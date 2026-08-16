@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use gpui::App;
 
 pub mod icons;
+pub mod input;
 pub mod loaders;
 pub mod material;
 pub mod popover;

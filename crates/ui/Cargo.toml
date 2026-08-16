@@ -20,3 +20,4 @@ workspace = true
 bezel-theme.workspace = true
 bezel-motion.workspace = true
 gpui.workspace = true
+unicode-segmentation = "1"

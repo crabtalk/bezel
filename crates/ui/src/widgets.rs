@@ -292,6 +292,163 @@ pub fn toggle(theme: &Theme, on: bool) -> gpui::Div {
         )
 }
 
+/// Display-only checkbox: a 16px rounded square that fills with the text tone
+/// and shows a check when on. State is the caller's; add `.id(..)`/`.on_click(..)`.
+pub fn checkbox(theme: &Theme, checked: bool) -> gpui::Div {
+    let mut box_ = div()
+        .flex_none()
+        .size(px(16.0))
+        .rounded(px(4.0))
+        .flex()
+        .items_center()
+        .justify_center();
+    box_ = if checked {
+        box_.bg(theme.text)
+    } else {
+        box_.border_1().border_color(ink(0.25)).bg(ink(0.03))
+    };
+    if checked {
+        box_.child(
+            crate::icons::icon(crate::icons::CHECK)
+                .size(px(11.0))
+                .text_color(theme.on_solid),
+        )
+    } else {
+        box_
+    }
+}
+
+/// Display-only radio button: a 16px ring with an inner dot when selected.
+/// Radios are a *set* — the caller owns which index is on.
+pub fn radio_button(theme: &Theme, selected: bool) -> gpui::Div {
+    div()
+        .flex_none()
+        .size(px(16.0))
+        .rounded_full()
+        .border_1()
+        .border_color(if selected { theme.text } else { ink(0.25) })
+        .bg(ink(0.03))
+        .flex()
+        .items_center()
+        .justify_center()
+        .when(selected, |ring| {
+            ring.child(div().size(px(8.0)).rounded_full().bg(theme.text))
+        })
+}
+
+/// Determinate progress bar. `fraction` is clamped to `0..=1`; the track keeps
+/// its full width so the row never reflows as the value moves.
+pub fn progress_bar(theme: &Theme, fraction: f32) -> gpui::Div {
+    let fraction = fraction.clamp(0.0, 1.0);
+    div()
+        .w_full()
+        .h(px(4.0))
+        .rounded_full()
+        .bg(ink(0.12))
+        .child(
+            div()
+                .h_full()
+                .w(gpui::relative(fraction))
+                .rounded_full()
+                .bg(theme.text),
+        )
+}
+
+/// Display-only slider: filled track behind a knob at `fraction` (clamped to
+/// `0..=1`). Dragging is the caller's — it owns the value and the mouse
+/// handlers; this is the paint.
+pub fn slider(theme: &Theme, fraction: f32) -> gpui::Div {
+    let fraction = fraction.clamp(0.0, 1.0);
+    div()
+        .w_full()
+        .h(px(16.0))
+        .flex()
+        .items_center()
+        .relative()
+        .child(
+            div()
+                .w_full()
+                .h(px(4.0))
+                .rounded_full()
+                .bg(ink(0.12))
+                .child(
+                    div()
+                        .h_full()
+                        .w(gpui::relative(fraction))
+                        .rounded_full()
+                        .bg(theme.text),
+                ),
+        )
+        .child(
+            // Inset by the knob's own width so it never overhangs the track.
+            div().absolute().left(gpui::relative(fraction)).child(
+                div()
+                    .size(px(14.0))
+                    .ml(px(-7.0))
+                    .rounded_full()
+                    .bg(theme.text),
+            ),
+        )
+}
+
+/// Circular avatar holding one or two initials — the fallback every avatar
+/// needs, and often the whole thing on a monochrome surface.
+pub fn avatar(theme: &Theme, initials: impl Into<SharedString>) -> gpui::Div {
+    div()
+        .flex_none()
+        .size(px(28.0))
+        .rounded_full()
+        .bg(ink(0.12))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(11.0))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(theme.text_muted)
+        .child(initials.into())
+}
+
+/// Tab strip: a hairline-underlined row that tabs sit on.
+pub fn tab_bar(theme: &Theme) -> gpui::Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(2.0))
+        .border_b_1()
+        .border_color(theme.border)
+}
+
+/// One tab. The active tab is marked by the text tone plus a 2px underline that
+/// overlaps the bar's hairline, so switching tabs never changes row height.
+pub fn tab(theme: &Theme, label: impl Into<SharedString>, active: bool) -> gpui::Div {
+    div()
+        .relative()
+        .px(px(10.0))
+        .pb(px(7.0))
+        .pt(px(6.0))
+        .text_size(px(13.0))
+        .font_weight(if active {
+            gpui::FontWeight::MEDIUM
+        } else {
+            gpui::FontWeight::NORMAL
+        })
+        .text_color(if active { theme.text } else { theme.text_muted })
+        .cursor_pointer()
+        .child(label.into())
+        .when(active, |t| {
+            t.child(
+                div()
+                    .absolute()
+                    .bottom(px(-1.0))
+                    .left_0()
+                    .right_0()
+                    .h(px(2.0))
+                    .bg(theme.text),
+            )
+        })
+}
+
 /// A small quiet ghost action (`rounded-lg px-2.5 py-1.5 text-[12px]
 /// text-muted-foreground`). Caller adds id + click + leading icon child AND
 /// its own `.hover(..)` — gpui panics on a second hover, and the pages vary

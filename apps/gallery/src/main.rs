@@ -2,10 +2,11 @@
 //! dev surface: new components land here the day they land in `crates/ui`.
 
 use bezel_theme::{Theme, appearance};
-use bezel_ui::{icons, loaders, popover, widgets};
+use bezel_ui::input::TextField;
+use bezel_ui::{icons, input, loaders, popover, widgets};
 use gpui::{
-    App, Bounds, Context, SharedString, Window, WindowBounds, WindowOptions, div, prelude::*, px,
-    size,
+    App, Bounds, Context, Entity, Focusable, SharedString, Window, WindowBounds, WindowOptions,
+    div, prelude::*, px, size,
 };
 
 fn main() {
@@ -16,6 +17,7 @@ fn main() {
                 eprintln!("FONT REGISTRATION FAILED: {err:?}");
             }
             appearance::init(appearance::AppearanceMode::System, cx);
+            input::init(cx);
             let bounds = Bounds::centered(None, size(px(960.0), px(760.0)), cx);
             cx.open_window(
                 WindowOptions {
@@ -27,7 +29,19 @@ fn main() {
                 },
                 |window, cx| {
                     appearance::observe_window(window, cx).detach();
-                    cx.new(|_| Gallery)
+                    let gallery = cx.new(|cx| Gallery {
+                        search: cx
+                            .new(|cx| TextField::new(cx).with_placeholder("Search components…")),
+                        filled: cx.new(|cx| {
+                            let mut field = TextField::new(cx);
+                            field.set_content("Select me with shift-left", cx);
+                            field
+                        }),
+                    });
+                    // Focus a field on launch so the caret is visible.
+                    let focus = gallery.read(cx).search.focus_handle(cx);
+                    window.focus(&focus, cx);
+                    gallery
                 },
             )
             .unwrap();
@@ -35,7 +49,10 @@ fn main() {
         });
 }
 
-struct Gallery;
+struct Gallery {
+    search: Entity<TextField>,
+    filled: Entity<TextField>,
+}
 
 fn section(theme: &Theme, title: &str) -> gpui::Div {
     div().flex().flex_col().gap(px(12.0)).child(
@@ -69,6 +86,44 @@ impl Render for Gallery {
                 .child(widgets::toggle(&theme, false))
                 .child(widgets::badge(&theme, "badge"))
                 .child(widgets::badge_active(&theme, "active")),
+        );
+
+        let fields = section(&theme, "Text field").child(
+            div()
+                .w(px(320.0))
+                .flex()
+                .flex_col()
+                .gap(px(10.0))
+                .child(self.search.clone())
+                .child(self.filled.clone()),
+        );
+
+        let controls = section(&theme, "Checkbox, radio, avatar").child(
+            row()
+                .child(widgets::checkbox(&theme, true))
+                .child(widgets::checkbox(&theme, false))
+                .child(widgets::radio_button(&theme, true))
+                .child(widgets::radio_button(&theme, false))
+                .child(widgets::avatar(&theme, "TC"))
+                .child(widgets::avatar(&theme, "K")),
+        );
+
+        let tracks = section(&theme, "Progress & slider").child(
+            div()
+                .w(px(280.0))
+                .flex()
+                .flex_col()
+                .gap(px(16.0))
+                .child(widgets::progress_bar(&theme, 0.35))
+                .child(widgets::progress_bar(&theme, 0.8))
+                .child(widgets::slider(&theme, 0.5)),
+        );
+
+        let tabs = section(&theme, "Tabs").child(
+            widgets::tab_bar(&theme)
+                .child(widgets::tab(&theme, "Components", true))
+                .child(widgets::tab(&theme, "Tokens", false))
+                .child(widgets::tab(&theme, "Motion", false)),
         );
 
         let menu = section(&theme, "Menu").child(
@@ -169,7 +224,11 @@ impl Render for Gallery {
                             .child("bezel gallery"),
                     )
                     .child(buttons)
+                    .child(fields)
                     .child(toggles)
+                    .child(controls)
+                    .child(tracks)
+                    .child(tabs)
                     .child(menu)
                     .child(group)
                     .child(spinners)

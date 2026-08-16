@@ -27,7 +27,12 @@ gpui = "0.2.2"
 # Not published; only the (unpublished) gallery needs it. Must resolve to the
 # SAME gpui as the patch below — a second copy in the graph is two
 # incompatible type universes.
-gpui_platform = { path = "../zed/crates/gpui_platform" }
+#
+# `font-kit` is NOT optional in practice: without it the text system falls back
+# to a handful of bundled faces (no system fonts, no `add_fonts` families), so
+# every glyph resolves to notdef — text reserves layout space and paints
+# nothing. Add `wayland`/`x11` when we build on Linux.
+gpui_platform = { path = "../zed/crates/gpui_platform", features = ["font-kit"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
