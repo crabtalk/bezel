@@ -16,7 +16,7 @@ use gpui::{
 };
 
 use bezel_motion as motion;
-use bezel_motion::PULSE;
+use bezel_motion::{AnimationExt as _, PULSE};
 use bezel_theme::{Theme, hairline, ink};
 
 // ---------------------------------------------------------------------------
@@ -257,6 +257,65 @@ pub fn filter_indices<S: AsRef<str>>(query: &str, labels: &[S]) -> Vec<usize> {
         .collect();
     ranked.sort_by_key(|&(rank, ix)| (rank, ix));
     ranked.into_iter().map(|(_, ix)| ix).collect()
+}
+
+/// The state behind a searchable list: the items, the ranked view of them, and
+/// which row of that view is active. Shared by every picker — the palette, the
+/// combobox — so the mapping below is written and tested once.
+pub struct Filter {
+    items: Vec<SharedString>,
+    /// Indices into `items`, ranked by [`filter_indices`].
+    filtered: Vec<usize>,
+    /// Position within `filtered`, not within `items`.
+    active: Option<usize>,
+}
+
+impl Filter {
+    pub fn new(items: Vec<SharedString>) -> Self {
+        let filtered: Vec<usize> = (0..items.len()).collect();
+        let active = (!filtered.is_empty()).then_some(0);
+        Self {
+            items,
+            filtered,
+            active,
+        }
+    }
+
+    pub fn items(&self) -> &[SharedString] {
+        &self.items
+    }
+
+    /// The ranked view: indices into [`Self::items`], in display order.
+    pub fn filtered(&self) -> &[usize] {
+        &self.filtered
+    }
+
+    /// The highlighted row's position in the FILTERED view — what a renderer
+    /// compares each row against.
+    pub fn active(&self) -> Option<usize> {
+        self.active
+    }
+
+    /// Re-rank against `query`, re-entering the list at the top: after
+    /// narrowing, the best match should be one Enter away.
+    pub fn refilter(&mut self, query: &str) {
+        self.filtered = filter_indices(query, &self.items);
+        self.active = (!self.filtered.is_empty()).then_some(0);
+    }
+
+    pub fn step(&mut self, delta: isize) {
+        self.active = menu_step(self.active, self.filtered.len(), delta);
+    }
+
+    /// The item confirming right now would pick — an index into
+    /// [`Self::items`], never into the filtered view. Confusing the two is the
+    /// defining bug of a filtered list: it only appears once a query narrows
+    /// the rows, and then every selection picks the wrong thing.
+    pub fn active_item(&self) -> Option<usize> {
+        self.active
+            .and_then(|position| self.filtered.get(position))
+            .copied()
+    }
 }
 
 /// Keys the pickers care about, classified from a raw keystroke.
@@ -615,6 +674,124 @@ fn modal_with(
                     .items_center()
                     .justify_center()
                     .child(motion::dialog_in(id, div().child(card))),
+            ),
+    )
+    .priority(2)
+    .into_any_element()
+}
+
+// ---------------------------------------------------------------------------
+// Sheet — a dialog pinned to an edge
+// ---------------------------------------------------------------------------
+
+/// Which edge a [`sheet`] slides in from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Left,
+    Right,
+}
+
+/// Corner rounding of a [`sheet_panel`] — the two inner corners; the two on
+/// the window edge are off-screen. Matches [`dialog_card`], since a sheet is
+/// the same card pinned instead of centred.
+const SHEET_RADIUS: f32 = 16.0;
+
+/// The full-height panel body of a [`sheet`]: glass card chrome rounded and
+/// hairlined on its *inner* edge only, so it reads as pulled out of the window
+/// side rather than floating near it.
+pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
+    let card = div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .shadow_lg()
+        .text_color(theme.text);
+    let card = match side {
+        Side::Left => card
+            .rounded_r(px(SHEET_RADIUS))
+            .border_r_1()
+            .border_color(hairline(0.10)),
+        Side::Right => card
+            .rounded_l(px(SHEET_RADIUS))
+            .border_l_1()
+            .border_color(hairline(0.10)),
+    };
+    if theme.is_glass() {
+        card.bg(theme.glass_overlay())
+    } else {
+        card.bg(theme.surface_overlay)
+    }
+}
+
+/// Full-height side panel over a dim scrim — [`modal`] pinned to an edge. It
+/// slides in over [`motion::DIALOG_IN`] and, once the caller's [`Popup`]
+/// enters its exit phase, back out over [`motion::MENU_OUT`] — which it must,
+/// because [`Popup::finish_close`] reaps on that spec's span.
+///
+/// `on_dismiss` is the scrim click. Unlike the anchored menus, dismissal
+/// cannot be the caller's `.on_mouse_down_out`: the scrim lives inside this
+/// deferred layer, so nothing outside can reach it.
+///
+/// The slide is written here rather than as a `bezel_motion` helper because
+/// only the *spec* is motion — which inset carries it is layout, and it
+/// differs per side.
+pub fn sheet(
+    id: impl Into<SharedString>,
+    viewport: gpui::Size<Pixels>,
+    side: Side,
+    width: Pixels,
+    content: AnyElement,
+    closing: Option<std::time::Instant>,
+    on_dismiss: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> AnyElement {
+    let id = id.into();
+    let exit = closing.map(exit_progress);
+    let blur = crate::material::MENU_BLUR * (1.0 - exit.unwrap_or(0.0));
+
+    let panel = div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .w(width)
+        .child(crate::material::material(SHEET_RADIUS, blur, content));
+    // `t` runs 0 (fully off-screen) → 1 (seated against the edge).
+    let seat = move |el: gpui::Div, t: f32| {
+        let inset = width * (t - 1.0);
+        match side {
+            Side::Left => el.left(inset),
+            Side::Right => el.right(inset),
+        }
+    };
+    let panel = if let Some(t) = exit {
+        // The dying panel must not take clicks — same overlay `menu_motion`
+        // puts over an exiting menu.
+        let panel = seat(panel, 1.0 - t).child(div().absolute().inset_0().occlude());
+        panel
+            .with_animation(
+                SharedString::from(format!("{id}-out")),
+                motion::MENU_OUT.animation(),
+                move |el, _| el,
+            )
+            .into_any_element()
+    } else {
+        panel
+            .with_animation(id.clone(), motion::DIALOG_IN.animation(), seat)
+            .into_any_element()
+    };
+
+    gpui::deferred(
+        gpui::anchored()
+            .position(gpui::point(px(0.0), px(0.0)))
+            .child(
+                div()
+                    .id(SharedString::from(format!("{id}-scrim")))
+                    .occlude()
+                    .relative()
+                    .w(viewport.width)
+                    .h(viewport.height)
+                    .bg(scrim_alpha(0.6 * (1.0 - exit.unwrap_or(0.0))))
+                    .on_click(on_dismiss)
+                    .child(panel),
             ),
     )
     .priority(2)
@@ -1074,6 +1251,49 @@ mod tests {
         // Empty / whitespace query keeps input order.
         assert_eq!(filter_indices("", &labels), vec![0, 1, 2, 3]);
         assert_eq!(filter_indices("   ", &labels), vec![0, 1, 2, 3]);
+    }
+
+    /// Mapping the active row back through the filtered view is the whole
+    /// reason [`Filter`] exists: get it wrong and every selection picks the
+    /// wrong item — but only once a query has narrowed the rows.
+    #[test]
+    fn filter_maps_the_active_row_back_to_its_item() {
+        let mut filter = Filter::new(
+            ["main", "feature/main-sync", "master", "dev"]
+                .iter()
+                .map(|s| SharedString::from(*s))
+                .collect(),
+        );
+        assert_eq!(filter.active_item(), Some(0), "enters at the top");
+
+        // "ma" keeps 0, 2, 1 in rank order; row 1 of the view is item 2.
+        filter.refilter("ma");
+        assert_eq!(filter.filtered(), &[0, 2, 1]);
+        filter.step(1);
+        assert_eq!(filter.active(), Some(1), "position in the view");
+        assert_eq!(filter.active_item(), Some(2), "not 1");
+
+        // Narrowing re-enters at the top, so the best match is one Enter away.
+        filter.refilter("dev");
+        assert_eq!(filter.active(), Some(0));
+        assert_eq!(filter.active_item(), Some(3));
+
+        // Nothing matches: nothing to confirm, and stepping stays out.
+        filter.refilter("zzz");
+        assert_eq!(filter.active(), None);
+        assert_eq!(filter.active_item(), None);
+        filter.step(1);
+        assert_eq!(filter.active_item(), None);
+    }
+
+    #[test]
+    fn empty_filter_is_inert() {
+        let mut filter = Filter::new(vec![]);
+        assert_eq!(filter.active(), None);
+        filter.step(1);
+        assert_eq!(filter.active_item(), None);
+        filter.refilter("anything");
+        assert_eq!(filter.active_item(), None);
     }
 
     #[test]

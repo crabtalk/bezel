@@ -12,15 +12,20 @@ verified by construction only.
 - [ ] Context menu opens on right-click (uses `popover::menu_at`)
 - [ ] Text field typing, word motion (`opt-←/→`), line kill (`cmd-backspace`)
 - [ ] Select and palette respond to click / `⌘K` (mounted state verified, click path not)
+- [ ] Combobox opens, filters as you type, `↑/↓`+`↵` picks, click-away dismisses
+      (the closed face and its selection ARE on screen)
+- [ ] Hover card opens after the delay and survives the pointer entering it
+- [ ] Sheet slides in from the right and back out
+- [ ] Split divider drags and clamps (the split itself IS on screen)
 
 ## Components — remaining
 
-- [ ] **Combobox** — searchable select; `select_trigger` + the palette's filtering
-- [ ] **Sheet / drawer** — side panel, slides in
-- [ ] **Hover card** — popover on hover instead of click
-- [ ] **Resizable split** — draggable pane divider
 - [ ] **Textarea** — multi-line editing. Deserves its own pass: line wrapping,
       vertical cursor movement, its own scrolling. Do not half-ship it.
+      `TextField`'s offset math (word boundaries, UTF-16 mapping, grapheme
+      stepping) carries over as-is; the layout does not — `shape_line` gives
+      one line, this needs `shape_text`, per-line hit testing, a goal column
+      for vertical motion, and a scroll offset that follows the caret.
 
 Need a real use case before building:
 
@@ -65,16 +70,17 @@ Worth more than more widgets, for a library other projects depend on.
 
 Layers: `bezel-theme` (tokens as a gpui `Global`, designed light+dark, oklch
 math, appearance switching) · `bezel-motion` (bezier catalog, pulse clock,
-hover fades, pure phase math) · `bezel-ui` · `apps/gallery` (two-column, every
-component on screen).
+hover fades, pure phase math) · `bezel-ui` · `apps/gallery` (two-column; the
+set has outgrown one screenful again — the lower sections need a scroll).
 
 Components: button ×3 · text field (IME, selection, clipboard, native
-shortcuts) · select · command palette · checkbox · radio · toggle · badge ×2 ·
-avatar · progress · slider · tabs · toggle group · disclosure + collapsible
-header · breadcrumb · tag · status dot · empty state · tooltip · context menu ·
-popover/menu/dialog mounts · group box + rows · separator · skeleton rows ·
-alert strips · spinners · icons (58 SVG) · material glass.
+shortcuts) · select · combobox · command palette · checkbox · radio · toggle ·
+badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
+collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
+hover card · context menu · popover/menu/dialog/sheet mounts · resizable
+split · group box + rows · separator · skeleton rows · alert strips ·
+spinners · icons (58 SVG) · material glass.
 
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 76 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 79 tests.

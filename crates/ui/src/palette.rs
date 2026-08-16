@@ -5,8 +5,8 @@
 //! rather than taking a callback, so the host decides what a selection *means*
 //! and the palette never knows about the app's actions.
 //!
-//! The pieces underneath are already tested: [`popover::filter_indices`] ranks
-//! and orders matches, [`popover::menu_step`] wraps the active row.
+//! The state underneath is [`popover::Filter`], shared with
+//! [`crate::combobox::Combobox`] and tested there.
 //!
 //! ```ignore
 //! bezel_ui::palette::init(cx);   // once, at startup (with input::init)
@@ -63,11 +63,7 @@ pub enum PaletteEvent {
 
 pub struct CommandPalette {
     query: Entity<TextField>,
-    items: Vec<SharedString>,
-    /// Indices into `items`, ranked by [`popover::filter_indices`].
-    filtered: Vec<usize>,
-    /// Position within `filtered`, not within `items`.
-    active: Option<usize>,
+    filter: popover::Filter,
     focus_handle: FocusHandle,
 }
 
@@ -81,13 +77,9 @@ impl CommandPalette {
             palette.refilter(cx);
         })
         .detach();
-        let filtered: Vec<usize> = (0..items.len()).collect();
-        let active = (!filtered.is_empty()).then_some(0);
         Self {
             query,
-            items,
-            filtered,
-            active,
+            filter: popover::Filter::new(items),
             focus_handle: cx.focus_handle(),
         }
     }
@@ -104,25 +96,22 @@ impl CommandPalette {
 
     /// The item the user would get by confirming right now.
     pub fn active_item(&self) -> Option<usize> {
-        item_at(&self.filtered, self.active)
+        self.filter.active_item()
     }
 
     fn refilter(&mut self, cx: &mut Context<Self>) {
         let query = self.query.read(cx).content().clone();
-        self.filtered = popover::filter_indices(&query, &self.items);
-        // Re-entering the list from the top is the behaviour every palette
-        // has: after narrowing, the best match should be one Enter away.
-        self.active = (!self.filtered.is_empty()).then_some(0);
+        self.filter.refilter(&query);
         cx.notify();
     }
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        self.active = popover::menu_step(self.active, self.filtered.len(), 1);
+        self.filter.step(1);
         cx.notify();
     }
 
     fn select_previous(&mut self, _: &SelectPrevious, _: &mut Window, cx: &mut Context<Self>) {
-        self.active = popover::menu_step(self.active, self.filtered.len(), -1);
+        self.filter.step(-1);
         cx.notify();
     }
 
@@ -148,20 +137,21 @@ impl Render for CommandPalette {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
         let rows: Vec<gpui::AnyElement> = self
-            .filtered
+            .filter
+            .filtered()
             .iter()
             .enumerate()
             .map(|(position, &item)| {
                 popover::menu_row(
                     &theme,
-                    Some(position) == self.active,
+                    Some(position) == self.filter.active(),
                     SharedString::from(format!("palette-row-{item}")),
                 )
                 .id(SharedString::from(format!("palette-{item}")))
                 .on_click(cx.listener(move |_, _, _, cx| {
                     cx.emit(PaletteEvent::Selected(item));
                 }))
-                .child(self.items[item].clone())
+                .child(self.filter.items()[item].clone())
                 .into_any_element()
             })
             .collect();
@@ -205,35 +195,3 @@ impl Render for CommandPalette {
 /// Re-exported so a host can bind its own "open palette" chord without
 /// depending on gpui's action macros directly.
 pub use input::KEY_CONTEXT as FIELD_KEY_CONTEXT;
-
-/// Map a position in the FILTERED view back to an index into the original
-/// items. Separated out because confusing the two is the defining bug of a
-/// filtered list: it only shows up once a query narrows the rows, and then
-/// every selection runs the wrong command.
-fn item_at(filtered: &[usize], active: Option<usize>) -> Option<usize> {
-    active.and_then(|position| filtered.get(position)).copied()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn active_maps_through_the_filtered_view() {
-        // A query narrowed 8 items down to items 3 and 7.
-        let filtered = [3, 7];
-        assert_eq!(item_at(&filtered, Some(0)), Some(3), "not 0");
-        assert_eq!(item_at(&filtered, Some(1)), Some(7), "not 1");
-    }
-
-    #[test]
-    fn active_is_none_when_there_is_nothing_to_confirm() {
-        assert_eq!(item_at(&[3, 7], None), None, "no active row");
-        assert_eq!(item_at(&[], Some(0)), None, "no matches at all");
-        assert_eq!(
-            item_at(&[3], Some(5)),
-            None,
-            "stale position after refilter"
-        );
-    }
-}

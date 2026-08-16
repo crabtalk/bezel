@@ -2,16 +2,30 @@
 //! dev surface: new components land here the day they land in `crates/ui`.
 
 use bezel_theme::{Theme, appearance};
+use bezel_ui::combobox::Combobox;
+use bezel_ui::hover_card::HoverCard;
 use bezel_ui::input::TextField;
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::tooltip::Tooltip;
-use bezel_ui::{icons, input, loaders, palette, popover, widgets};
+use bezel_ui::widgets::SplitDrag;
+use bezel_ui::{combobox, icons, input, loaders, palette, popover, widgets};
 use gpui::{
-    App, Bounds, Context, Entity, Focusable, KeyBinding, SharedString, Window, WindowBounds,
-    WindowOptions, actions, div, prelude::*, px, size,
+    App, Axis, Bounds, Context, DragMoveEvent, Empty, Entity, Focusable, KeyBinding, SharedString,
+    Window, WindowBounds, WindowOptions, actions, div, prelude::*, px, relative, size,
 };
 
 actions!(gallery, [OpenPalette]);
+
+const LANGUAGES: [&str; 8] = [
+    "Rust",
+    "TypeScript",
+    "Swift",
+    "Zig",
+    "Go",
+    "Python",
+    "Haskell",
+    "OCaml",
+];
 
 const COMMANDS: [&str; 8] = [
     "Open File…",
@@ -34,6 +48,7 @@ fn main() {
             appearance::init(appearance::AppearanceMode::System, cx);
             input::init(cx);
             palette::init(cx);
+            combobox::init(cx);
             cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
             let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
             cx.open_window(
@@ -56,11 +71,22 @@ fn main() {
                         }),
                         theme_menu: popover::Popup::default(),
                         theme_choice: 0,
+                        language: cx.new(|cx| {
+                            Combobox::new(
+                                LANGUAGES.iter().map(|l| SharedString::from(*l)).collect(),
+                                "Pick a language",
+                                cx,
+                            )
+                            .with_selection(0)
+                        }),
                         palette: None,
                         last_command: None,
                         segment: 0,
                         expanded: true,
                         context_menu: popover::Popup::default(),
+                        sheet: popover::Popup::default(),
+                        split: 0.4,
+                        split_dragging: false,
                     });
                     // Focus a field on launch so the caret is visible.
                     let focus = gallery.read(cx).search.focus_handle(cx);
@@ -87,6 +113,13 @@ struct Gallery {
     /// this view, so this view owns whether it is open and what is chosen.
     theme_menu: popover::Popup<()>,
     theme_choice: usize,
+    /// The combobox, by contrast, owns its own menu — it has a query field to
+    /// hold, so it is an entity.
+    language: Entity<Combobox>,
+    sheet: popover::Popup<()>,
+    /// Where the split's divider sits, as a fraction of the container.
+    split: f32,
+    split_dragging: bool,
 }
 
 const THEME_CHOICES: [&str; 3] = ["System", "Light", "Dark"];
@@ -136,6 +169,13 @@ impl Gallery {
         cx.notify();
     }
 
+    fn close_sheet(&mut self, cx: &mut Context<Self>) {
+        if self.sheet.begin_close() {
+            popover::reap_popup(cx, |view: &mut Self| &mut view.sheet);
+        }
+        cx.notify();
+    }
+
     fn choose_theme(&mut self, index: usize, cx: &mut Context<Self>) {
         self.theme_choice = index;
         if self.theme_menu.begin_close() {
@@ -160,7 +200,7 @@ fn row() -> gpui::Div {
 }
 
 impl Render for Gallery {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
         let view = cx.entity_id();
 
@@ -209,6 +249,17 @@ impl Render for Gallery {
                             "theme-select-menu",
                             popover::popover_card(&theme)
                                 .w(px(200.0))
+                                // Dismissal is the caller's, and the caller is
+                                // this view — without it, clicking away leaves
+                                // the menu hanging open.
+                                .on_mouse_down_out(cx.listener(|view, _, _, cx| {
+                                    if view.theme_menu.begin_close() {
+                                        popover::reap_popup(cx, |view: &mut Self| {
+                                            &mut view.theme_menu
+                                        });
+                                    }
+                                    cx.notify();
+                                }))
                                 .children(THEME_CHOICES.iter().enumerate().map(|(index, label)| {
                                     popover::menu_row(
                                         &theme,
@@ -228,6 +279,20 @@ impl Render for Gallery {
                     }),
             ),
         );
+
+        let combobox = section(&theme, "Combobox")
+            .child(div().w(px(220.0)).child(self.language.clone()))
+            .child(
+                div()
+                    .text_size(px(12.5))
+                    .text_color(theme.text_muted)
+                    .child(SharedString::from(
+                        match self.language.read(cx).selection() {
+                            Some(index) => format!("chosen: {}", LANGUAGES[index]),
+                            None => "nothing chosen".to_string(),
+                        },
+                    )),
+            );
 
         let controls = section(&theme, "Checkbox, radio, avatar").child(
             row()
@@ -353,6 +418,22 @@ impl Render for Gallery {
                             Tooltip::with_keystroke("Copy path", "⌘C", window, cx)
                         })
                         .child(popover::button(&theme, "Hover me", "g-tip")),
+                )
+                .child(
+                    div()
+                        .id("hover-card")
+                        // Hoverable: the pointer can travel into this one.
+                        .hoverable_tooltip(|window, cx| {
+                            HoverCard::person(
+                                "TC",
+                                "clearloop",
+                                "Builds desktop software in Rust. Maintains bezel.",
+                                "Joined 2019 · 412 repositories",
+                                window,
+                                cx,
+                            )
+                        })
+                        .child(widgets::tag(&theme, "@clearloop")),
                 ),
         );
 
@@ -444,6 +525,81 @@ impl Render for Gallery {
                 ),
         );
 
+        let pane = |label: SharedString| {
+            div()
+                .h_full()
+                .p(px(12.0))
+                .text_size(px(12.5))
+                .text_color(theme.text_muted)
+                .child(label)
+        };
+        let split = section(&theme, "Resizable split").child(
+            div()
+                .id("split")
+                .w(px(420.0))
+                .h(px(140.0))
+                .rounded(px(Theme::PANEL_RADIUS))
+                .border_1()
+                .border_color(theme.border)
+                .overflow_hidden()
+                .flex()
+                .flex_row()
+                .on_drag_move(
+                    cx.listener(|view, event: &DragMoveEvent<SplitDrag>, _, cx| {
+                        view.split = widgets::split_fraction(
+                            event.event.position,
+                            event.bounds,
+                            Axis::Horizontal,
+                            0.15,
+                        );
+                        view.split_dragging = true;
+                        cx.notify();
+                    }),
+                )
+                // Both, because the release can land anywhere: a divider left
+                // lit after the drag ends reads as still grabbed.
+                .on_mouse_up(
+                    gpui::MouseButton::Left,
+                    cx.listener(|view, _, _, cx| {
+                        view.split_dragging = false;
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_up_out(
+                    gpui::MouseButton::Left,
+                    cx.listener(|view, _, _, cx| {
+                        view.split_dragging = false;
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                        .w(relative(self.split))
+                        .child(pane(SharedString::from(format!(
+                            "{:.0}%",
+                            self.split * 100.0
+                        )))),
+                )
+                .child(
+                    widgets::split_handle(&theme, Axis::Horizontal, self.split_dragging)
+                        .id("split-handle")
+                        .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| Empty)),
+                )
+                .child(div().flex_1().child(pane("drag the divider".into()))),
+        );
+
+        let sheet = section(&theme, "Sheet").child(
+            row().child(
+                div()
+                    .id("open-sheet")
+                    .on_click(cx.listener(|view, _, _, cx| {
+                        view.sheet.open(());
+                        cx.notify();
+                    }))
+                    .child(popover::button(&theme, "Open sheet", "g-sheet")),
+            ),
+        );
+
         let strips = section(&theme, "Strips & redacted")
             .child(widgets::error_strip(&theme, "Something went wrong."))
             .child(widgets::warning_strip(&theme, "Heads up, check this."))
@@ -496,6 +652,7 @@ impl Render for Gallery {
                                     .child(fields)
                                     .child(toggles)
                                     .child(select)
+                                    .child(combobox)
                                     .child(controls)
                                     .child(tracks)
                                     .child(segments)
@@ -509,11 +666,13 @@ impl Render for Gallery {
                                     .flex_col()
                                     .gap(px(28.0))
                                     .child(tabs)
+                                    .child(split)
                                     .child(menu)
                                     .child(group)
                                     .child(empty)
                                     .child(spinners)
                                     .child(palette_hint)
+                                    .child(sheet)
                                     .child(material)
                                     .child(strips),
                             ),
@@ -550,6 +709,54 @@ impl Render for Gallery {
                     ))
                 },
             )
+            .when(self.sheet.get().is_some(), |root| {
+                root.child(popover::sheet(
+                    "gallery-sheet",
+                    window.viewport_size(),
+                    popover::Side::Right,
+                    px(320.0),
+                    popover::sheet_panel(&theme, popover::Side::Right)
+                        .p(px(20.0))
+                        .gap(px(14.0))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .justify_between()
+                                .child(popover::dialog_title(&theme, "Details"))
+                                .child(
+                                    div()
+                                        .id("close-sheet")
+                                        .on_click(
+                                            cx.listener(|view, _, _, cx| view.close_sheet(cx)),
+                                        )
+                                        .child(popover::button(&theme, "Close", "g-sheet-close")),
+                                ),
+                        )
+                        .child(popover::dialog_body(
+                            &theme,
+                            "A sheet is the dialog card pinned to an edge — same scrim, \
+                             same glass, full height.",
+                        ))
+                        .child(
+                            widgets::group_box(&theme)
+                                .child(
+                                    widgets::card_row(&theme, true)
+                                        .child(widgets::row_tile(&theme, icons::MONITOR))
+                                        .child(widgets::row_title(&theme, "Appearance")),
+                                )
+                                .child(
+                                    widgets::card_row(&theme, false)
+                                        .child(widgets::row_tile(&theme, icons::FOLDER))
+                                        .child(widgets::row_title(&theme, "Storage")),
+                                ),
+                        )
+                        .into_any_element(),
+                    self.sheet.closing_since(),
+                    cx.listener(|view, _, _, cx| view.close_sheet(cx)),
+                ))
+            })
             .when_some(self.palette.clone(), |root, palette| {
                 // Centered over a scrim, the way a palette always appears.
                 root.child(

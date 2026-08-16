@@ -528,6 +528,81 @@ pub fn collapsible_header(
         )
 }
 
+// ---------------------------------------------------------------------------
+// Resizable split
+// ---------------------------------------------------------------------------
+
+/// The drag payload of a [`split_handle`]. Shipped from here so every split
+/// speaks the same type: `on_drag_move::<SplitDrag>` on one container would
+/// otherwise fire for an unrelated split's gesture.
+pub struct SplitDrag;
+
+/// Width of the divider's grab strip: the 1px line plus zed's own 4px of slack
+/// each side (`workspace::HANDLE_HITBOX_SIZE`) — a 1px target is unhittable.
+const SPLIT_HANDLE_HIT: f32 = 9.0;
+
+/// Where a divider dragged to `pointer` puts the split, as a fraction of
+/// `bounds` along `axis`. `Axis::Horizontal` is panes side by side (a vertical
+/// divider travelling in x).
+///
+/// Clamped to `min..=1-min` so neither pane can be squeezed away, and to `min`
+/// on a zero-extent container — the frame before layout has run would divide
+/// by zero.
+pub fn split_fraction(
+    pointer: gpui::Point<gpui::Pixels>,
+    bounds: gpui::Bounds<gpui::Pixels>,
+    axis: gpui::Axis,
+    min: f32,
+) -> f32 {
+    let min = min.clamp(0.0, 0.5);
+    let (offset, extent) = match axis {
+        gpui::Axis::Horizontal => (pointer.x - bounds.left(), bounds.size.width),
+        gpui::Axis::Vertical => (pointer.y - bounds.top(), bounds.size.height),
+    };
+    if extent <= px(0.0) {
+        return min;
+    }
+    (offset / extent).clamp(min, 1.0 - min)
+}
+
+/// The divider between two panes: a hairline centred in a grab strip, lit while
+/// dragged.
+///
+/// The gesture stays with the caller, which owns the fraction — the handle is
+/// dragged with gpui's null-preview drag, and the container reads the pointer:
+///
+/// ```ignore
+/// div()
+///     .id("split")
+///     .on_drag_move(cx.listener(|view, event: &DragMoveEvent<SplitDrag>, _, cx| {
+///         view.fraction = split_fraction(event.event.position, event.bounds, Axis::Horizontal, 0.15);
+///         cx.notify();
+///     }))
+///     .child(div().w(relative(self.fraction)).child(left))
+///     .child(
+///         split_handle(&theme, Axis::Horizontal, self.dragging)
+///             .id("split-handle")
+///             .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| gpui::Empty)),
+///     )
+///     .child(div().flex_1().child(right))
+/// ```
+pub fn split_handle(theme: &Theme, axis: gpui::Axis, dragging: bool) -> gpui::Div {
+    let line = if dragging { theme.caret } else { theme.border };
+    let handle = div().flex_none().flex().items_center().justify_center();
+    match axis {
+        gpui::Axis::Horizontal => handle
+            .w(px(SPLIT_HANDLE_HIT))
+            .h_full()
+            .cursor_col_resize()
+            .child(div().w(px(1.0)).h_full().bg(line)),
+        gpui::Axis::Vertical => handle
+            .h(px(SPLIT_HANDLE_HIT))
+            .w_full()
+            .cursor_row_resize()
+            .child(div().h(px(1.0)).w_full().bg(line)),
+    }
+}
+
 /// A removable chip — a token in a filter bar or a recipient field. The caller
 /// adds the click handler for the ✕.
 pub fn tag(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
@@ -752,4 +827,63 @@ pub fn warning_strip(theme: &Theme, message: impl Into<SharedString>) -> gpui::D
             ),
         )
         .child(div().min_w_0().child(message.into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{Axis, Bounds, point, size};
+
+    fn box_at(left: f32, top: f32, width: f32, height: f32) -> Bounds<gpui::Pixels> {
+        Bounds::new(point(px(left), px(top)), size(px(width), px(height)))
+    }
+
+    #[test]
+    fn split_fraction_measures_from_the_container_origin() {
+        // A container that does not start at the window origin: the fraction is
+        // of the container, not of the pointer's absolute position.
+        let bounds = box_at(100.0, 40.0, 400.0, 200.0);
+        assert_eq!(
+            split_fraction(point(px(300.0), px(60.0)), bounds, Axis::Horizontal, 0.0),
+            0.5
+        );
+        assert_eq!(
+            split_fraction(point(px(200.0), px(60.0)), bounds, Axis::Horizontal, 0.0),
+            0.25
+        );
+        // Vertical splits read y against the height.
+        assert_eq!(
+            split_fraction(point(px(300.0), px(90.0)), bounds, Axis::Vertical, 0.0),
+            0.25
+        );
+    }
+
+    #[test]
+    fn split_fraction_never_squeezes_a_pane_away() {
+        let bounds = box_at(0.0, 0.0, 400.0, 200.0);
+        // Dragged past either end, and even outside the container entirely.
+        assert_eq!(
+            split_fraction(point(px(-500.0), px(0.0)), bounds, Axis::Horizontal, 0.2),
+            0.2
+        );
+        assert_eq!(
+            split_fraction(point(px(900.0), px(0.0)), bounds, Axis::Horizontal, 0.2),
+            0.8
+        );
+        // A nonsense minimum still leaves both panes on screen.
+        assert_eq!(
+            split_fraction(point(px(0.0), px(0.0)), bounds, Axis::Horizontal, 4.0),
+            0.5
+        );
+    }
+
+    #[test]
+    fn split_fraction_survives_a_container_with_no_extent() {
+        // The frame before layout has run — no divide by zero, no NaN.
+        let empty = box_at(0.0, 0.0, 0.0, 0.0);
+        assert_eq!(
+            split_fraction(point(px(10.0), px(10.0)), empty, Axis::Horizontal, 0.15),
+            0.15
+        );
+    }
 }

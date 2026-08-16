@@ -9,6 +9,8 @@ use std::borrow::Cow;
 
 use gpui::App;
 
+pub mod combobox;
+pub mod hover_card;
 pub mod icons;
 pub mod input;
 pub mod loaders;
