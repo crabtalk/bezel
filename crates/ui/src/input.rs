@@ -42,6 +42,16 @@ actions!(
         SelectAll,
         Home,
         End,
+        SelectHome,
+        SelectEnd,
+        WordLeft,
+        WordRight,
+        SelectWordLeft,
+        SelectWordRight,
+        DeleteWordLeft,
+        DeleteWordRight,
+        DeleteToLineStart,
+        DeleteToLineEnd,
         ShowCharacterPalette,
         Paste,
         Cut,
@@ -59,6 +69,7 @@ pub const KEY_CONTEXT: &str = "TextField";
 pub fn init(cx: &mut App) {
     let ctx = Some(KEY_CONTEXT);
     cx.bind_keys([
+        // Character movement and editing, everywhere.
         KeyBinding::new("backspace", Backspace, ctx),
         KeyBinding::new("delete", Delete, ctx),
         KeyBinding::new("left", Left, ctx),
@@ -67,24 +78,52 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("shift-right", SelectRight, ctx),
         KeyBinding::new("home", Home, ctx),
         KeyBinding::new("end", End, ctx),
-        #[cfg(target_os = "macos")]
+        KeyBinding::new("shift-home", SelectHome, ctx),
+        KeyBinding::new("shift-end", SelectEnd, ctx),
+    ]);
+
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([
         KeyBinding::new("cmd-a", SelectAll, ctx),
-        #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-c", Copy, ctx),
-        #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-x", Cut, ctx),
-        #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-v", Paste, ctx),
-        #[cfg(target_os = "macos")]
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, ctx),
-        #[cfg(not(target_os = "macos"))]
+        // cmd = line, option = word: the macOS convention.
+        KeyBinding::new("cmd-left", Home, ctx),
+        KeyBinding::new("cmd-right", End, ctx),
+        KeyBinding::new("cmd-shift-left", SelectHome, ctx),
+        KeyBinding::new("cmd-shift-right", SelectEnd, ctx),
+        KeyBinding::new("alt-left", WordLeft, ctx),
+        KeyBinding::new("alt-right", WordRight, ctx),
+        KeyBinding::new("alt-shift-left", SelectWordLeft, ctx),
+        KeyBinding::new("alt-shift-right", SelectWordRight, ctx),
+        KeyBinding::new("cmd-backspace", DeleteToLineStart, ctx),
+        KeyBinding::new("alt-backspace", DeleteWordLeft, ctx),
+        KeyBinding::new("alt-delete", DeleteWordRight, ctx),
+        // The emacs bindings macOS honours in every native text field.
+        KeyBinding::new("ctrl-a", Home, ctx),
+        KeyBinding::new("ctrl-e", End, ctx),
+        KeyBinding::new("ctrl-b", Left, ctx),
+        KeyBinding::new("ctrl-f", Right, ctx),
+        KeyBinding::new("ctrl-h", Backspace, ctx),
+        KeyBinding::new("ctrl-d", Delete, ctx),
+        KeyBinding::new("ctrl-k", DeleteToLineEnd, ctx),
+    ]);
+
+    #[cfg(not(target_os = "macos"))]
+    cx.bind_keys([
         KeyBinding::new("ctrl-a", SelectAll, ctx),
-        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-c", Copy, ctx),
-        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-x", Cut, ctx),
-        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-v", Paste, ctx),
+        // ctrl = word on Windows/Linux, where there is no line modifier.
+        KeyBinding::new("ctrl-left", WordLeft, ctx),
+        KeyBinding::new("ctrl-right", WordRight, ctx),
+        KeyBinding::new("ctrl-shift-left", SelectWordLeft, ctx),
+        KeyBinding::new("ctrl-shift-right", SelectWordRight, ctx),
+        KeyBinding::new("ctrl-backspace", DeleteWordLeft, ctx),
+        KeyBinding::new("ctrl-delete", DeleteWordRight, ctx),
     ]);
 }
 
@@ -174,6 +213,90 @@ impl TextField {
 
     fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
         self.move_to(self.content.len(), cx);
+    }
+
+    fn select_home(&mut self, _: &SelectHome, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(0, cx);
+    }
+
+    fn select_end(&mut self, _: &SelectEnd, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.content.len(), cx);
+    }
+
+    fn word_left(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(
+            previous_word_boundary(&self.content, self.cursor_offset()),
+            cx,
+        );
+    }
+
+    fn word_right(&mut self, _: &WordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn select_word_left(&mut self, _: &SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(
+            previous_word_boundary(&self.content, self.cursor_offset()),
+            cx,
+        );
+    }
+
+    fn select_word_right(&mut self, _: &SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+    }
+
+    /// Every delete-by-unit action is "extend the selection over the unit, then
+    /// replace it" — so a non-empty selection always wins, matching how every
+    /// native field behaves.
+    fn delete_word_left(
+        &mut self,
+        _: &DeleteWordLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            self.select_to(
+                previous_word_boundary(&self.content, self.cursor_offset()),
+                cx,
+            );
+        }
+        self.replace_text_in_range(None, "", window, cx)
+    }
+
+    fn delete_word_right(
+        &mut self,
+        _: &DeleteWordRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            self.select_to(next_word_boundary(&self.content, self.cursor_offset()), cx);
+        }
+        self.replace_text_in_range(None, "", window, cx)
+    }
+
+    fn delete_to_line_start(
+        &mut self,
+        _: &DeleteToLineStart,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            self.select_to(0, cx);
+        }
+        self.replace_text_in_range(None, "", window, cx)
+    }
+
+    fn delete_to_line_end(
+        &mut self,
+        _: &DeleteToLineEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            self.select_to(self.content.len(), cx);
+        }
+        self.replace_text_in_range(None, "", window, cx)
     }
 
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
@@ -369,6 +492,36 @@ fn next_boundary(text: &str, offset: usize) -> usize {
         .unwrap_or(text.len())
 }
 
+/// A word-bound segment counts as a word if it has any alphanumeric content;
+/// whitespace and punctuation runs are the things word motion skips over.
+fn is_word(segment: &str) -> bool {
+    segment.chars().any(char::is_alphanumeric)
+}
+
+/// Start of the word at or before `offset` — option-left.
+///
+/// Word units are Unicode word bounds (UAX#29), not space-delimited runs. In
+/// practice that means `foo.bar` and `foo_bar` are ONE word — a dot or
+/// underscore between letters does not break — while `a-b`, `path/to/file` and
+/// `foo, bar` do break. Good defaults for identifiers and paths, and verified
+/// against the segmenter rather than assumed (see tests).
+fn previous_word_boundary(text: &str, offset: usize) -> usize {
+    text.split_word_bound_indices()
+        .filter(|(start, _)| *start < offset)
+        .rfind(|(_, segment)| is_word(segment))
+        .map(|(start, _)| start)
+        .unwrap_or(0)
+}
+
+/// End of the word at or after `offset` — option-right.
+fn next_word_boundary(text: &str, offset: usize) -> usize {
+    text.split_word_bound_indices()
+        .filter(|(start, segment)| start + segment.len() > offset)
+        .find(|(_, segment)| is_word(segment))
+        .map(|(start, segment)| start + segment.len())
+        .unwrap_or(text.len())
+}
+
 impl EntityInputHandler for TextField {
     fn text_for_range(
         &mut self,
@@ -513,6 +666,16 @@ impl Render for TextField {
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::home))
             .on_action(cx.listener(Self::end))
+            .on_action(cx.listener(Self::select_home))
+            .on_action(cx.listener(Self::select_end))
+            .on_action(cx.listener(Self::word_left))
+            .on_action(cx.listener(Self::word_right))
+            .on_action(cx.listener(Self::select_word_left))
+            .on_action(cx.listener(Self::select_word_right))
+            .on_action(cx.listener(Self::delete_word_left))
+            .on_action(cx.listener(Self::delete_word_right))
+            .on_action(cx.listener(Self::delete_to_line_start))
+            .on_action(cx.listener(Self::delete_to_line_end))
             .on_action(cx.listener(Self::show_character_palette))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
@@ -780,6 +943,89 @@ mod tests {
                 byte += ch.len_utf8();
             }
             assert_eq!(offset_to_utf16(text, byte), text.encode_utf16().count());
+        }
+    }
+
+    /// option-left lands on the start of the word you were in or just past,
+    /// option-right on the end of the next one.
+    #[test]
+    fn word_motion_walks_word_starts_and_ends() {
+        let text = "the quick brown";
+        assert_eq!(next_word_boundary(text, 0), 3, "end of 'the'");
+        assert_eq!(
+            next_word_boundary(text, 3),
+            9,
+            "skips the space, ends 'quick'"
+        );
+        assert_eq!(next_word_boundary(text, 6), 9, "from mid-word to its end");
+        assert_eq!(previous_word_boundary(text, 15), 10, "start of 'brown'");
+        assert_eq!(previous_word_boundary(text, 10), 4, "start of 'quick'");
+        assert_eq!(
+            previous_word_boundary(text, 6),
+            4,
+            "from mid-word to its start"
+        );
+    }
+
+    /// Which punctuation splits a word is UAX#29's call, not ours, and the
+    /// answer is useful: identifiers stay whole, paths come apart.
+    #[test]
+    fn word_motion_keeps_identifiers_whole_but_splits_paths() {
+        // A dot or underscore between letters does NOT break a word, so an
+        // identifier is one motion.
+        for identifier in ["foo.bar", "foo_bar"] {
+            assert_eq!(
+                next_word_boundary(identifier, 0),
+                identifier.len(),
+                "{identifier:?} is one word"
+            );
+            assert_eq!(previous_word_boundary(identifier, identifier.len()), 0);
+        }
+
+        // Hyphens and slashes do break.
+        let text = "path/to/file";
+        assert_eq!(next_word_boundary(text, 0), 4, "stops at the slash");
+        assert_eq!(next_word_boundary(text, 4), 7, "then 'to'");
+        assert_eq!(
+            previous_word_boundary(text, text.len()),
+            8,
+            "back to 'file'"
+        );
+        assert_eq!(next_word_boundary("a-b", 0), 1, "hyphen breaks");
+    }
+
+    #[test]
+    fn word_motion_clamps_and_survives_runs_of_separators() {
+        let text = "  a   b  ";
+        assert_eq!(previous_word_boundary(text, 0), 0, "no underflow");
+        assert_eq!(
+            next_word_boundary(text, text.len()),
+            text.len(),
+            "no overflow"
+        );
+        assert_eq!(next_word_boundary(text, 0), 3, "over leading spaces to 'a'");
+        assert_eq!(previous_word_boundary(text, text.len()), 6, "back to 'b'");
+        // Nothing but separators: motion collapses to the ends, never panics.
+        assert_eq!(next_word_boundary("   ", 0), 3);
+        assert_eq!(previous_word_boundary("   ", 3), 0);
+        assert_eq!(next_word_boundary("", 0), 0);
+    }
+
+    /// Word motion must not split a grapheme or land mid-character.
+    #[test]
+    fn word_motion_lands_on_char_boundaries() {
+        for text in ["日本語 の テスト", "a😀b c", "🇯🇵 x"] {
+            for offset in 0..=text.len() {
+                if !text.is_char_boundary(offset) {
+                    continue;
+                }
+                let prev = previous_word_boundary(text, offset);
+                let next = next_word_boundary(text, offset);
+                assert!(text.is_char_boundary(prev), "{text:?} prev {prev}");
+                assert!(text.is_char_boundary(next), "{text:?} next {next}");
+                assert!(prev <= offset, "prev never moves forward");
+                assert!(next >= offset, "next never moves back");
+            }
         }
     }
 

@@ -37,6 +37,8 @@ fn main() {
                             field.set_content("Select me with shift-left", cx);
                             field
                         }),
+                        theme_menu: popover::Popup::default(),
+                        theme_choice: 0,
                     });
                     // Focus a field on launch so the caret is visible.
                     let focus = gallery.read(cx).search.focus_handle(cx);
@@ -52,6 +54,35 @@ fn main() {
 struct Gallery {
     search: Entity<TextField>,
     filled: Entity<TextField>,
+    /// Select state lives here, not in a component: the menu is mounted by
+    /// this view, so this view owns whether it is open and what is chosen.
+    theme_menu: popover::Popup<()>,
+    theme_choice: usize,
+}
+
+const THEME_CHOICES: [&str; 3] = ["System", "Light", "Dark"];
+
+impl Gallery {
+    fn toggle_theme_menu(&mut self, cx: &mut Context<Self>) {
+        // `note_trigger_press` was recorded on mouse-down; if the menu was
+        // already open then this click is a dismiss, not a re-open.
+        if self.theme_menu.take_press_was_open() {
+            if self.theme_menu.begin_close() {
+                popover::reap_popup(cx, |view: &mut Self| &mut view.theme_menu);
+            }
+        } else {
+            self.theme_menu.open(());
+        }
+        cx.notify();
+    }
+
+    fn choose_theme(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.theme_choice = index;
+        if self.theme_menu.begin_close() {
+            popover::reap_popup(cx, |view: &mut Self| &mut view.theme_menu);
+        }
+        cx.notify();
+    }
 }
 
 fn section(theme: &Theme, title: &str) -> gpui::Div {
@@ -96,6 +127,46 @@ impl Render for Gallery {
                 .gap(px(10.0))
                 .child(self.search.clone())
                 .child(self.filled.clone()),
+        );
+
+        let menu_open = self.theme_menu.is_open() || self.theme_menu.is_closing();
+        let select = section(&theme, "Select").child(
+            div().w(px(200.0)).relative().child(
+                div()
+                    .id("theme-select")
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|view, _, _, _| view.theme_menu.note_trigger_press()),
+                    )
+                    .on_click(cx.listener(|view, _, _, cx| view.toggle_theme_menu(cx)))
+                    .child(widgets::select_trigger(
+                        &theme,
+                        THEME_CHOICES[self.theme_choice],
+                        menu_open,
+                    ))
+                    .when(menu_open, |trigger| {
+                        trigger.child(popover::anchored_menu_below(
+                            "theme-select-menu",
+                            popover::popover_card(&theme)
+                                .w(px(200.0))
+                                .children(THEME_CHOICES.iter().enumerate().map(|(index, label)| {
+                                    popover::menu_row(
+                                        &theme,
+                                        index == self.theme_choice,
+                                        SharedString::from(format!("theme-row-{index}")),
+                                    )
+                                    .id(SharedString::from(format!("theme-{index}")))
+                                    .on_click(cx.listener(move |view, _, _, cx| {
+                                        view.choose_theme(index, cx)
+                                    }))
+                                    .child(*label)
+                                    .into_any_element()
+                                }))
+                                .into_any_element(),
+                            self.theme_menu.closing_since(),
+                        ))
+                    }),
+            ),
         );
 
         let controls = section(&theme, "Checkbox, radio, avatar").child(
@@ -226,6 +297,7 @@ impl Render for Gallery {
                     .child(buttons)
                     .child(fields)
                     .child(toggles)
+                    .child(select)
                     .child(controls)
                     .child(tracks)
                     .child(tabs)

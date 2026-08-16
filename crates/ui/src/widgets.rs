@@ -408,6 +408,39 @@ pub fn avatar(theme: &Theme, initials: impl Into<SharedString>) -> gpui::Div {
         .child(initials.into())
 }
 
+/// The closed face of a select: current value plus a chevron, shaped and
+/// toned like [`crate::input::TextField`] so a form of fields and selects
+/// reads as one system.
+///
+/// There is no `Select` component, deliberately — a select IS this trigger
+/// plus [`crate::popover::anchored_menu_below`] over [`crate::popover::menu_row`]s,
+/// and the caller already owns the open state and the selection. Wrapping
+/// that in a struct would buy an abstraction and cost the caller its control
+/// over both.
+pub fn select_trigger(theme: &Theme, label: impl Into<SharedString>, open: bool) -> gpui::Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .justify_between()
+        .gap(px(8.0))
+        .px(px(10.0))
+        .py(px(7.0))
+        .rounded(px(8.0))
+        .bg(theme.input_bg)
+        .border_1()
+        .border_color(if open { theme.caret } else { theme.border })
+        .text_size(px(13.0))
+        .text_color(theme.text)
+        .cursor_pointer()
+        .child(div().min_w_0().truncate().child(label.into()))
+        .child(
+            crate::icons::icon(crate::icons::ALT_ARROW_DOWN)
+                .size(px(14.0))
+                .text_color(theme.text_muted),
+        )
+}
+
 /// Tab strip: a hairline-underlined row that tabs sit on.
 pub fn tab_bar(theme: &Theme) -> gpui::Div {
     div()
