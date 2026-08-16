@@ -13,7 +13,9 @@ pub mod icons;
 pub mod input;
 pub mod loaders;
 pub mod material;
+pub mod palette;
 pub mod popover;
+pub mod tooltip;
 pub mod widgets;
 
 /// Embedded UI fonts — Geist and Geist Mono (variable), © Vercel Inc.,

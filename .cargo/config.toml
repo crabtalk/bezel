@@ -1,0 +1,15 @@
+# Silence cargo's future-incompatibility summary, which fires on every build
+# for dependencies we do not choose and cannot fix from here:
+#
+#   block 0.1.6        "static of uninhabited type" — reached via cocoa 0.26,
+#                      which `gpui` itself depends on.
+#   proc-macro-error2  a transitive proc-macro dependency.
+#
+# Both are the pre-`objc2` generation of the macOS bindings, and upstream zed is
+# already migrating off `cocoa` (its build pulls objc2/objc2-app-kit), so this
+# resolves there rather than here. The note was drowning our own warnings.
+#
+# This suppresses only the summary note — real compile warnings and any future
+# hard error still surface. Remove it once `gpui` drops `cocoa`.
+[future-incompat-report]
+frequency = "never"

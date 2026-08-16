@@ -441,6 +441,194 @@ pub fn select_trigger(theme: &Theme, label: impl Into<SharedString>, open: bool)
         )
 }
 
+/// Segmented control: one pill holding mutually exclusive choices, for when
+/// there are few enough that a [`select_trigger`] would be overkill.
+///
+/// `self_start` because a segmented control must hug its segments: dropped into
+/// a `flex_col`, flexbox's default `align-items: stretch` would otherwise blow
+/// it out to the column's full width.
+pub fn toggle_group(theme: &Theme) -> gpui::Div {
+    div()
+        .self_start()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(2.0))
+        .p(px(2.0))
+        .rounded(px(9.0))
+        .bg(ink(0.06))
+        .border_1()
+        .border_color(theme.border)
+}
+
+/// One segment. The selected segment carries a raised plate; the rest are
+/// bare, so exactly one reads as pressed.
+pub fn toggle_group_item(
+    theme: &Theme,
+    label: impl Into<SharedString>,
+    selected: bool,
+) -> gpui::Div {
+    let mut item = div()
+        .px(px(10.0))
+        .py(px(4.0))
+        .rounded(px(7.0))
+        .text_size(px(12.5))
+        .cursor_pointer()
+        .child(label.into());
+    item = if selected {
+        item.bg(theme.surface_raised)
+            .font_weight(gpui::FontWeight::MEDIUM)
+            .text_color(theme.text)
+    } else {
+        item.text_color(theme.text_muted)
+    };
+    item
+}
+
+/// The disclosure chevron: right when collapsed, down when expanded.
+///
+/// Two assets rather than one rotated: gpui has no transform for `div`s at the
+/// pinned rev, and an SVG rotation would need a transform on the element.
+pub fn disclosure(theme: &Theme, expanded: bool) -> gpui::Svg {
+    crate::icons::icon(if expanded {
+        crate::icons::ALT_ARROW_DOWN
+    } else {
+        crate::icons::ALT_ARROW_RIGHT
+    })
+    .size(px(14.0))
+    .text_color(theme.text_muted)
+}
+
+/// Header row of a collapsible section: chevron plus title. The caller owns
+/// `expanded` and renders the body itself — a container that swallowed its
+/// children would have to re-implement layout for them.
+pub fn collapsible_header(
+    theme: &Theme,
+    label: impl Into<SharedString>,
+    expanded: bool,
+) -> gpui::Div {
+    div()
+        .self_start()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(6.0))
+        .px(px(4.0))
+        .py(px(5.0))
+        .rounded(px(6.0))
+        .cursor_pointer()
+        .hover(|s| s.bg(ink(0.03)))
+        .child(disclosure(theme, expanded))
+        .child(
+            div()
+                .text_size(px(12.5))
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(theme.text)
+                .child(label.into()),
+        )
+}
+
+/// A removable chip — a token in a filter bar or a recipient field. The caller
+/// adds the click handler for the ✕.
+pub fn tag(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
+    div()
+        .self_start()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(5.0))
+        .pl(px(8.0))
+        .pr(px(5.0))
+        .py(px(3.0))
+        .rounded(px(6.0))
+        .bg(ink(0.07))
+        .border_1()
+        .border_color(theme.border)
+        .text_size(px(12.0))
+        .text_color(theme.text)
+        .child(label.into())
+        .child(
+            crate::icons::icon(crate::icons::CLOSE)
+                .size(px(10.0))
+                .text_color(theme.text_faint),
+        )
+}
+
+/// Breadcrumb trail. Items are added by the caller with [`breadcrumb_item`],
+/// separated by [`breadcrumb_separator`].
+pub fn breadcrumb() -> gpui::Div {
+    div()
+        .self_start()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(4.0))
+        .min_w_0()
+}
+
+/// One crumb. The last one is `current` and stops looking clickable.
+pub fn breadcrumb_item(theme: &Theme, label: impl Into<SharedString>, current: bool) -> gpui::Div {
+    let mut crumb = div()
+        .min_w_0()
+        .truncate()
+        .text_size(px(12.5))
+        .child(label.into());
+    crumb = if current {
+        crumb.text_color(theme.text)
+    } else {
+        crumb.text_color(theme.text_muted).cursor_pointer()
+    };
+    crumb
+}
+
+/// The chevron between crumbs.
+pub fn breadcrumb_separator(theme: &Theme) -> gpui::Svg {
+    crate::icons::icon(crate::icons::ALT_ARROW_RIGHT)
+        .size(px(12.0))
+        .text_color(theme.text_faint)
+}
+
+/// A small state dot — the "working / idle / failed" bead on a row. Takes the
+/// tone from the caller so the meaning stays with the caller's domain.
+pub fn status_dot(tone: gpui::Hsla) -> gpui::Div {
+    div().flex_none().size(px(6.0)).rounded_full().bg(tone)
+}
+
+/// The centered "nothing here yet" panel: icon, headline, one line of hint.
+pub fn empty_state(
+    theme: &Theme,
+    icon_path: &'static str,
+    title: impl Into<SharedString>,
+    hint: impl Into<SharedString>,
+) -> gpui::Div {
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(6.0))
+        .py(px(40.0))
+        .child(
+            crate::icons::icon(icon_path)
+                .size(px(24.0))
+                .text_color(theme.text_faint),
+        )
+        .child(
+            div()
+                .text_size(px(13.5))
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(theme.text)
+                .child(title.into()),
+        )
+        .child(
+            div()
+                .text_size(px(12.5))
+                .text_color(theme.text_muted)
+                .child(hint.into()),
+        )
+}
+
 /// Tab strip: a hairline-underlined row that tabs sit on.
 pub fn tab_bar(theme: &Theme) -> gpui::Div {
     div()

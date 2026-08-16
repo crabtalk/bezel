@@ -3,11 +3,26 @@
 
 use bezel_theme::{Theme, appearance};
 use bezel_ui::input::TextField;
-use bezel_ui::{icons, input, loaders, popover, widgets};
+use bezel_ui::palette::{CommandPalette, PaletteEvent};
+use bezel_ui::tooltip::Tooltip;
+use bezel_ui::{icons, input, loaders, palette, popover, widgets};
 use gpui::{
-    App, Bounds, Context, Entity, Focusable, SharedString, Window, WindowBounds, WindowOptions,
-    div, prelude::*, px, size,
+    App, Bounds, Context, Entity, Focusable, KeyBinding, SharedString, Window, WindowBounds,
+    WindowOptions, actions, div, prelude::*, px, size,
 };
+
+actions!(gallery, [OpenPalette]);
+
+const COMMANDS: [&str; 8] = [
+    "Open File…",
+    "Open Recent",
+    "Save All",
+    "Toggle Sidebar",
+    "Toggle Theme",
+    "Reload Window",
+    "Copy Path",
+    "Quit",
+];
 
 fn main() {
     gpui_platform::application()
@@ -18,7 +33,9 @@ fn main() {
             }
             appearance::init(appearance::AppearanceMode::System, cx);
             input::init(cx);
-            let bounds = Bounds::centered(None, size(px(960.0), px(760.0)), cx);
+            palette::init(cx);
+            cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
+            let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -39,6 +56,11 @@ fn main() {
                         }),
                         theme_menu: popover::Popup::default(),
                         theme_choice: 0,
+                        palette: None,
+                        last_command: None,
+                        segment: 0,
+                        expanded: true,
+                        context_menu: popover::Popup::default(),
                     });
                     // Focus a field on launch so the caret is visible.
                     let focus = gallery.read(cx).search.focus_handle(cx);
@@ -54,6 +76,13 @@ fn main() {
 struct Gallery {
     search: Entity<TextField>,
     filled: Entity<TextField>,
+    /// Mounted only while open — a palette that lingers keeps a stale query.
+    palette: Option<Entity<CommandPalette>>,
+    last_command: Option<SharedString>,
+    segment: usize,
+    expanded: bool,
+    /// Right-click menu, anchored at the click position.
+    context_menu: popover::Popup<gpui::Point<gpui::Pixels>>,
     /// Select state lives here, not in a component: the menu is mounted by
     /// this view, so this view owns whether it is open and what is chosen.
     theme_menu: popover::Popup<()>,
@@ -72,6 +101,37 @@ impl Gallery {
             }
         } else {
             self.theme_menu.open(());
+        }
+        cx.notify();
+    }
+
+    fn open_palette(&mut self, _: &OpenPalette, window: &mut Window, cx: &mut Context<Self>) {
+        let palette = cx.new(|cx| {
+            CommandPalette::new(
+                COMMANDS.iter().map(|c| SharedString::from(*c)).collect(),
+                cx,
+            )
+        });
+        // The host decides what a selection means; the palette only reports.
+        cx.subscribe(&palette, |view, _, event, cx| {
+            match event {
+                PaletteEvent::Selected(index) => {
+                    view.last_command = Some(SharedString::from(COMMANDS[*index]));
+                }
+                PaletteEvent::Dismissed => {}
+            }
+            view.palette = None;
+            cx.notify();
+        })
+        .detach();
+        palette.update(cx, |palette, cx| palette.focus(window, cx));
+        self.palette = Some(palette);
+        cx.notify();
+    }
+
+    fn close_context_menu(&mut self, cx: &mut Context<Self>) {
+        if self.context_menu.begin_close() {
+            popover::reap_popup(cx, |view: &mut Self| &mut view.context_menu);
         }
         cx.notify();
     }
@@ -190,6 +250,121 @@ impl Render for Gallery {
                 .child(widgets::slider(&theme, 0.5)),
         );
 
+        let palette_hint = section(&theme, "Command palette").child(
+            row()
+                .child(popover::key_hint_text(&theme, "⌘K", "open palette"))
+                .when_some(self.last_command.clone(), |r, cmd| {
+                    r.child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(theme.text_muted)
+                            .child(SharedString::from(format!("ran: {cmd}"))),
+                    )
+                }),
+        );
+
+        let segments = section(&theme, "Toggle group").child(
+            widgets::toggle_group(&theme)
+                .child(
+                    div()
+                        .id("seg-0")
+                        .on_click(cx.listener(|view, _, _, cx| {
+                            view.segment = 0;
+                            cx.notify();
+                        }))
+                        .child(widgets::toggle_group_item(&theme, "Day", self.segment == 0)),
+                )
+                .child(
+                    div()
+                        .id("seg-1")
+                        .on_click(cx.listener(|view, _, _, cx| {
+                            view.segment = 1;
+                            cx.notify();
+                        }))
+                        .child(widgets::toggle_group_item(
+                            &theme,
+                            "Week",
+                            self.segment == 1,
+                        )),
+                )
+                .child(
+                    div()
+                        .id("seg-2")
+                        .on_click(cx.listener(|view, _, _, cx| {
+                            view.segment = 2;
+                            cx.notify();
+                        }))
+                        .child(widgets::toggle_group_item(
+                            &theme,
+                            "Month",
+                            self.segment == 2,
+                        )),
+                ),
+        );
+
+        let collapsible = section(&theme, "Collapsible & breadcrumb")
+            .child(
+                div()
+                    .w(px(320.0))
+                    .child(
+                        div()
+                            .id("collapse")
+                            .on_click(cx.listener(|view, _, _, cx| {
+                                view.expanded = !view.expanded;
+                                cx.notify();
+                            }))
+                            .child(widgets::collapsible_header(
+                                &theme,
+                                "Advanced",
+                                self.expanded,
+                            )),
+                    )
+                    .when(self.expanded, |el| {
+                        el.child(
+                            div()
+                                .pl(px(24.0))
+                                .pt(px(4.0))
+                                .text_size(px(12.5))
+                                .text_color(theme.text_muted)
+                                .child("Body shown while expanded."),
+                        )
+                    }),
+            )
+            .child(
+                widgets::breadcrumb()
+                    .child(widgets::breadcrumb_item(&theme, "crates", false))
+                    .child(widgets::breadcrumb_separator(&theme))
+                    .child(widgets::breadcrumb_item(&theme, "ui", false))
+                    .child(widgets::breadcrumb_separator(&theme))
+                    .child(widgets::breadcrumb_item(&theme, "widgets.rs", true)),
+            );
+
+        let bits = section(&theme, "Tags, status, tooltip").child(
+            row()
+                .child(widgets::tag(&theme, "rust"))
+                .child(widgets::tag(&theme, "gpui"))
+                .child(widgets::status_dot(theme.success))
+                .child(widgets::status_dot(theme.warning))
+                .child(widgets::status_dot(theme.danger))
+                .child(
+                    div()
+                        .id("tip")
+                        .tooltip(|window, cx| {
+                            Tooltip::with_keystroke("Copy path", "⌘C", window, cx)
+                        })
+                        .child(popover::button(&theme, "Hover me", "g-tip")),
+                ),
+        );
+
+        let empty = section(&theme, "Empty state").child(widgets::group_box(&theme).child(
+            widgets::empty_state(
+                &theme,
+                icons::FOLDER,
+                "No repositories",
+                "Open a folder to get started.",
+            ),
+        ));
+
         let tabs = section(&theme, "Tabs").child(
             widgets::tab_bar(&theme)
                 .child(widgets::tab(&theme, "Components", true))
@@ -276,6 +451,15 @@ impl Render for Gallery {
 
         div()
             .id("gallery-scroll")
+            .key_context("Gallery")
+            .on_action(cx.listener(Self::open_palette))
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(|view, event: &gpui::MouseDownEvent, _, cx| {
+                    view.context_menu.open(event.position);
+                    cx.notify();
+                }),
+            )
             .size_full()
             .overflow_y_scroll()
             .bg(theme.bg)
@@ -294,18 +478,93 @@ impl Render for Gallery {
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child("bezel gallery"),
                     )
-                    .child(buttons)
-                    .child(fields)
-                    .child(toggles)
-                    .child(select)
-                    .child(controls)
-                    .child(tracks)
-                    .child(tabs)
-                    .child(menu)
-                    .child(group)
-                    .child(spinners)
-                    .child(material)
-                    .child(strips),
+                    // Two columns: the set has outgrown a single scroll, and
+                    // every component should be visible in one screenful.
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_start()
+                            .gap(px(40.0))
+                            .child(
+                                div()
+                                    .w(px(420.0))
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(28.0))
+                                    .child(buttons)
+                                    .child(fields)
+                                    .child(toggles)
+                                    .child(select)
+                                    .child(controls)
+                                    .child(tracks)
+                                    .child(segments)
+                                    .child(collapsible)
+                                    .child(bits),
+                            )
+                            .child(
+                                div()
+                                    .w(px(420.0))
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(28.0))
+                                    .child(tabs)
+                                    .child(menu)
+                                    .child(group)
+                                    .child(empty)
+                                    .child(spinners)
+                                    .child(palette_hint)
+                                    .child(material)
+                                    .child(strips),
+                            ),
+                    ),
             )
+            .when_some(
+                self.context_menu
+                    .get()
+                    .copied()
+                    .map(|position| (position, self.context_menu.closing_since())),
+                |root, (position, closing)| {
+                    root.child(popover::menu_at(
+                        "gallery-context",
+                        position,
+                        popover::popover_card(&theme)
+                            .w(px(180.0))
+                            .children(["Cut", "Copy", "Paste"].iter().enumerate().map(
+                                |(index, label)| {
+                                    popover::menu_row(
+                                        &theme,
+                                        false,
+                                        SharedString::from(format!("ctx-{index}")),
+                                    )
+                                    .id(SharedString::from(format!("ctx-item-{index}")))
+                                    .on_click(
+                                        cx.listener(|view, _, _, cx| view.close_context_menu(cx)),
+                                    )
+                                    .child(*label)
+                                    .into_any_element()
+                                },
+                            ))
+                            .into_any_element(),
+                        closing,
+                    ))
+                },
+            )
+            .when_some(self.palette.clone(), |root, palette| {
+                // Centered over a scrim, the way a palette always appears.
+                root.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .bg(bezel_theme::scrim(0.35))
+                        .flex()
+                        .justify_center()
+                        // Without items_start the card stretches to the full
+                        // window height (flex default is align: stretch).
+                        .items_start()
+                        .pt(px(120.0))
+                        .child(palette),
+                )
+            })
     }
 }
