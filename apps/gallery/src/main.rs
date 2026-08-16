@@ -6,7 +6,7 @@
 
 use bezel_theme::{Theme, appearance};
 use bezel_ui::{combobox, icons, input, palette};
-use gallery::{Gallery, OpenPalette};
+use gallery::{Gallery, OpenPalette, ToggleInspector};
 use gpui::{App, AppContext as _, Bounds, KeyBinding, WindowBounds, WindowOptions, px, size};
 
 fn main() {
@@ -20,7 +20,12 @@ fn main() {
             input::init(cx);
             palette::init(cx);
             combobox::init(cx);
-            cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
+            cx.bind_keys([
+                KeyBinding::new("cmd-k", OpenPalette, None),
+                KeyBinding::new("cmd-alt-i", ToggleInspector, None),
+            ]);
+            #[cfg(debug_assertions)]
+            gallery::inspector::init(cx);
             let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
             cx.open_window(
                 WindowOptions {
@@ -33,8 +38,9 @@ fn main() {
                 |window, cx| {
                     appearance::observe_window(window, cx).detach();
                     let gallery = cx.new(Gallery::new);
-                    // Focus a field on launch so the caret is visible.
-                    let focus = gallery.read(cx).search_focus_handle(cx);
+                    // The gallery itself takes focus, so its key context is
+                    // live from the first frame whatever page is showing.
+                    let focus = gallery.read(cx).focus_handle();
                     window.focus(&focus, cx);
                     gallery
                 },

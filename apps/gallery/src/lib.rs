@@ -16,11 +16,16 @@ use bezel_ui::tooltip::Tooltip;
 use bezel_ui::widgets::SplitDrag;
 use bezel_ui::{icons, loaders, popover, widgets};
 use gpui::{
-    AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, Focusable, SharedString, Window,
-    actions, div, prelude::*, px, relative,
+    AnyElement, Axis, Context, DragMoveEvent, Empty, Entity, SharedString, Window, actions, div,
+    prelude::*, px, relative,
 };
 
-actions!(gallery, [OpenPalette]);
+actions!(gallery, [OpenPalette, ToggleInspector]);
+
+/// gpui builds its element inspector into every debug build; release builds
+/// have no such window method, so the whole surface is debug-only.
+#[cfg(debug_assertions)]
+pub mod inspector;
 
 pub const LANGUAGES: [&str; 8] = [
     "Rust",
@@ -216,6 +221,9 @@ pub struct Gallery {
     /// Where the split's divider sits, as a fraction of the container.
     split: f32,
     split_dragging: bool,
+    /// The window's resting focus. Without it the key context has no node in
+    /// the focus path, and `cmd-k` reaches nothing.
+    focus_handle: gpui::FocusHandle,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -251,15 +259,16 @@ impl Gallery {
             sheet: popover::Popup::default(),
             split: 0.4,
             split_dragging: false,
+            focus_handle: cx.focus_handle(),
             tab: 1,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
         }
     }
 
-    /// The search field's handle — focus it on launch so a caret is visible.
-    pub fn search_focus_handle(&self, cx: &App) -> gpui::FocusHandle {
-        self.search.focus_handle(cx)
+    /// The gallery's own focus handle — what the window focuses on launch.
+    pub fn focus_handle(&self) -> gpui::FocusHandle {
+        self.focus_handle.clone()
     }
 
     fn toggle_theme_menu(&mut self, cx: &mut Context<Self>) {
@@ -297,6 +306,22 @@ impl Gallery {
         palette.update(cx, |palette, cx| palette.focus(window, cx));
         self.palette = Some(palette);
         cx.notify();
+    }
+
+    /// `cmd-alt-i`. The handler lives on this view rather than on the app so
+    /// it has the window in hand — `App::active_window` is a guess, and it is
+    /// `None` whenever the app is not frontmost.
+    ///
+    /// Debug builds only: `Window::toggle_inspector` does not exist in release,
+    /// so the whole affordance compiles out.
+    fn toggle_inspector(
+        &mut self,
+        _: &ToggleInspector,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        #[cfg(debug_assertions)]
+        _window.toggle_inspector(_cx);
     }
 
     fn close_context_menu(&mut self, cx: &mut Context<Self>) {
@@ -1541,7 +1566,9 @@ impl Render for Gallery {
         div()
             .id("gallery-scroll")
             .key_context("Gallery")
+            .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::open_palette))
+            .on_action(cx.listener(Self::toggle_inspector))
             .on_mouse_down(
                 gpui::MouseButton::Right,
                 cx.listener(|view, event: &gpui::MouseDownEvent, _, cx| {
