@@ -5,18 +5,38 @@ is actually left to do.
 
 ## Needs a pointer to verify
 
-Wired but never seen on screen — I can't inject pointer events, so these are
-verified by construction only.
+Seen working once, on 2026-08-17, driven offscreen through gpui's
+`VisualTestAppContext` and checked against the captured frame. The harness that
+did it was deleted afterwards (the gallery is the documentation now), so
+nothing re-checks them — treat these as "worked then", not "works":
 
-- [ ] Tooltip appears on hover (`bezel_ui::tooltip::Tooltip`)
-- [ ] Context menu opens on right-click (uses `popover::menu_at`)
+- [x] Tooltip appears on hover
+- [x] Hover card opens and survives the pointer moving into it
+- [x] Context menu opens at the click point
+- [x] Select opens on click
+- [x] Combobox opens, filters as you type, keeps its selected row distinct from
+      the keyboard cursor
+- [x] Sheet slides in from the right
+- [x] Split divider drags, clamps, and lights up
+
+Never verified:
+
 - [ ] Text field typing, word motion (`opt-←/→`), line kill (`cmd-backspace`)
-- [ ] Select and palette respond to click / `⌘K` (mounted state verified, click path not)
-- [ ] Combobox opens, filters as you type, `↑/↓`+`↵` picks, click-away dismisses
-      (the closed face and its selection ARE on screen)
-- [ ] Hover card opens after the delay and survives the pointer entering it
-- [ ] Sheet slides in from the right and back out
-- [ ] Split divider drags and clamps (the split itself IS on screen)
+- [ ] Palette on `⌘K`
+- [ ] Sheet and menu *exit* animations
+
+If this becomes a standing need rather than a one-off, the way back is a small
+`bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
+`simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
+macOS-only, so it can never gate CI.
+
+## Found while verifying the above
+
+- [ ] A `div().id(..)` wrapped around a button takes clicks over a box far
+      narrower than the label it paints: the gallery's "Open sheet" trigger
+      only responds near x=30 while its text runs to x=104. Hit-testing and
+      layout disagree — worth chasing in gpui before more of the gallery is
+      wired this way.
 
 ## Components — remaining
 
@@ -70,8 +90,23 @@ Worth more than more widgets, for a library other projects depend on.
 
 Layers: `bezel-theme` (tokens as a gpui `Global`, designed light+dark, oklch
 math, appearance switching) · `bezel-motion` (bezier catalog, pulse clock,
-hover fades, pure phase math) · `bezel-ui` · `apps/gallery` (two-column; the
-set has outgrown one screenful again — the lower sections need a scroll).
+hover fades, pure phase math) · `bezel-ui` · `apps/gallery`.
+
+The gallery is the documentation: a top nav for the kind of thing
+(Foundations, Components), a rail grouped by what each is *for*, one page in
+the pane with its title and source path. `TABS` in `apps/gallery/src/lib.rs`
+is the catalog — adding a component means one row there and one arm in
+`section_body`, and two tests check every row has a page and every source path
+resolves.
+
+Foundations: colour tokens with contrast ratios · typography (families,
+weights, the sizes actually in use) · layout constants drawn at size · the
+bezier curves and the whole motion catalog, plotted from their own pure
+functions · materials · all 58 icons.
+
+A third tab, Patterns — composed examples rather than primitives, shadcn's
+"blocks" — is the obvious next one, once there are compositions worth porting
+out of comet.
 
 Components: button ×3 · text field (IME, selection, clipboard, native
 shortcuts) · select · combobox · command palette · checkbox · radio · toggle ·
@@ -83,4 +118,4 @@ spinners · icons (58 SVG) · material glass.
 
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 79 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 81 tests.

@@ -15,6 +15,13 @@ macro_rules! icon_assets {
     ($(($const_name:ident, $path:literal)),+ $(,)?) => {
         $(pub const $const_name: &str = concat!("icons/", $path, ".svg");)+
 
+        /// Every icon in the set: `(constant name, asset path)`. The paths are
+        /// `&'static str` so they can be handed straight to [`icon`] — which is
+        /// what makes the set browsable at all.
+        pub const ALL: &[(&str, &str)] = &[
+            $((stringify!($const_name), concat!("icons/", $path, ".svg"))),+
+        ];
+
         /// Serves the embedded icons to gpui's SVG renderer.
         pub struct Assets;
 

@@ -1834,6 +1834,7 @@ dependencies = [
 name = "gallery"
 version = "0.0.1"
 dependencies = [
+ "bezel-motion",
  "bezel-theme",
  "bezel-ui",
  "gpui",

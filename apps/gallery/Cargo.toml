@@ -9,6 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
+bezel-motion.workspace = true
 bezel-theme.workspace = true
 bezel-ui.workspace = true
 gpui.workspace = true
