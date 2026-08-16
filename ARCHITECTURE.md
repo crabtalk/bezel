@@ -7,10 +7,11 @@ working application code — never invented ahead of need.
 ## Layout
 
 ```
+crates/bezel     the facade               (one dependency, peer namespaces)
 crates/theme     tokens + appearance      (the @Environment layer)
 crates/motion    animation vocabulary     (the Animation/transition layer)
 crates/ui        components               (the View layer)
-apps/gallery     the dev surface — every component rendered in a real window
+apps/gallery     the documentation — a rail of every component, live
 ```
 
 Library crates live in `crates/`, binaries in `apps/`. Each crate depends
@@ -22,14 +23,22 @@ alone: the token system is useful to anyone writing their own gpui
 components, and the coming `markdown`/`syntax`/`terminal` crates need tokens
 without pulling in popovers.
 
-**A `bezel` facade crate is deferred, not rejected.** The name is reserved on
-crates.io. It becomes worth building when the heavy layers land — `markdown`
-pulls in pulldown-cmark, `syntax` 28 tree-sitter grammars, `terminal`
-alacritty — because then one crate can gate them behind features and nobody
-compiles a grammar to get a button. It would re-export each layer as a peer
-namespace (`bezel::theme`, `bezel::ui`, …) plus `bezel::gpui`, so consumers
-cannot end up with a second copy of gpui in the graph. Until then the three
-layer crates are used directly.
+**The `bezel` facade re-exports each layer as a peer namespace** —
+`bezel::theme`, `bezel::motion`, `bezel::ui` — plus `bezel::gpui`. That last
+one is why it exists early: a consumer declaring its own `gpui = "0.2.2"`
+beside bezel can end up with a second copy in the graph, and going through
+`bezel::gpui` makes that impossible. A test in the facade pins the guarantee —
+it type-annotates values from every layer as `bezel::gpui` types, so a split
+graph stops compiling instead of producing a window that paints shapes but no
+text.
+
+It carries **no feature flags yet**. Features were the original reason to
+build it: gating `markdown` (pulldown-cmark), `syntax` (28 tree-sitter
+grammars) and `terminal` (alacritty) so nobody compiles a grammar to get a
+button. Those crates do not exist, and a feature that gates nothing is
+machinery for its own sake — they arrive together. Depending on a single layer
+directly stays supported: the token system alone is useful to anyone writing
+their own gpui components.
 
 ## Laws
 

@@ -82,15 +82,18 @@ Worth more than more widgets, for a library other projects depend on.
       its tree already holds two objc2 generations.
 - [ ] Remove the `.cargo/config.toml` future-incompat mute once gpui drops `cocoa`
 - [ ] Real crates.io release once zed publishes a gpui matching this API
-      (0.0.1 stubs currently reserve `bezel`, `bezel-theme`, `bezel-motion`, `bezel-ui`)
-- [ ] Build the `bezel` facade crate when the heavy layers land and features
-      start earning their keep (see `ARCHITECTURE.md`)
+      (0.0.1 stubs reserve `bezel`, `bezel-theme`, `bezel-motion`, `bezel-ui`;
+      the tree is on 0.0.2 and unpublished)
+- [ ] Feature-gate the facade when `markdown`/`syntax`/`terminal` land — that
+      is what features are for, and there is nothing to gate until then
 
 ## Done
 
 Layers: `bezel-theme` (tokens as a gpui `Global`, designed light+dark, oklch
 math, appearance switching) · `bezel-motion` (bezier catalog, pulse clock,
-hover fades, pure phase math) · `bezel-ui` · `apps/gallery`.
+hover fades, pure phase math) · `bezel-ui` · `bezel` (the facade: peer
+namespaces plus `bezel::gpui`, so a consumer cannot end up with two copies of
+gpui) · `apps/gallery`.
 
 The gallery is the documentation: a top nav for the kind of thing
 (Foundations, Components), a rail grouped by what each is *for*, one page in
@@ -118,4 +121,4 @@ spinners · icons (58 SVG) · material glass.
 
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 81 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 83 tests.

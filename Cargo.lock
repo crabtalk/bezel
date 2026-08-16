@@ -531,8 +531,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bezel"
+version = "0.0.2"
+dependencies = [
+ "bezel-motion",
+ "bezel-theme",
+ "bezel-ui",
+ "gpui",
+]
+
+[[package]]
 name = "bezel-motion"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bezel-theme",
  "gpui",
@@ -540,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-theme"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "gpui",
  "objc",
@@ -551,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-ui"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bezel-motion",
  "bezel-theme",
@@ -1832,7 +1842,7 @@ dependencies = [
 
 [[package]]
 name = "gallery"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bezel-motion",
  "bezel-theme",
