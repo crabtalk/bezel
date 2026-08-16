@@ -1833,7 +1833,6 @@ dependencies = [
 name = "gallery"
 version = "0.0.1"
 dependencies = [
- "bezel-motion",
  "bezel-theme",
  "bezel-ui",
  "gpui",
@@ -1953,7 +1952,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.20",
- "windows 0.57.0",
+ "windows 0.62.2",
 ]
 
 [[package]]

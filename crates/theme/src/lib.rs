@@ -500,7 +500,7 @@ impl Theme {
     }
 
     /// The translucent tint floating cards paint over their backdrop blur
-    /// (see `bezel_ui::material`). Dark: the reference
+    /// (see `bezel::material`). Dark: the reference
     /// `.glass-surface` menu tint verbatim — `oklch(0.33 0 0 / 34%)`. The
     /// previous `surface_overlay` at 65% was tuned back when the tint had to
     /// *approximate* the composited recipe without a real blur; kept over the

@@ -12,11 +12,9 @@ through the environment, never through parameters.
   evaluation, a named `MotionSpec` catalog (`FADE_IN`, `MENU_IN`, `PULSE`, …),
   a shared 30fps pulse clock for loaders, and a hover-fade system. The pure
   phase math lives in `motion::phase`.
-- **`crates/ui`** — the components. Popover/menu/dialog mounts, buttons,
+- **`crates/ui`** — the components: popover/menu/dialog mounts, buttons,
   `toggle`, `divider`, `group_box`, spinners, embedded SVG icons, and the
-  `material` float (SwiftUI's `.ultraThinMaterial` analog; true per-card
-  backdrop blur awaits a renderer primitive on our gpui fork).
-
+  `material` float (SwiftUI's `.ultraThinMaterial` analog).
 - **`apps/gallery`** — every component rendered in a real window
   (`cargo run -p gallery`).
 

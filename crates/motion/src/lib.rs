@@ -355,7 +355,7 @@ where
 
 /// Popover exit: the reverse of [`menu_in`] — fade to 0 + translateY 0→−2 over
 /// [`MENU_OUT`]. Unlike the entrances, the eased progress `t` comes from the
-/// caller (computed off `bezel_ui::popover::Popup`'s closing instant at render
+/// caller (computed off `bezel::popover::Popup`'s closing instant at render
 /// time): `with_animation`'s element-id-keyed clock replays from 0 on remount
 /// (the hover-blend comment's warning), and a replay mid-exit is a full-opacity
 /// flash. The wall-clock progress is monotonic by construction; the animation
@@ -390,7 +390,7 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Loader math (pure; rendered by bezel_ui::loaders)
+// Loader math (pure; rendered by bezel::loaders)
 // ---------------------------------------------------------------------------
 
 // The loader constants and math live in `crate::phase` (pure phase

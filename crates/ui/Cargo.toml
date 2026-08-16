@@ -1,5 +1,6 @@
 [package]
 name = "bezel-ui"
+
 description = "SwiftUI-flavored components for gpui — popovers, menus, buttons, toggles, and loaders"
 version.workspace = true
 edition.workspace = true

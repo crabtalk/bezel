@@ -10,7 +10,6 @@ workspace = true
 
 [dependencies]
 bezel-theme.workspace = true
-bezel-motion.workspace = true
 bezel-ui.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true

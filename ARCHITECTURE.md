@@ -17,6 +17,20 @@ Library crates live in `crates/`, binaries in `apps/`. Each crate depends
 only downward: `ui → motion + theme`, `motion → (theme in tests)`, `theme →
 gpui alone`.
 
+The layers are separate crates because there are real consumers of each
+alone: the token system is useful to anyone writing their own gpui
+components, and the coming `markdown`/`syntax`/`terminal` crates need tokens
+without pulling in popovers.
+
+**A `bezel` facade crate is deferred, not rejected.** The name is reserved on
+crates.io. It becomes worth building when the heavy layers land — `markdown`
+pulls in pulldown-cmark, `syntax` 28 tree-sitter grammars, `terminal`
+alacritty — because then one crate can gate them behind features and nobody
+compiles a grammar to get a button. It would re-export each layer as a peer
+namespace (`bezel::theme`, `bezel::ui`, …) plus `bezel::gpui`, so consumers
+cannot end up with a second copy of gpui in the graph. Until then the three
+layer crates are used directly.
+
 ## Laws
 
 1. **Style flows through the environment.** Components read `Theme::of(cx)`
@@ -35,12 +49,24 @@ gpui alone`.
 
 ## Dependencies
 
-gpui is pinned by rev to [crabtalk/zed](https://github.com/crabtalk/zed),
-our fork of gpui's home repo (the crates.io release trails the API by
-months). gpui patches we need (first up: a backdrop-blur primitive for
-`ui::material`) land on that fork. For in-workspace gpui development,
-`.cargo/config.toml` (gitignored) patches gpui to a sibling `../zed`
-checkout.
+Crates declare `gpui = "0.2.2"` — a version requirement, because crates.io
+rejects a bare git dependency — and `[patch.crates-io]` supplies the real
+source. The registry release trails the API we build against by months, so
+the patch is what actually compiles.
+
+That patch currently points at a **sibling `../zed` checkout**: our fork of
+gpui's home repo, [crabtalk/zed](https://github.com/crabtalk/zed), where the
+gpui patches we carry live (first up: `Window::paint_backdrop_blur`, which
+`ui::material` needs). A local path is the honest source while those commits
+are unpushed — the trade is that a fresh clone needs that sibling checkout.
+Once the branch is pushed, the patch becomes `{ git = …, rev = …, version =
+"=0.2.2" }` and nothing else changes.
+
+`gpui_platform` (unpublished, gallery only) must resolve to the *same*
+checkout. Two copies of gpui in one graph are two incompatible type
+universes; the failure is a trait-bound error at best and, at worst, a window
+that paints shapes but no text — one text system holding the fonts while the
+other draws the frame.
 
 ## Roadmap
 

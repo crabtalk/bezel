@@ -15,24 +15,36 @@ categories = ["gui"]
 rust-version = "1.85"
 
 [workspace.dependencies]
-bezel-theme = { path = "crates/theme" }
-bezel-motion = { path = "crates/motion" }
-bezel-ui = { path = "crates/ui" }
+bezel-theme = { path = "crates/theme", version = "0.0.1" }
+bezel-motion = { path = "crates/motion", version = "0.0.1" }
+bezel-ui = { path = "crates/ui", version = "0.0.1" }
 
-# gpui — our own zed fork (full upstream history), pinned to the rev the
-# extracted code was written against. The crates.io gpui release (0.2.2,
-# 2025-10) is nine months older than this API and fails dependency
-# resolution, so a git pin is the only option until zed publishes again.
-# Own gpui patches (e.g. a backdrop-blur primitive for ui::material) land
-# on this fork.
-gpui = { git = "https://github.com/crabtalk/zed", rev = "f14fea9bf3c93797d5161f7440ed418655bc6c57" }
-gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "f14fea9bf3c93797d5161f7440ed418655bc6c57" }
+# gpui by version, sourced from our fork via [patch.crates-io] below. The
+# version requirement is what publishing needs (crates.io rejects a bare git
+# dep); the patch is what actually builds. When zed publishes a release that
+# matches this API, drop the patch and nothing else changes.
+gpui = "0.2.2"
+# Not published; only the (unpublished) gallery needs it. Must resolve to the
+# SAME gpui as the patch below — a second copy in the graph is two
+# incompatible type universes.
+gpui_platform = { path = "../zed/crates/gpui_platform" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
 
+# Our fork of zed (gpui's home repo), as a sibling checkout: we carry gpui
+# patches (`ui::material` needs `Window::paint_backdrop_blur`) that are not
+# pushed yet, so a local path is the honest source. Swap to
+# `{ git = "https://github.com/crabtalk/zed", rev = "…", version = "=0.2.2" }`
+# once the patch branch is pushed — `version` is required there because the
+# repo holds more than one package named `gpui`.
+[patch.crates-io]
+gpui = { path = "../zed/crates/gpui" }
+
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare
 # the value so rustc's check-cfg pass doesn't warn on every msg_send! site.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("cargo-clippy"))'] }
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(feature, values("cargo-clippy"))',
+] }

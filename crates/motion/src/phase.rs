@@ -1,7 +1,7 @@
 //! Loader math — the pure phase functions behind the loading indicators.
 //!
 //! These are the curves and constants the gpui viewport animates with
-//! (`bezel-motion`, `bezel-ui::loaders`), kept pure so any
+//! (`bezel-motion`, `bezel::loaders`), kept pure so any
 //! surface animates the *same* loaders rather than inventing its own spinner.
 //! A loading indicator is a brand surface; two of them that disagree read as
 //! two products.

@@ -12,12 +12,17 @@ fn main() {
     gpui_platform::application()
         .with_assets(icons::Assets)
         .run(|cx: &mut App| {
-            bezel_ui::register_fonts(cx).ok();
+            if let Err(err) = bezel_ui::register_fonts(cx) {
+                eprintln!("FONT REGISTRATION FAILED: {err:?}");
+            }
             appearance::init(appearance::AppearanceMode::System, cx);
             let bounds = Bounds::centered(None, size(px(960.0), px(760.0)), cx);
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    // Glass needs a blurred window background to blur INTO;
+                    // without it `material` has nothing behind it.
+                    window_background: Theme::of(cx).window_background_appearance(),
                     ..Default::default()
                 },
                 |window, cx| {
@@ -104,6 +109,40 @@ impl Render for Gallery {
                 .child(loaders::loading_word(&theme)),
         );
 
+        // Exercises the fork's backdrop-blur primitive: the card blurs the
+        // striped band painted behind it.
+        let material = section(&theme, "Material").child(
+            div()
+                .relative()
+                .w(px(420.0))
+                .h(px(150.0))
+                .child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .flex_row()
+                        .children((0..14).map(|i| {
+                            div().w(px(30.0)).h_full().bg(if i % 2 == 0 {
+                                theme.accent
+                            } else {
+                                theme.warning
+                            })
+                        })),
+                )
+                .child(
+                    div().absolute().top(px(28.0)).left(px(60.0)).child(
+                        bezel_ui::material::material(
+                            12.0,
+                            bezel_ui::material::MENU_BLUR,
+                            popover::popover_card(&theme)
+                                .w(px(220.0))
+                                .child(popover::menu_row(&theme, false, "mat-a").child("Blurred")),
+                        ),
+                    ),
+                ),
+        );
+
         let strips = section(&theme, "Strips & redacted")
             .child(widgets::error_strip(&theme, "Something went wrong."))
             .child(widgets::warning_strip(&theme, "Heads up, check this."))
@@ -134,6 +173,7 @@ impl Render for Gallery {
                     .child(menu)
                     .child(group)
                     .child(spinners)
+                    .child(material)
                     .child(strips),
             )
     }
