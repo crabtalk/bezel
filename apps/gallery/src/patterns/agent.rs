@@ -325,7 +325,15 @@ struct Call {
 
 /// A turn's worth of calls, in the order they ran. The three consecutive
 /// `Read`s are the case the grouping exists for.
-const CALLS: [Call; 8] = [
+const CALLS: [Call; 12] = [
+    Call {
+        icon: icons::COMPASS,
+        verb: "Discover",
+        detail: "sources for \"bezel-agent\"",
+        ms: 40,
+        failed: false,
+        output: Some("ARCHITECTURE.md\nTODO.md\ntodos/agent.md"),
+    },
     Call {
         icon: icons::MAGNIFER,
         verb: "Search",
@@ -335,7 +343,7 @@ const CALLS: [Call; 8] = [
         output: Some("crates/ui/src/scroll.rs:236\ncrates/ui/src/scroll.rs:411"),
     },
     Call {
-        icon: icons::DOCUMENT,
+        icon: icons::BOOK,
         verb: "Read",
         detail: "crates/ui/src/scroll.rs",
         ms: 3,
@@ -343,7 +351,7 @@ const CALLS: [Call; 8] = [
         output: None,
     },
     Call {
-        icon: icons::DOCUMENT,
+        icon: icons::BOOK,
         verb: "Read",
         detail: "crates/ui/src/widgets.rs",
         ms: 2,
@@ -351,7 +359,7 @@ const CALLS: [Call; 8] = [
         output: None,
     },
     Call {
-        icon: icons::DOCUMENT,
+        icon: icons::BOOK,
         verb: "Read",
         detail: "ARCHITECTURE.md",
         ms: 2,
@@ -367,6 +375,30 @@ const CALLS: [Call; 8] = [
         output: Some("running 87 tests\n\ntest result: ok. 87 passed; 0 failed"),
     },
     Call {
+        icon: icons::CPU,
+        verb: "Recall",
+        detail: "what bezel-agent was for",
+        ms: 18,
+        failed: false,
+        output: Some("a crate agreed in principle and deliberately not created"),
+    },
+    Call {
+        icon: icons::DOWNLOAD,
+        verb: "Fetch",
+        detail: "aicss.dev",
+        ms: 210,
+        failed: false,
+        output: Some("14 blocks, none of them measured against a running app"),
+    },
+    Call {
+        icon: icons::LINK,
+        verb: "Link",
+        detail: "todos/agent.md → TODO.md",
+        ms: 5,
+        failed: false,
+        output: None,
+    },
+    Call {
         icon: icons::GIT_BRANCH,
         verb: "Diff",
         detail: "crates/ui",
@@ -375,7 +407,7 @@ const CALLS: [Call; 8] = [
         output: None,
     },
     Call {
-        icon: icons::DOCUMENT,
+        icon: icons::BOOK,
         verb: "Read",
         detail: "crates/agent/src/lib.rs",
         ms: 1,
@@ -426,8 +458,20 @@ pub struct ToolCalls {
 /// should not have to guess that a row opens before they see it.
 impl Default for ToolCalls {
     fn default() -> Self {
+        // The first run of more than one call — *found*, not written down: an
+        // index here would go stale the next time a call is added above it,
+        // and the page would open on nothing with no error to show for it.
+        let mut start = 0;
+        let mut open_groups = std::collections::HashSet::new();
+        for run in CALLS.chunk_by(|a, b| a.verb == b.verb) {
+            if run.len() > 1 {
+                open_groups.insert(start);
+                break;
+            }
+            start += run.len();
+        }
         Self {
-            open_groups: [1].into_iter().collect(),
+            open_groups,
             open_output: Default::default(),
         }
     }

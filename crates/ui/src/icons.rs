@@ -103,6 +103,17 @@ icon_assets![
     (COMMAND, "command"),
     (DOCUMENT, "document"),
     (DOCUMENT_ADD, "document-add"),
+    // The verbs an agent's tool calls come in — fetch, link, read, discover.
+    // Ported from `../desktop`'s tool-name→icon map, which stays over there:
+    // the map is that app's data model, and these are just glyphs.
+    (DOWNLOAD, "download-minimalistic"),
+    (LINK, "link-minimalistic"),
+    (BOOK, "book"),
+    (COMPASS, "compass"),
+    // What an agent recalls from. Named for the shape, like every icon here —
+    // `magnifer` rather than `search` — so the app's word for the store, brain
+    // or memory or notes, stays in the app.
+    (CPU, "cpu"),
     (GLOBAL, "global"),
     (CHECKLIST, "checklist"),
     (WIDGET, "widget"),
