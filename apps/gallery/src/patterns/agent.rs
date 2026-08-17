@@ -20,10 +20,12 @@
 use std::time::{Duration, Instant};
 
 use bezel_theme::Theme;
+use bezel_ui::input::{Shape, TextField};
 use bezel_ui::scroll::{self, FollowState, ScrollbarState};
 use bezel_ui::{icons, loaders, popover, widgets};
 use gpui::{
-    Context, Render, SharedString, Window, div, linear_color_stop, linear_gradient, prelude::*, px,
+    AnyElement, Context, Entity, Render, SharedString, Window, div, linear_color_stop,
+    linear_gradient, prelude::*, px,
 };
 
 /// The question on the page. Invented, like the music player's album, and about
@@ -548,6 +550,332 @@ impl Render for ToolCalls {
                             })
                             .into_any_element()
                     })),
+            )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Composer — `Composer.svelte` + `PromptEditor.svelte`
+// ---------------------------------------------------------------------------
+
+gpui::actions!(
+    bezel_gallery_composer,
+    [
+        Send,
+        MentionNext,
+        MentionPrevious,
+        MentionConfirm,
+        MentionDismiss
+    ]
+);
+
+/// The context this page's field claims on top of `TextField`/`TextArea`, so
+/// `enter` sends **here** and stays a newline in every other multi-line field
+/// in the gallery. See [`bezel_ui::input::TextField::with_key_context`] for why
+/// a container around the field cannot do this.
+const COMPOSER_CONTEXT: &str = "GalleryComposer";
+
+/// Bind the composer's keys. Called once at startup beside `input::init`,
+/// because a pattern is an app: the bindings belong to whoever mounts the page,
+/// not to `ui`.
+pub fn init(cx: &mut gpui::App) {
+    let ctx = Some(COMPOSER_CONTEXT);
+    cx.bind_keys([
+        gpui::KeyBinding::new("enter", Send, ctx),
+        // Bound explicitly: the field's own `enter` is what usually inserts a
+        // newline, and this page has just taken it.
+        gpui::KeyBinding::new("shift-enter", bezel_ui::input::InsertNewline, ctx),
+        gpui::KeyBinding::new("down", MentionNext, ctx),
+        gpui::KeyBinding::new("up", MentionPrevious, ctx),
+        gpui::KeyBinding::new("escape", MentionDismiss, ctx),
+    ]);
+}
+
+/// What `#` offers. Desktop searches its note store; bezel takes a list of
+/// strings, which is the whole difference between a library and an app.
+const MENTIONS: [&str; 7] = [
+    "ARCHITECTURE.md",
+    "TODO.md",
+    "crates/ui/src/input.rs",
+    "crates/ui/src/popover.rs",
+    "crates/ui/src/scroll.rs",
+    "crates/ui/src/widgets.rs",
+    "todos/agent.md",
+];
+
+/// The composer: a growing field in a frosted card, a send button that knows
+/// when there is nothing to send, and the `#` picker.
+///
+/// `Shape::Grow { min, max }` **is** `PromptEditor`'s `rows`/`maxRows`, and
+/// `control_bar(Shape::Rounded)` is its pill — so the only thing this page had
+/// to invent is the picker, and the picker is `popover::Filter` (the combobox's
+/// own state) mounted at a caret instead of under a trigger.
+pub struct Composer {
+    field: Entity<TextField>,
+    /// Byte offset of the `#` being typed, or `None` when no mention is open.
+    /// Derived from the text on every change rather than stored as a flag: a
+    /// backspace over the `#` has to close the picker, and a flag would have to
+    /// be told.
+    mention: Option<usize>,
+    filter: popover::Filter,
+    /// What has been sent, newest last — the page needs somewhere for a message
+    /// to go, and a transcript is the next pattern rather than this one.
+    sent: Vec<SharedString>,
+    focus_handle: gpui::FocusHandle,
+}
+
+impl Composer {
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        let field = cx.new(|cx| {
+            TextField::new(cx)
+                .with_shape(Shape::Grow { min: 3, max: 12 })
+                .with_key_context(COMPOSER_CONTEXT)
+                .with_placeholder("Ask anything, or # to attach a file")
+        });
+        cx.observe(&field, |composer: &mut Self, _, cx| composer.reread(cx))
+            .detach();
+        Self {
+            field,
+            mention: None,
+            filter: popover::Filter::new(MENTIONS.iter().map(|&m| m.into()).collect()),
+            sent: Vec::new(),
+            focus_handle: cx.focus_handle(),
+        }
+    }
+
+    /// The whole picker trigger, and it is a *read* of the text rather than a
+    /// key handler: the `#` nearest behind the caret, if nothing since it has
+    /// been whitespace. That way typing, pasting, arrowing back into a word and
+    /// deleting the `#` all agree without any of them being special-cased.
+    fn reread(&mut self, cx: &mut Context<Self>) {
+        let content = self.field.read(cx).content().clone();
+        let caret = self.field.read(cx).cursor().min(content.len());
+        self.mention = content[..caret]
+            .rfind('#')
+            .filter(|&hash| !content[hash + 1..caret].contains(char::is_whitespace));
+        if let Some(hash) = self.mention {
+            self.filter.refilter(&content[hash + 1..caret]);
+        }
+        cx.notify();
+    }
+
+    /// Replace `#query` with the picked path and close.
+    fn accept(&mut self, item: usize, cx: &mut Context<Self>) {
+        let Some(hash) = self.mention else { return };
+        let content = self.field.read(cx).content().clone();
+        let caret = self.field.read(cx).cursor().min(content.len());
+        let picked = format!("{}{} ", &content[..hash], self.filter.items()[item]);
+        let rest = content[caret..].to_string();
+        self.field
+            .update(cx, |field, cx| field.set_content(picked + &rest, cx));
+        self.mention = None;
+        cx.notify();
+    }
+
+    fn send(&mut self, _: &Send, _: &mut Window, cx: &mut Context<Self>) {
+        // `enter` is one key doing two jobs: while the picker is up it takes
+        // the highlighted row, exactly as the combobox's does.
+        if self.mention.is_some()
+            && let Some(item) = self.filter.active_item()
+        {
+            self.accept(item, cx);
+            return;
+        }
+        let content = self.field.read(cx).content().clone();
+        if content.trim().is_empty() {
+            return;
+        }
+        self.sent.push(content);
+        self.field.update(cx, |field, cx| field.clear(cx));
+        self.mention = None;
+        cx.notify();
+    }
+
+    fn mention_next(&mut self, _: &MentionNext, _: &mut Window, cx: &mut Context<Self>) {
+        self.filter.step(1);
+        cx.notify();
+    }
+
+    fn mention_previous(&mut self, _: &MentionPrevious, _: &mut Window, cx: &mut Context<Self>) {
+        self.filter.step(-1);
+        cx.notify();
+    }
+
+    fn mention_dismiss(&mut self, _: &MentionDismiss, _: &mut Window, cx: &mut Context<Self>) {
+        self.mention = None;
+        cx.notify();
+    }
+
+    /// Send, as a 24px disc — and inert until there is something to send.
+    ///
+    /// `Composer.svelte` dims the whole button to `opacity-30`, which on a
+    /// frosted card reads as a grey blob with a grey arrow inside it. bezel
+    /// already has a word for a control that is present but not pressable, and
+    /// it is [`bezel_ui::pagination::step`]: the shape keeps its place, the
+    /// glyph goes faint, and the pointer and hover simply are not there. Same
+    /// rule here — the disc quietens to the hover wash instead of fading, so
+    /// the arrow stays legible and nothing invites a press.
+    fn send_button(
+        &self,
+        theme: &Theme,
+        ready: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let disc = div()
+            .size(px(24.0))
+            .rounded_full()
+            .flex()
+            .items_center()
+            .justify_center();
+        let disc = if ready {
+            disc.bg(theme.solid)
+                .cursor_pointer()
+                .hover(|s| s.opacity(0.9))
+                .child(
+                    icons::icon(icons::ARROW_UP)
+                        .size(px(14.0))
+                        .text_color(theme.on_solid),
+                )
+        } else {
+            disc.bg(bezel_theme::ink(0.06)).child(
+                icons::icon(icons::ARROW_UP)
+                    .size(px(14.0))
+                    .text_color(theme.text_faint),
+            )
+        };
+        div()
+            .id("composer-send")
+            .on_click(cx.listener(|composer, _, window, cx| composer.send(&Send, window, cx)))
+            .child(disc)
+    }
+
+    /// The picker, anchored at the `#` itself rather than under the card —
+    /// `TextField::offset_bounds` is the same measurement the IME candidate
+    /// panel anchors to, so it follows the caret down as the box grows.
+    fn picker(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let hash = self.mention?;
+        let anchor = self.field.read(cx).offset_bounds(hash, window)?;
+        let rows: Vec<AnyElement> = self
+            .filter
+            .filtered()
+            .iter()
+            .enumerate()
+            .map(|(position, &item)| {
+                popover::menu_row(
+                    theme,
+                    Some(position) == self.filter.active(),
+                    format!("mention-{item}"),
+                )
+                .id(SharedString::from(format!("mention-{item}")))
+                .on_click(cx.listener(move |composer, _, _, cx| composer.accept(item, cx)))
+                .child(self.filter.items()[item].clone())
+                .into_any_element()
+            })
+            .collect();
+        if rows.is_empty() {
+            return None;
+        }
+        Some(popover::menu_at(
+            "composer-mentions",
+            // The row's bottom-left: the menu hangs under the `#`, the way the
+            // candidate panel hangs under composing text.
+            gpui::point(anchor.left(), anchor.bottom() + px(4.0)),
+            popover::popover_card(theme)
+                .w(px(280.0))
+                .child(div().flex().flex_col().children(rows))
+                .into_any_element(),
+            None,
+        ))
+    }
+}
+
+impl gpui::Focusable for Composer {
+    fn focus_handle(&self, _: &gpui::App) -> gpui::FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl Render for Composer {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::of(cx).clone();
+        let ready = !self.field.read(cx).content().trim().is_empty();
+        let picker = self.picker(&theme, window, cx);
+        let sent: Vec<AnyElement> = self
+            .sent
+            .iter()
+            .map(|message| {
+                div()
+                    .self_end()
+                    .max_w(px(440.0))
+                    .px(px(14.0))
+                    .py(px(9.0))
+                    .rounded(px(Theme::SURFACE_RADIUS))
+                    .bg(theme.surface_raised)
+                    .text_size(px(13.5))
+                    .text_color(theme.text)
+                    .child(message.clone())
+                    .into_any_element()
+            })
+            .collect();
+
+        div()
+            .key_context("GalleryComposerPage")
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::send))
+            .on_action(cx.listener(Self::mention_next))
+            .on_action(cx.listener(Self::mention_previous))
+            .on_action(cx.listener(Self::mention_dismiss))
+            .size_full()
+            .flex()
+            .justify_center()
+            .overflow_hidden()
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(660.0))
+                    .px(px(24.0))
+                    .py(px(32.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.0))
+                    .children(sent)
+                    // The card: `Card variant="input"` — the field, then a row
+                    // of controls under it, both on one frosted surface.
+                    .child(
+                        div()
+                            .rounded(px(Theme::SURFACE_RADIUS))
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.card_glass_bg())
+                            .px(px(4.0))
+                            .pt(px(4.0))
+                            .pb(px(6.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.0))
+                            .child(self.field.clone())
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .justify_between()
+                                    .px(px(6.0))
+                                    .child(
+                                        div()
+                                            .text_size(px(11.5))
+                                            .font_family(theme.font_mono.clone())
+                                            .text_color(theme.text_faint)
+                                            .child(if self.mention.is_some() {
+                                                "↑↓ pick · enter attach · esc close"
+                                            } else {
+                                                "enter send · shift-enter newline"
+                                            }),
+                                    )
+                                    .child(self.send_button(&theme, ready, cx)),
+                            ),
+                    )
+                    .children(picker),
             )
     }
 }

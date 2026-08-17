@@ -284,6 +284,9 @@ pub struct TextField {
     /// what decides whether the next edit joins that group or starts a new one.
     /// Adjacency rather than a pause, so there is no timing threshold to invent.
     last_edit: Option<(EditKind, usize)>,
+    /// A context this field claims *in addition* to [`KEY_CONTEXT`] and
+    /// [`MULTILINE_KEY_CONTEXT`] — see [`Self::with_key_context`].
+    key_context: Option<SharedString>,
     /// Set by anything that moves the caret, cleared once a frame has scrolled
     /// it back into view.
     ///
@@ -314,6 +317,7 @@ impl TextField {
             redo: Vec::new(),
             undo_limit: DEFAULT_UNDO_LIMIT,
             last_edit: None,
+            key_context: None,
             follow_caret: false,
         }
     }
@@ -329,6 +333,36 @@ impl TextField {
 
     pub fn with_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.placeholder = placeholder.into();
+        self
+    }
+
+    /// Claim an extra key context on this field, so an app can bind a key
+    /// *here* that it does not want bound in every other field.
+    ///
+    /// The composer case, and the reason this exists: `enter` sends a message
+    /// and `shift-enter` breaks a line, while the notes field two panels over
+    /// still takes `enter` as a newline. gpui resolves a keystroke to the
+    /// binding whose context matches **deepest** in the focus path, and nothing
+    /// is deeper than the focused field — so a container around it cannot win
+    /// `enter`, however it is bound. Rebinding [`MULTILINE_KEY_CONTEXT`]
+    /// globally would win, and would take the newline away from every other
+    /// multi-line field in the app. A context of the field's own is the only
+    /// thing that is both deep enough and narrow enough.
+    ///
+    /// ```ignore
+    /// const COMPOSER: &str = "Composer";
+    /// cx.bind_keys([
+    ///     KeyBinding::new("enter", Send, Some(COMPOSER)),
+    ///     KeyBinding::new("shift-enter", input::InsertNewline, Some(COMPOSER)),
+    /// ]);
+    /// let field = cx.new(|cx| {
+    ///     TextField::new(cx)
+    ///         .with_shape(Shape::Grow { min: 3, max: 12 })
+    ///         .with_key_context(COMPOSER)
+    /// });
+    /// ```
+    pub fn with_key_context(mut self, context: impl Into<SharedString>) -> Self {
+        self.key_context = Some(context.into());
         self
     }
 
@@ -361,6 +395,49 @@ impl TextField {
 
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.set_content("", cx);
+    }
+
+    /// Where the caret is, as a byte offset into [`Self::content`].
+    ///
+    /// What a caller needs to read the text *behind* the caret: the `#` an
+    /// autocomplete triggers on, the word a lookup would act on. With a
+    /// selection this is the moving end, which is where typing would land.
+    pub fn cursor(&self) -> usize {
+        self.cursor_offset()
+    }
+
+    /// Where a byte offset sits on screen — the bounds of the row it is on, in
+    /// window coordinates.
+    ///
+    /// The anchor for anything that hangs off a position *in the text* rather
+    /// than off the field: a mention picker under the `#` that opened it, in a
+    /// box that is also growing a row at a time. Pass it to
+    /// [`crate::popover::menu_at`], which takes a window point.
+    ///
+    /// `None` until the field has painted once — this is measured off the
+    /// shaped layout, and there is none before then.
+    pub fn offset_bounds(&self, offset: usize, window: &Window) -> Option<Bounds<Pixels>> {
+        self.row_bounds(self.text_origin()?, offset..offset, window.line_height())
+    }
+
+    /// The rectangle `range` spans, starting from the row it opens on, relative
+    /// to `origin`.
+    ///
+    /// The IME's candidate panel and [`Self::offset_bounds`] are the same
+    /// question asked by two callers, so they ask it here — computed apart they
+    /// would answer differently the first time one of them forgot the scroll.
+    fn row_bounds(
+        &self,
+        origin: Point<Pixels>,
+        range: Range<usize>,
+        line_height: Pixels,
+    ) -> Option<Bounds<Pixels>> {
+        let start = position_for_offset(&self.last_layout, range.start, line_height)?;
+        let end = position_for_offset(&self.last_layout, range.end, line_height)?;
+        Some(Bounds::from_corners(
+            origin + start,
+            origin + gpui::point(end.x, end.y + line_height),
+        ))
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
@@ -1125,17 +1202,12 @@ impl EntityInputHandler for TextField {
         window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let line_height = window.line_height();
         let range = self.range_from_utf16(&range_utf16);
         // The IME panel anchors under the composing text, so this has to be the
-        // row that text is on, not the whole field.
-        let origin = bounds.origin - self.scroll;
-        let start = position_for_offset(&self.last_layout, range.start, line_height)?;
-        let end = position_for_offset(&self.last_layout, range.end, line_height)?;
-        Some(Bounds::from_corners(
-            origin + start,
-            origin + gpui::point(end.x, end.y + line_height),
-        ))
+        // row that text is on, not the whole field. `bounds` is what
+        // `last_bounds` is set from, so this is the same origin
+        // [`TextField::offset_bounds`] measures from.
+        self.row_bounds(bounds.origin - self.scroll, range, window.line_height())
     }
 
     fn character_index_for_point(
@@ -1164,6 +1236,9 @@ impl Render for TextField {
         key_context.add(KEY_CONTEXT);
         if self.shape.is_multiline() {
             key_context.add(MULTILINE_KEY_CONTEXT);
+        }
+        if let Some(extra) = self.key_context.clone() {
+            key_context.add(extra);
         }
         div()
             .key_context(key_context)

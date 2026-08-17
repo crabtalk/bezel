@@ -29,6 +29,8 @@ fn main() {
             focus::init(cx);
             menubar::init(cx);
             tree::init(cx);
+            // A pattern is an app: the composer page binds its own keys.
+            gallery::patterns::agent::init(cx);
             cx.bind_keys([
                 KeyBinding::new("cmd-k", OpenPalette, None),
                 KeyBinding::new("cmd-alt-i", ToggleInspector, None),

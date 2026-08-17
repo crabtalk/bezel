@@ -53,6 +53,8 @@ pub fn start() {
             focus::init(cx);
             menubar::init(cx);
             tree::init(cx);
+            // A pattern is an app: the composer page binds its own keys.
+            gallery::patterns::agent::init(cx);
             cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
             let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
             cx.open_window(
