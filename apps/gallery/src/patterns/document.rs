@@ -23,8 +23,7 @@
 //! Like the other patterns it is an entity: a screen owns a screen's worth of
 //! state, and its host holds one field.
 
-use bezel_editor::Editor;
-use bezel_markdown::{BlockKind, Doc};
+use bezel_markdown::{BlockKind, Doc, Editor};
 use bezel_theme::Theme;
 use bezel_ui::widgets;
 use gpui::{

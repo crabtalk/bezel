@@ -10,17 +10,18 @@ use std::cell::Cell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use bezel_markdown::editor;
 use bezel_theme::Theme;
 use bezel_theme::appearance::{self, AppearanceMode};
-use bezel_ui::combobox::Combobox;
+use bezel_ui::combobox::{self, Combobox};
 use bezel_ui::control_bar::Shape as ControlBarShape;
-use bezel_ui::date::{Calendar, Date};
+use bezel_ui::date::{self, Calendar, Date};
 use bezel_ui::hover_card::HoverCard;
-use bezel_ui::input::{Shape, TextField};
+use bezel_ui::input::{self, Shape, TextField};
 use bezel_ui::list;
-use bezel_ui::menubar::{Item, Menu, Menubar, MenubarEvent};
+use bezel_ui::menubar::{self, Item, Menu, Menubar, MenubarEvent};
 use bezel_ui::pagination;
-use bezel_ui::palette::{CommandPalette, PaletteEvent};
+use bezel_ui::palette::{self, CommandPalette, PaletteEvent};
 use bezel_ui::scroll::{self, ScrollbarState};
 use bezel_ui::table::{self, Column, Sort, Width};
 use bezel_ui::tooltip::Tooltip;
@@ -28,11 +29,31 @@ use bezel_ui::tree::{self, Direction, Move};
 use bezel_ui::widgets::{SliderDrag, SplitDrag};
 use bezel_ui::{focus, icons, loaders, popover, widgets};
 use gpui::{
-    AnyElement, Axis, Context, DragMoveEvent, Empty, Entity, SharedString, Window, actions, div,
-    prelude::*, px, relative,
+    AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
+    actions, div, prelude::*, px, relative,
 };
 
 actions!(gallery, [OpenPalette, ToggleInspector, ToggleFullScreen]);
+
+/// Every keymap this view needs, in one call.
+///
+/// Two entry points open it — a native window and a browser tab — and a list
+/// each of them keeps by hand is a list they drift out of: the editor's
+/// bindings were installed natively and missing on the web, so typing worked in
+/// the browser and Backspace did not.
+pub fn init(cx: &mut App) {
+    input::init(cx);
+    editor::init(cx);
+    palette::init(cx);
+    combobox::init(cx);
+    date::init(cx);
+    focus::init(cx);
+    menubar::init(cx);
+    tree::init(cx);
+    // A pattern is an app: the composer page binds its own keys.
+    patterns::agent::init(cx);
+    cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
+}
 
 /// gpui builds its element inspector into every debug build; release builds
 /// have no such window method, so the whole surface is debug-only.

@@ -12,11 +12,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use bezel_theme::appearance::{self, AppearanceMode};
-use bezel_ui::{combobox, date, focus, icons, input, menubar, palette, tree};
-use gallery::{Gallery, OpenPalette};
+use bezel_ui::icons;
+use gallery::Gallery;
 use gpui::{
-    App, AppContext as _, Application, ApplicationHandle, Bounds, KeyBinding, WindowBounds,
-    WindowOptions, px, size,
+    App, AppContext as _, Application, ApplicationHandle, Bounds, WindowBounds, WindowOptions, px,
+    size,
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -57,16 +57,7 @@ pub fn start() {
                 log::error!("font registration failed: {err:?}");
             }
             appearance::init(AppearanceMode::System, cx);
-            input::init(cx);
-            palette::init(cx);
-            combobox::init(cx);
-            date::init(cx);
-            focus::init(cx);
-            menubar::init(cx);
-            tree::init(cx);
-            // A pattern is an app: the composer page binds its own keys.
-            gallery::patterns::agent::init(cx);
-            cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
+            gallery::init(cx);
             let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
             cx.open_window(
                 WindowOptions {

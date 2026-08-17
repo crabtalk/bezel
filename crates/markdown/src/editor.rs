@@ -1,23 +1,25 @@
-//! A Notion-style block editor.
+//! A Notion-style block editor. Behind the `editor` feature, off by default —
+//! a reader that only paints a document never compiles it.
 //!
 //! The document is the single source of truth. There is no `TextField` per
 //! block: a caret is a `(block, offset)` pair into one [`Doc`], which is what
 //! makes Enter split, Backspace merge and Tab indent into list operations
 //! rather than negotiations between separate widgets each owning a string.
 //!
-//! Everything about *what* an edit does lives in `bezel-markdown`'s `edit`
-//! module, and is tested there without a window. This crate owns only what
-//! needs one: a focus handle, key bindings, the platform input handler, and
-//! turning a click into an offset.
+//! Everything about *what* an edit does lives in [`crate::edit`], and is tested
+//! there without a window. This module owns only what needs one: a focus
+//! handle, key bindings, the platform input handler, and turning a click into
+//! an offset.
 //!
 //! ```ignore
-//! bezel_editor::init(cx);                       // once, at startup
+//! bezel_markdown::editor::init(cx);             // once, at startup
 //! let editor = cx.new(|cx| Editor::new("# Title", cx));
 //! ```
 
-use bezel_markdown::edit::{Cursor, shortcut};
-use bezel_markdown::{BlockKind, BlockLayouts, Doc, Text};
 use bezel_theme::Theme;
+
+use crate::edit::{Cursor, shortcut};
+use crate::{BlockKind, BlockLayouts, Doc, Text};
 use gpui::{
     App, Context, CursorStyle, ElementInputHandler, Entity, EntityInputHandler, FocusHandle,
     Focusable, KeyBinding, MouseButton, Render, SharedString, Styled as _, UTF16Selection, Window,
@@ -66,7 +68,7 @@ pub struct Editor {
 impl Editor {
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
         Self {
-            doc: bezel_markdown::parse(source),
+            doc: crate::parse(source),
             cursor: Cursor::default(),
             focus_handle: cx.focus_handle(),
             marked: None,
@@ -83,7 +85,7 @@ impl Editor {
     pub fn source(&self) -> String {
         let mut doc = self.doc.clone();
         doc.normalize();
-        bezel_markdown::serialize(&doc)
+        crate::serialize(&doc)
     }
 
     /// Insert text at the caret, applying a markdown prefix if one completes.
@@ -273,7 +275,7 @@ impl Render for Editor {
             })
             .relative()
             .child(input)
-            .child(bezel_markdown::render_with_caret(
+            .child(crate::render_with_caret(
                 &self.doc,
                 caret,
                 Some(&self.layouts),

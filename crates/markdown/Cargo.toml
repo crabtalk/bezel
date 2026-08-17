@@ -16,6 +16,11 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+# The editing surface. It pulls no dependency the reader does not already
+# carry, so the gate buys compile time and an API surface, not a lighter graph.
+editor = []
+
 [dependencies]
 bezel-theme.workspace = true
 gpui.workspace = true

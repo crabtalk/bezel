@@ -203,10 +203,11 @@ Heavy extractions from comet (ports, not new design):
       through insert/remove/toggle, block split/merge/indent/outdent, markdown
       input shortcuts. Pure, and held to the round trip over 1.5M generated edit
       sequences.
-- [x] `bezel-editor` phase 3b (first cut) — the editing surface. `Editor` owns
-      the document and a `(block, offset)` caret; typing, Backspace, Enter, Tab
-      and arrows run through the phase-3a operations; markdown input shortcuts
-      fire as you type. On the Document pattern's Edit segment.
+- [x] `bezel-markdown` phase 3b (first cut) — the editing surface, under the
+      `editor` feature. `Editor` owns the document and a `(block, offset)`
+      caret; typing, Backspace, Enter, Tab and arrows run through the phase-3a
+      operations; markdown input shortcuts fire as you type. On the Document
+      pattern's Edit segment.
 - [ ] Editing still missing: selection (the caret is a point, not a range), so
       no copy, cut or select-all; undo; the slash menu; and `up`/`down` step
       whole blocks rather than visual rows, so they jump in a wrapped

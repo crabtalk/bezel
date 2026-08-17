@@ -9,8 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
-bezel-editor.workspace = true
-bezel-markdown.workspace = true
+bezel-markdown = { workspace = true, features = ["editor"] }
 bezel-motion.workspace = true
 bezel-theme.workspace = true
 bezel-ui.workspace = true

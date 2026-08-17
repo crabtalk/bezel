@@ -5,8 +5,8 @@
 //! a time; this file is the window around it.
 
 use bezel_theme::{Theme, appearance};
-use bezel_ui::{combobox, date, focus, icons, input, menubar, palette, tree};
-use gallery::{Gallery, OpenPalette, ToggleFullScreen, ToggleInspector};
+use bezel_ui::icons;
+use gallery::{Gallery, ToggleFullScreen, ToggleInspector};
 use gpui::{
     App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, WindowBounds, WindowOptions, actions,
     px, size,
@@ -22,18 +22,8 @@ fn main() {
                 eprintln!("FONT REGISTRATION FAILED: {err:?}");
             }
             appearance::init(appearance::AppearanceMode::System, cx);
-            input::init(cx);
-            bezel_editor::init(cx);
-            palette::init(cx);
-            combobox::init(cx);
-            date::init(cx);
-            focus::init(cx);
-            menubar::init(cx);
-            tree::init(cx);
-            // A pattern is an app: the composer page binds its own keys.
-            gallery::patterns::agent::init(cx);
+            gallery::init(cx);
             cx.bind_keys([
-                KeyBinding::new("cmd-k", OpenPalette, None),
                 KeyBinding::new("cmd-alt-i", ToggleInspector, None),
                 // Both of the macOS defaults. Bound before `set_menus` so the
                 // menu item can pick the keystroke up off the keymap.

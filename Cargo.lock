@@ -541,15 +541,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bezel-editor"
-version = "0.0.2"
-dependencies = [
- "bezel-markdown",
- "bezel-theme",
- "gpui",
-]
-
-[[package]]
 name = "bezel-markdown"
 version = "0.0.2"
 dependencies = [
@@ -1866,7 +1857,6 @@ dependencies = [
 name = "gallery"
 version = "0.0.2"
 dependencies = [
- "bezel-editor",
  "bezel-markdown",
  "bezel-motion",
  "bezel-theme",

@@ -14,18 +14,22 @@
 //! edit/save cycle cannot drift.
 //!
 //! [`doc`], [`parse`], [`serialize`] and [`edit`] are pure — no gpui, no painting — and
-//! [`render`] is the gpui layer over them. Editing is a layer above both, and
-//! lives elsewhere: it needs `bezel-ui`, and this crate stays light so a
-//! read-only consumer never compiles a popover to show a paragraph.
+//! [`render`] is the gpui layer over them. The editing *surface* — a focus
+//! handle, key bindings and the platform input handler — is [`editor`], behind
+//! the `editor` feature so a read-only consumer compiles none of it.
 
 pub mod doc;
 pub mod edit;
+#[cfg(feature = "editor")]
+pub mod editor;
 pub mod parse;
 pub mod render;
 pub mod serialize;
 
 pub use doc::{Align, Block, BlockKind, Doc, Mark, MarkSpan, Text};
 pub use edit::{Cursor, Shortcut, shortcut};
+#[cfg(feature = "editor")]
+pub use editor::Editor;
 pub use parse::parse;
 pub use render::{BlockLayouts, markdown, render, render_with_caret};
 pub use serialize::serialize;
