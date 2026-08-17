@@ -6,7 +6,9 @@
 //! composed exactly once, so the browser is never out of date with the library
 //! it documents.
 
+use std::cell::Cell;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use bezel_theme::Theme;
 use bezel_theme::appearance::{self, AppearanceMode};
@@ -14,6 +16,7 @@ use bezel_ui::combobox::Combobox;
 use bezel_ui::date::{Calendar, Date};
 use bezel_ui::hover_card::HoverCard;
 use bezel_ui::input::{Shape, TextField};
+use bezel_ui::list;
 use bezel_ui::menubar::{Item, Menu, Menubar, MenubarEvent};
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::scroll::{self, ScrollbarState};
@@ -62,6 +65,10 @@ const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
 /// owns the value decides what they are worth.
 const SLIDER_STEP: f32 = 0.05;
+
+/// How many rows the virtualized-list page claims to hold. Large enough that
+/// building them all would be obvious.
+const VIRTUAL_ROWS: usize = 10_000;
 
 /// The tree page's data. A nested structure the *app* owns — bezel never sees
 /// one, which is why [`Gallery::tree_rows`] below exists.
@@ -363,7 +370,7 @@ pub const COMPONENTS: &[Group] = &[
             section("scroll-area", "Scroll area", "crates/ui/src/scroll.rs"),
             section("table", "Table", "crates/ui/src/table.rs"),
             section("tree", "Tree view", "crates/ui/src/tree.rs"),
-            planned("virtual-list", "Virtualized list"),
+            section("virtual-list", "Virtualized list", "crates/ui/src/list.rs"),
         ],
     },
     Group {
@@ -393,7 +400,7 @@ pub const COMPONENTS: &[Group] = &[
 /// than derived because the arms cannot be enumerated at runtime; a test keeps
 /// this in step with the [`planned`] rows.
 #[cfg(test)]
-const PLANNED_BODIES: &[&str] = &["pagination", "virtual-list"];
+const PLANNED_BODIES: &[&str] = &["pagination"];
 
 fn section_at(key: &str) -> Option<&'static Section> {
     TABS.iter()
@@ -470,6 +477,13 @@ pub struct Gallery {
     table_bar: ScrollbarState,
     tree_scroll: gpui::ScrollHandle,
     tree_bar: ScrollbarState,
+    rows_scroll: gpui::UniformListScrollHandle,
+    rows_bar: ScrollbarState,
+    /// How many of [`VIRTUAL_ROWS`] rows the list actually built last frame.
+    /// A `Cell` because the count is written from inside the render closure,
+    /// which the list owns and calls with no view in scope — and it is the only
+    /// honest way to *show* that virtualization is happening.
+    rows_built: Rc<Cell<usize>>,
     /// Which folders are open, by path. App data, and the reason `tree` reports
     /// an intent rather than expanding anything itself.
     tree_expanded: HashSet<String>,
@@ -562,6 +576,9 @@ impl Gallery {
             table_sort: None,
             tree_scroll: gpui::ScrollHandle::new(),
             tree_bar: ScrollbarState::new(),
+            rows_scroll: gpui::UniformListScrollHandle::new(),
+            rows_bar: ScrollbarState::new(),
+            rows_built: Rc::new(Cell::new(0)),
             // Opened so the page shows nesting on arrival rather than a flat
             // list of two folders.
             tree_expanded: ["crates", "crates/ui"]
@@ -2086,7 +2103,75 @@ impl Gallery {
                     .into_any_element()
             }
 
-            "virtual-list" => todo(&theme, "Deferred", "A wrapper over gpui's list().", &[]),
+            "virtual-list" => {
+                let built = self.rows_built.clone();
+                let muted = theme.text_muted;
+                let mono = theme.font_mono.clone();
+                section
+                    .child(hint(
+                        &theme,
+                        "Ten thousand rows. The count below is how many of them \
+                         the list actually built for the frame you are looking \
+                         at — scroll it and it stays about the same.",
+                    ))
+                    .child(
+                        div()
+                            .relative()
+                            .h(px(220.0))
+                            .w_full()
+                            .rounded(px(Theme::PANEL_RADIUS))
+                            .border_1()
+                            .border_color(theme.border)
+                            .overflow_hidden()
+                            .child(list::virtual_list(
+                                "virtual-rows",
+                                VIRTUAL_ROWS,
+                                px(26.0),
+                                &self.rows_scroll,
+                                move |range, _, _| {
+                                    built.set(range.len());
+                                    range
+                                        .map(|index| {
+                                            div()
+                                                .flex()
+                                                .flex_row()
+                                                .items_center()
+                                                .gap(px(10.0))
+                                                .px(px(12.0))
+                                                .text_size(px(12.5))
+                                                .child(
+                                                    div()
+                                                        .w(px(56.0))
+                                                        .flex_none()
+                                                        .font_family(mono.clone())
+                                                        .text_color(muted)
+                                                        .child(SharedString::from(format!(
+                                                            "{index:05}"
+                                                        ))),
+                                                )
+                                                .child(SharedString::from(format!("Row {index}")))
+                                        })
+                                        .collect::<Vec<_>>()
+                                },
+                            ))
+                            .child(scroll::scrollbar(
+                                "virtual-bar",
+                                &list::scroll_handle(&self.rows_scroll),
+                                &self.rows_bar,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.5))
+                            .font_family(theme.font_mono.clone())
+                            .text_color(theme.text_muted)
+                            .child(SharedString::from(format!(
+                                "{VIRTUAL_ROWS} rows · {} built this frame",
+                                self.rows_built.get()
+                            ))),
+                    )
+                    .into_any_element()
+            }
 
             _ => div().into_any_element(),
         }

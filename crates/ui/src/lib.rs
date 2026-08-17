@@ -15,6 +15,7 @@ pub mod focus;
 pub mod hover_card;
 pub mod icons;
 pub mod input;
+pub mod list;
 pub mod loaders;
 pub mod material;
 pub mod menubar;

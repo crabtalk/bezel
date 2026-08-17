@@ -100,6 +100,14 @@ The tree's reducers are six tests deep and its paint is not:
       which is the one number (`INDENT` against the chevron slot) that nothing
       checks
 
+The virtualized list is the best-measured page here — 9 rows built of 10,000,
+read off a temporary probe rather than assumed — and still unseen:
+
+- [ ] Scrolling it, and the built count staying flat while it moves (the count
+      is on the page, so this one checks itself)
+- [ ] The thumb tracking a 10,000-row document, which is the same bar over a
+      handle it has never been pointed at before
+
 If this becomes a standing need rather than a one-off, the way back is a small
 `bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
 `simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
@@ -129,9 +137,7 @@ Need a real use case before building:
 
 ## Next round (deferred by decision)
 
-Data surfaces:
-
-- [ ] Virtualized list wrapper over gpui `list()`
+(Data surfaces are done: scroll area, table, tree view, virtualized list.)
 
 Heavy extractions from comet (ports, not new design):
 
@@ -197,7 +203,7 @@ menubar · checkbox · radio · toggle ·
 badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
-split · scroll area · table · tree view · group box + rows · separator · skeleton rows · alert strips ·
+split · scroll area · table · tree view · virtualized list · group box + rows · separator · skeleton rows · alert strips ·
 spinners · icons (58 SVG) · material glass.
 
 Textarea is one `TextField` under a `Shape`, not a second component: `Line`,
@@ -230,6 +236,30 @@ left the caret — so there is no timing threshold to invent. Pushed from
 every keystroke of IME composition would be its own step. Bounded (default 10 *steps*,
 not keystrokes, `with_undo_limit` per field); `set_content` clears both stacks,
 being a programmatic reset rather than something the user did.
+
+Virtualized list (`list.rs`) — and the entry it replaces was wrong about which
+primitive. gpui has two virtualizers and only one can carry a scrollbar.
+`uniform_list`'s handle wraps a real `ScrollHandle` (`base_handle`, public, and
+registered as the list's tracked handle — gpui's own `is_scrolled_to_end` reads
+pixel geometry off it), so `scroll::scrollbar` reports on a virtualized list
+with no second implementation behind a trait. `list()`, the variable-height one,
+speaks `ListOffset { item_ix, offset_in_item }` — logical, no maximum offset, no
+viewport — and a proportional thumb needs a total height that a variable-height
+list cannot know without measuring every row, which is the work virtualization
+exists to skip.
+
+So the module is thin on purpose, and earns its keep on the two things a caller
+would otherwise have to know: the bridge to that inner handle, and applying the
+row height to every row, since `uniform_list` sizes them all from the *first*
+one it renders and silently overlaps the rest otherwise.
+
+A third thing came out of building it, and only because the gallery counts the
+rows it actually builds. The first run built **one** row of ten thousand: the
+list had no height of its own, so it collapsed, measured item zero and stopped —
+an empty box with no error and nothing to grep for. `virtual_list` now fills its
+parent by default (a virtualized list is bounded by definition; a caller wanting
+otherwise sets a size after, and the later call wins). With that, the same probe
+reads 9 of 10,000 for a 220px frame at 26px a row, which is the arithmetic.
 
 Tree view (`tree.rs`) — the design is one observation: **a depth-annotated flat
 list is a complete navigation model.** bezel cannot walk an app's tree (it has
@@ -427,4 +457,4 @@ one required call in the README rather than a contract a reader had to infer.
 
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 131 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 132 tests.
