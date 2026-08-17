@@ -4,4 +4,5 @@
 //! whole and complete enough to copy. Its rail row points at *this* source
 //! rather than into `crates/`, because the pattern is the code you take.
 
+pub mod agent;
 pub mod music;

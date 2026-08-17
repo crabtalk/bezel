@@ -574,6 +574,40 @@ pub fn collapsible_header(
         )
 }
 
+/// A flag that follows something else until the user takes it over.
+///
+/// The rule behind a section that opens itself while work streams in and
+/// collapses when it stops: auto-follow is right until the first press, and
+/// wrong immediately after — whatever the flag does next, the person who
+/// clicked has to win. Nothing agent-shaped about it; a build log that unfolds
+/// while it runs and a detail pane that follows the selection both want this.
+///
+/// It is an `Option<bool>` rather than the two flags it reads as (*touched*,
+/// plus the value): "untouched, and here is the manual value" is a state that
+/// cannot mean anything, and this way it cannot be written.
+///
+/// ```ignore
+/// let open = self.details.get(self.running);           // paint this
+/// // …on the header's click:
+/// self.details.toggle(self.running);
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Takeover(Option<bool>);
+
+impl Takeover {
+    /// What to show: `auto` until the first [`Self::toggle`], the user's own
+    /// choice from then on.
+    pub fn get(self, auto: bool) -> bool {
+        self.0.unwrap_or(auto)
+    }
+
+    /// Flip what is currently on screen — which while nobody has touched it is
+    /// `auto`, *not* the stored value — and take over from here.
+    pub fn toggle(&mut self, auto: bool) {
+        self.0 = Some(!self.get(auto));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Resizable split
 // ---------------------------------------------------------------------------
@@ -928,6 +962,42 @@ mod tests {
             axis_fraction(point(px(0.0), px(0.0)), bounds, Axis::Horizontal, 4.0),
             0.5
         );
+    }
+
+    #[test]
+    fn a_takeover_follows_the_flag_until_it_is_touched() {
+        let mut open = Takeover::default();
+        assert!(!open.get(false));
+        assert!(open.get(true), "the flag turning on opens it");
+        // Touched while open: closed, and the flag is no longer consulted.
+        open.toggle(true);
+        assert!(!open.get(true));
+        assert!(!open.get(false));
+    }
+
+    #[test]
+    fn the_first_press_flips_what_was_on_screen() {
+        // The one thing easy to get backwards: with nothing stored yet, the
+        // press flips `auto`, not the default. A header that shows "open"
+        // because the work is streaming has to *close* on its first click —
+        // flipping the stored `false` would open what is already open.
+        let mut auto_open = Takeover::default();
+        auto_open.toggle(true);
+        assert!(!auto_open.get(true));
+
+        let mut auto_closed = Takeover::default();
+        auto_closed.toggle(false);
+        assert!(auto_closed.get(false));
+    }
+
+    #[test]
+    fn a_manual_choice_outlasts_the_run_that_set_it() {
+        // Opened by hand while nothing was running; the run starting and
+        // finishing must not close it again.
+        let mut open = Takeover::default();
+        open.toggle(false);
+        assert!(open.get(true));
+        assert!(open.get(false));
     }
 
     #[test]

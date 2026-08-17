@@ -304,7 +304,7 @@ pub const TABS: &[Tab] = &[
     Tab {
         title: "Patterns",
         groups: PATTERNS,
-        home: "music-player",
+        home: "agent-activity",
         full_bleed: true,
     },
 ];
@@ -312,14 +312,28 @@ pub const TABS: &[Tab] = &[
 /// Composed screens. The source path points at the gallery rather than into
 /// `crates/`, and that is the point — a pattern is not a component you call, it
 /// is a file you copy.
-pub const PATTERNS: &[Group] = &[Group {
-    title: "Media",
-    sections: &[section(
-        "music-player",
-        "Music player",
-        "apps/gallery/src/patterns/music.rs",
-    )],
-}];
+pub const PATTERNS: &[Group] = &[
+    // A group per kind of app, and this one is the driver: bezel is a UI
+    // library for agent apps. A page appears here when the parts under it are
+    // real — the composer, the tool calls and the transcript are named in
+    // `TODO.md`, and none of them is a row until it can be pressed.
+    Group {
+        title: "Agent",
+        sections: &[section(
+            "agent-activity",
+            "Activity",
+            "apps/gallery/src/patterns/agent.rs",
+        )],
+    },
+    Group {
+        title: "Media",
+        sections: &[section(
+            "music-player",
+            "Music player",
+            "apps/gallery/src/patterns/music.rs",
+        )],
+    },
+];
 
 /// The layers under the components — what a token *is*, before anything paints
 /// with it. The source paths say which crate each belongs to, which is the
@@ -407,6 +421,7 @@ pub const COMPONENTS: &[Group] = &[
         title: "Data",
         sections: &[
             section("scroll-area", "Scroll area", "crates/ui/src/scroll.rs"),
+            section("follow", "Follow scroll", "crates/ui/src/scroll.rs"),
             section("table", "Table", "crates/ui/src/table.rs"),
             section("tree", "Tree view", "crates/ui/src/tree.rs"),
             section("virtual-list", "Virtualized list", "crates/ui/src/list.rs"),
@@ -460,6 +475,10 @@ pub struct Gallery {
     last_command: Option<SharedString>,
     segment: usize,
     expanded: bool,
+    /// The second collapsible: a section that follows a run until you take it
+    /// over. `running` is what a streaming flag would be in a real app.
+    running: bool,
+    details: widgets::Takeover,
     /// Right-click menu, anchored at the click position.
     context_menu: popover::Popup<gpui::Point<gpui::Pixels>>,
     /// Select state lives here, not in a component: the menu is mounted by
@@ -512,6 +531,11 @@ pub struct Gallery {
     pane_bar: ScrollbarState,
     demo_scroll: gpui::ScrollHandle,
     demo_bar: ScrollbarState,
+    /// The follow-scroll demo: a log that grows under a view pinned to its end.
+    log_scroll: gpui::ScrollHandle,
+    log_bar: ScrollbarState,
+    log_follow: scroll::FollowState,
+    log_lines: usize,
     table_scroll: gpui::ScrollHandle,
     table_bar: ScrollbarState,
     tree_scroll: gpui::ScrollHandle,
@@ -538,6 +562,7 @@ pub struct Gallery {
     /// The music pattern — one field, because a pattern is a screen and owns a
     /// screen's worth of state. A component demo can keep its value or two up
     /// here beside the rest; thirteen of them cannot.
+    activity: Entity<patterns::agent::Activity>,
     music: Entity<patterns::music::MusicPlayer>,
     /// Which top-nav tab is open.
     tab: usize,
@@ -599,6 +624,9 @@ impl Gallery {
             last_command: None,
             segment: 0,
             expanded: true,
+            // Arrives mid-run, which is the state the auto-follow is for.
+            running: true,
+            details: widgets::Takeover::default(),
             context_menu: popover::Popup::default(),
             sheet: popover::Popup::default(),
             split: 0.4,
@@ -617,6 +645,12 @@ impl Gallery {
             pane_bar: ScrollbarState::new(),
             demo_scroll: gpui::ScrollHandle::new(),
             demo_bar: ScrollbarState::new(),
+            log_scroll: gpui::ScrollHandle::new(),
+            log_bar: ScrollbarState::new(),
+            log_follow: scroll::FollowState::new(),
+            // Enough to overflow the box on arrival, so the pin has something
+            // to hold onto before you press anything.
+            log_lines: 24,
             table_scroll: gpui::ScrollHandle::new(),
             table_bar: ScrollbarState::new(),
             table_sort: None,
@@ -644,6 +678,7 @@ impl Gallery {
             tab: 1,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
+            activity: cx.new(|_| patterns::agent::Activity::default()),
             music: cx.new(|_| patterns::music::MusicPlayer::default()),
         }
     }
@@ -1556,35 +1591,116 @@ impl Gallery {
                 )
                 .into_any_element(),
 
-            "collapsible" => section
-                .child(
-                    div()
-                        .w(px(320.0))
-                        .child(
-                            div()
-                                .id("collapse")
-                                .on_click(cx.listener(|view, _, _, cx| {
-                                    view.expanded = !view.expanded;
-                                    cx.notify();
-                                }))
-                                .child(widgets::collapsible_header(
-                                    &theme,
-                                    "Advanced",
-                                    self.expanded,
-                                )),
-                        )
-                        .when(self.expanded, |el| {
-                            el.child(
+            "collapsible" => {
+                let open = self.details.get(self.running);
+                section
+                    .child(
+                        div()
+                            .w(px(320.0))
+                            .child(
                                 div()
-                                    .pl(px(24.0))
-                                    .pt(px(4.0))
-                                    .text_size(px(12.5))
-                                    .text_color(theme.text_muted)
-                                    .child("Body shown while expanded."),
+                                    .id("collapse")
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        view.expanded = !view.expanded;
+                                        cx.notify();
+                                    }))
+                                    .child(widgets::collapsible_header(
+                                        &theme,
+                                        "Advanced",
+                                        self.expanded,
+                                    )),
                             )
-                        }),
-                )
-                .into_any_element(),
+                            .when(self.expanded, |el| {
+                                el.child(
+                                    div()
+                                        .pl(px(24.0))
+                                        .pt(px(4.0))
+                                        .text_size(px(12.5))
+                                        .text_color(theme.text_muted)
+                                        .child("Body shown while expanded."),
+                                )
+                            }),
+                    )
+                    .child(hint(
+                        &theme,
+                        "The second one follows the run: it opens itself while \
+                         work is streaming in and closes when that stops. Touch \
+                         it once and it is yours — start and stop the run after \
+                         that and it stays where you put it.",
+                    ))
+                    .child(
+                        row()
+                            .child(
+                                div()
+                                    .id("takeover-run")
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        view.running = !view.running;
+                                        cx.notify();
+                                    }))
+                                    .child(popover::button(
+                                        &theme,
+                                        if self.running {
+                                            "Finish the run"
+                                        } else {
+                                            "Start a run"
+                                        },
+                                        "g-takeover-run",
+                                    )),
+                            )
+                            // Which of the two rules is answering, on the page —
+                            // the same trick the follow-scroll row uses. A
+                            // behaviour you can only infer is one nobody checks.
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .font_family(theme.font_mono.clone())
+                                    .text_color(theme.text_faint)
+                                    .child(SharedString::from(format!(
+                                        "open: {open} — {}",
+                                        if self.details == widgets::Takeover::default() {
+                                            "following the run"
+                                        } else {
+                                            "yours"
+                                        }
+                                    ))),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w(px(320.0))
+                            .child(
+                                div()
+                                    .id("takeover-head")
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        let running = view.running;
+                                        view.details.toggle(running);
+                                        cx.notify();
+                                    }))
+                                    .child(widgets::collapsible_header(
+                                        &theme,
+                                        if self.running { "Working" } else { "Details" },
+                                        open,
+                                    )),
+                            )
+                            .when(open, |el| {
+                                el.child(
+                                    div()
+                                        .ml(px(10.0))
+                                        .pl(px(12.0))
+                                        .border_l_1()
+                                        .border_color(theme.border)
+                                        .text_size(px(12.5))
+                                        .text_color(theme.text_muted)
+                                        .child(if self.running {
+                                            "Reading crates/ui/src/widgets.rs…"
+                                        } else {
+                                            "Read crates/ui/src/widgets.rs."
+                                        }),
+                                )
+                            }),
+                    )
+                    .into_any_element()
+            }
 
             "breadcrumb" => section
                 .child(
@@ -2172,6 +2288,88 @@ impl Gallery {
                 )
                 .into_any_element(),
 
+            "follow" => section
+                .child(hint(
+                    &theme,
+                    "Append a line and the box stays on the newest one. Scroll up \
+                     and it lets go — scroll back to the bottom and it takes over \
+                     again. Neither is an event it subscribes to: the overflow \
+                     changing is what tells appended content apart from you.",
+                ))
+                .child(
+                    row()
+                        .child(
+                            div()
+                                .id("follow-append")
+                                .on_click(cx.listener(|view, _, _, cx| {
+                                    view.log_lines += 1;
+                                    cx.notify();
+                                }))
+                                .child(popover::button(&theme, "Append a line", "g-follow-add")),
+                        )
+                        .child(
+                            div()
+                                .id("follow-jump")
+                                .on_click(cx.listener(|view, _, _, cx| {
+                                    view.log_follow.follow();
+                                    cx.notify();
+                                }))
+                                .child(popover::button(&theme, "Jump to latest", "g-follow-pin")),
+                        )
+                        // The state, on the page — the same trick the virtualized
+                        // list uses for its built count. A behaviour you can only
+                        // infer is a behaviour nobody can check.
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .font_family(theme.font_mono.clone())
+                                .text_color(if self.log_follow.following() {
+                                    theme.success
+                                } else {
+                                    theme.text_faint
+                                })
+                                .child(SharedString::from(format!(
+                                    "following: {}",
+                                    self.log_follow.following()
+                                ))),
+                        ),
+                )
+                .child(
+                    div()
+                        .relative()
+                        .h(px(180.0))
+                        .w_full()
+                        .rounded(px(Theme::PANEL_RADIUS))
+                        .border_1()
+                        .border_color(theme.border)
+                        .overflow_hidden()
+                        .child(
+                            div()
+                                .id("follow-demo")
+                                .size_full()
+                                .overflow_y_scroll()
+                                .track_scroll(&self.log_scroll)
+                                .child(div().p(px(14.0)).flex().flex_col().gap(px(6.0)).children(
+                                    (1..=self.log_lines).map(|line| {
+                                        div()
+                                            .text_size(px(12.0))
+                                            .font_family(theme.font_mono.clone())
+                                            .text_color(theme.text_muted)
+                                            .child(SharedString::from(format!(
+                                                "[{line:04}] token stream line {line}"
+                                            )))
+                                    }),
+                                )),
+                        )
+                        .child(scroll::follow(&self.log_scroll, &self.log_follow))
+                        .child(scroll::scrollbar(
+                            "follow-demo-bar",
+                            &self.log_scroll,
+                            &self.log_bar,
+                        )),
+                )
+                .into_any_element(),
+
             "table" => {
                 let columns = table_columns();
                 let mut rows = TABLE_ROWS;
@@ -2406,6 +2604,7 @@ impl Gallery {
             }
 
             // ---- Patterns ----------------------------------------------------
+            "agent-activity" => self.activity.clone().into_any_element(),
             "music-player" => self.music.clone().into_any_element(),
 
             _ => div().into_any_element(),

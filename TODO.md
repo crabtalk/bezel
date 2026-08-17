@@ -138,6 +138,36 @@ verified by hand, which is the only way any of this ever gets verified:
 - [x] The context menu closing on a press off the card
 - [x] The command palette closing on a scrim press as well as `escape`
 
+Follow scroll is four pure tests deep on `at_bottom` and unrun as an element —
+the part that decides is tested, the part that *moves the handle* is not:
+
+- [ ] Appending with the box at the bottom, and the newest line staying visible
+- [ ] Scrolling up mid-append and being left there, which is the whole point
+- [ ] Scrolling back to the end re-attaching without a button
+- [ ] "Jump to latest" re-pinning from far up the log
+- [ ] That it converges — the page reads `following:` off the state, so a pin
+      fighting the handle would show as that flag flickering rather than as a
+      hang
+
+The Agent → Activity pattern is the two ported pieces composed, and what a
+screenshot cannot reach is the run itself — an occluded window gets no frames,
+so the page only moves while it is the one you are looking at:
+
+- [ ] The lines arriving, and the box growing to its cap before it scrolls
+- [ ] Scrolling up mid-run and being left there while it keeps writing
+- [ ] The section collapsing on its own when the last line lands
+- [ ] "Ask again" restarting it *and* handing the section back to the run,
+      which is the one line of the takeover that a component page cannot show
+
+`Takeover` is three tests deep on the rule and unrun as a press. The page
+prints which of the two rules is answering, so both halves read off one line:
+
+- [ ] The section opening and closing on its own as the run starts and finishes
+- [ ] One click on the header taking it over — closing it *while* the run is on,
+      which is the case that would be backwards if the press flipped the stored
+      value instead of the shown one
+- [ ] The run starting and finishing after that, and the section staying put
+
 The paginator's window is six tests deep; the row it draws is not:
 
 - [ ] Clicking a page, and the prev/next steps going inert at the ends rather
@@ -173,6 +203,35 @@ Nothing. Every row in the gallery's catalog has a source, and `PLANNED_BODIES`
 is empty — the first time that has been true. `planned()`/`todo()` are kept
 (unused, and marked as such) because the convention they encode is what the next
 unbuilt component gets declared with, not because anything needs them today.
+
+## Porting `../desktop` — measured
+
+`../desktop` is Svelte 5 + Tauri + Tailwind, so this is a port rather than an
+extraction. Its agent surface is `src/lib/shell/chat` (13 components) plus
+`src/lib/agent` (16): **4,656 lines**. Measured against what bezel ships:
+
+| desktop source | lines | what bezel needs |
+| --- | --- | --- |
+| `LiveActivity.svelte` | 72 | **done** — `scroll::follow`, the one real gpui capability in the list; composed on the Agent → Activity pattern page |
+| `Thought.svelte` | 50 | **done** — `widgets::Takeover`, the reducer under it; the rest is `collapsible_header` |
+| `ToolCard.svelte` | 82 | paint, plus the `card`/`row` variant split |
+| `ToolGroup.svelte` | 54 | **nothing** — `slice::chunk_by` is the run grouping, verified |
+| `Composer.svelte` + `PromptEditor` | 350 | composition: `TextField` with `Shape::Grow{min,max}` *is* `rows`/`maxRows`, and `control_bar(Shape::Rounded)` is the pill. The `#` mention picker inside a growing field is the only gap |
+| `Transcript.svelte` | 943 | mostly not ours — Tauri `invoke`/`listen`, project lookups, cloud-error parsing. The activity/answer zone split and day grouping are extractable reducers |
+| `toolLabel.ts` | 71 | 4 icons (brain, download, link, book); the tool-name map stays in desktop |
+
+Not bezel's, and worth saying so before someone files it here: the hint
+extraction (it parses tool args and resolves note refs), the tool-name→title
+map, and `BrainCard`/`ProjectCard`. Those are desktop's data model.
+
+`bezel-agent` is agreed in principle and **not created yet**, deliberately. The
+music player is the precedent: it set out to need a media crate and produced one
+piece of library code, which turned out to be a *control bar* — general, so it
+went to `ui`. Every item above has passed the same test so far (a terminal wants
+follow-scroll; a CI log wants a tool card), which is why `ui` is holding them.
+The crate earns itself when a residue accumulates that genuinely fails "would a
+non-agent app want this" — and the thing to watch is a `ToolCall` type, because
+that is a *data model*, and `tree.rs` refuses those on principle.
 
 ## Next round (deferred by decision)
 
@@ -261,6 +320,43 @@ from the wall clock rather than accumulated per frame, and the scrubber's
 displayed position detaches from it while held — otherwise a playing track
 drags the thumb out from under the pointer, which reads as a seek bar that
 fights you.
+
+Follow scroll (`scroll::follow`) — a view pinned to the end of content that
+grows under it, which is what a streaming transcript, a terminal and a log all
+need and none of them could have.
+
+The whole problem is telling appended content from a user scroll, and **neither
+is an event you can subscribe to**: both surface as the handle reading
+differently than it did last frame. The overflow separates them. If it changed,
+the content grew and the pin stands as the user last set it; if it did not, the
+offset moved because the user moved it, and being at the end is what re-pins.
+Scrolling up releases and scrolling back down re-attaches, with no gesture
+hooked and no callback for the app to wire.
+
+`at_bottom` is pure and four tests deep, including the two traps this module
+already carries a warning about — `max_offset` is the overflow and `offset` is
+negative — plus content that fits, which has to read as "at the bottom" or an
+empty log unpins and can never re-pin, having no end to reach. `FollowState`
+starts pinned, since a transcript opens on its newest line. It is an `Rc<Cell>`
+like `ScrollbarState` and for the same reason: it mutates through `&self`, so
+the element carries the behaviour and the view wires nothing.
+
+Takeover (`widgets::Takeover`) — a flag that follows something else until the
+user takes it over, ported from `Thought.svelte`'s three lines of state. A
+section that opens itself while work streams in and collapses when it stops,
+where the first press has to win from then on however the flag moves after.
+
+It stores an `Option<bool>` rather than the *touched + value* pair it reads as,
+because "untouched, and here is the manual value" is a state that cannot mean
+anything and this way cannot be written. That leaves one line worth a test:
+`toggle` flips what is **on screen**, not what is stored — a header showing open
+because the run is streaming has to close on its first click, and flipping the
+stored `false` would open what is already open.
+
+Nothing agent-shaped survived the port: the component around it is
+`collapsible_header` plus an indented body, and a build log or a detail pane
+following a selection wants the same rule. So it sits in `widgets.rs` beside the
+header it serves, and the gallery's Collapsible page is where you press it.
 
 Click-away dismissal (`popover.rs`). Reported as "dialogs and menus only close
 when you click an item", and it was two different faults wearing one symptom.
@@ -371,8 +467,8 @@ the locally embedded subset had no speaker at the time — Solar does.
 Components: button ×3 · text field (IME, selection, clipboard, native
 shortcuts) · **textarea** · select · combobox · command palette · date picker ·
 menubar · checkbox · radio · toggle ·
-badge ×2 · avatar · progress · slider · tabs · toggle group · control bar · disclosure +
-collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
+badge ×2 · avatar · progress · slider · tabs · toggle group · control bar · follow scroll · disclosure +
+collapsible header + takeover · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
 split · scroll area · table · tree view · virtualized list · pagination · group box + rows · separator · skeleton rows · alert strips ·
 spinners · icons (58 SVG) · material glass.
