@@ -2082,6 +2082,37 @@ impl Gallery {
                 .into_any_element(),
 
             "loaders" => section
+                .child(hint(
+                    &theme,
+                    "The four orbs are bezel's own. Everything below them is a grid \
+                     of cells; the orbs are circles, because circles are the whole \
+                     vocabulary gpui gives at this rev — no rotation, no conic \
+                     gradient, no blur filter.",
+                ))
+                .child(
+                    row().gap(px(24.0)).children(
+                        [
+                            (loaders::Orb::Cluster, "cluster"),
+                            (loaders::Orb::Ring, "ring"),
+                            (loaders::Orb::Converge, "converge"),
+                            (loaders::Orb::Bloom, "bloom"),
+                        ]
+                        .map(|(shape, label)| {
+                            stack()
+                                .items_center()
+                                .gap(px(10.0))
+                                .child(loaders::orb(shape, label, 44.0, &theme, view, cx))
+                                .child(
+                                    div()
+                                        .text_size(px(10.5))
+                                        .font_family(theme.font_mono.clone())
+                                        .text_color(theme.text_faint)
+                                        .child(label),
+                                )
+                        }),
+                    ),
+                )
+                .child(hint(&theme, "And the older three:"))
                 .child(
                     row()
                         .child(loaders::pulse_loader("g-pulse", &theme, 8.0, view, cx))

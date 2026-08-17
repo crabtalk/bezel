@@ -151,7 +151,10 @@ impl Activity {
         // colour off that element's own style: a chevron tinted by its parent
         // paints nothing at all.
         let glyph = if running {
-            loaders::mini_gradient_spinner("thinking", 2.5, view, cx).into_any_element()
+            // The orb cluster, at the slot the chevron leaves behind: while a
+            // model is thinking, this is what bezel shows.
+            loaders::orb(loaders::Orb::Cluster, "thinking", 14.0, theme, view, cx)
+                .into_any_element()
         } else {
             widgets::disclosure(theme, open).into_any_element()
         };

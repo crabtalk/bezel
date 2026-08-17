@@ -290,6 +290,37 @@ displayed position detaches from it while held — otherwise a playing track
 drags the thumb out from under the pointer, which reads as a seek bar that
 fights you.
 
+The orbs (`loaders::orb`) — four shapes over one period, and **the first
+loaders in this library that are bezel's own.** The three older ones are all
+grids of cells: a pulse row, a 3×3 matrix, a 2×3 mini. Three variations on one
+arrangement is a narrow vocabulary for the surface a library gets looked at
+through, and `phase.rs` had already made the point itself — *a loading
+indicator is a brand surface.*
+
+`Cluster` swings its orbs between 0.14 and 0.62 of the box, a third of a period
+apart, so one is always swelling while another shrinks and the count you
+perceive changes; a fixed size would leave the silhouette constant and the
+thing would read as three dots dimming. `Ring` chases brightness round a
+circle. `Converge` gathers those dots to a single point and opens back out —
+one radius shared by every dot, so they arrive together. `Bloom` sends rings
+out from the centre, fading before the rim.
+
+Everything is circles, because circles are the whole vocabulary gpui gives at
+the pinned rev: no rotation transform, no conic gradient, and no blur filter on
+an element (`material`'s backdrop blur blurs what is *behind* a surface and
+cannot soften the surface itself). So the glow is a `BoxShadow`, the ring is
+eight positioned dots rather than a swept arc, and every position is
+arithmetic.
+
+That arithmetic is pure and lives in `bezel_motion::phase`, tested there: the
+opacity floor that stops the cluster blinking, the drift that closes its circle
+so nothing accumulates, the ring dots actually sitting on their circle, a bloom
+ring being invisible before the rim (or the box would clip it square), and a
+compile-time assertion that the cluster's size swing stays at least 4× — below
+that it silently becomes three dots dimming again. One tint, from
+`theme.accent`; in three hues this would be the gradient spinner wearing a
+different shape.
+
 Click-away dismissal (`popover.rs`). Reported as "dialogs and menus only close
 when you click an item", and it was two different faults wearing one symptom.
 
@@ -403,7 +434,7 @@ badge ×2 · avatar · progress · slider · tabs · toggle group · control bar
 collapsible header + takeover · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
 split · scroll area · table · tree view · virtualized list · pagination · group box + rows · separator · skeleton rows · alert strips ·
-spinners · icons (58 SVG) · material glass.
+orbs ×4 + spinners · icons (58 SVG) · material glass.
 
 Textarea is one `TextField` under a `Shape`, not a second component: `Line`,
 `Rows(n)`, `Grow { min, max }`. Every action already worked on the content and

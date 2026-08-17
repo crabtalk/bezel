@@ -1,6 +1,10 @@
-//! Loaders: the pulse loader and the gradient matrix spinners. All motion
-//! routes through `bezel_motion` pure helpers, so the math is unit-tested and
-//! these elements are testable-by-compile.
+//! Loaders: the orb cluster, the pulse loader and the gradient matrix spinners.
+//! All motion routes through `bezel_motion` pure helpers, so the math is
+//! unit-tested and these elements are testable-by-compile.
+//!
+//! [`orb`] is bezel's own vocabulary — four shapes over one period — and is
+//! what a thinking surface should reach for. The older three are grids of
+//! cells.
 //!
 //! Rendering pattern: each cell is its own `with_animation` repeating element
 //! sharing one period; per-cell offsets come from [`motion::staggered_phase`],
@@ -12,7 +16,7 @@
 use gpui::{App, EntityId, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use bezel_motion as motion;
-use bezel_motion::{GRADIENT_SPIN, PULSE, PULSE_STAGGER};
+use bezel_motion::{GRADIENT_SPIN, ORB, PULSE, PULSE_STAGGER};
 use bezel_theme::Theme;
 
 pub use bezel_motion::phase::{GSPIN_DIM, GSPIN_ROW_TINTS, MATRIX_SIDE, PULSE_CELLS};
@@ -132,6 +136,147 @@ pub fn mini_gradient_spinner(
                         .opacity(motion::gspin_opacity(delta + phase, GSPIN_DIM))
                 }))
         }))
+}
+
+/// Which orb to draw. All four share one period, one tint and one box, and
+/// differ only in how the circles are arranged and what the phase moves.
+///
+/// A parameter rather than four functions, for the reason [`crate::input::Shape`]
+/// is one: they are the same operation, and the thing that differs is an
+/// argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Orb {
+    /// Blobs whose sizes swing so the count you perceive changes, drifting far
+    /// enough to merge and separate. The one a thinking surface should reach
+    /// for.
+    Cluster,
+    /// Dots on a circle, brightness chasing round — the classic, with a real
+    /// circle instead of the mini spinner's 2×3 grid.
+    Ring,
+    /// Dots gathering to a single point and opening back out to the ring.
+    Converge,
+    /// Rings leaving the centre and fading before the edge. The only one that
+    /// travels outward, which is what makes it read as a signal rather than a
+    /// wait.
+    Bloom,
+}
+
+/// The orbs — **bezel's own loaders**, and the only ones here that are.
+///
+/// The three older loaders in this module are all grids of cells: a pulse row,
+/// a 3×3 matrix, a 2×3 mini. Three variations on one arrangement is a narrow
+/// vocabulary for the surface a library gets looked at through, and `phase.rs`
+/// makes the point itself: *a loading indicator is a brand surface.*
+///
+/// Everything is circles, because that is the whole vocabulary gpui gives at
+/// the pinned rev: no rotation transform, no conic gradient, and no blur filter
+/// on an element ([`crate::material`]'s backdrop blur blurs what is *behind* a
+/// surface and cannot soften the surface itself). So the glow is a `BoxShadow`,
+/// the ring is eight positioned dots rather than a swept arc, and every
+/// position is arithmetic — all of it pure and unit-tested in
+/// [`bezel_motion::phase`].
+///
+/// One tint, from the theme's accent. In three hues this would be the gradient
+/// spinner wearing a different shape.
+pub fn orb(
+    shape: Orb,
+    key: impl Into<SharedString>,
+    size_px: f32,
+    theme: &Theme,
+    view: EntityId,
+    cx: &mut App,
+) -> impl IntoElement {
+    let _key = key.into();
+    let delta = motion::pulse_delta(&ORB, view, cx);
+    let accent = theme.accent;
+
+    // A circle placed by its centre, since every seat below is a centre.
+    let dot = move |cx: f32, cy: f32, size: f32, opacity: f32, glow: f32| {
+        div()
+            .absolute()
+            .left(px(cx - size / 2.0))
+            .top(px(cy - size / 2.0))
+            .size(px(size))
+            .rounded_full()
+            .bg(accent.opacity(opacity))
+            .shadow(vec![gpui::BoxShadow {
+                color: accent.opacity(opacity * 0.55),
+                offset: gpui::point(px(0.0), px(0.0)),
+                blur_radius: px(glow),
+                spread_radius: px(0.0),
+                inset: false,
+            }])
+    };
+
+    let cells: Vec<gpui::Div> = match shape {
+        Orb::Cluster => (0..motion::ORBS)
+            .map(|index| {
+                // A third of a period apart, so one is always swelling while
+                // another shrinks and the silhouette never repeats.
+                let phase = motion::staggered_phase(delta, index, 1.0 / motion::ORBS as f32);
+                let (seat_x, seat_y) = motion::ORB_SEATS[index];
+                let (drift_x, drift_y) = motion::orb_drift(phase);
+                dot(
+                    size_px * (seat_x + drift_x),
+                    size_px * (seat_y + drift_y),
+                    size_px * motion::orb_size(phase),
+                    motion::orb_opacity(phase),
+                    size_px * motion::orb_glow(phase),
+                )
+            })
+            .collect(),
+        Orb::Ring => (0..motion::ORB_RING_DOTS)
+            .map(|index| {
+                let phase =
+                    motion::staggered_phase(delta, index, 1.0 / motion::ORB_RING_DOTS as f32);
+                let (seat_x, seat_y) = motion::orb_ring_seat(index, motion::ORB_RING_RADIUS);
+                dot(
+                    size_px * seat_x,
+                    size_px * seat_y,
+                    size_px * motion::ORB_RING_DOT,
+                    motion::orb_opacity(phase),
+                    size_px * motion::orb_glow(phase) * 0.5,
+                )
+            })
+            .collect(),
+        Orb::Converge => {
+            // One phase for every dot, unlike the ring: they travel together,
+            // so the gathered frame is a single point rather than a queue.
+            let radius = motion::orb_converge_radius(delta);
+            (0..motion::ORB_RING_DOTS)
+                .map(|index| {
+                    let (seat_x, seat_y) = motion::orb_ring_seat(index, radius);
+                    dot(
+                        size_px * seat_x,
+                        size_px * seat_y,
+                        size_px * motion::ORB_RING_DOT,
+                        motion::orb_opacity(delta),
+                        size_px * motion::orb_glow(delta) * 0.5,
+                    )
+                })
+                .collect()
+        }
+        Orb::Bloom => (0..motion::ORB_BLOOM_RINGS)
+            .map(|index| {
+                let phase =
+                    motion::staggered_phase(delta, index, 1.0 / motion::ORB_BLOOM_RINGS as f32);
+                let diameter = size_px * motion::orb_bloom_radius(phase);
+                let opacity = motion::orb_bloom_opacity(phase);
+                // A ring, not a disc: the border is the whole element, so this
+                // one is the odd shape out and cannot go through `dot`.
+                div()
+                    .absolute()
+                    .left(px((size_px - diameter) / 2.0))
+                    .top(px((size_px - diameter) / 2.0))
+                    .size(px(diameter))
+                    .rounded_full()
+                    .border(px((size_px * 0.05).max(1.0)))
+                    .border_color(accent.opacity(opacity))
+            })
+            .collect(),
+    };
+
+    div().relative().size(px(size_px)).children(cells)
 }
 
 /// "L O A D I N G" — `text-[11px] uppercase tracking-[0.32em]`; tracking

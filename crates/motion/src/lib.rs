@@ -320,6 +320,9 @@ pub const HOVER_FADE: MotionSpec = MotionSpec::new(150, EASE_TAILWIND);
 pub const PULSE: MotionSpec = MotionSpec::new(2400, EASE);
 /// Gradient matrix spinner wave period: 750ms.
 pub const GRADIENT_SPIN: MotionSpec = MotionSpec::new(750, EASE);
+/// Orb cluster breath: 2s, and `EASE_IN_OUT` because a breath has no edges —
+/// the two spinners tick, this one swells.
+pub const ORB: MotionSpec = MotionSpec::new(phase::ORB_MS, EASE_IN_OUT);
 
 // ---------------------------------------------------------------------------
 // Element helpers (paint-layer entrances/exits)
@@ -399,8 +402,10 @@ where
 // The loader constants and math live in `crate::phase` (pure phase
 // functions); this crate animates them with gpui.
 pub use crate::phase::{
-    PULSE_MIN_OPACITY, PULSE_MIN_SCALE, PULSE_STAGGER, gspin_opacity, pulse_opacity, pulse_scale,
-    pulse_wave, staggered_phase,
+    ORB_BLOOM_RINGS, ORB_RING_DOT, ORB_RING_DOTS, ORB_RING_RADIUS, ORB_SEATS, ORBS,
+    PULSE_MIN_OPACITY, PULSE_MIN_SCALE, PULSE_STAGGER, gspin_opacity, orb_bloom_opacity,
+    orb_bloom_radius, orb_converge_radius, orb_drift, orb_glow, orb_opacity, orb_ring_seat,
+    orb_size, pulse_opacity, pulse_scale, pulse_wave, staggered_phase,
 };
 
 /// Gradient-matrix spinner wave: intensity (0..1) of cell `wave_index` out of
