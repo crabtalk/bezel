@@ -15,6 +15,7 @@ use bezel_ui::input::{Shape, TextField};
 use bezel_ui::menubar::{Item, Menu, Menubar, MenubarEvent};
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::scroll::{self, ScrollbarState};
+use bezel_ui::table::{self, Column, Sort, Width};
 use bezel_ui::tooltip::Tooltip;
 use bezel_ui::widgets::{SliderDrag, SplitDrag};
 use bezel_ui::{focus, icons, loaders, popover, widgets};
@@ -58,6 +59,30 @@ const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
 /// owns the value decides what they are worth.
 const SLIDER_STEP: f32 = 0.05;
+
+/// The table page's columns, declared once — the header and every row are laid
+/// out from this exact slice, which is what keeps them lined up.
+fn table_columns() -> Vec<Column> {
+    vec![
+        Column::new("Name", Width::Flex(2.0)),
+        Column::new("Kind", Width::Flex(1.0)),
+        // Right-aligned so the digits line up by place value.
+        Column::new("Size", Width::Fixed(px(90.0))).align_end(),
+    ]
+}
+
+/// Rows for the table page. Made-up file listing rather than anything measured
+/// from this repo: a demo that quoted real numbers would be wrong by the next
+/// commit and nothing would notice.
+const TABLE_ROWS: [(&str, &str, u32); 7] = [
+    ("bezel.toml", "Config", 812),
+    ("palette.rs", "Source", 24_930),
+    ("README.md", "Document", 4_216),
+    ("Geist.ttf", "Font", 1_284_400),
+    ("icons/", "Folder", 58),
+    ("theme.json", "Config", 9_004),
+    ("notes.md", "Document", 1_130),
+];
 
 /// The menubar page's menus. Ordinary app chrome, with the two rows worth
 /// showing: a separator, and a disabled item the keyboard steps straight over.
@@ -242,7 +267,7 @@ pub const COMPONENTS: &[Group] = &[
         title: "Data",
         sections: &[
             section("scroll-area", "Scroll area", "crates/ui/src/scroll.rs"),
-            planned("table", "Table"),
+            section("table", "Table", "crates/ui/src/table.rs"),
             planned("tree", "Tree view"),
             planned("virtual-list", "Virtualized list"),
         ],
@@ -274,7 +299,7 @@ pub const COMPONENTS: &[Group] = &[
 /// than derived because the arms cannot be enumerated at runtime; a test keeps
 /// this in step with the [`planned`] rows.
 #[cfg(test)]
-const PLANNED_BODIES: &[&str] = &["pagination", "table", "tree", "virtual-list"];
+const PLANNED_BODIES: &[&str] = &["pagination", "tree", "virtual-list"];
 
 fn section_at(key: &str) -> Option<&'static Section> {
     TABS.iter()
@@ -347,6 +372,11 @@ pub struct Gallery {
     pane_bar: ScrollbarState,
     demo_scroll: gpui::ScrollHandle,
     demo_bar: ScrollbarState,
+    table_scroll: gpui::ScrollHandle,
+    table_bar: ScrollbarState,
+    /// Which column the table page is sorted by. The app's, because the app is
+    /// what has to sort the rows — the table only says what a click meant.
+    table_sort: Option<Sort>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -425,6 +455,9 @@ impl Gallery {
             pane_bar: ScrollbarState::new(),
             demo_scroll: gpui::ScrollHandle::new(),
             demo_bar: ScrollbarState::new(),
+            table_scroll: gpui::ScrollHandle::new(),
+            table_bar: ScrollbarState::new(),
+            table_sort: None,
             last_pressed: None,
             checked: [true, false],
             radio: 0,
@@ -511,6 +544,13 @@ impl Gallery {
     /// What a button does, reached by click and by `enter`/`space` alike.
     fn press(&mut self, label: &'static str, cx: &mut Context<Self>) {
         self.last_pressed = Some(SharedString::from(label));
+        cx.notify();
+    }
+
+    /// A heading was clicked. `next_sort` says what that means; sorting the
+    /// rows is this view's job, since they are this view's rows.
+    fn sort_table(&mut self, column: usize, cx: &mut Context<Self>) {
+        self.table_sort = Some(table::next_sort(self.table_sort, column));
         cx.notify();
     }
 
@@ -1726,7 +1766,97 @@ impl Gallery {
                 )
                 .into_any_element(),
 
-            "table" => todo(&theme, "Deferred", "No design yet.", &[]),
+            "table" => {
+                let columns = table_columns();
+                let mut rows = TABLE_ROWS;
+                if let Some(sort) = self.table_sort {
+                    // bezel never sees the rows: it says what the click meant
+                    // and paints the arrow, and the sorting happens here.
+                    rows.sort_by(|left, right| {
+                        let order = match sort.column {
+                            0 => left.0.cmp(right.0),
+                            1 => left.1.cmp(right.1),
+                            _ => left.2.cmp(&right.2),
+                        };
+                        if sort.ascending {
+                            order
+                        } else {
+                            order.reverse()
+                        }
+                    });
+                }
+                section
+                    .child(hint(
+                        &theme,
+                        "Click a heading to sort, and again to reverse it. The \
+                         header sits outside the scroll container, so it stays \
+                         put while the body moves under it.",
+                    ))
+                    .child(
+                        table::table(&theme)
+                            .child(
+                                table::header(&theme).children(columns.iter().enumerate().map(
+                                    |(index, column)| {
+                                        let sorted = self
+                                            .table_sort
+                                            .filter(|sort| sort.column == index)
+                                            .map(|sort| sort.ascending);
+                                        table::header_cell(&theme, column, sorted)
+                                            .id(SharedString::from(format!("column-{index}")))
+                                            .on_click(cx.listener(move |view, _, _, cx| {
+                                                view.sort_table(index, cx)
+                                            }))
+                                            .into_any_element()
+                                    },
+                                )),
+                            )
+                            .child(
+                                div()
+                                    .relative()
+                                    .h(px(150.0))
+                                    .child(
+                                        div()
+                                            .id("table-body")
+                                            .size_full()
+                                            .overflow_y_scroll()
+                                            .track_scroll(&self.table_scroll)
+                                            .children(rows.iter().enumerate().map(
+                                                |(index, (name, kind, size))| {
+                                                    table::row(
+                                                        &theme,
+                                                        &columns,
+                                                        index == 0,
+                                                        false,
+                                                        vec![
+                                                            SharedString::from(*name)
+                                                                .into_any_element(),
+                                                            div()
+                                                                .text_color(theme.text_muted)
+                                                                .child(SharedString::from(*kind))
+                                                                .into_any_element(),
+                                                            div()
+                                                                .font_family(
+                                                                    theme.font_mono.clone(),
+                                                                )
+                                                                .text_color(theme.text_muted)
+                                                                .child(SharedString::from(
+                                                                    format_size(*size),
+                                                                ))
+                                                                .into_any_element(),
+                                                        ],
+                                                    )
+                                                },
+                                            )),
+                                    )
+                                    .child(scroll::scrollbar(
+                                        "table-bar",
+                                        &self.table_scroll,
+                                        &self.table_bar,
+                                    )),
+                            ),
+                    )
+                    .into_any_element()
+            }
 
             "tree" => todo(&theme, "Deferred", "No design yet.", &[]),
 
@@ -2056,6 +2186,16 @@ fn pressable(
     el.id(id)
         .on_click(cx.listener(move |view, _, _, cx| press(view, cx)))
         .on_action(cx.listener(move |view, _: &focus::Activate, _, cx| by_key(view, cx)))
+}
+
+/// Bytes in the shortest unit that keeps them under four digits — the kind of
+/// formatting a right-aligned column exists for.
+fn format_size(bytes: u32) -> String {
+    match bytes {
+        0..1_000 => format!("{bytes} B"),
+        1_000..1_000_000 => format!("{:.1} kB", bytes as f32 / 1_000.0),
+        _ => format!("{:.1} MB", bytes as f32 / 1_000_000.0),
+    }
 }
 
 /// Today, locally — the one thing [`Calendar`] asks its host for.

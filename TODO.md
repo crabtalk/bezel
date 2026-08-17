@@ -83,6 +83,14 @@ with a pointer is not:
 - [ ] The bar appearing on the frame after a page's content first overflows,
       and vanishing entirely when it fits
 
+The table's reducer is tested and its cell-count guard has teeth; what nothing
+checks is that the columns actually land where the model says:
+
+- [ ] A heading click sorting, and the arrow landing on the clicked column
+- [ ] The header holding still while the body scrolls under it
+- [ ] Header and body cells lining up — the drift the shared column slice is
+      supposed to make impossible, never once looked at
+
 If this becomes a standing need rather than a one-off, the way back is a small
 `bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
 `simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
@@ -114,7 +122,6 @@ Need a real use case before building:
 
 Data surfaces:
 
-- [ ] Table
 - [ ] Tree view
 - [ ] Virtualized list wrapper over gpui `list()`
 
@@ -182,7 +189,7 @@ menubar · checkbox · radio · toggle ·
 badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
-split · scroll area · group box + rows · separator · skeleton rows · alert strips ·
+split · scroll area · table · group box + rows · separator · skeleton rows · alert strips ·
 spinners · icons (58 SVG) · material glass.
 
 Textarea is one `TextField` under a `Shape`, not a second component: `Line`,
@@ -215,6 +222,31 @@ left the caret — so there is no timing threshold to invent. Pushed from
 every keystroke of IME composition would be its own step. Bounded (default 10 *steps*,
 not keystrokes, `with_undo_limit` per field); `set_content` clears both stacks,
 being a programmatic reset rather than something the user did.
+
+Table (`table.rs`) — and the first question it has to answer is when *not* to
+use it. A list of records reads better as `group_box` + `card_row` + `row_title`
++ `meta_line`, which this library already had; a table earns its place only when
+rows are tuples and reading *down* a column is the point.
+
+Which names its own failure: a header and a body that size their own cells drift
+apart the moment either changes, and nothing catches it because both halves look
+right alone. So columns are declared once and shared, and `row` zips its cells
+onto them rather than letting a caller size a cell where it writes it. A row
+short of cells is a caller bug, not a shape to render — the `debug_assert` has a
+`#[should_panic]` test behind it, because a guard nothing exercises is
+decoration.
+
+Sorting is a reducer and nothing else: `next_sort` says what a click on a
+heading meant, the app sorts its own rows, and the table paints the arrow. A new
+column starts ascending rather than inheriting the last one's direction — carry
+it over and clicking a fresh heading can sort it descending, which reads as the
+click having been ignored. `Align` has no `Center`, deliberately. Column resize
+is out until something needs it (`widgets::axis_fraction` is the path, plus
+per-column state), and virtualization stays its own entry.
+
+The gallery page is where the last two commits meet: a sticky header outside a
+scrolling body, with the body's own scrollbar — the table staying out of the
+scrolling business is what lets that compose at all.
 
 Scroll area (`scroll.rs`) — the bar only, not a wrapper: the caller keeps its
 own `overflow_y_scroll` container, because something that swallowed the content
@@ -359,4 +391,4 @@ one required call in the README rather than a contract a reader had to infer.
 
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 120 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 125 tests.
