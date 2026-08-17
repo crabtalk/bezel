@@ -381,11 +381,18 @@ pub const PATTERNS: &[Group] = &[
     },
     Group {
         title: "Media",
-        sections: &[section(
-            "music-player",
-            "Music player",
-            "apps/gallery/src/patterns/music.rs",
-        )],
+        sections: &[
+            section(
+                "document",
+                "Document",
+                "apps/gallery/src/patterns/document.rs",
+            ),
+            section(
+                "music-player",
+                "Music player",
+                "apps/gallery/src/patterns/music.rs",
+            ),
+        ],
     },
 ];
 
@@ -622,6 +629,7 @@ pub struct Gallery {
     activity: Entity<patterns::agent::Activity>,
     tool_calls: Entity<patterns::agent::ToolCalls>,
     music: Entity<patterns::music::MusicPlayer>,
+    document: Entity<patterns::document::Document>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -740,6 +748,7 @@ impl Gallery {
             activity: cx.new(|_| patterns::agent::Activity::default()),
             tool_calls: cx.new(|_| patterns::agent::ToolCalls::default()),
             music: cx.new(|_| patterns::music::MusicPlayer::default()),
+            document: cx.new(|_| patterns::document::Document::default()),
         }
     }
 
@@ -2742,6 +2751,7 @@ impl Gallery {
             "agent-activity" => self.activity.clone().into_any_element(),
             "agent-tools" => self.tool_calls.clone().into_any_element(),
             "music-player" => self.music.clone().into_any_element(),
+            "document" => self.document.clone().into_any_element(),
 
             _ => div().into_any_element(),
         }

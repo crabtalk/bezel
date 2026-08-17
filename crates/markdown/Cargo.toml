@@ -1,0 +1,22 @@
+[package]
+name = "bezel-markdown"
+
+description = "A Notion-style block document model for gpui — markdown in, markdown out"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bezel-theme.workspace = true
+gpui.workspace = true
+pulldown-cmark = { version = "0.13", default-features = false }

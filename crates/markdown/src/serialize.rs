@@ -1,0 +1,677 @@
+//! [`Doc`] → markdown.
+//!
+//! The guarantee is a **fixed point**: `parse(serialize(parse(s)))` equals
+//! `parse(s)` for any input. An edit/save cycle can therefore never drift,
+//! which is the property an editor actually needs — stronger than pretty
+//! output and weaker (honestly so) than byte-identical round tripping, which a
+//! flat model cannot promise for arbitrarily nested CommonMark.
+//!
+//! Escaping is deliberately narrow. Over-escaping is its own bug: escaping `#`
+//! everywhere turns a `#123` reference into `\#123`, which no reader matches.
+//! So `#`, `>`, `-` and friends are escaped only at the start of a line, where
+//! they would actually mean something.
+
+use crate::doc::{Align, Block, BlockKind, Doc, Mark, Text};
+
+/// Four spaces per level: enough to sit inside any list marker's content
+/// column (`- ` is 2, `10. ` is 4), and never enough to become an indented
+/// code block, because a block at depth N+1 always follows its marker at N.
+const INDENT: &str = "    ";
+
+pub fn serialize(doc: &Doc) -> String {
+    let mut out = String::new();
+    let mut previous: Option<(&BlockKind, u8)> = None;
+
+    for block in &doc.blocks {
+        let indent = match previous {
+            Some((_, prev)) => block.indent.min(prev + 1),
+            None => 0,
+        };
+
+        if let Some((prev_kind, _)) = previous {
+            out.push('\n');
+            if !tight_after(prev_kind, &block.kind) {
+                out.push('\n');
+            }
+        }
+
+        write_block(&mut out, &block.kind, indent);
+        previous = Some((&block.kind, indent));
+    }
+
+    out
+}
+
+/// Which list a marker block belongs to. Two markers of different kinds are two
+/// different lists even when they are adjacent.
+fn marker_kind(kind: &BlockKind) -> Option<u8> {
+    match kind {
+        BlockKind::Bullet(_) => Some(0),
+        BlockKind::Ordered { .. } => Some(1),
+        BlockKind::Task { .. } => Some(2),
+        _ => None,
+    }
+}
+
+fn is_marker(kind: &BlockKind) -> bool {
+    marker_kind(kind).is_some()
+}
+
+/// Whether a blank line between these two blocks would be wrong.
+///
+/// Items of one list stay tight: a blank line between them makes the list loose,
+/// and `- a\n- b` should come back out as it went in. A blank line does go
+/// between two *different* lists, which is legal — they were already separate —
+/// and is the difference between a readable document and a wall.
+///
+/// The exception is an *empty* marker, which must stay tight to whatever
+/// follows: CommonMark lets a list item begin with at most one blank line, so a
+/// blank line there ends the list and its child becomes a top-level indented
+/// code block. Everywhere else the blank line is required — without it a child
+/// block is read as a lazy continuation of the item's own text.
+fn tight_after(previous: &BlockKind, next: &BlockKind) -> bool {
+    let empty_marker = is_marker(previous)
+        && Block::new(previous.clone())
+            .text()
+            .is_some_and(Text::is_empty);
+    let same_list = marker_kind(previous).is_some() && marker_kind(previous) == marker_kind(next);
+    same_list || empty_marker
+}
+
+fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
+    let pad = INDENT.repeat(indent as usize);
+
+    match kind {
+        BlockKind::Paragraph(text) => write_lines(out, &pad, &pad, &inline(text)),
+        BlockKind::Heading { level, text } => {
+            let hashes = "#".repeat((*level).clamp(1, 6) as usize);
+            write_lines(out, &format!("{pad}{hashes} "), &pad, &inline(text));
+        }
+        BlockKind::Bullet(text) => write_marked(out, &pad, "- ", text),
+        BlockKind::Ordered { number, text } => {
+            write_marked(out, &pad, &format!("{number}. "), text)
+        }
+        BlockKind::Task { checked, text } => {
+            let marker = if *checked { "- [x] " } else { "- [ ] " };
+            write_marked(out, &pad, marker, text);
+        }
+        BlockKind::Quote(text) => {
+            let prefix = format!("{pad}> ");
+            write_lines(out, &prefix, &prefix, &inline(text));
+        }
+        BlockKind::Code { language, code } => {
+            let fence = "`".repeat(fence_width(code));
+            out.push_str(&pad);
+            out.push_str(&fence);
+            out.push_str(language.as_deref().unwrap_or(""));
+            for line in code.split('\n') {
+                out.push('\n');
+                out.push_str(&pad);
+                out.push_str(line);
+            }
+            out.push('\n');
+            out.push_str(&pad);
+            out.push_str(&fence);
+        }
+        BlockKind::Image { url, alt } => {
+            out.push_str(&pad);
+            out.push_str("![");
+            escape_inline(out, alt);
+            out.push_str("](");
+            out.push_str(url);
+            out.push(')');
+        }
+        BlockKind::Table {
+            align,
+            header,
+            rows,
+        } => write_table(out, &pad, align, header, rows),
+        BlockKind::Rule => {
+            out.push_str(&pad);
+            out.push_str("---");
+        }
+    }
+}
+
+/// A list item: the marker on the first line, its content column on the rest.
+fn write_marked(out: &mut String, pad: &str, marker: &str, text: &Text) {
+    let first = format!("{pad}{marker}");
+    let rest = format!("{pad}{}", " ".repeat(marker.chars().count()));
+    write_lines(out, &first, &rest, &inline(text));
+}
+
+fn write_lines(out: &mut String, first: &str, rest: &str, body: &str) {
+    for (ix, line) in body.split('\n').enumerate() {
+        if ix > 0 {
+            out.push('\n');
+        }
+        out.push_str(if ix == 0 { first } else { rest });
+        out.push_str(line);
+    }
+}
+
+/// Long enough to survive any run of backticks the code itself contains.
+fn fence_width(code: &str) -> usize {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in code.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    (longest + 1).max(3)
+}
+
+fn write_table(out: &mut String, pad: &str, align: &[Align], header: &[Text], rows: &[Vec<Text>]) {
+    let columns = align.len().max(header.len());
+    let row_of = |cells: &[Text]| {
+        let mut line = String::from("|");
+        for ix in 0..columns {
+            line.push(' ');
+            if let Some(cell) = cells.get(ix) {
+                // `escape_span` already escapes the pipes.
+                line.push_str(&inline(cell));
+            }
+            line.push_str(" |");
+        }
+        line
+    };
+
+    out.push_str(pad);
+    out.push_str(&row_of(header));
+    out.push('\n');
+    out.push_str(pad);
+    out.push('|');
+    for ix in 0..columns {
+        out.push_str(match align.get(ix).copied().unwrap_or_default() {
+            Align::Left => " --- |",
+            Align::Center => " :-: |",
+            Align::Right => " ---: |",
+        });
+    }
+    for row in rows {
+        out.push('\n');
+        out.push_str(pad);
+        out.push_str(&row_of(row));
+    }
+}
+
+/// Render inline content with its marks. Marks are stored outermost first, so
+/// opening them in order and closing them in reverse reproduces the nesting —
+/// which is what keeps `**_x_**` and `_**x**_` distinct.
+fn inline(text: &Text) -> String {
+    let mut out = String::new();
+    let mut open: Vec<usize> = Vec::new();
+    let mut started = vec![false; text.marks.len()];
+    let mut cursor = 0usize;
+
+    let mut boundaries: Vec<usize> = text
+        .marks
+        .iter()
+        .flat_map(|m| [m.range.start, m.range.end])
+        .chain([0, text.text.len()])
+        .collect();
+    boundaries.sort_unstable();
+    boundaries.dedup();
+
+    for point in boundaries {
+        if point < cursor {
+            continue;
+        }
+        escape_inline(&mut out, &text.text[cursor..point]);
+        cursor = point;
+
+        while let Some(&top) = open.last() {
+            if text.marks[top].range.end <= point {
+                let span = &text.marks[top];
+                close_mark(&mut out, &span.mark, italic_delimiter(text, &span.range));
+                open.pop();
+            } else {
+                break;
+            }
+        }
+
+        for (ix, span) in text.marks.iter().enumerate() {
+            if started[ix] || span.range.start != point {
+                continue;
+            }
+            started[ix] = true;
+            // Code spans are literal to their closing backtick: nothing inside
+            // is markup, so they are emitted whole rather than opened.
+            if span.mark == Mark::Code {
+                let body = &text.text[span.range.clone()];
+                let ticks = "`".repeat(fence_width_inline(body));
+                out.push_str(&ticks);
+                out.push_str(body);
+                out.push_str(&ticks);
+                cursor = cursor.max(span.range.end);
+                continue;
+            }
+            let italic = italic_delimiter(text, &span.range);
+            open_mark(&mut out, &span.mark, italic);
+            // A mark over nothing — an image with no alt text — closes here.
+            // Leaving it on the stack would stretch it to the next boundary.
+            if span.range.is_empty() {
+                close_mark(&mut out, &span.mark, italic);
+            } else {
+                open.push(ix);
+            }
+        }
+    }
+
+    escape_inline(&mut out, &text.text[cursor.min(text.text.len())..]);
+    while let Some(ix) = open.pop() {
+        let span = &text.marks[ix];
+        close_mark(&mut out, &span.mark, italic_delimiter(text, &span.range));
+    }
+    out
+}
+
+fn fence_width_inline(body: &str) -> usize {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in body.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    longest + 1
+}
+
+/// Which delimiter spells italic for this span.
+///
+/// `_` is preferred because it nests unambiguously inside `**` — `***x***` is
+/// read as emphasis wrapping strong, so writing bold-outside-italic with stars
+/// would come back inside out. But `_` cannot open or close against a letter,
+/// so an emphasis that starts or ends mid-word has to use `*` or it will not
+/// parse back at all.
+fn italic_delimiter(text: &Text, range: &std::ops::Range<usize>) -> char {
+    let intraword = text.text[..range.start]
+        .chars()
+        .next_back()
+        .is_some_and(char::is_alphanumeric)
+        || text.text[range.end..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric);
+    if intraword { '*' } else { '_' }
+}
+
+fn open_mark(out: &mut String, mark: &Mark, italic: char) {
+    match mark {
+        Mark::Bold => out.push_str("**"),
+        Mark::Italic => out.push(italic),
+        Mark::Strike => out.push_str("~~"),
+        Mark::Link(_) => out.push('['),
+        Mark::Image(_) => out.push_str("!["),
+        Mark::Code => {}
+    }
+}
+
+fn close_mark(out: &mut String, mark: &Mark, italic: char) {
+    match mark {
+        Mark::Bold => out.push_str("**"),
+        Mark::Italic => out.push(italic),
+        Mark::Strike => out.push_str("~~"),
+        Mark::Link(url) | Mark::Image(url) => {
+            out.push_str("](");
+            out.push_str(url);
+            out.push(')');
+        }
+        Mark::Code => {}
+    }
+}
+
+/// Escape only what would otherwise re-parse as syntax.
+///
+/// Called with slices between mark boundaries, so "line start" means the start
+/// of a line in the *output*, not in the slice.
+fn escape_inline(out: &mut String, s: &str) {
+    let mut line_start = out.is_empty() || out.ends_with('\n');
+    for (ix, line) in s.split('\n').enumerate() {
+        if ix > 0 {
+            out.push('\n');
+            line_start = true;
+        }
+        let body = if line_start {
+            escape_block_marker(out, line)
+        } else {
+            line
+        };
+        escape_span(out, body);
+        line_start = false;
+    }
+}
+
+/// Escape a leading run that would open a block, returning what is left of the
+/// line. Only ever fires at a line start — mid-line these characters are
+/// ordinary text, and escaping them there is what turns `#123` into `\#123`.
+fn escape_block_marker<'a>(out: &mut String, line: &'a str) -> &'a str {
+    let after_space = |rest: &str| rest.starts_with([' ', '\t']) || rest.is_empty();
+
+    let hashes = line.len() - line.trim_start_matches('#').len();
+    if hashes > 0 && after_space(&line[hashes..]) {
+        out.push('\\');
+        out.push_str(&line[..hashes]);
+        return &line[hashes..];
+    }
+
+    if let Some(rest) = line.strip_prefix('>') {
+        out.push_str("\\>");
+        return rest;
+    }
+
+    // `*` is escaped by `escape_span` wherever it appears, so only `-` and `+`
+    // need catching here.
+    if (line.starts_with('-') || line.starts_with('+')) && after_space(&line[1..]) {
+        out.push('\\');
+        out.push_str(&line[..1]);
+        return &line[1..];
+    }
+
+    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    if digits > 0 {
+        let after = &line[digits..];
+        if (after.starts_with('.') || after.starts_with(')')) && after_space(&after[1..]) {
+            out.push_str(&line[..digits]);
+            out.push('\\');
+            out.push_str(&after[..1]);
+            return &after[1..];
+        }
+    }
+
+    // A run of `-` or `=` alone is a thematic break or a setext underline.
+    let trimmed = line.trim_end();
+    if !trimmed.is_empty() && trimmed.chars().all(|c| c == '=' || c == '-') {
+        out.push('\\');
+        out.push_str(&line[..1]);
+        return &line[1..];
+    }
+
+    line
+}
+
+/// Per-character escaping within one line.
+fn escape_span(out: &mut String, s: &str) {
+    for (ix, c) in s.char_indices() {
+        let rest = &s[ix + c.len_utf8()..];
+        match c {
+            // Every tilde, not just a doubled one: GFM strikes on `~x~` as
+            // well, so escaping only the first of a pair leaves the survivors
+            // to find each other. Pipes are here because two consecutive body
+            // lines that happen to look like a header and a delimiter row will
+            // otherwise reconstitute themselves into a table.
+            '\\' | '*' | '`' | '[' | ']' | '~' | '|' => {
+                out.push('\\');
+                out.push(c);
+            }
+            // Intraword underscores are not emphasis in CommonMark, and
+            // escaping them would mangle every snake_case identifier.
+            '_' => {
+                let before = s[..ix].chars().next_back();
+                let inside_word = before.is_some_and(char::is_alphanumeric)
+                    && rest.chars().next().is_some_and(char::is_alphanumeric);
+                if !inside_word {
+                    out.push('\\');
+                }
+                out.push('_');
+            }
+            // `<` matters for autolinks and raw tags, not for `1 < 2`.
+            '<' if rest
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || matches!(c, '/' | '!' | '?')) =>
+            {
+                out.push_str("\\<")
+            }
+            '&' if rest
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '#') =>
+            {
+                out.push_str("\\&")
+            }
+            _ => out.push(c),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse::parse;
+
+    /// Markdown already in the form this serializer emits. These must survive
+    /// byte for byte — anything less means opening a note and saving it without
+    /// touching it would rewrite the file.
+    const CANONICAL: &[&str] = &[
+        "Hello",
+        "a\nb",
+        "# Title",
+        "###### Deep",
+        "# Title\n\nBody",
+        "**bold** and _italic_ and ~~struck~~",
+        "**_x_**",
+        "_**x**_",
+        "`code` inline",
+        "[link](https://example.com)",
+        "- a\n- b",
+        "- a\n    - b\n- c",
+        "1. a\n2. b",
+        "3. c\n4. d",
+        "- [ ] todo\n- [x] done",
+        "> quoted",
+        "```rust\nfn main() {}\n```",
+        "```\nplain\n```",
+        "---",
+        "![alt](media://x)",
+        "![](media://x)",
+        "| a | b |\n| --- | ---: |\n| 1 | 2 |",
+        "# Title\n\n- a\n- b\n\n> note\n\n```sh\nls\n```",
+        "snake_case stays intact",
+        "a #123 reference",
+        "1 < 2 & 3 > 0",
+        "- a\n\n    child paragraph",
+    ];
+
+    /// Markdown that legitimately gets rewritten — escaping added, nesting
+    /// flattened, alignment normalized. The guarantee here is only that the
+    /// rewrite settles after one pass.
+    const NON_CANONICAL: &[&str] = &[
+        "star * and under _ alone",
+        "a [bracket] in text",
+        "trailing  spaces  kept",
+        "> - quoted bullet",
+        "- > bulleted quote",
+        "> # heading in a quote",
+        "- a\n            - overdeep",
+        ">>> deep quote",
+        "1) paren ordered",
+        "* star bullet",
+        "+ plus bullet",
+        "Setext\n======",
+        "| a |\n| :-: |\n| c |",
+        "<div>raw html</div>",
+        "text with <span>inline</span> html",
+        "AT&T and &amp; entities",
+        "- [ ] nested\n    - [x] task",
+        "1. a\n\n    ```\n    code\n    ```",
+        "",
+        "\n\n\n",
+    ];
+
+    #[test]
+    fn serializing_a_parse_is_a_fixed_point() {
+        for source in CANONICAL.iter().chain(NON_CANONICAL) {
+            let once = parse(source);
+            let text = serialize(&once);
+            let twice = parse(&text);
+            assert_eq!(
+                once, twice,
+                "not a fixed point\n--- source ---\n{source}\n--- serialized ---\n{text}\n"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_input_survives_byte_for_byte() {
+        for source in CANONICAL {
+            let text = serialize(&parse(source));
+            assert_eq!(text, *source, "canonical form drifted");
+        }
+    }
+
+    #[test]
+    fn every_document_satisfies_the_indent_invariant() {
+        // The serializer's indentation is only sound because of this.
+        for source in CANONICAL.iter().chain(NON_CANONICAL) {
+            let mut previous: Option<u8> = None;
+            for block in &parse(source).blocks {
+                let max = previous.map_or(0, |p| p + 1);
+                assert!(block.indent <= max, "{source:?}: indent {}", block.indent);
+                previous = Some(block.indent);
+            }
+        }
+    }
+
+    #[test]
+    fn mark_nesting_order_survives() {
+        assert_eq!(serialize(&parse("**_x_**")), "**_x_**");
+        assert_eq!(serialize(&parse("_**x**_")), "_**x**_");
+    }
+
+    #[test]
+    fn a_hash_reference_is_not_escaped() {
+        // The bug that made desktop's `markdown.ts` necessary: a `#123` ref
+        // escaped to `\#123` matches no reader.
+        assert_eq!(serialize(&parse("see #123 now")), "see #123 now");
+        assert_eq!(serialize(&parse("#123 at the start")), "#123 at the start");
+    }
+
+    #[test]
+    fn a_heading_in_body_text_is_escaped() {
+        let doc = Doc {
+            blocks: vec![Block::new(BlockKind::Paragraph(Text::plain(
+                "# not a heading",
+            )))],
+        };
+        let text = serialize(&doc);
+        assert_eq!(text, "\\# not a heading");
+        assert_eq!(parse(&text), doc);
+    }
+
+    #[test]
+    fn text_that_looks_like_a_list_is_escaped() {
+        for body in ["- item", "1. item", "> quote", "+ item"] {
+            let doc = Doc {
+                blocks: vec![Block::new(BlockKind::Paragraph(Text::plain(body)))],
+            };
+            assert_eq!(parse(&serialize(&doc)), doc, "{body:?} did not survive");
+        }
+    }
+
+    #[test]
+    fn code_containing_a_fence_gets_a_longer_one() {
+        let doc = Doc {
+            blocks: vec![Block::new(BlockKind::Code {
+                language: None,
+                code: "```\nnested\n```".into(),
+            })],
+        };
+        assert_eq!(parse(&serialize(&doc)), doc);
+    }
+
+    #[test]
+    fn an_empty_document_serializes_to_nothing() {
+        assert_eq!(serialize(&Doc::default()), "");
+        assert_eq!(parse(""), Doc::default());
+    }
+
+    /// Line fragments to shuffle into documents no one would think to write.
+    /// The point of the generative test is exactly the combinations a
+    /// hand-written corpus misses, so the awkward ones earn their place here.
+    const FRAGMENTS: &[&str] = &[
+        "# h",
+        "###### deep",
+        "text",
+        "- a",
+        "- b",
+        "1. a",
+        "2. b",
+        "9) paren",
+        "> q",
+        "```",
+        "```rust",
+        "    indented",
+        "| a | b |",
+        "| --- | ---: |",
+        "| 1 | 2 |",
+        "---",
+        "***",
+        "",
+        "    - nested",
+        "        deep cont",
+        "- [ ] t",
+        "- [x] d",
+        "**bold** tail",
+        "_it_ tail",
+        "`code` tail",
+        "[l](u) tail",
+        "![](i)",
+        "![alt](i)",
+        "a*b",
+        "a_b_c",
+        "#123",
+        "1 < 2 & 3",
+        "AT&T",
+        "\\# escaped",
+        "~~s~~",
+        "   ",
+        "> - x",
+        "- > x",
+        "<div>",
+        "a <span> b",
+        "trailing \\",
+        "**unclosed",
+        "| ragged |",
+        "setext",
+        "======",
+    ];
+
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> usize {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (self.0 >> 33) as usize
+        }
+    }
+
+    #[test]
+    fn the_fixed_point_holds_for_generated_documents() {
+        let mut rng = Rng(0x5eed);
+        for case in 0..20_000 {
+            let lines = 1 + rng.next() % 8;
+            let source = (0..lines)
+                .map(|_| FRAGMENTS[rng.next() % FRAGMENTS.len()])
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let once = parse(&source);
+            let text = serialize(&once);
+            let twice = parse(&text);
+            assert_eq!(
+                once, twice,
+                "case {case} is not a fixed point\n--- source ---\n{source}\n--- serialized ---\n{text}\n"
+            );
+
+            // And it must stay put: a third pass changes nothing either.
+            assert_eq!(
+                serialize(&twice),
+                text,
+                "case {case} drifted on a second pass"
+            );
+        }
+    }
+}

@@ -5,4 +5,5 @@
 //! rather than into `crates/`, because the pattern is the code you take.
 
 pub mod agent;
+pub mod document;
 pub mod music;

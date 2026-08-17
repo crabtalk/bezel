@@ -11,6 +11,7 @@ crates/bezel     the facade               (one dependency, peer namespaces)
 crates/theme     tokens + appearance      (the @Environment layer)
 crates/motion    animation vocabulary     (the Animation/transition layer)
 crates/ui        components               (the View layer)
+crates/markdown  block document model     (markdown in, markdown out)
 apps/gallery     the documentation — a rail of every component, live
 ```
 
@@ -39,6 +40,31 @@ button. Those crates do not exist, and a feature that gates nothing is
 machinery for its own sake — they arrive together. Depending on a single layer
 directly stays supported: the token system alone is useful to anyone writing
 their own gpui components.
+
+## The markdown model
+
+`bezel-markdown` is a **flat list of blocks with an indent level**, not a
+nested tree — Notion's shape rather than CommonMark's. The reason is editing:
+on a flat list, Enter splits, Backspace merges and Tab indents, all list
+operations; on a tree, "the previous block" is a traversal and every edit is a
+restructure. Inline formatting is a list of marks over byte ranges rather than
+flags on a run, because an editor has to *map* marks through insertions, and
+because flags lose nesting order — under flags `**_x_**` and `_**x**_` are the
+same value.
+
+Markdown is the wire form, so `parse` and `serialize` are inverses up to a
+**fixed point**: parse, serialize, parse again, and the document is unchanged.
+That is what an edit/save cycle needs and it is what the tests enforce, over a
+canonical corpus and 20,000 generated documents. Byte-identical round tripping
+is deliberately *not* promised — a flat model cannot represent arbitrarily
+nested CommonMark, and neither can Notion.
+
+`doc`, `parse` and `serialize` are pure — no gpui, no painting. `render` is the
+gpui layer over them: a flat block list means nesting is left padding rather
+than nested containers, and the gap between two blocks is decided by the pair,
+so items of one list sit tight while a new list gets air. Editing is a layer
+above both and lives elsewhere — it needs `bezel-ui`, and this crate stays light
+so a read-only consumer never compiles a popover to show a paragraph.
 
 ## Laws
 
