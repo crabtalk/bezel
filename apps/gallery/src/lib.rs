@@ -6,6 +6,8 @@
 //! composed exactly once, so the browser is never out of date with the library
 //! it documents.
 
+use std::collections::HashSet;
+
 use bezel_theme::Theme;
 use bezel_theme::appearance::{self, AppearanceMode};
 use bezel_ui::combobox::Combobox;
@@ -17,6 +19,7 @@ use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::scroll::{self, ScrollbarState};
 use bezel_ui::table::{self, Column, Sort, Width};
 use bezel_ui::tooltip::Tooltip;
+use bezel_ui::tree::{self, Direction, Move};
 use bezel_ui::widgets::{SliderDrag, SplitDrag};
 use bezel_ui::{focus, icons, loaders, popover, widgets};
 use gpui::{
@@ -59,6 +62,97 @@ const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
 /// owns the value decides what they are worth.
 const SLIDER_STEP: f32 = 0.05;
+
+/// The tree page's data. A nested structure the *app* owns — bezel never sees
+/// one, which is why [`Gallery::tree_rows`] below exists.
+struct Node {
+    name: &'static str,
+    children: &'static [Node],
+}
+
+const FILE_TREE: &[Node] = &[
+    Node {
+        name: "crates",
+        children: &[
+            Node {
+                name: "ui",
+                children: &[
+                    Node {
+                        name: "table.rs",
+                        children: &[],
+                    },
+                    Node {
+                        name: "tree.rs",
+                        children: &[],
+                    },
+                ],
+            },
+            Node {
+                name: "theme",
+                children: &[Node {
+                    name: "lib.rs",
+                    children: &[],
+                }],
+            },
+        ],
+    },
+    Node {
+        name: "apps",
+        children: &[Node {
+            name: "gallery",
+            children: &[Node {
+                name: "main.rs",
+                children: &[],
+            }],
+        }],
+    },
+    Node {
+        name: "README.md",
+        children: &[],
+    },
+];
+
+/// One flattened row: what bezel needs to paint and navigate it, plus what this
+/// app needs to identify it again.
+struct TreeRow {
+    row: tree::Row,
+    label: &'static str,
+    path: String,
+}
+
+/// Flatten the open parts of [`FILE_TREE`] into visible rows.
+///
+/// This is the function every consumer of `tree` writes, and the reason the
+/// module asks for a flat list: bezel cannot walk a tree it knows nothing
+/// about, and the app has to produce these rows to render them anyway.
+fn flatten_tree(
+    nodes: &'static [Node],
+    depth: usize,
+    prefix: &str,
+    expanded: &HashSet<String>,
+    out: &mut Vec<TreeRow>,
+) {
+    for node in nodes {
+        let path = if prefix.is_empty() {
+            node.name.to_string()
+        } else {
+            format!("{prefix}/{}", node.name)
+        };
+        let open = expanded.contains(&path);
+        out.push(TreeRow {
+            row: if node.children.is_empty() {
+                tree::Row::leaf(depth)
+            } else {
+                tree::Row::branch(depth, open)
+            },
+            label: node.name,
+            path: path.clone(),
+        });
+        if open {
+            flatten_tree(node.children, depth + 1, &path, expanded, out);
+        }
+    }
+}
 
 /// The table page's columns, declared once — the header and every row are laid
 /// out from this exact slice, which is what keeps them lined up.
@@ -268,7 +362,7 @@ pub const COMPONENTS: &[Group] = &[
         sections: &[
             section("scroll-area", "Scroll area", "crates/ui/src/scroll.rs"),
             section("table", "Table", "crates/ui/src/table.rs"),
-            planned("tree", "Tree view"),
+            section("tree", "Tree view", "crates/ui/src/tree.rs"),
             planned("virtual-list", "Virtualized list"),
         ],
     },
@@ -299,7 +393,7 @@ pub const COMPONENTS: &[Group] = &[
 /// than derived because the arms cannot be enumerated at runtime; a test keeps
 /// this in step with the [`planned`] rows.
 #[cfg(test)]
-const PLANNED_BODIES: &[&str] = &["pagination", "tree", "virtual-list"];
+const PLANNED_BODIES: &[&str] = &["pagination", "virtual-list"];
 
 fn section_at(key: &str) -> Option<&'static Section> {
     TABS.iter()
@@ -374,6 +468,14 @@ pub struct Gallery {
     demo_bar: ScrollbarState,
     table_scroll: gpui::ScrollHandle,
     table_bar: ScrollbarState,
+    tree_scroll: gpui::ScrollHandle,
+    tree_bar: ScrollbarState,
+    /// Which folders are open, by path. App data, and the reason `tree` reports
+    /// an intent rather than expanding anything itself.
+    tree_expanded: HashSet<String>,
+    tree_selected: Option<String>,
+    tree_cursor: usize,
+    tree_focus: gpui::FocusHandle,
     /// Which column the table page is sorted by. The app's, because the app is
     /// what has to sort the rows — the table only says what a click meant.
     table_sort: Option<Sort>,
@@ -458,6 +560,17 @@ impl Gallery {
             table_scroll: gpui::ScrollHandle::new(),
             table_bar: ScrollbarState::new(),
             table_sort: None,
+            tree_scroll: gpui::ScrollHandle::new(),
+            tree_bar: ScrollbarState::new(),
+            // Opened so the page shows nesting on arrival rather than a flat
+            // list of two folders.
+            tree_expanded: ["crates", "crates/ui"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            tree_selected: None,
+            tree_cursor: 0,
+            tree_focus: cx.focus_handle().tab_stop(true),
             last_pressed: None,
             checked: [true, false],
             radio: 0,
@@ -544,6 +657,50 @@ impl Gallery {
     /// What a button does, reached by click and by `enter`/`space` alike.
     fn press(&mut self, label: &'static str, cx: &mut Context<Self>) {
         self.last_pressed = Some(SharedString::from(label));
+        cx.notify();
+    }
+
+    /// The visible rows, rebuilt from this view's own tree and its own set of
+    /// open folders.
+    fn tree_rows(&self) -> Vec<TreeRow> {
+        let mut rows = Vec::new();
+        flatten_tree(FILE_TREE, 0, "", &self.tree_expanded, &mut rows);
+        rows
+    }
+
+    /// An arrow key. `tree::step` decides what it meant; applying it is this
+    /// view's job, because the set of open folders is this view's.
+    fn tree_step(&mut self, direction: Direction, cx: &mut Context<Self>) {
+        let rows = self.tree_rows();
+        let shape: Vec<tree::Row> = rows.iter().map(|entry| entry.row).collect();
+        match tree::step(&shape, self.tree_cursor, direction) {
+            Some(Move::To(index)) => self.tree_cursor = index,
+            Some(Move::Expand(index)) => {
+                self.tree_expanded.insert(rows[index].path.clone());
+            }
+            Some(Move::Collapse(index)) => {
+                self.tree_expanded.remove(&rows[index].path);
+            }
+            None => {}
+        }
+        cx.notify();
+    }
+
+    /// A click: a folder opens or closes, a file is chosen. Both move the
+    /// keyboard cursor, so the two ways of getting around agree on where you
+    /// are.
+    fn tree_click(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let rows = self.tree_rows();
+        let Some(entry) = rows.get(index) else { return };
+        self.tree_cursor = index;
+        if entry.row.expanded.is_some() {
+            if !self.tree_expanded.remove(&entry.path) {
+                self.tree_expanded.insert(entry.path.clone());
+            }
+        } else {
+            self.tree_selected = Some(entry.path.clone());
+        }
+        window.focus(&self.tree_focus, cx);
         cx.notify();
     }
 
@@ -1858,7 +2015,76 @@ impl Gallery {
                     .into_any_element()
             }
 
-            "tree" => todo(&theme, "Deferred", "No design yet.", &[]),
+            "tree" => {
+                let rows = self.tree_rows();
+                section
+                    .child(hint(
+                        &theme,
+                        "Click a folder to open it, a file to choose it. The \
+                         arrows walk the same rows: right opens a folder or \
+                         steps into it, left closes it or leaves for its parent.",
+                    ))
+                    .child(
+                        div()
+                            .key_context(tree::KEY_CONTEXT)
+                            .track_focus(&self.tree_focus)
+                            .on_action(cx.listener(|view, _: &tree::SelectPrevious, _, cx| {
+                                view.tree_step(Direction::Up, cx)
+                            }))
+                            .on_action(cx.listener(|view, _: &tree::SelectNext, _, cx| {
+                                view.tree_step(Direction::Down, cx)
+                            }))
+                            .on_action(cx.listener(|view, _: &tree::Collapse, _, cx| {
+                                view.tree_step(Direction::Left, cx)
+                            }))
+                            .on_action(cx.listener(|view, _: &tree::Expand, _, cx| {
+                                view.tree_step(Direction::Right, cx)
+                            }))
+                            .relative()
+                            .h(px(200.0))
+                            .w_full()
+                            .rounded(px(Theme::PANEL_RADIUS))
+                            .border_1()
+                            .border_color(theme.border)
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .id("tree-body")
+                                    .size_full()
+                                    .overflow_y_scroll()
+                                    .track_scroll(&self.tree_scroll)
+                                    .child(tree::tree().p(px(6.0)).children(
+                                        rows.iter().enumerate().map(|(index, entry)| {
+                                            tree::tree_row(
+                                                &theme,
+                                                &entry.row,
+                                                self.tree_selected.as_deref() == Some(&entry.path),
+                                                index == self.tree_cursor,
+                                            )
+                                            .id(SharedString::from(format!("tree-{index}")))
+                                            .on_click(cx.listener(move |view, _, window, cx| {
+                                                view.tree_click(index, window, cx)
+                                            }))
+                                            .child(SharedString::from(entry.label))
+                                        }),
+                                    )),
+                            )
+                            .child(scroll::scrollbar(
+                                "tree-bar",
+                                &self.tree_scroll,
+                                &self.tree_bar,
+                            )),
+                    )
+                    .when_some(self.tree_selected.clone(), |page, path| {
+                        page.child(
+                            div()
+                                .text_size(px(12.5))
+                                .text_color(theme.text_muted)
+                                .child(SharedString::from(format!("chosen: {path}"))),
+                        )
+                    })
+                    .into_any_element()
+            }
 
             "virtual-list" => todo(&theme, "Deferred", "A wrapper over gpui's list().", &[]),
 

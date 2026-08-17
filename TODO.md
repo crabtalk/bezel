@@ -91,6 +91,15 @@ checks is that the columns actually land where the model says:
 - [ ] Header and body cells lining up — the drift the shared column slice is
       supposed to make impossible, never once looked at
 
+The tree's reducers are six tests deep and its paint is not:
+
+- [ ] Clicking a folder opening it, and a file reading as chosen
+- [ ] The arrows walking, opening and collapsing — `tab` reaching the tree at
+      all, since it is one stop and the rows are not
+- [ ] Indent guides landing under their parent's chevron rather than beside it,
+      which is the one number (`INDENT` against the chevron slot) that nothing
+      checks
+
 If this becomes a standing need rather than a one-off, the way back is a small
 `bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
 `simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
@@ -122,7 +131,6 @@ Need a real use case before building:
 
 Data surfaces:
 
-- [ ] Tree view
 - [ ] Virtualized list wrapper over gpui `list()`
 
 Heavy extractions from comet (ports, not new design):
@@ -189,7 +197,7 @@ menubar · checkbox · radio · toggle ·
 badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
-split · scroll area · table · group box + rows · separator · skeleton rows · alert strips ·
+split · scroll area · table · tree view · group box + rows · separator · skeleton rows · alert strips ·
 spinners · icons (58 SVG) · material glass.
 
 Textarea is one `TextField` under a `Shape`, not a second component: `Line`,
@@ -222,6 +230,34 @@ left the caret — so there is no timing threshold to invent. Pushed from
 every keystroke of IME composition would be its own step. Bounded (default 10 *steps*,
 not keystrokes, `with_undo_limit` per field); `set_content` clears both stacks,
 being a programmatic reset rather than something the user did.
+
+Tree view (`tree.rs`) — the design is one observation: **a depth-annotated flat
+list is a complete navigation model.** bezel cannot walk an app's tree (it has
+no idea what a node is, and a trait to find out would be a data model this
+library does not want), so the app flattens the open parts into visible rows —
+which it must do to render them anyway. Everything then falls out of that list
+with no parent pointers and no walk: up and down are neighbouring indices, a
+first child is the next row, and a parent is the nearest row above of smaller
+depth. `parent_of` is the only piece with any subtlety, because the row directly
+above is usually a sibling or the last leaf of a sibling's whole subtree.
+
+`step` reports an intent — `To`/`Expand`/`Collapse` — rather than mutating,
+since only the app can open a node; it owns the set, and a file tree's open
+folders often outlive the window. Keys follow `focus.rs`: bezel names the four
+chords everyone agrees on and publishes the actions, the app handles them. That
+also drew the line between this and the menubar, which *can* handle its own keys
+because it owns everything they touch.
+
+Neither end wraps, deliberately. A menu wraps because it is a ring of choices; a
+tree is a document, and arriving back at the top because you pressed down once
+too often loses your place. Indent guides are per-row segments — one bordered
+div per ancestor level — so the line runs continuously down the page without any
+element spanning rows or knowing its neighbours, and leaves keep an empty
+chevron slot so their labels line up with their siblings'.
+
+One test caught a wrong assumption in its own test rather than in the code:
+`left` on an open root branch collapses it, and only a row with nothing left to
+close goes looking for a parent.
 
 Table (`table.rs`) — and the first question it has to answer is when *not* to
 use it. A list of records reads better as `group_box` + `card_row` + `row_title`
@@ -391,4 +427,4 @@ one required call in the README rather than a contract a reader had to infer.
 
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 125 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 131 tests.
