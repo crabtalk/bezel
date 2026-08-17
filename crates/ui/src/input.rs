@@ -1207,7 +1207,7 @@ impl Render for TextField {
             .w_full()
             .px(px(10.0))
             .py(px(7.0))
-            .rounded(px(8.0))
+            .rounded(px(Theme::BUTTON_RADIUS))
             .bg(theme.input_bg)
             .border_1()
             .border_color(if self.focus_handle.is_focused(_window) {

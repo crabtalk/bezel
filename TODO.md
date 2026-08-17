@@ -255,6 +255,47 @@ displayed position detaches from it while held — otherwise a playing track
 drags the thumb out from under the pointer, which reads as a seek bar that
 fights you.
 
+Corner radii, bound and derived. The crate painted **nine** distinct radii
+across thirty sites; three had names. It now paints **three** literals across
+seven, and the reason is not tidiness.
+
+`material` takes a corner radius and paints the backdrop blur to it, so a glass
+surface states its radius twice — once on its border, once under it. Those two
+had drifted apart into separate literals: `popover_card` wrote `12.0` and
+`material_menu` wrote `12.0` sixty lines away in a different function, the
+palette wrote a third, and `modal_glass` took a fourth as a **parameter** whose
+doc read *"must match the card's rounding"* — the footgun handed to the caller
+in writing. Nothing enforced any of it, and a mismatch shows only on glass and
+only at the corners. `Theme::SURFACE_RADIUS` is now read at both ends, and
+`modal_glass` lost the parameter (it had no callers at all, which is worth
+knowing separately).
+
+The rest came from asking what SwiftUI's standard is, and finding it isn't a
+scale. SwiftUI has no radius tokens: it has `ContainerRelativeShape`,
+`.containerShape()` and `ConcentricRectangle`, and the rule is that a child's
+radius is its container's *minus the inset*. Checked against this tree, the rule
+was already here and unnamed — `popover_card` is 12 with a 4px inset, and **8.0
+was the crate's most-repeated corner value**. It was never a token; it was
+arithmetic nobody had written down. `Theme::inset_radius` writes it down, and
+four sites now derive rather than declare: `menu_row`, `search_input_frame`,
+`menubar`'s disabled row, and `toggle_group_item` (a track of 9 inset by 2 —
+the second concentric pair, found the same way).
+
+gpui has no continuous corners (`grep -rn "continuous\|squircle\|superellipse"`
+over its source finds nothing relevant), so the squircle half of Apple's answer
+is off the table without a renderer change on the fork.
+
+Only one value was left worth naming: 8.0 at the eight sites that genuinely
+*chose* it — buttons, text fields, select triggers — now `BUTTON_RADIUS`, a
+size up from `CONTROL_RADIUS`'s chips and tags. What remains literal is 7.0 ×3
+(paginator buttons, calendar cells), 5.0 ×2 (key caps) and 4.0 ×2 (checkbox,
+slider): small, standalone, and concentric with nothing. Naming them would be
+inventing a taxonomy rather than recording one.
+
+No trait. The card "types" are `fn(&Theme) -> Div`, not types, and no call site
+is polymorphic — nothing holds a `Box<dyn Card>` or is generic over one. What
+they share is a number and an invariant, which is a value and a `const fn`.
+
 Control bar (`control_bar.rs`) — a glass surface holding a leading cluster, an
 optional centre and a trailing cluster. Named for the job, not the shape, and
 the module is the evidence: of everything it does, only one line was ever

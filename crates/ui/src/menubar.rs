@@ -347,7 +347,7 @@ pub fn menubar_title(theme: &Theme, label: impl Into<SharedString>, open: bool) 
     let title = div()
         .px(px(8.0))
         .py(px(3.0))
-        .rounded(px(6.0))
+        .rounded(px(Theme::CONTROL_RADIUS))
         .text_size(px(13.0))
         .cursor_pointer()
         .child(label.into());
@@ -380,7 +380,12 @@ fn disabled_row(theme: &Theme, label: SharedString, keystroke: Option<SharedStri
         .gap(px(10.0))
         .px(px(8.0))
         .py(px(6.0))
-        .rounded(px(8.0))
+        // The disabled twin of `popover::menu_row`, in the same card — so it
+        // takes its corners from the same rule rather than a matching literal.
+        .rounded(px(Theme::inset_radius(
+            Theme::SURFACE_RADIUS,
+            popover::MENU_PAD,
+        )))
         .text_size(px(13.0))
         .text_color(theme.text_faint)
         .child(label)

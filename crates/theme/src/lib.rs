@@ -436,10 +436,40 @@ impl Theme {
     pub const TRANSCRIPT_FADE_BAND: f32 = 24.0;
     /// Message bubble corner radius.
     pub const BUBBLE_RADIUS: f32 = 16.0;
+    /// Floating-surface corner radius — popovers, menus, the command palette,
+    /// group boxes.
+    ///
+    /// A glass surface paints this on its border **and** hands the same number
+    /// to `bezel::ui::material`'s backdrop blur. The two must agree: a blur cut
+    /// to a different radius frosts square corners outside a round border, and
+    /// it shows only on glass and only at the corners. So the radius is named
+    /// once and read at both ends, rather than written twice sixty lines apart
+    /// — which is how three independent `12.0`s came to exist here.
+    pub const SURFACE_RADIUS: f32 = 12.0;
     /// Panel / card corner radius.
     pub const PANEL_RADIUS: f32 = 10.0;
-    /// Small control radius (buttons, chips).
+    /// Button, text field and select-trigger radius — the crate's most-used
+    /// corner after the derived ones, and unnamed until the concentric pass
+    /// separated the eight sites that *chose* 8.0 from the ones that only
+    /// arrived at it as `12 − 4`.
+    pub const BUTTON_RADIUS: f32 = 8.0;
+    /// Small control radius (chips, tags, steppers) — a size down from
+    /// [`Self::BUTTON_RADIUS`], for things that sit inside a control rather
+    /// than being one.
     pub const CONTROL_RADIUS: f32 = 6.0;
+
+    /// The concentric child of a surface: a row inset by `inset` inside a
+    /// container of radius `outer` keeps its corners parallel to the
+    /// container's, rather than looking pasted onto it.
+    ///
+    /// This is SwiftUI's `ContainerRelativeShape` rule done as arithmetic. gpui
+    /// has no container shape to inherit at paint time, so the relationship is
+    /// stated where the child is *defined* instead of resolved at runtime —
+    /// which means a container that changes its padding carries its rows with
+    /// it, and the derived value never becomes a constant of its own.
+    pub const fn inset_radius(outer: f32, inset: f32) -> f32 {
+        if outer > inset { outer - inset } else { 0.0 }
+    }
     /// Base spacing steps.
     pub const SPACE_XS: f32 = 4.0;
     pub const SPACE_SM: f32 = 8.0;
@@ -1691,6 +1721,22 @@ mod tests {
         assert!((mid.l - 0.5).abs() < 1e-6 && (mid.a - 0.5).abs() < 1e-6);
         // Out-of-range t clamps.
         assert_eq!(mix(a, b, 2.0), b);
+    }
+
+    /// The rule the library now derives nested corners from, rather than the
+    /// values it happens to produce today: a row inside a card keeps its corners
+    /// parallel to the card's, and an inset at least as deep as the radius
+    /// squares them off instead of going negative.
+    #[test]
+    fn inset_radius_is_concentric_and_floors_at_zero() {
+        // The case the whole pass came out of: `popover_card` is 12 with a 4px
+        // inset, and 8.0 was the crate's most-repeated corner value.
+        assert_eq!(Theme::inset_radius(Theme::SURFACE_RADIUS, 4.0), 8.0);
+        // The segmented track, the other pair that turned out to be derived.
+        assert_eq!(Theme::inset_radius(9.0, 2.0), 7.0);
+        // A dialog insets by more than it rounds; its children are square.
+        assert_eq!(Theme::inset_radius(16.0, 20.0), 0.0);
+        assert_eq!(Theme::inset_radius(8.0, 8.0), 0.0);
     }
 
     #[test]

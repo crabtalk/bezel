@@ -185,7 +185,7 @@ impl Render for CommandPalette {
             .on_action(cx.listener(Self::confirm))
             .on_action(cx.listener(Self::dismiss))
             .child(crate::material::material(
-                12.0,
+                Theme::SURFACE_RADIUS,
                 crate::material::MENU_BLUR,
                 card,
             ))

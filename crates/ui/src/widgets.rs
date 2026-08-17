@@ -166,7 +166,7 @@ pub fn option_card(
 pub fn group_box(theme: &Theme) -> gpui::Div {
     div()
         .mt(px(24.0))
-        .rounded(px(12.0))
+        .rounded(px(Theme::SURFACE_RADIUS))
         .border_1()
         .border_color(theme.border)
         .bg(theme.card_glass_bg())
@@ -195,7 +195,7 @@ pub fn row_tile(theme: &Theme, icon_path: &'static str) -> gpui::Div {
     div()
         .flex_none()
         .size(px(36.0))
-        .rounded(px(10.0))
+        .rounded(px(Theme::PANEL_RADIUS))
         .border_1()
         .border_color(theme.border)
         .bg(ink(0.03))
@@ -460,7 +460,7 @@ pub fn select_trigger(theme: &Theme, label: impl Into<SharedString>, open: bool)
         .gap(px(8.0))
         .px(px(10.0))
         .py(px(7.0))
-        .rounded(px(8.0))
+        .rounded(px(Theme::BUTTON_RADIUS))
         .bg(theme.input_bg)
         .border_1()
         .border_color(if open { theme.caret } else { theme.border })
@@ -481,15 +481,21 @@ pub fn select_trigger(theme: &Theme, label: impl Into<SharedString>, open: bool)
 /// `self_start` because a segmented control must hug its segments: dropped into
 /// a `flex_col`, flexbox's default `align-items: stretch` would otherwise blow
 /// it out to the column's full width.
+/// The segmented track's radius, and the inset its segments come in by. Two
+/// numbers read from both here and [`toggle_group_item`], so a segment cannot
+/// stop being concentric with the track it sits in.
+const TOGGLE_GROUP_RADIUS: f32 = 9.0;
+const TOGGLE_GROUP_PAD: f32 = 2.0;
+
 pub fn toggle_group(theme: &Theme) -> gpui::Div {
     div()
         .self_start()
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(2.0))
-        .p(px(2.0))
-        .rounded(px(9.0))
+        .gap(px(TOGGLE_GROUP_PAD))
+        .p(px(TOGGLE_GROUP_PAD))
+        .rounded(px(TOGGLE_GROUP_RADIUS))
         .bg(ink(0.06))
         .border_1()
         .border_color(theme.border)
@@ -505,7 +511,11 @@ pub fn toggle_group_item(
     let mut item = div()
         .px(px(10.0))
         .py(px(4.0))
-        .rounded(px(7.0))
+        // Concentric with the track: 9 - 2 = 7.
+        .rounded(px(Theme::inset_radius(
+            TOGGLE_GROUP_RADIUS,
+            TOGGLE_GROUP_PAD,
+        )))
         .border_1()
         .border_color(RING_SLOT)
         .text_size(px(12.5))
@@ -551,7 +561,7 @@ pub fn collapsible_header(
         .gap(px(6.0))
         .px(px(4.0))
         .py(px(5.0))
-        .rounded(px(6.0))
+        .rounded(px(Theme::CONTROL_RADIUS))
         .cursor_pointer()
         .hover(|s| s.bg(ink(0.03)))
         .child(disclosure(theme, expanded))
@@ -652,7 +662,7 @@ pub fn tag(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
         .pl(px(8.0))
         .pr(px(5.0))
         .py(px(3.0))
-        .rounded(px(6.0))
+        .rounded(px(Theme::CONTROL_RADIUS))
         .bg(ink(0.07))
         .border_1()
         .border_color(theme.border)
@@ -760,7 +770,7 @@ pub fn tab(theme: &Theme, label: impl Into<SharedString>, active: bool) -> gpui:
         .px(px(10.0))
         .pb(px(7.0))
         .pt(px(6.0))
-        .rounded_t(px(6.0))
+        .rounded_t(px(Theme::CONTROL_RADIUS))
         .border_1()
         .border_color(RING_SLOT)
         .text_size(px(13.0))
@@ -798,7 +808,7 @@ pub fn ghost_action(theme: &Theme) -> gpui::Div {
         .flex_row()
         .items_center()
         .gap(px(6.0))
-        .rounded(px(8.0))
+        .rounded(px(Theme::BUTTON_RADIUS))
         .px(px(10.0))
         .py(px(6.0))
         .text_size(px(12.0))
@@ -822,7 +832,7 @@ pub fn error_strip(theme: &Theme, message: impl Into<SharedString>) -> gpui::Div
         .mt(px(16.0))
         .px(px(16.0))
         .py(px(12.0))
-        .rounded(px(12.0))
+        .rounded(px(Theme::SURFACE_RADIUS))
         .border_1()
         .border_color(red.opacity(0.2))
         .bg(red.opacity(0.06))
@@ -852,7 +862,7 @@ pub fn warning_strip(theme: &Theme, message: impl Into<SharedString>) -> gpui::D
         .mt(px(8.0))
         .px(px(16.0))
         .py(px(10.0))
-        .rounded(px(12.0))
+        .rounded(px(Theme::SURFACE_RADIUS))
         .border_1()
         .border_color(amber.opacity(0.2))
         .bg(amber.opacity(0.06))

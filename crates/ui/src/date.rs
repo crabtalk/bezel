@@ -476,7 +476,7 @@ const CELL: f32 = 30.0;
 fn month_step(theme: &Theme, icon: &'static str) -> gpui::Div {
     div()
         .size(px(24.0))
-        .rounded(px(6.0))
+        .rounded(px(Theme::CONTROL_RADIUS))
         .flex()
         .items_center()
         .justify_center()
