@@ -23,6 +23,40 @@ zed (gpui's home repo), pinned by rev. The crates.io gpui release is months
 behind the API this code targets, so a git pin is required; the fork also
 hosts any gpui patches we carry.
 
+## Configuration
+
+There is no config object and no registry: bezel is configured through gpui's
+own globals and by choosing which `init` functions to call.
+
+**Theme.** `Theme` is a plain struct with public fields, installed as a gpui
+`Global`. To ship your own colours, say how a palette is built and register it
+before `appearance::init`:
+
+```rust
+fn palette(appearance: Appearance) -> Theme {
+    let mut theme = Theme::for_appearance(appearance);
+    theme.accent = my_brand_accent(appearance);
+    theme
+}
+theme::set_palette(palette, cx);
+```
+
+Registering the *builder* rather than a palette is what makes the colours
+survive a light/dark switch — the appearance switch rebuilds the palette, and it
+now rebuilds yours. For a one-shot palette that does not need to survive that,
+`Theme::install_custom(theme, cx)` installs one directly.
+
+Use either of those rather than `cx.set_global(theme)`. The context-free paint
+helpers (`ink`, `hairline`, `wash`) read a process-wide appearance mirror rather
+than the global — they are called from element builders with no `cx` in scope —
+and setting the global alone leaves them painting for the wrong appearance.
+
+**Key bindings.** `bezel_ui::input::init(cx)` installs a default keymap scoped
+to the `TextField` key context. It is a convenience — every action is a public
+type, so an app that wants a different keymap skips `init` and binds the actions
+itself. bezel deliberately claims few chords: a component library that binds a
+keystroke it is not sure about takes it away from every app downstream.
+
 ## Provenance & licenses
 
 The initial components were extracted from
