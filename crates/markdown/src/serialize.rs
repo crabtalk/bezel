@@ -28,9 +28,9 @@ pub fn serialize(doc: &Doc) -> String {
             None => 0,
         };
 
-        if let Some((prev_kind, _)) = previous {
+        if let Some((prev_kind, prev_indent)) = previous {
             out.push('\n');
-            if !tight_after(prev_kind, &block.kind) {
+            if !tight_after(prev_kind, &block.kind, indent > prev_indent) {
                 out.push('\n');
             }
         }
@@ -64,18 +64,37 @@ fn is_marker(kind: &BlockKind) -> bool {
 /// between two *different* lists, which is legal — they were already separate —
 /// and is the difference between a readable document and a wall.
 ///
-/// The exception is an *empty* marker, which must stay tight to whatever
-/// follows: CommonMark lets a list item begin with at most one blank line, so a
-/// blank line there ends the list and its child becomes a top-level indented
-/// code block. Everywhere else the blank line is required — without it a child
-/// block is read as a lazy continuation of the item's own text.
-fn tight_after(previous: &BlockKind, next: &BlockKind) -> bool {
-    let empty_marker = is_marker(previous)
-        && Block::new(previous.clone())
-            .text()
-            .is_some_and(Text::is_empty);
-    let same_list = marker_kind(previous).is_some() && marker_kind(previous) == marker_kind(next);
-    same_list || empty_marker
+/// An *empty* marker is a special case on both sides, and in opposite
+/// directions. Nothing may separate it from what follows: CommonMark lets a
+/// list item begin with at most one blank line, so a blank line there ends the
+/// list and the item's child becomes a top-level indented code block. But a
+/// blank line must come *before* it, because an empty list item cannot
+/// interrupt a paragraph — written tight against the item above, it is read as
+/// a lazy continuation of that item's text instead of as a list of its own.
+///
+/// Everywhere else the blank line is required too: without it a child block is
+/// read as a lazy continuation of its item.
+///
+/// `nested` says the next block opens a level deeper, which makes it a *new*
+/// list rather than the next item of this one — and a new list has to interrupt
+/// the paragraph above it to be seen at all. A bullet may; an ordered list may
+/// only when it starts at 1. So a nested `2.` written tight is read as more text
+/// in the item above, and needs the blank line that ends that paragraph.
+fn tight_after(previous: &BlockKind, next: &BlockKind, nested: bool) -> bool {
+    if is_empty_marker(previous) {
+        return true;
+    }
+    if is_empty_marker(next) {
+        return false;
+    }
+    if nested && matches!(next, BlockKind::Ordered { number, .. } if *number != 1) {
+        return false;
+    }
+    marker_kind(previous).is_some() && marker_kind(previous) == marker_kind(next)
+}
+
+fn is_empty_marker(kind: &BlockKind) -> bool {
+    is_marker(kind) && Block::new(kind.clone()).text().is_some_and(Text::is_empty)
 }
 
 fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
@@ -87,7 +106,14 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
             let hashes = "#".repeat((*level).clamp(1, 6) as usize);
             write_lines(out, &format!("{pad}{hashes} "), &pad, &inline(text));
         }
-        BlockKind::Bullet(text) => write_marked(out, &pad, "- ", text),
+        // A bullet with no text would be written as a line holding nothing but
+        // a dash — and a line of dashes directly under a paragraph is a setext
+        // heading underline, not a list item. `+` is the bullet marker that
+        // cannot be read as one.
+        BlockKind::Bullet(text) => {
+            let marker = if text.is_empty() { "+ " } else { "- " };
+            write_marked(out, &pad, marker, text)
+        }
         BlockKind::Ordered { number, text } => {
             write_marked(out, &pad, &format!("{number}. "), text)
         }
@@ -202,6 +228,8 @@ fn inline(text: &Text) -> String {
     let mut out = String::new();
     let mut open: Vec<usize> = Vec::new();
     let mut started = vec![false; text.marks.len()];
+    // The delimiter a span opened with, so it closes with the same one.
+    let mut delimiters = vec!['_'; text.marks.len()];
     let mut cursor = 0usize;
 
     let mut boundaries: Vec<usize> = text
@@ -222,8 +250,7 @@ fn inline(text: &Text) -> String {
 
         while let Some(&top) = open.last() {
             if text.marks[top].range.end <= point {
-                let span = &text.marks[top];
-                close_mark(&mut out, &span.mark, italic_delimiter(text, &span.range));
+                close_mark(&mut out, &text.marks[top].mark, delimiters[top]);
                 open.pop();
             } else {
                 break;
@@ -246,7 +273,8 @@ fn inline(text: &Text) -> String {
                 cursor = cursor.max(span.range.end);
                 continue;
             }
-            let italic = italic_delimiter(text, &span.range);
+            let italic = italic_delimiter(&out, text, &span.range);
+            delimiters[ix] = italic;
             open_mark(&mut out, &span.mark, italic);
             // A mark over nothing — an image with no alt text — closes here.
             // Leaving it on the stack would stretch it to the next boundary.
@@ -260,8 +288,7 @@ fn inline(text: &Text) -> String {
 
     escape_inline(&mut out, &text.text[cursor.min(text.text.len())..]);
     while let Some(ix) = open.pop() {
-        let span = &text.marks[ix];
-        close_mark(&mut out, &span.mark, italic_delimiter(text, &span.range));
+        close_mark(&mut out, &text.marks[ix].mark, delimiters[ix]);
     }
     out
 }
@@ -281,10 +308,15 @@ fn fence_width_inline(body: &str) -> usize {
 /// `_` is preferred because it nests unambiguously inside `**` — `***x***` is
 /// read as emphasis wrapping strong, so writing bold-outside-italic with stars
 /// would come back inside out. But `_` cannot open or close against a letter,
-/// so an emphasis that starts or ends mid-word has to use `*` or it will not
-/// parse back at all.
-fn italic_delimiter(text: &Text, range: &std::ops::Range<usize>) -> char {
-    let intraword = text.text[..range.start]
+/// so an emphasis that starts or ends mid-word has to use `*` instead.
+///
+/// What counts as "against a letter" is the *output*, not the source text: a
+/// mark opening right after a code span is preceded by a backtick, which is
+/// punctuation, even though the character before it in the text is a letter.
+/// Deciding from `written` is what keeps `` `a`**_x_** `` from being spelled
+/// `***`, which reads back inside out.
+fn italic_delimiter(written: &str, text: &Text, range: &std::ops::Range<usize>) -> char {
+    let intraword = written
         .chars()
         .next_back()
         .is_some_and(char::is_alphanumeric)

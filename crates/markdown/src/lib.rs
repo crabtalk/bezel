@@ -13,17 +13,19 @@
 //! serializing and parsing again always lands on the same document, so an
 //! edit/save cycle cannot drift.
 //!
-//! [`doc`], [`parse`] and [`serialize`] are pure — no gpui, no painting — and
+//! [`doc`], [`parse`], [`serialize`] and [`edit`] are pure — no gpui, no painting — and
 //! [`render`] is the gpui layer over them. Editing is a layer above both, and
 //! lives elsewhere: it needs `bezel-ui`, and this crate stays light so a
 //! read-only consumer never compiles a popover to show a paragraph.
 
 pub mod doc;
+pub mod edit;
 pub mod parse;
 pub mod render;
 pub mod serialize;
 
 pub use doc::{Align, Block, BlockKind, Doc, Mark, MarkSpan, Text};
+pub use edit::{Cursor, Shortcut, shortcut};
 pub use parse::parse;
-pub use render::{markdown, render};
+pub use render::{BlockLayouts, markdown, render, render_with_caret};
 pub use serialize::serialize;

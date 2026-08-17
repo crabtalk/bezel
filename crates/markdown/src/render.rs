@@ -7,16 +7,19 @@
 //!
 //! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
 
+use std::cell::RefCell;
 use std::ops::Range;
+use std::rc::Rc;
 
 use bezel_theme::Theme;
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, ElementId, FontStyle, FontWeight, InteractiveText,
-    Pixels, SharedString, StrikethroughStyle, StyledText, TextRun, UnderlineStyle, Window, canvas,
-    div, font, img, point, prelude::*, px, quad, size,
+    Pixels, Point, SharedString, StrikethroughStyle, StyledText, TextLayout, TextRun,
+    UnderlineStyle, Window, canvas, div, font, img, point, prelude::*, px, quad, size,
 };
 
 use crate::doc::{Align, Block, BlockKind, Doc, Mark, Text};
+use crate::edit::Cursor;
 
 /// Space between two ordinary blocks, and the tighter space inside a list.
 const BLOCK_GAP: f32 = 12.0;
@@ -49,6 +52,51 @@ const TABLE_MIN_COLUMN_CONTENT: f32 = 48.0;
 /// Narrowest a column wraps down to before the table scrolls instead.
 const TABLE_MIN_COLUMN_WIDTH: f32 = 96.0;
 
+/// Where each block's text landed, recorded as it painted.
+///
+/// A caret has to be placeable by pointer, and only paint knows where a glyph
+/// ended up. An editor hands one of these in, the renderer fills it, and the
+/// next click resolves against it. Read-only callers pass nothing and pay
+/// nothing.
+#[derive(Clone, Default)]
+pub struct BlockLayouts(Rc<RefCell<Vec<(usize, TextLayout)>>>);
+
+impl BlockLayouts {
+    /// The block and byte offset under `point`.
+    ///
+    /// Falls back to the nearest block vertically, so clicking the margin
+    /// beside a line — or below the last one — still lands somewhere useful
+    /// rather than doing nothing.
+    pub fn hit(&self, point: Point<Pixels>) -> Option<Cursor> {
+        let entries = self.0.borrow();
+        let offset_in = |layout: &TextLayout| {
+            let (Ok(offset) | Err(offset)) = layout.index_for_position(point);
+            offset
+        };
+        if let Some((ix, layout)) = entries
+            .iter()
+            .find(|(_, layout)| layout.bounds().contains(&point))
+        {
+            return Some(Cursor::new(*ix, offset_in(layout)));
+        }
+        let (ix, layout) = entries.iter().min_by_key(|(_, layout)| {
+            let bounds = layout.bounds();
+            let above = (bounds.origin.y - point.y).abs();
+            let below = (bounds.origin.y + bounds.size.height - point.y).abs();
+            f32::from(above.min(below)) as i64
+        })?;
+        Some(Cursor::new(*ix, offset_in(layout)))
+    }
+
+    fn record(&self, ix: usize, layout: TextLayout) {
+        self.0.borrow_mut().push((ix, layout));
+    }
+
+    fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+}
+
 /// Parse and render in one step — the common case for read-only content.
 pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
     render(&crate::parse(source), window, cx)
@@ -56,6 +104,27 @@ pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
 
 /// Render a document.
 pub fn render(doc: &Doc, window: &mut Window, cx: &mut App) -> AnyElement {
+    render_with_caret(doc, None, None, window, cx)
+}
+
+/// Render a document with a caret in it.
+///
+/// The caret is a paint-time concern and nothing else: it reads its position
+/// off the shaped text's own layout handle, the same way the inline-code wash
+/// does, so nothing about layout depends on where it sits. An editor supplies
+/// the position and owns the focus and the keys; painting one line is not worth
+/// a second renderer.
+pub fn render_with_caret(
+    doc: &Doc,
+    caret: Option<Cursor>,
+    layouts: Option<&BlockLayouts>,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    // Refilled every frame, in paint order.
+    if let Some(layouts) = layouts {
+        layouts.clear();
+    }
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
@@ -67,11 +136,14 @@ pub fn render(doc: &Doc, window: &mut Window, cx: &mut App) -> AnyElement {
             Some(previous) if tight(previous, block) => LIST_GAP,
             Some(_) => BLOCK_GAP,
         };
+        let caret = caret
+            .filter(|caret| caret.block == ix)
+            .map(|caret| caret.offset);
         column = column.child(
             div()
                 .mt(px(gap))
                 .pl(px(block.indent as f32 * INDENT_WIDTH))
-                .child(block_element(block, ix, &theme, window, cx)),
+                .child(block_element(block, ix, caret, layouts, &theme, window, cx)),
         );
     }
 
@@ -89,45 +161,65 @@ fn tight(previous: &Block, next: &Block) -> bool {
     marker(previous) && (marker(next) || next.indent > previous.indent)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn block_element(
     block: &Block,
     ix: usize,
+    caret: Option<usize>,
+    layouts: Option<&BlockLayouts>,
     theme: &Theme,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
     match &block.kind {
-        BlockKind::Paragraph(text) => {
-            text_element(text, TEXT_SIZE, LINE_HEIGHT, FontWeight::NORMAL, ix, theme)
-        }
+        BlockKind::Paragraph(text) => text_element(
+            text,
+            TEXT_SIZE,
+            LINE_HEIGHT,
+            FontWeight::NORMAL,
+            ix,
+            caret,
+            layouts,
+            theme,
+        ),
         BlockKind::Heading { level, text } => {
             let (size, line) = heading_metrics(*level);
-            text_element(text, size, line, FontWeight::SEMIBOLD, ix, theme)
+            text_element(
+                text,
+                size,
+                line,
+                FontWeight::SEMIBOLD,
+                ix,
+                caret,
+                layouts,
+                theme,
+            )
         }
-        BlockKind::Bullet(text) => marker_row(disc(theme), text, ix, theme),
+        BlockKind::Bullet(text) => marker_row(disc(theme), text, ix, caret, layouts, theme),
         BlockKind::Ordered { number, text } => marker_row(
             div()
                 .flex_none()
                 .w(px(MARKER_WIDTH))
                 .text_size(px(TEXT_SIZE))
                 .line_height(px(LINE_HEIGHT))
-                .text_color(theme.accent.opacity(0.85))
+                .text_color(theme.text_muted)
                 .child(SharedString::from(format!("{number}.")))
                 .into_any_element(),
             text,
             ix,
+            caret,
+            layouts,
             theme,
         ),
-        BlockKind::Task { checked, text } => marker_row(checkbox(*checked, theme), text, ix, theme),
+        BlockKind::Task { checked, text } => {
+            marker_row(checkbox(*checked, theme), text, ix, caret, layouts, theme)
+        }
         BlockKind::Quote(text) => div()
             .border_l_2()
-            .border_color(theme.accent.opacity(0.6))
-            .bg(theme.accent.opacity(0.05))
-            .rounded_tr(px(6.0))
-            .rounded_br(px(6.0))
+            .border_color(theme.border_strong)
             .pl(px(12.0))
             .pr(px(10.0))
-            .py(px(6.0))
+            .py(px(2.0))
             .text_color(theme.text_muted)
             .child(text_element(
                 text,
@@ -135,6 +227,8 @@ fn block_element(
                 LINE_HEIGHT,
                 FontWeight::NORMAL,
                 ix,
+                caret,
+                layouts,
                 theme,
             ))
             .into_any_element(),
@@ -179,7 +273,7 @@ fn disc(theme: &Theme) -> AnyElement {
                 .w(px(5.0))
                 .h(px(5.0))
                 .rounded_full()
-                .bg(theme.accent.opacity(0.85)),
+                .bg(theme.text_faint),
         )
         .into_any_element()
 }
@@ -194,10 +288,10 @@ fn checkbox(checked: bool, theme: &Theme) -> AnyElement {
         .items_center()
         .justify_center();
     box_ = if checked {
-        box_.bg(theme.accent)
-            .border_color(theme.accent)
+        box_.bg(theme.solid)
+            .border_color(theme.solid)
             .text_size(px(9.0))
-            .text_color(theme.on_accent)
+            .text_color(theme.on_solid)
             .child("✓")
     } else {
         box_.border_color(theme.border_strong)
@@ -213,7 +307,14 @@ fn checkbox(checked: bool, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-fn marker_row(marker: AnyElement, text: &Text, ix: usize, theme: &Theme) -> AnyElement {
+fn marker_row(
+    marker: AnyElement,
+    text: &Text,
+    ix: usize,
+    caret: Option<usize>,
+    layouts: Option<&BlockLayouts>,
+    theme: &Theme,
+) -> AnyElement {
     div()
         .flex()
         .flex_row()
@@ -225,6 +326,8 @@ fn marker_row(marker: AnyElement, text: &Text, ix: usize, theme: &Theme) -> AnyE
             LINE_HEIGHT,
             FontWeight::NORMAL,
             ix,
+            caret,
+            layouts,
             theme,
         )))
         .into_any_element()
@@ -331,12 +434,15 @@ fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text_element(
     text: &Text,
     size: f32,
     line_height: f32,
     weight: FontWeight,
     ix: usize,
+    caret: Option<usize>,
+    layouts: Option<&BlockLayouts>,
     theme: &Theme,
 ) -> AnyElement {
     let flat = flatten(text, weight, theme);
@@ -361,9 +467,26 @@ fn text_element(
     // never part of layout.
     let wash = theme.code_wash;
     let code_ranges = flat.code;
+    let caret_color = theme.caret;
+    let layouts = layouts.cloned();
     let underlay = canvas(
         |_, _, _| (),
         move |_, _, window, _| {
+            if let Some(layouts) = &layouts {
+                layouts.record(ix, layout.clone());
+            }
+            if let Some(offset) = caret
+                && let Some(head) = layout.position_for_index(offset)
+            {
+                window.paint_quad(quad(
+                    Bounds::new(head, gpui::size(px(1.5), layout.line_height())),
+                    px(0.0),
+                    caret_color,
+                    px(0.0),
+                    gpui::transparent_black(),
+                    BorderStyle::default(),
+                ));
+            }
             for range in &code_ranges {
                 for rect in range_rects(&layout, range, INLINE_CODE_PAD_X, INLINE_CODE_INSET_Y) {
                     window.paint_quad(quad(

@@ -34,36 +34,8 @@ pub fn parse(source: &str) -> Doc {
     for event in Parser::new_ext(source, options) {
         state.event(event);
     }
-    renumber(&mut state.doc.blocks);
+    state.doc.renumber();
     state.doc
-}
-
-/// Make each run of ordered items consecutive.
-///
-/// Markdown honours only the *first* number in a list — `1.` followed by `9.`
-/// renders as 1, 2. Two source lists that used different delimiters (`1.` then
-/// `9)`) are separate lists, but a flat document has no list identity to
-/// preserve, so they serialize as one and the second item's number would move
-/// on the next read. Deciding it here means the document already holds what the
-/// next parse would produce.
-fn renumber(blocks: &mut [Block]) {
-    // The number owed to the next ordered item at each indent level. A run
-    // survives blocks nested under it and ends at anything else.
-    let mut expected: Vec<Option<u64>> = Vec::new();
-    for block in blocks {
-        let indent = block.indent as usize;
-        expected.truncate(indent + 1);
-        expected.resize(indent + 1, None);
-
-        if let BlockKind::Ordered { number, .. } = &mut block.kind {
-            if let Some(next) = expected[indent] {
-                *number = next;
-            }
-            expected[indent] = Some(number.saturating_add(1));
-        } else {
-            expected[indent] = None;
-        }
-    }
 }
 
 /// Accumulates one run of inline content and the marks over it.
@@ -127,7 +99,7 @@ impl TextBuilder {
 /// belongs to block structure. Keeping them would mean writing out whitespace
 /// that the next parse discards, so the document would change every time it was
 /// saved. Blank lines at either end of a block go the same way.
-fn normalize(text: &str, marks: &[MarkSpan]) -> Text {
+pub(crate) fn normalize(text: &str, marks: &[MarkSpan]) -> Text {
     let bytes = text.as_bytes();
     let mut keep = vec![true; text.len()];
 
@@ -174,7 +146,47 @@ fn normalize(text: &str, marks: &[MarkSpan]) -> Text {
         .filter(|span| !span.range.is_empty() || matches!(span.mark, Mark::Image(_)))
         .collect();
 
-    Text { text: out, marks }
+    Text {
+        text: out,
+        marks: merge_same_mark(marks),
+    }
+}
+
+/// Fuse spans of the same mark that overlap or nest.
+///
+/// Emphasis inside the same emphasis is redundant — `_a _b_ c_` is italic
+/// either way — and two spans of one mark have no unambiguous spelling: written
+/// back out, the delimiters pair up differently than they came in. Collapsing
+/// them here means the parse produces the one form that survives being written
+/// and read again.
+fn merge_same_mark(mut marks: Vec<MarkSpan>) -> Vec<MarkSpan> {
+    let mut ix = 0;
+    while ix < marks.len() {
+        let mut fused = None;
+        for other in ix + 1..marks.len() {
+            let (a, b) = (&marks[ix], &marks[other]);
+            if a.mark == b.mark
+                && !matches!(a.mark, Mark::Image(_))
+                && a.range.start <= b.range.end
+                && b.range.start <= a.range.end
+            {
+                fused = Some((
+                    other,
+                    a.range.start.min(b.range.start),
+                    a.range.end.max(b.range.end),
+                ));
+                break;
+            }
+        }
+        match fused {
+            Some((other, start, end)) => {
+                marks[ix].range = start..end;
+                marks.remove(other);
+            }
+            None => ix += 1,
+        }
+    }
+    marks
 }
 
 /// Flatten a block whose serialized form is one line.
@@ -184,7 +196,7 @@ fn normalize(text: &str, marks: &[MarkSpan]) -> Text {
 /// newline, and a second line in a cell would end the row. Both are single-line
 /// blocks in this model, and since a newline and a space are each one byte, the
 /// marks over them do not move.
-fn collapse_to_one_line(text: &mut Text) {
+pub(crate) fn collapse_to_one_line(text: &mut Text) {
     if text.text.contains('\n') {
         text.text = text.text.replace('\n', " ");
     }
@@ -377,6 +389,13 @@ impl ParseState {
             }
             Tag::List(start) => {
                 self.flush_inline();
+                // An item whose content is only a nested list still has to emit
+                // its own marker first. `flush_inline` covers the item that had
+                // text; this covers the empty one, whose pending marker the
+                // nested `Start(Item)` would otherwise overwrite — losing a
+                // level of nesting. It runs before the push so the marker is
+                // numbered at the outer list's depth.
+                self.flush_marker();
                 self.lists.push(start);
             }
             Tag::Item => {
