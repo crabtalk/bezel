@@ -1,6 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/bezel", "crates/theme", "crates/motion", "crates/ui", "apps/gallery"]
+members = [
+    "crates/bezel",
+    "crates/theme",
+    "crates/motion",
+    "crates/ui",
+    "apps/gallery",
+    "apps/web",
+]
 
 [workspace.package]
 version = "0.0.2"
@@ -34,6 +41,13 @@ gpui = "0.2.2"
 # every glyph resolves to notdef — text reserves layout space and paints
 # nothing. Add `wayland`/`x11` when we build on Linux.
 gpui_platform = { path = "../zed/crates/gpui_platform", features = ["font-kit"] }
+# The browser platform, taken directly rather than through `gpui_platform`.
+# Going through it would enable `gpui_web/multithreaded` by default, and feature
+# unification makes that unopt-outable from here — `wasm_thread` then needs
+# nightly, and its `SharedArrayBuffer` needs COOP/COEP headers GitHub Pages
+# cannot send. Depending on `gpui_web` alone keeps `gpui_platform` out of the
+# wasm graph entirely, so the default never turns on.
+gpui_web = { path = "../zed/crates/gpui_web", default-features = false }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

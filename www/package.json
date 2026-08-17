@@ -1,0 +1,23 @@
+{
+  "name": "bezel-www",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "catalog": "cd .. && cargo run -q -p web > www/src/lib/catalog.json",
+    "wasm": "cd .. && cargo build -p web --lib --target wasm32-unknown-unknown --release && wasm-bindgen --target web --no-typescript --out-dir www/static/gallery target/wasm32-unknown-unknown/release/web.wasm",
+    "dev": "bun run catalog && vite dev",
+    "build": "bun run wasm && bun run catalog && vite build",
+    "preview": "vite preview",
+    "deploy": "bun run build && wrangler pages deploy build --project-name=bezel --branch=main"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.8",
+    "@sveltejs/kit": "^2.20.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "svelte": "^5.20.0",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "marked": "^15.0.0"
+  }
+}

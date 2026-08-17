@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>bezel gallery</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+				background: #0b0c0e;
+			}
+			#boot {
+				position: absolute;
+				inset: 0;
+				display: grid;
+				place-content: center;
+				color: #8b929c;
+				font: 14px -apple-system, system-ui, sans-serif;
+			}
+		</style>
+	</head>
+	<body>
+		<!-- gpui creates and appends its own canvas; this is only what shows until it does. -->
+		<p id="boot">Starting the gallery…</p>
+		<script type="module">
+			import init from './web.js';
+
+			init()
+				.then(() => document.getElementById('boot')?.remove())
+				.catch((error) => {
+					document.getElementById('boot').textContent =
+						'The gallery needs WebGPU or WebGL2, and this browser gave us neither.';
+					console.error(error);
+				});
+		</script>
+	</body>
+</html>

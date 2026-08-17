@@ -5820,6 +5820,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "web"
+version = "0.0.2"
+dependencies = [
+ "bezel-theme",
+ "bezel-ui",
+ "console_error_panic_hook",
+ "gallery",
+ "gpui",
+ "gpui_web",
+ "log",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
