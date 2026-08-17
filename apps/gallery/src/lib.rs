@@ -18,6 +18,7 @@ use bezel_ui::hover_card::HoverCard;
 use bezel_ui::input::{Shape, TextField};
 use bezel_ui::list;
 use bezel_ui::menubar::{Item, Menu, Menubar, MenubarEvent};
+use bezel_ui::pagination;
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::scroll::{self, ScrollbarState};
 use bezel_ui::table::{self, Column, Sort, Width};
@@ -65,6 +66,10 @@ const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
 /// owns the value decides what they are worth.
 const SLIDER_STEP: f32 = 0.05;
+
+/// Pages in the pagination page's imaginary result set — the shape of thing
+/// that arrives one page at a time and cannot be held whole.
+const RESULT_PAGES: usize = 87;
 
 /// How many rows the virtualized-list page claims to hold. Large enough that
 /// building them all would be obvious.
@@ -251,6 +256,13 @@ const fn section(key: &'static str, title: &'static str, source: &'static str) -
 /// A component the rail lists but the library does not have yet. Its page says
 /// what the remaining work is, which is what turns the rail into a measure of
 /// what is left rather than a list of what exists.
+///
+/// Unused as of the pagination commit — every row in the catalog now has a
+/// source, which is a milestone rather than a reason to delete the mechanism.
+/// The convention (a `planned()` row plus an arm in [`PLANNED_BODIES`], and a
+/// test that fails until both are dropped together) is what the next unbuilt
+/// component will be declared with.
+#[allow(dead_code)]
 const fn planned(key: &'static str, title: &'static str) -> Section {
     Section {
         key,
@@ -380,7 +392,7 @@ pub const COMPONENTS: &[Group] = &[
             section("tag", "Tag", "crates/ui/src/widgets.rs"),
             section("avatar", "Avatar", "crates/ui/src/widgets.rs"),
             section("breadcrumb", "Breadcrumb", "crates/ui/src/widgets.rs"),
-            planned("pagination", "Pagination"),
+            section("pagination", "Pagination", "crates/ui/src/pagination.rs"),
             section("empty-state", "Empty state", "crates/ui/src/widgets.rs"),
             section("skeleton", "Skeleton", "crates/ui/src/popover.rs"),
         ],
@@ -400,7 +412,7 @@ pub const COMPONENTS: &[Group] = &[
 /// than derived because the arms cannot be enumerated at runtime; a test keeps
 /// this in step with the [`planned`] rows.
 #[cfg(test)]
-const PLANNED_BODIES: &[&str] = &["pagination"];
+const PLANNED_BODIES: &[&str] = &[];
 
 fn section_at(key: &str) -> Option<&'static Section> {
     TABS.iter()
@@ -490,6 +502,9 @@ pub struct Gallery {
     tree_selected: Option<String>,
     tree_cursor: usize,
     tree_focus: gpui::FocusHandle,
+    /// Which page of the imaginary result set is showing. 1-based, like the
+    /// component: it is a label, not an index.
+    page: usize,
     /// Which column the table page is sorted by. The app's, because the app is
     /// what has to sort the rows — the table only says what a click meant.
     table_sort: Option<Sort>,
@@ -574,6 +589,7 @@ impl Gallery {
             table_scroll: gpui::ScrollHandle::new(),
             table_bar: ScrollbarState::new(),
             table_sort: None,
+            page: 1,
             tree_scroll: gpui::ScrollHandle::new(),
             tree_bar: ScrollbarState::new(),
             rows_scroll: gpui::UniformListScrollHandle::new(),
@@ -718,6 +734,13 @@ impl Gallery {
             self.tree_selected = Some(entry.path.clone());
         }
         window.focus(&self.tree_focus, cx);
+        cx.notify();
+    }
+
+    /// Go to a page, clamped the way the component clamps what it draws — the
+    /// prev/next steps hand this `page - 1` and `page + 1` without checking.
+    fn go_to_page(&mut self, page: usize, cx: &mut Context<Self>) {
+        self.page = page.clamp(1, RESULT_PAGES);
         cx.notify();
     }
 
@@ -1894,12 +1917,71 @@ impl Gallery {
                 )
                 .into_any_element(),
 
-            "pagination" => todo(
-                &theme,
-                "Needs a use case",
-                "Desktop apps rarely paginate. Skipped until something needs it.",
-                &[],
-            ),
+            "pagination" => {
+                section
+                    .child(hint(
+                        &theme,
+                        "For data that arrives in pages — a result set the client \
+                     cannot hold — and not for lists that are merely long: those \
+                     are the scroll area and the virtualized list. Walk to either \
+                     end and the run of pages keeps its width.",
+                    ))
+                    .child(
+                        pagination::pagination()
+                            .child(
+                                div()
+                                    .id("page-prev")
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        view.go_to_page(view.page.saturating_sub(1), cx)
+                                    }))
+                                    .child(pagination::step(
+                                        &theme,
+                                        icons::ALT_ARROW_LEFT,
+                                        self.page > 1,
+                                    )),
+                            )
+                            .children(
+                                pagination::window(self.page, RESULT_PAGES, 2)
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(slot, entry)| match entry {
+                                        pagination::Slot::Gap => {
+                                            pagination::ellipsis(&theme).into_any_element()
+                                        }
+                                        pagination::Slot::Page(page) => {
+                                            pagination::page_button(&theme, page, page == self.page)
+                                                .id(SharedString::from(format!("page-{slot}")))
+                                                .on_click(cx.listener(move |view, _, _, cx| {
+                                                    view.go_to_page(page, cx)
+                                                }))
+                                                .into_any_element()
+                                        }
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("page-next")
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        view.go_to_page(view.page + 1, cx)
+                                    }))
+                                    .child(pagination::step(
+                                        &theme,
+                                        icons::ALT_ARROW_RIGHT,
+                                        self.page < RESULT_PAGES,
+                                    )),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.5))
+                            .text_color(theme.text_muted)
+                            .child(SharedString::from(format!(
+                                "page {} of {RESULT_PAGES}",
+                                self.page
+                            ))),
+                    )
+                    .into_any_element()
+            }
 
             "scroll-area" => section
                 .child(hint(
@@ -2430,6 +2512,10 @@ fn shape_demo(theme: &Theme, shape: &'static str, field: Entity<TextField>) -> g
 ///
 /// `work` is empty wherever nothing has been designed yet. That is the honest
 /// answer, and an empty list is itself the measurement.
+///
+/// Unused for the same reason [`planned`] is: nothing in the catalog is unbuilt
+/// at the moment. Kept for the next thing that is.
+#[allow(dead_code)]
 fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> AnyElement {
     let amber = theme.warning;
     stack()
@@ -2803,6 +2889,11 @@ mod tests {
     /// Both directions bite: a `planned()` row with no arm renders a blank
     /// page, and a component that gets built but keeps its TODO arm documents
     /// itself as missing while sitting right there in the crate.
+    ///
+    /// Both sides are empty as of the pagination commit — every row has a
+    /// source. That is the assertion passing, not the assertion being vacuous:
+    /// the day something is planned again, it has to be declared on both sides
+    /// or this fails.
     #[test]
     fn planned_rows_and_todo_pages_agree() {
         let mut rows: Vec<_> = all_sections()

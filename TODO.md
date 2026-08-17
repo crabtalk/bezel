@@ -108,6 +108,14 @@ read off a temporary probe rather than assumed — and still unseen:
 - [ ] The thumb tracking a 10,000-row document, which is the same bar over a
       handle it has never been pointed at before
 
+The paginator's window is six tests deep; the row it draws is not:
+
+- [ ] Clicking a page, and the prev/next steps going inert at the ends rather
+      than vanishing
+- [ ] The row holding its width as you walk to either end — the point of the
+      sliding window, and the one thing a unit test can only assert about slots
+      rather than pixels
+
 If this becomes a standing need rather than a one-off, the way back is a small
 `bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
 `simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
@@ -131,9 +139,10 @@ macOS-only, so it can never gate CI.
 
 ## Components — remaining
 
-Need a real use case before building:
-
-- [ ] Pagination — desktop apps rarely paginate; skip until something needs it
+Nothing. Every row in the gallery's catalog has a source, and `PLANNED_BODIES`
+is empty — the first time that has been true. `planned()`/`todo()` are kept
+(unused, and marked as such) because the convention they encode is what the next
+unbuilt component gets declared with, not because anything needs them today.
 
 ## Next round (deferred by decision)
 
@@ -203,7 +212,7 @@ menubar · checkbox · radio · toggle ·
 badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
-split · scroll area · table · tree view · virtualized list · group box + rows · separator · skeleton rows · alert strips ·
+split · scroll area · table · tree view · virtualized list · pagination · group box + rows · separator · skeleton rows · alert strips ·
 spinners · icons (58 SVG) · material glass.
 
 Textarea is one `TextField` under a `Shape`, not a second component: `Line`,
@@ -236,6 +245,29 @@ left the caret — so there is no timing threshold to invent. Pushed from
 every keystroke of IME composition would be its own step. Bounded (default 10 *steps*,
 not keystrokes, `with_undo_limit` per field); `set_content` clears both stacks,
 being a programmatic reset rather than something the user did.
+
+Pagination (`pagination.rs`) — built against this file's own advice, which said
+to skip it, so the reason is on the record. That advice stands for the case it
+was written about: a long list is answered by the scroll area and the virtualized
+list, and paginating one on a desktop is worse than scrolling it. What earns the
+component is the *other* case — data that arrives in pages and cannot be held
+whole, where the page number is the query rather than a scrolling affordance.
+The gallery page says which case it is for, so the rail does not read as an
+endorsement of the first.
+
+The module is one function and some paint. `window` turns `(current, total)`
+into the row, and the two rules that make it more than an iterator are the ones
+under test: a gap hiding exactly *one* page shows the page instead (an ellipsis
+standing for a single number takes the same room and says less), and the window
+slides at the ends rather than shrinking, so walking to the last page does not
+narrow the control under the pointer — the same refusal to reflow as the ring
+slot and the calendar's six rows. Pages are 1-based, against the rest of the
+crate, because a page number is a label rather than an index.
+
+It also emptied `PLANNED_BODIES`, which turned `planned()` and `todo()` into
+dead code — kept, marked, and documented rather than deleted: the convention is
+what the next unbuilt component will be declared with, and the guard test now
+asserts both sides are empty rather than nothing at all.
 
 Virtualized list (`list.rs`) — and the entry it replaces was wrong about which
 primitive. gpui has two virtualizers and only one can carry a scrollbar.
@@ -457,4 +489,4 @@ one required call in the README rather than a contract a reader had to infer.
 
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 132 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 138 tests.

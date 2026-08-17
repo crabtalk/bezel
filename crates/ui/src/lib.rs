@@ -19,6 +19,7 @@ pub mod list;
 pub mod loaders;
 pub mod material;
 pub mod menubar;
+pub mod pagination;
 pub mod palette;
 pub mod popover;
 pub mod scroll;
