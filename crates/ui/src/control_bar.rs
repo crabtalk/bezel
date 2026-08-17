@@ -1,13 +1,17 @@
-//! [`pill`] — the floating control bar: a glass stadium holding a leading
-//! cluster, an optional centre, and a trailing cluster. A media transport, a
-//! desktop agent app's chat input, a floating toolbar — one shape.
+//! [`control_bar`] — the floating control bar: a glass surface holding a
+//! leading cluster, an optional centre, and a trailing cluster. Apple Music's
+//! transport, a desktop agent app's composer, a floating toolbar.
+//!
+//! [`Shape`] is the only thing that differs between those; everything below is
+//! shape-blind, which is why the module is named for the job rather than for
+//! the stadium it started as.
 //!
 //! Two things it exists to get right.
 //!
-//! **The blur corners follow the height.** [`crate::material::material`] takes
-//! a corner radius and paints the backdrop blur to it; a stadium's is half its
-//! height, and a mismatch frosts square corners outside a round border. The
-//! radius is derived from [`PILL_HEIGHT`] here so no caller has to know that.
+//! **The blur corners follow the border.** [`crate::material::material`] takes
+//! a corner radius and paints the backdrop blur to it, and a mismatch frosts
+//! square corners outside a round border. One radius comes out of [`Shape`] and
+//! feeds both, so there is no second number to keep in step.
 //!
 //! **The centre is centred on the bar, not on what the clusters leave.** The
 //! two rails are equal-flex and the centre is not: clusters of five controls
@@ -19,11 +23,12 @@
 //! hugging its controls. Equal rails need free space to be equal *about*; a
 //! shrink-to-fit bar has none, and its middle then lands wherever the clusters
 //! happen to put it. So width is the caller's, and a `max_w` is how a wide
-//! window gets a floating pill instead of a bottom bar.
+//! window gets a floating bar instead of a docked one.
 //!
-//! Placement is the caller's too, and it is four lines. A pill floats *over*
+//! Placement is the caller's too, and it is four lines. This bar floats *over*
 //! content and must never reflow it — the same overlay-never-a-gutter rule
-//! [`crate::scroll`] follows:
+//! [`crate::scroll`] follows. A bar that *does* reflow its content is a dock,
+//! not this: no blur, no float, and nothing here to reuse.
 //!
 //! ```ignore
 //! div().relative().size_full()
@@ -32,7 +37,7 @@
 //!         div().absolute().bottom(px(20.0)).left_0().right_0()
 //!             .flex().justify_center()
 //!             .child(div().w_full().max_w(px(880.0)).child(
-//!                 pill::pill(&theme, leading, Some(centre), trailing),
+//!                 control_bar::control_bar(&theme, Shape::Pill, leading, Some(centre), trailing),
 //!             )),
 //!     )
 //! ```
@@ -40,37 +45,60 @@
 use bezel_theme::{Theme, hairline};
 use gpui::{AnyElement, IntoElement, ParentElement as _, Styled as _, div, px};
 
-/// Height of the bar, and so half of its corner radius. One number rather than
-/// a parameter: the radius has to be derived from it for the material's blur to
-/// match the border, and a caller free to pick a height is a caller free to get
-/// that wrong.
-pub const PILL_HEIGHT: f32 = 56.0;
+/// Height of the bar, and so half the radius of a [`Shape::Pill`]. One number
+/// rather than a parameter: a stadium's radius has to be derived from it for
+/// the material's blur to match the border, and a caller free to pick a height
+/// is a caller free to get that wrong.
+pub const BAR_HEIGHT: f32 = 56.0;
 
 /// Gap between controls in a cluster, and the bar's own end inset. The inset
-/// matches the gap so the first control's circle sits as far from the stadium's
-/// edge as it does from its neighbour.
-const PILL_GAP: f32 = 8.0;
+/// matches the gap so the first control sits as far from the bar's edge as it
+/// does from its neighbour.
+const BAR_GAP: f32 = 8.0;
+
+/// How the bar's corners are cut. Two named cases rather than a radius, because
+/// this is a choice between two shapes and not a continuum — and because a bare
+/// number at the call site says nothing about which one you meant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shape {
+    /// A stadium — the radius is half the height. Apple Music's transport.
+    Pill,
+    /// A rounded rectangle at [`Theme::BUBBLE_RADIUS`], the radius this library
+    /// already gives floating rounded things. What most composers want; a
+    /// stadium reads as a media control and a composer is not one.
+    Rounded,
+}
+
+impl Shape {
+    fn radius(self) -> f32 {
+        match self {
+            Shape::Pill => BAR_HEIGHT / 2.0,
+            Shape::Rounded => Theme::BUBBLE_RADIUS,
+        }
+    }
+}
 
 /// The bar. `centre` is optional — a toolbar with only clusters passes `None`
 /// and the rails still hold their ends.
-pub fn pill(
+pub fn control_bar(
     theme: &Theme,
+    shape: Shape,
     leading: Vec<AnyElement>,
     centre: Option<AnyElement>,
     trailing: Vec<AnyElement>,
 ) -> AnyElement {
-    let radius = PILL_HEIGHT / 2.0;
+    let radius = shape.radius();
 
-    let rail = || div().flex().flex_row().items_center().gap(px(PILL_GAP));
+    let rail = || div().flex().flex_row().items_center().gap(px(BAR_GAP));
 
     let bar = div()
-        .h(px(PILL_HEIGHT))
+        .h(px(BAR_HEIGHT))
         .rounded(px(radius))
         .border_1()
         .border_color(hairline(0.10))
         .shadow_lg()
         .overflow_hidden()
-        .px(px(PILL_GAP))
+        .px(px(BAR_GAP))
         .flex()
         .flex_row()
         .items_center()
@@ -82,13 +110,13 @@ pub fn pill(
             theme.surface_overlay
         })
         .child(rail().flex_1().justify_start().children(leading))
-        .children(centre.map(|centre| div().flex_none().px(px(PILL_GAP)).child(centre)))
+        .children(centre.map(|centre| div().flex_none().px(px(BAR_GAP)).child(centre)))
         .child(rail().flex_1().justify_end().children(trailing));
 
     crate::material::material(radius, crate::material::MENU_BLUR, bar).into_any_element()
 }
 
-/// A circular control inside a pill: the ring, and its glyph at half the
+/// A circular control inside a bar: the ring, and its glyph at half the
 /// diameter. `diameter` is a parameter because a transport's primary action is
 /// deliberately bigger than its neighbours — that size difference is what makes
 /// the cluster readable at a glance.
@@ -101,7 +129,7 @@ pub fn pill(
 /// Caller adds id, click and its own `.hover(..)`: gpui panics on a second
 /// hover call, and the wash differs by state (a lit toggle is not a resting
 /// one). [`Theme::glass_hover`] is the wash to reach for.
-pub fn pill_button(icon: &'static str, diameter: f32, tint: gpui::Hsla) -> gpui::Div {
+pub fn bar_button(icon: &'static str, diameter: f32, tint: gpui::Hsla) -> gpui::Div {
     div()
         .flex_none()
         .size(px(diameter))

@@ -13,6 +13,7 @@ use std::rc::Rc;
 use bezel_theme::Theme;
 use bezel_theme::appearance::{self, AppearanceMode};
 use bezel_ui::combobox::Combobox;
+use bezel_ui::control_bar::Shape as ControlBarShape;
 use bezel_ui::date::{Calendar, Date};
 use bezel_ui::hover_card::HoverCard;
 use bezel_ui::input::{Shape, TextField};
@@ -397,7 +398,7 @@ pub const COMPONENTS: &[Group] = &[
             section("tabs", "Tabs", "crates/ui/src/widgets.rs"),
             section("collapsible", "Collapsible", "crates/ui/src/widgets.rs"),
             section("split", "Resizable split", "crates/ui/src/widgets.rs"),
-            section("pill", "Pill bar", "crates/ui/src/pill.rs"),
+            section("control-bar", "Control bar", "crates/ui/src/control_bar.rs"),
         ],
     },
     // Nothing here is built. It is one whole group on purpose: the data
@@ -534,27 +535,10 @@ pub struct Gallery {
     /// Which column the table page is sorted by. The app's, because the app is
     /// what has to sort the rows — the table only says what a click meant.
     table_sort: Option<Sort>,
-    /// The music pattern's playback clock. `music_position` is where the track
-    /// sat at `music_position_at`, and while playing the elapsed time is
-    /// *derived* from the two rather than accumulated per frame — see
-    /// `Gallery::elapsed`.
-    music_playing: bool,
-    music_position: f32,
-    music_position_at: std::time::Instant,
-    /// Where the scrubber is being held, in seconds. `Some` detaches the
-    /// display from the clock for exactly as long as the pointer is down.
-    music_scrub: Option<f32>,
-    music_track: usize,
-    music_volume: f32,
-    music_shuffle: bool,
-    /// Off, all, one. A three-state toggle, so it counts rather than flips.
-    music_repeat: usize,
-    music_liked: HashSet<usize>,
-    music_library: usize,
-    /// Right-click on a track: which one, and where the click landed.
-    music_menu: popover::Popup<(usize, gpui::Point<gpui::Pixels>)>,
-    music_scroll: gpui::ScrollHandle,
-    music_bar: ScrollbarState,
+    /// The music pattern — one field, because a pattern is a screen and owns a
+    /// screen's worth of state. A component demo can keep its value or two up
+    /// here beside the rest; thirteen of them cannot.
+    music: Entity<patterns::music::MusicPlayer>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -660,22 +644,7 @@ impl Gallery {
             tab: 1,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
-            // Starts paused: a clock that ticks on arrival would keep the
-            // window repainting for as long as the gallery is open, whichever
-            // page you are on.
-            music_playing: false,
-            music_position: 0.0,
-            music_position_at: std::time::Instant::now(),
-            music_scrub: None,
-            music_track: 0,
-            music_volume: 0.7,
-            music_shuffle: false,
-            music_repeat: 0,
-            music_liked: [0, 4].into_iter().collect(),
-            music_library: 0,
-            music_menu: popover::Popup::default(),
-            music_scroll: gpui::ScrollHandle::new(),
-            music_bar: ScrollbarState::new(),
+            music: cx.new(|_| patterns::music::MusicPlayer::default()),
         }
     }
 
@@ -1759,10 +1728,10 @@ impl Gallery {
                     .into_any_element()
             }
 
-            "pill" => {
+            "control-bar" => {
                 let glyph = |path: &'static str| {
                     let hover = theme.glass_hover();
-                    bezel_ui::pill::pill_button(path, 30.0, theme.text_muted)
+                    bezel_ui::control_bar::bar_button(path, 30.0, theme.text_muted)
                         .id(path)
                         .hover(move |s| s.bg(hover))
                 };
@@ -1775,13 +1744,15 @@ impl Gallery {
                 section
                     .child(hint(
                         &theme,
-                        "One shape, three jobs. The centre is centred on the BAR \
-                         rather than on what the clusters leave — five controls \
-                         on the left and one on the right still put it on axis.",
+                        "One bar, three jobs, two shapes. The centre is centred on \
+                         the BAR rather than on what the clusters leave — five \
+                         controls on the left and one on the right still put it \
+                         on axis.",
                     ))
-                    .child(widgets::field_label(&theme, "Transport"))
-                    .child(bezel_ui::pill::pill(
+                    .child(widgets::field_label(&theme, "Transport — Shape::Pill"))
+                    .child(bezel_ui::control_bar::control_bar(
                         &theme,
+                        ControlBarShape::Pill,
                         vec![
                             glyph(icons::SHUFFLE).into_any_element(),
                             glyph(icons::SKIP_PREVIOUS).into_any_element(),
@@ -1792,9 +1763,12 @@ impl Gallery {
                         Some(label("Grain").into_any_element()),
                         vec![glyph(icons::VOLUME_LOUD).into_any_element()],
                     ))
-                    .child(widgets::field_label(&theme, "Composer"))
-                    .child(bezel_ui::pill::pill(
+                    // Rounded, not a stadium: a composer is not a media control,
+                    // and the stadium reads as one.
+                    .child(widgets::field_label(&theme, "Composer — Shape::Rounded"))
+                    .child(bezel_ui::control_bar::control_bar(
                         &theme,
+                        ControlBarShape::Rounded,
                         vec![glyph(icons::PLUS).into_any_element()],
                         Some(label("Ask anything…").into_any_element()),
                         vec![
@@ -1803,9 +1777,9 @@ impl Gallery {
                         ],
                     ))
                     .child(widgets::field_label(&theme, "Floating over content"))
-                    // The same striped band the materials page uses: a pill that
-                    // frosts its backdrop with square corners would show it here
-                    // and nowhere else.
+                    // The same striped band the materials page uses, and the only
+                    // place either shape's blur can be caught disagreeing with
+                    // its border.
                     .child(
                         div()
                             .relative()
@@ -1829,8 +1803,9 @@ impl Gallery {
                                     .right_0()
                                     .flex()
                                     .justify_center()
-                                    .child(bezel_ui::pill::pill(
+                                    .child(bezel_ui::control_bar::control_bar(
                                         &theme,
+                                        ControlBarShape::Pill,
                                         vec![
                                             glyph(icons::SIDEBAR_MINIMALISTIC_LEFT)
                                                 .into_any_element(),
@@ -2407,7 +2382,7 @@ impl Gallery {
             }
 
             // ---- Patterns ----------------------------------------------------
-            "music-player" => self.music_body(cx),
+            "music-player" => self.music.clone().into_any_element(),
 
             _ => div().into_any_element(),
         }
@@ -2837,13 +2812,6 @@ impl Render for Gallery {
             window.request_animation_frame();
         }
 
-        // The playback clock, on the same terms: it is derived from the wall
-        // clock at paint time, so the only thing that makes it *move* is asking
-        // for the next frame. Paused, this costs nothing.
-        if self.music_playing {
-            window.request_animation_frame();
-        }
-
         // Traversal goes on the root so `tab` works wherever focus happens to
         // be, rather than only inside whatever claimed it.
         focus::traversal(div())
@@ -2897,9 +2865,6 @@ impl Render for Gallery {
                     ))
                 },
             )
-            .when(self.music_menu.get().is_some(), |root| {
-                root.child(self.music_context_menu(&theme, cx))
-            })
             .when(self.dialog.get().is_some(), |root| {
                 root.child(popover::modal(
                     "gallery-dialog",

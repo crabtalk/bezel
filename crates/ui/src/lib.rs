@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use gpui::App;
 
 pub mod combobox;
+pub mod control_bar;
 pub mod date;
 pub mod focus;
 pub mod hover_card;
@@ -21,7 +22,6 @@ pub mod material;
 pub mod menubar;
 pub mod pagination;
 pub mod palette;
-pub mod pill;
 pub mod popover;
 pub mod scroll;
 pub mod table;

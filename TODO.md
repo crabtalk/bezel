@@ -108,13 +108,13 @@ read off a temporary probe rather than assumed — and still unseen:
 - [ ] The thumb tracking a 10,000-row document, which is the same bar over a
       handle it has never been pointed at before
 
-The pill bar and the music pattern were built against the running app, captured
+The control bar and the music pattern were built against the running app, captured
 window by window — the layout below is *seen*, on dark, at one window size:
 
 - [x] Both centring claims, measured off the capture rather than assumed: the
       bar centred in its frame, and the centre block centred in the bar under a
       five-against-one cluster split
-- [x] The blur following the stadium's corners (the striped band on the Pill
+- [x] The blur following the stadium's corners (the striped band on the Control
       bar page is there for exactly this, and nothing else shows it)
 - [x] Transport icons painting at the same weight as their neighbours
 
@@ -122,7 +122,7 @@ Everything you *do* to it is unrun — no pointer ever reached the built app:
 
 - [ ] Play advancing the position, and the window going quiet again on pause
 - [ ] Dragging the scrubber mid-playback and the thumb NOT snapping back, which
-      is the whole reason `music_scrub` exists
+      is the whole reason `MusicPlayer::scrub` exists
 - [ ] The release committing the seek — `on_mouse_up` is the only commit path,
       since gpui delivers no drag-end
 - [ ] Right-click on a track opening the track menu rather than the gallery's
@@ -231,6 +231,20 @@ which is the point: a pattern is not a component you call, it is a file you
 copy. `Tab::full_bleed` gives those pages the whole pane instead of the fixed
 column every component demo is designed for.
 
+A pattern is an **entity**, not a handful of fields on the gallery, and that is
+the rule for every one after this. The music player first landed as thirteen
+`music_*` fields on `Gallery` plus a mount in the root render — the same bloat
+the library is careful to keep out of `ui`, aimed one layer off. A component
+demo owns a value or two and can keep them beside the rest; a screen owns a
+screen's worth. `Gallery` holds one `Entity<MusicPlayer>`, and the next pattern
+costs one more field rather than another fifteen.
+
+Two things fell out of that rather than being designed. The page mounts its own
+context menu (`menu_at` anchors to the window, so a nested view can carry a
+popup), and the playback clock stops asking for frames when another page is
+open — a view that is not rendered never reaches its `request_animation_frame`,
+which the root-level version could not manage.
+
 Its first entry is **Music player**, and it exists because someone building a
 native Spotify client on gpui asked what bezel had for one. Answering that by
 composing the screen is what found the gaps: no transport icons at all (58 of
@@ -241,14 +255,25 @@ displayed position detaches from it while held — otherwise a playing track
 drags the thumb out from under the pointer, which reads as a seek bar that
 fights you.
 
-Pill bar (`pill.rs`) — a glass stadium holding a leading cluster, an optional
-centre and a trailing cluster. One constant and two functions, and both of the
-things it exists for are things a caller gets wrong alone.
+Control bar (`control_bar.rs`) — a glass surface holding a leading cluster, an
+optional centre and a trailing cluster. Named for the job, not the shape, and
+the module is the evidence: of everything it does, only one line was ever
+stadium-specific. The glass chrome, the equal rails, the overlay placement and
+the invariant below are all shape-blind, so `Shape::Pill`/`Shape::Rounded` is a
+choice between two corner cuts and nothing else — a stadium for a transport, a
+`Theme::BUBBLE_RADIUS` rectangle for a composer, which is not a media control
+and should not read as one.
 
-`material` takes a corner radius and paints the backdrop blur to it; a
-stadium's is half its height, and a mismatch frosts square corners outside a
-round border. Deriving it from `PILL_HEIGHT` is why the height is a constant
-rather than a parameter.
+`material` takes a corner radius and paints the backdrop blur to it, and a
+mismatch frosts square corners outside a round border. The invariant is *the
+blur radius equals the border radius* — not "half the height", which is only
+the stadium's case of it. One number comes out of `Shape` and feeds both, so a
+second shape cannot reintroduce the bug.
+
+What is deliberately **not** a shape here is Spotify's bar. That one docks: it
+reflows the content above it, takes no blur and does not float. It is the
+negation of this module's whole reason to exist, and it is `div().h(..)
+.border_t_1()` — nothing to extract.
 
 The centre is centred on the *bar*, not on what the clusters leave: the two
 rails are equal-flex and the centre is not, so five controls on the left and
@@ -256,10 +281,9 @@ one on the right still put it on axis. That rule is also why the bar takes the
 width it is given rather than hugging its controls — equal rails need free
 space to be equal about, and a shrink-to-fit bar has none. The two are
 contradictory and only one of them can be free; width is the caller's, and a
-`max_w` is what keeps a wide window showing a floating pill instead of a bottom
-bar.
+`max_w` is what keeps a wide window showing a floating bar rather than a docked one.
 
-`pill_button` builds its own icon rather than taking one, the way `row_tile`
+`bar_button` builds its own icon rather than taking one, the way `row_tile`
 does, and for a reason worth knowing anywhere in this library: **gpui reads an
 svg's colour off that element's own style and paints nothing at all when it is
 unset.** A colour set on the button would silently not reach the glyph, and the
@@ -276,7 +300,7 @@ the locally embedded subset had no speaker at the time — Solar does.
 Components: button ×3 · text field (IME, selection, clipboard, native
 shortcuts) · **textarea** · select · combobox · command palette · date picker ·
 menubar · checkbox · radio · toggle ·
-badge ×2 · avatar · progress · slider · tabs · toggle group · pill bar · disclosure +
+badge ×2 · avatar · progress · slider · tabs · toggle group · control bar · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
 split · scroll area · table · tree view · virtualized list · pagination · group box + rows · separator · skeleton rows · alert strips ·
