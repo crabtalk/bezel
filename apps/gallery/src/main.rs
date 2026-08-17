@@ -23,6 +23,7 @@ fn main() {
             }
             appearance::init(appearance::AppearanceMode::System, cx);
             input::init(cx);
+            bezel_editor::init(cx);
             palette::init(cx);
             combobox::init(cx);
             date::init(cx);

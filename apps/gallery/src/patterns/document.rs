@@ -23,11 +23,13 @@
 //! Like the other patterns it is an entity: a screen owns a screen's worth of
 //! state, and its host holds one field.
 
+use bezel_editor::Editor;
 use bezel_markdown::{BlockKind, Doc};
 use bezel_theme::Theme;
 use bezel_ui::widgets;
 use gpui::{
-    Context, ElementId, Render, ScrollHandle, SharedString, Window, div, prelude::*, px,
+    Context, ElementId, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
+    prelude::*, px,
 };
 
 /// The document on the page. Canonical markdown — `serialize(parse(SOURCE))`
@@ -75,19 +77,22 @@ fn main() {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
     Read,
+    Edit,
     Source,
 }
 
 pub struct Document {
-    doc: Doc,
+    editor: Entity<Editor>,
     view: View,
     scroll: ScrollHandle,
 }
 
-impl Default for Document {
-    fn default() -> Self {
+impl Document {
+    /// The editor is an entity of its own, like every other screen's state: it
+    /// owns a document and a caret, and this screen owns the editor.
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
-            doc: bezel_markdown::parse(SOURCE),
+            editor: cx.new(|cx| Editor::new(SOURCE, cx)),
             view: View::Read,
             scroll: ScrollHandle::new(),
         }
@@ -95,13 +100,19 @@ impl Default for Document {
 }
 
 impl Document {
+    /// The document the panes read from — the editor's once it has been
+    /// touched, so Read and Source show what was typed rather than the
+    /// constant this file opened with.
+    fn current(&self, cx: &Context<Self>) -> Doc {
+        self.editor.read(cx).doc().clone()
+    }
+
     /// Every heading, with its level — the table of contents.
     ///
     /// One pass over the block list. There is no tree to descend and no depth
     /// to track, because a block already knows how deep it sits.
-    fn outline(&self) -> Vec<(u8, SharedString)> {
-        self.doc
-            .blocks
+    fn outline(&self, doc: &Doc) -> Vec<(u8, SharedString)> {
+        doc.blocks
             .iter()
             .filter_map(|block| match &block.kind {
                 BlockKind::Heading { level, text } => {
@@ -116,6 +127,7 @@ impl Document {
 impl Render for Document {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
+        let doc = self.current(cx);
 
         let outline = div()
             .flex_none()
@@ -129,7 +141,7 @@ impl Render for Document {
                     .text_color(theme.text_faint)
                     .child("OUTLINE"),
             )
-            .children(self.outline().into_iter().map(|(level, title)| {
+            .children(self.outline(&doc).into_iter().map(|(level, title)| {
                 div()
                     .pl(px((level.saturating_sub(1) as f32) * 12.0))
                     .text_size(px(12.5))
@@ -142,23 +154,32 @@ impl Render for Document {
             }));
 
         let body = match self.view {
-            View::Read => bezel_markdown::render(&self.doc, window, cx),
+            View::Read => bezel_markdown::render(&doc, window, cx),
+            View::Edit => self.editor.clone().into_any_element(),
             // The document written back out, not the constant above it.
             View::Source => div()
                 .font_family(theme.font_mono.clone())
                 .text_size(px(12.0))
                 .line_height(px(19.0))
                 .text_color(theme.text_muted)
-                .child(SharedString::from(bezel_markdown::serialize(&self.doc)))
+                .child(SharedString::from(self.editor.read(cx).source()))
                 .into_any_element(),
         };
 
-        let segments = [("Read", View::Read), ("Source", View::Source)];
+        let segments = [
+            ("Read", View::Read),
+            ("Edit", View::Edit),
+            ("Source", View::Source),
+        ];
         let toggle = widgets::toggle_group(&theme).children(segments.map(|(label, view)| {
             widgets::toggle_group_item(&theme, label, self.view == view)
                 .id(ElementId::Name(label.into()))
-                .on_click(cx.listener(move |this, _, _, cx| {
+                .on_click(cx.listener(move |this, _, window, cx| {
                     this.view = view;
+                    if view == View::Edit {
+                        let handle = this.editor.read(cx).focus_handle(cx);
+                        handle.focus(window, cx);
+                    }
                     cx.notify();
                 }))
         }));

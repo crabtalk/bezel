@@ -382,6 +382,12 @@ pub const PATTERNS: &[Group] = &[
                 "Composer",
                 "apps/gallery/src/patterns/agent.rs",
             ),
+            section(
+                "agent-transcript",
+                "Transcript",
+                "apps/gallery/src/patterns/transcript.rs",
+            ),
+            section("agent-diff", "Diff", "apps/gallery/src/patterns/diff.rs"),
         ],
     },
     Group {
@@ -530,6 +536,16 @@ fn section_at(key: &str) -> Option<&'static Section> {
         .find(|section| section.key == key)
 }
 
+/// Which tab holds a key, so an embed can select a page without knowing the
+/// shape of the catalog above it.
+fn tab_of(key: &str) -> Option<usize> {
+    TABS.iter().position(|tab| {
+        tab.groups
+            .iter()
+            .any(|group| group.sections.iter().any(|section| section.key == key))
+    })
+}
+
 pub struct Gallery {
     search: Entity<TextField>,
     filled: Entity<TextField>,
@@ -634,6 +650,8 @@ pub struct Gallery {
     activity: Entity<patterns::agent::Activity>,
     tool_calls: Entity<patterns::agent::ToolCalls>,
     agent_composer: Entity<patterns::agent::Composer>,
+    transcript: Entity<patterns::transcript::Transcript>,
+    diff: Entity<patterns::diff::Diff>,
     music: Entity<patterns::music::MusicPlayer>,
     document: Entity<patterns::document::Document>,
     /// Which top-nav tab is open.
@@ -642,6 +660,10 @@ pub struct Gallery {
     /// where you left, not at the top.
     selected: Vec<&'static str>,
     dialog: popover::Popup<()>,
+    /// Renders one section alone, without the nav, rail or header around it.
+    /// The website embeds a page per component this way, so a doc page shows
+    /// the component it documents rather than the whole browser.
+    embedded: bool,
 }
 
 impl Gallery {
@@ -748,15 +770,35 @@ impl Gallery {
             switched: [true, false],
             level: 0.5,
             tab_choice: 0,
-            tab: 1,
-            selected: TABS.iter().map(|tab| tab.home).collect(),
+            tab: 2,
+            selected: TABS
+                .iter()
+                .enumerate()
+                .map(|(i, tab)| if i == 2 { "agent-diff" } else { tab.home })
+                .collect(),
             dialog: popover::Popup::default(),
             activity: cx.new(|_| patterns::agent::Activity::default()),
             tool_calls: cx.new(|_| patterns::agent::ToolCalls::default()),
             agent_composer: cx.new(patterns::agent::Composer::new),
+            transcript: cx.new(|_| patterns::transcript::Transcript::default()),
+            diff: cx.new(|_| patterns::diff::Diff),
             music: cx.new(|_| patterns::music::MusicPlayer::default()),
-            document: cx.new(|_| patterns::document::Document::default()),
+            document: cx.new(patterns::document::Document::new),
+            embedded: false,
         }
+    }
+
+    /// One section, alone, for a website page that documents it. Falls back to
+    /// the whole browser when the key is not in the catalog, so a stale link
+    /// lands somewhere useful instead of on an empty pane.
+    pub fn embedded(key: &str, cx: &mut Context<Self>) -> Self {
+        let mut gallery = Self::new(cx);
+        if let Some(tab) = tab_of(key) {
+            gallery.tab = tab;
+            gallery.selected[tab] = section_at(key).expect("tab_of matched").key;
+            gallery.embedded = true;
+        }
+        gallery
     }
 
     /// The gallery's own focus handle — what the window focuses on launch.
@@ -2789,6 +2831,8 @@ impl Gallery {
             "agent-activity" => self.activity.clone().into_any_element(),
             "agent-tools" => self.tool_calls.clone().into_any_element(),
             "agent-composer" => self.agent_composer.clone().into_any_element(),
+            "agent-transcript" => self.transcript.clone().into_any_element(),
+            "agent-diff" => self.diff.clone().into_any_element(),
             "music-player" => self.music.clone().into_any_element(),
             "document" => self.document.clone().into_any_element(),
 
@@ -3185,29 +3229,35 @@ impl Render for Gallery {
                 ))
             }
         });
-        let content = div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .child(self.nav(&theme, cx))
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.rail(&theme, cx))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .flex()
-                            .flex_col()
-                            .child(self.header(section, &theme))
-                            .child(pane),
-                    ),
-            );
+        let content = if self.embedded {
+            // The page around the iframe is already the nav, the rail and the
+            // header — repeating them inside it would be the same chrome twice.
+            div().flex().flex_col().size_full().child(pane)
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .size_full()
+                .child(self.nav(&theme, cx))
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .flex_1()
+                        .min_h_0()
+                        .child(self.rail(&theme, cx))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .h_full()
+                                .flex()
+                                .flex_col()
+                                .child(self.header(section, &theme))
+                                .child(pane),
+                        ),
+                )
+        };
 
         // A hover fade is a colour computed at paint time, not an animation
         // element that drives itself: `hover_listener` marks the window dirty
