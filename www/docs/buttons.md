@@ -1,3 +1,8 @@
+---
+title: Buttons
+description: Buttons for gpui — default, prominent and destructive, each returning a plain gpui::Div you attach your own click handler to.
+---
+
 Three buttons, and the difference between them is only ever emphasis. Each returns a `gpui::Div`, so you wrap it in whatever handles the click — bezel does not own your interaction.
 
 ```rust

@@ -31,10 +31,21 @@ thread_local! {
     static APPLICATION: RefCell<Option<ApplicationHandle>> = const { RefCell::new(None) };
 }
 
+/// `?s=<key>` embeds one section; without it the page is the whole browser.
+fn requested_section() -> Option<String> {
+    let search = web_sys::window()?.location().search().ok()?;
+    web_sys::UrlSearchParams::new_with_str(&search)
+        .ok()?
+        .get("s")
+        .filter(|key| !key.is_empty())
+}
+
 #[wasm_bindgen(start)]
 pub fn start() {
     console_error_panic_hook::set_once();
     gpui_web::init_logging();
+
+    let section = requested_section();
 
     let platform = Rc::new(gpui_web::WebPlatform::new(false));
     let http_client = Arc::new(platform.fetch_http_client());
@@ -66,7 +77,10 @@ pub fn start() {
                 // appearance synchronously during init, and on a mismatch that
                 // reaches `reapply_window_background`, which updates the window
                 // still being constructed.
-                |_, cx| cx.new(Gallery::new),
+                move |_, cx| match section.as_deref() {
+                    Some(key) => cx.new(|cx| Gallery::embedded(key, cx)),
+                    None => cx.new(Gallery::new),
+                },
             )
             .expect("failed to open the gallery window");
             cx.activate(true);

@@ -6,6 +6,7 @@ members = [
     "crates/motion",
     "crates/ui",
     "crates/markdown",
+    "crates/editor",
     "apps/gallery",
     "apps/web",
 ]
@@ -28,27 +29,34 @@ bezel-theme = { path = "crates/theme", version = "0.0.2" }
 bezel-motion = { path = "crates/motion", version = "0.0.2" }
 bezel-ui = { path = "crates/ui", version = "0.0.2" }
 bezel-markdown = { path = "crates/markdown", version = "0.0.2" }
+bezel-editor = { path = "crates/editor", version = "0.0.2" }
 
-# gpui by version, sourced from our fork via [patch.crates-io] below. The
-# version requirement is what publishing needs (crates.io rejects a bare git
-# dep); the patch is what actually builds. When zed publishes a release that
-# matches this API, drop the patch and nothing else changes.
-gpui = "0.2.2"
-# Not published; only the (unpublished) gallery needs it. Must resolve to the
-# SAME gpui as the patch below — a second copy in the graph is two
-# incompatible type universes.
+# gpui from our fork by git rev, not from crates.io. The registry release is
+# months behind this API and its macOS graph does not even resolve, so a version
+# requirement plus `[patch.crates-io]` only ever described a build that could
+# not happen — and it made every consumer repeat the patch in their own root
+# workspace, because patch sections do not travel through dependencies. A git
+# dep resolves for anyone who depends on bezel, with nothing to repeat.
+#
+# `version` disambiguates: the repo holds a second package named `gpui`, the
+# 0.0.0 lint fixture under `tooling/`.
+gpui = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", version = "0.2.2" }
+# Same rev as gpui above, deliberately: a second copy of gpui in the graph is
+# two incompatible type universes.
 #
 # `font-kit` is NOT optional in practice: without it the text system falls back
 # to a handful of bundled faces (no system fonts, no `add_fonts` families), so
 # every glyph resolves to notdef — text reserves layout space and paints
 # nothing. Add `wayland`/`x11` when we build on Linux.
-gpui_platform = { path = "../zed/crates/gpui_platform", features = ["font-kit"] }
+gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", features = [
+    "font-kit",
+] }
 # The browser platform, taken directly rather than through `gpui_platform`,
 # which would enable `gpui_web/multithreaded` by default and drag in a
 # `wasm_thread` that only builds on nightly. gpui's own browser gallery
 # (longbridge/gpui-component) runs single-threaded with empty rustflags, so the
 # threaded path buys us nothing but a toolchain pin.
-gpui_web = { path = "../zed/crates/gpui_web", default-features = false }
+gpui_web = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", default-features = false }
 
 # `std::time::Instant` panics on wasm32-unknown-unknown ("time not implemented
 # on this platform"), and every animation clock in bezel reads one per frame.
@@ -59,15 +67,6 @@ web-time = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
-
-# Our fork of zed (gpui's home repo), as a sibling checkout: we carry gpui
-# patches (`ui::material` needs `Window::paint_backdrop_blur`) that are not
-# pushed yet, so a local path is the honest source. Swap to
-# `{ git = "https://github.com/crabtalk/zed", rev = "…", version = "=0.2.2" }`
-# once the patch branch is pushed — `version` is required there because the
-# repo holds more than one package named `gpui`.
-[patch.crates-io]
-gpui = { path = "../zed/crates/gpui" }
 
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare

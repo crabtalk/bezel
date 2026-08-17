@@ -1,10 +1,17 @@
+/* Imported here rather than in the page, so the overrides below always land
+   after it — the theme ships its own surface, and we only want its colours. */
+@import 'highlight.js/styles/github-dark-dimmed.css';
+
 :root {
-	--bg: #0b0c0e;
-	--panel: #121417;
-	--line: #22262c;
-	--text: #e6e8ec;
-	--muted: #8b929c;
-	--accent: #7aa2f7;
+	/* Neutral by construction: there is no hue anywhere in the page, so nothing
+	   competes with the gallery, which is the only thing here with colour. */
+	--bg: #000;
+	--panel: #0a0a0a;
+	--line: #232323;
+	--line-strong: #363636;
+	--text: #ededed;
+	--muted: #a1a1a1;
+	--faint: #6f6f6f;
 	--mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
 	color-scheme: dark;
 }
@@ -25,12 +32,13 @@ body {
 }
 
 a {
-	color: var(--accent);
+	color: var(--text);
 	text-decoration: none;
 }
 
 a:hover {
 	text-decoration: underline;
+	text-underline-offset: 3px;
 }
 
 code {
@@ -50,10 +58,72 @@ pre {
 	overflow-x: auto;
 }
 
-pre code {
+/* Styles for rendered markdown live here rather than in the page: Svelte scopes
+   component styles, and `{@html}` content never carries the scoping class. */
+.code-block {
+	position: relative;
+}
+
+.copy {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	display: grid;
+	place-items: center;
+	width: 30px;
+	height: 30px;
+	padding: 0;
+	border: 1px solid var(--line-strong);
+	border-radius: 6px;
+	background: var(--bg);
+	color: var(--muted);
+	cursor: pointer;
+	opacity: 0;
+	transition:
+		opacity 0.12s,
+		color 0.12s,
+		border-color 0.12s;
+}
+
+.code-block:hover .copy,
+.copy:focus-visible {
+	opacity: 1;
+}
+
+.copy:hover {
+	color: var(--text);
+	border-color: var(--text);
+}
+
+.copy svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* lucide names its own marks, so swapping them needs no extra markup. */
+.copy .lucide-check,
+.copy.copied .lucide-copy {
+	display: none;
+}
+
+.copy.copied .lucide-check {
+	display: block;
+}
+
+.copy.copied {
+	opacity: 1;
+	color: var(--text);
+}
+
+/* One box, not two. `pre` already draws the outline and the padding; the
+   highlight theme's own surface would sit inside it as a second, lighter
+   rectangle. Its token colours are all we take. */
+pre code,
+pre code.hljs {
 	background: none;
 	border: 0;
 	padding: 0;
+	color: var(--text);
 }
 
 h1,

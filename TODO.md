@@ -199,10 +199,18 @@ Heavy extractions from comet (ports, not new design):
       (restoring `SyntaxPalette::color`) so spans arrive from the caller and this
       crate never learns about tree-sitter. Deliberately not added before
       `bezel-syntax` exists to produce them.
-- [ ] `bezel-markdown` phase 3 — the block editor. Marks mapped through edits on
-      `TextField`, block split/merge/indent/transform, markdown input shortcuts,
-      slash menu. Its own crate: it needs `bezel-ui`, and `bezel-markdown` stays
-      light so a read-only consumer does not pull in popovers.
+- [x] `bezel-markdown` phase 3a — the editing model (`edit`). Marks mapped
+      through insert/remove/toggle, block split/merge/indent/outdent, markdown
+      input shortcuts. Pure, and held to the round trip over 1.5M generated edit
+      sequences.
+- [x] `bezel-editor` phase 3b (first cut) — the editing surface. `Editor` owns
+      the document and a `(block, offset)` caret; typing, Backspace, Enter, Tab
+      and arrows run through the phase-3a operations; markdown input shortcuts
+      fire as you type. On the Document pattern's Edit segment.
+- [ ] Editing still missing: selection (the caret is a point, not a range), so
+      no copy, cut or select-all; undo; the slash menu; and `up`/`down` step
+      whole blocks rather than visual rows, so they jump in a wrapped
+      paragraph. Word motion and the clipboard come with selection.
 - [ ] `bezel-syntax` — tree-sitter highlighting + bounded highlight cache
 - [ ] `bezel-terminal` — alacritty grid view (leave the app-coupled panel behind)
 
@@ -433,7 +441,7 @@ menubar · checkbox · radio · toggle ·
 badge ×2 · avatar · progress · slider · tabs · toggle group · control bar · follow scroll · disclosure +
 collapsible header + takeover · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
-split · scroll area · table · tree view · virtualized list · pagination · group box + rows · separator · skeleton rows · alert strips ·
+split · scroll area · table · tree view · diff · virtualized list · pagination · group box + rows · separator · skeleton rows · alert strips ·
 orbs ×4 + spinners · icons (58 SVG) · material glass.
 
 Textarea is one `TextField` under a `Shape`, not a second component: `Line`,

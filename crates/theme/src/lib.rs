@@ -22,9 +22,10 @@
 //!    *alphas* carry over unchanged ([`INK_FILL_SCALE`]); only hairlines scale, so
 //!    a 1px edge survives a bright surround ([`INK_HAIRLINE_SCALE`]).
 //! 3. **Accents must move down the scale.** The dark palette's 400-level accents
-//!    (indigo/red/amber) are chosen for contrast against near-black; on white they
-//!    fall to 2–4:1 and fail WCAG AA. Light mode uses the 600-level siblings at the
-//!    same hue, which restores the *contrast ratio* the dark token had.
+//!    (red/amber, and whatever hue an app sets [`Theme::accent`] to) are chosen
+//!    for contrast against near-black; on white they fall to 2–4:1 and fail WCAG
+//!    AA. Light mode uses the 600-level siblings at the same hue, which restores
+//!    the *contrast ratio* the dark token had.
 //!
 //! Text tones are chosen so each light token lands within ~0.5 of its dark
 //! counterpart's contrast ratio against its own background — the pairing is
@@ -322,10 +323,27 @@ pub struct Theme {
     pub on_solid: Hsla,
 
     // ---- paint: accents ----
-    /// Accent — indigo. Text/icon weight: indigo-400 on dark, indigo-600 on light
-    /// (the 400 fails AA on white).
+    /// Accent — the emphasis weight for text and icons.
+    ///
+    /// **Neutral by default, and deliberately.** A component library that ships
+    /// a hue puts that hue in every app that installs it, and bezel had an
+    /// indigo running through spinners, pagination, date selection and list
+    /// markers before anyone chose it. The default is now the same lightness
+    /// with the chroma at zero.
+    ///
+    /// This is the token to brand:
+    ///
+    /// ```ignore
+    /// let mut theme = Theme::for_appearance(appearance);
+    /// theme.accent = my_brand_accent(appearance);
+    /// ```
+    ///
+    /// See [`set_palette`], which is what makes an override survive an
+    /// appearance switch.
     pub accent: Hsla,
-    /// Stronger accent for fills that carry [`Self::on_accent`] text.
+    /// Stronger accent for fills that carry [`Self::on_accent`] text. Neutral by
+    /// default, it is the maximum-contrast plate — a mid grey would not carry a
+    /// label the way the indigo it replaced did.
     pub accent_strong: Hsla,
     /// Label color on top of [`Self::accent_strong`].
     pub on_accent: Hsla,
@@ -365,14 +383,19 @@ pub struct Theme {
     pub selection: Hsla,
     /// Terminal block cursor.
     pub cursor: Hsla,
-    /// Composer text caret. A blue distinct from `accent` — sampled from the
-    /// original composer, not derived, so it keeps its own token.
+    /// Text caret, and the focus ring that shares its weight.
+    ///
+    /// The body text colour, because that is what a caret is: the next glyph,
+    /// before you type it. It was a sampled blue once — carried over from the
+    /// app this library was extracted from, derived from nothing here — which
+    /// is why a caret in a plain paragraph arrived tinted.
     pub caret: Hsla,
     /// Destructive-action button fill (danger plate, carries [`Self::on_accent`]).
     pub danger_strong: Hsla,
 
     // ---- paint: code & diff ----
-    /// Inline-code text — violet, per the user's "a nice purple" request.
+    /// Inline-code text. Neutral: code is already set apart by the mono face
+    /// and its wash, and a hue on top reads as a link rather than as code.
     pub code_text: Hsla,
     /// Inline-code wash behind [`Self::code_text`].
     pub code_wash: Hsla,
@@ -619,25 +642,25 @@ impl Theme {
             text_dim: grey(0x98),
             solid: neutral(0.922),                       // near-white plate
             on_solid: grey(0x0e),                        // near-black label
-            accent: oklch(0.673, 0.182, 276.935),        // indigo-400
-            accent_strong: oklch(0.585, 0.233, 277.117), // indigo-500
-            on_accent: neutral(0.985),
-            danger: oklch(0.704, 0.191, 22.216),       // red-400
-            danger_muted: oklch(0.808, 0.114, 19.571), // red-300
-            warning: oklch(0.828, 0.189, 84.429),      // amber-400
-            warning_muted: oklch(0.924, 0.12, 95.746), // amber-200
-            success: oklch(0.765, 0.177, 163.223),     // emerald-400
-            busy: oklch(0.718, 0.202, 349.761),        // pink-400
+            accent: neutral(0.673),                      // indigo-400's lightness, no chroma
+            accent_strong: neutral(0.922),               // the solid plate
+            on_accent: grey(0x0e),                       // its inverse label
+            danger: oklch(0.704, 0.191, 22.216),         // red-400
+            danger_muted: oklch(0.808, 0.114, 19.571),   // red-300
+            warning: oklch(0.828, 0.189, 84.429),        // amber-400
+            warning_muted: oklch(0.924, 0.12, 95.746),   // amber-200
+            success: oklch(0.765, 0.177, 163.223),       // emerald-400
+            busy: oklch(0.718, 0.202, 349.761),          // pink-400
             success_muted: oklch(0.845, 0.143, 164.978), // emerald-300
             surface_raised_hover: neutral(0.29),
             band: band_for(Appearance::Dark),
             input_bg: hsla(0.0, 0.0, 1.0, 0.03),
             selection: hsla(0.66, 0.6, 0.55, 0.35),
             cursor: hsla(0.0, 0.0, 1.0, 0.35),
-            caret: hsla(0.66, 0.7, 0.7, 1.0),
+            caret: neutral(0.922), // the body text colour
             danger_strong: oklch(0.58, 0.16, 25.0),
-            code_text: oklch(0.811, 0.111, 293.571), // violet-300
-            code_wash: oklch(0.702, 0.183, 293.541).opacity(0.12), // violet-400/12
+            code_text: neutral(0.94), // near-white, a shade above body text
+            code_wash: hsla(0.0, 0.0, 1.0, 0.08), // white/8
             syntax: SyntaxPalette::dark(neutral(0.922), neutral(0.60), oklch(0.704, 0.191, 22.216)),
             diff_add: oklch(0.765, 0.177, 163.223), // emerald-400
             diff_del: oklch(0.704, 0.191, 22.216),  // red-400
@@ -691,15 +714,15 @@ impl Theme {
             text_dim: neutral(0.50),
             solid: neutral(0.205),    // near-black plate, deeper than body text
             on_solid: neutral(0.985), // near-white label
-            accent: oklch(0.511, 0.262, 276.966), // indigo-600
-            accent_strong: oklch(0.511, 0.262, 276.966), // indigo-600 fill
-            on_accent: neutral(0.985),
-            danger: oklch(0.577, 0.245, 27.325),        // red-600
-            danger_muted: oklch(0.505, 0.213, 27.518),  // red-700
-            warning: oklch(0.555, 0.163, 48.998),       // amber-700 — carries 12px text
+            accent: neutral(0.511),   // indigo-600's lightness, no chroma
+            accent_strong: neutral(0.205), // the solid plate
+            on_accent: neutral(0.985), // its inverse label
+            danger: oklch(0.577, 0.245, 27.325), // red-600
+            danger_muted: oklch(0.505, 0.213, 27.518), // red-700
+            warning: oklch(0.555, 0.163, 48.998), // amber-700 — carries 12px text
             warning_muted: oklch(0.473, 0.137, 46.201), // amber-800
-            success: oklch(0.596, 0.145, 163.225),      // emerald-600
-            busy: oklch(0.592, 0.249, 0.584),           // pink-600
+            success: oklch(0.596, 0.145, 163.225), // emerald-600
+            busy: oklch(0.592, 0.249, 0.584), // pink-600
             success_muted: oklch(0.508, 0.118, 165.612), // emerald-700
             // Opaque pills darken on hover here rather than brighten — same
             // "brighten the plate, don't wash it out" rule, read the other way.
@@ -710,10 +733,10 @@ impl Theme {
             input_bg: grey(0xff),
             selection: hsla(0.66, 0.75, 0.62, 0.28),
             cursor: hsla(0.0, 0.0, 0.0, 0.55),
-            caret: hsla(0.66, 0.78, 0.42, 1.0),
+            caret: neutral(0.25), // the body text colour
             danger_strong: oklch(0.51, 0.20, 25.0),
-            code_text: oklch(0.491, 0.27, 292.581), // violet-700
-            code_wash: oklch(0.541, 0.281, 293.009).opacity(0.10), // violet-600/10
+            code_text: neutral(0.18), // near-black, a shade under body text
+            code_wash: hsla(0.0, 0.0, 0.0, 0.06), // black/6
             syntax: SyntaxPalette::light(neutral(0.25), neutral(0.48), oklch(0.505, 0.213, 27.518)),
             diff_add: oklch(0.596, 0.145, 163.225), // emerald-600
             diff_del: oklch(0.577, 0.245, 27.325),  // red-600
