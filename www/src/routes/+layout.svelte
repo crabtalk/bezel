@@ -4,7 +4,7 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import Brand from '$lib/Brand.svelte';
-	import { documented, docsHome, repo } from '$lib/catalog.js';
+	import { documented, repo } from '$lib/catalog.js';
 
 	let { children, data } = $props();
 
@@ -16,13 +16,17 @@
 	const inDocs = $derived(page.route.id?.startsWith('/docs') ?? false);
 
 	// Same axis the gallery uses: the tabs are the *kind* of thing, the rail is
-	// what is in it. One tab is not a choice, so the row waits until there are two.
-	const tabs = $derived(inDocs && documented.length > 1 ? documented : []);
+	// what is in it. This is a docs site, so they are the site's nav and sit in
+	// the header everywhere — a "Docs" link beside them would point at the first
+	// tab's first page, which is the first tab.
+	const tabs = $derived(documented);
 
 	const activeTab = $derived(
-		documented.find((tab) =>
-			tab.groups.some((group) => group.sections.some((s) => s.key === page.params.slug))
-		) ?? documented[0]
+		inDocs
+			? (documented.find((tab) =>
+					tab.groups.some((group) => group.sections.some((s) => s.key === page.params.slug))
+				) ?? documented[0])
+			: null
 	);
 
 	const home = (tab) => tab.groups[0].sections[0].key;
@@ -56,9 +60,6 @@
 	<!-- Nav sits with the wordmark, not opposite it: the left group is where you
 	     are in the project, the right group is what you can do about it. -->
 	<nav class="nav">
-		{#if docsHome}
-			<a href="{base}/docs/{docsHome}/" class:current={inDocs}>Docs</a>
-		{/if}
 		{#each tabs as tab (tab.title)}
 			<a
 				href="{base}/docs/{home(tab)}/"
