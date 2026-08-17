@@ -10,7 +10,7 @@ use bezel_theme::Theme;
 use bezel_theme::appearance::{self, AppearanceMode};
 use bezel_ui::combobox::Combobox;
 use bezel_ui::hover_card::HoverCard;
-use bezel_ui::input::TextField;
+use bezel_ui::input::{Shape, TextField};
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::tooltip::Tooltip;
 use bezel_ui::widgets::SplitDrag;
@@ -149,7 +149,7 @@ pub const COMPONENTS: &[Group] = &[
         sections: &[
             section("buttons", "Buttons", "crates/ui/src/popover.rs"),
             section("text-field", "Text field", "crates/ui/src/input.rs"),
-            planned("textarea", "Textarea"),
+            section("textarea", "Textarea", "crates/ui/src/input.rs"),
             section("select", "Select", "crates/ui/src/widgets.rs"),
             section("combobox", "Combobox", "crates/ui/src/combobox.rs"),
             section(
@@ -229,7 +229,6 @@ pub const COMPONENTS: &[Group] = &[
 /// this in step with the [`planned`] rows.
 #[cfg(test)]
 const PLANNED_BODIES: &[&str] = &[
-    "textarea",
     "date-picker",
     "menubar",
     "pagination",
@@ -249,6 +248,10 @@ fn section_at(key: &str) -> Option<&'static Section> {
 pub struct Gallery {
     search: Entity<TextField>,
     filled: Entity<TextField>,
+    /// The two multi-line shapes. Their row counts are this page's example, not
+    /// a default the library holds — `Shape` takes them from the caller.
+    notes: Entity<TextField>,
+    composer: Entity<TextField>,
     /// Mounted only while open — a palette that lingers keeps a stale query.
     palette: Option<Entity<CommandPalette>>,
     last_command: Option<SharedString>,
@@ -286,6 +289,20 @@ impl Gallery {
                 let mut field = TextField::new(cx);
                 field.set_content("Select me with shift-left", cx);
                 field
+            }),
+            notes: cx.new(|cx| {
+                let mut field = TextField::new(cx).with_shape(Shape::Rows(4));
+                field.set_content(
+                    "Wrapping is the point: this line is longer than the box, so it \
+                     folds. Press enter for a hard break.",
+                    cx,
+                );
+                field
+            }),
+            composer: cx.new(|cx| {
+                TextField::new(cx)
+                    .with_shape(Shape::Grow { min: 2, max: 6 })
+                    .with_placeholder("Grows as you type…")
             }),
             theme_menu: popover::Popup::default(),
             theme_choice: 0,
@@ -1344,26 +1361,29 @@ impl Gallery {
                 .child(popover::redacted_rows("g-redacted", &theme, 3, view, cx))
                 .into_any_element(),
 
-            // ---- Not built yet -----------------------------------------------
-            "textarea" => todo(
-                &theme,
-                "Next up",
-                "Multi-line editing. Every action in crates/ui/src/input.rs already \
-                 works on content plus a byte range and never touches layout, so the \
-                 editing half carries over untouched. The layout half does not.",
-                &[
-                    "shape_text in place of shape_line: one WrappedLine per hard \
-                     newline, each wrapping into rows of its own.",
-                    "Caret and selection from WrappedLineLayout::position_for_index. \
-                     Selection stops being one quad and becomes one per row.",
-                    "Hit testing through index_for_position, and the IME's \
-                     bounds_for_range resolved against the right row.",
-                    "Up and down with a goal column, held across rows and dropped on \
-                     horizontal motion or an edit.",
-                    "A scroll offset that follows the caret.",
-                ],
-            ),
+            "textarea" => section
+                .child(hint(
+                    &theme,
+                    "The same TextField under a different Shape — enter breaks a line, \
+                     up/down and ctrl-p/ctrl-n walk rows keeping their column, and \
+                     ctrl-a/ctrl-e go to the ends of the logical line rather than \
+                     stopping at a wrap.",
+                ))
+                .child(shape_demo(&theme, "Shape::Rows(4)", self.notes.clone()))
+                .child(shape_demo(
+                    &theme,
+                    "Shape::Grow { min: 2, max: 6 }",
+                    self.composer.clone(),
+                ))
+                .child(hint(
+                    &theme,
+                    "Past the last row it scrolls: the caret is kept in view as you \
+                     type or move, and the wheel scrolls away from it without being \
+                     dragged back.",
+                ))
+                .into_any_element(),
 
+            // ---- Not built yet -----------------------------------------------
             "date-picker" => todo(
                 &theme,
                 "Needs a use case",
@@ -1634,6 +1654,21 @@ fn hint(theme: &Theme, copy: &str) -> gpui::Div {
         .text_size(px(12.5))
         .text_color(theme.text_muted)
         .child(SharedString::from(copy.to_string()))
+}
+
+/// One field captioned with the [`Shape`] that produced it, so the numbers on
+/// the page read as this example's arguments rather than as library defaults.
+fn shape_demo(theme: &Theme, shape: &'static str, field: Entity<TextField>) -> gpui::Div {
+    stack()
+        .gap(px(6.0))
+        .child(
+            div()
+                .text_size(px(11.0))
+                .font_family(theme.font_mono.clone())
+                .text_color(theme.text_faint)
+                .child(SharedString::from(shape)),
+        )
+        .child(field)
 }
 
 /// The page for a [`planned`] component: why it is not here, and what the work

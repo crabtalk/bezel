@@ -56,11 +56,30 @@ actions!(
         Paste,
         Cut,
         Copy,
+        Up,
+        Down,
+        SelectUp,
+        SelectDown,
+        InsertNewline,
     ]
 );
 
+/// Width of the caret. Named because horizontal scrolling has to keep the caret
+/// itself on screen, not merely the character before it.
+const CARET_WIDTH: Pixels = px(2.);
+
 /// The key context the field claims; bindings from [`init`] are scoped to it.
 pub const KEY_CONTEXT: &str = "TextField";
+
+/// Claimed *in addition* to [`KEY_CONTEXT`] by a multi-line field.
+///
+/// Vertical motion and `enter` hang off this rather than off every field,
+/// because a single-line field is routinely nested inside something that has
+/// already claimed those keys: [`crate::palette`] and [`crate::combobox`] both
+/// bind `up`, `down`, `ctrl-n`, `ctrl-p` and `enter` to drive their lists, and
+/// their query field sits *deeper* in the focus path — so binding those on
+/// every `TextField` would win the dispatch and break list navigation in both.
+pub const MULTILINE_KEY_CONTEXT: &str = "TextArea";
 
 /// Install the default key bindings. Call once at startup.
 ///
@@ -95,6 +114,17 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("shift-end", SelectEnd, ctx),
     ]);
 
+    // Multi-line only — see [`MULTILINE_KEY_CONTEXT`] for why these cannot be
+    // bound on every field.
+    let area = Some(MULTILINE_KEY_CONTEXT);
+    cx.bind_keys([
+        KeyBinding::new("enter", InsertNewline, area),
+        KeyBinding::new("up", Up, area),
+        KeyBinding::new("down", Down, area),
+        KeyBinding::new("shift-up", SelectUp, area),
+        KeyBinding::new("shift-down", SelectDown, area),
+    ]);
+
     #[cfg(target_os = "macos")]
     cx.bind_keys([
         KeyBinding::new("cmd-a", SelectAll, ctx),
@@ -122,6 +152,14 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-h", Backspace, ctx),
         KeyBinding::new("ctrl-d", Delete, ctx),
         KeyBinding::new("ctrl-k", DeleteToLineEnd, ctx),
+    ]);
+
+    // `C-n`/`C-p` are emacs' vertical motion and macOS `NSTextView` natives
+    // both — the two tests a chord has to pass to earn a binding here.
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([
+        KeyBinding::new("ctrl-n", Down, area),
+        KeyBinding::new("ctrl-p", Up, area),
     ]);
 
     #[cfg(not(target_os = "macos"))]
@@ -183,6 +221,28 @@ pub struct TextField {
     last_layout: Vec<WrappedLine>,
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
+    /// The column vertical motion is trying to keep, in pixels from the left of
+    /// the row. Held across a run of up/down so that walking through a short
+    /// line and out the other side returns to the column you started in, and
+    /// dropped by anything horizontal — which is every other way the caret
+    /// moves, so [`TextField::move_to`] and [`TextField::select_to`] clear it
+    /// and the vertical handlers put it back.
+    goal_x: Option<Pixels>,
+    /// How far the text is scrolled inside the box. Clamped every frame,
+    /// because the content it is measured against changes under it.
+    ///
+    /// Both axes, though only ever one at a time: a wrapped field's lines are
+    /// shaped to the box width so they cannot overflow sideways, and a
+    /// single-line field is exactly one row tall so it cannot overflow
+    /// downwards. The clamp falls out of that and needs no test for shape.
+    scroll: Point<Pixels>,
+    /// Set by anything that moves the caret, cleared once a frame has scrolled
+    /// it back into view.
+    ///
+    /// Without the flag the wheel could never win: following the caret
+    /// unconditionally would snap the view back to it on the very next frame,
+    /// so scrolling away to read would be impossible.
+    follow_caret: bool,
 }
 
 impl TextField {
@@ -198,6 +258,9 @@ impl TextField {
             last_layout: Vec::new(),
             last_bounds: None,
             is_selecting: false,
+            goal_x: None,
+            scroll: Point::default(),
+            follow_caret: false,
         }
     }
 
@@ -221,7 +284,7 @@ impl TextField {
 
     /// Replace the content, putting the cursor at the end.
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.content = content.into();
+        self.content = normalize(&content.into(), self.shape).into();
         let end = self.content.len();
         self.selected_range = end..end;
         self.marked_range = None;
@@ -275,6 +338,66 @@ impl TextField {
 
     fn select_end(&mut self, _: &SelectEnd, _: &mut Window, cx: &mut Context<Self>) {
         self.select_to(line_end(&self.content, self.cursor_offset()), cx);
+    }
+
+    fn up(&mut self, _: &Up, window: &mut Window, cx: &mut Context<Self>) {
+        self.vertical(-1, false, window, cx);
+    }
+
+    fn down(&mut self, _: &Down, window: &mut Window, cx: &mut Context<Self>) {
+        self.vertical(1, false, window, cx);
+    }
+
+    fn select_up(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
+        self.vertical(-1, true, window, cx);
+    }
+
+    fn select_down(&mut self, _: &SelectDown, window: &mut Window, cx: &mut Context<Self>) {
+        self.vertical(1, true, window, cx);
+    }
+
+    /// Move the caret `rows` rows, keeping the goal column.
+    ///
+    /// Rows are *visual*, so this walks soft wraps one at a time rather than
+    /// jumping a whole paragraph — the opposite call from `ctrl-a`/`ctrl-e`,
+    /// and the right one: down should land where it looks like it will.
+    ///
+    /// Geometry rather than arithmetic on line numbers, so wrapped rows and hard
+    /// newlines are the same case and neither needs counting.
+    fn vertical(&mut self, rows: i32, extend: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.last_layout.is_empty() {
+            return;
+        }
+        let line_height = window.line_height();
+        let Some(at) = position_for_offset(&self.last_layout, self.cursor_offset(), line_height)
+        else {
+            return;
+        };
+        let goal = self.goal_x.unwrap_or(at.x);
+        let target = at.y + line_height * rows as f32;
+        // Off the top is the start of the text and off the bottom is its end —
+        // what every native field does with up/down on the first/last row.
+        let offset = if target < px(0.) {
+            0
+        } else {
+            offset_for_position(&self.last_layout, gpui::point(goal, target), line_height)
+        };
+
+        if extend {
+            self.select_to(offset, cx);
+        } else {
+            self.move_to(offset, cx);
+        }
+        // Both of the above clear the goal; this is the one motion that keeps it.
+        self.goal_x = Some(goal);
+    }
+
+    /// `enter`. Guarded as well as bound to [`MULTILINE_KEY_CONTEXT`], because
+    /// an action can also be dispatched directly.
+    fn insert_newline(&mut self, _: &InsertNewline, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shape.is_multiline() {
+            self.replace_text_in_range(None, "\n", window, cx);
+        }
     }
 
     fn word_left(&mut self, _: &WordLeft, _: &mut Window, cx: &mut Context<Self>) {
@@ -394,6 +517,21 @@ impl TextField {
         self.is_selecting = false;
     }
 
+    /// Scrolling is the one thing that moves the view without moving the caret,
+    /// so it deliberately does not set `follow_caret` — the next frame clamps
+    /// this, and the caret is left wherever it was.
+    fn on_scroll_wheel(
+        &mut self,
+        event: &gpui::ScrollWheelEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let delta = event.delta.pixel_delta(window.line_height());
+        self.scroll.x = (self.scroll.x - delta.x).max(px(0.));
+        self.scroll.y = (self.scroll.y - delta.y).max(px(0.));
+        cx.notify();
+    }
+
     fn on_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
@@ -417,9 +555,7 @@ impl TextField {
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            // Single line: a pasted newline becomes a space rather than
-            // silently truncating what the user pasted.
-            self.replace_text_in_range(None, &text.replace('\n', " "), window, cx);
+            self.replace_text_in_range(None, &normalize(&text, self.shape), window, cx);
         }
     }
 
@@ -442,6 +578,8 @@ impl TextField {
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
+        self.goal_x = None;
+        self.follow_caret = true;
         cx.notify()
     }
 
@@ -453,20 +591,25 @@ impl TextField {
         }
     }
 
+    /// Where the shaped text starts on screen: the box, moved up by the scroll.
+    /// Every mapping between a screen point and a byte offset goes through it.
+    fn text_origin(&self) -> Option<Point<Pixels>> {
+        Some(self.last_bounds?.origin - self.scroll)
+    }
+
     fn index_for_mouse_position(&self, position: Point<Pixels>, line_height: Pixels) -> usize {
         if self.content.is_empty() || self.last_layout.is_empty() {
             return 0;
         }
-        let Some(bounds) = self.last_bounds.as_ref() else {
+        let Some(origin) = self.text_origin() else {
             return 0;
         };
-        if position.y < bounds.top() {
-            return 0;
-        }
-        offset_for_position(&self.last_layout, position - bounds.origin, line_height)
+        offset_for_position(&self.last_layout, position - origin, line_height)
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
+        self.goal_x = None;
+        self.follow_caret = true;
         if self.selection_reversed {
             self.selected_range.start = offset
         } else {
@@ -552,6 +695,24 @@ fn next_boundary(text: &str, offset: usize) -> usize {
     text.grapheme_indices(true)
         .find_map(|(idx, _)| (idx > offset).then_some(idx))
         .unwrap_or(text.len())
+}
+
+/// The line breaks a field of this shape is allowed to hold.
+///
+/// CRLF is folded to LF whatever the shape: `shape_text` splits on `\n` alone,
+/// so a surviving `\r` shapes as a glyph and puts every offset after it out by
+/// one. A single-line field then keeps the text but not the breaks — a pasted
+/// newline becomes a space rather than silently truncating what was pasted.
+///
+/// The invariant this buys: a [`Shape::Line`] field's content never contains a
+/// newline, so nothing downstream has to ask whether it might.
+fn normalize(text: &str, shape: Shape) -> String {
+    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+    if shape.is_multiline() {
+        text
+    } else {
+        text.replace('\n', " ")
+    }
 }
 
 /// Start of the logical line holding `offset` — the byte after the previous
@@ -775,6 +936,7 @@ impl EntityInputHandler for TextField {
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
+        self.follow_caret = true;
         cx.notify();
     }
 
@@ -817,11 +979,12 @@ impl EntityInputHandler for TextField {
         let range = self.range_from_utf16(&range_utf16);
         // The IME panel anchors under the composing text, so this has to be the
         // row that text is on, not the whole field.
+        let origin = bounds.origin - self.scroll;
         let start = position_for_offset(&self.last_layout, range.start, line_height)?;
         let end = position_for_offset(&self.last_layout, range.end, line_height)?;
         Some(Bounds::from_corners(
-            bounds.origin + start,
-            bounds.origin + gpui::point(end.x, end.y + line_height),
+            origin + start,
+            origin + gpui::point(end.x, end.y + line_height),
         ))
     }
 
@@ -831,9 +994,9 @@ impl EntityInputHandler for TextField {
         window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
-        let bounds = self.last_bounds?;
-        let local = bounds.localize(&point)?;
-        let offset = offset_for_position(&self.last_layout, local, window.line_height());
+        self.last_bounds?.localize(&point)?;
+        let origin = self.text_origin()?;
+        let offset = offset_for_position(&self.last_layout, point - origin, window.line_height());
         Some(self.offset_to_utf16(offset))
     }
 }
@@ -847,8 +1010,13 @@ impl Focusable for TextField {
 impl Render for TextField {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx);
+        let mut key_context = gpui::KeyContext::default();
+        key_context.add(KEY_CONTEXT);
+        if self.shape.is_multiline() {
+            key_context.add(MULTILINE_KEY_CONTEXT);
+        }
         div()
-            .key_context(KEY_CONTEXT)
+            .key_context(key_context)
             .track_focus(&self.focus_handle(cx))
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))
@@ -866,6 +1034,11 @@ impl Render for TextField {
             .on_action(cx.listener(Self::word_right))
             .on_action(cx.listener(Self::select_word_left))
             .on_action(cx.listener(Self::select_word_right))
+            .on_action(cx.listener(Self::up))
+            .on_action(cx.listener(Self::down))
+            .on_action(cx.listener(Self::select_up))
+            .on_action(cx.listener(Self::select_down))
+            .on_action(cx.listener(Self::insert_newline))
             .on_action(cx.listener(Self::delete_word_left))
             .on_action(cx.listener(Self::delete_word_right))
             .on_action(cx.listener(Self::delete_to_line_start))
@@ -878,6 +1051,7 @@ impl Render for TextField {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .w_full()
             .px(px(10.0))
             .py(px(7.0))
@@ -905,6 +1079,8 @@ struct TextFieldElement {
 
 struct FieldPrepaint {
     lines: Vec<WrappedLine>,
+    /// Top-left of the text, which is the box moved up by the scroll offset.
+    origin: Point<Pixels>,
     cursor: Option<PaintQuad>,
     /// One quad per visual row the selection covers.
     selection: Vec<PaintQuad>,
@@ -959,13 +1135,17 @@ impl Element for TextFieldElement {
         };
 
         let text = display_text(field).0;
-        let id = window.request_measured_layout(style, move |_known, available, window, _cx| {
+        let id = window.request_measured_layout(style, move |known, available, window, _cx| {
             let text_style = window.text_style();
             let font_size = text_style.font_size.to_pixels(window.rem_size());
-            let wrap_width = match available.width {
+            // Prefer the width layout has already settled on. Taffy also probes
+            // with min/max-content, where there is no width to wrap against —
+            // and counting rows off unwrapped text under-reports them, which
+            // would size the box for fewer lines than it goes on to paint.
+            let wrap_width = known.width.or(match available.width {
                 gpui::AvailableSpace::Definite(width) => Some(width),
                 _ => None,
-            };
+            });
             let run = TextRun {
                 len: text.len(),
                 font: text_style.font(),
@@ -1006,6 +1186,9 @@ impl Element for TextFieldElement {
         let selected_range = field.selected_range.clone();
         let cursor = field.cursor_offset();
         let shape = field.shape;
+        let marked_range = field.marked_range.clone();
+        let scrolled = field.scroll;
+        let follow_caret = field.follow_caret;
         let style = window.text_style();
 
         let (text, is_placeholder) = display_text(field);
@@ -1025,7 +1208,7 @@ impl Element for TextFieldElement {
         };
         // The IME composition range is underlined so the user can see what is
         // still provisional.
-        let runs = if let Some(marked) = field.marked_range.as_ref() {
+        let runs = if let Some(marked) = marked_range.as_ref() {
             vec![
                 TextRun {
                     len: marked.start,
@@ -1063,12 +1246,52 @@ impl Element for TextFieldElement {
             .map(|lines| lines.into_vec())
             .unwrap_or_default();
 
+        // Clamp every frame, not just when scrolling: the content this is
+        // measured against shrinks under it — delete the last line while parked
+        // at the bottom and an unclamped offset leaves the box showing nothing.
+        //
+        // Only one axis is ever live. Wrapped lines are shaped to the box width,
+        // so `max.x` is zero for a multi-line field; a single line is one row
+        // tall, so `max.y` is zero for a single-line one. Neither needs asking
+        // which shape it is.
+        let content_height: Pixels = lines.iter().map(|l| l.size(line_height).height).sum();
+        let content_width = lines.iter().map(|l| l.width()).fold(px(0.), Pixels::max);
+        let max = gpui::point(
+            (content_width - bounds.size.width).max(px(0.)),
+            (content_height - bounds.size.height).max(px(0.)),
+        );
+        let mut scroll = gpui::point(
+            scrolled.x.clamp(px(0.), max.x),
+            scrolled.y.clamp(px(0.), max.y),
+        );
+        if follow_caret && let Some(at) = position_for_offset(&lines, cursor, line_height) {
+            if at.y < scroll.y {
+                scroll.y = at.y;
+            } else if at.y + line_height > scroll.y + bounds.size.height {
+                scroll.y = at.y + line_height - bounds.size.height;
+            }
+            // The caret is the thing being kept in view, so it is its own width
+            // that has to clear the right edge — not the character before it.
+            if at.x < scroll.x {
+                scroll.x = at.x;
+            } else if at.x + CARET_WIDTH > scroll.x + bounds.size.width {
+                scroll.x = at.x + CARET_WIDTH - bounds.size.width;
+            }
+            scroll.x = scroll.x.clamp(px(0.), max.x);
+            scroll.y = scroll.y.clamp(px(0.), max.y);
+        }
+        self.field.update(cx, |field, _| {
+            field.scroll = scroll;
+            field.follow_caret = false;
+        });
+        let origin = bounds.origin - scroll;
+
         let (selection, cursor) = if selected_range.is_empty() {
             let at = position_for_offset(&lines, cursor, line_height).unwrap_or_default();
             (
                 Vec::new(),
                 Some(fill(
-                    Bounds::new(bounds.origin + at, gpui::size(px(2.), line_height)),
+                    Bounds::new(origin + at, gpui::size(CARET_WIDTH, line_height)),
                     theme.caret,
                 )),
             )
@@ -1078,7 +1301,7 @@ impl Element for TextFieldElement {
                     .into_iter()
                     .map(|rect| {
                         fill(
-                            Bounds::new(bounds.origin + rect.origin, rect.size),
+                            Bounds::new(origin + rect.origin, rect.size),
                             theme.selection,
                         )
                     })
@@ -1089,6 +1312,7 @@ impl Element for TextFieldElement {
 
         FieldPrepaint {
             lines,
+            origin,
             cursor,
             selection,
         }
@@ -1110,26 +1334,34 @@ impl Element for TextFieldElement {
             ElementInputHandler::new(bounds, self.field.clone()),
             cx,
         );
-        for selection in prepaint.selection.drain(..) {
-            window.paint_quad(selection);
-        }
-
         let line_height = window.line_height();
         let lines = std::mem::take(&mut prepaint.lines);
-        let mut top = bounds.origin;
-        for line in &lines {
-            line.paint(top, line_height, gpui::TextAlign::Left, None, window, cx)
-                .ok();
-            top.y += line.size(line_height).height;
-        }
+        let selection = std::mem::take(&mut prepaint.selection);
+        let cursor = prepaint.cursor.take();
+        let origin = prepaint.origin;
 
-        // The caret only exists while focused — an unfocused field showing one
-        // reads as two cursors on screen.
-        if focus_handle.is_focused(window)
-            && let Some(cursor) = prepaint.cursor.take()
-        {
-            window.paint_quad(cursor);
-        }
+        // Scrolled text runs past the box in both directions, so everything the
+        // field draws is masked to it — text, selection and caret alike.
+        window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
+            for selection in selection {
+                window.paint_quad(selection);
+            }
+
+            let mut top = origin;
+            for line in &lines {
+                line.paint(top, line_height, gpui::TextAlign::Left, None, window, cx)
+                    .ok();
+                top.y += line.size(line_height).height;
+            }
+
+            // The caret only exists while focused — an unfocused field showing
+            // one reads as two cursors on screen.
+            if focus_handle.is_focused(window)
+                && let Some(cursor) = cursor
+            {
+                window.paint_quad(cursor);
+            }
+        });
 
         self.field.update(cx, |field, _| {
             field.last_layout = lines;
@@ -1188,6 +1420,32 @@ mod tests {
             }
             assert_eq!(offset_to_utf16(text, byte), text.encode_utf16().count());
         }
+    }
+
+    /// A `\r` that survived would shape as a glyph — `shape_text` splits on
+    /// `\n` alone — and put every offset after it out by one.
+    #[test]
+    fn normalize_folds_crlf_whatever_the_shape() {
+        for shape in [Shape::Line, Shape::Rows(3), Shape::Grow { min: 1, max: 4 }] {
+            let out = normalize("a\r\nb\rc", shape);
+            assert!(!out.contains('\r'), "{shape:?} left a carriage return");
+            assert_eq!(out.len(), 5, "{shape:?} changed the character count");
+        }
+    }
+
+    /// The invariant a single-line field rests on: no newline, ever, however it
+    /// got there — and the pasted text is kept, not truncated at the break.
+    #[test]
+    fn normalize_keeps_a_single_line_single() {
+        assert_eq!(normalize("a\nb", Shape::Line), "a b");
+        assert_eq!(normalize("a\r\nb", Shape::Line), "a b");
+        assert_eq!(normalize("one\ntwo\nthree", Shape::Line), "one two three");
+    }
+
+    #[test]
+    fn normalize_keeps_breaks_when_the_shape_has_room() {
+        assert_eq!(normalize("a\nb", Shape::Rows(2)), "a\nb");
+        assert_eq!(normalize("a\r\nb", Shape::Grow { min: 1, max: 3 }), "a\nb");
     }
 
     /// On a field that cannot hold a newline these collapse to the ends of the
