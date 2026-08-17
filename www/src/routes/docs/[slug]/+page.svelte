@@ -14,7 +14,7 @@
 	<h1>{data.section.title}</h1>
 
 	<p class="actions">
-		<a class="button" href="{base}/gallery/">Open in gallery</a>
+		<a class="button" href="{base}/gallery/" data-sveltekit-reload>Open in gallery</a>
 		{#if data.section.source}
 			<a class="source" href="{repo}/blob/main/{data.section.source}">
 				<code>{data.section.source}</code>

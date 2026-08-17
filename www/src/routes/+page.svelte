@@ -15,7 +15,7 @@
 		here by the same code that runs natively.
 	</p>
 	<p class="cta">
-		<a class="button primary" href="{base}/gallery/">Open the gallery</a>
+		<a class="button primary" href="{base}/gallery/" data-sveltekit-reload>Open the gallery</a>
 		<a class="button" href="{base}/docs/color/">Read the docs</a>
 		<a class="button" href={repo}>GitHub</a>
 	</p>

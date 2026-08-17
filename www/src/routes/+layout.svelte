@@ -10,7 +10,7 @@
 	<a class="wordmark" href="{base}/">bezel</a>
 	<nav>
 		<a href="{base}/docs/color/">Docs</a>
-		<a href="{base}/gallery/">Gallery</a>
+		<a href="{base}/gallery/" data-sveltekit-reload>Gallery</a>
 		<a href={repo}>GitHub</a>
 	</nav>
 </header>

@@ -18,6 +18,7 @@ bezel-ui.workspace = true
 # public API, and a consumer with its own chrono would then have two.
 chrono = "0.4"
 gpui.workspace = true
+web-time.workspace = true
 
 # Only `main.rs` opens a window, and only a native one. Keeping this off the
 # wasm target is what lets `web` pick the browser platform's features for

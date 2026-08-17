@@ -86,7 +86,7 @@ pub struct MusicPlayer {
     /// [`Self::elapsed`].
     playing: bool,
     position: f32,
-    position_at: std::time::Instant,
+    position_at: web_time::Instant,
     /// Where the scrubber is being held, in seconds. `Some` detaches the
     /// display from the clock for exactly as long as the pointer is down.
     scrub: Option<f32>,
@@ -112,7 +112,7 @@ impl Default for MusicPlayer {
             // the next frame, so at rest this page costs nothing.
             playing: false,
             position: 0.0,
-            position_at: std::time::Instant::now(),
+            position_at: web_time::Instant::now(),
             scrub: None,
             track: 0,
             volume: 0.7,
@@ -157,7 +157,7 @@ impl MusicPlayer {
     /// "now" is.
     fn seek(&mut self, position: f32) {
         self.position = position.clamp(0.0, self.track_length());
-        self.position_at = std::time::Instant::now();
+        self.position_at = web_time::Instant::now();
     }
 
     fn toggle_play(&mut self, cx: &mut Context<Self>) {

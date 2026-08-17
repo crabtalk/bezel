@@ -1,20 +1,35 @@
 //! The gallery, in a browser tab — the same view `apps/gallery` opens in a
 //! native window, on gpui's web platform.
 //!
-//! Single-threaded on purpose. The threaded dispatcher needs `SharedArrayBuffer`,
-//! which needs COOP/COEP response headers, and GitHub Pages cannot send them;
-//! it also drags in a `wasm_thread` that only builds on nightly.
+//! Single-threaded, like gpui's own browser gallery: the threaded dispatcher
+//! wants nightly for `wasm_thread` and a cross-origin-isolated document for
+//! `SharedArrayBuffer`, and buys nothing this page needs.
 
 #![cfg(target_family = "wasm")]
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use bezel_theme::appearance::{self, AppearanceMode};
 use bezel_ui::{combobox, date, focus, icons, input, menubar, palette, tree};
 use gallery::{Gallery, OpenPalette};
-use gpui::{App, AppContext as _, Application, KeyBinding, WindowOptions};
+use gpui::{
+    App, AppContext as _, Application, ApplicationHandle, Bounds, KeyBinding, WindowBounds,
+    WindowOptions, px, size,
+};
 use wasm_bindgen::prelude::wasm_bindgen;
+
+thread_local! {
+    /// The whole app, and the reason it stays alive.
+    ///
+    /// `Platform::run` blocks for the process lifetime natively, so the stack
+    /// frame owns the app; on wasm the run loop is the browser's, so it returns
+    /// straight away and `Application::run` would drop everything it just
+    /// built. `run_embedded` hands back the handle instead — dropping it
+    /// releases the app, which is exactly what "app was released" meant.
+    static APPLICATION: RefCell<Option<ApplicationHandle>> = const { RefCell::new(None) };
+}
 
 #[wasm_bindgen(start)]
 pub fn start() {
@@ -23,10 +38,10 @@ pub fn start() {
 
     let platform = Rc::new(gpui_web::WebPlatform::new(false));
     let http_client = Arc::new(platform.fetch_http_client());
-    Application::with_platform(platform)
+    let handle = Application::with_platform(platform)
         .with_http_client(http_client)
         .with_assets(icons::Assets)
-        .run(|cx: &mut App| {
+        .run_embedded(|cx: &mut App| {
             if let Err(err) = bezel_ui::register_fonts(cx) {
                 log::error!("font registration failed: {err:?}");
             }
@@ -39,13 +54,20 @@ pub fn start() {
             menubar::init(cx);
             tree::init(cx);
             cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
-            cx.open_window(WindowOptions::default(), |window, cx| {
-                appearance::observe_window(window, cx).detach();
-                let gallery = cx.new(Gallery::new);
-                let focus = gallery.read(cx).focus_handle();
-                window.focus(&focus, cx);
-                gallery
-            })
-            .unwrap();
+            let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    ..Default::default()
+                },
+                // No `observe_window` here, unlike the native app: it reconciles
+                // appearance synchronously during init, and on a mismatch that
+                // reaches `reapply_window_background`, which updates the window
+                // still being constructed.
+                |_, cx| cx.new(Gallery::new),
+            )
+            .expect("failed to open the gallery window");
+            cx.activate(true);
         });
+    APPLICATION.with(|application| *application.borrow_mut() = Some(handle));
 }

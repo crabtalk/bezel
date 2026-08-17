@@ -5,25 +5,44 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>bezel gallery</title>
 		<style>
-			html,
-			body {
+			* {
 				margin: 0;
-				height: 100%;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			body {
 				overflow: hidden;
+				width: 100vw;
+				height: 100vh;
 				background: #0b0c0e;
 			}
-			#boot {
-				position: absolute;
+
+			/* Out of flow, deliberately. gpui sizes its own canvas `100%` and
+			   appends it to the body; left in normal flow that is a cycle — the
+			   canvas measures the body, the body grows to fit the canvas — and
+			   the ResizeObserver behind it re-enters gpui mid-draw every frame. */
+			body > canvas {
+				position: fixed;
 				inset: 0;
-				display: grid;
-				place-content: center;
+				display: block;
+				width: 100%;
+				height: 100%;
+			}
+
+			#boot {
+				position: fixed;
+				z-index: 1;
+				pointer-events: none;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
 				color: #8b929c;
 				font: 14px -apple-system, system-ui, sans-serif;
 			}
 		</style>
 	</head>
 	<body>
-		<!-- gpui creates and appends its own canvas; this is only what shows until it does. -->
 		<p id="boot">Starting the gallery…</p>
 		<script type="module">
 			import init from './web.js';

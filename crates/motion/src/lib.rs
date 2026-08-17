@@ -29,7 +29,9 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use gpui::{
     Animation, AnimationElement, App, ElementId, EntityId, Global, Hsla, IntoElement, Rgba,
