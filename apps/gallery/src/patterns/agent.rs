@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use bezel_theme::Theme;
 use bezel_ui::scroll::{self, FollowState, ScrollbarState};
-use bezel_ui::{loaders, popover, widgets};
+use bezel_ui::{icons, loaders, popover, widgets};
 use gpui::{
     Context, Render, SharedString, Window, div, linear_color_stop, linear_gradient, prelude::*, px,
 };
@@ -298,6 +298,256 @@ impl Render for Activity {
                             .on_click(cx.listener(|view, _, _, cx| view.ask(cx)))
                             .child(popover::button(&theme, "Ask again", "agent-ask")),
                     ),
+            )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tool calls — `ToolCard.svelte` + `ToolGroup.svelte`
+// ---------------------------------------------------------------------------
+
+/// One call in the run below. This is the shape bezel deliberately does *not*
+/// have a type for: `widgets::step_row` takes the four strings and a flag, so
+/// the library never learns what a tool is. Yours will look nothing like this
+/// one, and that is the point.
+struct Call {
+    icon: &'static str,
+    verb: &'static str,
+    detail: &'static str,
+    ms: u32,
+    failed: bool,
+    /// `None` prints no chevron — a call that returned nothing has nothing to
+    /// open.
+    output: Option<&'static str>,
+}
+
+/// A turn's worth of calls, in the order they ran. The three consecutive
+/// `Read`s are the case the grouping exists for.
+const CALLS: [Call; 8] = [
+    Call {
+        icon: icons::MAGNIFER,
+        verb: "Search",
+        detail: "fn at_bottom",
+        ms: 12,
+        failed: false,
+        output: Some("crates/ui/src/scroll.rs:236\ncrates/ui/src/scroll.rs:411"),
+    },
+    Call {
+        icon: icons::DOCUMENT,
+        verb: "Read",
+        detail: "crates/ui/src/scroll.rs",
+        ms: 3,
+        failed: false,
+        output: None,
+    },
+    Call {
+        icon: icons::DOCUMENT,
+        verb: "Read",
+        detail: "crates/ui/src/widgets.rs",
+        ms: 2,
+        failed: false,
+        output: None,
+    },
+    Call {
+        icon: icons::DOCUMENT,
+        verb: "Read",
+        detail: "ARCHITECTURE.md",
+        ms: 2,
+        failed: false,
+        output: Some("extracted from working application code, never invented ahead of need"),
+    },
+    Call {
+        icon: icons::TERMINAL,
+        verb: "Run",
+        detail: "cargo test -p bezel-ui",
+        ms: 1_412,
+        failed: false,
+        output: Some("running 87 tests\n\ntest result: ok. 87 passed; 0 failed"),
+    },
+    Call {
+        icon: icons::GIT_BRANCH,
+        verb: "Diff",
+        detail: "crates/ui",
+        ms: 31,
+        failed: false,
+        output: None,
+    },
+    Call {
+        icon: icons::DOCUMENT,
+        verb: "Read",
+        detail: "crates/agent/src/lib.rs",
+        ms: 1,
+        failed: true,
+        output: Some("error: no such file or directory (os error 2)"),
+    },
+    Call {
+        icon: icons::PEN,
+        verb: "Edit",
+        detail: "todos/agent.md",
+        ms: 7,
+        failed: false,
+        output: None,
+    },
+];
+
+/// `1412ms` under a second, `1.4s` over it — a figure you read at a glance
+/// rather than count digits in.
+fn took(ms: u32) -> String {
+    if ms < 1000 {
+        format!("{ms}ms")
+    } else {
+        format!("{:.1}s", ms as f32 / 1000.0)
+    }
+}
+
+/// A run of tool calls, grouped the way `ToolGroup.svelte` groups them.
+///
+/// **The grouping is `slice::chunk_by`** — consecutive calls of the same verb,
+/// straight out of std, and bezel wrote nothing for it. That is the whole
+/// finding of this page: what looked like a component ("tool group") is one
+/// std call plus a container that already existed.
+///
+/// The two variants are here as well, and they are not a parameter anywhere in
+/// the library: a lone call is a bordered card, a grouped one is a bare row and
+/// the group's box owns the border and the hairlines between them.
+pub struct ToolCalls {
+    /// Groups showing their calls, keyed by the index of the first call in the
+    /// run — stable as long as `CALLS` is, and it is a `const`.
+    open_groups: std::collections::HashSet<usize>,
+    /// Calls showing their output, keyed by index into `CALLS`.
+    open_output: std::collections::HashSet<usize>,
+}
+
+/// The page opens with the run of `Read`s already open. Every other row is
+/// collapsed, which is `ToolGroup.svelte`'s own default — this one is unfolded
+/// because the nesting is the thing the page is here to show, and a visitor
+/// should not have to guess that a row opens before they see it.
+impl Default for ToolCalls {
+    fn default() -> Self {
+        Self {
+            open_groups: [1].into_iter().collect(),
+            open_output: Default::default(),
+        }
+    }
+}
+
+impl ToolCalls {
+    /// One call as a row, plus its output when open. `first` draws the hairline
+    /// above it, so a group's box needs no divider of its own.
+    fn call(&self, theme: &Theme, index: usize, first: bool, cx: &mut Context<Self>) -> gpui::Div {
+        let call = &CALLS[index];
+        let open = self.open_output.contains(&index);
+        div()
+            .when(!first, |el| el.border_t_1().border_color(theme.border))
+            .child(
+                widgets::step_row(
+                    theme,
+                    call.icon,
+                    call.verb,
+                    Some(SharedString::from(call.detail)),
+                    Some(SharedString::from(took(call.ms))),
+                    call.failed,
+                    call.output.map(|_| open),
+                )
+                .id(SharedString::from(format!("call-{index}")))
+                .on_click(cx.listener(move |view, _, _, cx| {
+                    if !view.open_output.insert(index) {
+                        view.open_output.remove(&index);
+                    }
+                    cx.notify();
+                })),
+            )
+            .when_some(call.output.filter(|_| open), |el, output| {
+                el.child(widgets::step_output(
+                    theme,
+                    SharedString::from(format!("call-out-{index}")),
+                    output,
+                ))
+            })
+    }
+
+    /// The box a card and a group share: rounded, bordered, clipping whatever
+    /// it holds. Three lines, which is why there is no `variant` parameter in
+    /// `ui` for it.
+    fn box_(theme: &Theme) -> gpui::Div {
+        div()
+            .rounded(px(Theme::PANEL_RADIUS))
+            .border_1()
+            .border_color(theme.border)
+            .overflow_hidden()
+    }
+}
+
+impl Render for ToolCalls {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::of(cx).clone();
+
+        // The grouping, whole. `chunk_by` hands back consecutive runs; the
+        // offset is what turns a run back into indices into `CALLS`.
+        let mut offset = 0;
+        let mut groups = Vec::new();
+        for run in CALLS.chunk_by(|a, b| a.verb == b.verb) {
+            groups.push((offset, run.len()));
+            offset += run.len();
+        }
+
+        div()
+            .size_full()
+            .flex()
+            .justify_center()
+            .overflow_hidden()
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(660.0))
+                    .px(px(24.0))
+                    .py(px(32.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .children(groups.into_iter().map(|(start, len)| {
+                        if len == 1 {
+                            return Self::box_(&theme)
+                                .child(self.call(&theme, start, true, cx))
+                                .into_any_element();
+                        }
+                        let open = self.open_groups.contains(&start);
+                        let failed = CALLS[start..start + len].iter().any(|call| call.failed);
+                        Self::box_(&theme)
+                            .child(
+                                widgets::step_row(
+                                    &theme,
+                                    CALLS[start].icon,
+                                    CALLS[start].verb,
+                                    Some(SharedString::from(format!("· {len}"))),
+                                    None,
+                                    failed,
+                                    Some(open),
+                                )
+                                .id(SharedString::from(format!("group-{start}")))
+                                .on_click(cx.listener(
+                                    move |view, _, _, cx| {
+                                        if !view.open_groups.insert(start) {
+                                            view.open_groups.remove(&start);
+                                        }
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                            .when(open, |group| {
+                                group.child(
+                                    div()
+                                        .border_t_1()
+                                        .border_color(theme.border)
+                                        .pl(px(16.0))
+                                        .children((start..start + len).map(|index| {
+                                            self.call(&theme, index, index == start, cx)
+                                                .into_any_element()
+                                        })),
+                                )
+                            })
+                            .into_any_element()
+                    })),
             )
     }
 }

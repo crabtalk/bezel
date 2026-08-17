@@ -193,6 +193,53 @@ const TABLE_ROWS: [(&str, &str, u32); 7] = [
     ("notes.md", "Document", 1_130),
 ];
 
+/// One row on the Step row page. A build rather than an agent turn, on purpose:
+/// the component is named for the shape, and the shape is "an operation with an
+/// outcome" wherever it turns up.
+struct Step {
+    icon: &'static str,
+    title: &'static str,
+    detail: &'static str,
+    meta: &'static str,
+    failed: bool,
+    /// `None` is a step that printed nothing, which is what suppresses the
+    /// chevron.
+    output: Option<&'static str>,
+}
+
+const STEPS: [Step; 3] = [
+    Step {
+        icon: icons::TERMINAL,
+        title: "cargo test",
+        detail: "-p bezel-ui",
+        meta: "1.4s",
+        failed: false,
+        output: Some(
+            "running 87 tests\n\
+             test widgets::tests::the_first_press_flips_what_was_on_screen ... ok\n\
+             test scroll::tests::following_means_within_slack_of_the_end ... ok\n\
+             \n\
+             test result: ok. 87 passed; 0 failed",
+        ),
+    },
+    Step {
+        icon: icons::MAGNIFER,
+        title: "Search",
+        detail: "fn at_bottom",
+        meta: "12ms",
+        failed: false,
+        output: None,
+    },
+    Step {
+        icon: icons::DOCUMENT,
+        title: "Read",
+        detail: "crates/ui/src/missing.rs",
+        meta: "3ms",
+        failed: true,
+        output: Some("error: no such file or directory (os error 2)"),
+    },
+];
+
 /// The menubar page's menus. Ordinary app chrome, with the two rows worth
 /// showing: a separator, and a disabled item the keyboard steps straight over.
 ///
@@ -319,11 +366,18 @@ pub const PATTERNS: &[Group] = &[
     // `TODO.md`, and none of them is a row until it can be pressed.
     Group {
         title: "Agent",
-        sections: &[section(
-            "agent-activity",
-            "Activity",
-            "apps/gallery/src/patterns/agent.rs",
-        )],
+        sections: &[
+            section(
+                "agent-activity",
+                "Activity",
+                "apps/gallery/src/patterns/agent.rs",
+            ),
+            section(
+                "agent-tools",
+                "Tool calls",
+                "apps/gallery/src/patterns/agent.rs",
+            ),
+        ],
     },
     Group {
         title: "Media",
@@ -445,6 +499,7 @@ pub const COMPONENTS: &[Group] = &[
             section("progress", "Progress", "crates/ui/src/widgets.rs"),
             section("status-dot", "Status dot", "crates/ui/src/widgets.rs"),
             section("alerts", "Alert strips", "crates/ui/src/widgets.rs"),
+            section("step-row", "Step row", "crates/ui/src/widgets.rs"),
             section("loaders", "Loaders", "crates/ui/src/loaders.rs"),
         ],
     },
@@ -475,6 +530,8 @@ pub struct Gallery {
     last_command: Option<SharedString>,
     segment: usize,
     expanded: bool,
+    /// Which step rows are showing their output.
+    step_open: [bool; 3],
     /// The second collapsible: a section that follows a run until you take it
     /// over. `running` is what a streaming flag would be in a real app.
     running: bool,
@@ -563,6 +620,7 @@ pub struct Gallery {
     /// screen's worth of state. A component demo can keep its value or two up
     /// here beside the rest; thirteen of them cannot.
     activity: Entity<patterns::agent::Activity>,
+    tool_calls: Entity<patterns::agent::ToolCalls>,
     music: Entity<patterns::music::MusicPlayer>,
     /// Which top-nav tab is open.
     tab: usize,
@@ -624,6 +682,7 @@ impl Gallery {
             last_command: None,
             segment: 0,
             expanded: true,
+            step_open: [false; 3],
             // Arrives mid-run, which is the state the auto-follow is for.
             running: true,
             details: widgets::Takeover::default(),
@@ -679,6 +738,7 @@ impl Gallery {
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
             activity: cx.new(|_| patterns::agent::Activity::default()),
+            tool_calls: cx.new(|_| patterns::agent::ToolCalls::default()),
             music: cx.new(|_| patterns::music::MusicPlayer::default()),
         }
     }
@@ -2117,6 +2177,81 @@ impl Gallery {
                 .child(widgets::warning_strip(&theme, "Heads up, check this."))
                 .into_any_element(),
 
+            "step-row" => {
+                let card = |index: usize, first: bool| {
+                    let Step {
+                        icon,
+                        title,
+                        detail,
+                        meta,
+                        failed,
+                        output,
+                    } = STEPS[index];
+                    let open = self.step_open[index];
+                    div()
+                        .when(!first, |el| el.border_t_1().border_color(theme.border))
+                        .child(
+                            widgets::step_row(
+                                &theme,
+                                icon,
+                                title,
+                                Some(SharedString::from(detail)),
+                                Some(SharedString::from(meta)),
+                                failed,
+                                output.map(|_| open),
+                            )
+                            .id(SharedString::from(format!("step-{index}")))
+                            .on_click(cx.listener(
+                                move |view, _, _, cx| {
+                                    view.step_open[index] = !view.step_open[index];
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                        .when_some(output.filter(|_| open), |el, output| {
+                            el.child(widgets::step_output(
+                                &theme,
+                                SharedString::from(format!("step-out-{index}")),
+                                output,
+                            ))
+                        })
+                };
+
+                section
+                    .child(hint(
+                        &theme,
+                        "An operation with an outcome: press a row to see what it \
+                         printed. A step with no output has no chevron — a \
+                         disclosure onto nothing is worse than none.",
+                    ))
+                    .child(
+                        // Standalone: one step in its own box.
+                        div()
+                            .w(px(420.0))
+                            .rounded(px(Theme::PANEL_RADIUS))
+                            .border_1()
+                            .border_color(theme.border)
+                            .overflow_hidden()
+                            .child(card(0, true)),
+                    )
+                    .child(hint(
+                        &theme,
+                        "Or as a run: the same rows, borderless, in one box that \
+                         owns the hairlines between them.",
+                    ))
+                    .child(
+                        div()
+                            .w(px(420.0))
+                            .rounded(px(Theme::PANEL_RADIUS))
+                            .border_1()
+                            .border_color(theme.border)
+                            .overflow_hidden()
+                            .child(card(1, true))
+                            .child(card(2, false)),
+                    )
+                    .into_any_element()
+            }
+
             "skeleton" => section
                 .child(popover::redacted_rows("g-redacted", &theme, 3, view, cx))
                 .into_any_element(),
@@ -2605,6 +2740,7 @@ impl Gallery {
 
             // ---- Patterns ----------------------------------------------------
             "agent-activity" => self.activity.clone().into_any_element(),
+            "agent-tools" => self.tool_calls.clone().into_any_element(),
             "music-player" => self.music.clone().into_any_element(),
 
             _ => div().into_any_element(),
