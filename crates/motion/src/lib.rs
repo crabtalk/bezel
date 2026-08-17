@@ -28,6 +28,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use gpui::{
@@ -626,23 +627,53 @@ pub fn hover_blend(key: &str, rest: Hsla, hover: Hsla) -> Hsla {
 }
 
 // ---------------------------------------------------------------------------
-// Reduced motion
+// Speed and reduced motion
 // ---------------------------------------------------------------------------
 
-/// Dev/measurement knob (`BEZEL_MOTION_SCALE`, default 1): stretches every
-/// catalog timeline by this factor — e.g. `BEZEL_MOTION_SCALE=10` slows the
-/// 200ms pane tweens to 2s so screenshot bursts can sample the geometry
-/// per frame. Read once; never set in production.
+/// Process-wide motion speed, as f32 bits: every catalog timeline is multiplied
+/// by it.
+///
+/// An atomic mirror rather than a gpui global, for exactly the reason
+/// `bezel_theme::current_appearance` is one: the timelines are read from free
+/// functions deep inside element builders — [`HoverFades::duration`], the
+/// popover exit clock — that have no `cx` in scope. Speed is genuinely
+/// process-wide, one setting for every window, so a single mirror is sound.
+static SPEED: AtomicU32 = AtomicU32::new(1.0f32.to_bits());
+
+/// How far every timeline in the catalog is stretched. `1.0` is the designed
+/// speed.
 pub fn speed_scale() -> f32 {
-    static SCALE: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    *SCALE.get_or_init(|| {
-        std::env::var("BEZEL_MOTION_SCALE")
-            .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-            .filter(|s| s.is_finite())
-            .map(|s| s.clamp(0.01, 100.0))
-            .unwrap_or(1.0)
-    })
+    f32::from_bits(SPEED.load(Ordering::Relaxed))
+}
+
+/// Stretch every catalog timeline by `scale` — `10.0` slows the 200ms pane
+/// tweens to 2s, so a screenshot burst can sample the geometry frame by frame.
+///
+/// Configuration in code, like the rest of bezel: an app that wants this on a
+/// setting, or hanging off its own theme, calls this from wherever that lives.
+/// It used to read a `BEZEL_MOTION_SCALE` environment variable, which meant the
+/// one knob in the library that no app could reach.
+///
+/// Clamped to `0.01..=100.0`; a non-finite `scale` resets to `1.0` rather than
+/// poisoning every duration with a NaN.
+pub fn set_speed(scale: f32) {
+    let scale = if scale.is_finite() {
+        scale.clamp(0.01, 100.0)
+    } else {
+        1.0
+    };
+    SPEED.store(scale.to_bits(), Ordering::Relaxed);
+}
+
+/// [`SPEED`] is process-wide, so a test that moves it must hold this lock and
+/// restore `1.0` before letting go — every fade and exit timing asserted
+/// anywhere is measured in it. The same arrangement as
+/// `bezel_theme::lock_appearance`, and public for the same reason: such tests
+/// exist in other crates too. Not part of the API.
+#[doc(hidden)]
+pub fn lock_speed() -> std::sync::MutexGuard<'static, ()> {
+    static SPEED_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SPEED_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Global reduced-motion flag. gpui snaps every `with_animation` element when
@@ -823,6 +854,7 @@ mod tests {
 
     #[test]
     fn hover_fade_ramps_and_reverses_continuously() {
+        let _guard = lock_speed();
         let mut fades = HoverFades::default();
         let t0 = Instant::now();
         let ms = |m: u64| t0 + Duration::from_millis(m);
@@ -851,6 +883,7 @@ mod tests {
 
     #[test]
     fn hover_fade_reduced_motion_snaps() {
+        let _guard = lock_speed();
         let mut fades = HoverFades::default();
         let t0 = Instant::now();
         fades.set_at("row", true, true, t0);
@@ -870,6 +903,7 @@ mod tests {
 
     #[test]
     fn hover_tick_reports_flight_and_prunes() {
+        let _guard = lock_speed();
         let mut fades = HoverFades::default();
         let t0 = Instant::now();
         let ms = |m: u64| t0 + Duration::from_millis(m);
@@ -897,6 +931,7 @@ mod tests {
     fn hover_tick_evicts_unread_entries() {
         // An element that unmounts mid-hover never sends its leave — a full
         // frame without a read drops the entry so a remount starts clean.
+        let _guard = lock_speed();
         let mut fades = HoverFades::default();
         let t0 = Instant::now();
         let ms = |m: u64| t0 + Duration::from_millis(m);
@@ -942,6 +977,32 @@ mod tests {
         assert_eq!(HOVER_FADE.duration_ms, 150);
         assert_eq!(HOVER_FADE.delay_ms, 0);
         assert_eq!(EASE_TAILWIND, CubicBezier::new(0.4, 0.0, 0.2, 1.0));
+    }
+
+    #[test]
+    fn speed_is_set_in_code_and_cannot_be_set_to_nonsense() {
+        let _guard = lock_speed();
+        assert_eq!(speed_scale(), 1.0, "the designed speed is the default");
+
+        set_speed(10.0);
+        assert_eq!(speed_scale(), 10.0);
+        // It is what every timeline is measured in, so it reaches the clocks.
+        assert_eq!(
+            HoverFades::duration(),
+            HOVER_FADE.total().mul_f32(10.0),
+            "the fade clock reads the same knob"
+        );
+
+        // A zero would make every duration instantaneous and a negative one
+        // would run time backwards; NaN would poison every duration silently.
+        set_speed(0.0);
+        assert_eq!(speed_scale(), 0.01);
+        set_speed(1e9);
+        assert_eq!(speed_scale(), 100.0);
+        set_speed(f32::NAN);
+        assert_eq!(speed_scale(), 1.0);
+
+        set_speed(1.0);
     }
 
     #[test]

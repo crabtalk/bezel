@@ -14,6 +14,7 @@ use bezel_ui::hover_card::HoverCard;
 use bezel_ui::input::{Shape, TextField};
 use bezel_ui::menubar::{Item, Menu, Menubar, MenubarEvent};
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
+use bezel_ui::scroll::{self, ScrollbarState};
 use bezel_ui::tooltip::Tooltip;
 use bezel_ui::widgets::{SliderDrag, SplitDrag};
 use bezel_ui::{focus, icons, loaders, popover, widgets};
@@ -240,7 +241,7 @@ pub const COMPONENTS: &[Group] = &[
     Group {
         title: "Data",
         sections: &[
-            planned("scroll-area", "Scroll area"),
+            section("scroll-area", "Scroll area", "crates/ui/src/scroll.rs"),
             planned("table", "Table"),
             planned("tree", "Tree view"),
             planned("virtual-list", "Virtualized list"),
@@ -273,7 +274,7 @@ pub const COMPONENTS: &[Group] = &[
 /// than derived because the arms cannot be enumerated at runtime; a test keeps
 /// this in step with the [`planned`] rows.
 #[cfg(test)]
-const PLANNED_BODIES: &[&str] = &["pagination", "scroll-area", "table", "tree", "virtual-list"];
+const PLANNED_BODIES: &[&str] = &["pagination", "table", "tree", "virtual-list"];
 
 fn section_at(key: &str) -> Option<&'static Section> {
     TABS.iter()
@@ -337,6 +338,15 @@ pub struct Gallery {
     switched: [bool; 2],
     level: f32,
     tab_choice: usize,
+    /// Scroll position and thumb-grab for every scrolling surface here. gpui
+    /// owns the offset; the second half of each pair is only where in the thumb
+    /// a drag took hold.
+    rail_scroll: gpui::ScrollHandle,
+    rail_bar: ScrollbarState,
+    pane_scroll: gpui::ScrollHandle,
+    pane_bar: ScrollbarState,
+    demo_scroll: gpui::ScrollHandle,
+    demo_bar: ScrollbarState,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -409,6 +419,12 @@ impl Gallery {
             segments: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             slider: cx.focus_handle(),
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+            rail_scroll: gpui::ScrollHandle::new(),
+            rail_bar: ScrollbarState::new(),
+            pane_scroll: gpui::ScrollHandle::new(),
+            pane_bar: ScrollbarState::new(),
+            demo_scroll: gpui::ScrollHandle::new(),
+            demo_bar: ScrollbarState::new(),
             last_pressed: None,
             checked: [true, false],
             radio: 0,
@@ -541,38 +557,52 @@ impl Gallery {
         let tab = &TABS[self.tab];
         let selected = self.selected[self.tab];
         div()
-            .id("gallery-rail")
+            .relative()
             .flex_none()
             .w(px(220.0))
             .h_full()
-            .overflow_y_scroll()
             .border_r_1()
             .border_color(theme.border)
-            .child(div().flex().flex_col().gap(px(2.0)).p(px(10.0)).children(
-                tab.groups.iter().flat_map(|group| {
-                    let heading = popover::menu_heading(theme, group.title).into_any_element();
-                    let rows = group.sections.iter().map(|section| {
-                        popover::menu_row(
-                            theme,
-                            section.key == selected,
-                            SharedString::from(format!("rail-{}", section.key)),
-                        )
-                        .id(SharedString::from(format!("rail-item-{}", section.key)))
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            let tab = view.tab;
-                            view.selected[tab] = section.key;
-                            cx.notify();
-                        }))
-                        // Unbuilt rows stay legible but recede, so the rail
-                        // reads as "what exists" and "what is left" at once.
-                        .when(section.source.is_none() && section.key != selected, |row| {
-                            row.text_color(theme.text_faint)
-                        })
-                        .child(SharedString::from(section.title))
-                        .into_any_element()
-                    });
-                    std::iter::once(heading).chain(rows)
-                }),
+            .child(
+                div()
+                    .id("gallery-rail")
+                    .size_full()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.rail_scroll)
+                    .child(div().flex().flex_col().gap(px(2.0)).p(px(10.0)).children(
+                        tab.groups.iter().flat_map(|group| {
+                            let heading =
+                                popover::menu_heading(theme, group.title).into_any_element();
+                            let rows = group.sections.iter().map(|section| {
+                                popover::menu_row(
+                                    theme,
+                                    section.key == selected,
+                                    SharedString::from(format!("rail-{}", section.key)),
+                                )
+                                .id(SharedString::from(format!("rail-item-{}", section.key)))
+                                .on_click(cx.listener(move |view, _, _, cx| {
+                                    let tab = view.tab;
+                                    view.selected[tab] = section.key;
+                                    cx.notify();
+                                }))
+                                // Unbuilt rows stay legible but recede, so the rail
+                                // reads as "what exists" and "what is left" at once.
+                                .when(section.source.is_none() && section.key != selected, |row| {
+                                    row.text_color(theme.text_faint)
+                                })
+                                .child(SharedString::from(section.title))
+                                .into_any_element()
+                            });
+                            std::iter::once(heading).chain(rows)
+                        }),
+                    )),
+            )
+            // After the content: hitboxes and paint are both order-dependent in
+            // gpui, so a bar added first would sit under what it reports on.
+            .child(scroll::scrollbar(
+                "rail-bar",
+                &self.rail_scroll,
+                &self.rail_bar,
             ))
             .into_any_element()
     }
@@ -1657,12 +1687,44 @@ impl Gallery {
                 &[],
             ),
 
-            "scroll-area" => todo(
-                &theme,
-                "Deferred",
-                "A styled scrollbar over gpui's own scroll handles.",
-                &[],
-            ),
+            "scroll-area" => section
+                .child(hint(
+                    &theme,
+                    "Drag the thumb, or use the wheel over it — the bar overlays \
+                     the content rather than taking a gutter, so it never reflows \
+                     what it sits on. The rail and this pane have one too.",
+                ))
+                .child(
+                    div()
+                        .relative()
+                        .h(px(220.0))
+                        .w_full()
+                        .rounded(px(Theme::PANEL_RADIUS))
+                        .border_1()
+                        .border_color(theme.border)
+                        .overflow_hidden()
+                        .child(
+                            div()
+                                .id("scroll-demo")
+                                .size_full()
+                                .overflow_y_scroll()
+                                .track_scroll(&self.demo_scroll)
+                                .child(div().p(px(14.0)).flex().flex_col().gap(px(8.0)).children(
+                                    (1..=30).map(|line| {
+                                        div()
+                                            .text_size(px(12.5))
+                                            .text_color(theme.text_muted)
+                                            .child(SharedString::from(format!("Line {line}")))
+                                    }),
+                                )),
+                        )
+                        .child(scroll::scrollbar(
+                            "scroll-demo-bar",
+                            &self.demo_scroll,
+                            &self.demo_bar,
+                        )),
+                )
+                .into_any_element(),
 
             "table" => todo(&theme, "Deferred", "No design yet.", &[]),
 
@@ -2046,14 +2108,26 @@ impl Render for Gallery {
                             .child(self.header(section, &theme))
                             .child(
                                 div()
-                                    .id("gallery-pane")
+                                    .relative()
                                     .flex_1()
                                     .min_h_0()
-                                    .overflow_y_scroll()
-                                    // The column width components are designed
-                                    // for; several are `w_full` and would
-                                    // otherwise stretch to the whole pane.
-                                    .child(div().p(px(32.0)).child(column().child(body))),
+                                    .child(
+                                        div()
+                                            .id("gallery-pane")
+                                            .size_full()
+                                            .overflow_y_scroll()
+                                            .track_scroll(&self.pane_scroll)
+                                            // The column width components are
+                                            // designed for; several are `w_full`
+                                            // and would otherwise stretch to the
+                                            // whole pane.
+                                            .child(div().p(px(32.0)).child(column().child(body))),
+                                    )
+                                    .child(scroll::scrollbar(
+                                        "pane-bar",
+                                        &self.pane_scroll,
+                                        &self.pane_bar,
+                                    )),
                             ),
                     ),
             );

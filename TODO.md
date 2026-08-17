@@ -71,6 +71,18 @@ thing here:
 - [ ] `left`/`right` crossing menus with the keyboard, and a disabled row being
       neither clickable nor landable
 
+The scrollbar's geometry is tested in both directions; everything you do to it
+with a pointer is not:
+
+- [ ] Dragging the thumb — including that it keeps the grab point rather than
+      snapping its middle to the pointer, which is the whole reason
+      `ScrollbarState` exists
+- [ ] The wheel still reaching the content *through* the bar (both hitboxes sit
+      under the pointer, so it should — the bar deliberately does not occlude)
+- [ ] Dragging one bar while three are mounted moving only that one
+- [ ] The bar appearing on the frame after a page's content first overflows,
+      and vanishing entirely when it fits
+
 If this becomes a standing need rather than a one-off, the way back is a small
 `bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
 `simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
@@ -102,7 +114,6 @@ Need a real use case before building:
 
 Data surfaces:
 
-- [ ] Scroll area (styled scrollbar over gpui scroll handles)
 - [ ] Table
 - [ ] Tree view
 - [ ] Virtualized list wrapper over gpui `list()`
@@ -171,7 +182,7 @@ menubar · checkbox · radio · toggle ·
 badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
-split · group box + rows · separator · skeleton rows · alert strips ·
+split · scroll area · group box + rows · separator · skeleton rows · alert strips ·
 spinners · icons (58 SVG) · material glass.
 
 Textarea is one `TextField` under a `Shape`, not a second component: `Line`,
@@ -204,6 +215,35 @@ left the caret — so there is no timing threshold to invent. Pushed from
 every keystroke of IME composition would be its own step. Bounded (default 10 *steps*,
 not keystrokes, `with_undo_limit` per field); `set_content` clears both stacks,
 being a programmatic reset rather than something the user did.
+
+Scroll area (`scroll.rs`) — the bar only, not a wrapper: the caller keeps its
+own `overflow_y_scroll` container, because something that swallowed the content
+would have to re-implement layout for it. The geometry is zed's `thumb_ranges`
+transcribed (fifteen lines of its 1722; the rest is a settings system, three
+reveal policies and four handle types). Both of gpui's conventions here invert
+easily — `max_offset` is the overflow rather than the content, and `offset` is
+negative going down — so the round trip between the thumb and the offset that
+drew it is a test, in both directions and at both ends.
+
+It carries its own gesture, which is the part worth keeping: `ScrollHandle` and
+the `Rc<Cell>` holding the grab both mutate through `&self`, so the bar wires
+plain closures over two clones and calls `window.refresh()` — no `cx.listener`,
+no view state beyond two fields, one line at the call site instead of the
+fifteen `split_handle` asks for. The grab is what stops the thumb jumping its
+middle to the pointer on every press. The drag payload carries the bar's id
+because `on_drag_move` filters by type alone and an app has several bars at
+once.
+
+A render pass can only see the handle as the last frame left it, so a bar would
+otherwise appear one frame late — or never, if nothing else repaints, which is
+how the hover fades failed. A canvas compares its laid-out height against the
+geometry the render used and asks for one more frame when they disagree; idle
+CPU measured 0.0%, so it converges rather than spinning.
+
+Overlay, never a gutter: a bar arriving or leaving must not reflow what it
+reports on. Track clicks do nothing yet — the wheel and the thumb are the two
+real gestures, and click-to-page is a platform preference before it is a
+feature.
 
 Menubar (`menubar.rs`) — the *in-window* bar. The native one is `cx.set_menus`
 and four lines in an app's `main`, which is where it stays; this is the bar an
@@ -292,6 +332,18 @@ process-wide appearance mirror that `cx.set_global` alone leaves stale.
 `input::init` is optional — the actions are public, so an app that wants its
 own keymap skips it. Documented in the README.
 
+No environment variables anywhere, as of the `motion::set_speed` change: the
+speed knob used to read `BEZEL_MOTION_SCALE` through a `OnceLock`, which made it
+the one piece of configuration in the library that no app could reach and no
+app's own settings could carry. It is now an atomic mirror behind
+`set_speed`/`speed_scale`, sited for the same reason as the theme's appearance
+mirror — the timelines are read from free functions with no `cx` in scope, so a
+gpui global cannot serve them. An app wanting it on a theme or a setting wires
+that from the layer that owns both; motion sits below theme and stays there.
+Every test that measures a timeline now holds `lock_speed()`, the same
+arrangement `theme::lock_appearance` uses, or moving the knob in one test would
+have quietly changed the arithmetic under another.
+
 The gallery installs a menu bar. Without one a gpui app has no key equivalents
 at all: `cmd-q` did not quit and `ctrl-cmd-f` did not toggle full screen, and
 neither comes for free — the standard items live in a nib, which a gpui app
@@ -307,4 +359,4 @@ one required call in the README rather than a contract a reader had to infer.
 
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 112 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 120 tests.

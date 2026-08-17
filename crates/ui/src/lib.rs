@@ -20,6 +20,7 @@ pub mod material;
 pub mod menubar;
 pub mod palette;
 pub mod popover;
+pub mod scroll;
 pub mod tooltip;
 pub mod widgets;
 

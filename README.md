@@ -84,6 +84,14 @@ is the app's: bezel's widgets are `fn(&Theme, ..) -> Div` with nowhere to keep
 one, and the state saying whether a checkbox is checked already lives with the
 caller.
 
+**Motion.** `bezel_motion::set_speed(scale)` stretches every timeline in the
+catalog — `10.0` slows the 200ms pane tweens to 2s, which is how you sample an
+animation frame by frame. `set_reduced_motion(cx, true)` is the other switch,
+and gpui honours it in every animated element for free.
+
+There are no environment variables anywhere in bezel, deliberately. A knob only
+the shell can reach is a knob the app cannot put behind its own setting.
+
 ## Provenance & licenses
 
 The initial components were extracted from
