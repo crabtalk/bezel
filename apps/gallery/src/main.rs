@@ -5,7 +5,7 @@
 //! a time; this file is the window around it.
 
 use bezel_theme::{Theme, appearance};
-use bezel_ui::{combobox, date, focus, icons, input, palette};
+use bezel_ui::{combobox, date, focus, icons, input, menubar, palette};
 use gallery::{Gallery, OpenPalette, ToggleFullScreen, ToggleInspector};
 use gpui::{
     App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, WindowBounds, WindowOptions, actions,
@@ -27,6 +27,7 @@ fn main() {
             combobox::init(cx);
             date::init(cx);
             focus::init(cx);
+            menubar::init(cx);
             cx.bind_keys([
                 KeyBinding::new("cmd-k", OpenPalette, None),
                 KeyBinding::new("cmd-alt-i", ToggleInspector, None),

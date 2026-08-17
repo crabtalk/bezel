@@ -26,7 +26,20 @@ hosts any gpui patches we carry.
 ## Configuration
 
 There is no config object and no registry: bezel is configured through gpui's
-own globals and by choosing which `init` functions to call.
+own globals and by choosing which `init` functions to call. Every `init` below
+is optional. The one thing that is **not** optional is two lines in your root
+render:
+
+```rust
+if bezel_motion::hover_fades_active() {
+    window.request_animation_frame();
+}
+```
+
+Hover washes are colours computed at paint time, not animation elements that
+drive themselves — so the frames a fade needs are the app's to ask for. Skip it
+and every hover wash paints one frame at rest and then sticks until something
+else repaints.
 
 **Theme.** `Theme` is a plain struct with public fields, installed as a gpui
 `Global`. To ship your own colours, say how a palette is built and register it
@@ -57,9 +70,10 @@ type, so an app that wants a different keymap skips `init` and binds the actions
 itself. bezel deliberately claims few chords: a component library that binds a
 keystroke it is not sure about takes it away from every app downstream.
 
-`bezel_ui::combobox::init(cx)` and `bezel_ui::date::init(cx)` do the same for
-the two components that own a keyboard of their own — list navigation, and the
-calendar's day/week/month arrows.
+`bezel_ui::combobox::init(cx)`, `bezel_ui::date::init(cx)` and
+`bezel_ui::menubar::init(cx)` do the same for the components that own a keyboard
+of their own — list navigation, the calendar's day/week/month arrows, and the
+bar's rows and menus.
 
 `bezel_ui::focus::init(cx)` is the other one: `tab`/`shift-tab` to walk the
 controls, `enter`/`space` to press the focused one, `←`/`→` to move one that

@@ -60,6 +60,17 @@ eleven pure tests deep. What no test can reach is the card:
 - [ ] Walking off the end of a month carrying the grid with it
 - [ ] `pageup`/`pagedown`, `escape`, and `enter` opening a closed picker
 
+The menubar's whole point is a pointer behaviour, so it is the least verified
+thing here:
+
+- [ ] **Hover-switch** — one menu down, the pointer crossing a sibling title
+      opening that one; and hovering with *nothing* down opening nothing
+- [ ] Clicking a second title switching rather than being swallowed by the
+      dismissal that same press causes — `note_trigger_press_matching`'s reason
+      to exist, never once exercised
+- [ ] `left`/`right` crossing menus with the keyboard, and a disabled row being
+      neither clickable nor landable
+
 If this becomes a standing need rather than a one-off, the way back is a small
 `bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
 `simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
@@ -85,7 +96,6 @@ macOS-only, so it can never gate CI.
 
 Need a real use case before building:
 
-- [ ] Menubar — app chrome more than a component; comet's is app-coupled
 - [ ] Pagination — desktop apps rarely paginate; skip until something needs it
 
 ## Next round (deferred by decision)
@@ -157,7 +167,7 @@ out of comet.
 
 Components: button ×3 · text field (IME, selection, clipboard, native
 shortcuts) · **textarea** · select · combobox · command palette · date picker ·
-checkbox · radio · toggle ·
+menubar · checkbox · radio · toggle ·
 badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
@@ -194,6 +204,33 @@ left the caret — so there is no timing threshold to invent. Pushed from
 every keystroke of IME composition would be its own step. Bounded (default 10 *steps*,
 not keystrokes, `with_undo_limit` per field); `set_content` clears both stacks,
 being a programmatic reset rather than something the user did.
+
+Menubar (`menubar.rs`) — the *in-window* bar. The native one is `cx.set_menus`
+and four lines in an app's `main`, which is where it stays; this is the bar an
+app with a custom titlebar draws itself. The page's old note ("app chrome more
+than a component; comet's is app-coupled") held right up to the design: nothing
+was ported, and what makes it a component rather than a row of dropdowns is that
+one menu being open changes what the others do — the pointer crossing a sibling
+title switches to it with no click, and `left`/`right` cross menus without
+leaving the keyboard.
+
+One `Popup<usize>` for the whole bar rather than one per title, because exactly
+one menu can be down and saying so in the type makes switching a single
+assignment. `note_trigger_press_matching` already existed for it, having been
+written for the shared-popup case: the press that dismisses menu A is the same
+press that opens menu B, and only a press on the *owning* title counts as a
+dismissal. Menus are data the app hands over, shaped like gpui's `Menu`/
+`MenuItem` so an app drawing both bars writes them alike — but not those types,
+which carry a boxed action; bezel reports an index and leaves dispatch alone.
+Accelerators are printed, never bound: a menu showing a keystroke it did not own
+would be documenting a lie.
+
+The keyboard is why disabled rows and separators are in scope at all —
+`next_selectable` steps over both, wraps, and answers `None` for a menu with
+nothing to land on, which is the one shape that would otherwise walk the ring
+forever. Six pure tests, that one included. No submenus, no checkmarks, no `alt`
+to focus the bar: each is where a menubar turns into a menu *system*, and
+nothing needs one.
 
 Date picker (`date.rs`) — an entity, not a function, and the line between the
 two is now clear enough to state: a select owns nothing the caller does not
@@ -260,6 +297,14 @@ at all: `cmd-q` did not quit and `ctrl-cmd-f` did not toggle full screen, and
 neither comes for free — the standard items live in a nib, which a gpui app
 does not have, so full screen is an action the app binds itself.
 
+The hover fades were never actually running. `motion::hover_listener` hands off
+to a once-per-frame tail — `hover_fades_active()` + `request_animation_frame` in
+the app's root render — and nothing in the tree had ever called it, so every
+wash painted its first frame at rest and then held until an unrelated repaint
+came along. It read as a hover that lagged and then jumped. The fade system was
+right; the app was missing the two lines it is written against, which is now the
+one required call in the README rather than a contract a reader had to infer.
+
 Infrastructure: gpui sourced from our fork via `[patch.crates-io]` ·
 `Window::paint_backdrop_blur` ported onto the fork (`e0b415b4bc`) and verified
-rendering · `font-kit` feature (without it every glyph is notdef) · 95 tests.
+rendering · `font-kit` feature (without it every glyph is notdef) · 112 tests.

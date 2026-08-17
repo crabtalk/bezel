@@ -12,6 +12,7 @@ use bezel_ui::combobox::Combobox;
 use bezel_ui::date::{Calendar, Date};
 use bezel_ui::hover_card::HoverCard;
 use bezel_ui::input::{Shape, TextField};
+use bezel_ui::menubar::{Item, Menu, Menubar, MenubarEvent};
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::tooltip::Tooltip;
 use bezel_ui::widgets::{SliderDrag, SplitDrag};
@@ -56,6 +57,44 @@ const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
 /// owns the value decides what they are worth.
 const SLIDER_STEP: f32 = 0.05;
+
+/// The menubar page's menus. Ordinary app chrome, with the two rows worth
+/// showing: a separator, and a disabled item the keyboard steps straight over.
+///
+/// The accelerators are printed, not bound — `menubar` never dispatches, so
+/// these name shortcuts this app would wire itself.
+fn demo_menus() -> Vec<Menu> {
+    vec![
+        Menu::new(
+            "File",
+            vec![
+                Item::action("New Window").with_keystroke("⌘N"),
+                Item::action("Open…").with_keystroke("⌘O"),
+                Item::Separator,
+                Item::action("Save").with_keystroke("⌘S"),
+                Item::action("Save As…").with_keystroke("⇧⌘S").disabled(),
+            ],
+        ),
+        Menu::new(
+            "Edit",
+            vec![
+                Item::action("Undo").with_keystroke("⌘Z"),
+                Item::action("Redo").with_keystroke("⇧⌘Z").disabled(),
+                Item::Separator,
+                Item::action("Cut").with_keystroke("⌘X"),
+                Item::action("Copy").with_keystroke("⌘C"),
+                Item::action("Paste").with_keystroke("⌘V"),
+            ],
+        ),
+        Menu::new(
+            "View",
+            vec![
+                Item::action("Toggle Sidebar").with_keystroke("⌘B"),
+                Item::action("Full Screen").with_keystroke("⌃⌘F"),
+            ],
+        ),
+    ]
+}
 
 /// One page of the browser.
 pub struct Section {
@@ -175,7 +214,7 @@ pub const COMPONENTS: &[Group] = &[
             section("menu", "Menu", "crates/ui/src/popover.rs"),
             section("context-menu", "Context menu", "crates/ui/src/popover.rs"),
             section("palette", "Command palette", "crates/ui/src/palette.rs"),
-            planned("menubar", "Menubar"),
+            section("menubar", "Menubar", "crates/ui/src/menubar.rs"),
         ],
     },
     Group {
@@ -234,14 +273,7 @@ pub const COMPONENTS: &[Group] = &[
 /// than derived because the arms cannot be enumerated at runtime; a test keeps
 /// this in step with the [`planned`] rows.
 #[cfg(test)]
-const PLANNED_BODIES: &[&str] = &[
-    "menubar",
-    "pagination",
-    "scroll-area",
-    "table",
-    "tree",
-    "virtual-list",
-];
+const PLANNED_BODIES: &[&str] = &["pagination", "scroll-area", "table", "tree", "virtual-list"];
 
 fn section_at(key: &str) -> Option<&'static Section> {
     TABS.iter()
@@ -273,6 +305,11 @@ pub struct Gallery {
     language: Entity<Combobox>,
     /// So does the date picker, which holds a month and a cursor.
     date: Entity<Calendar>,
+    /// And the menubar, which holds which menu is down.
+    menubar: Entity<Menubar>,
+    /// What it last reported. The bar keeps no selection — a menu item is an
+    /// action, not a value — so the host is where the answer lands.
+    last_menu_item: Option<SharedString>,
     sheet: popover::Popup<()>,
     /// Where the split's divider sits, as a fraction of the container.
     split: f32,
@@ -310,7 +347,21 @@ pub struct Gallery {
 
 impl Gallery {
     pub fn new(cx: &mut Context<Self>) -> Self {
+        // The bar reports a place in the menus it was given; the host is what
+        // turns that back into a name, and what decides it means anything.
+        let menubar = cx.new(|cx| Menubar::new(demo_menus(), cx));
+        cx.subscribe(&menubar, |view, bar, event, cx| {
+            let MenubarEvent::Selected { menu, item } = event;
+            if let Some(Item::Action { label, .. }) = bar.read(cx).menus()[*menu].items.get(*item) {
+                view.last_menu_item = Some(label.clone());
+            }
+            cx.notify();
+        })
+        .detach();
+
         Self {
+            menubar,
+            last_menu_item: None,
             search: cx.new(|cx| TextField::new(cx).with_placeholder("Search components…")),
             filled: cx.new(|cx| {
                 let mut field = TextField::new(cx);
@@ -1579,14 +1630,25 @@ impl Gallery {
                 )
                 .into_any_element(),
 
-            "menubar" => todo(
-                &theme,
-                "Needs a use case",
-                "App chrome more than a component — comet's is coupled to its own \
-                 app, so there is nothing to port that would not have to be \
-                 redesigned first.",
-                &[],
-            ),
+            "menubar" => section
+                .child(hint(
+                    &theme,
+                    "Open one, then slide across the others — a bar with a menu \
+                     down switches on hover, with no second click. The arrows \
+                     walk rows and cross between menus; the greyed rows cannot \
+                     be landed on at all.",
+                ))
+                .child(self.menubar.clone())
+                .child(
+                    div()
+                        .text_size(px(12.5))
+                        .text_color(theme.text_muted)
+                        .child(SharedString::from(match &self.last_menu_item {
+                            Some(label) => format!("chose: {label}"),
+                            None => "nothing chosen".to_string(),
+                        })),
+                )
+                .into_any_element(),
 
             "pagination" => todo(
                 &theme,
@@ -1995,6 +2057,17 @@ impl Render for Gallery {
                             ),
                     ),
             );
+
+        // A hover fade is a colour computed at paint time, not an animation
+        // element that drives itself: `hover_listener` marks the window dirty
+        // once when the pointer crosses, and everything after that frame is the
+        // host's to ask for. Without this the blend paints its first frame — at
+        // rest — and then freezes until something unrelated repaints, which
+        // reads as a wash that sticks and then jumps. It also ticks the fade
+        // table, which is what evicts entries for elements that have gone away.
+        if bezel_motion::hover_fades_active() {
+            window.request_animation_frame();
+        }
 
         // Traversal goes on the root so `tab` works wherever focus happens to
         // be, rather than only inside whatever claimed it.

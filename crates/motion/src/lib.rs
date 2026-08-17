@@ -574,8 +574,23 @@ pub fn hover_listener(
     }
 }
 
-/// Frame-drive hook: call ONCE per window frame (the shell render tail); true
-/// while any hover fade is mid-flight and frames must keep coming.
+/// Frame-drive hook: call ONCE per window frame, from the app's root render:
+///
+/// ```ignore
+/// if bezel_motion::hover_fades_active() {
+///     window.request_animation_frame();
+/// }
+/// ```
+///
+/// **Not optional.** A hover fade is a colour computed at paint time rather than
+/// an animation element that drives itself: [`hover_listener`] dirties the
+/// window once as the pointer crosses, and every frame after that one has to be
+/// asked for. An app that skips this paints the blend's first frame — at rest —
+/// and then holds it until something unrelated repaints, which looks like a wash
+/// that sticks and then jumps rather than one that is simply off.
+///
+/// It is also the tick: the frame counter it advances is what evicts fades whose
+/// elements have gone away, so skipping it leaks an entry per hovered element.
 pub fn hover_fades_active() -> bool {
     HOVER_FADES.with(|fades| fades.borrow_mut().tick_at(Instant::now()))
 }
