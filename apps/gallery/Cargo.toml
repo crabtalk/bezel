@@ -12,5 +12,10 @@ workspace = true
 bezel-motion.workspace = true
 bezel-theme.workspace = true
 bezel-ui.workspace = true
+# Today's date, in the local timezone — the one thing `date::Calendar` asks its
+# host for, because bezel carries no clock. Deliberately a dependency of the
+# *app* and never of the library: taking chrono into `bezel-ui` would make it
+# public API, and a consumer with its own chrono would then have two.
+chrono = "0.4"
 gpui.workspace = true
 gpui_platform.workspace = true

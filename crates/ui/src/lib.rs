@@ -10,6 +10,7 @@ use std::borrow::Cow;
 use gpui::App;
 
 pub mod combobox;
+pub mod date;
 pub mod focus;
 pub mod hover_card;
 pub mod icons;

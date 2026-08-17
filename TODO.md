@@ -51,6 +51,15 @@ is unrun:
       transparent, so a control that loses that border loses its ring silently —
       the failure looks like nothing at all
 
+The date picker is in the same state, and its *arithmetic* is not — that part is
+eleven pure tests deep. What no test can reach is the card:
+
+- [ ] The grid painting where the maths says it does — the month opening on the
+      right weekday, and today, the selection and the cursor each reading as
+      themselves
+- [ ] Walking off the end of a month carrying the grid with it
+- [ ] `pageup`/`pagedown`, `escape`, and `enter` opening a closed picker
+
 If this becomes a standing need rather than a one-off, the way back is a small
 `bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
 `simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
@@ -77,7 +86,6 @@ macOS-only, so it can never gate CI.
 Need a real use case before building:
 
 - [ ] Menubar — app chrome more than a component; comet's is app-coupled
-- [ ] Date picker / calendar — large surface
 - [ ] Pagination — desktop apps rarely paginate; skip until something needs it
 
 ## Next round (deferred by decision)
@@ -148,8 +156,8 @@ A third tab, Patterns — composed examples rather than primitives, shadcn's
 out of comet.
 
 Components: button ×3 · text field (IME, selection, clipboard, native
-shortcuts) · **textarea** · select · combobox · command palette · checkbox ·
-radio · toggle ·
+shortcuts) · **textarea** · select · combobox · command palette · date picker ·
+checkbox · radio · toggle ·
 badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
@@ -186,6 +194,30 @@ left the caret — so there is no timing threshold to invent. Pushed from
 every keystroke of IME composition would be its own step. Bounded (default 10 *steps*,
 not keystrokes, `with_undo_limit` per field); `set_content` clears both stacks,
 being a programmatic reset rather than something the user did.
+
+Date picker (`date.rs`) — an entity, not a function, and the line between the
+two is now clear enough to state: a select owns nothing the caller does not
+already own, so it stays a trigger plus a mount; a calendar owns a month on
+screen and a keyboard cursor, which the app has no opinion about. It reports the
+one thing the app does care about and nothing else.
+
+The cursor *is* the view month — one field, not two, so walking off the end of a
+month and paging to the next are the same operation and cannot disagree about
+where you are. The grid is always six rows of real dates, including the
+neighbouring months' edges: a card that resized as you paged would move the day
+you were about to click, and blanks would need a second test that real dates do
+not (`cell.month() != view.month()`).
+
+`Date` is bezel's own. chrono is already under gpui, so taking it would compile
+for free — and would make it *public* API, so a consumer with its own chrono
+would have two, which is the split-graph failure `bezel::gpui` exists to
+prevent. A picker needs no timezones, no parsing and no formatting: it needs the
+civil calendar, which is Hinnant's two conversions transcribed and everything
+else as a round trip through them. Eleven pure tests, checked against the system
+calendar rather than against themselves. bezel carries no clock either — `today`
+is a constructor argument, since the app is the only thing that knows its
+timezone; the gallery does that conversion in three lines, which is the whole
+integration story for an app that already speaks chrono.
 
 Keyboard focus traversal (`focus.rs`), and every control wired to it. gpui had
 the whole machinery and none of it on: `tab_stop` starts false and no keys are

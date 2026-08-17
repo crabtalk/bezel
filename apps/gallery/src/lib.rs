@@ -9,6 +9,7 @@
 use bezel_theme::Theme;
 use bezel_theme::appearance::{self, AppearanceMode};
 use bezel_ui::combobox::Combobox;
+use bezel_ui::date::{Calendar, Date};
 use bezel_ui::hover_card::HoverCard;
 use bezel_ui::input::{Shape, TextField};
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
@@ -165,7 +166,7 @@ pub const COMPONENTS: &[Group] = &[
             section("toggle", "Toggle", "crates/ui/src/widgets.rs"),
             section("toggle-group", "Toggle group", "crates/ui/src/widgets.rs"),
             section("slider", "Slider", "crates/ui/src/widgets.rs"),
-            planned("date-picker", "Date picker"),
+            section("date-picker", "Date picker", "crates/ui/src/date.rs"),
         ],
     },
     Group {
@@ -234,7 +235,6 @@ pub const COMPONENTS: &[Group] = &[
 /// this in step with the [`planned`] rows.
 #[cfg(test)]
 const PLANNED_BODIES: &[&str] = &[
-    "date-picker",
     "menubar",
     "pagination",
     "scroll-area",
@@ -271,6 +271,8 @@ pub struct Gallery {
     /// The combobox, by contrast, owns its own menu — it has a query field to
     /// hold, so it is an entity.
     language: Entity<Combobox>,
+    /// So does the date picker, which holds a month and a cursor.
+    date: Entity<Calendar>,
     sheet: popover::Popup<()>,
     /// Where the split's divider sits, as a fraction of the container.
     split: f32,
@@ -339,6 +341,7 @@ impl Gallery {
                 )
                 .with_selection(0)
             }),
+            date: cx.new(|cx| Calendar::new(today(), cx)),
             palette: None,
             last_command: None,
             segment: 0,
@@ -1557,12 +1560,24 @@ impl Gallery {
                 .into_any_element(),
 
             // ---- Not built yet -----------------------------------------------
-            "date-picker" => todo(
-                &theme,
-                "Needs a use case",
-                "A large surface. Parked until something in the library needs one.",
-                &[],
-            ),
+            "date-picker" => section
+                .child(hint(
+                    &theme,
+                    "enter opens it. The arrows walk days and weeks — off the end \
+                     of a month and the grid follows — pageup and pagedown page \
+                     months, enter chooses, escape dismisses.",
+                ))
+                .child(div().w(px(220.0)).child(self.date.clone()))
+                .child(
+                    div()
+                        .text_size(px(12.5))
+                        .text_color(theme.text_muted)
+                        .child(SharedString::from(match self.date.read(cx).selection() {
+                            Some(date) => format!("chosen: {date}"),
+                            None => "nothing chosen".to_string(),
+                        })),
+                )
+                .into_any_element(),
 
             "menubar" => todo(
                 &theme,
@@ -1917,6 +1932,17 @@ fn pressable(
     el.id(id)
         .on_click(cx.listener(move |view, _, _, cx| press(view, cx)))
         .on_action(cx.listener(move |view, _: &focus::Activate, _, cx| by_key(view, cx)))
+}
+
+/// Today, locally — the one thing [`Calendar`] asks its host for.
+///
+/// This is the boundary conversion, and the reason it is worth showing: bezel
+/// carries no clock and no chrono, so the app that has both hands over three
+/// numbers and keeps its date library to itself.
+fn today() -> Date {
+    use chrono::Datelike as _;
+    let now = chrono::Local::now().date_naive();
+    Date::new(now.year(), now.month() as u8, now.day() as u8).expect("chrono deals in real dates")
 }
 
 fn row() -> gpui::Div {

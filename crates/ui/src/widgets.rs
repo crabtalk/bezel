@@ -13,7 +13,7 @@ use bezel_theme::{Theme, ink};
 /// Always present, never conditional. gpui sizes border-box, so a border that
 /// appeared only on focus would shift the content under it by a pixel — a
 /// checkbox whose tick jumps as you tab onto it.
-const RING_SLOT: gpui::Hsla = gpui::transparent_black();
+pub(crate) const RING_SLOT: gpui::Hsla = gpui::transparent_black();
 
 /// Centered page column: `mx-auto w-full max-w-3xl px-6 pb-16 pt-8`.
 pub fn page_column() -> gpui::Div {

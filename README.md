@@ -57,6 +57,10 @@ type, so an app that wants a different keymap skips `init` and binds the actions
 itself. bezel deliberately claims few chords: a component library that binds a
 keystroke it is not sure about takes it away from every app downstream.
 
+`bezel_ui::combobox::init(cx)` and `bezel_ui::date::init(cx)` do the same for
+the two components that own a keyboard of their own — list navigation, and the
+calendar's day/week/month arrows.
+
 `bezel_ui::focus::init(cx)` is the other one: `tab`/`shift-tab` to walk the
 controls, `enter`/`space` to press the focused one, `←`/`→` to move one that
 holds a value. Traversal needs two more lines — `focus::traversal` on the root

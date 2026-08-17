@@ -1847,6 +1847,7 @@ dependencies = [
  "bezel-motion",
  "bezel-theme",
  "bezel-ui",
+ "chrono",
  "gpui",
  "gpui_platform",
 ]
