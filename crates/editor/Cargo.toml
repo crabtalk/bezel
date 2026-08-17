@@ -1,0 +1,22 @@
+[package]
+name = "bezel-editor"
+
+description = "A Notion-style block editor for gpui, editing markdown in place"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bezel-markdown.workspace = true
+bezel-theme.workspace = true
+gpui.workspace = true
