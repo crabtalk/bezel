@@ -13,7 +13,7 @@ use bezel_ui::hover_card::HoverCard;
 use bezel_ui::input::{Shape, TextField};
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::tooltip::Tooltip;
-use bezel_ui::widgets::SplitDrag;
+use bezel_ui::widgets::{SliderDrag, SplitDrag};
 use bezel_ui::{focus, icons, loaders, popover, widgets};
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, Empty, Entity, SharedString, Window, actions, div,
@@ -50,6 +50,11 @@ pub const COMMANDS: [&str; 8] = [
 ];
 
 const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
+
+/// What one press of ← or → moves the slider. The step is never the library's:
+/// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
+/// owns the value decides what they are worth.
+const SLIDER_STEP: f32 = 0.05;
 
 /// One page of the browser.
 pub struct Section {
@@ -273,10 +278,26 @@ pub struct Gallery {
     /// The window's resting focus. Without it the key context has no node in
     /// the focus path, and `cmd-k` reaches nothing.
     focus_handle: gpui::FocusHandle,
-    /// Focus for the three buttons. A stateless `fn(&Theme, ..) -> Div` has
+    /// Focus for the wired controls. A stateless `fn(&Theme, ..) -> Div` has
     /// nowhere to keep a handle, so the view that composes it holds them —
-    /// the same place it already holds which tab is open.
+    /// the same place it already holds what each one is set to.
     buttons: [gpui::FocusHandle; 3],
+    checkboxes: [gpui::FocusHandle; 2],
+    radios: [gpui::FocusHandle; 2],
+    switches: [gpui::FocusHandle; 2],
+    segments: [gpui::FocusHandle; 3],
+    slider: gpui::FocusHandle,
+    tab_strip: [gpui::FocusHandle; 3],
+    /// Which button was last pressed, and by what — the only way to see that a
+    /// keyboard press and a click reach the same place.
+    last_pressed: Option<SharedString>,
+    /// What the wired controls are set to. Every one of them paints from the
+    /// caller's state and reports nothing back, so this is where the answer is.
+    checked: [bool; 2],
+    radio: usize,
+    switched: [bool; 2],
+    level: f32,
+    tab_choice: usize,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -328,6 +349,18 @@ impl Gallery {
             split_dragging: false,
             focus_handle: cx.focus_handle(),
             buttons: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+            checkboxes: [cx.focus_handle(), cx.focus_handle()],
+            radios: [cx.focus_handle(), cx.focus_handle()],
+            switches: [cx.focus_handle(), cx.focus_handle()],
+            segments: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+            slider: cx.focus_handle(),
+            tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+            last_pressed: None,
+            checked: [true, false],
+            radio: 0,
+            switched: [true, false],
+            level: 0.5,
+            tab_choice: 0,
             tab: 1,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
@@ -403,6 +436,19 @@ impl Gallery {
         _: &mut Context<Self>,
     ) {
         window.toggle_fullscreen();
+    }
+
+    /// What a button does, reached by click and by `enter`/`space` alike.
+    fn press(&mut self, label: &'static str, cx: &mut Context<Self>) {
+        self.last_pressed = Some(SharedString::from(label));
+        cx.notify();
+    }
+
+    /// The slider by keyboard. Clamped here rather than in the widget: the
+    /// paint clamps what it draws, but the value is this view's to keep sane.
+    fn nudge(&mut self, delta: f32, cx: &mut Context<Self>) {
+        self.level = (self.level + delta).clamp(0.0, 1.0);
+        cx.notify();
     }
 
     fn close_context_menu(&mut self, cx: &mut Context<Self>) {
@@ -835,31 +881,41 @@ impl Gallery {
                 .into_any_element(),
 
             // ---- Components --------------------------------------------------
-            "buttons" => section
-                .child(hint(
-                    &theme,
-                    "tab and shift-tab walk these, and every field and combobox in \
-                     the gallery, in the order they are painted.",
-                ))
-                .child(
-                    row()
-                        .child(focus::focusable(
-                            &theme,
-                            &self.buttons[0],
-                            popover::button(&theme, "Ghost", "g-ghost"),
-                        ))
-                        .child(focus::focusable(
-                            &theme,
-                            &self.buttons[1],
-                            popover::button_prominent(&theme, "Prominent"),
-                        ))
-                        .child(focus::focusable(
-                            &theme,
-                            &self.buttons[2],
-                            popover::button_destructive(&theme, "Destructive"),
-                        )),
-                )
-                .into_any_element(),
+            "buttons" => {
+                let labels = ["Ghost", "Prominent", "Destructive"];
+                let faces = [
+                    popover::button(&theme, labels[0], "g-ghost"),
+                    popover::button_prominent(&theme, labels[1]),
+                    popover::button_destructive(&theme, labels[2]),
+                ];
+                section
+                    .child(hint(
+                        &theme,
+                        "tab and shift-tab walk these, and every field and combobox \
+                         in the gallery, in the order they are painted. enter or \
+                         space presses the focused one.",
+                    ))
+                    .child(
+                        row().children(faces.into_iter().enumerate().map(|(index, face)| {
+                            pressable(
+                                focus::focusable(&theme, &self.buttons[index], face),
+                                SharedString::from(format!("button-{index}")),
+                                cx,
+                                move |view, cx| view.press(labels[index], cx),
+                            )
+                            .into_any_element()
+                        })),
+                    )
+                    .when_some(self.last_pressed.clone(), |page, label| {
+                        page.child(
+                            div()
+                                .text_size(px(12.5))
+                                .text_color(theme.text_muted)
+                                .child(SharedString::from(format!("pressed: {label}"))),
+                        )
+                    })
+                    .into_any_element()
+            }
 
             "text-field" => section
                 .child(hint(
@@ -880,11 +936,23 @@ impl Gallery {
                 .into_any_element(),
 
             "toggle" => section
-                .child(
-                    row()
-                        .child(widgets::toggle(&theme, true))
-                        .child(widgets::toggle(&theme, false)),
-                )
+                .child(hint(&theme, "space or enter flips the focused switch."))
+                .child(row().children((0..2).map(|index| {
+                    pressable(
+                        focus::focusable(
+                            &theme,
+                            &self.switches[index],
+                            widgets::toggle(&theme, self.switched[index]),
+                        ),
+                        SharedString::from(format!("toggle-{index}")),
+                        cx,
+                        move |view, cx| {
+                            view.switched[index] = !view.switched[index];
+                            cx.notify();
+                        },
+                    )
+                    .into_any_element()
+                })))
                 .into_any_element(),
 
             "badge" => section
@@ -974,12 +1042,46 @@ impl Gallery {
                 .into_any_element(),
 
             "checkbox-radio" => section
+                .child(hint(
+                    &theme,
+                    "space or enter flips the focused control. The radios are one \
+                     set, so choosing either clears the other; the checkboxes are \
+                     two independent answers.",
+                ))
                 .child(
                     row()
-                        .child(widgets::checkbox(&theme, true))
-                        .child(widgets::checkbox(&theme, false))
-                        .child(widgets::radio_button(&theme, true))
-                        .child(widgets::radio_button(&theme, false)),
+                        .children((0..2).map(|index| {
+                            pressable(
+                                focus::focusable(
+                                    &theme,
+                                    &self.checkboxes[index],
+                                    widgets::checkbox(&theme, self.checked[index]),
+                                ),
+                                SharedString::from(format!("checkbox-{index}")),
+                                cx,
+                                move |view, cx| {
+                                    view.checked[index] = !view.checked[index];
+                                    cx.notify();
+                                },
+                            )
+                            .into_any_element()
+                        }))
+                        .children((0..2).map(|index| {
+                            pressable(
+                                focus::focusable(
+                                    &theme,
+                                    &self.radios[index],
+                                    widgets::radio_button(&theme, self.radio == index),
+                                ),
+                                SharedString::from(format!("radio-{index}")),
+                                cx,
+                                move |view, cx| {
+                                    view.radio = index;
+                                    cx.notify();
+                                },
+                            )
+                            .into_any_element()
+                        })),
                 )
                 .into_any_element(),
 
@@ -1004,51 +1106,76 @@ impl Gallery {
                 .into_any_element(),
 
             "slider" => section
-                .child(div().w(px(280.0)).child(widgets::slider(&theme, 0.5)))
+                .child(hint(
+                    &theme,
+                    "Grab it anywhere and slide, or tab to it and press ← and →.",
+                ))
+                .child(
+                    div().w(px(280.0)).child(
+                        focus::focusable(&theme, &self.slider, widgets::slider(&theme, self.level))
+                            .id("slider")
+                            // The element is its own drag source, so the gesture
+                            // starts wherever the pointer went down on the track.
+                            .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| Empty))
+                            .on_drag_move(cx.listener(
+                                |view, event: &DragMoveEvent<SliderDrag>, _, cx| {
+                                    view.level = widgets::axis_fraction(
+                                        event.event.position,
+                                        event.bounds,
+                                        Axis::Horizontal,
+                                        0.0,
+                                    );
+                                    cx.notify();
+                                },
+                            ))
+                            .on_action(cx.listener(|view, _: &focus::Decrement, _, cx| {
+                                view.nudge(-SLIDER_STEP, cx)
+                            }))
+                            .on_action(cx.listener(|view, _: &focus::Increment, _, cx| {
+                                view.nudge(SLIDER_STEP, cx)
+                            })),
+                    ),
+                )
+                .child(
+                    div()
+                        .text_size(px(12.5))
+                        .font_family(theme.font_mono.clone())
+                        .text_color(theme.text_muted)
+                        .child(SharedString::from(format!("{:.0}%", self.level * 100.0))),
+                )
                 .into_any_element(),
 
             "toggle-group" => section
+                .child(hint(
+                    &theme,
+                    "One of three: space or enter picks the focused segment.",
+                ))
                 .child(
-                    widgets::toggle_group(&theme)
-                        .child(
-                            div()
-                                .id("seg-0")
-                                .on_click(cx.listener(|view, _, _, cx| {
-                                    view.segment = 0;
-                                    cx.notify();
-                                }))
-                                .child(widgets::toggle_group_item(
-                                    &theme,
-                                    "Day",
-                                    self.segment == 0,
-                                )),
-                        )
-                        .child(
-                            div()
-                                .id("seg-1")
-                                .on_click(cx.listener(|view, _, _, cx| {
-                                    view.segment = 1;
-                                    cx.notify();
-                                }))
-                                .child(widgets::toggle_group_item(
-                                    &theme,
-                                    "Week",
-                                    self.segment == 1,
-                                )),
-                        )
-                        .child(
-                            div()
-                                .id("seg-2")
-                                .on_click(cx.listener(|view, _, _, cx| {
-                                    view.segment = 2;
-                                    cx.notify();
-                                }))
-                                .child(widgets::toggle_group_item(
-                                    &theme,
-                                    "Month",
-                                    self.segment == 2,
-                                )),
-                        ),
+                    widgets::toggle_group(&theme).children(
+                        ["Day", "Week", "Month"]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, label)| {
+                                pressable(
+                                    focus::focusable(
+                                        &theme,
+                                        &self.segments[index],
+                                        widgets::toggle_group_item(
+                                            &theme,
+                                            label,
+                                            self.segment == index,
+                                        ),
+                                    ),
+                                    SharedString::from(format!("segment-{index}")),
+                                    cx,
+                                    move |view, cx| {
+                                        view.segment = index;
+                                        cx.notify();
+                                    },
+                                )
+                                .into_any_element()
+                            }),
+                    ),
                 )
                 .into_any_element(),
 
@@ -1153,11 +1280,29 @@ impl Gallery {
                 .into_any_element(),
 
             "tabs" => section
+                .child(hint(&theme, "space or enter opens the focused tab."))
                 .child(
-                    widgets::tab_bar(&theme)
-                        .child(widgets::tab(&theme, "Components", true))
-                        .child(widgets::tab(&theme, "Tokens", false))
-                        .child(widgets::tab(&theme, "Motion", false)),
+                    widgets::tab_bar(&theme).children(
+                        ["Components", "Tokens", "Motion"]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, label)| {
+                                pressable(
+                                    focus::focusable(
+                                        &theme,
+                                        &self.tab_strip[index],
+                                        widgets::tab(&theme, label, self.tab_choice == index),
+                                    ),
+                                    SharedString::from(format!("tab-{index}")),
+                                    cx,
+                                    move |view, cx| {
+                                        view.tab_choice = index;
+                                        cx.notify();
+                                    },
+                                )
+                                .into_any_element()
+                            }),
+                    ),
                 )
                 .into_any_element(),
 
@@ -1187,7 +1332,7 @@ impl Gallery {
                             .flex_row()
                             .on_drag_move(cx.listener(
                                 |view, event: &DragMoveEvent<SplitDrag>, _, cx| {
-                                    view.split = widgets::split_fraction(
+                                    view.split = widgets::axis_fraction(
                                         event.event.position,
                                         event.bounds,
                                         Axis::Horizontal,
@@ -1753,6 +1898,25 @@ fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> An
             )
         })
         .into_any_element()
+}
+
+/// Wire a focusable control to click *and* to `enter`/`space`, from one closure.
+///
+/// [`focus::Activate`] is dispatched rather than folded into `on_click` because
+/// only the caller knows what a press means — which makes two call sites per
+/// control, and two call sites are where a keyboard affordance quietly starts
+/// doing something else than the mouse. Taking the behaviour once removes the
+/// chance.
+fn pressable(
+    el: gpui::Div,
+    id: impl Into<gpui::ElementId>,
+    cx: &Context<Gallery>,
+    press: impl Fn(&mut Gallery, &mut Context<Gallery>) + Clone + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    let by_key = press.clone();
+    el.id(id)
+        .on_click(cx.listener(move |view, _, _, cx| press(view, cx)))
+        .on_action(cx.listener(move |view, _: &focus::Activate, _, cx| by_key(view, cx)))
 }
 
 fn row() -> gpui::Div {

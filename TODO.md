@@ -40,6 +40,17 @@ were not:
 - [ ] IME composition on a multi-line field — `bounds_for_range` anchoring the
       candidate panel to the composing row rather than the box
 
+Focus traversal landed the same way and is in the same state — it compiles, it
+is unrun:
+
+- [ ] `tab` reaching checkbox, radio, toggle, segment, slider and tab, in the
+      order they are painted
+- [ ] `space`/`enter` on a focused control doing exactly what its click does
+- [ ] `←`/`→` moving the slider, and the drag it now takes
+- [ ] The ring appearing on all six. It lands on a border each control paints
+      transparent, so a control that loses that border loses its ring silently —
+      the failure looks like nothing at all
+
 If this becomes a standing need rather than a one-off, the way back is a small
 `bezel-shot` crate: `open_offscreen_window` + `Window::render_to_image` +
 `simulate_*` + a pixel diff, ~120 lines, and useful to any gpui app — but
@@ -55,18 +66,8 @@ macOS-only, so it can never gate CI.
 
 ## Found while building the textarea
 
-- [ ] **No keyboard focus traversal anywhere.** gpui has the machinery —
-      `FocusHandle::tab_index`/`tab_stop`, `Window::focus_next`/`focus_prev` —
-      and bezel uses none of it: `tab_stop` defaults to false and no component
-      sets either. So `tab` reaches nothing in any bezel app.
-
-      Not a mechanical fix. Only `TextField`, `Combobox` and `CommandPalette`
-      own a focus handle at all; every button, checkbox, toggle, radio, tab and
-      slider is a stateless `fn(&Theme, ..) -> Div` with nowhere to put one.
-      Making them focusable means either giving them state — against the grain
-      of the whole widget layer — or leaving focus to the caller and accepting
-      that bezel ships no keyboard story. That is a design conversation before
-      it is a task.
+- [x] **No keyboard focus traversal anywhere.** Answered by `crates/ui/src/focus.rs`
+      — see Done.
 - [ ] `Shape::Grow` shapes its text twice per frame — once in the measure
       closure to get the row count, once in `prepaint` to paint. Correct but
       wasteful; wants a cache keyed on (text, wrap width).
@@ -185,6 +186,35 @@ left the caret — so there is no timing threshold to invent. Pushed from
 every keystroke of IME composition would be its own step. Bounded (default 10 *steps*,
 not keystrokes, `with_undo_limit` per field); `set_content` clears both stacks,
 being a programmatic reset rather than something the user did.
+
+Keyboard focus traversal (`focus.rs`), and every control wired to it. gpui had
+the whole machinery and none of it on: `tab_stop` starts false and no keys are
+bound. `focus::init` binds `tab`/`shift-tab` window-wide and `enter`/`space` in
+a `Control` key context that only a focused control claims, so it wins `enter`
+over the palette's list and a field's newline and gives it straight back.
+Traversal order is paint order — every `tab_index` stays 0, so inserting a
+control into the middle of a form renumbers nothing, which is the failure that
+makes HTML `tabindex` a liability.
+
+The handle stays with the *caller*. Giving a checkbox one of its own would mean
+giving it an identity and a lifetime — the entity machinery `TextField` needs
+and a checkbox does not — so `focus::focusable` takes the app's handle, and the
+gallery holds them beside the state each control already paints from. `Activate`
+is dispatched rather than folded into `on_click` for the same reason: only the
+caller knows what a press means. That leaves two call sites per control and two
+call sites are where a keyboard route quietly diverges from the mouse one, so
+the gallery takes the behaviour once (`pressable`) and wires both from it. A
+slider holds a value rather than a press, so it also answers
+`Decrement`/`Increment` on `←`/`→`; the step is the caller's, since a library
+picking one would pick it for a percentage and a font size alike.
+
+The ring lands on the control's own border, which is why every widget now keeps
+one even where it paints nothing (`RING_SLOT`): gpui sizes border-box, so a
+border that appeared only on focus would shift the content under it by a pixel.
+The toggle's knob and the tab's underline each pay a pixel back, absolute insets
+being resolved against the padding box. A ring wrapped *around* each control
+instead would have cost every one of them a radius parameter and prised a
+focused tab off the hairline its underline has to overlap.
 
 Configuration is gpui's globals, not a config object: `theme::set_palette`
 registers how an app builds its palette so brand colours survive a light/dark

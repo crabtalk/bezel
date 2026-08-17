@@ -7,6 +7,14 @@ use gpui::{AnyElement, SharedString, div, prelude::*, px};
 
 use bezel_theme::{Theme, ink};
 
+/// What a control paints in the 1px border it keeps for
+/// [`crate::focus::focusable`]'s ring: nothing, until focus fills it.
+///
+/// Always present, never conditional. gpui sizes border-box, so a border that
+/// appeared only on focus would shift the content under it by a pixel — a
+/// checkbox whose tick jumps as you tab onto it.
+const RING_SLOT: gpui::Hsla = gpui::transparent_black();
+
 /// Centered page column: `mx-auto w-full max-w-3xl px-6 pb-16 pt-8`.
 pub fn page_column() -> gpui::Div {
     div()
@@ -280,12 +288,17 @@ pub fn toggle(theme: &Theme, on: bool) -> gpui::Div {
         .h(px(18.0))
         .rounded_full()
         .bg(if on { theme.text } else { ink(0.15) })
+        .border_1()
+        .border_color(RING_SLOT)
         .relative()
         .child(
+            // One less than the 2px inset it looks like: absolute insets resolve
+            // against the padding box, which the ring slot has already moved in
+            // by a pixel.
             div()
                 .absolute()
-                .top(px(2.0))
-                .left(px(if on { 16.0 } else { 2.0 }))
+                .top(px(1.0))
+                .left(px(if on { 15.0 } else { 1.0 }))
                 .size(px(14.0))
                 .rounded_full()
                 .bg(if on { theme.on_solid } else { ink(0.7) }),
@@ -303,7 +316,7 @@ pub fn checkbox(theme: &Theme, checked: bool) -> gpui::Div {
         .items_center()
         .justify_center();
     box_ = if checked {
-        box_.bg(theme.text)
+        box_.border_1().border_color(RING_SLOT).bg(theme.text)
     } else {
         box_.border_1().border_color(ink(0.25)).bg(ink(0.03))
     };
@@ -354,14 +367,35 @@ pub fn progress_bar(theme: &Theme, fraction: f32) -> gpui::Div {
         )
 }
 
+/// The drag payload of a [`slider`], shipped from here for the same reason
+/// [`SplitDrag`] is: one type per gesture, so two sliders in one window do not
+/// answer each other's `on_drag_move`.
+pub struct SliderDrag;
+
 /// Display-only slider: filled track behind a knob at `fraction` (clamped to
 /// `0..=1`). Dragging is the caller's — it owns the value and the mouse
 /// handlers; this is the paint.
+///
+/// The element *is* the drag source, so the gesture is grab-anywhere-and-slide,
+/// and [`axis_fraction`] turns the pointer into the value:
+///
+/// ```ignore
+/// focus::focusable(&theme, &self.slider, slider(&theme, self.level))
+///     .id("slider")
+///     .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
+///     .on_drag_move(cx.listener(|view, event: &DragMoveEvent<SliderDrag>, _, cx| {
+///         view.level = axis_fraction(event.event.position, event.bounds, Axis::Horizontal, 0.0);
+///         cx.notify();
+///     }))
+/// ```
 pub fn slider(theme: &Theme, fraction: f32) -> gpui::Div {
     let fraction = fraction.clamp(0.0, 1.0);
     div()
         .w_full()
         .h(px(16.0))
+        .border_1()
+        .border_color(RING_SLOT)
+        .rounded(px(4.0))
         .flex()
         .items_center()
         .relative()
@@ -472,6 +506,8 @@ pub fn toggle_group_item(
         .px(px(10.0))
         .py(px(4.0))
         .rounded(px(7.0))
+        .border_1()
+        .border_color(RING_SLOT)
         .text_size(px(12.5))
         .cursor_pointer()
         .child(label.into());
@@ -541,14 +577,15 @@ pub struct SplitDrag;
 /// each side (`workspace::HANDLE_HITBOX_SIZE`) — a 1px target is unhittable.
 const SPLIT_HANDLE_HIT: f32 = 9.0;
 
-/// Where a divider dragged to `pointer` puts the split, as a fraction of
-/// `bounds` along `axis`. `Axis::Horizontal` is panes side by side (a vertical
-/// divider travelling in x).
+/// Where `pointer` falls along `axis` as a fraction of `bounds` — what a
+/// divider dragged there makes the split, and what a slider dragged there makes
+/// the value. `Axis::Horizontal` travels in x.
 ///
-/// Clamped to `min..=1-min` so neither pane can be squeezed away, and to `min`
-/// on a zero-extent container — the frame before layout has run would divide
-/// by zero.
-pub fn split_fraction(
+/// Clamped to `min..=1-min` — the dead zone a split passes so neither pane can
+/// be squeezed away, and the `0.0` a slider passes because it has none. On a
+/// zero-extent container the answer is `min`: the frame before layout has run
+/// would otherwise divide by zero.
+pub fn axis_fraction(
     pointer: gpui::Point<gpui::Pixels>,
     bounds: gpui::Bounds<gpui::Pixels>,
     axis: gpui::Axis,
@@ -575,7 +612,7 @@ pub fn split_fraction(
 /// div()
 ///     .id("split")
 ///     .on_drag_move(cx.listener(|view, event: &DragMoveEvent<SplitDrag>, _, cx| {
-///         view.fraction = split_fraction(event.event.position, event.bounds, Axis::Horizontal, 0.15);
+///         view.fraction = axis_fraction(event.event.position, event.bounds, Axis::Horizontal, 0.15);
 ///         cx.notify();
 ///     }))
 ///     .child(div().w(relative(self.fraction)).child(left))
@@ -723,6 +760,9 @@ pub fn tab(theme: &Theme, label: impl Into<SharedString>, active: bool) -> gpui:
         .px(px(10.0))
         .pb(px(7.0))
         .pt(px(6.0))
+        .rounded_t(px(6.0))
+        .border_1()
+        .border_color(RING_SLOT)
         .text_size(px(13.0))
         .font_weight(if active {
             gpui::FontWeight::MEDIUM
@@ -734,11 +774,14 @@ pub fn tab(theme: &Theme, label: impl Into<SharedString>, active: bool) -> gpui:
         .child(label.into())
         .when(active, |t| {
             t.child(
+                // Insets resolve against the padding box, so each one carries
+                // the ring slot's pixel: the underline still spans the tab's
+                // full width and still overlaps the bar's hairline.
                 div()
                     .absolute()
-                    .bottom(px(-1.0))
-                    .left_0()
-                    .right_0()
+                    .bottom(px(-2.0))
+                    .left(px(-1.0))
+                    .right(px(-1.0))
                     .h(px(2.0))
                     .bg(theme.text),
             )
@@ -839,50 +882,50 @@ mod tests {
     }
 
     #[test]
-    fn split_fraction_measures_from_the_container_origin() {
+    fn axis_fraction_measures_from_the_container_origin() {
         // A container that does not start at the window origin: the fraction is
         // of the container, not of the pointer's absolute position.
         let bounds = box_at(100.0, 40.0, 400.0, 200.0);
         assert_eq!(
-            split_fraction(point(px(300.0), px(60.0)), bounds, Axis::Horizontal, 0.0),
+            axis_fraction(point(px(300.0), px(60.0)), bounds, Axis::Horizontal, 0.0),
             0.5
         );
         assert_eq!(
-            split_fraction(point(px(200.0), px(60.0)), bounds, Axis::Horizontal, 0.0),
+            axis_fraction(point(px(200.0), px(60.0)), bounds, Axis::Horizontal, 0.0),
             0.25
         );
         // Vertical splits read y against the height.
         assert_eq!(
-            split_fraction(point(px(300.0), px(90.0)), bounds, Axis::Vertical, 0.0),
+            axis_fraction(point(px(300.0), px(90.0)), bounds, Axis::Vertical, 0.0),
             0.25
         );
     }
 
     #[test]
-    fn split_fraction_never_squeezes_a_pane_away() {
+    fn axis_fraction_never_squeezes_a_pane_away() {
         let bounds = box_at(0.0, 0.0, 400.0, 200.0);
         // Dragged past either end, and even outside the container entirely.
         assert_eq!(
-            split_fraction(point(px(-500.0), px(0.0)), bounds, Axis::Horizontal, 0.2),
+            axis_fraction(point(px(-500.0), px(0.0)), bounds, Axis::Horizontal, 0.2),
             0.2
         );
         assert_eq!(
-            split_fraction(point(px(900.0), px(0.0)), bounds, Axis::Horizontal, 0.2),
+            axis_fraction(point(px(900.0), px(0.0)), bounds, Axis::Horizontal, 0.2),
             0.8
         );
         // A nonsense minimum still leaves both panes on screen.
         assert_eq!(
-            split_fraction(point(px(0.0), px(0.0)), bounds, Axis::Horizontal, 4.0),
+            axis_fraction(point(px(0.0), px(0.0)), bounds, Axis::Horizontal, 4.0),
             0.5
         );
     }
 
     #[test]
-    fn split_fraction_survives_a_container_with_no_extent() {
+    fn axis_fraction_survives_a_container_with_no_extent() {
         // The frame before layout has run — no divide by zero, no NaN.
         let empty = box_at(0.0, 0.0, 0.0, 0.0);
         assert_eq!(
-            split_fraction(point(px(10.0), px(10.0)), empty, Axis::Horizontal, 0.15),
+            axis_fraction(point(px(10.0), px(10.0)), empty, Axis::Horizontal, 0.15),
             0.15
         );
     }

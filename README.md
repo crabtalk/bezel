@@ -57,6 +57,15 @@ type, so an app that wants a different keymap skips `init` and binds the actions
 itself. bezel deliberately claims few chords: a component library that binds a
 keystroke it is not sure about takes it away from every app downstream.
 
+`bezel_ui::focus::init(cx)` is the other one: `tab`/`shift-tab` to walk the
+controls, `enter`/`space` to press the focused one, `←`/`→` to move one that
+holds a value. Traversal needs two more lines — `focus::traversal` on the root
+element, because moving focus needs a `Window` an app-level handler never sees,
+and `focus::focusable(&theme, &handle, control)` around each control. The handle
+is the app's: bezel's widgets are `fn(&Theme, ..) -> Div` with nowhere to keep
+one, and the state saying whether a checkbox is checked already lives with the
+caller.
+
 ## Provenance & licenses
 
 The initial components were extracted from
