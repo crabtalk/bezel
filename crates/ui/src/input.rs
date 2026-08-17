@@ -61,8 +61,19 @@ actions!(
         SelectUp,
         SelectDown,
         InsertNewline,
+        Undo,
+        Redo,
     ]
 );
+
+/// How many undo steps a field keeps by default.
+///
+/// Steps, not keystrokes: a run of typing coalesces into one, so this is deeper
+/// than it looks. A text field is not a document — nobody walks a search box
+/// back through a long history — and the ceiling is what stops a long-lived
+/// field accumulating snapshots forever. Override per field with
+/// [`TextField::with_undo_limit`].
+pub const DEFAULT_UNDO_LIMIT: usize = 10;
 
 /// Width of the caret. Named because horizontal scrolling has to keep the caret
 /// itself on screen, not merely the character before it.
@@ -131,6 +142,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-c", Copy, ctx),
         KeyBinding::new("cmd-x", Cut, ctx),
         KeyBinding::new("cmd-v", Paste, ctx),
+        KeyBinding::new("cmd-z", Undo, ctx),
+        KeyBinding::new("cmd-shift-z", Redo, ctx),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, ctx),
         // cmd = line, option = word: the macOS convention.
         KeyBinding::new("cmd-left", Home, ctx),
@@ -175,6 +188,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-shift-right", SelectWordRight, ctx),
         KeyBinding::new("ctrl-backspace", DeleteWordLeft, ctx),
         KeyBinding::new("ctrl-delete", DeleteWordRight, ctx),
+        KeyBinding::new("ctrl-z", Undo, ctx),
+        KeyBinding::new("ctrl-shift-z", Redo, ctx),
     ]);
 }
 
@@ -203,6 +218,26 @@ impl Shape {
     fn is_multiline(self) -> bool {
         !matches!(self, Self::Line)
     }
+}
+
+/// A point the field can be returned to.
+///
+/// A whole snapshot rather than a diff: a field holds a sentence, not a file,
+/// and `SharedString` clones are a refcount bump. A rope and a transaction log
+/// is what an editor needs and would be the wrong machinery here.
+#[derive(Clone)]
+struct Snapshot {
+    content: SharedString,
+    selection: Range<usize>,
+    reversed: bool,
+}
+
+/// Which way an edit went, so a run of the same kind can coalesce into one
+/// undo step instead of giving the text back a character at a time.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EditKind {
+    Insert,
+    Delete,
 }
 
 /// A text field. [`Shape`] decides whether it is one line or many; everything
@@ -236,6 +271,19 @@ pub struct TextField {
     /// single-line field is exactly one row tall so it cannot overflow
     /// downwards. The clamp falls out of that and needs no test for shape.
     scroll: Point<Pixels>,
+    /// Points to return to, oldest first. Bounded by `undo_limit`: the field
+    /// outlives a lot of typing, and an unbounded history of a growing string
+    /// is a slow leak nothing ever reclaims.
+    undo: std::collections::VecDeque<Snapshot>,
+    /// Undone points, newest last. Cleared by any fresh edit — the usual
+    /// model, and the only one where redo cannot resurrect a branch the text
+    /// has already diverged from.
+    redo: Vec<Snapshot>,
+    undo_limit: usize,
+    /// The kind of the last edit and the offset it left the caret at, which is
+    /// what decides whether the next edit joins that group or starts a new one.
+    /// Adjacency rather than a pause, so there is no timing threshold to invent.
+    last_edit: Option<(EditKind, usize)>,
     /// Set by anything that moves the caret, cleared once a frame has scrolled
     /// it back into view.
     ///
@@ -248,7 +296,9 @@ pub struct TextField {
 impl TextField {
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
+            // A field is a tab stop from birth; a stateless control needs
+            // `focus::focusable` because its handle lives in the caller.
+            focus_handle: cx.focus_handle().tab_stop(true),
             content: "".into(),
             placeholder: "".into(),
             shape: Shape::Line,
@@ -260,8 +310,21 @@ impl TextField {
             is_selecting: false,
             goal_x: None,
             scroll: Point::default(),
+            undo: std::collections::VecDeque::new(),
+            redo: Vec::new(),
+            undo_limit: DEFAULT_UNDO_LIMIT,
+            last_edit: None,
             follow_caret: false,
         }
+    }
+
+    /// How many undo steps to keep. App-wide configuration would be a gpui
+    /// global alongside [`crate::input::init`], not a [`Theme`] field — the
+    /// theme is rebuilt on every light/dark switch, which would quietly reset
+    /// anything behavioural parked in it.
+    pub fn with_undo_limit(mut self, limit: usize) -> Self {
+        self.undo_limit = limit;
+        self
     }
 
     pub fn with_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
@@ -285,6 +348,11 @@ impl TextField {
     /// Replace the content, putting the cursor at the end.
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.content = normalize(&content.into(), self.shape).into();
+        // A programmatic reset is not something the user did, so there is
+        // nothing here for them to undo back past.
+        self.undo.clear();
+        self.redo.clear();
+        self.last_edit = None;
         let end = self.content.len();
         self.selected_range = end..end;
         self.marked_range = None;
@@ -576,6 +644,56 @@ impl TextField {
         }
     }
 
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            content: self.content.clone(),
+            selection: self.selected_range.clone(),
+            reversed: self.selection_reversed,
+        }
+    }
+
+    fn restore(&mut self, point: Snapshot, cx: &mut Context<Self>) {
+        self.content = point.content;
+        self.selected_range = point.selection;
+        self.selection_reversed = point.reversed;
+        self.marked_range = None;
+        // The next edit must not join whatever group was open before.
+        self.last_edit = None;
+        self.follow_caret = true;
+        cx.notify();
+    }
+
+    /// Record the state before an edit, unless that edit continues the group the
+    /// last one opened. Contiguity is the whole rule: the same kind of edit,
+    /// starting where the caret was left. Type a run and it is one step; move
+    /// the caret, or switch from typing to deleting, and the next one starts a
+    /// group of its own.
+    fn push_undo(&mut self, kind: EditKind, at: usize) {
+        if !joins_group(self.last_edit, kind, at) {
+            self.undo.push_back(self.snapshot());
+            while self.undo.len() > self.undo_limit {
+                self.undo.pop_front();
+            }
+        }
+        self.redo.clear();
+    }
+
+    fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(point) = self.undo.pop_back() else {
+            return;
+        };
+        self.redo.push(self.snapshot());
+        self.restore(point, cx);
+    }
+
+    fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(point) = self.redo.pop() else {
+            return;
+        };
+        self.undo.push_back(self.snapshot());
+        self.restore(point, cx);
+    }
+
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
         self.goal_x = None;
@@ -695,6 +813,17 @@ fn next_boundary(text: &str, offset: usize) -> usize {
     text.grapheme_indices(true)
         .find_map(|(idx, _)| (idx > offset).then_some(idx))
         .unwrap_or(text.len())
+}
+
+/// Whether an edit continues the group the last one opened, rather than
+/// starting an undo step of its own.
+///
+/// Two conditions, both structural: the same kind of edit, landing where the
+/// last one left the caret. Deliberately not "within N milliseconds" — a time
+/// threshold is a number nobody has measured, and adjacency is what actually
+/// distinguishes a run of typing from a fresh thought somewhere else.
+fn joins_group(last: Option<(EditKind, usize)>, kind: EditKind, at: usize) -> bool {
+    last.is_some_and(|(last_kind, offset)| last_kind == kind && at == offset)
 }
 
 /// The line breaks a field of this shape is allowed to hold.
@@ -931,11 +1060,32 @@ impl EntityInputHandler for TextField {
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
 
+        // Every edit lands here — typing, deleting, cut, paste, and the IME
+        // *committing*. Not `replace_and_mark_text_in_range`, which is the
+        // composing path: provisional text must not become undo steps, or every
+        // keystroke of Japanese input would be one.
+        let kind = if new_text.is_empty() {
+            EditKind::Delete
+        } else {
+            EditKind::Insert
+        };
+        // A delete grows leftwards, so its group continues at the range's end;
+        // an insert continues at its start.
+        self.push_undo(
+            kind,
+            if new_text.is_empty() {
+                range.end
+            } else {
+                range.start
+            },
+        );
+
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
+        self.last_edit = Some((kind, self.selected_range.end));
         self.follow_caret = true;
         cx.notify();
     }
@@ -1039,6 +1189,8 @@ impl Render for TextField {
             .on_action(cx.listener(Self::select_up))
             .on_action(cx.listener(Self::select_down))
             .on_action(cx.listener(Self::insert_newline))
+            .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(Self::redo))
             .on_action(cx.listener(Self::delete_word_left))
             .on_action(cx.listener(Self::delete_word_right))
             .on_action(cx.listener(Self::delete_to_line_start))
@@ -1420,6 +1572,57 @@ mod tests {
             }
             assert_eq!(offset_to_utf16(text, byte), text.encode_utf16().count());
         }
+    }
+
+    /// A run of typing is one undo step, so `cmd-z` gives back the word rather
+    /// than the letter.
+    #[test]
+    fn typing_a_run_stays_one_undo_group() {
+        let mut last = None;
+        for offset in 1..6 {
+            // Each insert lands exactly where the previous left the caret.
+            assert!(
+                joins_group(last, EditKind::Insert, offset - 1) || last.is_none(),
+                "insert at {offset} should continue the run"
+            );
+            last = Some((EditKind::Insert, offset));
+        }
+    }
+
+    /// The first edit has nothing to join.
+    #[test]
+    fn the_first_edit_opens_a_group() {
+        assert!(!joins_group(None, EditKind::Insert, 0));
+        assert!(!joins_group(None, EditKind::Delete, 7));
+    }
+
+    /// Moving the caret and typing somewhere else is a separate thought, and a
+    /// separate undo step.
+    #[test]
+    fn an_edit_elsewhere_starts_a_new_group() {
+        let last = Some((EditKind::Insert, 5));
+        assert!(
+            joins_group(last, EditKind::Insert, 5),
+            "same spot continues"
+        );
+        assert!(!joins_group(last, EditKind::Insert, 9), "moved away");
+        assert!(!joins_group(last, EditKind::Insert, 4), "even by one");
+    }
+
+    /// Switching from typing to deleting breaks the group even without moving —
+    /// otherwise `cmd-z` after a backspace would give back the typing too.
+    #[test]
+    fn changing_edit_kind_starts_a_new_group() {
+        assert!(!joins_group(
+            Some((EditKind::Insert, 5)),
+            EditKind::Delete,
+            5
+        ));
+        assert!(!joins_group(
+            Some((EditKind::Delete, 5)),
+            EditKind::Insert,
+            5
+        ));
     }
 
     /// A `\r` that survived would shape as a glyph — `shape_text` splits on

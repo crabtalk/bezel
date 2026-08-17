@@ -91,7 +91,9 @@ impl Combobox {
             chosen: None,
             placeholder: placeholder.into(),
             trigger_width: None,
-            focus_handle: cx.focus_handle(),
+            // One stop per combobox: the query field is inside `menu_card`, so
+            // it only joins the order while the menu is actually open.
+            focus_handle: cx.focus_handle().tab_stop(true),
         }
     }
 

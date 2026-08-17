@@ -14,7 +14,7 @@ use bezel_ui::input::{Shape, TextField};
 use bezel_ui::palette::{CommandPalette, PaletteEvent};
 use bezel_ui::tooltip::Tooltip;
 use bezel_ui::widgets::SplitDrag;
-use bezel_ui::{icons, loaders, popover, widgets};
+use bezel_ui::{focus, icons, loaders, popover, widgets};
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, Empty, Entity, SharedString, Window, actions, div,
     prelude::*, px, relative,
@@ -273,6 +273,10 @@ pub struct Gallery {
     /// The window's resting focus. Without it the key context has no node in
     /// the focus path, and `cmd-k` reaches nothing.
     focus_handle: gpui::FocusHandle,
+    /// Focus for the three buttons. A stateless `fn(&Theme, ..) -> Div` has
+    /// nowhere to keep a handle, so the view that composes it holds them —
+    /// the same place it already holds which tab is open.
+    buttons: [gpui::FocusHandle; 3],
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -323,6 +327,7 @@ impl Gallery {
             split: 0.4,
             split_dragging: false,
             focus_handle: cx.focus_handle(),
+            buttons: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             tab: 1,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
@@ -831,15 +836,38 @@ impl Gallery {
 
             // ---- Components --------------------------------------------------
             "buttons" => section
+                .child(hint(
+                    &theme,
+                    "tab and shift-tab walk these, and every field and combobox in \
+                     the gallery, in the order they are painted.",
+                ))
                 .child(
                     row()
-                        .child(popover::button(&theme, "Ghost", "g-ghost"))
-                        .child(popover::button_prominent(&theme, "Prominent"))
-                        .child(popover::button_destructive(&theme, "Destructive")),
+                        .child(focus::focusable(
+                            &theme,
+                            &self.buttons[0],
+                            popover::button(&theme, "Ghost", "g-ghost"),
+                        ))
+                        .child(focus::focusable(
+                            &theme,
+                            &self.buttons[1],
+                            popover::button_prominent(&theme, "Prominent"),
+                        ))
+                        .child(focus::focusable(
+                            &theme,
+                            &self.buttons[2],
+                            popover::button_destructive(&theme, "Destructive"),
+                        )),
                 )
                 .into_any_element(),
 
             "text-field" => section
+                .child(hint(
+                    &theme,
+                    "cmd-z undoes a run of typing at a time, not a letter at a time; \
+                     moving the caret or switching between typing and deleting ends \
+                     the run.",
+                ))
                 .child(
                     div()
                         .w(px(320.0))
@@ -1778,7 +1806,9 @@ impl Render for Gallery {
                     ),
             );
 
-        div()
+        // Traversal goes on the root so `tab` works wherever focus happens to
+        // be, rather than only inside whatever claimed it.
+        focus::traversal(div())
             .id("gallery-scroll")
             .key_context("Gallery")
             .track_focus(&self.focus_handle)
