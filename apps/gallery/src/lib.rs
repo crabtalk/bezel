@@ -38,6 +38,8 @@ actions!(gallery, [OpenPalette, ToggleInspector, ToggleFullScreen]);
 #[cfg(debug_assertions)]
 pub mod inspector;
 
+pub mod patterns;
+
 pub const LANGUAGES: [&str; 8] = [
     "Rust",
     "TypeScript",
@@ -277,23 +279,46 @@ pub struct Tab {
     pub groups: &'static [Group],
     /// The page the tab opens on.
     pub home: &'static str,
+    /// Whether its pages get the whole pane instead of the fixed column every
+    /// component demo is designed for. A pattern is a screen: it fills the
+    /// pane, scrolls its own parts, and floats its own chrome over them.
+    pub full_bleed: bool,
 }
 
-/// The top nav. Two tabs, not shadcn's eight: the axis separates the *kind* of
-/// thing you are looking at, and bezel has two kinds until composed patterns
-/// exist to fill a third.
+/// The top nav. The axis is the *kind* of thing you are looking at: a token, a
+/// component, or a screen built out of both.
 pub const TABS: &[Tab] = &[
     Tab {
         title: "Foundations",
         groups: FOUNDATIONS,
         home: "color",
+        full_bleed: false,
     },
     Tab {
         title: "Components",
         groups: COMPONENTS,
         home: "buttons",
+        full_bleed: false,
+    },
+    Tab {
+        title: "Patterns",
+        groups: PATTERNS,
+        home: "music-player",
+        full_bleed: true,
     },
 ];
+
+/// Composed screens. The source path points at the gallery rather than into
+/// `crates/`, and that is the point — a pattern is not a component you call, it
+/// is a file you copy.
+pub const PATTERNS: &[Group] = &[Group {
+    title: "Media",
+    sections: &[section(
+        "music-player",
+        "Music player",
+        "apps/gallery/src/patterns/music.rs",
+    )],
+}];
 
 /// The layers under the components — what a token *is*, before anything paints
 /// with it. The source paths say which crate each belongs to, which is the
@@ -372,6 +397,7 @@ pub const COMPONENTS: &[Group] = &[
             section("tabs", "Tabs", "crates/ui/src/widgets.rs"),
             section("collapsible", "Collapsible", "crates/ui/src/widgets.rs"),
             section("split", "Resizable split", "crates/ui/src/widgets.rs"),
+            section("pill", "Pill bar", "crates/ui/src/pill.rs"),
         ],
     },
     // Nothing here is built. It is one whole group on purpose: the data
@@ -508,6 +534,27 @@ pub struct Gallery {
     /// Which column the table page is sorted by. The app's, because the app is
     /// what has to sort the rows — the table only says what a click meant.
     table_sort: Option<Sort>,
+    /// The music pattern's playback clock. `music_position` is where the track
+    /// sat at `music_position_at`, and while playing the elapsed time is
+    /// *derived* from the two rather than accumulated per frame — see
+    /// `Gallery::elapsed`.
+    music_playing: bool,
+    music_position: f32,
+    music_position_at: std::time::Instant,
+    /// Where the scrubber is being held, in seconds. `Some` detaches the
+    /// display from the clock for exactly as long as the pointer is down.
+    music_scrub: Option<f32>,
+    music_track: usize,
+    music_volume: f32,
+    music_shuffle: bool,
+    /// Off, all, one. A three-state toggle, so it counts rather than flips.
+    music_repeat: usize,
+    music_liked: HashSet<usize>,
+    music_library: usize,
+    /// Right-click on a track: which one, and where the click landed.
+    music_menu: popover::Popup<(usize, gpui::Point<gpui::Pixels>)>,
+    music_scroll: gpui::ScrollHandle,
+    music_bar: ScrollbarState,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -613,6 +660,22 @@ impl Gallery {
             tab: 1,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
+            // Starts paused: a clock that ticks on arrival would keep the
+            // window repainting for as long as the gallery is open, whichever
+            // page you are on.
+            music_playing: false,
+            music_position: 0.0,
+            music_position_at: std::time::Instant::now(),
+            music_scrub: None,
+            music_track: 0,
+            music_volume: 0.7,
+            music_shuffle: false,
+            music_repeat: 0,
+            music_liked: [0, 4].into_iter().collect(),
+            music_library: 0,
+            music_menu: popover::Popup::default(),
+            music_scroll: gpui::ScrollHandle::new(),
+            music_bar: ScrollbarState::new(),
         }
     }
 
@@ -1696,6 +1759,94 @@ impl Gallery {
                     .into_any_element()
             }
 
+            "pill" => {
+                let glyph = |path: &'static str| {
+                    let hover = theme.glass_hover();
+                    bezel_ui::pill::pill_button(path, 30.0, theme.text_muted)
+                        .id(path)
+                        .hover(move |s| s.bg(hover))
+                };
+                let label = |copy: &'static str| {
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(theme.text_muted)
+                        .child(copy)
+                };
+                section
+                    .child(hint(
+                        &theme,
+                        "One shape, three jobs. The centre is centred on the BAR \
+                         rather than on what the clusters leave — five controls \
+                         on the left and one on the right still put it on axis.",
+                    ))
+                    .child(widgets::field_label(&theme, "Transport"))
+                    .child(bezel_ui::pill::pill(
+                        &theme,
+                        vec![
+                            glyph(icons::SHUFFLE).into_any_element(),
+                            glyph(icons::SKIP_PREVIOUS).into_any_element(),
+                            glyph(icons::PLAY_BOLD).into_any_element(),
+                            glyph(icons::SKIP_NEXT).into_any_element(),
+                            glyph(icons::REPEAT).into_any_element(),
+                        ],
+                        Some(label("Grain").into_any_element()),
+                        vec![glyph(icons::VOLUME_LOUD).into_any_element()],
+                    ))
+                    .child(widgets::field_label(&theme, "Composer"))
+                    .child(bezel_ui::pill::pill(
+                        &theme,
+                        vec![glyph(icons::PLUS).into_any_element()],
+                        Some(label("Ask anything…").into_any_element()),
+                        vec![
+                            glyph(icons::MICROPHONE).into_any_element(),
+                            glyph(icons::ARROW_UP).into_any_element(),
+                        ],
+                    ))
+                    .child(widgets::field_label(&theme, "Floating over content"))
+                    // The same striped band the materials page uses: a pill that
+                    // frosts its backdrop with square corners would show it here
+                    // and nowhere else.
+                    .child(
+                        div()
+                            .relative()
+                            .h(px(130.0))
+                            .rounded(px(Theme::PANEL_RADIUS))
+                            .overflow_hidden()
+                            .child(div().absolute().inset_0().flex().flex_row().children(
+                                (0..14).map(|i| {
+                                    div().flex_1().h_full().bg(if i % 2 == 0 {
+                                        theme.accent
+                                    } else {
+                                        theme.warning
+                                    })
+                                }),
+                            ))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .bottom(px(16.0))
+                                    .left_0()
+                                    .right_0()
+                                    .flex()
+                                    .justify_center()
+                                    .child(bezel_ui::pill::pill(
+                                        &theme,
+                                        vec![
+                                            glyph(icons::SIDEBAR_MINIMALISTIC_LEFT)
+                                                .into_any_element(),
+                                            glyph(icons::MAGNIFER).into_any_element(),
+                                        ],
+                                        None,
+                                        vec![
+                                            glyph(icons::TUNING).into_any_element(),
+                                            glyph(icons::SETTINGS_MINIMALISTIC).into_any_element(),
+                                        ],
+                                    )),
+                            ),
+                    )
+                    .into_any_element()
+            }
+
             "menu" => section
                 .child(
                     popover::popover_card(&theme).w(px(240.0)).children([
@@ -2255,6 +2406,9 @@ impl Gallery {
                     .into_any_element()
             }
 
+            // ---- Patterns ----------------------------------------------------
+            "music-player" => self.music_body(cx),
+
             _ => div().into_any_element(),
         }
     }
@@ -2623,6 +2777,31 @@ impl Render for Gallery {
         let section =
             section_at(self.selected[self.tab]).unwrap_or(&TABS[self.tab].groups[0].sections[0]);
         let body = self.section_body(section.key, cx);
+        let pane = div().relative().flex_1().min_h_0().map(|pane| {
+            if TABS[self.tab].full_bleed {
+                // A pattern is a screen: it takes the pane whole and
+                // scrolls its own parts, so neither the fixed column nor
+                // the pane's own scrollbar applies to it.
+                pane.child(div().size_full().p(px(24.0)).child(body))
+            } else {
+                pane.child(
+                    div()
+                        .id("gallery-pane")
+                        .size_full()
+                        .overflow_y_scroll()
+                        .track_scroll(&self.pane_scroll)
+                        // The column width components are designed for;
+                        // several are `w_full` and would otherwise stretch
+                        // to the whole pane.
+                        .child(div().p(px(32.0)).child(column().child(body))),
+                )
+                .child(scroll::scrollbar(
+                    "pane-bar",
+                    &self.pane_scroll,
+                    &self.pane_bar,
+                ))
+            }
+        });
         let content = div()
             .flex()
             .flex_col()
@@ -2643,29 +2822,7 @@ impl Render for Gallery {
                             .flex()
                             .flex_col()
                             .child(self.header(section, &theme))
-                            .child(
-                                div()
-                                    .relative()
-                                    .flex_1()
-                                    .min_h_0()
-                                    .child(
-                                        div()
-                                            .id("gallery-pane")
-                                            .size_full()
-                                            .overflow_y_scroll()
-                                            .track_scroll(&self.pane_scroll)
-                                            // The column width components are
-                                            // designed for; several are `w_full`
-                                            // and would otherwise stretch to the
-                                            // whole pane.
-                                            .child(div().p(px(32.0)).child(column().child(body))),
-                                    )
-                                    .child(scroll::scrollbar(
-                                        "pane-bar",
-                                        &self.pane_scroll,
-                                        &self.pane_bar,
-                                    )),
-                            ),
+                            .child(pane),
                     ),
             );
 
@@ -2677,6 +2834,13 @@ impl Render for Gallery {
         // reads as a wash that sticks and then jumps. It also ticks the fade
         // table, which is what evicts entries for elements that have gone away.
         if bezel_motion::hover_fades_active() {
+            window.request_animation_frame();
+        }
+
+        // The playback clock, on the same terms: it is derived from the wall
+        // clock at paint time, so the only thing that makes it *move* is asking
+        // for the next frame. Paused, this costs nothing.
+        if self.music_playing {
             window.request_animation_frame();
         }
 
@@ -2733,6 +2897,9 @@ impl Render for Gallery {
                     ))
                 },
             )
+            .when(self.music_menu.get().is_some(), |root| {
+                root.child(self.music_context_menu(&theme, cx))
+            })
             .when(self.dialog.get().is_some(), |root| {
                 root.child(popover::modal(
                     "gallery-dialog",

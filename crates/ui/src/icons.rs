@@ -113,10 +113,31 @@ icon_assets![
     (INFO_CIRCLE, "info-circle"),
     (DANGER_TRIANGLE, "danger-triangle"),
     (CHAT_ROUND_LINE, "chat-round-line"),
-    // Hand-drawn bell + speaker in the Solar Linear style (like the terminal/
-    // plus/return ports) — the embedded set has neither.
+    // Hand-drawn bell in the Solar Linear style (like the terminal/plus/return
+    // ports) — the embedded set has none.
     (BELL, "bell"),
+    // Media transport. The three volume glyphs are one Solar family on purpose:
+    // a level control swaps between them as you slide, and a speaker cone that
+    // changed shape mid-slide would read as a bug. `volume-loud` used to be
+    // hand-drawn here and no longer is, for exactly that reason.
+    (VOLUME_MUTE, "volume-mute"),
+    (VOLUME_LOW, "volume-low"),
     (VOLUME_LOUD, "volume-loud"),
+    // Linear like their neighbours; the bold pairs are the two states a
+    // transport paints solid, the same split STAR/STAR_BOLD already makes.
+    (PLAY, "play"),
+    (PLAY_BOLD, "play-bold"),
+    (PAUSE, "pause"),
+    (PAUSE_BOLD, "pause-bold"),
+    (SKIP_PREVIOUS, "skip-previous"),
+    (SKIP_NEXT, "skip-next"),
+    (SHUFFLE, "shuffle"),
+    (REPEAT, "repeat"),
+    (REPEAT_ONE, "repeat-one"),
+    (HEART, "heart"),
+    (HEART_BOLD, "heart-bold"),
+    (PLAYLIST, "playlist"),
+    (MICROPHONE, "microphone"),
     // Hand-drawn reference glyphs (terminal-panel.tsx / composer-actions.tsx /
     // menu-check.tsx / logo.tsx).
     (TERMINAL, "terminal"),

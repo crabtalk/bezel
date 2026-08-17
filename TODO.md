@@ -108,6 +108,29 @@ read off a temporary probe rather than assumed — and still unseen:
 - [ ] The thumb tracking a 10,000-row document, which is the same bar over a
       handle it has never been pointed at before
 
+The pill bar and the music pattern were built against the running app, captured
+window by window — the layout below is *seen*, on dark, at one window size:
+
+- [x] Both centring claims, measured off the capture rather than assumed: the
+      bar centred in its frame, and the centre block centred in the bar under a
+      five-against-one cluster split
+- [x] The blur following the stadium's corners (the striped band on the Pill
+      bar page is there for exactly this, and nothing else shows it)
+- [x] Transport icons painting at the same weight as their neighbours
+
+Everything you *do* to it is unrun — no pointer ever reached the built app:
+
+- [ ] Play advancing the position, and the window going quiet again on pause
+- [ ] Dragging the scrubber mid-playback and the thumb NOT snapping back, which
+      is the whole reason `music_scrub` exists
+- [ ] The release committing the seek — `on_mouse_up` is the only commit path,
+      since gpui delivers no drag-end
+- [ ] Right-click on a track opening the track menu rather than the gallery's
+      own, which rests entirely on one `cx.stop_propagation()`
+- [ ] Liking a track without also playing it — the same, one level down
+- [ ] Light appearance, and glass off. The radius bug shows only on glass and
+      only at the corners, so dark-only is half a check
+
 The paginator's window is six tests deep; the row it draws is not:
 
 - [ ] Clicking a page, and the prev/next steps going inert at the ends rather
@@ -202,14 +225,58 @@ weights, the sizes actually in use) · layout constants drawn at size · the
 bezier curves and the whole motion catalog, plotted from their own pure
 functions · materials · all 58 icons.
 
-A third tab, Patterns — composed examples rather than primitives, shadcn's
-"blocks" — is the obvious next one, once there are compositions worth porting
-out of comet.
+A third tab, **Patterns** — composed screens rather than primitives, shadcn's
+"blocks". Its rows point at `apps/gallery/src/patterns/`, not into `crates/`,
+which is the point: a pattern is not a component you call, it is a file you
+copy. `Tab::full_bleed` gives those pages the whole pane instead of the fixed
+column every component demo is designed for.
+
+Its first entry is **Music player**, and it exists because someone building a
+native Spotify client on gpui asked what bezel had for one. Answering that by
+composing the screen is what found the gaps: no transport icons at all (58 of
+them, none a play button), and no floating bar to put them in. Both are now
+library code; nothing else from the page needed to be. The clock is derived
+from the wall clock rather than accumulated per frame, and the scrubber's
+displayed position detaches from it while held — otherwise a playing track
+drags the thumb out from under the pointer, which reads as a seek bar that
+fights you.
+
+Pill bar (`pill.rs`) — a glass stadium holding a leading cluster, an optional
+centre and a trailing cluster. One constant and two functions, and both of the
+things it exists for are things a caller gets wrong alone.
+
+`material` takes a corner radius and paints the backdrop blur to it; a
+stadium's is half its height, and a mismatch frosts square corners outside a
+round border. Deriving it from `PILL_HEIGHT` is why the height is a constant
+rather than a parameter.
+
+The centre is centred on the *bar*, not on what the clusters leave: the two
+rails are equal-flex and the centre is not, so five controls on the left and
+one on the right still put it on axis. That rule is also why the bar takes the
+width it is given rather than hugging its controls — equal rails need free
+space to be equal about, and a shrink-to-fit bar has none. The two are
+contradictory and only one of them can be free; width is the caller's, and a
+`max_w` is what keeps a wide window showing a floating pill instead of a bottom
+bar.
+
+`pill_button` builds its own icon rather than taking one, the way `row_tile`
+does, and for a reason worth knowing anywhere in this library: **gpui reads an
+svg's colour off that element's own style and paints nothing at all when it is
+unset.** A colour set on the button would silently not reach the glyph, and the
+failure looks like an empty circle rather than an error. That was found by
+building the gallery page, not by reading the code.
+
+Media transport icons — play/pause (linear and bold), skip, shuffle, repeat,
+repeat-one, heart, playlist, microphone, and volume mute/low. The three volume
+glyphs are one Solar family on purpose: a level control swaps between them as
+you slide, and a cone that changed shape mid-slide would read as a bug. That
+also replaced the hand-drawn `volume-loud`, which was hand-drawn only because
+the locally embedded subset had no speaker at the time — Solar does.
 
 Components: button ×3 · text field (IME, selection, clipboard, native
 shortcuts) · **textarea** · select · combobox · command palette · date picker ·
 menubar · checkbox · radio · toggle ·
-badge ×2 · avatar · progress · slider · tabs · toggle group · disclosure +
+badge ×2 · avatar · progress · slider · tabs · toggle group · pill bar · disclosure +
 collapsible header · breadcrumb · tag · status dot · empty state · tooltip ·
 hover card · context menu · popover/menu/dialog/sheet mounts · resizable
 split · scroll area · table · tree view · virtualized list · pagination · group box + rows · separator · skeleton rows · alert strips ·

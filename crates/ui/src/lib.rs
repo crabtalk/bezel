@@ -21,6 +21,7 @@ pub mod material;
 pub mod menubar;
 pub mod pagination;
 pub mod palette;
+pub mod pill;
 pub mod popover;
 pub mod scroll;
 pub mod table;
