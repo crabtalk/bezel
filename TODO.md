@@ -131,6 +131,13 @@ Everything you *do* to it is unrun — no pointer ever reached the built app:
 - [ ] Light appearance, and glass off. The radius bug shows only on glass and
       only at the corners, so dark-only is half a check
 
+Click-away dismissal, reported from the running app and fixed on 2026-08-18 —
+verified by hand, which is the only way any of this ever gets verified:
+
+- [x] A dialog closing on a press outside its card
+- [x] The context menu closing on a press off the card
+- [x] The command palette closing on a scrim press as well as `escape`
+
 The paginator's window is six tests deep; the row it draws is not:
 
 - [ ] Clicking a page, and the prev/next steps going inert at the ends rather
@@ -254,6 +261,29 @@ from the wall clock rather than accumulated per frame, and the scrubber's
 displayed position detaches from it while held — otherwise a playing track
 drags the thumb out from under the pointer, which reads as a seek bar that
 fights you.
+
+Click-away dismissal (`popover.rs`). Reported as "dialogs and menus only close
+when you click an item", and it was two different faults wearing one symptom.
+
+The library's contract is stated on `anchored_menu`: *"dismissal is the caller's
+`.on_mouse_down_out` on the content."* Three components that own their popup —
+combobox, menubar, date picker — honour it. So did the gallery's select. The
+gallery's **context menu** simply forgot, which is a caller bug and a one-line
+fix.
+
+`modal` was not a caller bug. Its scrim lives inside its own `deferred` layer,
+so *nothing outside can reach it* — meaning no caller could dismiss a dialog by
+clicking away, ever. The sibling `sheet` had already hit this exact wall and
+solved it with an `on_dismiss` parameter, and says so in its own doc; `modal`
+never got one. The library knew the rule and had not applied it next door, which
+is the same shape as the radius/blur split above.
+
+`modal` now takes `on_dismiss` too. It lands on the *card's wrapper* as
+`on_mouse_down_out` rather than as a click on the scrim, so a press inside the
+card is not "out" and the dialog's own buttons keep working — no occluding
+overlay, no propagation games. The palette got the same treatment from the
+gallery side: it bound `escape` and nothing else, and a scrim you can press with
+no effect reads as a stuck window.
 
 Corner radii, bound and derived. The crate painted **nine** distinct radii
 across thirty sites; three had names. It now paints **three** literals across

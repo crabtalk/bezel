@@ -635,12 +635,19 @@ pub(crate) fn scrim_alpha(alpha_dark: f32) -> gpui::Hsla {
 /// `viewport` is the window size (an `anchored` layer sizes to its children,
 /// so the scrim needs explicit dimensions). The frost radius matches
 /// [`dialog_card`]'s 16px rounding.
+/// `on_dismiss` is the scrim press. It is a parameter rather than the caller's
+/// `.on_mouse_down_out`, for the same reason [`sheet`]'s is: the scrim lives
+/// inside this deferred layer, so nothing outside can reach it. Without it a
+/// dialog could not be dismissed by clicking away from it *by any caller* —
+/// which is how this one shipped, and what it looked like was a dialog that
+/// only closed on its own buttons.
 pub fn modal(
     id: impl Into<ElementId>,
     viewport: gpui::Size<Pixels>,
     card: AnyElement,
+    on_dismiss: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
-    modal_with(id, viewport, card, DIALOG_RADIUS, 0.6)
+    modal_with(id, viewport, card, DIALOG_RADIUS, 0.6, on_dismiss)
 }
 
 /// [`modal`] for glass-tinted cards (the add-space palette): a LIGHTER scrim,
@@ -656,8 +663,9 @@ pub fn modal_glass(
     id: impl Into<ElementId>,
     viewport: gpui::Size<Pixels>,
     card: AnyElement,
+    on_dismiss: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
-    modal_with(id, viewport, card, Theme::SURFACE_RADIUS, 0.35)
+    modal_with(id, viewport, card, Theme::SURFACE_RADIUS, 0.35, on_dismiss)
 }
 
 fn modal_with(
@@ -666,6 +674,7 @@ fn modal_with(
     card: AnyElement,
     corner_radius: f32,
     scrim: f32,
+    on_dismiss: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
     let card = crate::material::material(corner_radius, crate::material::MENU_BLUR, card)
         .into_any_element();
@@ -681,7 +690,15 @@ fn modal_with(
                     .flex()
                     .items_center()
                     .justify_center()
-                    .child(motion::dialog_in(id, div().child(card))),
+                    // On the card's wrapper, not the scrim: a press inside the
+                    // card is not "out", so the dialog's own buttons keep
+                    // working with no occluding overlay and no propagation
+                    // games. The scrim covers the viewport and occludes, so
+                    // "outside the card" and "on the scrim" are the same press.
+                    .child(motion::dialog_in(
+                        id,
+                        div().child(card).on_mouse_down_out(on_dismiss),
+                    )),
             ),
     )
     .priority(2)

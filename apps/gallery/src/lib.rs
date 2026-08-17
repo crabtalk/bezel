@@ -2860,6 +2860,12 @@ impl Render for Gallery {
                                     .into_any_element()
                                 },
                             ))
+                            // Dismissal is the caller's, and this is that
+                            // caller: press anywhere off the card and the menu
+                            // goes away.
+                            .on_mouse_down_out(
+                                cx.listener(|view, _, _, cx| view.close_context_menu(cx)),
+                            )
                             .into_any_element(),
                         closing,
                     ))
@@ -2902,6 +2908,7 @@ impl Render for Gallery {
                                 ),
                         )
                         .into_any_element(),
+                    cx.listener(|view, _, _, cx| view.close_dialog(cx)),
                 ))
             })
             .when(self.sheet.get().is_some(), |root| {
@@ -2965,7 +2972,16 @@ impl Render for Gallery {
                         // window height (flex default is align: stretch).
                         .items_start()
                         .pt(px(120.0))
-                        .child(palette),
+                        // The palette binds `escape` itself, but a scrim you
+                        // can press and nothing happens reads as a stuck
+                        // window. The wrapper sizes to the card, so "out" is
+                        // the scrim.
+                        .child(div().child(palette).on_mouse_down_out(cx.listener(
+                            |view, _, _, cx| {
+                                view.palette = None;
+                                cx.notify();
+                            },
+                        ))),
                 )
             })
     }
