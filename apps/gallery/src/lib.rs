@@ -20,7 +20,7 @@ use gpui::{
     prelude::*, px, relative,
 };
 
-actions!(gallery, [OpenPalette, ToggleInspector]);
+actions!(gallery, [OpenPalette, ToggleInspector, ToggleFullScreen]);
 
 /// gpui builds its element inspector into every debug build; release builds
 /// have no such window method, so the whole surface is debug-only.
@@ -58,7 +58,8 @@ pub struct Section {
     pub title: &'static str,
     /// Where the component is written. Customisation here is editing the
     /// source, so the path is the most useful line of documentation there is.
-    pub source: &'static str,
+    /// `None` for a component the rail lists but the library has not built.
+    pub source: Option<&'static str>,
 }
 
 /// A rail group.
@@ -68,7 +69,22 @@ pub struct Group {
 }
 
 const fn section(key: &'static str, title: &'static str, source: &'static str) -> Section {
-    Section { key, title, source }
+    Section {
+        key,
+        title,
+        source: Some(source),
+    }
+}
+
+/// A component the rail lists but the library does not have yet. Its page says
+/// what the remaining work is, which is what turns the rail into a measure of
+/// what is left rather than a list of what exists.
+const fn planned(key: &'static str, title: &'static str) -> Section {
+    Section {
+        key,
+        title,
+        source: None,
+    }
 }
 
 /// A top-nav tab, holding its own rail.
@@ -133,6 +149,7 @@ pub const COMPONENTS: &[Group] = &[
         sections: &[
             section("buttons", "Buttons", "crates/ui/src/popover.rs"),
             section("text-field", "Text field", "crates/ui/src/input.rs"),
+            planned("textarea", "Textarea"),
             section("select", "Select", "crates/ui/src/widgets.rs"),
             section("combobox", "Combobox", "crates/ui/src/combobox.rs"),
             section(
@@ -143,6 +160,7 @@ pub const COMPONENTS: &[Group] = &[
             section("toggle", "Toggle", "crates/ui/src/widgets.rs"),
             section("toggle-group", "Toggle group", "crates/ui/src/widgets.rs"),
             section("slider", "Slider", "crates/ui/src/widgets.rs"),
+            planned("date-picker", "Date picker"),
         ],
     },
     Group {
@@ -151,6 +169,7 @@ pub const COMPONENTS: &[Group] = &[
             section("menu", "Menu", "crates/ui/src/popover.rs"),
             section("context-menu", "Context menu", "crates/ui/src/popover.rs"),
             section("palette", "Command palette", "crates/ui/src/palette.rs"),
+            planned("menubar", "Menubar"),
         ],
     },
     Group {
@@ -171,6 +190,17 @@ pub const COMPONENTS: &[Group] = &[
             section("split", "Resizable split", "crates/ui/src/widgets.rs"),
         ],
     },
+    // Nothing here is built. It is one whole group on purpose: the data
+    // surfaces were deferred together, and they are the next round together.
+    Group {
+        title: "Data",
+        sections: &[
+            planned("scroll-area", "Scroll area"),
+            planned("table", "Table"),
+            planned("tree", "Tree view"),
+            planned("virtual-list", "Virtualized list"),
+        ],
+    },
     Group {
         title: "Content",
         sections: &[
@@ -178,6 +208,7 @@ pub const COMPONENTS: &[Group] = &[
             section("tag", "Tag", "crates/ui/src/widgets.rs"),
             section("avatar", "Avatar", "crates/ui/src/widgets.rs"),
             section("breadcrumb", "Breadcrumb", "crates/ui/src/widgets.rs"),
+            planned("pagination", "Pagination"),
             section("empty-state", "Empty state", "crates/ui/src/widgets.rs"),
             section("skeleton", "Skeleton", "crates/ui/src/popover.rs"),
         ],
@@ -191,6 +222,21 @@ pub const COMPONENTS: &[Group] = &[
             section("loaders", "Loaders", "crates/ui/src/loaders.rs"),
         ],
     },
+];
+
+/// The keys [`Gallery::section_body`] answers with a TODO page. Listed rather
+/// than derived because the arms cannot be enumerated at runtime; a test keeps
+/// this in step with the [`planned`] rows.
+#[cfg(test)]
+const PLANNED_BODIES: &[&str] = &[
+    "textarea",
+    "date-picker",
+    "menubar",
+    "pagination",
+    "scroll-area",
+    "table",
+    "tree",
+    "virtual-list",
 ];
 
 fn section_at(key: &str) -> Option<&'static Section> {
@@ -324,6 +370,19 @@ impl Gallery {
         _window.toggle_inspector(_cx);
     }
 
+    /// `ctrl-cmd-f`. macOS draws that shortcut on the Window menu of a nib-built
+    /// app; a gpui app has no nib, so AppKit supplies nothing and the keystroke
+    /// reaches whatever the app binds — which, until this existed, was nothing.
+    /// Zed carries the same binding in its own keymap for the same reason.
+    fn toggle_full_screen(
+        &mut self,
+        _: &ToggleFullScreen,
+        window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
+        window.toggle_fullscreen();
+    }
+
     fn close_context_menu(&mut self, cx: &mut Context<Self>) {
         if self.context_menu.begin_close() {
             popover::reap_popup(cx, |view: &mut Self| &mut view.context_menu);
@@ -382,6 +441,11 @@ impl Gallery {
                             view.selected[tab] = section.key;
                             cx.notify();
                         }))
+                        // Unbuilt rows stay legible but recede, so the rail
+                        // reads as "what exists" and "what is left" at once.
+                        .when(section.source.is_none() && section.key != selected, |row| {
+                            row.text_color(theme.text_faint)
+                        })
                         .child(SharedString::from(section.title))
                         .into_any_element()
                     });
@@ -484,15 +548,19 @@ impl Gallery {
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child(SharedString::from(section.title)),
                     )
-                    // Customisation is editing the source, so say which file.
+                    // Customisation is editing the source, so say which file —
+                    // unless there is no file, which is worth saying too.
                     .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(11.5))
-                            .font_family(theme.font_mono.clone())
-                            .text_color(theme.text_faint)
-                            .child(SharedString::from(section.source)),
+                        match section.source {
+                            Some(path) => div()
+                                .min_w_0()
+                                .truncate()
+                                .font_family(theme.font_mono.clone())
+                                .child(SharedString::from(path)),
+                            None => div().child("not built yet"),
+                        }
+                        .text_size(px(11.5))
+                        .text_color(theme.text_faint),
                     ),
             )
             .into_any_element()
@@ -1276,6 +1344,62 @@ impl Gallery {
                 .child(popover::redacted_rows("g-redacted", &theme, 3, view, cx))
                 .into_any_element(),
 
+            // ---- Not built yet -----------------------------------------------
+            "textarea" => todo(
+                &theme,
+                "Next up",
+                "Multi-line editing. Every action in crates/ui/src/input.rs already \
+                 works on content plus a byte range and never touches layout, so the \
+                 editing half carries over untouched. The layout half does not.",
+                &[
+                    "shape_text in place of shape_line: one WrappedLine per hard \
+                     newline, each wrapping into rows of its own.",
+                    "Caret and selection from WrappedLineLayout::position_for_index. \
+                     Selection stops being one quad and becomes one per row.",
+                    "Hit testing through index_for_position, and the IME's \
+                     bounds_for_range resolved against the right row.",
+                    "Up and down with a goal column, held across rows and dropped on \
+                     horizontal motion or an edit.",
+                    "A scroll offset that follows the caret.",
+                ],
+            ),
+
+            "date-picker" => todo(
+                &theme,
+                "Needs a use case",
+                "A large surface. Parked until something in the library needs one.",
+                &[],
+            ),
+
+            "menubar" => todo(
+                &theme,
+                "Needs a use case",
+                "App chrome more than a component — comet's is coupled to its own \
+                 app, so there is nothing to port that would not have to be \
+                 redesigned first.",
+                &[],
+            ),
+
+            "pagination" => todo(
+                &theme,
+                "Needs a use case",
+                "Desktop apps rarely paginate. Skipped until something needs it.",
+                &[],
+            ),
+
+            "scroll-area" => todo(
+                &theme,
+                "Deferred",
+                "A styled scrollbar over gpui's own scroll handles.",
+                &[],
+            ),
+
+            "table" => todo(&theme, "Deferred", "No design yet.", &[]),
+
+            "tree" => todo(&theme, "Deferred", "No design yet.", &[]),
+
+            "virtual-list" => todo(&theme, "Deferred", "A wrapper over gpui's list().", &[]),
+
             _ => div().into_any_element(),
         }
     }
@@ -1512,6 +1636,62 @@ fn hint(theme: &Theme, copy: &str) -> gpui::Div {
         .child(SharedString::from(copy.to_string()))
 }
 
+/// The page for a [`planned`] component: why it is not here, and what the work
+/// actually is. Numbered rather than bulleted — the entries are the order the
+/// work happens in, not a set of features.
+///
+/// `work` is empty wherever nothing has been designed yet. That is the honest
+/// answer, and an empty list is itself the measurement.
+fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> AnyElement {
+    let amber = theme.warning;
+    stack()
+        .child(
+            div()
+                .self_start()
+                .px(px(7.0))
+                .py(px(2.0))
+                .rounded(px(5.0))
+                .border_1()
+                .border_color(amber.opacity(0.2))
+                .bg(amber.opacity(0.06))
+                .text_size(px(10.0))
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(theme.warning_muted.opacity(0.9))
+                .child(SharedString::from(popover::tracked_upper(status))),
+        )
+        .child(
+            div()
+                .text_size(px(13.0))
+                .text_color(theme.text_muted)
+                .child(SharedString::from(summary.to_string())),
+        )
+        .when(!work.is_empty(), |page| {
+            page.child(
+                widgets::group_box(theme).children(work.iter().enumerate().map(|(index, step)| {
+                    widgets::card_row(theme, index == 0)
+                        .items_start()
+                        .child(
+                            div()
+                                .flex_none()
+                                .w(px(12.0))
+                                .text_size(px(12.0))
+                                .font_family(theme.font_mono.clone())
+                                .text_color(theme.text_faint)
+                                .child(SharedString::from(format!("{}", index + 1))),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(12.5))
+                                .text_color(theme.text_muted)
+                                .child(SharedString::from(*step)),
+                        )
+                        .into_any_element()
+                })),
+            )
+        })
+        .into_any_element()
+}
+
 fn row() -> gpui::Div {
     div().flex().flex_row().items_center().gap(px(12.0))
 }
@@ -1569,6 +1749,7 @@ impl Render for Gallery {
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::open_palette))
             .on_action(cx.listener(Self::toggle_inspector))
+            .on_action(cx.listener(Self::toggle_full_screen))
             .on_mouse_down(
                 gpui::MouseButton::Right,
                 cx.listener(|view, event: &gpui::MouseDownEvent, _, cx| {
@@ -1752,7 +1933,10 @@ mod tests {
             .and_then(|apps| apps.parent())
             .expect("workspace root");
         for section in all_sections() {
-            let path = root.join(section.source);
+            let Some(source) = section.source else {
+                continue;
+            };
+            let path = root.join(source);
             assert!(
                 path.exists(),
                 "{} points at {}, which does not exist",
@@ -1760,5 +1944,24 @@ mod tests {
                 path.display()
             );
         }
+    }
+
+    /// The rail and [`Gallery::section_body`] have to agree on what is unbuilt.
+    /// Both directions bite: a `planned()` row with no arm renders a blank
+    /// page, and a component that gets built but keeps its TODO arm documents
+    /// itself as missing while sitting right there in the crate.
+    #[test]
+    fn planned_rows_and_todo_pages_agree() {
+        let mut rows: Vec<_> = all_sections()
+            .filter(|section| section.source.is_none())
+            .map(|section| section.key)
+            .collect();
+        let mut pages = PLANNED_BODIES.to_vec();
+        rows.sort_unstable();
+        pages.sort_unstable();
+        assert_eq!(
+            rows, pages,
+            "rail rows without a source must match the TODO pages exactly"
+        );
     }
 }

@@ -6,8 +6,13 @@
 
 use bezel_theme::{Theme, appearance};
 use bezel_ui::{combobox, icons, input, palette};
-use gallery::{Gallery, OpenPalette, ToggleInspector};
-use gpui::{App, AppContext as _, Bounds, KeyBinding, WindowBounds, WindowOptions, px, size};
+use gallery::{Gallery, OpenPalette, ToggleFullScreen, ToggleInspector};
+use gpui::{
+    App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, WindowBounds, WindowOptions, actions,
+    px, size,
+};
+
+actions!(gallery_app, [Quit]);
 
 fn main() {
     gpui_platform::application()
@@ -23,9 +28,14 @@ fn main() {
             cx.bind_keys([
                 KeyBinding::new("cmd-k", OpenPalette, None),
                 KeyBinding::new("cmd-alt-i", ToggleInspector, None),
+                // Both of the macOS defaults. Bound before `set_menus` so the
+                // menu item can pick the keystroke up off the keymap.
+                KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
+                KeyBinding::new("fn-f", ToggleFullScreen, None),
             ]);
             #[cfg(debug_assertions)]
             gallery::inspector::init(cx);
+            set_menus(cx);
             let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
             cx.open_window(
                 WindowOptions {
@@ -48,4 +58,20 @@ fn main() {
             .unwrap();
             cx.activate(true);
         });
+}
+
+/// Without a menu bar `cmd-q` does not quit — a gpui app gets no menu items for
+/// free, because the standard ones come from a nib and there is no nib here.
+///
+/// The same holds for full screen: nothing is auto-inserted, so the item below
+/// carries an action this app binds itself. The menu is what makes the shortcut
+/// *discoverable*; the keymap in [`main`] is what makes it work. Naming a menu
+/// `Window` is still worth it — gpui hands that one to AppKit as the windows
+/// menu, which is what maintains the window list on it.
+fn set_menus(cx: &mut App) {
+    cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
+    cx.set_menus(vec![
+        Menu::new("bezel").items([MenuItem::action("Quit", Quit)]),
+        Menu::new("Window").items([MenuItem::action("Toggle Full Screen", ToggleFullScreen)]),
+    ]);
 }
