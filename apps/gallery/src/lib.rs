@@ -881,7 +881,7 @@ impl Gallery {
     /// in [`Self::header`].
     fn nav(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let current = self.tab;
-        let mode = appearance::mode(cx);
+        let dark = matches!(theme.appearance, bezel_theme::Appearance::Dark);
         div()
             .flex_none()
             .h(px(Theme::HEADER_HEIGHT))
@@ -922,23 +922,47 @@ impl Gallery {
             }))
             // Pushes the appearance switch to the trailing edge.
             .child(div().flex_1())
+            // A switch, not three segments. It reads the *resolved* appearance
+            // rather than the mode, so it shows what you are actually looking
+            // at while the app is still following the OS — and the first flip
+            // is what pins it. Returning to `System` is `set_mode`, which is a
+            // settings-level action rather than a nav-level one.
             .child(
-                widgets::toggle_group(theme).children(AppearanceMode::ALL.into_iter().map(
-                    |option| {
-                        div()
-                            .id(SharedString::from(format!("appearance-{}", option.label())))
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(icons::icon(icons::SUN).size(px(14.0)).text_color(if dark {
+                        theme.text_faint
+                    } else {
+                        theme.text
+                    }))
+                    // id + click on the switch itself, not on a wrapper around
+                    // it: a `div().id(..)` wrapped around a control takes
+                    // clicks over a box narrower than what it paints, which is
+                    // the open hit-testing bug in this tree.
+                    .child(
+                        widgets::toggle(theme, dark)
+                            .id("appearance")
+                            .cursor_pointer()
                             .on_click(cx.listener(move |_, _, _, cx| {
-                                appearance::set_mode(option, cx);
+                                appearance::set_mode(
+                                    if dark {
+                                        AppearanceMode::Light
+                                    } else {
+                                        AppearanceMode::Dark
+                                    },
+                                    cx,
+                                );
                                 cx.notify();
-                            }))
-                            .child(widgets::toggle_group_item(
-                                theme,
-                                option.label(),
-                                option == mode,
-                            ))
-                            .into_any_element()
-                    },
-                )),
+                            })),
+                    )
+                    .child(icons::icon(icons::MOON).size(px(14.0)).text_color(if dark {
+                        theme.text
+                    } else {
+                        theme.text_faint
+                    })),
             )
             .into_any_element()
     }

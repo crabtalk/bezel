@@ -116,6 +116,10 @@ icon_assets![
     // Hand-drawn bell in the Solar Linear style (like the terminal/plus/return
     // ports) — the embedded set has none.
     (BELL, "bell"),
+    // The two ends of an appearance switch. A pair, so a switch between them
+    // needs no label to say which way is which.
+    (SUN, "sun"),
+    (MOON, "moon"),
     // Media transport. The three volume glyphs are one Solar family on purpose:
     // a level control swaps between them as you slide, and a speaker cone that
     // changed shape mid-slide would read as a bug. `volume-loud` used to be
