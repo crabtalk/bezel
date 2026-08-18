@@ -8,4 +8,6 @@ pub mod agent;
 pub mod diff;
 pub mod document;
 pub mod music;
+#[cfg(not(target_family = "wasm"))]
+pub mod terminal;
 pub mod transcript;

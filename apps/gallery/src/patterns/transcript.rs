@@ -22,8 +22,11 @@
 //! scroll measurement and cloud-error parsing — an app's job, all of it.
 
 use bezel_theme::Theme;
-use bezel_ui::scroll::{self, FollowState, ScrollbarState};
-use bezel_ui::{icons, popover, widgets};
+use bezel_ui::{
+    icons, popover,
+    scroll::{self, FollowState, ScrollbarState},
+    widgets,
+};
 use gpui::{AnyElement, Context, Render, SharedString, Window, div, prelude::*, px};
 
 /// One thing that happened, in the order it happened. A page-local shape, and

@@ -20,9 +20,13 @@
 use std::time::{Duration, Instant};
 
 use bezel_theme::Theme;
-use bezel_ui::input::{Shape, TextField};
-use bezel_ui::scroll::{self, FollowState, ScrollbarState};
-use bezel_ui::{icons, loaders, popover, widgets};
+use bezel_ui::{
+    icons,
+    input::{Shape, TextField},
+    loaders, popover,
+    scroll::{self, FollowState, ScrollbarState},
+    widgets,
+};
 use gpui::{
     AnyElement, Context, Entity, Render, SharedString, Window, div, linear_color_stop,
     linear_gradient, prelude::*, px,

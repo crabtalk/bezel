@@ -14,10 +14,13 @@
 //! host holds one field, and the next pattern costs one more.
 
 use bezel_theme::Theme;
-use bezel_ui::control_bar::{self, BAR_HEIGHT, Shape};
-use bezel_ui::table::{self, Column, Width};
-use bezel_ui::widgets::SliderDrag;
-use bezel_ui::{icons, popover, scroll, widgets};
+use bezel_ui::{
+    control_bar::{self, BAR_HEIGHT, Shape},
+    icons, popover, scroll,
+    table::{self, Column, Width},
+    widgets,
+    widgets::SliderDrag,
+};
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, MouseButton, MouseDownEvent, Render, SharedString,
     Window, div, linear_color_stop, linear_gradient, prelude::*, px,

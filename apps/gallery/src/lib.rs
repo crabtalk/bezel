@@ -409,6 +409,15 @@ pub const PATTERNS: &[Group] = &[
                 "apps/gallery/src/patterns/transcript.rs",
             ),
             section("agent-diff", "Diff", "apps/gallery/src/patterns/diff.rs"),
+            // Native-only: the terminal crate sits off the wasm build
+            // (alacritty_terminal pulls `home`, which does not compile for
+            // wasm32) — see the gallery manifest.
+            #[cfg(not(target_family = "wasm"))]
+            section(
+                "agent-terminal",
+                "Terminal",
+                "apps/gallery/src/patterns/terminal.rs",
+            ),
         ],
     },
     Group {
@@ -674,6 +683,8 @@ pub struct Gallery {
     diff: Entity<patterns::diff::Diff>,
     music: Entity<patterns::music::MusicPlayer>,
     document: Entity<patterns::document::Document>,
+    #[cfg(not(target_family = "wasm"))]
+    terminal: Entity<patterns::terminal::Terminal>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -804,6 +815,8 @@ impl Gallery {
             diff: cx.new(|_| patterns::diff::Diff),
             music: cx.new(|_| patterns::music::MusicPlayer::default()),
             document: cx.new(patterns::document::Document::new),
+            #[cfg(not(target_family = "wasm"))]
+            terminal: cx.new(patterns::terminal::Terminal::new),
             embedded: false,
         }
     }
@@ -2855,6 +2868,8 @@ impl Gallery {
             "agent-diff" => self.diff.clone().into_any_element(),
             "music-player" => self.music.clone().into_any_element(),
             "document" => self.document.clone().into_any_element(),
+            #[cfg(not(target_family = "wasm"))]
+            "agent-terminal" => self.terminal.clone().into_any_element(),
 
             _ => div().into_any_element(),
         }

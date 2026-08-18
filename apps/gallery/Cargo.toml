@@ -25,4 +25,8 @@ web-time.workspace = true
 # wasm target is what lets `web` pick the browser platform's features for
 # itself — see the `gpui_web` note in the workspace manifest.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
+# Native-only: alacritty_terminal pulls `home`, which does not compile for
+# wasm32, so the terminal crate (and the pattern built on it) sits off the web
+# build until that dep is fixed upstream.
+bezel-terminal.workspace = true
 gpui_platform.workspace = true
