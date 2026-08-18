@@ -10,7 +10,7 @@
 //! so a folded clock (gpui's `with_animation`) jumps visibly at every wrap.
 //! That is why the component is an entity and this page owns an `Instant`.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui::{Context, Entity, Render, SharedString, Window, div, prelude::*, px};
 use theme::Theme;
@@ -19,6 +19,7 @@ use ui::{
     orbs::{Orb, OrbSize, OrbState, orb_element},
     widgets::Controls,
 };
+use web_time::Instant;
 
 use crate::{hint, pressable, stack};
 

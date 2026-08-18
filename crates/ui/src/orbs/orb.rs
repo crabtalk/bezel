@@ -6,16 +6,13 @@
 //! clock; [`orb_element`] is the same paint one layer down for hosts that
 //! already tick.
 
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use gpui::{
     Bounds, Context, IntoElement, ParentElement, Pixels, Render, Styled, Task, Window, canvas, div,
     px,
 };
+use web_time::Instant;
 
 use crate::orbs::{
     engine::{Frame, draw_mode_into, draw_mode_into_resolved},

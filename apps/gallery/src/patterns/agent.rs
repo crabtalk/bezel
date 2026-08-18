@@ -17,7 +17,7 @@
 //! Like the music player it is an entity, for the reason stated there: a screen
 //! owns a screen's worth of state, and its host holds one field.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gpui::{
     AnyElement, Context, Entity, Render, SharedString, Window, div, linear_color_stop,
@@ -32,6 +32,7 @@ use ui::{
     widgets,
     widgets::{ButtonStyle, Buttons, Layout, Status},
 };
+use web_time::Instant;
 
 /// The question on the page. Invented, like the music player's album, and about
 /// this repository because a reasoning trace has to be *about* something before
