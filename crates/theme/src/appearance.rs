@@ -176,8 +176,7 @@ pub fn apply(cx: &mut App) {
 /// until our own notification round-trip repainted it.
 #[cfg(target_os = "macos")]
 fn sync_ns_appearance(mode: AppearanceMode) {
-    use objc::runtime::Object;
-    use objc::{class, msg_send, sel, sel_impl};
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
     // NSAppearanceName constants are NSStrings whose value equals the
     // constant's own name (AppKit documents them as stable identifiers), so
     // building them from literals avoids linking the extern statics.
