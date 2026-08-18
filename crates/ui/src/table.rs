@@ -1,7 +1,7 @@
 //! Table — for rows that are *tuples*.
 //!
 //! Most lists of things in this library are records, and a record reads better
-//! as a card: [`crate::widgets::group_box`] + `card_row` + `row_title` +
+//! as a card: [`group_box`](crate::widgets::Scaffolding::group_box) + `card_row` + `row_title` +
 //! `meta_line` already does that, and does it better than a table would. Reach
 //! for this one only when the third column of every row has to line up, because
 //! reading *down* it is the point.

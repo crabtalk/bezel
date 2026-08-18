@@ -121,7 +121,7 @@ pub fn control_bar(
 /// deliberately bigger than its neighbours — that size difference is what makes
 /// the cluster readable at a glance.
 ///
-/// It builds the icon rather than taking one, the way [`crate::widgets::row_tile`]
+/// It builds the icon rather than taking one, the way [`row_tile`](crate::widgets::Scaffolding::row_tile)
 /// does, because `tint` is not optional in the way it looks: gpui reads an
 /// svg's colour off that element's own style and paints **nothing** when it is
 /// unset, so a colour set on this button would silently not reach the glyph.

@@ -1,11 +1,14 @@
-//! Shared scaffolding for the settings pages — the original's page rhythm
-//! (`mx-auto max-w-3xl px-6 pb-16 pt-8`), section cards, row layout, badges
-//! and small buttons, so every page reads as the same product surface
-//! (the reference settings.devices.tsx / settings.agents.tsx / settings.archived.tsx).
+//! Small controls and content pieces, grouped as catalog traits. The page
+//! rhythm and section cards live in the [`Scaffolding`] trait; each group is imported
+//! on its own (`use bezel_ui::widgets::Scaffolding;` → `theme.group_box()`).
 
-use gpui::{AnyElement, SharedString, div, prelude::*, px};
+use gpui::{SharedString, div, prelude::*, px};
 
 use bezel_theme::{Theme, ink};
+
+mod scaffolding;
+
+pub use scaffolding::{OPTION_CARD_HEIGHT, OPTION_CARD_RADIUS, Scaffolding};
 
 /// What a control paints in the 1px border it keeps for
 /// [`crate::focus::focusable`]'s ring: nothing, until focus fills it.
@@ -14,248 +17,6 @@ use bezel_theme::{Theme, ink};
 /// appeared only on focus would shift the content under it by a pixel — a
 /// checkbox whose tick jumps as you tab onto it.
 pub(crate) const RING_SLOT: gpui::Hsla = gpui::transparent_black();
-
-/// Centered page column: `mx-auto w-full max-w-3xl px-6 pb-16 pt-8`.
-pub fn page_column() -> gpui::Div {
-    div()
-        .w_full()
-        .max_w(px(768.0))
-        .mx_auto()
-        .px(px(24.0))
-        .pt(px(32.0))
-        .pb(px(64.0))
-        .flex()
-        .flex_col()
-}
-
-/// Page headline row: `flex items-baseline gap-2.5` — `text-base font-semibold`
-/// title + `text-[13px]` count sharing a baseline (the reference settings.devices.tsx).
-pub fn page_header(
-    theme: &Theme,
-    title: impl Into<SharedString>,
-    count: Option<usize>,
-) -> gpui::Div {
-    div()
-        .flex()
-        .flex_row()
-        .items_baseline()
-        .gap(px(10.0))
-        .child(
-            div()
-                .text_size(px(16.0))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .text_color(theme.text)
-                .child(title.into()),
-        )
-        .when_some(count, |el, count| {
-            el.child(
-                div()
-                    .text_size(px(13.0))
-                    .text_color(theme.text_muted.opacity(0.7))
-                    .child(format!("{count}")),
-            )
-        })
-}
-
-/// Subtitle under the headline: `mt-1 text-[13px] text-muted-foreground`.
-pub fn page_subtitle(theme: &Theme, copy: impl Into<SharedString>) -> gpui::Div {
-    div()
-        .mt(px(4.0))
-        .text_size(px(13.0))
-        .text_color(theme.text_muted)
-        .child(copy.into())
-}
-
-/// Small label above a group of controls (`text-[13px] font-medium`) — the
-/// "Theme" caption over a picker, not a page headline.
-pub fn field_label(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
-    div()
-        .text_size(px(13.0))
-        .font_weight(gpui::FontWeight::MEDIUM)
-        .text_color(theme.text)
-        .child(label.into())
-}
-
-/// A row of equally-sized preview cards for picking one of N *visual* options.
-///
-/// Deliberately knows nothing about themes: the caller supplies each preview as
-/// an arbitrary element and picks however many cards it wants, so the same
-/// control works for a density picker, a layout picker or anything else where
-/// the choice is easier to show than to describe. Pair with [`option_card`].
-pub fn option_card_row() -> gpui::Div {
-    div().flex().flex_row().items_start().gap(px(16.0)).w_full()
-}
-
-/// Default height of an [`option_card`] preview frame.
-pub const OPTION_CARD_HEIGHT: f32 = 148.0;
-/// Corner radius of the preview frame.
-///
-/// Public because the preview has to round *itself* to this. gpui content masks
-/// are axis-aligned rectangles, so `overflow_hidden` on the frame clips to its
-/// bounding box and not to its corner radius — a preview that paints its own
-/// background will square off the corners and cover the frame's border with it.
-pub const OPTION_CARD_RADIUS: f32 = 10.0;
-/// Clear space between the frame and the selection ring.
-const RING_GAP: f32 = 2.0;
-/// Thickness of the selection ring.
-const RING_WIDTH: f32 = 2.0;
-
-/// One card in an [`option_card_row`]: a fixed-height preview frame that carries
-/// the selection ring, with a caption underneath.
-///
-/// `preview` fills the frame and **must round its own corners** to
-/// [`OPTION_CARD_RADIUS`] if it paints a background — see that constant.
-///
-/// Returns a plain `Div` like the rest of this module — the caller adds `.id(..)`
-/// and `.on_click(..)`, so selection behaviour stays with the page that owns the
-/// state.
-pub fn option_card(
-    theme: &Theme,
-    label: impl Into<SharedString>,
-    selected: bool,
-    preview: AnyElement,
-) -> gpui::Div {
-    let frame = div()
-        .h(px(OPTION_CARD_HEIGHT))
-        .w_full()
-        .rounded(px(OPTION_CARD_RADIUS))
-        .overflow_hidden()
-        .border_1()
-        .border_color(theme.border)
-        .child(preview);
-
-    // The ring is a *wrapper border*, not a spread shadow. A shadow's spread
-    // grows the rectangle without growing its corner radius, so the halo's
-    // corners tighten relative to the frame's and the two visibly drift apart by
-    // a pixel at each rounded corner. Concentric borders can't do that: each
-    // element rounds itself, and the outer radius is the inner one plus the gap
-    // it sits behind. Always present, transparent when unselected, so selecting a
-    // card never reflows the row.
-    div()
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(px(8.0))
-        .cursor_pointer()
-        .child(
-            div()
-                .w_full()
-                .rounded(px(OPTION_CARD_RADIUS + RING_GAP + RING_WIDTH))
-                .p(px(RING_GAP))
-                .border_2()
-                .border_color(if selected {
-                    theme.accent
-                } else {
-                    gpui::transparent_black()
-                })
-                .child(frame),
-        )
-        .child(
-            div()
-                .text_size(px(13.0))
-                .text_color(if selected {
-                    theme.text
-                } else {
-                    theme.text_muted
-                })
-                .child(label.into()),
-        )
-}
-
-/// Section card: `mt-6 overflow-hidden rounded-xl border border-border bg-card`
-/// — the card tone, thinned to a translucent tint over glass so the card
-/// reads as frost instead of a solid slab ([`Theme::card_glass_bg`]).
-pub fn group_box(theme: &Theme) -> gpui::Div {
-    div()
-        .mt(px(24.0))
-        .rounded(px(Theme::SURFACE_RADIUS))
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.card_glass_bg())
-        .overflow_hidden()
-        .flex()
-        .flex_col()
-}
-
-/// One card row: `border-t border-border px-5 py-3.5 first:border-t-0`.
-/// Hover is caller-owned — gpui panics on a second hover, so the default wash
-/// is [`card_row_hover`] for the caller to chain.
-pub fn card_row(theme: &Theme, first: bool) -> gpui::Div {
-    div()
-        .px(px(20.0))
-        .py(px(14.0))
-        .when(!first, |el| el.border_t_1().border_color(theme.border))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(14.0))
-}
-
-/// The default card-row hover wash (`hover:bg-white/[0.015]`).
-pub fn card_row_hover(s: gpui::StyleRefinement) -> gpui::StyleRefinement {
-    s.bg(ink(0.015))
-}
-
-/// The identity tile on a row: `size-9 rounded-[10px] border bg-white/[0.03]`
-/// around a 16px icon.
-pub fn row_tile(theme: &Theme, icon_path: &'static str) -> gpui::Div {
-    div()
-        .flex_none()
-        .size(px(36.0))
-        .rounded(px(Theme::PANEL_RADIUS))
-        .border_1()
-        .border_color(theme.border)
-        .bg(ink(0.03))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            crate::icons::icon(icon_path)
-                .size(px(16.0))
-                .text_color(theme.text_muted),
-        )
-}
-
-/// Row title: `text-[13.5px] font-medium leading-tight`.
-pub fn row_title(theme: &Theme, title: impl Into<SharedString>) -> gpui::Div {
-    div()
-        .min_w_0()
-        .truncate()
-        .text_size(px(13.5))
-        .font_weight(gpui::FontWeight::MEDIUM)
-        .text_color(theme.text)
-        .child(title.into())
-}
-
-/// The quiet meta line under a row title: `text-[11.5px]
-/// text-muted-foreground/65` fragments joined by dots.
-pub fn meta_line(theme: &Theme, fragments: Vec<AnyElement>) -> gpui::Div {
-    let mut line = div()
-        .mt(px(4.0))
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap_x(px(8.0))
-        .gap_y(px(2.0))
-        .text_size(px(11.5))
-        .text_color(theme.text_muted.opacity(0.65));
-    let mut first = true;
-    for fragment in fragments {
-        if !first {
-            line = line.child(
-                div()
-                    .text_color(theme.text_muted.opacity(0.3))
-                    .child(SharedString::from("·")),
-            );
-        }
-        line = line.child(fragment);
-        first = false;
-    }
-    line
-}
 
 /// Right-anchored badge pill: `rounded-full border px-2 py-0.5 text-[10.5px]`.
 pub fn badge(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
@@ -713,6 +474,11 @@ pub fn step_row(
                     cluster.child(disclosure(theme, expanded))
                 }),
         )
+}
+
+/// The default card-row hover wash (`hover:bg-white/[0.015]`).
+pub fn card_row_hover(s: gpui::StyleRefinement) -> gpui::StyleRefinement {
+    s.bg(ink(0.015))
 }
 
 /// The default step-row hover wash (`hover:bg-white/[0.03]`).

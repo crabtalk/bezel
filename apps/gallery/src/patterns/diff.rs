@@ -17,7 +17,7 @@
 //! produced them is the app's business, the same line `tree` holds.
 
 use bezel_theme::{Theme, ink};
-use bezel_ui::{icons, widgets};
+use bezel_ui::{icons, widgets::Scaffolding};
 use gpui::{Context, Render, SharedString, Window, div, prelude::*, px};
 
 /// What happened to a line. `Skip` is the gap between hunks — the lines nobody
@@ -211,7 +211,8 @@ impl Render for Diff {
                     .px(px(24.0))
                     .py(px(32.0))
                     .child(
-                        widgets::group_box(&theme)
+                        theme
+                            .group_box()
                             .mt(px(0.0))
                             .child(Self::header(&theme))
                             .child(

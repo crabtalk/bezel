@@ -86,10 +86,11 @@ a reader does not already carry.
    last (see `ghost_hover`).
 2. **SwiftUI vocabulary.** Widgets are named for their SwiftUI analog:
    `toggle`, `divider`, `group_box`, `material`, `button_prominent`,
-   `redacted_rows`. Stateless paint is a plain function returning a gpui
-   element; stateful components are struct entities (`Table`, `TextField`,
-   `Orb`). Builder methods configure *content* — an orb's state, a table's
-   columns — never style.
+   `redacted_rows`. Stateless paint is a catalog trait on `Theme` — import
+   the group (`use bezel_ui::widgets::Scaffolding;`) and reach it as
+   `theme.group_box()`. Stateful components are struct entities (`Table`,
+   `TextField`, `Orb`). Builder methods configure *content* — an orb's
+   state, a table's columns — never style.
 3. **Motion is named.** Every animation comes from the `MotionSpec` catalog
    in `bezel-motion`; pure phase math lives in `motion::phase` and is
    unit-tested. No inline durations or curves in components.

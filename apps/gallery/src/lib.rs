@@ -31,7 +31,7 @@ use bezel_ui::{
     tooltip::Tooltip,
     tree::{self, Direction, Move},
     widgets,
-    widgets::{SliderDrag, SplitDrag},
+    widgets::{Scaffolding, SliderDrag, SplitDrag},
 };
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
@@ -2058,7 +2058,7 @@ impl Gallery {
                          controls on the left and one on the right still put it \
                          on axis.",
                     ))
-                    .child(widgets::field_label(&theme, "Transport — Shape::Pill"))
+                    .child(theme.field_label("Transport — Shape::Pill"))
                     .child(bezel_ui::control_bar::control_bar(
                         &theme,
                         ControlBarShape::Pill,
@@ -2074,7 +2074,7 @@ impl Gallery {
                     ))
                     // Rounded, not a stadium: a composer is not a media control,
                     // and the stadium reads as one.
-                    .child(widgets::field_label(&theme, "Composer — Shape::Rounded"))
+                    .child(theme.field_label("Composer — Shape::Rounded"))
                     .child(bezel_ui::control_bar::control_bar(
                         &theme,
                         ControlBarShape::Rounded,
@@ -2085,7 +2085,7 @@ impl Gallery {
                             glyph(icons::ARROW_UP).into_any_element(),
                         ],
                     ))
-                    .child(widgets::field_label(&theme, "Floating over content"))
+                    .child(theme.field_label("Floating over content"))
                     // The same striped band the materials page uses, and the only
                     // place either shape's blur can be caught disagreeing with
                     // its border.
@@ -2151,24 +2151,27 @@ impl Gallery {
 
             "group-box" => section
                 .child(
-                    widgets::group_box(&theme)
+                    theme
+                        .group_box()
                         .child(
-                            widgets::card_row(&theme, true)
+                            theme
+                                .card_row(true)
                                 .hover(widgets::card_row_hover)
-                                .child(widgets::row_tile(&theme, icons::MONITOR))
-                                .child(widgets::row_title(&theme, "First row")),
+                                .child(theme.row_tile(icons::MONITOR))
+                                .child(theme.row_title("First row")),
                         )
                         .child(
-                            widgets::card_row(&theme, false)
+                            theme
+                                .card_row(false)
                                 .hover(widgets::card_row_hover)
-                                .child(widgets::row_tile(&theme, icons::FOLDER))
-                                .child(widgets::row_title(&theme, "Second row")),
+                                .child(theme.row_tile(icons::FOLDER))
+                                .child(theme.row_title("Second row")),
                         ),
                 )
                 .into_any_element(),
 
             "empty-state" => section
-                .child(widgets::group_box(&theme).child(widgets::empty_state(
+                .child(theme.group_box().child(widgets::empty_state(
                     &theme,
                     icons::FOLDER,
                     "No repositories",
@@ -3179,27 +3182,30 @@ fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> An
         )
         .when(!work.is_empty(), |page| {
             page.child(
-                widgets::group_box(theme).children(work.iter().enumerate().map(|(index, step)| {
-                    widgets::card_row(theme, index == 0)
-                        .hover(widgets::card_row_hover)
-                        .items_start()
-                        .child(
-                            div()
-                                .flex_none()
-                                .w(px(12.0))
-                                .text_size(px(12.0))
-                                .font_family(theme.font_mono.clone())
-                                .text_color(theme.text_faint)
-                                .child(SharedString::from(format!("{}", index + 1))),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(12.5))
-                                .text_color(theme.text_muted)
-                                .child(SharedString::from(*step)),
-                        )
-                        .into_any_element()
-                })),
+                theme
+                    .group_box()
+                    .children(work.iter().enumerate().map(|(index, step)| {
+                        theme
+                            .card_row(index == 0)
+                            .hover(widgets::card_row_hover)
+                            .items_start()
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .w(px(12.0))
+                                    .text_size(px(12.0))
+                                    .font_family(theme.font_mono.clone())
+                                    .text_color(theme.text_faint)
+                                    .child(SharedString::from(format!("{}", index + 1))),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.5))
+                                    .text_color(theme.text_muted)
+                                    .child(SharedString::from(*step)),
+                            )
+                            .into_any_element()
+                    })),
             )
         })
         .into_any_element()
@@ -3458,18 +3464,21 @@ impl Render for Gallery {
                              same glass, full height.",
                         ))
                         .child(
-                            widgets::group_box(&theme)
+                            theme
+                                .group_box()
                                 .child(
-                                    widgets::card_row(&theme, true)
+                                    theme
+                                        .card_row(true)
                                         .hover(widgets::card_row_hover)
-                                        .child(widgets::row_tile(&theme, icons::MONITOR))
-                                        .child(widgets::row_title(&theme, "Appearance")),
+                                        .child(theme.row_tile(icons::MONITOR))
+                                        .child(theme.row_title("Appearance")),
                                 )
                                 .child(
-                                    widgets::card_row(&theme, false)
+                                    theme
+                                        .card_row(false)
                                         .hover(widgets::card_row_hover)
-                                        .child(widgets::row_tile(&theme, icons::FOLDER))
-                                        .child(widgets::row_title(&theme, "Storage")),
+                                        .child(theme.row_tile(icons::FOLDER))
+                                        .child(theme.row_title("Storage")),
                                 ),
                         )
                         .into_any_element(),

@@ -51,6 +51,20 @@ pub use paint::{
 };
 pub use theme::{SyntaxPalette, Theme, set_palette};
 
+/// The carrier seam for catalog traits: any type holding a [`Theme`] exposes
+/// it through this one method, and every component group
+/// (`bezel_ui::widgets::Scaffolding`, …) extends it, so group methods read
+/// the environment through `self.theme()`.
+pub trait ThemeExt {
+    fn theme(&self) -> &Theme;
+}
+
+impl ThemeExt for Theme {
+    fn theme(&self) -> &Theme {
+        self
+    }
+}
+
 /// Which appearance the app is painting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Appearance {

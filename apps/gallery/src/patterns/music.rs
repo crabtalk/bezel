@@ -19,7 +19,7 @@ use bezel_ui::{
     icons, popover, scroll,
     table::{self, Column, Width},
     widgets,
-    widgets::SliderDrag,
+    widgets::{Scaffolding, SliderDrag},
 };
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, MouseButton, MouseDownEvent, Render, SharedString,
@@ -254,27 +254,26 @@ impl MusicPlayer {
             .flex()
             .flex_col()
             .gap(px(10.0))
-            .child(widgets::field_label(theme, "Library"))
-            .child(
-                widgets::group_box(theme).children(LIBRARY.iter().enumerate().map(
-                    |(index, (icon, label))| {
-                        widgets::card_row(theme, index == 0)
-                            .hover(widgets::card_row_hover)
-                            .id(SharedString::from(format!("library-{index}")))
-                            .cursor_pointer()
-                            .when(index == self.library, |row| {
-                                row.bg(bezel_theme::card_selected_bg())
-                            })
-                            .on_click(cx.listener(move |view, _, _, cx| {
-                                view.library = index;
-                                cx.notify();
-                            }))
-                            .child(widgets::row_tile(theme, icon))
-                            .child(widgets::row_title(theme, *label))
-                            .into_any_element()
-                    },
-                )),
-            )
+            .child(theme.field_label("Library"))
+            .child(theme.group_box().children(LIBRARY.iter().enumerate().map(
+                |(index, (icon, label))| {
+                    theme
+                        .card_row(index == 0)
+                        .hover(widgets::card_row_hover)
+                        .id(SharedString::from(format!("library-{index}")))
+                        .cursor_pointer()
+                        .when(index == self.library, |row| {
+                            row.bg(bezel_theme::card_selected_bg())
+                        })
+                        .on_click(cx.listener(move |view, _, _, cx| {
+                            view.library = index;
+                            cx.notify();
+                        }))
+                        .child(theme.row_tile(icon))
+                        .child(theme.row_title(*label))
+                        .into_any_element()
+                },
+            )))
             .into_any_element()
     }
 
@@ -354,15 +353,11 @@ impl MusicPlayer {
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child(ALBUM),
                     )
-                    .child(widgets::meta_line(
-                        theme,
-                        vec![
-                            SharedString::from(ARTIST).into_any_element(),
-                            SharedString::from(format!("{} tracks", TRACKS.len()))
-                                .into_any_element(),
-                            SharedString::from(format!("{} min", total / 60)).into_any_element(),
-                        ],
-                    )),
+                    .child(theme.meta_line(vec![
+                        SharedString::from(ARTIST).into_any_element(),
+                        SharedString::from(format!("{} tracks", TRACKS.len())).into_any_element(),
+                        SharedString::from(format!("{} min", total / 60)).into_any_element(),
+                    ])),
             )
             .into_any_element()
     }
