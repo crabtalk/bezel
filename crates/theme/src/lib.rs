@@ -49,7 +49,7 @@ pub use paint::{
     card_selected_shadows, current_appearance, glass_selected_bg, glass_selected_shadows, hairline,
     ink, lock_appearance, scrim, set_current_appearance, theme_generation, user_bubble_bg, wash,
 };
-pub use theme::{SyntaxPalette, Theme, set_palette};
+pub use theme::{HighlightKind, SyntaxPalette, Theme, set_palette};
 
 /// The carrier seam for catalog traits: any type holding a [`Theme`] exposes
 /// it through this one method, and every component group

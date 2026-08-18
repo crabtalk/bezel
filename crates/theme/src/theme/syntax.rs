@@ -33,7 +33,67 @@ pub struct SyntaxPalette {
     pub invalid: Hsla,
 }
 
+/// The token category a highlighter paints with, mirroring [`SyntaxPalette`]
+/// field-for-field so classification can name a kind without knowing its color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HighlightKind {
+    Comment,
+    Keyword,
+    String,
+    StringSpecial,
+    Escape,
+    Number,
+    Boolean,
+    TypeName,
+    TypeBuiltin,
+    Constructor,
+    Function,
+    FunctionBuiltin,
+    MacroName,
+    Property,
+    Constant,
+    Variable,
+    VariableSpecial,
+    Parameter,
+    Operator,
+    Punctuation,
+    Tag,
+    Attribute,
+    Label,
+    Invalid,
+}
+
 impl SyntaxPalette {
+    /// The palette color for a token kind.
+    pub fn color(&self, kind: HighlightKind) -> Hsla {
+        match kind {
+            HighlightKind::Comment => self.comment,
+            HighlightKind::Keyword => self.keyword,
+            HighlightKind::String => self.string,
+            HighlightKind::StringSpecial => self.string_special,
+            HighlightKind::Escape => self.escape,
+            HighlightKind::Number => self.number,
+            HighlightKind::Boolean => self.boolean,
+            HighlightKind::TypeName => self.type_name,
+            HighlightKind::TypeBuiltin => self.type_builtin,
+            HighlightKind::Constructor => self.constructor,
+            HighlightKind::Function => self.function,
+            HighlightKind::FunctionBuiltin => self.function_builtin,
+            HighlightKind::MacroName => self.macro_name,
+            HighlightKind::Property => self.property,
+            HighlightKind::Constant => self.constant,
+            HighlightKind::Variable => self.variable,
+            HighlightKind::VariableSpecial => self.variable_special,
+            HighlightKind::Parameter => self.parameter,
+            HighlightKind::Operator => self.operator,
+            HighlightKind::Punctuation => self.punctuation,
+            HighlightKind::Tag => self.tag,
+            HighlightKind::Attribute => self.attribute,
+            HighlightKind::Label => self.label,
+            HighlightKind::Invalid => self.invalid,
+        }
+    }
+
     pub(crate) fn dark(text: Hsla, comment: Hsla, danger: Hsla) -> Self {
         // Same sources and 72% saturation treatment as history::graph_color.
         let indigo = git_graph_tone(color::oklch(0.673, 0.182, 276.935));

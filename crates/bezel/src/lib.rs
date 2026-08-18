@@ -20,16 +20,16 @@
 //!
 //! No feature flags. They are the reason `ARCHITECTURE.md` planned this crate —
 //! gating `markdown` (pulldown-cmark), `syntax` (28 tree-sitter grammars) and
-//! `terminal` (alacritty) so nobody compiles a grammar to get a button. Those
-//! layers do not exist yet, and features that gate nothing are machinery for
-//! its own sake. They arrive with the crates they protect; until then all three
-//! layers are light and unconditional.
+//! `terminal` (alacritty) so nobody compiles a grammar to get a button. The
+//! layers are light and unconditional until the first grammar or terminal
+//! growth makes them heavy enough to gate.
 //!
 //! Depending on a single layer directly (`theme` for tokens alone, which
 //! is useful to anyone writing their own gpui components) stays supported and
 //! is not going away.
 
 pub use motion;
+pub use syntax;
 pub use theme;
 pub use ui;
 

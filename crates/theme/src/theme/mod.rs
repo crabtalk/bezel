@@ -11,7 +11,7 @@ mod palettes;
 mod syntax;
 
 pub use install::set_palette;
-pub use syntax::SyntaxPalette;
+pub use syntax::{HighlightKind, SyntaxPalette};
 
 /// The app theme. Two concrete instances — [`Theme::dark`] and [`Theme::light`].
 #[derive(Debug, Clone)]

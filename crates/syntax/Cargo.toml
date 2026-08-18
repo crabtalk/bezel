@@ -1,0 +1,27 @@
+[package]
+name = "syntax"
+
+description = "Tree-sitter syntax classification for isolated code blocks — source and a fence tag in, (byte range, kind) spans out"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+theme.workspace = true
+tree-sitter.workspace = true
+tree-sitter-highlight.workspace = true
+tree-sitter-language.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-python.workspace = true
+tree-sitter-json.workspace = true
+tree-sitter-typescript.workspace = true

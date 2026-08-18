@@ -17,6 +17,7 @@ workspace = true
 
 [dependencies]
 motion.workspace = true
+syntax.workspace = true
 theme.workspace = true
 ui.workspace = true
 gpui.workspace = true
