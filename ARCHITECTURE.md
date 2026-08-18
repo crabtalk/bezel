@@ -77,12 +77,19 @@ a reader does not already carry.
 
 1. **Style flows through the environment.** Components read `Theme::of(cx)`
    (a gpui `Global`) at paint time — SwiftUI's `@Environment`. No color,
-   font, or size parameters on component functions.
+   font, or size parameters on component functions. The environment supplies
+   *defaults*, not verdicts: a caller overrides any style by chaining the
+   standard gpui modifiers on the returned element
+   (`widgets::group_box(&theme).rounded(px(4.0))`). Components must never bake
+   style into a child the caller cannot reach; the rare function that needs
+   caller-supplied styling takes an optional `StyleRefinement` and merges it
+   last (see `ghost_hover`).
 2. **SwiftUI vocabulary.** Widgets are named for their SwiftUI analog:
    `toggle`, `divider`, `group_box`, `material`, `button_prominent`,
-   `redacted_rows`. Components are plain functions returning gpui elements —
-   no component structs, no builder knobs, no style traits. Customization is
-   editing the source.
+   `redacted_rows`. Stateless paint is a plain function returning a gpui
+   element; stateful components are struct entities (`Table`, `TextField`,
+   `Orb`). Builder methods configure *content* — an orb's state, a table's
+   columns — never style.
 3. **Motion is named.** Every animation comes from the `MotionSpec` catalog
    in `bezel-motion`; pure phase math lives in `motion::phase` and is
    unit-tested. No inline durations or curves in components.

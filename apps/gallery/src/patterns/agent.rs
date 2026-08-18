@@ -502,6 +502,7 @@ impl ToolCalls {
                     call.failed,
                     call.output.map(|_| open),
                 )
+                .hover(widgets::step_row_hover)
                 .id(SharedString::from(format!("call-{index}")))
                 .on_click(cx.listener(move |view, _, _, cx| {
                     if !view.open_output.insert(index) {
@@ -577,6 +578,7 @@ impl Render for ToolCalls {
                                     failed,
                                     Some(open),
                                 )
+                                .hover(widgets::step_row_hover)
                                 .id(SharedString::from(format!("group-{start}")))
                                 .on_click(cx.listener(
                                     move |view, _, _, cx| {

@@ -259,6 +259,7 @@ impl MusicPlayer {
                 widgets::group_box(theme).children(LIBRARY.iter().enumerate().map(
                     |(index, (icon, label))| {
                         widgets::card_row(theme, index == 0)
+                            .hover(widgets::card_row_hover)
                             .id(SharedString::from(format!("library-{index}")))
                             .cursor_pointer()
                             .when(index == self.library, |row| {

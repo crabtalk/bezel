@@ -1767,11 +1767,14 @@ impl Gallery {
                                         view.expanded = !view.expanded;
                                         cx.notify();
                                     }))
-                                    .child(widgets::collapsible_header(
-                                        &theme,
-                                        "Advanced",
-                                        self.expanded,
-                                    )),
+                                    .child(
+                                        widgets::collapsible_header(
+                                            &theme,
+                                            "Advanced",
+                                            self.expanded,
+                                        )
+                                        .hover(widgets::collapsible_header_hover),
+                                    ),
                             )
                             .when(self.expanded, |el| {
                                 el.child(
@@ -1839,11 +1842,14 @@ impl Gallery {
                                         view.details.toggle(running);
                                         cx.notify();
                                     }))
-                                    .child(widgets::collapsible_header(
-                                        &theme,
-                                        if self.running { "Working" } else { "Details" },
-                                        open,
-                                    )),
+                                    .child(
+                                        widgets::collapsible_header(
+                                            &theme,
+                                            if self.running { "Working" } else { "Details" },
+                                            open,
+                                        )
+                                        .hover(widgets::collapsible_header_hover),
+                                    ),
                             )
                             .when(open, |el| {
                                 el.child(
@@ -2148,11 +2154,13 @@ impl Gallery {
                     widgets::group_box(&theme)
                         .child(
                             widgets::card_row(&theme, true)
+                                .hover(widgets::card_row_hover)
                                 .child(widgets::row_tile(&theme, icons::MONITOR))
                                 .child(widgets::row_title(&theme, "First row")),
                         )
                         .child(
                             widgets::card_row(&theme, false)
+                                .hover(widgets::card_row_hover)
                                 .child(widgets::row_tile(&theme, icons::FOLDER))
                                 .child(widgets::row_title(&theme, "Second row")),
                         ),
@@ -2334,6 +2342,7 @@ impl Gallery {
                                 failed,
                                 output.map(|_| open),
                             )
+                            .hover(widgets::step_row_hover)
                             .id(SharedString::from(format!("step-{index}")))
                             .on_click(cx.listener(
                                 move |view, _, _, cx| {
@@ -3172,6 +3181,7 @@ fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> An
             page.child(
                 widgets::group_box(theme).children(work.iter().enumerate().map(|(index, step)| {
                     widgets::card_row(theme, index == 0)
+                        .hover(widgets::card_row_hover)
                         .items_start()
                         .child(
                             div()
@@ -3451,11 +3461,13 @@ impl Render for Gallery {
                             widgets::group_box(&theme)
                                 .child(
                                     widgets::card_row(&theme, true)
+                                        .hover(widgets::card_row_hover)
                                         .child(widgets::row_tile(&theme, icons::MONITOR))
                                         .child(widgets::row_title(&theme, "Appearance")),
                                 )
                                 .child(
                                     widgets::card_row(&theme, false)
+                                        .hover(widgets::card_row_hover)
                                         .child(widgets::row_tile(&theme, icons::FOLDER))
                                         .child(widgets::row_title(&theme, "Storage")),
                                 ),

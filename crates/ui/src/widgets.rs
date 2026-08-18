@@ -179,18 +179,23 @@ pub fn group_box(theme: &Theme) -> gpui::Div {
         .flex_col()
 }
 
-/// One card row: `border-t border-border px-5 py-3.5 first:border-t-0` with the
-/// quiet hover wash.
+/// One card row: `border-t border-border px-5 py-3.5 first:border-t-0`.
+/// Hover is caller-owned — gpui panics on a second hover, so the default wash
+/// is [`card_row_hover`] for the caller to chain.
 pub fn card_row(theme: &Theme, first: bool) -> gpui::Div {
     div()
         .px(px(20.0))
         .py(px(14.0))
         .when(!first, |el| el.border_t_1().border_color(theme.border))
-        .hover(|s| s.bg(ink(0.015)))
         .flex()
         .flex_row()
         .items_center()
         .gap(px(14.0))
+}
+
+/// The default card-row hover wash (`hover:bg-white/[0.015]`).
+pub fn card_row_hover(s: gpui::StyleRefinement) -> gpui::StyleRefinement {
+    s.bg(ink(0.015))
 }
 
 /// The identity tile on a row: `size-9 rounded-[10px] border bg-white/[0.03]`
@@ -551,7 +556,9 @@ pub fn disclosure(theme: &Theme, expanded: bool) -> gpui::Svg {
 
 /// Header row of a collapsible section: chevron plus title. The caller owns
 /// `expanded` and renders the body itself — a container that swallowed its
-/// children would have to re-implement layout for them.
+/// children would have to re-implement layout for them. Hover is caller-owned
+/// (gpui panics on a second hover); the default wash is
+/// [`collapsible_header_hover`].
 pub fn collapsible_header(
     theme: &Theme,
     label: impl Into<SharedString>,
@@ -567,7 +574,6 @@ pub fn collapsible_header(
         .py(px(5.0))
         .rounded(px(Theme::CONTROL_RADIUS))
         .cursor_pointer()
-        .hover(|s| s.bg(ink(0.03)))
         .child(disclosure(theme, expanded))
         .child(
             div()
@@ -576,6 +582,11 @@ pub fn collapsible_header(
                 .text_color(theme.text)
                 .child(label.into()),
         )
+}
+
+/// The default collapsible-header hover wash (`hover:bg-white/[0.03]`).
+pub fn collapsible_header_hover(s: gpui::StyleRefinement) -> gpui::StyleRefinement {
+    s.bg(ink(0.03))
 }
 
 /// A flag that follows something else until the user takes it over.
@@ -634,7 +645,8 @@ const STEP_OUTPUT_MAX: f32 = 256.0;
 ///
 /// Returns a plain `Div` like the rest of this module: the caller adds `.id(..)`
 /// and `.on_click(..)` **to this row**, never to a wrapper around it, or the
-/// hitbox ends up narrower than what it paints.
+/// hitbox ends up narrower than what it paints. Hover is caller-owned (gpui
+/// panics on a second hover); the default wash is [`step_row_hover`].
 pub fn step_row(
     theme: &Theme,
     icon: &'static str,
@@ -652,7 +664,6 @@ pub fn step_row(
         .px(px(STEP_PAD_X))
         .py(px(STEP_PAD_Y))
         .cursor_pointer()
-        .hover(|s| s.bg(ink(0.03)))
         .child(
             // Tinted here rather than on the row: gpui reads an svg's colour
             // off its own style, so a colour set on the parent never arrives.
@@ -702,6 +713,11 @@ pub fn step_row(
                     cluster.child(disclosure(theme, expanded))
                 }),
         )
+}
+
+/// The default step-row hover wash (`hover:bg-white/[0.03]`).
+pub fn step_row_hover(s: gpui::StyleRefinement) -> gpui::StyleRefinement {
+    s.bg(ink(0.03))
 }
 
 /// What a [`step_row`] opens onto: its output, verbatim.
