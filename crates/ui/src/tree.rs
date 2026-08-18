@@ -31,7 +31,7 @@ use gpui::{App, KeyBinding, actions, div, prelude::*, px};
 
 use bezel_theme::{Theme, hairline};
 
-use crate::widgets;
+use crate::widgets::Layout;
 
 /// One visible row: how deep it sits, and whether it is a branch.
 ///
@@ -190,7 +190,7 @@ pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui:
                 .items_center()
                 .justify_center()
                 .when_some(row.expanded, |slot, expanded| {
-                    slot.child(widgets::disclosure(theme, expanded))
+                    slot.child(theme.disclosure(expanded))
                 }),
         )
 }

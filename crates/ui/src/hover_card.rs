@@ -21,9 +21,10 @@
 
 use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelude::*, px};
 
+use crate::widgets::Content;
 use bezel_theme::Theme;
 
-use crate::{popover, widgets};
+use crate::popover;
 
 pub struct HoverCard {
     title: SharedString,
@@ -82,7 +83,7 @@ impl Render for HoverCard {
             .items_center()
             .gap(px(10.0))
             .when_some(self.initials.clone(), |row, initials| {
-                row.child(widgets::avatar(&theme, initials))
+                row.child(theme.avatar(initials))
             })
             .child(
                 div()

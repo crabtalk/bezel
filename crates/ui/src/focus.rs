@@ -60,7 +60,8 @@ pub const CONTROL_KEY_CONTEXT: &str = "Control";
 /// the classic way to make a form impossible to leave by keyboard.
 ///
 /// [`Decrement`]/[`Increment`] on `left`/`right` are for a control that holds a
-/// *value* rather than a press — [`crate::widgets::slider`] is the one. They
+/// *value* rather than a press — [`slider`](crate::widgets::Controls::slider)
+/// is the one. They
 /// carry no step: only the caller knows the range, and a library that picked
 /// one would be picking it for a percentage and a font size alike.
 pub fn init(cx: &mut App) {

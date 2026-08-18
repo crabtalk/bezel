@@ -26,6 +26,7 @@ use bezel_ui::{
     icons, popover,
     scroll::{self, FollowState, ScrollbarState},
     widgets,
+    widgets::{Layout, Status},
 };
 use gpui::{AnyElement, Context, Render, SharedString, Window, div, prelude::*, px};
 
@@ -238,7 +239,7 @@ impl Transcript {
                 view.work.entry(turn).or_default().toggle(false);
                 cx.notify();
             }))
-            .child(widgets::disclosure(theme, open))
+            .child(theme.disclosure(open))
             .child(
                 div()
                     .text_size(px(12.5))
@@ -265,34 +266,30 @@ impl Transcript {
         div()
             .when(!first, |el| el.border_t_1().border_color(theme.border))
             .child(
-                widgets::step_row(
-                    theme,
-                    icon,
-                    *verb,
-                    Some(SharedString::from(*detail)),
-                    Some(SharedString::from(if *ms < 1000 {
-                        format!("{ms}ms")
-                    } else {
-                        format!("{:.1}s", *ms as f32 / 1000.0)
+                theme
+                    .step_row(
+                        icon,
+                        *verb,
+                        Some(SharedString::from(*detail)),
+                        Some(SharedString::from(if *ms < 1000 {
+                            format!("{ms}ms")
+                        } else {
+                            format!("{:.1}s", *ms as f32 / 1000.0)
+                        })),
+                        *failed,
+                        output.map(|_| open),
+                    )
+                    .hover(widgets::step_row_hover)
+                    .id(SharedString::from(format!("beat-{index}")))
+                    .on_click(cx.listener(move |view: &mut Self, _, _, cx| {
+                        if !view.open_output.insert(index) {
+                            view.open_output.remove(&index);
+                        }
+                        cx.notify();
                     })),
-                    *failed,
-                    output.map(|_| open),
-                )
-                .hover(widgets::step_row_hover)
-                .id(SharedString::from(format!("beat-{index}")))
-                .on_click(cx.listener(move |view: &mut Self, _, _, cx| {
-                    if !view.open_output.insert(index) {
-                        view.open_output.remove(&index);
-                    }
-                    cx.notify();
-                })),
             )
             .when_some(output.filter(|_| open), |el, output| {
-                el.child(widgets::step_output(
-                    theme,
-                    SharedString::from(format!("beat-out-{index}")),
-                    output,
-                ))
+                el.child(theme.step_output(SharedString::from(format!("beat-out-{index}")), output))
             })
     }
 

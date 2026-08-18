@@ -18,7 +18,7 @@
 //! 3. **What is it?** The element id path, when a component is on screen twice.
 
 use bezel_theme::Theme;
-use bezel_ui::{popover, widgets};
+use bezel_ui::{popover, widgets::Controls};
 use gpui::{
     AnyElement, App, Context, DivInspectorState, InspectorElementId, IntoElement, SharedString,
     Window, div, prelude::*, px,
@@ -78,13 +78,10 @@ fn render(
                             inspector.start_picking();
                             window.refresh();
                         }))
-                        .child(
-                            widgets::toggle_group(&theme).child(widgets::toggle_group_item(
-                                &theme,
-                                if picking { "Picking…" } else { "Pick" },
-                                picking,
-                            )),
-                        ),
+                        .child(theme.toggle_group().child(theme.toggle_group_item(
+                            if picking { "Picking…" } else { "Pick" },
+                            picking,
+                        ))),
                 ),
         )
         .child(

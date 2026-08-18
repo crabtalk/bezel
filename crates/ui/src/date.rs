@@ -32,7 +32,7 @@ use gpui::{
 
 use bezel_theme::{Theme, ink};
 
-use crate::{icons, popover, widgets};
+use crate::{icons, popover, widgets, widgets::Controls};
 
 /// A day in the proleptic Gregorian calendar.
 ///
@@ -568,7 +568,7 @@ impl Render for Calendar {
                         cx.listener(|calendar, _, _, _| calendar.menu.note_trigger_press()),
                     )
                     .on_click(cx.listener(|calendar, _, window, cx| calendar.toggle(window, cx)))
-                    .child(widgets::select_trigger(&theme, label, open)),
+                    .child(theme.select_trigger(label, open)),
             )
             .when_some(card, |trigger, card| {
                 trigger.child(popover::anchored_menu_below(

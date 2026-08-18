@@ -26,6 +26,7 @@ use bezel_ui::{
     loaders, popover,
     scroll::{self, FollowState, ScrollbarState},
     widgets,
+    widgets::{Layout, Status},
 };
 use gpui::{
     AnyElement, Context, Entity, Render, SharedString, Window, div, linear_color_stop,
@@ -160,7 +161,7 @@ impl Activity {
             loaders::orb(loaders::Orb::Cluster, "thinking", 14.0, theme, view, cx)
                 .into_any_element()
         } else {
-            widgets::disclosure(theme, open).into_any_element()
+            theme.disclosure(open).into_any_element()
         };
         div()
             .id("thought-header")
@@ -493,30 +494,26 @@ impl ToolCalls {
         div()
             .when(!first, |el| el.border_t_1().border_color(theme.border))
             .child(
-                widgets::step_row(
-                    theme,
-                    call.icon,
-                    call.verb,
-                    Some(SharedString::from(call.detail)),
-                    Some(SharedString::from(took(call.ms))),
-                    call.failed,
-                    call.output.map(|_| open),
-                )
-                .hover(widgets::step_row_hover)
-                .id(SharedString::from(format!("call-{index}")))
-                .on_click(cx.listener(move |view, _, _, cx| {
-                    if !view.open_output.insert(index) {
-                        view.open_output.remove(&index);
-                    }
-                    cx.notify();
-                })),
+                theme
+                    .step_row(
+                        call.icon,
+                        call.verb,
+                        Some(SharedString::from(call.detail)),
+                        Some(SharedString::from(took(call.ms))),
+                        call.failed,
+                        call.output.map(|_| open),
+                    )
+                    .hover(widgets::step_row_hover)
+                    .id(SharedString::from(format!("call-{index}")))
+                    .on_click(cx.listener(move |view, _, _, cx| {
+                        if !view.open_output.insert(index) {
+                            view.open_output.remove(&index);
+                        }
+                        cx.notify();
+                    })),
             )
             .when_some(call.output.filter(|_| open), |el, output| {
-                el.child(widgets::step_output(
-                    theme,
-                    SharedString::from(format!("call-out-{index}")),
-                    output,
-                ))
+                el.child(theme.step_output(SharedString::from(format!("call-out-{index}")), output))
             })
     }
 
@@ -569,25 +566,23 @@ impl Render for ToolCalls {
                         let failed = CALLS[start..start + len].iter().any(|call| call.failed);
                         Self::box_(&theme)
                             .child(
-                                widgets::step_row(
-                                    &theme,
-                                    CALLS[start].icon,
-                                    CALLS[start].verb,
-                                    Some(SharedString::from(format!("· {len}"))),
-                                    None,
-                                    failed,
-                                    Some(open),
-                                )
-                                .hover(widgets::step_row_hover)
-                                .id(SharedString::from(format!("group-{start}")))
-                                .on_click(cx.listener(
-                                    move |view, _, _, cx| {
+                                theme
+                                    .step_row(
+                                        CALLS[start].icon,
+                                        CALLS[start].verb,
+                                        Some(SharedString::from(format!("· {len}"))),
+                                        None,
+                                        failed,
+                                        Some(open),
+                                    )
+                                    .hover(widgets::step_row_hover)
+                                    .id(SharedString::from(format!("group-{start}")))
+                                    .on_click(cx.listener(move |view, _, _, cx| {
                                         if !view.open_groups.insert(start) {
                                             view.open_groups.remove(&start);
                                         }
                                         cx.notify();
-                                    },
-                                )),
+                                    })),
                             )
                             .when(open, |group| {
                                 group.child(

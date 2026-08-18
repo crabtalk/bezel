@@ -31,7 +31,7 @@ use bezel_ui::{
     tooltip::Tooltip,
     tree::{self, Direction, Move},
     widgets,
-    widgets::{Scaffolding, SliderDrag, SplitDrag},
+    widgets::{Content, Controls, Layout, Scaffolding, SliderDrag, SplitDrag, Status},
 };
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
@@ -1141,7 +1141,8 @@ impl Gallery {
                     // clicks over a box narrower than what it paints, which is
                     // the open hit-testing bug in this tree.
                     .child(
-                        widgets::toggle(theme, dark)
+                        theme
+                            .toggle(dark)
                             .id("appearance")
                             .cursor_pointer()
                             .on_click(cx.listener(move |_, _, _, cx| {
@@ -1517,7 +1518,7 @@ impl Gallery {
                         focus::focusable(
                             &theme,
                             &self.switches[index],
-                            widgets::toggle(&theme, self.switched[index]),
+                            theme.toggle(self.switched[index]),
                         ),
                         SharedString::from(format!("toggle-{index}")),
                         cx,
@@ -1533,8 +1534,8 @@ impl Gallery {
             "badge" => section
                 .child(
                     row()
-                        .child(widgets::badge(&theme, "badge"))
-                        .child(widgets::badge_active(&theme, "active")),
+                        .child(theme.badge("badge"))
+                        .child(theme.badge_active("active")),
                 )
                 .into_any_element(),
 
@@ -1552,11 +1553,12 @@ impl Gallery {
                                     }),
                                 )
                                 .on_click(cx.listener(|view, _, _, cx| view.toggle_theme_menu(cx)))
-                                .child(widgets::select_trigger(
-                                    &theme,
-                                    SELECT_CHOICES[self.theme_choice],
-                                    menu_open,
-                                ))
+                                .child(
+                                    theme.select_trigger(
+                                        SELECT_CHOICES[self.theme_choice],
+                                        menu_open,
+                                    ),
+                                )
                                 .when(menu_open, |trigger| {
                                     trigger.child(popover::anchored_menu_below(
                                         "theme-select-menu",
@@ -1630,7 +1632,7 @@ impl Gallery {
                                 focus::focusable(
                                     &theme,
                                     &self.checkboxes[index],
-                                    widgets::checkbox(&theme, self.checked[index]),
+                                    theme.checkbox(self.checked[index]),
                                 ),
                                 SharedString::from(format!("checkbox-{index}")),
                                 cx,
@@ -1646,7 +1648,7 @@ impl Gallery {
                                 focus::focusable(
                                     &theme,
                                     &self.radios[index],
-                                    widgets::radio_button(&theme, self.radio == index),
+                                    theme.radio_button(self.radio == index),
                                 ),
                                 SharedString::from(format!("radio-{index}")),
                                 cx,
@@ -1661,11 +1663,7 @@ impl Gallery {
                 .into_any_element(),
 
             "avatar" => section
-                .child(
-                    row()
-                        .child(widgets::avatar(&theme, "TC"))
-                        .child(widgets::avatar(&theme, "K")),
-                )
+                .child(row().child(theme.avatar("TC")).child(theme.avatar("K")))
                 .into_any_element(),
 
             "progress" => section
@@ -1675,8 +1673,8 @@ impl Gallery {
                         .flex()
                         .flex_col()
                         .gap(px(16.0))
-                        .child(widgets::progress_bar(&theme, 0.35))
-                        .child(widgets::progress_bar(&theme, 0.8)),
+                        .child(theme.progress_bar(0.35))
+                        .child(theme.progress_bar(0.8)),
                 )
                 .into_any_element(),
 
@@ -1687,7 +1685,7 @@ impl Gallery {
                 ))
                 .child(
                     div().w(px(280.0)).child(
-                        focus::focusable(&theme, &self.slider, widgets::slider(&theme, self.level))
+                        focus::focusable(&theme, &self.slider, theme.slider(self.level))
                             .id("slider")
                             // The element is its own drag source, so the gesture
                             // starts wherever the pointer went down on the track.
@@ -1726,7 +1724,7 @@ impl Gallery {
                     "One of three: space or enter picks the focused segment.",
                 ))
                 .child(
-                    widgets::toggle_group(&theme).children(
+                    theme.toggle_group().children(
                         ["Day", "Week", "Month"]
                             .into_iter()
                             .enumerate()
@@ -1735,11 +1733,7 @@ impl Gallery {
                                     focus::focusable(
                                         &theme,
                                         &self.segments[index],
-                                        widgets::toggle_group_item(
-                                            &theme,
-                                            label,
-                                            self.segment == index,
-                                        ),
+                                        theme.toggle_group_item(label, self.segment == index),
                                     ),
                                     SharedString::from(format!("segment-{index}")),
                                     cx,
@@ -1768,12 +1762,9 @@ impl Gallery {
                                         cx.notify();
                                     }))
                                     .child(
-                                        widgets::collapsible_header(
-                                            &theme,
-                                            "Advanced",
-                                            self.expanded,
-                                        )
-                                        .hover(widgets::collapsible_header_hover),
+                                        theme
+                                            .collapsible_header("Advanced", self.expanded)
+                                            .hover(widgets::collapsible_header_hover),
                                     ),
                             )
                             .when(self.expanded, |el| {
@@ -1843,12 +1834,12 @@ impl Gallery {
                                         cx.notify();
                                     }))
                                     .child(
-                                        widgets::collapsible_header(
-                                            &theme,
-                                            if self.running { "Working" } else { "Details" },
-                                            open,
-                                        )
-                                        .hover(widgets::collapsible_header_hover),
+                                        theme
+                                            .collapsible_header(
+                                                if self.running { "Working" } else { "Details" },
+                                                open,
+                                            )
+                                            .hover(widgets::collapsible_header_hover),
                                     ),
                             )
                             .when(open, |el| {
@@ -1873,21 +1864,18 @@ impl Gallery {
 
             "breadcrumb" => section
                 .child(
-                    widgets::breadcrumb()
-                        .child(widgets::breadcrumb_item(&theme, "crates", false))
-                        .child(widgets::breadcrumb_separator(&theme))
-                        .child(widgets::breadcrumb_item(&theme, "ui", false))
-                        .child(widgets::breadcrumb_separator(&theme))
-                        .child(widgets::breadcrumb_item(&theme, "widgets.rs", true)),
+                    theme
+                        .breadcrumb()
+                        .child(theme.breadcrumb_item("crates", false))
+                        .child(theme.breadcrumb_separator())
+                        .child(theme.breadcrumb_item("ui", false))
+                        .child(theme.breadcrumb_separator())
+                        .child(theme.breadcrumb_item("widgets.rs", true)),
                 )
                 .into_any_element(),
 
             "tag" => section
-                .child(
-                    row()
-                        .child(widgets::tag(&theme, "rust"))
-                        .child(widgets::tag(&theme, "gpui")),
-                )
+                .child(row().child(theme.tag("rust")).child(theme.tag("gpui")))
                 .into_any_element(),
 
             "status-dot" => section
@@ -1936,7 +1924,7 @@ impl Gallery {
                                     cx,
                                 )
                             })
-                            .child(widgets::tag(&theme, "@clearloop")),
+                            .child(theme.tag("@clearloop")),
                     ),
                 )
                 .into_any_element(),
@@ -1944,7 +1932,7 @@ impl Gallery {
             "tabs" => section
                 .child(hint(&theme, "space or enter opens the focused tab."))
                 .child(
-                    widgets::tab_bar(&theme).children(
+                    theme.tab_bar().children(
                         ["Components", "Tokens", "Motion"]
                             .into_iter()
                             .enumerate()
@@ -1953,7 +1941,7 @@ impl Gallery {
                                     focus::focusable(
                                         &theme,
                                         &self.tab_strip[index],
-                                        widgets::tab(&theme, label, self.tab_choice == index),
+                                        theme.tab(label, self.tab_choice == index),
                                     ),
                                     SharedString::from(format!("tab-{index}")),
                                     cx,
@@ -2024,13 +2012,10 @@ impl Gallery {
                                 format!("{:.0}%", self.split * 100.0),
                             ))))
                             .child(
-                                widgets::split_handle(
-                                    &theme,
-                                    Axis::Horizontal,
-                                    self.split_dragging,
-                                )
-                                .id("split-handle")
-                                .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| Empty)),
+                                theme
+                                    .split_handle(Axis::Horizontal, self.split_dragging)
+                                    .id("split-handle")
+                                    .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| Empty)),
                             )
                             .child(div().flex_1().child(pane("drag the divider".into()))),
                     )
@@ -2171,8 +2156,7 @@ impl Gallery {
                 .into_any_element(),
 
             "empty-state" => section
-                .child(theme.group_box().child(widgets::empty_state(
-                    &theme,
+                .child(theme.group_box().child(theme.empty_state(
                     icons::FOLDER,
                     "No repositories",
                     "Open a folder to get started.",
@@ -2318,8 +2302,8 @@ impl Gallery {
             }
 
             "alerts" => section
-                .child(widgets::error_strip(&theme, "Something went wrong."))
-                .child(widgets::warning_strip(&theme, "Heads up, check this."))
+                .child(theme.error_strip("Something went wrong."))
+                .child(theme.warning_strip("Heads up, check this."))
                 .into_any_element(),
 
             "step-row" => {
@@ -2336,27 +2320,24 @@ impl Gallery {
                     div()
                         .when(!first, |el| el.border_t_1().border_color(theme.border))
                         .child(
-                            widgets::step_row(
-                                &theme,
-                                icon,
-                                title,
-                                Some(SharedString::from(detail)),
-                                Some(SharedString::from(meta)),
-                                failed,
-                                output.map(|_| open),
-                            )
-                            .hover(widgets::step_row_hover)
-                            .id(SharedString::from(format!("step-{index}")))
-                            .on_click(cx.listener(
-                                move |view, _, _, cx| {
+                            theme
+                                .step_row(
+                                    icon,
+                                    title,
+                                    Some(SharedString::from(detail)),
+                                    Some(SharedString::from(meta)),
+                                    failed,
+                                    output.map(|_| open),
+                                )
+                                .hover(widgets::step_row_hover)
+                                .id(SharedString::from(format!("step-{index}")))
+                                .on_click(cx.listener(move |view, _, _, cx| {
                                     view.step_open[index] = !view.step_open[index];
                                     cx.notify();
-                                },
-                            )),
+                                })),
                         )
                         .when_some(output.filter(|_| open), |el, output| {
-                            el.child(widgets::step_output(
-                                &theme,
+                            el.child(theme.step_output(
                                 SharedString::from(format!("step-out-{index}")),
                                 output,
                             ))

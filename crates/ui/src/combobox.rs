@@ -20,11 +20,13 @@ use gpui::{
     Window, actions, canvas, div, prelude::*, px,
 };
 
+use crate::widgets::Controls;
 use bezel_theme::Theme;
 
-use crate::input::{self, TextField};
-use crate::popover;
-use crate::widgets;
+use crate::{
+    input::{self, TextField},
+    popover,
+};
 
 actions!(
     bezel_combobox,
@@ -252,7 +254,7 @@ impl Render for Combobox {
                         cx.listener(|combobox, _, _, _| combobox.menu.note_trigger_press()),
                     )
                     .on_click(cx.listener(|combobox, _, window, cx| combobox.toggle(window, cx)))
-                    .child(widgets::select_trigger(&theme, label, open)),
+                    .child(theme.select_trigger(label, open)),
             )
             .when_some(card, |trigger, card| {
                 trigger.child(popover::anchored_menu_below(

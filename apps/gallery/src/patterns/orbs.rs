@@ -16,7 +16,7 @@ use bezel_theme::Theme;
 use bezel_ui::{
     focus,
     orbs::{Orb, OrbSize, OrbState, orb_element},
-    widgets,
+    widgets::Controls,
 };
 use gpui::{Context, Entity, Render, SharedString, Window, div, prelude::*, px};
 
@@ -88,21 +88,15 @@ impl Render for Orbs {
                  this page's timer.",
             ))
             .child(
-                widgets::toggle_group(&theme).children(
-                    OrbSize::ALL_SIZES
-                        .iter()
-                        .copied()
-                        .enumerate()
-                        .map(|(index, size)| {
+                theme
+                    .toggle_group()
+                    .children(OrbSize::ALL_SIZES.iter().copied().enumerate().map(
+                        |(index, size)| {
                             pressable(
                                 focus::focusable(
                                     &theme,
                                     &self.segments[index],
-                                    widgets::toggle_group_item(
-                                        &theme,
-                                        size.label(),
-                                        self.size == size,
-                                    ),
+                                    theme.toggle_group_item(size.label(), self.size == size),
                                 ),
                                 SharedString::from(format!("orb-size-{index}")),
                                 cx,
@@ -113,8 +107,8 @@ impl Render for Orbs {
                                 },
                             )
                             .into_any_element()
-                        }),
-                ),
+                        },
+                    )),
             )
             .child(
                 div()

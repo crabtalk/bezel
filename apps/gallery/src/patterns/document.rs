@@ -25,7 +25,7 @@
 
 use bezel_markdown::{BlockKind, Doc, Editor};
 use bezel_theme::Theme;
-use bezel_ui::widgets;
+use bezel_ui::widgets::Controls;
 use gpui::{
     Context, ElementId, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
     prelude::*, px,
@@ -170,8 +170,9 @@ impl Render for Document {
             ("Edit", View::Edit),
             ("Source", View::Source),
         ];
-        let toggle = widgets::toggle_group(&theme).children(segments.map(|(label, view)| {
-            widgets::toggle_group_item(&theme, label, self.view == view)
+        let toggle = theme.toggle_group().children(segments.map(|(label, view)| {
+            theme
+                .toggle_group_item(label, self.view == view)
                 .id(ElementId::Name(label.into()))
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.view = view;

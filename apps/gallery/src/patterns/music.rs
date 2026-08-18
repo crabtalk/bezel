@@ -19,7 +19,7 @@ use bezel_ui::{
     icons, popover, scroll,
     table::{self, Column, Width},
     widgets,
-    widgets::{Scaffolding, SliderDrag},
+    widgets::{Controls, Scaffolding, SliderDrag},
 };
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, MouseButton, MouseDownEvent, Render, SharedString,
@@ -558,7 +558,7 @@ impl MusicPlayer {
                                 div()
                                     .flex_1()
                                     .id("bar-scrub")
-                                    .child(widgets::slider(theme, position / length))
+                                    .child(theme.slider(position / length))
                                     .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
                                     .on_drag_move(cx.listener(
                                         move |view, event: &DragMoveEvent<SliderDrag>, _, cx| {
@@ -617,7 +617,7 @@ impl MusicPlayer {
                     div()
                         .id("bar-volume-slider")
                         .w(px(72.0))
-                        .child(widgets::slider(theme, self.volume))
+                        .child(theme.slider(self.volume))
                         .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
                         .on_drag_move(cx.listener(
                             |view, event: &DragMoveEvent<SliderDrag>, _, cx| {
