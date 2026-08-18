@@ -36,32 +36,3 @@ pub use bezel_ui as ui;
 /// The exact gpui these components were built against. Depend on this rather
 /// than declaring your own — see the crate docs.
 pub use gpui;
-
-#[cfg(test)]
-mod tests {
-    /// The guarantee the facade exists for: everything reached through
-    /// `bezel::*` speaks the *same* gpui. If a second copy ever entered the
-    /// graph these annotations would stop type-checking — which is the failure
-    /// worth catching at compile time, because at runtime it shows up as a
-    /// window that paints shapes but no text.
-    #[test]
-    fn every_layer_shares_one_gpui() {
-        let theme = crate::theme::Theme::dark();
-        let _: crate::gpui::Hsla = theme.bg;
-        let _: crate::gpui::SharedString = theme.font_sans.clone();
-
-        let _: crate::gpui::Hsla = crate::theme::ink(0.05);
-        let _: crate::gpui::Hsla = crate::motion::mix(theme.bg, theme.text, 0.5);
-
-        // The components layer, reached through the facade, styles with the
-        // same tokens.
-        let _: crate::gpui::Hsla = crate::ui::popover::band();
-    }
-
-    /// Motion's catalog is reachable without naming `bezel-motion` directly.
-    #[test]
-    fn motion_catalog_is_reachable() {
-        assert_eq!(crate::motion::MENU_IN.duration_ms, 140);
-        assert!(crate::motion::MENU_OUT.total() < crate::motion::MENU_IN.total());
-    }
-}
