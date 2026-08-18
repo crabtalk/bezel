@@ -19,10 +19,9 @@
 //! per-view prepaint cache for the frame, which is the only thing that forces
 //! already-laid-out elements to re-run their paint with the new palette.
 
+use crate::{Appearance, Theme};
 use gpui::{App, Global, Subscription, Window};
 use serde::{Deserialize, Serialize};
-
-use crate::{Appearance, Theme};
 
 /// The user's appearance preference. Serde-serializable so callers can persist
 /// it wherever their settings live; this crate never touches disk.
