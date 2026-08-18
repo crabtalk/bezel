@@ -9,6 +9,7 @@ members = [
     "crates/terminal",
     "apps/gallery",
     "apps/web",
+    "apps/hello",
 ]
 
 [workspace.package]

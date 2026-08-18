@@ -1,0 +1,25 @@
+[package]
+name = "hello"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+# The whole example goes through the facade: every gpui *type* path is
+# `bezel::gpui`, so a crates.io gpui cannot creep into the graph. That is the
+# contract the README example exists to exercise.
+bezel.workspace = true
+# `actions!` expands to literal `gpui::` paths, so the crate name must be in
+# scope even though no type is ever named through it. Same fork rev as the
+# facade's gpui, so it is the same crate instance — no second universe.
+gpui.workspace = true
+
+# The one dependency beyond `bezel`. The facade re-exports gpui but not the
+# platform — there is no `Application::new()` in this gpui fork, so booting a
+# native window always needs this, from the same git rev.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+gpui_platform.workspace = true

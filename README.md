@@ -34,6 +34,49 @@ if bezel::motion::hover_fades_active() {
 }
 ```
 
+## Build an app
+
+`apps/hello` is the smallest consumer — one window, a button, a toggle.
+Every gpui *type* path goes through `bezel::gpui`, so a crates.io gpui cannot
+creep into the graph; the two dependencies beyond that are both from the same
+fork rev: `gpui` (for `actions!`, which expands to literal `gpui::` paths)
+and `gpui_platform` (the facade re-exports gpui but not the platform, and
+this gpui has no `Application::new()`). The bootstrap, which is the part no
+snippet can skip:
+
+```rust
+use bezel::gpui::{App, AppContext as _, Bounds, WindowBounds, WindowOptions, px, size};
+use bezel::theme::{self, Theme};
+use bezel::ui;
+
+fn main() {
+    gpui_platform::application()
+        .run(|cx: &mut App| {
+            if let Err(err) = ui::register_fonts(cx) {
+                eprintln!("FONT REGISTRATION FAILED: {err:?}");
+            }
+            theme::appearance::init(theme::appearance::AppearanceMode::System, cx);
+            let bounds = Bounds::centered(None, size(px(520.0), px(360.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    theme::appearance::observe_window(window, cx).detach();
+                    cx.new(Hello::new)
+                },
+            )
+            .unwrap();
+            cx.activate(true);
+        });
+}
+```
+
+`Hello` is a struct implementing `Render`; its `render` reads the theme with
+`Theme::of(cx)` and builds elements through the `widgets` traits. Run
+`cargo run -p hello` and read `apps/hello/src/main.rs` for the rest.
+
 ## Provenance
 
 The initial components were extracted from [comet][comet](MIT).
