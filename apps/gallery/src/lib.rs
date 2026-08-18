@@ -6,28 +6,33 @@
 //! composed exactly once, so the browser is never out of date with the library
 //! it documents.
 
-use std::cell::Cell;
-use std::collections::HashSet;
-use std::rc::Rc;
+use std::{cell::Cell, collections::HashSet, rc::Rc};
 
 use bezel_markdown::editor;
-use bezel_theme::Theme;
-use bezel_theme::appearance::{self, AppearanceMode};
-use bezel_ui::combobox::{self, Combobox};
-use bezel_ui::control_bar::Shape as ControlBarShape;
-use bezel_ui::date::{self, Calendar, Date};
-use bezel_ui::hover_card::HoverCard;
-use bezel_ui::input::{self, Shape, TextField};
-use bezel_ui::list;
-use bezel_ui::menubar::{self, Item, Menu, Menubar, MenubarEvent};
-use bezel_ui::pagination;
-use bezel_ui::palette::{self, CommandPalette, PaletteEvent};
-use bezel_ui::scroll::{self, ScrollbarState};
-use bezel_ui::table::{self, Column, Sort, Width};
-use bezel_ui::tooltip::Tooltip;
-use bezel_ui::tree::{self, Direction, Move};
-use bezel_ui::widgets::{SliderDrag, SplitDrag};
-use bezel_ui::{focus, icons, loaders, popover, widgets};
+use bezel_theme::{
+    Theme,
+    appearance::{self, AppearanceMode},
+};
+use bezel_ui::{
+    combobox::{self, Combobox},
+    control_bar::Shape as ControlBarShape,
+    date::{self, Calendar, Date},
+    focus,
+    hover_card::HoverCard,
+    icons,
+    input::{self, Shape, TextField},
+    list, loaders,
+    menubar::{self, Item, Menu, Menubar, MenubarEvent},
+    pagination,
+    palette::{self, CommandPalette, PaletteEvent},
+    popover,
+    scroll::{self, ScrollbarState},
+    table::{self, Column, Sort, Width},
+    tooltip::Tooltip,
+    tree::{self, Direction, Move},
+    widgets,
+    widgets::{SliderDrag, SplitDrag},
+};
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
     actions, div, prelude::*, px, relative,
@@ -418,6 +423,11 @@ pub const PATTERNS: &[Group] = &[
                 "Terminal",
                 "apps/gallery/src/patterns/terminal.rs",
             ),
+            section(
+                "agent-orbs",
+                "Thinking orbs",
+                "apps/gallery/src/patterns/orbs.rs",
+            ),
         ],
     },
     Group {
@@ -685,6 +695,7 @@ pub struct Gallery {
     document: Entity<patterns::document::Document>,
     #[cfg(not(target_family = "wasm"))]
     terminal: Entity<patterns::terminal::Terminal>,
+    orbs: Entity<patterns::orbs::Orbs>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -817,6 +828,7 @@ impl Gallery {
             document: cx.new(patterns::document::Document::new),
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(patterns::terminal::Terminal::new),
+            orbs: cx.new(patterns::orbs::Orbs::new),
             embedded: false,
         }
     }
@@ -2870,6 +2882,7 @@ impl Gallery {
             "document" => self.document.clone().into_any_element(),
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),
+            "agent-orbs" => self.orbs.clone().into_any_element(),
 
             _ => div().into_any_element(),
         }
@@ -3189,11 +3202,11 @@ fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> An
 /// control, and two call sites are where a keyboard affordance quietly starts
 /// doing something else than the mouse. Taking the behaviour once removes the
 /// chance.
-fn pressable(
+fn pressable<T: 'static>(
     el: gpui::Div,
     id: impl Into<gpui::ElementId>,
-    cx: &Context<Gallery>,
-    press: impl Fn(&mut Gallery, &mut Context<Gallery>) + Clone + 'static,
+    cx: &Context<T>,
+    press: impl Fn(&mut T, &mut Context<T>) + Clone + 'static,
 ) -> gpui::Stateful<gpui::Div> {
     let by_key = press.clone();
     el.id(id)
