@@ -1125,64 +1125,6 @@ pub fn dialog_field(input: AnyElement) -> gpui::Div {
         .child(input)
 }
 
-/// Ghost button (`btnGhost`): quiet text, hover wash fading over
-/// `transition-colors` (the reference dialogs.tsx). Caller adds id + click; `fade_key`
-/// as in [`menu_row`].
-pub fn button(
-    theme: &Theme,
-    label: impl Into<SharedString>,
-    fade_key: impl Into<SharedString>,
-) -> gpui::Div {
-    let fade_key = fade_key.into();
-    let label = label.into();
-    let mut btn = div()
-        .px(px(12.0))
-        .py(px(6.0))
-        .rounded(px(Theme::BUTTON_RADIUS))
-        .text_size(px(13.0))
-        .text_color(motion::hover_blend(&fade_key, theme.text_muted, theme.text))
-        .bg(motion::hover_blend(
-            &fade_key,
-            bezel_theme::wash(0.0),
-            ink(0.06),
-        ))
-        .cursor_pointer()
-        .child(label);
-    btn.interactivity()
-        .on_hover(motion::hover_listener(fade_key));
-    btn
-}
-
-/// Primary button (`btnPrimary`): white fill, near-black text.
-pub fn button_prominent(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
-    div()
-        .px(px(12.0))
-        .py(px(6.0))
-        .rounded(px(Theme::BUTTON_RADIUS))
-        .bg(theme.text)
-        .text_size(px(13.0))
-        .font_weight(gpui::FontWeight::MEDIUM)
-        .text_color(theme.on_solid)
-        .cursor_pointer()
-        .hover(|s| s.opacity(0.9))
-        .child(label.into())
-}
-
-/// Destructive button (`btnDestructive`): the muted red fill.
-pub fn button_destructive(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
-    div()
-        .px(px(12.0))
-        .py(px(6.0))
-        .rounded(px(Theme::BUTTON_RADIUS))
-        .bg(theme.danger_strong)
-        .text_size(px(13.0))
-        .font_weight(gpui::FontWeight::MEDIUM)
-        .text_color(gpui::white())
-        .cursor_pointer()
-        .hover(|s| s.opacity(0.9))
-        .child(label.into())
-}
-
 /// Pulsing skeleton rows shown while a list loads (the reference:
 /// `h-7 animate-pulse rounded-md bg-white/[0.04]`).
 pub fn redacted_rows(

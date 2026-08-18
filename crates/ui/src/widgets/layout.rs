@@ -1,10 +1,9 @@
-//! Organisation chrome — disclosure, collapsible header, split divider, tabs,
-//! and the quiet ghost action.
+//! Organisation chrome — disclosure, collapsible header, split divider, tabs.
 //!
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.collapsible_header(..)`, `theme.split_handle(..)`, `theme.tab(..)`.
 
-use bezel_theme::{Theme, ThemeExt, ink};
+use bezel_theme::{Theme, ThemeExt};
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
 
 /// The drag payload of a [`Layout::split_handle`]. Shipped from here so every
@@ -148,31 +147,6 @@ pub trait Layout: ThemeExt {
                         .bg(theme.text),
                 )
             })
-    }
-
-    /// A small quiet ghost action (`rounded-lg px-2.5 py-1.5 text-[12px]
-    /// text-muted-foreground`). Caller adds id + click + leading icon child AND
-    /// its own `.hover(..)` — gpui panics on a second hover, and the pages vary
-    /// it (reveal opacity, 4% vs 6% washes).
-    fn ghost_action(&self) -> Div {
-        let theme = self.theme();
-        div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(6.0))
-            .rounded(px(Theme::BUTTON_RADIUS))
-            .px(px(10.0))
-            .py(px(6.0))
-            .text_size(px(12.0))
-            .text_color(theme.text_muted)
-            .cursor_pointer()
-    }
-
-    /// The default ghost-action hover wash (`hover:bg-white/[0.06]
-    /// hover:text-foreground`).
-    fn ghost_hover(&self, s: gpui::StyleRefinement) -> gpui::StyleRefinement {
-        s.bg(ink(0.06)).text_color(self.theme().text)
     }
 }
 

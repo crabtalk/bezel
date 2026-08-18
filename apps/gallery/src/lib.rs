@@ -31,7 +31,9 @@ use bezel_ui::{
     tooltip::Tooltip,
     tree::{self, Direction, Move},
     widgets,
-    widgets::{Content, Controls, Layout, Scaffolding, SliderDrag, SplitDrag, Status},
+    widgets::{
+        ButtonStyle, Buttons, Content, Controls, Layout, Scaffolding, SliderDrag, SplitDrag, Status,
+    },
 };
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
@@ -483,7 +485,7 @@ pub const COMPONENTS: &[Group] = &[
     Group {
         title: "Selection & input",
         sections: &[
-            section("buttons", "Buttons", "crates/ui/src/popover.rs"),
+            section("buttons", "Buttons", "crates/ui/src/widgets/buttons.rs"),
             section("text-field", "Text field", "crates/ui/src/input.rs"),
             section("textarea", "Textarea", "crates/ui/src/input.rs"),
             section("select", "Select", "crates/ui/src/widgets.rs"),
@@ -1460,9 +1462,9 @@ impl Gallery {
             "buttons" => {
                 let labels = ["Ghost", "Prominent", "Destructive"];
                 let faces = [
-                    popover::button(&theme, labels[0], "g-ghost"),
-                    popover::button_prominent(&theme, labels[1]),
-                    popover::button_destructive(&theme, labels[2]),
+                    theme.button(labels[0], ButtonStyle::Ghost, Some("g-ghost".into())),
+                    theme.button(labels[1], ButtonStyle::Prominent, None),
+                    theme.button(labels[2], ButtonStyle::Destructive, None),
                 ];
                 section
                     .child(hint(
@@ -1794,14 +1796,14 @@ impl Gallery {
                                         view.running = !view.running;
                                         cx.notify();
                                     }))
-                                    .child(popover::button(
-                                        &theme,
+                                    .child(theme.button(
                                         if self.running {
                                             "Finish the run"
                                         } else {
                                             "Start a run"
                                         },
-                                        "g-takeover-run",
+                                        ButtonStyle::Ghost,
+                                        Some("g-takeover-run".into()),
                                     )),
                             )
                             // Which of the two rules is answering, on the page —
@@ -1900,7 +1902,11 @@ impl Gallery {
                             .tooltip(|window, cx| {
                                 Tooltip::with_keystroke("Copy path", "⌘C", window, cx)
                             })
-                            .child(popover::button(&theme, "Hover me", "g-tip")),
+                            .child(theme.button(
+                                "Hover me",
+                                ButtonStyle::Ghost,
+                                Some("g-tip".into()),
+                            )),
                     ),
                 )
                 .into_any_element(),
@@ -2232,7 +2238,11 @@ impl Gallery {
                                 view.sheet.open(());
                                 cx.notify();
                             }))
-                            .child(popover::button(&theme, "Open sheet", "g-sheet")),
+                            .child(theme.button(
+                                "Open sheet",
+                                ButtonStyle::Ghost,
+                                Some("g-sheet".into()),
+                            )),
                     ),
                 )
                 .into_any_element(),
@@ -2265,7 +2275,11 @@ impl Gallery {
                                 view.dialog.open(());
                                 cx.notify();
                             }))
-                            .child(popover::button(&theme, "Open dialog", "g-dialog")),
+                            .child(theme.button(
+                                "Open dialog",
+                                ButtonStyle::Ghost,
+                                Some("g-dialog".into()),
+                            )),
                     ),
                 )
                 .into_any_element(),
@@ -2567,7 +2581,11 @@ impl Gallery {
                                     view.log_lines += 1;
                                     cx.notify();
                                 }))
-                                .child(popover::button(&theme, "Append a line", "g-follow-add")),
+                                .child(theme.button(
+                                    "Append a line",
+                                    ButtonStyle::Ghost,
+                                    Some("g-follow-add".into()),
+                                )),
                         )
                         .child(
                             div()
@@ -2576,7 +2594,11 @@ impl Gallery {
                                     view.log_follow.follow();
                                     cx.notify();
                                 }))
-                                .child(popover::button(&theme, "Jump to latest", "g-follow-pin")),
+                                .child(theme.button(
+                                    "Jump to latest",
+                                    ButtonStyle::Ghost,
+                                    Some("g-follow-pin".into()),
+                                )),
                         )
                         // The state, on the page — the same trick the virtualized
                         // list uses for its built count. A behaviour you can only
@@ -3399,7 +3421,11 @@ impl Render for Gallery {
                                         .on_click(
                                             cx.listener(|view, _, _, cx| view.close_dialog(cx)),
                                         )
-                                        .child(popover::button(&theme, "Cancel", "g-dialog-no")),
+                                        .child(theme.button(
+                                            "Cancel",
+                                            ButtonStyle::Ghost,
+                                            Some("g-dialog-no".into()),
+                                        )),
                                 )
                                 .child(
                                     div()
@@ -3407,7 +3433,11 @@ impl Render for Gallery {
                                         .on_click(
                                             cx.listener(|view, _, _, cx| view.close_dialog(cx)),
                                         )
-                                        .child(popover::button_destructive(&theme, "Discard")),
+                                        .child(theme.button(
+                                            "Discard",
+                                            ButtonStyle::Destructive,
+                                            None,
+                                        )),
                                 ),
                         )
                         .into_any_element(),
@@ -3436,7 +3466,11 @@ impl Render for Gallery {
                                         .on_click(
                                             cx.listener(|view, _, _, cx| view.close_sheet(cx)),
                                         )
-                                        .child(popover::button(&theme, "Close", "g-sheet-close")),
+                                        .child(theme.button(
+                                            "Close",
+                                            ButtonStyle::Ghost,
+                                            Some("g-sheet-close".into()),
+                                        )),
                                 ),
                         )
                         .child(popover::dialog_body(

@@ -90,7 +90,9 @@ a reader does not already carry.
    the group (`use bezel_ui::widgets::Scaffolding;`) and reach it as
    `theme.group_box()`. Stateful components are struct entities (`Table`,
    `TextField`, `Orb`). Builder methods configure *content* — an orb's
-   state, a table's columns — never style.
+   state, a table's columns — never style. A closed variant enum
+   (`ButtonStyle`) selects between shipped looks; free-form values (radius,
+   color, padding) never become parameters.
 3. **Motion is named.** Every animation comes from the `MotionSpec` catalog
    in `bezel-motion`; pure phase math lives in `motion::phase` and is
    unit-tested. No inline durations or curves in components.

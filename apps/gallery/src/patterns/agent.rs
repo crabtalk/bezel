@@ -26,7 +26,7 @@ use bezel_ui::{
     loaders, popover,
     scroll::{self, FollowState, ScrollbarState},
     widgets,
-    widgets::{Layout, Status},
+    widgets::{ButtonStyle, Buttons, Layout, Status},
 };
 use gpui::{
     AnyElement, Context, Entity, Render, SharedString, Window, div, linear_color_stop,
@@ -306,7 +306,11 @@ impl Render for Activity {
                             .id("ask")
                             .self_start()
                             .on_click(cx.listener(|view, _, _, cx| view.ask(cx)))
-                            .child(popover::button(&theme, "Ask again", "agent-ask")),
+                            .child(theme.button(
+                                "Ask again",
+                                ButtonStyle::Ghost,
+                                Some("agent-ask".into()),
+                            )),
                     ),
             )
     }

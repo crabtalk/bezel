@@ -9,12 +9,14 @@ use gpui::{div, prelude::*, px};
 
 use bezel_theme::ink;
 
+mod buttons;
 mod content;
 mod controls;
 mod layout;
 mod scaffolding;
 mod status;
 
+pub use buttons::{ButtonStyle, Buttons};
 pub use content::Content;
 pub use controls::{Controls, SliderDrag};
 pub use layout::{Layout, SplitDrag};
