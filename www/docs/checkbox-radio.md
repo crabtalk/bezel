@@ -6,7 +6,7 @@ description: Display-only checkbox and radio marks — the app owns which are on
 Both are `fn(&Theme, bool) -> Div`. They paint the mark and nothing else; whether a box is checked lives in the app:
 
 ```rust
-use bezel_ui::{focus, widgets};
+use ui::{focus, widgets};
 
 widgets::checkbox(&theme, self.checked[index])
 widgets::radio_button(&theme, self.radio == index)

@@ -7,7 +7,7 @@
 //! trigger and remembers what was chosen.
 //!
 //! ```ignore
-//! bezel_ui::combobox::init(cx);   // once, at startup (with input::init)
+//! ui::combobox::init(cx);   // once, at startup (with input::init)
 //! let language = cx.new(|cx| Combobox::new(vec!["Rust".into()], "Language", cx));
 //! cx.subscribe(&language, |_, _, event, _| match event {
 //!     ComboboxEvent::Selected(index) => { /* item `index` */ }
@@ -15,18 +15,16 @@
 //! .detach();
 //! ```
 
+use crate::{
+    input::{self, TextField},
+    popover,
+    widgets::Controls,
+};
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, Pixels, SharedString,
     Window, actions, canvas, div, prelude::*, px,
 };
-
-use crate::widgets::Controls;
-use bezel_theme::Theme;
-
-use crate::{
-    input::{self, TextField},
-    popover,
-};
+use theme::Theme;
 
 actions!(
     bezel_combobox,

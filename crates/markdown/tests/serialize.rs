@@ -1,6 +1,6 @@
-use bezel_markdown::*;
+use markdown::*;
 
-use bezel_markdown::parse::parse;
+use markdown::parse::parse;
 
 /// Markdown already in the form this serializer emits. These must survive
 /// byte for byte — anything less means opening a note and saving it without

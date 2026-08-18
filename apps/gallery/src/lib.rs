@@ -6,14 +6,17 @@
 //! composed exactly once, so the browser is never out of date with the library
 //! it documents.
 
+use gpui::{
+    AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
+    actions, div, prelude::*, px, relative,
+};
+use markdown::editor;
 use std::{cell::Cell, collections::HashSet, rc::Rc};
-
-use bezel_markdown::editor;
-use bezel_theme::{
+use theme::{
     Theme,
     appearance::{self, AppearanceMode},
 };
-use bezel_ui::{
+use ui::{
     combobox::{self, Combobox},
     control_bar::Shape as ControlBarShape,
     date::{self, Calendar, Date},
@@ -34,10 +37,6 @@ use bezel_ui::{
     widgets::{
         ButtonStyle, Buttons, Content, Controls, Layout, Scaffolding, SliderDrag, SplitDrag, Status,
     },
-};
-use gpui::{
-    AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
-    actions, div, prelude::*, px, relative,
 };
 
 actions!(gallery, [OpenPalette, ToggleInspector, ToggleFullScreen]);
@@ -239,7 +238,7 @@ const STEPS: [Step; 3] = [
     Step {
         icon: icons::TERMINAL,
         title: "cargo test",
-        detail: "-p bezel-ui",
+        detail: "-p ui",
         meta: "1.4s",
         failed: false,
         output: Some(
@@ -488,16 +487,20 @@ pub const COMPONENTS: &[Group] = &[
             section("buttons", "Buttons", "crates/ui/src/widgets/buttons.rs"),
             section("text-field", "Text field", "crates/ui/src/input.rs"),
             section("textarea", "Textarea", "crates/ui/src/input.rs"),
-            section("select", "Select", "crates/ui/src/widgets.rs"),
+            section("select", "Select", "crates/ui/src/widgets/controls.rs"),
             section("combobox", "Combobox", "crates/ui/src/combobox.rs"),
             section(
                 "checkbox-radio",
                 "Checkbox & radio",
-                "crates/ui/src/widgets.rs",
+                "crates/ui/src/widgets/controls.rs",
             ),
-            section("toggle", "Toggle", "crates/ui/src/widgets.rs"),
-            section("toggle-group", "Toggle group", "crates/ui/src/widgets.rs"),
-            section("slider", "Slider", "crates/ui/src/widgets.rs"),
+            section("toggle", "Toggle", "crates/ui/src/widgets/controls.rs"),
+            section(
+                "toggle-group",
+                "Toggle group",
+                "crates/ui/src/widgets/controls.rs",
+            ),
+            section("slider", "Slider", "crates/ui/src/widgets/controls.rs"),
             section("date-picker", "Date picker", "crates/ui/src/date.rs"),
         ],
     },
@@ -522,10 +525,22 @@ pub const COMPONENTS: &[Group] = &[
     Group {
         title: "Layout & organisation",
         sections: &[
-            section("group-box", "Group box", "crates/ui/src/widgets.rs"),
-            section("tabs", "Tabs", "crates/ui/src/widgets.rs"),
-            section("collapsible", "Collapsible", "crates/ui/src/widgets.rs"),
-            section("split", "Resizable split", "crates/ui/src/widgets.rs"),
+            section(
+                "group-box",
+                "Group box",
+                "crates/ui/src/widgets/scaffolding.rs",
+            ),
+            section("tabs", "Tabs", "crates/ui/src/widgets/layout.rs"),
+            section(
+                "collapsible",
+                "Collapsible",
+                "crates/ui/src/widgets/layout.rs",
+            ),
+            section(
+                "split",
+                "Resizable split",
+                "crates/ui/src/widgets/layout.rs",
+            ),
             section("control-bar", "Control bar", "crates/ui/src/control_bar.rs"),
         ],
     },
@@ -544,22 +559,30 @@ pub const COMPONENTS: &[Group] = &[
     Group {
         title: "Content",
         sections: &[
-            section("badge", "Badge", "crates/ui/src/widgets.rs"),
-            section("tag", "Tag", "crates/ui/src/widgets.rs"),
-            section("avatar", "Avatar", "crates/ui/src/widgets.rs"),
-            section("breadcrumb", "Breadcrumb", "crates/ui/src/widgets.rs"),
+            section("badge", "Badge", "crates/ui/src/widgets/content.rs"),
+            section("tag", "Tag", "crates/ui/src/widgets/content.rs"),
+            section("avatar", "Avatar", "crates/ui/src/widgets/content.rs"),
+            section(
+                "breadcrumb",
+                "Breadcrumb",
+                "crates/ui/src/widgets/content.rs",
+            ),
             section("pagination", "Pagination", "crates/ui/src/pagination.rs"),
-            section("empty-state", "Empty state", "crates/ui/src/widgets.rs"),
+            section(
+                "empty-state",
+                "Empty state",
+                "crates/ui/src/widgets/content.rs",
+            ),
             section("skeleton", "Skeleton", "crates/ui/src/popover.rs"),
         ],
     },
     Group {
         title: "Status",
         sections: &[
-            section("progress", "Progress", "crates/ui/src/widgets.rs"),
-            section("status-dot", "Status dot", "crates/ui/src/widgets.rs"),
-            section("alerts", "Alert strips", "crates/ui/src/widgets.rs"),
-            section("step-row", "Step row", "crates/ui/src/widgets.rs"),
+            section("progress", "Progress", "crates/ui/src/widgets/controls.rs"),
+            section("status-dot", "Status dot", "crates/ui/src/widgets/mod.rs"),
+            section("alerts", "Alert strips", "crates/ui/src/widgets/status.rs"),
+            section("step-row", "Step row", "crates/ui/src/widgets/status.rs"),
             section("loaders", "Loaders", "crates/ui/src/loaders.rs"),
         ],
     },
@@ -1081,7 +1104,7 @@ impl Gallery {
     /// in [`Self::header`].
     fn nav(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let current = self.tab;
-        let dark = matches!(theme.appearance, bezel_theme::Appearance::Dark);
+        let dark = matches!(theme.appearance, theme::Appearance::Dark);
         div()
             .flex_none()
             .h(px(Theme::HEADER_HEIGHT))
@@ -1368,12 +1391,12 @@ impl Gallery {
                 .child(
                     div().flex().flex_row().flex_wrap().gap(px(16.0)).children(
                         [
-                            ("EASE", bezel_motion::EASE),
-                            ("EASE_OUT", bezel_motion::EASE_OUT),
-                            ("EASE_OUT_EXPO", bezel_motion::EASE_OUT_EXPO),
-                            ("EASE_IN_OUT", bezel_motion::EASE_IN_OUT),
-                            ("EASE_RESORT", bezel_motion::EASE_RESORT),
-                            ("EASE_TAILWIND", bezel_motion::EASE_TAILWIND),
+                            ("EASE", motion::EASE),
+                            ("EASE_OUT", motion::EASE_OUT),
+                            ("EASE_OUT_EXPO", motion::EASE_OUT_EXPO),
+                            ("EASE_IN_OUT", motion::EASE_IN_OUT),
+                            ("EASE_RESORT", motion::EASE_RESORT),
+                            ("EASE_TAILWIND", motion::EASE_TAILWIND),
                         ]
                         .into_iter()
                         .map(|(name, curve)| {
@@ -2031,7 +2054,7 @@ impl Gallery {
             "control-bar" => {
                 let glyph = |path: &'static str| {
                     let hover = theme.glass_hover();
-                    bezel_ui::control_bar::bar_button(path, 30.0, theme.text_muted)
+                    ui::control_bar::bar_button(path, 30.0, theme.text_muted)
                         .id(path)
                         .hover(move |s| s.bg(hover))
                 };
@@ -2050,7 +2073,7 @@ impl Gallery {
                          on axis.",
                     ))
                     .child(theme.field_label("Transport — Shape::Pill"))
-                    .child(bezel_ui::control_bar::control_bar(
+                    .child(ui::control_bar::control_bar(
                         &theme,
                         ControlBarShape::Pill,
                         vec![
@@ -2066,7 +2089,7 @@ impl Gallery {
                     // Rounded, not a stadium: a composer is not a media control,
                     // and the stadium reads as one.
                     .child(theme.field_label("Composer — Shape::Rounded"))
-                    .child(bezel_ui::control_bar::control_bar(
+                    .child(ui::control_bar::control_bar(
                         &theme,
                         ControlBarShape::Rounded,
                         vec![glyph(icons::PLUS).into_any_element()],
@@ -2103,7 +2126,7 @@ impl Gallery {
                                     .right_0()
                                     .flex()
                                     .justify_center()
-                                    .child(bezel_ui::control_bar::control_bar(
+                                    .child(ui::control_bar::control_bar(
                                         &theme,
                                         ControlBarShape::Pill,
                                         vec![
@@ -2303,9 +2326,9 @@ impl Gallery {
                                 }),
                             ))
                             .child(div().absolute().top(px(28.0)).left(px(60.0)).child(
-                                bezel_ui::material::material(
+                                ui::material::material(
                                     12.0,
-                                    bezel_ui::material::MENU_BLUR,
+                                    ui::material::MENU_BLUR,
                                     popover::popover_card(&theme).w(px(220.0)).child(
                                         popover::menu_row(&theme, false, "mat-a").child("Blurred"),
                                     ),
@@ -2916,22 +2939,22 @@ const TYPE_SCALE: &[f32] = &[
     10.0, 10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 15.0, 16.0,
 ];
 
-/// Every named spec in `bezel-motion`.
-const MOTION_CATALOG: &[(&str, bezel_motion::MotionSpec)] = &[
-    ("FADE_IN", bezel_motion::FADE_IN),
-    ("FADE_QUICK", bezel_motion::FADE_QUICK),
-    ("MENU_IN", bezel_motion::MENU_IN),
-    ("MENU_OUT", bezel_motion::MENU_OUT),
-    ("DIALOG_IN", bezel_motion::DIALOG_IN),
-    ("SPLASH_OUT", bezel_motion::SPLASH_OUT),
-    ("RESIZE", bezel_motion::RESIZE),
-    ("TAB_SLIDE", bezel_motion::TAB_SLIDE),
-    ("COLLAPSE", bezel_motion::COLLAPSE),
-    ("CHEVRON", bezel_motion::CHEVRON),
-    ("SCROLL_GLIDE", bezel_motion::SCROLL_GLIDE),
-    ("HOVER_FADE", bezel_motion::HOVER_FADE),
-    ("PULSE", bezel_motion::PULSE),
-    ("GRADIENT_SPIN", bezel_motion::GRADIENT_SPIN),
+/// Every named spec in `motion`.
+const MOTION_CATALOG: &[(&str, motion::MotionSpec)] = &[
+    ("FADE_IN", motion::FADE_IN),
+    ("FADE_QUICK", motion::FADE_QUICK),
+    ("MENU_IN", motion::MENU_IN),
+    ("MENU_OUT", motion::MENU_OUT),
+    ("DIALOG_IN", motion::DIALOG_IN),
+    ("SPLASH_OUT", motion::SPLASH_OUT),
+    ("RESIZE", motion::RESIZE),
+    ("TAB_SLIDE", motion::TAB_SLIDE),
+    ("COLLAPSE", motion::COLLAPSE),
+    ("CHEVRON", motion::CHEVRON),
+    ("SCROLL_GLIDE", motion::SCROLL_GLIDE),
+    ("HOVER_FADE", motion::HOVER_FADE),
+    ("PULSE", motion::PULSE),
+    ("GRADIENT_SPIN", motion::GRADIENT_SPIN),
 ];
 
 /// The colour tokens, by role. Hand-listed because `Theme` is a plain struct —
@@ -3033,7 +3056,7 @@ fn swatch(theme: &Theme, name: &'static str, color: gpui::Hsla) -> gpui::Div {
                 .text_color(theme.text_faint)
                 .child(SharedString::from(format!(
                     "{:.1}:1",
-                    bezel_theme::contrast_ratio(color, theme.bg)
+                    theme::contrast_ratio(color, theme.bg)
                 ))),
         )
 }
@@ -3333,7 +3356,7 @@ impl Render for Gallery {
         // rest — and then freezes until something unrelated repaints, which
         // reads as a wash that sticks and then jumps. It also ticks the fade
         // table, which is what evicts entries for elements that have gone away.
-        if bezel_motion::hover_fades_active() {
+        if motion::hover_fades_active() {
             window.request_animation_frame();
         }
 
@@ -3507,7 +3530,7 @@ impl Render for Gallery {
                     div()
                         .absolute()
                         .inset_0()
-                        .bg(bezel_theme::scrim(0.35))
+                        .bg(theme::scrim(0.35))
                         .flex()
                         .justify_center()
                         // Without items_start the card stretches to the full

@@ -1,9 +1,9 @@
-//! bezel-ui — SwiftUI-flavored components for gpui. Reached as `bezel::ui`.
+//! ui — SwiftUI-flavored components for gpui. Reached as `bezel::ui`.
 //!
 //! Style flows through the environment, never through parameters: components
-//! read [`bezel_theme::Theme`] (a gpui `Global`) at paint time, the way
+//! read [`theme::Theme`] (a gpui `Global`) at paint time, the way
 //! SwiftUI views read `@Environment`. Motion comes from the named
-//! `bezel_motion` catalog.
+//! `motion` catalog.
 
 use std::borrow::Cow;
 

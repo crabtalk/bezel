@@ -1,5 +1,5 @@
 //! Loaders: the orb cluster, the pulse loader and the gradient matrix spinners.
-//! All motion routes through `bezel_motion` pure helpers, so the math is
+//! All motion routes through `motion` pure helpers, so the math is
 //! unit-tested and these elements are testable-by-compile.
 //!
 //! [`orb`] is bezel's own vocabulary — four shapes over one period — and is
@@ -15,11 +15,10 @@
 
 use gpui::{App, EntityId, IntoElement, ParentElement, SharedString, Styled, div, px};
 
-use bezel_motion as motion;
-use bezel_motion::{GRADIENT_SPIN, ORB, PULSE, PULSE_STAGGER};
-use bezel_theme::Theme;
+use motion::{self, GRADIENT_SPIN, ORB, PULSE, PULSE_STAGGER};
+use theme::Theme;
 
-pub use bezel_motion::phase::{GSPIN_DIM, GSPIN_ROW_TINTS, MATRIX_SIDE, PULSE_CELLS};
+pub use motion::phase::{GSPIN_DIM, GSPIN_ROW_TINTS, MATRIX_SIDE, PULSE_CELLS};
 
 /// The pulse wave loader: a row of cells pulsing opacity 0.08→1 / scale 0.9→1
 /// over 2.4s with a 0.15s stagger per cell.
@@ -174,7 +173,7 @@ pub enum Orb {
 /// surface and cannot soften the surface itself). So the glow is a `BoxShadow`,
 /// the ring is eight positioned dots rather than a swept arc, and every
 /// position is arithmetic — all of it pure and unit-tested in
-/// [`bezel_motion::phase`].
+/// [`motion::phase`].
 ///
 /// One tint, from the theme's accent. In three hues this would be the gradient
 /// spinner wearing a different shape.

@@ -1,5 +1,5 @@
-use bezel_theme::*;
 use gpui::hsla;
+use theme::*;
 
 fn srgb_u8(c: [f32; 3]) -> [u8; 3] {
     [

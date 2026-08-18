@@ -26,10 +26,12 @@
 //! transformations), so `menu-in`/`dialog-in` approximate their scale component
 //! with fade + translate; see the module report in ARCHITECTURE §4 follow-ups.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
+};
 
 use web_time::Instant;
 
@@ -585,7 +587,7 @@ pub fn hover_listener(
 /// Frame-drive hook: call ONCE per window frame, from the app's root render:
 ///
 /// ```ignore
-/// if bezel_motion::hover_fades_active() {
+/// if motion::hover_fades_active() {
 ///     window.request_animation_frame();
 /// }
 /// ```
@@ -641,7 +643,7 @@ pub fn hover_blend(key: &str, rest: Hsla, hover: Hsla) -> Hsla {
 /// by it.
 ///
 /// An atomic mirror rather than a gpui global, for exactly the reason
-/// `bezel_theme::current_appearance` is one: the timelines are read from free
+/// `theme::current_appearance` is one: the timelines are read from free
 /// functions deep inside element builders — [`HoverFades::duration`], the
 /// popover exit clock — that have no `cx` in scope. Speed is genuinely
 /// process-wide, one setting for every window, so a single mirror is sound.
@@ -675,7 +677,7 @@ pub fn set_speed(scale: f32) {
 /// [`SPEED`] is process-wide, so a test that moves it must hold this lock and
 /// restore `1.0` before letting go — every fade and exit timing asserted
 /// anywhere is measured in it. The same arrangement as
-/// `bezel_theme::lock_appearance`, and public for the same reason: such tests
+/// `theme::lock_appearance`, and public for the same reason: such tests
 /// exist in other crates too. Not part of the API.
 #[doc(hidden)]
 pub fn lock_speed() -> std::sync::MutexGuard<'static, ()> {

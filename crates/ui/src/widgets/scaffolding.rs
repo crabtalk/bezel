@@ -8,8 +8,8 @@
 //! empty because every method below has a default. Not object-safe — its
 //! methods are statically dispatched onto [`Theme`].
 
-use bezel_theme::{Theme, ThemeExt, ink};
 use gpui::{AnyElement, Div, SharedString, div, prelude::*, px};
+use theme::{Theme, ThemeExt, ink};
 
 /// Default height of an [`Scaffolding::option_card`] preview frame.
 pub const OPTION_CARD_HEIGHT: f32 = 148.0;

@@ -1,5 +1,5 @@
 //! The music player pattern — the Patterns tab's first entry, and the reason
-//! [`bezel_ui::control_bar`] exists.
+//! [`ui::control_bar`] exists.
 //!
 //! Nothing here is library code and none of it needs to be. A player is a
 //! sidebar, a table and a floating bar, and bezel already had two of the three;
@@ -13,19 +13,19 @@
 //! and can borrow its host's, but a screen owns a screen's worth of state. Its
 //! host holds one field, and the next pattern costs one more.
 
-use bezel_theme::Theme;
-use bezel_ui::{
+use gpui::{
+    AnyElement, Axis, Context, DragMoveEvent, MouseButton, MouseDownEvent, Render, SharedString,
+    Window, div, linear_color_stop, linear_gradient, prelude::*, px,
+};
+use std::collections::HashSet;
+use theme::Theme;
+use ui::{
     control_bar::{self, BAR_HEIGHT, Shape},
     icons, popover, scroll,
     table::{self, Column, Width},
     widgets,
     widgets::{Controls, Scaffolding, SliderDrag},
 };
-use gpui::{
-    AnyElement, Axis, Context, DragMoveEvent, MouseButton, MouseDownEvent, Render, SharedString,
-    Window, div, linear_color_stop, linear_gradient, prelude::*, px,
-};
-use std::collections::HashSet;
 
 /// The album on the page. Invented, and it has to be: quoting a real catalogue
 /// in a component gallery is a licensing question rather than documentation.
@@ -103,7 +103,7 @@ pub struct MusicPlayer {
     /// Right-click on a track: which one, and where the click landed.
     menu: popover::Popup<(usize, gpui::Point<gpui::Pixels>)>,
     scroll: gpui::ScrollHandle,
-    bar: bezel_ui::scroll::ScrollbarState,
+    bar: ui::scroll::ScrollbarState,
 }
 
 /// The page has exactly one starting state and takes no arguments to reach it,
@@ -125,7 +125,7 @@ impl Default for MusicPlayer {
             library: 0,
             menu: popover::Popup::default(),
             scroll: gpui::ScrollHandle::new(),
-            bar: bezel_ui::scroll::ScrollbarState::new(),
+            bar: ui::scroll::ScrollbarState::new(),
         }
     }
 }
@@ -263,7 +263,7 @@ impl MusicPlayer {
                         .id(SharedString::from(format!("library-{index}")))
                         .cursor_pointer()
                         .when(index == self.library, |row| {
-                            row.bg(bezel_theme::card_selected_bg())
+                            row.bg(theme::card_selected_bg())
                         })
                         .on_click(cx.listener(move |view, _, _, cx| {
                             view.library = index;

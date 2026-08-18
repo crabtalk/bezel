@@ -1,6 +1,6 @@
 //! The thinking screen — what an agent surface shows while the model works.
 //!
-//! The orbs themselves are `bezel_ui::orbs`, a component; this page is the
+//! The orbs themselves are `ui::orbs`, a component; this page is the
 //! pattern: one live [`Orb`] entity (the builder API a real app reaches for)
 //! above the twelve-state catalog, painted by [`orb_element`] on this page's
 //! own clock. One timer drives every cell — the shape to copy when your host
@@ -12,13 +12,13 @@
 
 use std::time::{Duration, Instant};
 
-use bezel_theme::Theme;
-use bezel_ui::{
+use gpui::{Context, Entity, Render, SharedString, Window, div, prelude::*, px};
+use theme::Theme;
+use ui::{
     focus,
     orbs::{Orb, OrbSize, OrbState, orb_element},
     widgets::Controls,
 };
-use gpui::{Context, Entity, Render, SharedString, Window, div, prelude::*, px};
 
 use crate::{hint, pressable, stack};
 

@@ -34,7 +34,7 @@
 
 use gpui::{AnyElement, Pixels, SharedString, div, prelude::*, px, relative};
 
-use bezel_theme::{Theme, ink};
+use theme::{Theme, ink};
 
 use crate::icons;
 
@@ -195,7 +195,7 @@ pub fn row(
         .text_size(px(12.5))
         .text_color(theme.text);
     row = if selected {
-        row.bg(bezel_theme::card_selected_bg())
+        row.bg(theme::card_selected_bg())
     } else {
         // The same wash `card_row` uses, so a table and a card list read as one
         // system rather than two.

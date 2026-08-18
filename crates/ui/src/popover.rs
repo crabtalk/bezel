@@ -11,11 +11,11 @@
 //! classification) lives in free functions with unit tests; the elements only
 //! feed them measurements/events.
 
-use bezel_motion::{self as motion, AnimationExt as _, PULSE};
-use bezel_theme::{Theme, hairline, ink};
 use gpui::{
     Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
 };
+use motion::{self as motion, AnimationExt as _, PULSE};
+use theme::{Theme, hairline, ink};
 
 // ---------------------------------------------------------------------------
 // Loadable — async slot state shared by pickers/settings pages
@@ -625,7 +625,7 @@ pub fn menu_at(
 /// through [`Hsla::opacity`], whose `0..=1` clamp would clip a
 /// larger-than-0.6 alpha before it could scale the light side).
 pub(crate) fn scrim_alpha(alpha_dark: f32) -> gpui::Hsla {
-    bezel_theme::scrim(alpha_dark)
+    theme::scrim(alpha_dark)
 }
 
 /// Full-window modal: dim scrim + centered card with the `dialog-in` entrance.
@@ -757,7 +757,7 @@ pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
 /// cannot be the caller's `.on_mouse_down_out`: the scrim lives inside this
 /// deferred layer, so nothing outside can reach it.
 ///
-/// The slide is written here rather than as a `bezel_motion` helper because
+/// The slide is written here rather than as a `motion` helper because
 /// only the *spec* is motion — which inset carries it is layout, and it
 /// differs per side.
 pub fn sheet(
@@ -844,8 +844,7 @@ pub fn menu_row(theme: &Theme, active: bool, fade_key: impl Into<SharedString>) 
         .text_size(px(13.0))
         .cursor_pointer();
     if active {
-        row.bg(bezel_theme::card_selected_bg())
-            .text_color(theme.text)
+        row.bg(theme::card_selected_bg()).text_color(theme.text)
     } else {
         let fade_key = fade_key.into();
         let mut row = row
@@ -856,8 +855,8 @@ pub fn menu_row(theme: &Theme, active: bool, fade_key: impl Into<SharedString>) 
             ))
             .bg(motion::hover_blend(
                 &fade_key,
-                bezel_theme::wash(0.0),
-                bezel_theme::card_selected_bg(),
+                theme::wash(0.0),
+                theme::card_selected_bg(),
             ));
         // Imperative form — the caller's `.id(...)` makes the element stateful
         // (hover listeners need element state, `.on_hover` needs `Stateful`).
@@ -879,8 +878,7 @@ pub fn menu_row_nav(
 ) -> gpui::Div {
     let row = menu_row(theme, selected, fade_key);
     if !selected && highlighted {
-        row.bg(bezel_theme::card_selected_bg())
-            .text_color(theme.text)
+        row.bg(theme::card_selected_bg()).text_color(theme.text)
     } else {
         row
     }
@@ -933,7 +931,7 @@ pub fn divider() -> gpui::Div {
 /// (some outside this crate's `ui` module tree — threading a `&Theme` param
 /// would ripple past this task's file scope).
 pub fn band() -> gpui::Hsla {
-    bezel_theme::band()
+    theme::band()
 }
 
 /// One footer key-cap (22px, rounded-5, `white/[0.05]`) holding arbitrary

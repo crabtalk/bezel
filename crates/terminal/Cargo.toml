@@ -1,5 +1,5 @@
 [package]
-name = "bezel-terminal"
+name = "terminal"
 
 description = "An alacritty-backed terminal emulator and grid view for gpui — bytes in, cells out"
 version.workspace = true
@@ -18,5 +18,5 @@ workspace = true
 
 [dependencies]
 alacritty_terminal.workspace = true
-bezel-theme.workspace = true
+theme.workspace = true
 gpui.workspace = true

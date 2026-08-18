@@ -12,7 +12,7 @@
 //! `cmd-a` mean "select all text" for the whole application.
 //!
 //! ```ignore
-//! bezel_ui::input::init(cx);                      // once, at startup
+//! ui::input::init(cx);                      // once, at startup
 //! let field = cx.new(|cx| TextField::new(cx).with_placeholder("Search…"));
 //! // …then render it: .child(field.clone())
 //! ```
@@ -28,7 +28,7 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
-use bezel_theme::Theme;
+use theme::Theme;
 
 actions!(
     bezel_text_field,
@@ -102,7 +102,7 @@ pub const MULTILINE_KEY_CONTEXT: &str = "TextArea";
 /// this and binds what it likes instead —
 ///
 /// ```ignore
-/// use bezel_ui::input::{self, Home, KEY_CONTEXT};
+/// use ui::input::{self, Home, KEY_CONTEXT};
 /// cx.bind_keys([KeyBinding::new("ctrl-a", Home, Some(KEY_CONTEXT))]);
 /// ```
 ///

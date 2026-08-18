@@ -28,16 +28,14 @@
 //! (content minus viewport, not content), and `offset` is **negative** as you
 //! scroll down.
 
-use std::cell::Cell;
-use std::ops::Range;
-use std::rc::Rc;
+use std::{cell::Cell, ops::Range, rc::Rc};
 
 use gpui::{
     App, DragMoveEvent, Empty, MouseButton, Pixels, ScrollHandle, SharedString, Window, canvas,
     div, point, prelude::*, px,
 };
 
-use bezel_theme::ink;
+use theme::ink;
 
 /// Shortest a thumb may get, however long the document — below this it stops
 /// being something a pointer can catch.

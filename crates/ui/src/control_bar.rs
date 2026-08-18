@@ -42,8 +42,8 @@
 //!     )
 //! ```
 
-use bezel_theme::{Theme, hairline};
 use gpui::{AnyElement, IntoElement, ParentElement as _, Styled as _, div, px};
+use theme::{Theme, hairline};
 
 /// Height of the bar, and so half the radius of a [`Shape::Pill`]. One number
 /// rather than a parameter: a stadium's radius has to be derived from it for

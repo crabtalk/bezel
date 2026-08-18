@@ -9,7 +9,7 @@
 //! card alive while the pointer is inside it.
 //!
 //! ```ignore
-//! use bezel_ui::hover_card::HoverCard;
+//! use ui::hover_card::HoverCard;
 //!
 //! div()
 //!     .id("clearloop")
@@ -22,7 +22,7 @@
 use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelude::*, px};
 
 use crate::widgets::Content;
-use bezel_theme::Theme;
+use theme::Theme;
 
 use crate::popover;
 

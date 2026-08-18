@@ -16,7 +16,7 @@ use gpui::{
     LayoutId, Pixels, Window, px,
 };
 
-use bezel_theme::Theme;
+use theme::Theme;
 
 /// Backdrop-blur sigma for floating menu/dialog glass — the reference
 /// `.glass-surface` runs `blur(44px)`, and the [`Theme::glass_overlay`] tint is

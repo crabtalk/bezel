@@ -4,7 +4,7 @@ description: A thin binding over gpui's uniform_list that pins the row height an
 ---
 
 ```rust
-use bezel_ui::{list, scroll};
+use ui::{list, scroll};
 
 div().relative().h(px(240.0))
     .child(list::virtual_list("rows", rows.len(), px(28.0), &self.rows_scroll, {

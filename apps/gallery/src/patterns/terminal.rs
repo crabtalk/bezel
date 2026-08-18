@@ -1,8 +1,8 @@
-//! A scripted terminal session — the bezel-terminal emulator fed a canned
+//! A scripted terminal session — the terminal emulator fed a canned
 //! ANSI byte stream on a timer, because a gallery page has no PTY to point at
 //! anything real.
 //!
-//! **The PTY is the host's job by design.** bezel-terminal is bytes in, grid
+//! **The PTY is the host's job by design.** terminal is bytes in, grid
 //! out: the escape-sequence state machine and the paint, nothing else. This
 //! page is the host — it plays the script below, hands the emulator's
 //! snapshots to [`TerminalElement`], then scrolls back through history and
@@ -11,14 +11,13 @@
 //! Native-only: `alacritty_terminal` pulls `home`, which does not compile for
 //! wasm32, so the crate (and this page) sits off the web build.
 
+use gpui::{Context, Render, SharedString, Window, div, prelude::*, px};
 use std::time::{Duration, Instant};
-
-use bezel_terminal::{
+use terminal::{
     emulator::Emulator,
     view::{GridSnapshot, TerminalElement, terminal_panel_bg},
 };
-use bezel_theme::{Theme, hairline};
-use gpui::{Context, Render, SharedString, Window, div, prelude::*, px};
+use theme::{Theme, hairline};
 
 /// Timer tick, driving the wall-clock script playback.
 const TICK_MS: u64 = 80;
@@ -48,9 +47,9 @@ const SCRIPT: &[(&[u8], u64)] = &[
     (b"l", 90),
     (b"d", 90),
     (b"\r\n", 220),
-    (b"\x1b[1;32m   Compiling\x1b[0m bezel-theme v0.0.2\r\n", 340),
-    (b"\x1b[1;32m   Compiling\x1b[0m bezel-motion v0.0.2\r\n", 260),
-    (b"\x1b[1;32m   Compiling\x1b[0m bezel-terminal v0.0.2\r\n", 260),
+    (b"\x1b[1;32m   Compiling\x1b[0m theme v0.0.2\r\n", 340),
+    (b"\x1b[1;32m   Compiling\x1b[0m motion v0.0.2\r\n", 260),
+    (b"\x1b[1;32m   Compiling\x1b[0m terminal v0.0.2\r\n", 260),
     (b"\x1b[1;33m    Warning\x1b[0m: unused variable: `i`\r\n", 340),
     (b"\x1b[1;33m   --> crates/theme/src/color.rs:142:9\x1b[0m\r\n", 170),
     (b"\x1b[1;33m    \xe2\x94\x82\x1b[0m\r\n", 170),

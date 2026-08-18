@@ -6,13 +6,13 @@ description: One operation as a row — icon, what it was, how it went — with 
 A tool call in a transcript, a step in a CI run, a file in a migration: the shape is the same everywhere, which is why this takes strings rather than a type that knows what any of them mean.
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::step_row(
     &theme,
     icons::TERMINAL,
     "Bash",
-    Some("cargo test -p bezel-ui".into()),  // truncating middle
+    Some("cargo test -p ui".into()),  // truncating middle
     Some("1.4s".into()),                     // right-aligned, never truncates
     false,                                   // failed
     Some(open),                              // has an output to disclose

@@ -1,6 +1,6 @@
 use alacritty_terminal::index::{Column, Line, Point};
 
-use bezel_terminal::emulator::*;
+use terminal::emulator::*;
 
 fn emu(cols: u16, rows: u16) -> Emulator {
     Emulator::new(cols, rows)

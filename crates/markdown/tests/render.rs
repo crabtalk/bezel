@@ -1,7 +1,6 @@
-use bezel_markdown::render::flatten;
-use bezel_markdown::*;
-use bezel_theme::Theme;
 use gpui::FontWeight;
+use markdown::{render::flatten, *};
+use theme::Theme;
 #[test]
 fn flatten_cuts_the_text_at_every_mark_boundary() {
     let theme = Theme::dark();

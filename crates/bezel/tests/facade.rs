@@ -19,7 +19,7 @@ fn every_layer_shares_one_gpui() {
     let _: bezel::gpui::Hsla = bezel::ui::popover::band();
 }
 
-/// Motion's catalog is reachable without naming `bezel-motion` directly.
+/// Motion's catalog is reachable without naming `motion` directly.
 #[test]
 fn motion_catalog_is_reachable() {
     assert_eq!(bezel::motion::MENU_IN.duration_ms, 140);

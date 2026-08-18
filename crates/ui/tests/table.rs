@@ -1,7 +1,7 @@
 #[cfg(debug_assertions)] // the only user is the should_panic test below
 use gpui::{IntoElement, div};
 
-use bezel_ui::table::*;
+use ui::table::*;
 
 #[test]
 fn the_first_click_sorts_ascending() {
@@ -56,7 +56,7 @@ fn a_row_short_of_cells_is_caught_rather_than_quietly_misaligned() {
     // Zipping alone would truncate and render a row that looks fine on its
     // own while sitting under the wrong headings — the exact drift this
     // module exists to prevent, so the guard is worth having teeth.
-    let theme = bezel_theme::Theme::for_appearance(bezel_theme::Appearance::Dark);
+    let theme = theme::Theme::for_appearance(theme::Appearance::Dark);
     let columns = [
         Column::new("Name", Width::Flex(1.0)),
         Column::new("Size", Width::Flex(1.0)),

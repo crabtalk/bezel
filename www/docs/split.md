@@ -4,7 +4,7 @@ description: A hairline divider in a grab strip — the caller owns the fraction
 ---
 
 ```rust
-use bezel_ui::widgets::{self, SplitDrag};
+use ui::widgets::{self, SplitDrag};
 
 div()
     .id("split")

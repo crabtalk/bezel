@@ -4,7 +4,7 @@ description: A preview the pointer can travel into — same mounting as a toolti
 ---
 
 ```rust
-use bezel_ui::hover_card::HoverCard;
+use ui::hover_card::HoverCard;
 
 div()
     .id("clearloop")

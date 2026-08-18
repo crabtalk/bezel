@@ -9,13 +9,13 @@ publish = false
 workspace = true
 
 [dependencies]
-bezel-markdown = { workspace = true, features = ["editor"] }
-bezel-motion.workspace = true
-bezel-theme.workspace = true
-bezel-ui.workspace = true
+markdown = { workspace = true, features = ["editor"] }
+motion.workspace = true
+theme.workspace = true
+ui.workspace = true
 # Today's date, in the local timezone — the one thing `date::Calendar` asks its
 # host for, because bezel carries no clock. Deliberately a dependency of the
-# *app* and never of the library: taking chrono into `bezel-ui` would make it
+# *app* and never of the library: taking chrono into `ui` would make it
 # public API, and a consumer with its own chrono would then have two.
 chrono = "0.4"
 gpui.workspace = true
@@ -28,5 +28,5 @@ web-time.workspace = true
 # Native-only: alacritty_terminal pulls `home`, which does not compile for
 # wasm32, so the terminal crate (and the pattern built on it) sits off the web
 # build until that dep is fixed upstream.
-bezel-terminal.workspace = true
+terminal.workspace = true
 gpui_platform.workspace = true

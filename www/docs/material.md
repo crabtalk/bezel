@@ -6,7 +6,7 @@ description: The glass float — a backdrop-blurred card painted in one scene la
 `material` wraps a floating card so its entire subtree paints inside one gpui scene layer, with the backdrop blur painted first, structurally under the content:
 
 ```rust
-use bezel_ui::material;
+use ui::material;
 
 material::material(Theme::SURFACE_RADIUS, material::MENU_BLUR, card)
 ```

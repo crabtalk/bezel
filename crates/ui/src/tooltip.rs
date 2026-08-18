@@ -5,7 +5,7 @@
 //! after the hover delay, so it cannot be an inline element.
 //!
 //! ```ignore
-//! use bezel_ui::tooltip::Tooltip;
+//! use ui::tooltip::Tooltip;
 //!
 //! div()
 //!     .id("copy")
@@ -15,7 +15,7 @@
 
 use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelude::*, px};
 
-use bezel_theme::Theme;
+use theme::Theme;
 
 use crate::popover;
 

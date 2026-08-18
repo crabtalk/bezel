@@ -6,7 +6,7 @@ description: The token set — two designed palettes read from a gpui global at 
 `Theme` is a plain struct of `gpui::Hsla` fields installed as a gpui `Global`. Components read it at paint time and never take a color parameter:
 
 ```rust
-use bezel_theme::Theme;
+use theme::Theme;
 
 let theme = Theme::of(cx);
 div().bg(theme.surface).text_color(theme.text_muted)
@@ -15,7 +15,7 @@ div().bg(theme.surface).text_color(theme.text_muted)
 Install it once at boot, before the first window opens — later than that and the first frame paints in the wrong palette:
 
 ```rust
-use bezel_theme::appearance::{self, AppearanceMode};
+use theme::appearance::{self, AppearanceMode};
 
 appearance::init(AppearanceMode::System, cx);
 ```

@@ -3,8 +3,8 @@
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.badge(..)`, `theme.avatar(..)`, `theme.empty_state(..)`.
 
-use bezel_theme::{Theme, ThemeExt, ink};
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
+use theme::{Theme, ThemeExt, ink};
 
 pub trait Content: ThemeExt {
     /// Right-anchored badge pill: `rounded-full border px-2 py-0.5 text-[10.5px]`.

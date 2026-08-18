@@ -6,7 +6,7 @@ description: The in-window bar of titles that drop menus, where one menu being o
 Not the *native* bar. On macOS that is `cx.set_menus` and four lines in `main`, which is where it belongs. This is the bar an app with a custom titlebar draws for itself, and the one every other platform expects to see inside the window.
 
 ```rust
-use bezel_ui::menubar::{self, Item, Menu, Menubar, MenubarEvent};
+use ui::menubar::{self, Item, Menu, Menubar, MenubarEvent};
 
 menubar::init(cx);   // once, at startup
 

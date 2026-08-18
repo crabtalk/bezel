@@ -1,6 +1,6 @@
-use bezel_markdown::*;
+use markdown::*;
 
-use bezel_markdown::{parse::parse, serialize::serialize};
+use markdown::{parse::parse, serialize::serialize};
 
 fn text_of(doc: &Doc, ix: usize) -> &Text {
     doc.blocks[ix].text().expect("block holds text")

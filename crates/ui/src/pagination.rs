@@ -22,7 +22,7 @@
 
 use gpui::{SharedString, div, prelude::*, px};
 
-use bezel_theme::{Theme, ink};
+use theme::{Theme, ink};
 
 use crate::{icons, widgets};
 

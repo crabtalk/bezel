@@ -3,8 +3,8 @@
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.collapsible_header(..)`, `theme.split_handle(..)`, `theme.tab(..)`.
 
-use bezel_theme::{Theme, ThemeExt};
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
+use theme::{Theme, ThemeExt};
 
 /// The drag payload of a [`Layout::split_handle`]. Shipped from here so every
 /// split speaks the same type: `on_drag_move::<SplitDrag>` on one container

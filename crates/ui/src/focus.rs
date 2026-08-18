@@ -23,7 +23,7 @@
 //! checkbox does not.
 //!
 //! ```ignore
-//! bezel_ui::focus::init(cx);                    // once, at startup
+//! ui::focus::init(cx);                    // once, at startup
 //!
 //! // ..and on the root view, so `tab` works wherever focus currently is:
 //! focus::traversal(div().track_focus(&self.focus_handle))
@@ -32,7 +32,7 @@
 
 use gpui::{App, Div, FocusHandle, KeyBinding, Window, actions, prelude::*};
 
-use bezel_theme::Theme;
+use theme::Theme;
 
 actions!(
     bezel_focus,

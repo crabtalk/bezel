@@ -4,7 +4,7 @@ description: The section card and the rows inside it — a bordered container th
 ---
 
 ```rust
-use bezel_ui::{icons, widgets};
+use ui::{icons, widgets};
 
 widgets::group_box(&theme)
     .child(

@@ -4,7 +4,7 @@ description: The floating glass bar — a leading cluster, an optional centre an
 ---
 
 ```rust
-use bezel_ui::control_bar::{self, Shape};
+use ui::control_bar::{self, Shape};
 
 div().relative().size_full()
     .child(page)

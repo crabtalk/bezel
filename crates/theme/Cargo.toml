@@ -1,5 +1,5 @@
 [package]
-name = "bezel-theme"
+name = "theme"
 description = "Design tokens for gpui — an environment-driven theme with designed light and dark palettes"
 version.workspace = true
 edition.workspace = true

@@ -180,9 +180,9 @@ unbuilt component gets declared with, not because anything needs them today.
 
 Heavy extractions from comet (ports, not new design):
 
-- [x] `bezel-markdown` phase 1 — the document model (`doc`/`parse`/`serialize`).
+- [x] `markdown` phase 1 — the document model (`doc`/`parse`/`serialize`).
       Flat Notion-style blocks, marks over byte ranges, fixed-point round trip.
-- [x] `bezel-markdown` phase 2 — rendering. Every block kind paints, inline
+- [x] `markdown` phase 2 — rendering. Every block kind paints, inline
       marks shape into runs, code blocks carry a self-contained copy button, and
       tables measure content-proportional columns. Shown by the Document
       pattern (Patterns → Media), not by a Components row: `COMPONENTS` is
@@ -195,15 +195,15 @@ Heavy extractions from comet (ports, not new design):
 - [ ] Streaming: the per-chunk opacity veil and hanging-marker mend. Both exist
       in comet but sit on its incremental parser, so they are a re-derivation
       against `parse`, not a port. Wanted by desktop's transcript.
-- [ ] Syntax highlighting in code blocks. Needs `HighlightKind` in `bezel-theme`
+- [ ] Syntax highlighting in code blocks. Needs `HighlightKind` in `theme`
       (restoring `SyntaxPalette::color`) so spans arrive from the caller and this
       crate never learns about tree-sitter. Deliberately not added before
       `bezel-syntax` exists to produce them.
-- [x] `bezel-markdown` phase 3a — the editing model (`edit`). Marks mapped
+- [x] `markdown` phase 3a — the editing model (`edit`). Marks mapped
       through insert/remove/toggle, block split/merge/indent/outdent, markdown
       input shortcuts. Pure, and held to the round trip over 1.5M generated edit
       sequences.
-- [x] `bezel-markdown` phase 3b (first cut) — the editing surface, under the
+- [x] `markdown` phase 3b (first cut) — the editing surface, under the
       `editor` feature. `Editor` owns the document and a `(block, offset)`
       caret; typing, Backspace, Enter, Tab and arrows run through the phase-3a
       operations; markdown input shortcuts fire as you type. On the Document
@@ -213,7 +213,7 @@ Heavy extractions from comet (ports, not new design):
       whole blocks rather than visual rows, so they jump in a wrapped
       paragraph. Word motion and the clipboard come with selection.
 - [ ] `bezel-syntax` — tree-sitter highlighting + bounded highlight cache
-- [ ] `bezel-terminal` — alacritty grid view (leave the app-coupled panel behind)
+- [ ] `terminal` — alacritty grid view (leave the app-coupled panel behind)
 
 ## Consumability
 
@@ -226,21 +226,22 @@ Worth more than more widgets, for a library other projects depend on.
 - [ ] README example that is not the gallery — the Configuration section now
       carries real snippets (`set_palette`, binding an action), but there is
       still no worked example of building an app against bezel
-- [ ] Migrate `bezel-theme`'s `sync_ns_appearance` from `objc 0.2` to `objc2`,
+- [ ] Migrate `theme`'s `sync_ns_appearance` from `objc 0.2` to `objc2`,
       dropping our last pre-`objc2` dependency. Match gpui's version carefully:
       its tree already holds two objc2 generations.
 - [ ] Remove the `.cargo/config.toml` future-incompat mute once gpui drops `cocoa`
 - [ ] Real crates.io release once zed publishes a gpui matching this API
       (0.0.1 stubs reserve `bezel`, `bezel-theme`, `bezel-motion`, `bezel-ui`;
-      the tree is on 0.0.2 and unpublished)
+      the tree is on 0.0.2 and unpublished, the in-repo names short —
+      `theme`, `motion`, `ui`, `markdown`, `terminal`)
 - [ ] Feature-gate the facade when `markdown`/`syntax`/`terminal` land — that
       is what features are for, and there is nothing to gate until then
 
 ## Done
 
-Layers: `bezel-theme` (tokens as a gpui `Global`, designed light+dark, oklch
-math, appearance switching) · `bezel-motion` (bezier catalog, pulse clock,
-hover fades, pure phase math) · `bezel-ui` · `bezel` (the facade: peer
+Layers: `theme` (tokens as a gpui `Global`, designed light+dark, oklch
+math, appearance switching) · `motion` (bezier catalog, pulse clock,
+hover fades, pure phase math) · `ui` · `bezel` (the facade: peer
 namespaces plus `bezel::gpui`, so a consumer cannot end up with two copies of
 gpui) · `apps/gallery`.
 
@@ -321,7 +322,7 @@ cannot soften the surface itself). So the glow is a `BoxShadow`, the ring is
 eight positioned dots rather than a swept arc, and every position is
 arithmetic.
 
-That arithmetic is pure and lives in `bezel_motion::phase`, tested there: the
+That arithmetic is pure and lives in `motion::phase`, tested there: the
 opacity floor that stops the cluster blinking, the drift that closes its circle
 so nothing accumulates, the ring dots actually sitting on their circle, a bloom
 ring being invisible before the rim (or the box would clip it square), and a

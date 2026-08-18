@@ -6,7 +6,7 @@ description: Six CSS cubic-bezier timing functions evaluated exactly, each usabl
 `CubicBezier` is a CSS `cubic-bezier(x1, y1, x2, y2)` with the endpoints fixed at (0,0) and (1,1). `eval` solves x(t) = input by Newton iteration with a bisection fallback — the standard UnitBezier approach — so a curve copied out of a stylesheet plays the same shape here:
 
 ```rust
-use bezel_motion::{CubicBezier, EASE_OUT_EXPO};
+use motion::{CubicBezier, EASE_OUT_EXPO};
 
 EASE_OUT_EXPO.eval(0.5);        // eased progress
 element.with_animation(id, animation.with_easing(EASE_OUT_EXPO.easing()), ..)

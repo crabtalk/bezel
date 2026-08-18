@@ -6,7 +6,7 @@ description: A styled bar over gpui's own scroll handle — the caller keeps the
 gpui scrolls a `div` perfectly well and draws nothing while it does. This is that bar, and only that bar:
 
 ```rust
-use bezel_ui::scroll;
+use ui::scroll;
 
 div().relative()                                // the bar is absolute in here
     .child(

@@ -6,7 +6,7 @@ description: Nested rows with disclosure, indent guides and arrow keys — drive
 bezel cannot walk your tree. It has no idea what a node is, and a trait or a callback to find out would be a data model this library does not want to own. So the app flattens what is currently visible — which it has to do to render it anyway:
 
 ```rust
-use bezel_ui::tree::{self, Row};
+use ui::tree::{self, Row};
 
 tree::init(cx);   // once, at startup
 

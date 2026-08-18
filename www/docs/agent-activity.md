@@ -16,4 +16,4 @@ Everything else on the page is a `div`. That is the finding: composing `LiveActi
 
 The source is at `apps/gallery/src/patterns/agent.rs`. Copy the file.
 
-The answer zone is plain text on purpose. Streaming markdown is `bezel-markdown`'s job, and this page claims the *activity* zone works, not the answer zone — which is also why there is one exchange here rather than a transcript.
+The answer zone is plain text on purpose. Streaming markdown is the `markdown` crate's job, and this page claims the *activity* zone works, not the answer zone — which is also why there is one exchange here rather than a transcript.

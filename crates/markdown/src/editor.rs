@@ -12,14 +12,16 @@
 //! an offset.
 //!
 //! ```ignore
-//! bezel_markdown::editor::init(cx);             // once, at startup
+//! markdown::editor::init(cx);             // once, at startup
 //! let editor = cx.new(|cx| Editor::new("# Title", cx));
 //! ```
 
-use bezel_theme::Theme;
+use theme::Theme;
 
-use crate::edit::{Cursor, shortcut};
-use crate::{BlockKind, BlockLayouts, Doc, Text};
+use crate::{
+    BlockKind, BlockLayouts, Doc, Text,
+    edit::{Cursor, shortcut},
+};
 use gpui::{
     App, Context, CursorStyle, ElementInputHandler, Entity, EntityInputHandler, FocusHandle,
     Focusable, KeyBinding, MouseButton, Render, SharedString, Styled as _, UTF16Selection, Window,

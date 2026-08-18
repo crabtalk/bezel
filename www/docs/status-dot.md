@@ -4,7 +4,7 @@ description: The small state bead on a row — the tone comes from the caller, b
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::status_dot(theme.success)
 widgets::status_dot(theme.busy)

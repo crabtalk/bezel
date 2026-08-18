@@ -6,7 +6,7 @@ description: Buttons for gpui — default, prominent and destructive, each retur
 Three buttons, and the difference between them is only ever emphasis. Each returns a `gpui::Div`, so you wrap it in whatever handles the click — bezel does not own your interaction.
 
 ```rust
-use bezel_ui::popover;
+use ui::popover;
 
 popover::button(&theme, "Cancel", "dialog-no")
 popover::button_prominent(&theme, "Save")

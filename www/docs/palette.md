@@ -4,7 +4,7 @@ description: A filtered command list over a text field, reporting selections as 
 ---
 
 ```rust
-use bezel_ui::palette::{self, CommandPalette, PaletteEvent};
+use ui::palette::{self, CommandPalette, PaletteEvent};
 
 palette::init(cx);   // once, at startup, alongside input::init
 

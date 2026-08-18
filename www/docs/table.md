@@ -6,7 +6,7 @@ description: Columns declared once and handed to both the header and every row, 
 Reach for a table when the third column of every row has to line up, because reading *down* it is the point. Most lists of things are records, and a record reads better as a `group_box` of `card_row`s.
 
 ```rust
-use bezel_ui::table::{self, Align, Column, Width};
+use ui::table::{self, Align, Column, Width};
 
 const COLUMNS: &[Column] = ..;   // one declaration
 

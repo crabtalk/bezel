@@ -4,7 +4,7 @@ description: Two inline notices — red for what failed, amber for what wants at
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::error_strip(&theme, "Something went wrong.")
 widgets::warning_strip(&theme, "Heads up, check this.")

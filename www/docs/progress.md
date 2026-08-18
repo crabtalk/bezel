@@ -4,7 +4,7 @@ description: A determinate bar — a clamped fraction over a track that keeps it
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::progress_bar(&theme, 0.35)
 ```

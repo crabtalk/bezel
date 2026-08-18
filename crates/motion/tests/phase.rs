@@ -1,4 +1,4 @@
-use bezel_motion::phase::*;
+use motion::phase::*;
 
 fn close(a: f32, b: f32, what: &str) {
     assert!((a - b).abs() < 1e-5, "{what}: {a} vs {b}");

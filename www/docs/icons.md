@@ -6,7 +6,7 @@ description: 79 SVGs embedded in the crate and served to gpui through an AssetSo
 Register the asset source when the app starts, then name an icon by its constant:
 
 ```rust
-use bezel_ui::icons;
+use ui::icons;
 
 Application::new().with_assets(icons::Assets)
 

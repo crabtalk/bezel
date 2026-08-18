@@ -1,7 +1,7 @@
 use gpui::Modifiers;
 
-use bezel_terminal::{emulator::Side, view::*};
-use bezel_theme::Appearance;
+use terminal::{emulator::Side, view::*};
+use theme::Appearance;
 
 fn mods() -> Modifiers {
     Modifiers::default()

@@ -20,7 +20,7 @@
 //! leaving the keyboard.
 //!
 //! ```ignore
-//! bezel_ui::menubar::init(cx);   // once, at startup
+//! ui::menubar::init(cx);   // once, at startup
 //! let bar = cx.new(|cx| Menubar::new(vec![
 //!     Menu::new("File", vec![
 //!         Item::action("New Window").with_keystroke("⌘N"),
@@ -39,7 +39,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use bezel_theme::{Theme, ink};
+use theme::{Theme, ink};
 
 use crate::popover;
 

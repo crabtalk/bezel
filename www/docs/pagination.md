@@ -8,7 +8,7 @@ A long list is answered by `scroll` and `list`, which will show ten thousand row
 The fiddly part is one function:
 
 ```rust
-use bezel_ui::pagination::{self, Slot};
+use ui::pagination::{self, Slot};
 
 pagination::window(6, 20, 2)
 // 1 … 4 5 [6] 7 8 … 20

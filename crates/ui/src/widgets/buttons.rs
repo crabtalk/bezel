@@ -1,13 +1,13 @@
 //! The button — one component, three shipped looks. A catalog trait like
-//! every widget group: `use bezel_ui::widgets::{ButtonStyle, Buttons};` →
+//! every widget group: `use ui::widgets::{ButtonStyle, Buttons};` →
 //! `theme.button("Save", ButtonStyle::Prominent, None)`.
 //!
 //! [`ButtonStyle`] is a closed enum, not free-form knobs: it selects between
 //! the looks that ship, while per-call overrides stay chain modifiers.
 
-use bezel_motion as motion;
-use bezel_theme::{Theme, ThemeExt, ink, wash};
 use gpui::{Div, SharedString, div, prelude::*, px};
+use motion;
+use theme::{Theme, ThemeExt, ink, wash};
 
 /// The shipped looks (the reference `btnGhost` / `btnPrimary` /
 /// `btnDestructive`).

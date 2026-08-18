@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use bezel_motion::*;
 use gpui::Rgba;
+use motion::*;
 use web_time::Instant;
 
 #[test]
@@ -259,8 +259,8 @@ fn hover_tick_evicts_unread_entries() {
 
 #[test]
 fn mix_endpoints_and_transparent_blend() {
-    let rest = bezel_theme::neutral(0.235);
-    let hover = bezel_theme::neutral(0.29);
+    let rest = theme::neutral(0.235);
+    let hover = theme::neutral(0.29);
     assert_eq!(mix(rest, hover, 0.0), rest);
     assert_eq!(mix(rest, hover, 1.0), hover);
     assert_eq!(mix(rest, hover, -1.0), rest, "t clamps low");
@@ -274,8 +274,8 @@ fn mix_endpoints_and_transparent_blend() {
     // — never a darkened grey mid-fade). `ink` reads the process-wide
     // appearance, which theme's tests flip — hold the lock so this test
     // never observes a mid-flip Light palette.
-    let _guard = bezel_theme::lock_appearance();
-    let wash = bezel_theme::ink(0.06);
+    let _guard = theme::lock_appearance();
+    let wash = theme::ink(0.06);
     let half = mix(gpui::transparent_black(), wash, 0.5);
     assert!((half.a - 0.03).abs() < 1e-4, "alpha midpoint {}", half.a);
     let half_rgba = Rgba::from(half);

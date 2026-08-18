@@ -4,7 +4,7 @@ description: A filled track and a knob at a fraction — the paint only; the cal
 ---
 
 ```rust
-use bezel_ui::widgets::{self, SliderDrag};
+use ui::widgets::{self, SliderDrag};
 
 focus::focusable(&theme, &self.slider, widgets::slider(&theme, self.level))
     .id("slider")

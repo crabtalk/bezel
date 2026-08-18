@@ -3,10 +3,10 @@ title: Typography
 description: Geist and Geist Mono embedded in the crate, registered with the gpui text system in one call, named on the theme as two families.
 ---
 
-Both families are bundled in `bezel-ui` and registered with the text system at boot:
+Both families are bundled in the `ui` crate and registered with the text system at boot:
 
 ```rust
-bezel_ui::register_fonts(cx).ok();
+ui::register_fonts(cx).ok();
 ```
 
 Failure is non-fatal — the theme's `font_sans_fallback` / `font_mono_fallback` name the system faces, so text still paints if registration fails. Everything else reads the family off the theme:

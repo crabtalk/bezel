@@ -5,8 +5,8 @@
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`.
 
-use bezel_theme::{Theme, ThemeExt, ink};
 use gpui::{Div, SharedString, div, prelude::*, px};
+use theme::{Theme, ThemeExt, ink};
 
 /// The drag payload of a [`Controls::slider`], shipped from here for the same
 /// reason [`crate::widgets::SplitDrag`] is: one type per gesture, so two

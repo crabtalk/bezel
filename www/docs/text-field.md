@@ -6,7 +6,7 @@ description: A single-line gpui text field with IME, selection, clipboard and un
 The one component in the library that is not a plain function. Editing needs state — content, selection, the IME marked range, a focus handle — so a field is an entity the caller holds, the way SwiftUI's `TextField` binds to `@State`:
 
 ```rust
-use bezel_ui::input::{self, TextField};
+use ui::input::{self, TextField};
 
 input::init(cx); // once, at startup
 
@@ -19,7 +19,7 @@ Read and write it through the entity — `content()`, `set_content()`, `clear()`
 `init` is a convenience, not a requirement. Every action is a public type and every binding is scoped to the field's key context, so `cmd-a` never comes to mean "select all text" for the whole application:
 
 ```rust
-use bezel_ui::input::{self, Home, KEY_CONTEXT};
+use ui::input::{self, Home, KEY_CONTEXT};
 
 cx.bind_keys([KeyBinding::new("ctrl-a", Home, Some(KEY_CONTEXT))]);
 ```

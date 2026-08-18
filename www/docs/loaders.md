@@ -6,14 +6,14 @@ description: The orb cluster and the older cell grids — four shapes over one p
 The orbs are bezel's own, and what a thinking surface should reach for:
 
 ```rust
-use bezel_ui::loaders::{self, Orb};
+use ui::loaders::{self, Orb};
 
 loaders::orb(Orb::Cluster, "thinking", 44.0, &theme, cx.entity_id(), cx)
 ```
 
 One function with a shape parameter rather than four functions: they are the same operation, and the thing that differs is an argument. `Cluster` is blobs whose sizes swing so the count you perceive changes; `Ring` is dots on a circle with the brightness chasing round; `Converge` gathers them to a point and opens back out; `Bloom` is rings leaving the centre and fading before the edge — the only one that travels outward, which is what makes it read as a signal rather than a wait.
 
-Everything is circles, because that is the vocabulary gpui gives at the pinned rev: no rotation transform, no conic gradient, no blur filter on an element. So the glow is a `BoxShadow`, the ring is eight positioned dots rather than a swept arc, and every position is arithmetic — all of it pure and unit-tested in `bezel_motion::phase`.
+Everything is circles, because that is the vocabulary gpui gives at the pinned rev: no rotation transform, no conic gradient, no blur filter on an element. So the glow is a `BoxShadow`, the ring is eight positioned dots rather than a swept arc, and every position is arithmetic — all of it pure and unit-tested in `motion::phase`.
 
 One tint, from the theme's accent. In three hues this would be the gradient spinner wearing a different shape.
 

@@ -6,7 +6,7 @@ description: A segmented control — one pill of mutually exclusive choices, whe
 The track is a container and each segment is a child, so the caller keeps the list and the selection:
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::toggle_group(&theme).children(
     ["Day", "Week", "Month"].into_iter().enumerate().map(|(index, label)| {

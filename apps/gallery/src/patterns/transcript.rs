@@ -3,7 +3,7 @@
 //!
 //! `scroll::follow` pins it to the newest line, `widgets::Takeover` runs each
 //! turn's Work zone, `widgets::step_row` draws the tool calls, and
-//! `bezel_markdown::markdown` renders the answers — which is the whole reason
+//! `markdown::markdown` renders the answers — which is the whole reason
 //! this page could not be honest until that crate existed. Copy this file.
 //!
 //! **`Transcript.svelte` is 943 lines and produced no library code**, which was
@@ -21,14 +21,14 @@
 //! What is left of the 943 is Tauri `invoke`/`listen`, project lookups, sticky
 //! scroll measurement and cloud-error parsing — an app's job, all of it.
 
-use bezel_theme::Theme;
-use bezel_ui::{
+use gpui::{AnyElement, Context, Render, SharedString, Window, div, prelude::*, px};
+use theme::Theme;
+use ui::{
     icons, popover,
     scroll::{self, FollowState, ScrollbarState},
     widgets,
     widgets::{Layout, Status},
 };
-use gpui::{AnyElement, Context, Render, SharedString, Window, div, prelude::*, px};
 
 /// One thing that happened, in the order it happened. A page-local shape, and
 /// deliberately not a library type: `step_row` takes strings, so bezel never
@@ -122,7 +122,7 @@ const BEATS: &[Beat] = &[
     Beat::Tool {
         icon: icons::TERMINAL,
         verb: "Run",
-        detail: "cargo test -p bezel-ui",
+        detail: "cargo test -p ui",
         ms: 1_412,
         failed: false,
     },
@@ -234,7 +234,7 @@ impl Transcript {
             .py(px(5.0))
             .rounded(px(Theme::CONTROL_RADIUS))
             .cursor_pointer()
-            .hover(|s| s.bg(bezel_theme::ink(0.03)))
+            .hover(|s| s.bg(theme::ink(0.03)))
             .on_click(cx.listener(move |view: &mut Self, _, _, cx| {
                 view.work.entry(turn).or_default().toggle(false);
                 cx.notify();
@@ -408,11 +408,11 @@ impl Render for Transcript {
                 }
             }
             // The answer zone, rendered as markdown — the reason this page
-            // waited for `bezel-markdown` rather than shipping with a
+            // waited for `markdown` rather than shipping with a
             // paragraph and calling it done.
             for beat in &BEATS[turn.answer_from..turn.range.end] {
                 if let Beat::Text(source) = beat {
-                    zone = zone.child(bezel_markdown::markdown(source, window, cx));
+                    zone = zone.child(markdown::markdown(source, window, cx));
                 }
             }
             rows.push(zone.pb(px(28.0)).into_any_element());

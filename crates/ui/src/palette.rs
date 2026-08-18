@@ -9,7 +9,7 @@
 //! [`crate::combobox::Combobox`] and tested there.
 //!
 //! ```ignore
-//! bezel_ui::palette::init(cx);   // once, at startup (with input::init)
+//! ui::palette::init(cx);   // once, at startup (with input::init)
 //! let palette = cx.new(|cx| CommandPalette::new(vec!["Open File".into()], cx));
 //! cx.subscribe(&palette, |_, _, event, _| match event {
 //!     PaletteEvent::Selected(index) => { /* run command `index` */ }
@@ -23,10 +23,12 @@ use gpui::{
     actions, div, prelude::*, px,
 };
 
-use bezel_theme::Theme;
+use theme::Theme;
 
-use crate::input::{self, TextField};
-use crate::popover;
+use crate::{
+    input::{self, TextField},
+    popover,
+};
 
 actions!(
     bezel_command_palette,

@@ -1,4 +1,4 @@
-use bezel_ui::orbs::Orb;
+use ui::orbs::Orb;
 
 #[test]
 fn builder_paused_false_clears_pause_clock() {

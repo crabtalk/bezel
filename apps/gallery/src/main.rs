@@ -4,13 +4,13 @@
 //! The view itself lives in `lib.rs`, so `shots` can mount its sections one at
 //! a time; this file is the window around it.
 
-use bezel_theme::{Theme, appearance};
-use bezel_ui::icons;
 use gallery::{Gallery, ToggleFullScreen, ToggleInspector};
 use gpui::{
     App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, WindowBounds, WindowOptions, actions,
     px, size,
 };
+use theme::{Theme, appearance};
+use ui::icons;
 
 actions!(gallery_app, [Quit]);
 
@@ -18,7 +18,7 @@ fn main() {
     gpui_platform::application()
         .with_assets(icons::Assets)
         .run(|cx: &mut App| {
-            if let Err(err) = bezel_ui::register_fonts(cx) {
+            if let Err(err) = ui::register_fonts(cx) {
                 eprintln!("FONT REGISTRATION FAILED: {err:?}");
             }
             appearance::init(appearance::AppearanceMode::System, cx);

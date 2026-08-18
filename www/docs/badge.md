@@ -4,7 +4,7 @@ description: A small right-anchored pill for a count or a state, in a quiet vari
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::badge(&theme, "badge")
 widgets::badge_active(&theme, "active")

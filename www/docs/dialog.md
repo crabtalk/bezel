@@ -6,7 +6,7 @@ description: A centred card over a dim scrim, with the dialog-in entrance and th
 `modal` is the scrim and the layer; `dialog_card` and its pieces are what you put in it:
 
 ```rust
-use bezel_ui::popover;
+use ui::popover;
 
 popover::modal(
     "gallery-dialog",

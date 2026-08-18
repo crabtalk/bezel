@@ -10,7 +10,7 @@
 //! ```
 //!
 //! Style flows through the environment like the rest of bezel: [`OrbTheme::Auto`]
-//! resolves ink against the installed [`bezel_theme::Appearance`] at paint time.
+//! resolves ink against the installed [`theme::Appearance`] at paint time.
 //! The engine is the public `engine` module below — the "advanced" tier for
 //! custom paint loops.
 

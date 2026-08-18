@@ -4,7 +4,7 @@ description: A removable chip — a token in a filter bar or a recipient field, 
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::tag(&theme, "rust")
 ```

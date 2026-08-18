@@ -1,4 +1,4 @@
-use bezel_ui::date::*;
+use ui::date::*;
 
 fn date(year: i32, month: u8, day: u8) -> Date {
     Date::new(year, month, day).expect("a real date")

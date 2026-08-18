@@ -44,7 +44,7 @@ pub fn theme_generation() -> u32 {
 /// [`CURRENT_APPEARANCE`] is process-wide, so under the parallel test runner
 /// any test that flips it — or asserts on the output of a helper that reads it
 /// ([`ink`], [`hairline`], [`wash`], …) — must hold this lock. Crate-visible
-/// because such tests exist outside this module too (see bezel-motion's tests).
+/// because such tests exist outside this module too (see motion's tests).
 /// Tests that flip the appearance restore Dark before releasing the guard.
 /// Compiled unconditionally (not `cfg(test)`) so downstream crates' tests can
 /// use it too; it is not part of the public API.

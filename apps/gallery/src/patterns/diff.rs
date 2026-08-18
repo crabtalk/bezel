@@ -16,9 +16,9 @@
 //! bezel never computes a diff. These rows arrive already decided; whatever
 //! produced them is the app's business, the same line `tree` holds.
 
-use bezel_theme::{Theme, ink};
-use bezel_ui::{icons, widgets::Scaffolding};
 use gpui::{Context, Render, SharedString, Window, div, prelude::*, px};
+use theme::{Theme, ink};
+use ui::{icons, widgets::Scaffolding};
 
 /// What happened to a line. `Skip` is the gap between hunks — the lines nobody
 /// asked to see.

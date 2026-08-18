@@ -3,7 +3,7 @@ title: Music player
 description: A sidebar, a table and a floating transport — the pattern that produced the control bar by finding it missing.
 ---
 
-Nothing here is library code and none of it needs to be. A player is a sidebar, a table and a floating bar; bezel already had two of the three, and composing this is what showed the third was missing. `bezel_ui::control_bar` exists because of this page.
+Nothing here is library code and none of it needs to be. A player is a sidebar, a table and a floating bar; bezel already had two of the three, and composing this is what showed the third was missing. `ui::control_bar` exists because of this page.
 
 Two pieces are worth reading before you copy them.
 

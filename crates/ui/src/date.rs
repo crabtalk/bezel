@@ -17,7 +17,7 @@
 //! window, and is tested.
 //!
 //! ```ignore
-//! bezel_ui::date::init(cx);   // once, at startup
+//! ui::date::init(cx);   // once, at startup
 //! let picker = cx.new(|cx| Calendar::new(today, cx));
 //! cx.subscribe(&picker, |_, _, event, _| match event {
 //!     CalendarEvent::Selected(date) => { /* the chosen day */ }
@@ -30,7 +30,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use bezel_theme::{Theme, ink};
+use theme::{Theme, ink};
 
 use crate::{icons, popover, widgets, widgets::Controls};
 

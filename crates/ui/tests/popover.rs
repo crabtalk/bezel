@@ -1,6 +1,6 @@
 use gpui::SharedString;
 
-use bezel_ui::popover::*;
+use ui::popover::*;
 
 #[test]
 fn trigger_press_note_distinguishes_dismiss_from_open() {

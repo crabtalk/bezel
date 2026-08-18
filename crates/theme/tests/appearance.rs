@@ -1,4 +1,4 @@
-use bezel_theme::{
+use theme::{
     Appearance,
     appearance::{AppearanceMode, resolve},
 };

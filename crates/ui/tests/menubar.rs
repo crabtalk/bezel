@@ -1,4 +1,4 @@
-use bezel_ui::menubar::*;
+use ui::menubar::*;
 
 /// `a · ─ · b(disabled) · c`
 fn items() -> Vec<Item> {

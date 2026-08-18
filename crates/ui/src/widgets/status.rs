@@ -3,8 +3,8 @@
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.step_row(..)`, `theme.step_output(..)`, `theme.error_strip(..)`.
 
-use bezel_theme::{Theme, ThemeExt};
 use gpui::{Div, SharedString, div, prelude::*, px};
+use theme::{Theme, ThemeExt};
 
 use crate::widgets::Layout;
 

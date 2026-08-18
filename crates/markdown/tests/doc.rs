@@ -1,4 +1,4 @@
-use bezel_markdown::*;
+use markdown::*;
 
 #[test]
 fn text_accessor_covers_every_kind() {

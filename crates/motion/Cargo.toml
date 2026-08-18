@@ -1,5 +1,5 @@
 [package]
-name = "bezel-motion"
+name = "motion"
 description = "A named animation catalog for gpui — exact CSS cubic-bezier curves and pure phase math"
 version.workspace = true
 edition.workspace = true
@@ -20,4 +20,4 @@ gpui.workspace = true
 web-time.workspace = true
 
 [dev-dependencies]
-bezel-theme.workspace = true
+theme.workspace = true

@@ -3,7 +3,7 @@ title: Transcript
 description: A conversation as a scrollback — everything built for the agent port appearing at once, and three reducers that are all std.
 ---
 
-`scroll::follow` pins it to the newest line, `widgets::Takeover` runs each turn's work zone, `widgets::step_row` draws the tool calls, and `bezel_markdown::markdown` renders the answers — which is why this page could not be honest until that crate existed.
+`scroll::follow` pins it to the newest line, `widgets::Takeover` runs each turn's work zone, `widgets::step_row` draws the tool calls, and `markdown::markdown` renders the answers — which is why this page could not be honest until that crate existed.
 
 The screen it was ported from is 943 lines and produced no library code. That was the prediction, and the measurement is that its three reducers are all standard library:
 

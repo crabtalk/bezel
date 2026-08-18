@@ -7,19 +7,19 @@
 //!
 //! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
 
-use std::cell::RefCell;
-use std::ops::Range;
-use std::rc::Rc;
+use std::{cell::RefCell, ops::Range, rc::Rc};
 
-use bezel_theme::Theme;
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, ElementId, FontStyle, FontWeight, InteractiveText,
     Pixels, Point, SharedString, StrikethroughStyle, StyledText, TextLayout, TextRun,
     UnderlineStyle, Window, canvas, div, font, img, point, prelude::*, px, quad, size,
 };
+use theme::Theme;
 
-use crate::doc::{Align, Block, BlockKind, Doc, Mark, Text};
-use crate::edit::Cursor;
+use crate::{
+    doc::{Align, Block, BlockKind, Doc, Mark, Text},
+    edit::Cursor,
+};
 
 /// Space between two ordinary blocks, and the tighter space inside a list.
 const BLOCK_GAP: f32 = 12.0;

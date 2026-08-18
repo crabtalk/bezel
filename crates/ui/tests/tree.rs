@@ -1,4 +1,4 @@
-use bezel_ui::tree::*;
+use ui::tree::*;
 
 /// ```text
 /// 0  src/            branch, open

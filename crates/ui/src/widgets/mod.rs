@@ -1,5 +1,5 @@
 //! Widgets, grouped as catalog traits on `Theme` — import the group, reach
-//! the component: `use bezel_ui::widgets::{Content, Controls, Layout,
+//! the component: `use ui::widgets::{Content, Controls, Layout,
 //! Scaffolding, Status};` → `theme.group_box()`, `theme.tab(..)`.
 //!
 //! What stays here is deliberately trait-shaped: state flags, pure math, and
@@ -7,7 +7,7 @@
 
 use gpui::{div, prelude::*, px};
 
-use bezel_theme::ink;
+use theme::ink;
 
 mod buttons;
 mod content;

@@ -1,4 +1,4 @@
-use bezel_ui::input::*;
+use ui::input::*;
 
 /// A regional-indicator pair is one grapheme of 8 bytes: stepping by
 /// `char` would land inside it and split the flag in half.

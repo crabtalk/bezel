@@ -1,6 +1,6 @@
 use gpui::UniformListScrollHandle;
 
-use bezel_ui::list::*;
+use ui::list::*;
 
 use gpui::{point, px};
 

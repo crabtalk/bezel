@@ -4,7 +4,7 @@ description: The centred "nothing here yet" panel — icon, headline, one line o
 ---
 
 ```rust
-use bezel_ui::{icons, widgets};
+use ui::{icons, widgets};
 
 widgets::empty_state(
     &theme,

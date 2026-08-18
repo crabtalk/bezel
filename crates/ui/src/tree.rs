@@ -12,7 +12,7 @@
 //! row above with a smaller depth. [`step`] is that, and nothing else.
 //!
 //! ```ignore
-//! bezel_ui::tree::init(cx);   // once, at startup
+//! ui::tree::init(cx);   // once, at startup
 //!
 //! // Each frame: flatten what is open, paint it, and let `step` answer the keys.
 //! let rows = self.flatten();                       // Vec<(Row, label)>
@@ -29,7 +29,7 @@
 
 use gpui::{App, KeyBinding, actions, div, prelude::*, px};
 
-use bezel_theme::{Theme, hairline};
+use theme::{Theme, hairline};
 
 use crate::widgets::Layout;
 
@@ -162,11 +162,9 @@ pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui:
         .text_size(px(12.5))
         .cursor_pointer();
     frame = if selected {
-        frame
-            .bg(bezel_theme::card_selected_bg())
-            .text_color(theme.text)
+        frame.bg(theme::card_selected_bg()).text_color(theme.text)
     } else if cursor {
-        frame.bg(bezel_theme::wash(0.05)).text_color(theme.text)
+        frame.bg(theme::wash(0.05)).text_color(theme.text)
     } else {
         frame.text_color(theme.text_muted)
     };

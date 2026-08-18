@@ -1,6 +1,6 @@
 use gpui::px;
 
-use bezel_ui::widgets::*;
+use ui::widgets::*;
 
 use gpui::{Axis, Bounds, point, size};
 

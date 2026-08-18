@@ -1,6 +1,6 @@
 use gpui::AssetSource;
 
-use bezel_ui::icons::*;
+use ui::icons::*;
 
 #[test]
 fn every_registered_icon_loads_and_parses() {

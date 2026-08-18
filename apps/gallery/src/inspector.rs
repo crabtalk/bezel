@@ -17,12 +17,12 @@
 //!    what it paints shows up here rather than being guessed at.
 //! 3. **What is it?** The element id path, when a component is on screen twice.
 
-use bezel_theme::Theme;
-use bezel_ui::{popover, widgets::Controls};
 use gpui::{
     AnyElement, App, Context, DivInspectorState, InspectorElementId, IntoElement, SharedString,
     Window, div, prelude::*, px,
 };
+use theme::Theme;
+use ui::{popover, widgets::Controls};
 
 /// Install the inspector panel. Call once at startup, alongside the other
 /// `init`s. The toggle itself is an action on the gallery view — see

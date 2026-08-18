@@ -4,7 +4,7 @@ description: A trail of crumbs and chevrons, assembled by the caller — the las
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::breadcrumb()
     .child(widgets::breadcrumb_item(&theme, "crates", false))

@@ -6,7 +6,7 @@ description: The same menu card floated at an explicit window point — right-cl
 A context menu is `menu_at`: the card, positioned by a point rather than by a trigger.
 
 ```rust
-use bezel_ui::popover;
+use ui::popover;
 
 .on_mouse_down(MouseButton::Right, cx.listener(|view, event: &MouseDownEvent, _, cx| {
     view.context_menu.open(event.position);

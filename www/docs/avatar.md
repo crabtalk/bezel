@@ -4,7 +4,7 @@ description: A circular initials tile — the fallback every avatar needs, and o
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::avatar(&theme, "TC")
 widgets::avatar(&theme, "K")

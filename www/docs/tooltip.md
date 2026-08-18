@@ -4,7 +4,7 @@ description: The small hover label, built for gpui's own .tooltip builder — te
 ---
 
 ```rust
-use bezel_ui::tooltip::Tooltip;
+use ui::tooltip::Tooltip;
 
 div()
     .id("copy")

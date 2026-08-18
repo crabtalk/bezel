@@ -6,7 +6,7 @@ description: The closed face of a select — a trigger shaped like a text field,
 There is no `Select` component. A select *is* a trigger plus an anchored menu, and the caller already owns the open state and the selection:
 
 ```rust
-use bezel_ui::{popover, widgets};
+use ui::{popover, widgets};
 
 div()
     .id("theme-select")

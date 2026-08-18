@@ -4,7 +4,7 @@ description: A disclosure header — chevron plus title — with the body render
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 div()
     .child(

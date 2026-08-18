@@ -1,4 +1,4 @@
-use bezel_ui::pagination::*;
+use ui::pagination::*;
 
 fn pages(slots: &[Slot]) -> String {
     slots

@@ -4,7 +4,7 @@ description: Pulsing placeholder rows for a list that is still loading, staggere
 ---
 
 ```rust
-use bezel_ui::popover;
+use ui::popover;
 
 popover::redacted_rows("recent-sessions", &theme, 3, cx.entity_id(), cx)
 ```

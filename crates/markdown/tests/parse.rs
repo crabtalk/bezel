@@ -1,4 +1,4 @@
-use bezel_markdown::*;
+use markdown::*;
 
 fn kinds(source: &str) -> Vec<(u8, BlockKind)> {
     parse(source)

@@ -4,7 +4,7 @@ description: A hairline-underlined strip whose active tab is marked by an underl
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::tab_bar(&theme).children(TABS.iter().enumerate().map(|(index, label)| {
     widgets::tab(&theme, *label, index == self.tab)

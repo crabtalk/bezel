@@ -4,7 +4,7 @@ description: A select you can type into — the closed face of a select over an 
 ---
 
 ```rust
-use bezel_ui::combobox::{self, Combobox, ComboboxEvent};
+use ui::combobox::{self, Combobox, ComboboxEvent};
 
 combobox::init(cx);   // once, at startup, alongside input::init
 

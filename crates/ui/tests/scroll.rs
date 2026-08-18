@@ -1,6 +1,6 @@
 use gpui::{Pixels, px};
 
-use bezel_ui::scroll::*;
+use ui::scroll::*;
 
 /// A 400px window onto 1600px of content: 1200 of overflow.
 const VIEWPORT: Pixels = px(400.0);

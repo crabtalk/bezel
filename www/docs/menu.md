@@ -6,7 +6,7 @@ description: The floating card, its rows, headings and dividers — plus the anc
 A menu is a card and a list of rows, assembled by the caller:
 
 ```rust
-use bezel_ui::popover;
+use ui::popover;
 
 popover::popover_card(&theme).w(px(240.0)).children([
     popover::menu_heading(&theme, "Section").into_any_element(),

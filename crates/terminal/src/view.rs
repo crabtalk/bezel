@@ -19,7 +19,7 @@ use gpui::{
     SharedString, Style, TextRun, Window, fill, font, outline, point, px, relative, size,
 };
 
-use bezel_theme::{self as theme, Appearance, Theme};
+use theme::{Appearance, Theme};
 
 use crate::emulator::{CellColor, CellSnapshot, CursorSnapshot, Side};
 

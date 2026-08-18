@@ -17,8 +17,8 @@ crate-type = ["cdylib", "rlib"]
 gallery = { path = "../gallery" }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-bezel-theme.workspace = true
-bezel-ui.workspace = true
+theme.workspace = true
+ui.workspace = true
 console_error_panic_hook = "0.1"
 gpui.workspace = true
 gpui_web.workspace = true

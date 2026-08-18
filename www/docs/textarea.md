@@ -6,7 +6,7 @@ description: The same text field in a taller box — fixed rows or growing betwe
 A textarea is a `TextField` with a different `Shape`. Editing is identical across all three shapes — every action works on the content and a byte range, and none of them cares where the lines break. What the shape decides is the box:
 
 ```rust
-use bezel_ui::input::{Shape, TextField};
+use ui::input::{Shape, TextField};
 
 TextField::new(cx).with_shape(Shape::Rows(4))
 TextField::new(cx).with_shape(Shape::Grow { min: 3, max: 12 })

@@ -43,7 +43,7 @@ their own gpui components.
 
 ## The markdown model
 
-`bezel-markdown` is a **flat list of blocks with an indent level**, not a
+`markdown` is a **flat list of blocks with an indent level**, not a
 nested tree — Notion's shape rather than CommonMark's. The reason is editing:
 on a flat list, Enter splits, Backspace merges and Tab indents, all list
 operations; on a tree, "the previous block" is a traversal and every edit is a
@@ -87,14 +87,14 @@ a reader does not already carry.
 2. **SwiftUI vocabulary.** Widgets are named for their SwiftUI analog:
    `toggle`, `divider`, `group_box`, `material`, `button_prominent`,
    `redacted_rows`. Stateless paint is a catalog trait on `Theme` — import
-   the group (`use bezel_ui::widgets::Scaffolding;`) and reach it as
+   the group (`use ui::widgets::Scaffolding;`) and reach it as
    `theme.group_box()`. Stateful components are struct entities (`Table`,
    `TextField`, `Orb`). Builder methods configure *content* — an orb's
    state, a table's columns — never style. A closed variant enum
    (`ButtonStyle`) selects between shipped looks; free-form values (radius,
    color, padding) never become parameters.
 3. **Motion is named.** Every animation comes from the `MotionSpec` catalog
-   in `bezel-motion`; pure phase math lives in `motion::phase` and is
+   in `motion`; pure phase math lives in `motion::phase` and is
    unit-tested. No inline durations or curves in components.
 4. **Numbers drive layout, colors are paint.** Layout constants are plain
    numbers on `Theme`; no layout ever depends on which color is painted.

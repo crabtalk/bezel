@@ -4,7 +4,7 @@ description: A select's closed face over an anchored month grid, on a civil cale
 ---
 
 ```rust
-use bezel_ui::date::{self, Calendar, CalendarEvent, Date};
+use ui::date::{self, Calendar, CalendarEvent, Date};
 
 date::init(cx);   // once, at startup
 

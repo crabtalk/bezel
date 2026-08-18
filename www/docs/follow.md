@@ -6,7 +6,7 @@ description: Stay pinned to the bottom while the reader leaves it there, and get
 Drop it in beside the scrollbar, over the same container:
 
 ```rust
-use bezel_ui::scroll;
+use ui::scroll;
 
 div().relative()
     .child(div().id("log").size_full().overflow_y_scroll().track_scroll(&self.scroll).child(rows))

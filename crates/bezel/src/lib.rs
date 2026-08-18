@@ -25,13 +25,13 @@
 //! its own sake. They arrive with the crates they protect; until then all three
 //! layers are light and unconditional.
 //!
-//! Depending on a single layer directly (`bezel-theme` for tokens alone, which
+//! Depending on a single layer directly (`theme` for tokens alone, which
 //! is useful to anyone writing their own gpui components) stays supported and
 //! is not going away.
 
-pub use bezel_motion as motion;
-pub use bezel_theme as theme;
-pub use bezel_ui as ui;
+pub use motion;
+pub use theme;
+pub use ui;
 
 /// The exact gpui these components were built against. Depend on this rather
 /// than declaring your own — see the crate docs.

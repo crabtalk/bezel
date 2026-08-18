@@ -4,7 +4,7 @@ description: An 18×32 switch whose knob slides and whose track fills with the t
 ---
 
 ```rust
-use bezel_ui::widgets;
+use ui::widgets;
 
 widgets::toggle(&theme, self.enabled)
 ```

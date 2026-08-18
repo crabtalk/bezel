@@ -3,13 +3,13 @@
 //!
 //! It is `../desktop`'s `LiveActivity.svelte` and `Thought.svelte` composed, and
 //! composing them is what showed both pieces were library code:
-//! [`bezel_ui::scroll::follow`] pins the reasoning box to its newest line while
-//! the run writes into it, and [`bezel_ui::widgets::Takeover`] opens the section
+//! [`ui::scroll::follow`] pins the reasoning box to its newest line while
+//! the run writes into it, and [`ui::widgets::Takeover`] opens the section
 //! while that is happening and hands it over the moment you press the header.
 //! Everything else here is a `div`. Copy this file.
 //!
 //! **The answer is plain text on purpose.** Streaming markdown is
-//! `bezel-markdown`'s job and that crate does not exist yet, so a paragraph is
+//! `markdown`'s job and that crate does not exist yet, so a paragraph is
 //! the honest placeholder — this page claims the *activity* zone works, not the
 //! answer zone. That is also why there is no transcript here: one exchange is
 //! all the parts can carry today.
@@ -19,18 +19,18 @@
 
 use std::time::{Duration, Instant};
 
-use bezel_theme::Theme;
-use bezel_ui::{
+use gpui::{
+    AnyElement, Context, Entity, Render, SharedString, Window, div, linear_color_stop,
+    linear_gradient, prelude::*, px,
+};
+use theme::Theme;
+use ui::{
     icons,
     input::{Shape, TextField},
     loaders, popover,
     scroll::{self, FollowState, ScrollbarState},
     widgets,
     widgets::{ButtonStyle, Buttons, Layout, Status},
-};
-use gpui::{
-    AnyElement, Context, Entity, Render, SharedString, Window, div, linear_color_stop,
-    linear_gradient, prelude::*, px,
 };
 
 /// The question on the page. Invented, like the music player's album, and about
@@ -174,7 +174,7 @@ impl Activity {
             .py(px(5.0))
             .rounded(px(Theme::CONTROL_RADIUS))
             .cursor_pointer()
-            .hover(|s| s.bg(bezel_theme::ink(0.03)))
+            .hover(|s| s.bg(theme::ink(0.03)))
             .on_click(cx.listener(move |view, _, _, cx| {
                 let running = view.running();
                 view.thought.toggle(running);
@@ -381,7 +381,7 @@ const CALLS: [Call; 12] = [
     Call {
         icon: icons::TERMINAL,
         verb: "Run",
-        detail: "cargo test -p bezel-ui",
+        detail: "cargo test -p ui",
         ms: 1_412,
         failed: false,
         output: Some("running 87 tests\n\ntest result: ok. 87 passed; 0 failed"),
@@ -623,7 +623,7 @@ gpui::actions!(
 
 /// The context this page's field claims on top of `TextField`/`TextArea`, so
 /// `enter` sends **here** and stays a newline in every other multi-line field
-/// in the gallery. See [`bezel_ui::input::TextField::with_key_context`] for why
+/// in the gallery. See [`ui::input::TextField::with_key_context`] for why
 /// a container around the field cannot do this.
 const COMPOSER_CONTEXT: &str = "GalleryComposer";
 
@@ -636,7 +636,7 @@ pub fn init(cx: &mut gpui::App) {
         gpui::KeyBinding::new("enter", Send, ctx),
         // Bound explicitly: the field's own `enter` is what usually inserts a
         // newline, and this page has just taken it.
-        gpui::KeyBinding::new("shift-enter", bezel_ui::input::InsertNewline, ctx),
+        gpui::KeyBinding::new("shift-enter", ui::input::InsertNewline, ctx),
         gpui::KeyBinding::new("down", MentionNext, ctx),
         gpui::KeyBinding::new("up", MentionPrevious, ctx),
         gpui::KeyBinding::new("escape", MentionDismiss, ctx),
@@ -763,7 +763,7 @@ impl Composer {
     /// `Composer.svelte` dims the whole button to `opacity-30`, which on a
     /// frosted card reads as a grey blob with a grey arrow inside it. bezel
     /// already has a word for a control that is present but not pressable, and
-    /// it is [`bezel_ui::pagination::step`]: the shape keeps its place, the
+    /// it is [`ui::pagination::step`]: the shape keeps its place, the
     /// glyph goes faint, and the pointer and hover simply are not there. Same
     /// rule here — the disc quietens to the hover wash instead of fading, so
     /// the arrow stays legible and nothing invites a press.
@@ -789,7 +789,7 @@ impl Composer {
                         .text_color(theme.on_solid),
                 )
         } else {
-            disc.bg(bezel_theme::ink(0.06)).child(
+            disc.bg(theme::ink(0.06)).child(
                 icons::icon(icons::ARROW_UP)
                     .size(px(14.0))
                     .text_color(theme.text_faint),

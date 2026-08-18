@@ -29,7 +29,7 @@ One thing is not optional if you use hover fades — ask for frames in your root
 render, or fades paint once and stick:
 
 ```rust
-if bezel_motion::hover_fades_active() {
+if bezel::motion::hover_fades_active() {
     window.request_animation_frame();
 }
 ```

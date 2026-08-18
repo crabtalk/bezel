@@ -6,6 +6,6 @@ use gallery::patterns::document::SOURCE;
 /// it does not actually survive.
 #[test]
 fn the_source_is_canonical() {
-    let doc = bezel_markdown::parse(SOURCE);
-    assert_eq!(bezel_markdown::serialize(&doc), SOURCE);
+    let doc = markdown::parse(SOURCE);
+    assert_eq!(markdown::serialize(&doc), SOURCE);
 }

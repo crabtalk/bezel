@@ -6,7 +6,7 @@ description: Every named motion spec — duration, delay and curve — plus the 
 Law 3: no component inlines a duration or a curve, it names a spec. A `MotionSpec` is a duration, an optional delay and a curve, and it hands gpui a ready animation:
 
 ```rust
-use bezel_motion::{MotionSpec, MENU_IN};
+use motion::{MotionSpec, MENU_IN};
 
 element.with_animation("menu", MENU_IN.animation(), |el, t| el.opacity(t))
 ```
@@ -26,7 +26,7 @@ div()
 That means the app's root render has to pump the frames:
 
 ```rust
-if bezel_motion::hover_fades_active() {
+if motion::hover_fades_active() {
     window.request_animation_frame();
 }
 ```

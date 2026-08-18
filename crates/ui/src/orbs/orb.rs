@@ -17,8 +17,6 @@ use gpui::{
     px,
 };
 
-use bezel_theme as theme;
-
 use crate::orbs::{
     engine::{Frame, draw_mode_into, draw_mode_into_resolved},
     paint::paint_frame,

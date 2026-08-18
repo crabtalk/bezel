@@ -1,12 +1,12 @@
-//! The document pattern — a reader, and the screen `bezel-markdown` exists for.
+//! The document pattern — a reader, and the screen `markdown` exists for.
 //!
 //! Nothing here is library code. The reader is an outline, a scroll area and a
-//! toggle; the only call into the library is [`bezel_markdown::render`]. Copy
+//! toggle; the only call into the library is [`markdown::render`]. Copy
 //! this file.
 //!
 //! Two things it is built to show.
 //!
-//! **The outline is a `filter`, not a walk.** A [`bezel_markdown::Doc`] is a
+//! **The outline is a `filter`, not a walk.** A [`markdown::Doc`] is a
 //! flat list of blocks carrying their own indent, so the table of contents is
 //! one pass picking out headings — see [`Document::outline`]. On a nested
 //! document tree the same list costs a recursive descent that has to
@@ -23,13 +23,13 @@
 //! Like the other patterns it is an entity: a screen owns a screen's worth of
 //! state, and its host holds one field.
 
-use bezel_markdown::{BlockKind, Doc, Editor};
-use bezel_theme::Theme;
-use bezel_ui::widgets::Controls;
 use gpui::{
     Context, ElementId, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
     prelude::*, px,
 };
+use markdown::{BlockKind, Doc, Editor};
+use theme::Theme;
+use ui::widgets::Controls;
 
 /// The document on the page. Canonical markdown — `serialize(parse(SOURCE))`
 /// returns it unchanged, which the gallery's tests assert, so the Source
@@ -153,7 +153,7 @@ impl Render for Document {
             }));
 
         let body = match self.view {
-            View::Read => bezel_markdown::render(&doc, window, cx),
+            View::Read => markdown::render(&doc, window, cx),
             View::Edit => self.editor.clone().into_any_element(),
             // The document written back out, not the constant above it.
             View::Source => div()

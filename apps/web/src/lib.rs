@@ -7,17 +7,15 @@
 
 #![cfg(target_family = "wasm")]
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-use bezel_theme::appearance::{self, AppearanceMode};
-use bezel_ui::icons;
 use gallery::Gallery;
 use gpui::{
     App, AppContext as _, Application, ApplicationHandle, Bounds, WindowBounds, WindowOptions, px,
     size,
 };
+use theme::appearance::{self, AppearanceMode};
+use ui::icons;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 thread_local! {
@@ -53,7 +51,7 @@ pub fn start() {
         .with_http_client(http_client)
         .with_assets(icons::Assets)
         .run_embedded(|cx: &mut App| {
-            if let Err(err) = bezel_ui::register_fonts(cx) {
+            if let Err(err) = ui::register_fonts(cx) {
                 log::error!("font registration failed: {err:?}");
             }
             appearance::init(AppearanceMode::System, cx);

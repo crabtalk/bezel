@@ -4,7 +4,7 @@ description: The dialog card pinned to a window edge — full height, same scrim
 ---
 
 ```rust
-use bezel_ui::popover::{self, Side};
+use ui::popover::{self, Side};
 
 popover::sheet(
     "gallery-sheet",
