@@ -2,3 +2,9 @@
 # the bytes do and the cache never needs to ask.
 /_app/immutable/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Every embedded gallery is its own document and re-instantiates the wasm; this
+# is what stops each one revalidating 20MB first. The path is unhashed, so the
+# max-age is also how long a deploy can keep serving the previous build.
+/gallery/*
+  Cache-Control: public, max-age=300
