@@ -122,7 +122,7 @@ other draws the frame.
 
 ## Roadmap
 
-`TODO.md` holds the checklist. The policy it follows: a new crate appears in
-`crates/` only when the component is real, and heavier layers (markdown,
-syntax, terminal) arrive as their own crates rather than swelling `ui` — so a
-consumer never compiles a tree-sitter grammar to get a button.
+A new crate appears in `crates/` only when the component is real, and heavier
+layers (markdown, syntax, terminal) arrive as their own crates rather than
+swelling `ui` — so a consumer never compiles a tree-sitter grammar to get a
+button.

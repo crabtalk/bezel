@@ -8,7 +8,6 @@ pub mod agent;
 pub mod avatar;
 pub mod diff;
 pub mod document;
-pub mod music;
 pub mod orbs;
 pub mod syntax;
 #[cfg(not(target_family = "wasm"))]

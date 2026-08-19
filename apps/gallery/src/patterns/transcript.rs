@@ -95,7 +95,7 @@ const BEATS: &[Beat] = &[
     Beat::Tool {
         icon: icons::CPU,
         verb: "Recall",
-        detail: "the music player precedent",
+        detail: "the control bar precedent",
         ms: 18,
         failed: false,
     },

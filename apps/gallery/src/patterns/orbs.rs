@@ -1,8 +1,7 @@
 //! The thinking screen — what an agent surface shows while the model works.
 //!
 //! The orbs themselves are `agent::orbs`, a component; this page is the
-//! pattern: one live [`Orb`] entity (the builder API a real app reaches for)
-//! above the twelve-state catalog, painted by [`orb_element`] on this page's
+//! pattern: the twelve-state catalog, painted by [`orb_element`] on this page's
 //! own clock. One timer drives every cell — the shape to copy when your host
 //! already ticks.
 //!
@@ -16,14 +15,13 @@
 //!
 //! The engine takes unbounded time: its modes mix incommensurate frequencies,
 //! so a folded clock (gpui's `with_animation`) jumps visibly at every wrap.
-//! That is why the component is an entity and this page owns its own.
+//! That is why this page owns its own clock.
 
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-use agent::orbs::{Orb, OrbSize, OrbState, engine::Frame, orb_element};
+use agent::orbs::{OrbSize, OrbState, engine::Frame, orb_element};
 use gpui::{
-    Context, Entity, Render, ScrollHandle, SharedString, Subscription, Task, Window, div,
-    prelude::*, px,
+    Context, Render, ScrollHandle, SharedString, Subscription, Task, Window, div, prelude::*, px,
 };
 use theme::Theme;
 use ui::{
@@ -36,12 +34,11 @@ use crate::{hint, pressable, stack};
 
 const TICK: Duration = Duration::from_millis(40);
 
-/// The page: size selection, one featured orb, twelve states.
+/// The page: size selection, twelve states.
 pub struct Orbs {
     /// Animation time, advanced one [`TICK`] per tick that actually fired.
     t: Duration,
     size: OrbSize,
-    featured: Entity<Orb>,
     segments: [gpui::FocusHandle; 4],
     scroll: ScrollHandle,
     bar: TransientState,
@@ -58,7 +55,6 @@ impl Orbs {
         Self {
             t: Duration::ZERO,
             size: OrbSize::Avatar,
-            featured: cx.new(|_| Orb::new().state(OrbState::Searching).size(OrbSize::Avatar)),
             segments: std::array::from_fn(|_| cx.focus_handle().tab_stop(true)),
             scroll: ScrollHandle::new(),
             bar: TransientState::new(),
@@ -145,9 +141,8 @@ impl Render for Orbs {
                             .child(hint(
                                 &theme,
                                 "A port of gpui-thinking-orbs: twelve hand-tuned states, four \
-                 sizes, monochrome ink over any substrate. The featured orb is \
-                 the builder entity; the grid below is `orb_element` driven by \
-                 this page's timer.",
+                 sizes, monochrome ink over any substrate. The grid is \
+                 `orb_element` driven by this page's timer.",
                             ))
                             .child(theme.toggle_group().children(
                                 OrbSize::ALL_SIZES.iter().copied().enumerate().map(
@@ -165,8 +160,6 @@ impl Render for Orbs {
                                             cx,
                                             move |view, cx| {
                                                 view.size = size;
-                                                view.featured
-                                                    .update(cx, |orb, cx| orb.set_size(size, cx));
                                                 cx.notify();
                                             },
                                         )
@@ -174,21 +167,6 @@ impl Render for Orbs {
                                     },
                                 ),
                             ))
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap(px(16.0))
-                                    .child(
-                                        div()
-                                            .text_size(px(12.0))
-                                            .font_family(theme.font_mono.clone())
-                                            .text_color(theme.text_muted)
-                                            .child("Orb::new().state(..).size(..)"),
-                                    )
-                                    .child(self.featured.clone()),
-                            )
                             .child(div().flex().flex_row().flex_wrap().gap(px(20.0)).children(
                                 OrbState::ALL_STATES.iter().zip(&self.frames).map(
                                     |(state, frame)| Self::cell(*state, size, t, frame, &theme),

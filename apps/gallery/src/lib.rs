@@ -389,8 +389,7 @@ pub const TABS: &[Tab] = &[
 pub const PATTERNS: &[Group] = &[
     // A group per kind of app, and this one is the driver: bezel is a UI
     // library for agent apps. A page appears here when the parts under it are
-    // real — the composer, the tool calls and the transcript are named in
-    // `TODO.md`, and none of them is a row until it can be pressed.
+    // real — nothing is a row until it can be pressed.
     Group {
         title: "Agent",
         sections: &[
@@ -445,11 +444,6 @@ pub const PATTERNS: &[Group] = &[
                 "apps/gallery/src/patterns/document.rs",
             ),
             section("syntax", "Syntax", "apps/gallery/src/patterns/syntax.rs"),
-            section(
-                "music-player",
-                "Music player",
-                "apps/gallery/src/patterns/music.rs",
-            ),
         ],
     },
 ];
@@ -714,15 +708,14 @@ pub struct Gallery {
     /// Which column the table page is sorted by. The app's, because the app is
     /// what has to sort the rows — the table only says what a click meant.
     table_sort: Option<Sort>,
-    /// The music pattern — one field, because a pattern is a screen and owns a
-    /// screen's worth of state. A component demo can keep its value or two up
-    /// here beside the rest; thirteen of them cannot.
+    /// One field per pattern, because a pattern is a screen and owns a screen's
+    /// worth of state. A component demo can keep its value or two up here
+    /// beside the rest; thirteen of them cannot.
     activity: Entity<patterns::agent::Activity>,
     tool_calls: Entity<patterns::agent::ToolCalls>,
     agent_composer: Entity<patterns::agent::Composer>,
     transcript: Entity<patterns::transcript::Transcript>,
     diff: Entity<patterns::diff::Diff>,
-    music: Entity<patterns::music::MusicPlayer>,
     document: Entity<patterns::document::Document>,
     #[cfg(not(target_family = "wasm"))]
     terminal: Entity<patterns::terminal::Terminal>,
@@ -857,7 +850,6 @@ impl Gallery {
             agent_composer: cx.new(patterns::agent::Composer::new),
             transcript: cx.new(|_| patterns::transcript::Transcript::default()),
             diff: cx.new(|_| patterns::diff::Diff),
-            music: cx.new(|_| patterns::music::MusicPlayer::default()),
             document: cx.new(patterns::document::Document::new),
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(patterns::terminal::Terminal::new),
@@ -2926,7 +2918,6 @@ impl Gallery {
             "agent-composer" => self.agent_composer.clone().into_any_element(),
             "agent-transcript" => self.transcript.clone().into_any_element(),
             "agent-diff" => self.diff.clone().into_any_element(),
-            "music-player" => self.music.clone().into_any_element(),
             "document" => self.document.clone().into_any_element(),
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),

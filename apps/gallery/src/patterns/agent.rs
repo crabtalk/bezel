@@ -14,7 +14,7 @@
 //! answer zone. That is also why there is no transcript here: one exchange is
 //! all the parts can carry today.
 //!
-//! Like the music player it is an entity, for the reason stated there: a screen
+//! It is an entity rather than a handful of fields on the gallery: a screen
 //! owns a screen's worth of state, and its host holds one field.
 
 use std::time::Duration;
@@ -34,9 +34,8 @@ use ui::{
 };
 use web_time::Instant;
 
-/// The question on the page. Invented, like the music player's album, and about
-/// this repository because a reasoning trace has to be *about* something before
-/// it reads as one.
+/// The question on the page. Invented, and about this repository because a
+/// reasoning trace has to be *about* something before it reads as one.
 const PROMPT: &str = "Why does bezel have no bezel-agent crate yet?";
 
 /// The reasoning, one line per beat. A real one arrives as tokens; the unit
@@ -54,8 +53,8 @@ const REASONING: [&str; 14] = [
     "Neither fails \"would a non-agent app want it\".",
     "Looking for the residue a new crate would hold.",
     "There isn't any yet.",
-    "The music player is the precedent: it set out to need bezel-media",
-    "and produced a control bar, which was general, so it went to ui.",
+    "The control bar is the precedent: it set out to need bezel-media",
+    "and turned out general, so it went to ui.",
 ];
 
 /// What it says once it stops. Plain text — see the module note.
@@ -110,9 +109,8 @@ impl Default for Activity {
 }
 
 impl Activity {
-    /// How many lines have arrived. Derived from the wall clock like the music
-    /// player's position, so a dropped frame costs nothing and no per-frame
-    /// counter drifts away from the truth.
+    /// How many lines have arrived. Derived from the wall clock, so a dropped
+    /// frame costs nothing and no per-frame counter drifts away from the truth.
     fn shown(&self) -> usize {
         match self.run {
             None => REASONING.len(),
@@ -250,9 +248,8 @@ impl Render for Activity {
         let running = self.running();
         let open = self.thought.get(running);
 
-        // Same rule as the music player's clock: the line count is derived at
-        // paint time, so the only thing that makes it move is asking for the
-        // next frame. A finished page costs nothing.
+        // The line count is derived at paint time, so the only thing that makes
+        // it move is asking for the next frame. A finished page costs nothing.
         if running {
             window.request_animation_frame();
         }
