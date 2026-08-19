@@ -46,15 +46,21 @@ const FASTEST: f32 = 4.0;
 /// One press of ← or → on the focused slider.
 const NUDGE: f32 = 0.05;
 
-/// The names a chat client might actually show.
+/// The names a chat client might actually show — a seed is bytes, and the row
+/// is here to say that no script is the default one.
 const NAMES: &[&str] = &[
     "alain",
-    "Sara",
-    "🦊",
-    "café-4",
     "Grace Hopper",
-    "Ada",
-    "Claude",
+    "Jürgen Weiß",
+    "café-4",
+    "Пётр",
+    "صبا",
+    "आर्या",
+    "小明",
+    "김하늘",
+    "さくら",
+    "@sara",
+    "🦀",
 ];
 
 /// One cycling face, and whether it is still running.

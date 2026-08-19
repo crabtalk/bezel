@@ -2,7 +2,7 @@
 //! `r(θ)` that every seed lands somewhere inside.
 
 use std::{
-    f32::consts::{FRAC_PI_2, PI, TAU},
+    f32::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU},
     sync::atomic::{AtomicU64, Ordering},
 };
 use web_time::{SystemTime, UNIX_EPOCH};
@@ -67,6 +67,17 @@ impl Shape {
         taper: 0.2,
         ..Self::ROUND
     };
+    pub const BEAN: Self = Self {
+        lobes: [lobe(2, 0.13, 0.9), NONE, NONE],
+        stretch: 1.1,
+        rot: 0.5,
+        ..Self::ROUND
+    };
+    pub const DROP: Self = Self {
+        stretch: 0.92,
+        taper: 0.44,
+        ..Self::ROUND
+    };
     pub const BLOB: Self = Self {
         lobes: [lobe(3, 0.09, 0.6), lobe(5, 0.035, 2.1), NONE],
         rot: 0.4,
@@ -75,6 +86,14 @@ impl Shape {
     pub const CLOUD: Self = Self {
         lobes: [lobe(5, 0.12, 1.2), lobe(2, 0.05, 0.3), NONE],
         stretch: 1.1,
+        ..Self::ROUND
+    };
+    /// A quarter of the segment past the vertex the polygon term puts at the
+    /// top, which is what turns a diamond into a square.
+    pub const TILE: Self = Self {
+        sides: 4,
+        corner: 0.82,
+        rot: FRAC_PI_4,
         ..Self::ROUND
     };
     pub const GEM: Self = Self {
@@ -95,11 +114,14 @@ impl Shape {
     };
 
     /// The presets, for a picker that wants to name them.
-    pub const PRESETS: [(&'static str, Self); 7] = [
+    pub const PRESETS: [(&'static str, Self); 10] = [
         ("round", Self::ROUND),
         ("egg", Self::EGG),
+        ("bean", Self::BEAN),
         ("blob", Self::BLOB),
         ("cloud", Self::CLOUD),
+        ("drop", Self::DROP),
+        ("tile", Self::TILE),
         ("gem", Self::GEM),
         ("shard", Self::SHARD),
         ("sun", Self::SUN),
@@ -234,12 +256,33 @@ impl From<&str> for Shape {
     }
 }
 
-/// FNV-1a over the trimmed, lowercased name, so the same person keeps the same
-/// face across whatever the keyboard did.
+/// FNV-1a over a canonical form of the name — lowercased, outer whitespace
+/// dropped and inner runs collapsed to one space — so the same person keeps the
+/// same face across whatever the keyboard did.
+///
+/// Composed and decomposed spellings still part ways: `café` written with `é`
+/// and with `e` + a combining acute are one name to a reader and two here.
+/// Normalizing them together needs a Unicode table, which is a dependency this
+/// crate does not carry.
 pub fn seed(name: &str) -> u64 {
+    let feed = |h: u64, b: u8| (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3);
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in name.trim().to_lowercase().bytes() {
-        h = (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3);
+    let (mut started, mut gap) = (false, false);
+    let mut buf = [0u8; 4];
+    for c in name.chars().flat_map(char::to_lowercase) {
+        if c.is_whitespace() {
+            // Only between characters, so leading and trailing runs never land.
+            gap = started;
+            continue;
+        }
+        if gap {
+            h = feed(h, b' ');
+            gap = false;
+        }
+        for b in c.encode_utf8(&mut buf).as_bytes() {
+            h = feed(h, *b);
+        }
+        started = true;
     }
     h
 }

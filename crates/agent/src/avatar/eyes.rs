@@ -57,12 +57,52 @@ impl Eyes {
         n: 5.0,
         ..Self::CALM
     };
+    pub const TALL: Self = Self {
+        rx: 0.11,
+        ratio: 3.2,
+        gap: 0.32,
+        ..Self::CALM
+    };
+    /// `n` near 2 is a true ellipse, which at this ratio is a circle.
+    pub const DOTS: Self = Self {
+        rx: 0.11,
+        ratio: 1.0,
+        gap: 0.3,
+        n: 2.2,
+        ..Self::CALM
+    };
+    /// A lean only reads on an elongated eye — a round one looks the same at
+    /// every angle.
+    pub const SLY: Self = Self {
+        rx: 0.12,
+        ratio: 2.5,
+        lean: 16.0,
+        ..Self::CALM
+    };
+    pub const CLOSE: Self = Self {
+        gap: 0.22,
+        ..Self::CALM
+    };
+    pub const FAR: Self = Self {
+        gap: 0.5,
+        ..Self::CALM
+    };
+    pub const LOW: Self = Self {
+        rise: -0.16,
+        ..Self::CALM
+    };
 
-    pub const PRESETS: [(&'static str, Self); 4] = [
+    pub const PRESETS: [(&'static str, Self); 10] = [
         ("calm", Self::CALM),
         ("wide", Self::WIDE),
         ("keen", Self::KEEN),
+        ("tall", Self::TALL),
+        ("dots", Self::DOTS),
+        ("sly", Self::SLY),
         ("sleepy", Self::SLEEPY),
+        ("close", Self::CLOSE),
+        ("far", Self::FAR),
+        ("low", Self::LOW),
     ];
 }
 

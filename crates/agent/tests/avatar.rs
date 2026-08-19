@@ -60,6 +60,7 @@ fn a_name_is_one_seed() {
     assert_eq!(Shape::from("Sara"), Shape::from("Sara"));
     assert_ne!(Shape::from("Sara"), Shape::from("Dan"));
     assert_eq!(seed("  Mixed Case 9  "), seed("mixed case 9"));
+    assert_eq!(seed("Grace\u{a0} Hopper"), seed("grace hopper"));
 }
 
 /// Motion is a function of `t` alone: the same instant paints the same face,
