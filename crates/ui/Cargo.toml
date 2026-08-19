@@ -1,6 +1,5 @@
 [package]
 name = "ui"
-
 description = "SwiftUI-flavored components for gpui — popovers, menus, buttons, toggles, and loaders"
 version.workspace = true
 edition.workspace = true
@@ -15,6 +14,16 @@ rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+default = ["geist-sans", "geist-mono", "geist-weights"]
+# Geist (variable), 165 KB. Off, `Theme::font_sans_fallback` is what paints.
+geist-sans = []
+# Geist Mono (variable), 168 KB. Off, `Theme::font_mono_fallback` is what paints.
+geist-mono = []
+# The static 500/600/700 Geist faces, 375 KB — sans only, there are no mono
+# statics. Only the cosmic-text path needs them; a macOS build can drop it.
+geist-weights = ["geist-sans"]
 
 [dependencies]
 theme.workspace = true

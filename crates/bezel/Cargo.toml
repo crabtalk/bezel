@@ -15,10 +15,18 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["geist-sans", "geist-mono", "geist-weights"]
+geist-sans = ["ui/geist-sans"]
+geist-mono = ["ui/geist-mono"]
+geist-weights = ["ui/geist-weights"]
+
 [dependencies]
 agent.workspace = true
 motion.workspace = true
-syntax.workspace = true
 theme.workspace = true
-ui.workspace = true
+# Spelled out rather than inherited: cargo rejects `default-features = false` on
+# a workspace dependency that has them, and clearing them in the workspace entry
+# would make every other member ask for the fonts back.
+ui = { path = "../ui", version = "0.0.2", default-features = false }
 gpui.workspace = true

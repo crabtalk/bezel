@@ -165,8 +165,9 @@ pub struct Theme {
     pub diff_hunk_bg: Hsla,
 
     // ---- fonts ----
-    /// UI font family (bundling of Geist lands with asset work; until then the
-    /// text system falls back to the system sans when the family is missing).
+    /// UI font family — the name the text system resolves, not the bytes. Point
+    /// it at your own family once you have registered that font with the text
+    /// system; a family nothing registered falls through to the fallback below.
     pub font_sans: SharedString,
     /// Monospace family for code/terminal.
     pub font_mono: SharedString,

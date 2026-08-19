@@ -571,7 +571,6 @@ dependencies = [
  "agent",
  "gpui",
  "motion",
- "syntax",
  "theme",
  "ui",
 ]

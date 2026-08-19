@@ -16,15 +16,26 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["rust", "python", "typescript", "json", "go", "bash", "toml"]
+rust = ["dep:tree-sitter-rust"]
+python = ["dep:tree-sitter-python"]
+# Both the TypeScript and TSX rows — one grammar crate, and JavaScript rides TSX.
+typescript = ["dep:tree-sitter-typescript"]
+json = ["dep:tree-sitter-json"]
+go = ["dep:tree-sitter-go"]
+bash = ["dep:tree-sitter-bash"]
+toml = ["dep:tree-sitter-toml-ng"]
+
 [dependencies]
 theme.workspace = true
 tree-sitter.workspace = true
 tree-sitter-highlight.workspace = true
 tree-sitter-language.workspace = true
-tree-sitter-rust.workspace = true
-tree-sitter-python.workspace = true
-tree-sitter-json.workspace = true
-tree-sitter-typescript.workspace = true
-tree-sitter-go.workspace = true
-tree-sitter-bash.workspace = true
-tree-sitter-toml-ng.workspace = true
+tree-sitter-rust = { workspace = true, optional = true }
+tree-sitter-python = { workspace = true, optional = true }
+tree-sitter-json = { workspace = true, optional = true }
+tree-sitter-typescript = { workspace = true, optional = true }
+tree-sitter-go = { workspace = true, optional = true }
+tree-sitter-bash = { workspace = true, optional = true }
+tree-sitter-toml-ng = { workspace = true, optional = true }

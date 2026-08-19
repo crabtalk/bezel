@@ -16,13 +16,20 @@
 //! text, one text system holding the fonts while the other draws the frame.
 //! Going through `bezel::gpui` makes that impossible by construction.
 //!
-//! # What it does not do yet
+//! # What it carries, and what it will not
 //!
-//! No feature flags. They are the reason `ARCHITECTURE.md` planned this crate —
-//! gating `markdown` (pulldown-cmark), `syntax` (28 tree-sitter grammars) and
-//! `terminal` (alacritty) so nobody compiles a grammar to get a button. The
-//! layers are light and unconditional until the first grammar or terminal
-//! growth makes them heavy enough to gate.
+//! The layers here are the ones every app paints with. `markdown`, `syntax` and
+//! `terminal` are peer crates a consumer names itself, because each is an
+//! *implementation* behind a seam the library already opens —
+//! `markdown::set_highlighter` takes any `fn(&str, &str)`, so tree-sitter is one
+//! answer and not the answer. Re-exporting `syntax` made every consumer of this
+//! crate compile seven C grammars to get a button, and made the facade
+//! unbuildable for `wasm32-unknown-unknown`, where that C has no libc — the very
+//! failure `markdown` names no highlighter to avoid.
+//!
+//! Font gates are wired: `geist-sans`, `geist-mono` and `geist-weights`, all on
+//! by default, forwarded to `ui` so an app shipping its own type stops paying
+//! for the families it does not paint.
 //!
 //! Depending on a single layer directly (`theme` for tokens alone, which
 //! is useful to anyone writing their own gpui components) stays supported and
@@ -30,7 +37,6 @@
 
 pub use agent;
 pub use motion;
-pub use syntax;
 pub use theme;
 pub use ui;
 

@@ -33,13 +33,24 @@ it type-annotates values from every layer as `bezel::gpui` types, so a split
 graph stops compiling instead of producing a window that paints shapes but no
 text.
 
-It carries **no feature flags yet**. Features were the original reason to
-build it: gating `markdown` (pulldown-cmark), `syntax` (28 tree-sitter
-grammars) and `terminal` (alacritty) so nobody compiles a grammar to get a
-button. Those crates do not exist, and a feature that gates nothing is
-machinery for its own sake — they arrive together. Depending on a single layer
-directly stays supported: the token system alone is useful to anyone writing
-their own gpui components.
+**It carries only the layers every app paints with.** `markdown`, `syntax` and
+`terminal` are peer crates a consumer names itself, and layer gating never
+needed to arrive because each is an *implementation* behind a seam already open:
+`markdown::set_highlighter` takes any `fn(&str, &str) -> Option<Vec<(Range,
+HighlightKind)>>`, so tree-sitter is one answer to highlighting and not the
+answer. Re-exporting `syntax` here made every consumer compile seven C grammars
+to get a button, and made the facade fail outright for
+`wasm32-unknown-unknown` — where that C has no libc, which is the very failure
+`markdown` names no highlighter to avoid. A gate would have hidden that behind a
+default; not carrying the crate removes it.
+
+Its only feature flags are one per bundled face — `geist-sans`, `geist-mono`,
+`geist-weights` — all on by default and forwarded to `ui`: an app that registers
+its own typeface points `Theme::font_sans` at it and drops the Geist it no
+longer paints. `ui` is also the one dependency spelled out rather than
+inherited, because cargo will not let a member clear a workspace dependency's
+default features. Depending on a single layer directly stays supported: the
+token system alone is useful to anyone writing their own gpui components.
 
 ## The markdown model
 

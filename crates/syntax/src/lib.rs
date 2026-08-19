@@ -6,45 +6,30 @@
 //! and no rendering here — kinds map to colors through
 //! [`SyntaxPalette::color`](theme::SyntaxPalette::color) — and no injection
 //! machinery: the fence already names the grammar, so a block is one parse
-//! with one highlights query. Languages are a table ([`lang`]); a grammar
-//! with no match returns `None` and the caller renders plain text.
+//! with one highlights query. Languages are a table ([`lang::LANGS`], one row
+//! per feature); a grammar with no match returns `None` and the caller renders
+//! plain text.
+//!
+//! A language the table does not carry is a [`Lang::new`](lang::Lang::new)
+//! `static` of your own, highlighted through
+//! [`Lang::highlight`](lang::Lang::highlight) — the same path the built-in rows
+//! take, so nothing about the query cache or the capture vocabulary has to be
+//! rebuilt to add one.
 
 use std::ops::Range;
 use theme::HighlightKind;
-use tree_sitter_highlight::{HighlightEvent, Highlighter};
 
-mod lang;
+pub mod lang;
+
+/// The exact tree-sitter these grammars were built against. Reach for a
+/// `LanguageFn` through here rather than declaring your own tree-sitter, or
+/// [`Lang::new`](lang::Lang::new) will not accept it — two versions in the
+/// graph are two unrelated types with one name.
+pub use tree_sitter;
+pub use tree_sitter_language;
 
 /// Highlight `source` as `language` (a fence tag — `rs`, `py`, `tsx`, …).
 /// `None` when the tag names no language.
 pub fn highlight(source: &str, language: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
-    let compiled = lang::resolve(language)?.compiled()?;
-    let config = &compiled.config;
-    let mut highlighter = Highlighter::new();
-    highlighter.parser().set_language(&config.language).ok()?;
-    let mut spans = Vec::new();
-    // Nested highlight starts end with `HighlightEnd`; the top of the stack is
-    // the kind painting the `Source` ranges that follow it.
-    let mut kinds: Vec<HighlightKind> = Vec::new();
-    for event in highlighter
-        .highlight(config, source.as_bytes(), None, |_| None)
-        .ok()?
-        .flatten()
-    {
-        match event {
-            HighlightEvent::HighlightStart(hl) => {
-                let name = compiled.names.get(hl.0).map(String::as_str).unwrap_or("");
-                kinds.push(lang::kind_of(name));
-            }
-            HighlightEvent::HighlightEnd => {
-                kinds.pop();
-            }
-            HighlightEvent::Source { start, end } => {
-                if let Some(&kind) = kinds.last() {
-                    spans.push((start..end, kind));
-                }
-            }
-        }
-    }
-    Some(spans)
+    lang::resolve(language)?.highlight(source)
 }
