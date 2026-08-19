@@ -397,6 +397,18 @@ impl TextField {
         self.set_content("", cx);
     }
 
+    /// [`Self::with_placeholder`] after construction, for a hint that follows
+    /// something else — the field naming whichever agent, file or channel is
+    /// selected rather than being rebuilt each time one is.
+    pub fn set_placeholder(
+        &mut self,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        self.placeholder = placeholder.into();
+        cx.notify();
+    }
+
     /// Where the caret is, as a byte offset into [`Self::content`].
     ///
     /// What a caller needs to read the text *behind* the caret: the `#` an
