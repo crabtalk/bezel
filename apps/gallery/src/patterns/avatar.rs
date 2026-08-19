@@ -305,12 +305,15 @@ impl Render for Avatars {
                                     )
                                     .child(
                                         div().w(px(180.0)).child(
-                                            focus::focusable(
-                                                &theme,
-                                                &self.slider,
-                                                theme.slider(self.speed),
-                                            )
-                                            .id("avatar-speed")
+                                            // Tracked rather than `focus::focusable`, which
+                                            // rings a focused control with its own outline —
+                                            // a box around a track, here. Keys still reach it.
+                                            theme
+                                                .slider(self.speed)
+                                                .key_context(focus::CONTROL_KEY_CONTEXT)
+                                                .track_focus(&self.slider)
+                                                .id("avatar-speed")
+                                            .cursor_pointer()
                                             .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| Empty))
                                             .on_drag_move(cx.listener(
                                                 |view, event: &DragMoveEvent<SliderDrag>, _, cx| {
