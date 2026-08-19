@@ -444,6 +444,7 @@ pub const PATTERNS: &[Group] = &[
                 "Document",
                 "apps/gallery/src/patterns/document.rs",
             ),
+            section("syntax", "Syntax", "apps/gallery/src/patterns/syntax.rs"),
             section(
                 "music-player",
                 "Music player",
@@ -726,6 +727,7 @@ pub struct Gallery {
     #[cfg(not(target_family = "wasm"))]
     terminal: Entity<patterns::terminal::Terminal>,
     orbs: Entity<patterns::orbs::Orbs>,
+    syntax: Entity<patterns::syntax::Syntax>,
     avatar: Entity<patterns::avatar::Avatars>,
     /// Which top-nav tab is open.
     tab: usize,
@@ -860,6 +862,7 @@ impl Gallery {
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(patterns::terminal::Terminal::new),
             orbs: cx.new(patterns::orbs::Orbs::new),
+            syntax: cx.new(patterns::syntax::Syntax::new),
             avatar: cx.new(|_| patterns::avatar::Avatars::default()),
             embedded: false,
         }
@@ -2928,6 +2931,7 @@ impl Gallery {
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),
             "agent-orbs" => self.orbs.clone().into_any_element(),
+            "syntax" => self.syntax.clone().into_any_element(),
             "agent-avatar" => self.avatar.clone().into_any_element(),
 
             _ => div().into_any_element(),

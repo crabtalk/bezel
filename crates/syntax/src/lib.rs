@@ -13,31 +13,15 @@ mod lang;
 
 use std::ops::Range;
 
-use tree_sitter::Language;
-use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
+use tree_sitter_highlight::{HighlightEvent, Highlighter};
 
 use theme::HighlightKind;
-
-use lang::{kind_of, resolve};
 
 /// Highlight `source` as `language` (a fence tag — `rs`, `py`, `tsx`, …).
 /// `None` when the tag names no language.
 pub fn highlight(source: &str, language: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
-    let lang = resolve(language)?;
-    let grammar: Language = lang.grammar.into();
-    let mut config = HighlightConfiguration::new(grammar, lang.name, lang.query, "", "").ok()?;
-    // Recognize exactly the capture names the query uses, so every
-    // `Highlight` index resolves straight through `names`. `_`-prefixed
-    // names are predicate anchors, never paint — recognizing them would
-    // emit their ranges as spans.
-    let names: Vec<String> = config
-        .query
-        .capture_names()
-        .iter()
-        .map(|s| s.to_string())
-        .filter(|s| !s.starts_with('_'))
-        .collect();
-    config.configure(&names);
+    let compiled = lang::resolve(language)?.compiled()?;
+    let config = &compiled.config;
     let mut highlighter = Highlighter::new();
     highlighter.parser().set_language(&config.language).ok()?;
     let mut spans = Vec::new();
@@ -45,13 +29,14 @@ pub fn highlight(source: &str, language: &str) -> Option<Vec<(Range<usize>, High
     // the kind painting the `Source` ranges that follow it.
     let mut kinds: Vec<HighlightKind> = Vec::new();
     for event in highlighter
-        .highlight(&config, source.as_bytes(), None, |_| None)
+        .highlight(config, source.as_bytes(), None, |_| None)
         .ok()?
         .flatten()
     {
         match event {
             HighlightEvent::HighlightStart(hl) => {
-                kinds.push(kind_of(names.get(hl.0).map(String::as_str).unwrap_or("")));
+                let name = compiled.names.get(hl.0).map(String::as_str).unwrap_or("");
+                kinds.push(lang::kind_of(name));
             }
             HighlightEvent::HighlightEnd => {
                 kinds.pop();

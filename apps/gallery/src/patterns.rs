@@ -10,6 +10,7 @@ pub mod diff;
 pub mod document;
 pub mod music;
 pub mod orbs;
+pub mod syntax;
 #[cfg(not(target_family = "wasm"))]
 pub mod terminal;
 pub mod transcript;

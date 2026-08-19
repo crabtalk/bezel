@@ -1,6 +1,10 @@
 //! The languages bezel can highlight: a row per grammar — the fence aliases
 //! it answers to, the tree-sitter grammar, and its highlights query.
 
+use std::sync::OnceLock;
+
+use tree_sitter::Language;
+use tree_sitter_highlight::HighlightConfiguration;
 use tree_sitter_language::LanguageFn;
 
 use theme::HighlightKind;
@@ -10,38 +14,102 @@ pub struct Lang {
     pub aliases: &'static [&'static str],
     pub grammar: LanguageFn,
     pub query: &'static str,
+    /// Compiling a highlights query costs milliseconds — tsx.scm is 750 lines
+    /// — and a render loop calls [`Lang::compiled`] every frame.
+    compiled: OnceLock<Option<Compiled>>,
 }
 
-pub const LANGS: &[Lang] = &[
+/// A grammar's query, compiled and configured once.
+pub struct Compiled {
+    pub config: HighlightConfiguration,
+    /// Capture names by `Highlight` index, for [`kind_of`].
+    pub names: Vec<String>,
+}
+
+impl Lang {
+    pub fn compiled(&'static self) -> Option<&'static Compiled> {
+        self.compiled
+            .get_or_init(|| {
+                let grammar: Language = self.grammar.into();
+                let mut config =
+                    HighlightConfiguration::new(grammar, self.name, self.query, "", "").ok()?;
+                // Recognize exactly the capture names the query uses, so every
+                // `Highlight` index resolves straight through `names`.
+                // `_`-prefixed names are predicate anchors, never paint —
+                // recognizing them would emit their ranges as spans.
+                let names: Vec<String> = config
+                    .query
+                    .capture_names()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.starts_with('_'))
+                    .collect();
+                config.configure(&names);
+                Some(Compiled { config, names })
+            })
+            .as_ref()
+    }
+}
+
+pub static LANGS: [Lang; 8] = [
     Lang {
         name: "rust",
         aliases: &["rust", "rs"],
         grammar: tree_sitter_rust::LANGUAGE,
         query: include_str!("../queries/rust.scm"),
+        compiled: OnceLock::new(),
     },
     Lang {
         name: "python",
         aliases: &["python", "py"],
         grammar: tree_sitter_python::LANGUAGE,
         query: include_str!("../queries/python.scm"),
+        compiled: OnceLock::new(),
     },
     Lang {
         name: "typescript",
         aliases: &["typescript", "ts"],
         grammar: tree_sitter_typescript::LANGUAGE_TYPESCRIPT,
         query: include_str!("../queries/typescript.scm"),
+        compiled: OnceLock::new(),
     },
+    // JavaScript rides the TSX grammar: TSX parses JS, and a separate grammar
+    // plus query would buy only the `<`-ambiguity edge cases that JSX and type
+    // assertions disagree on — which a highlighted sample does not hinge on.
     Lang {
         name: "tsx",
-        aliases: &["tsx"],
+        aliases: &["tsx", "jsx", "javascript", "js"],
         grammar: tree_sitter_typescript::LANGUAGE_TSX,
         query: include_str!("../queries/tsx.scm"),
+        compiled: OnceLock::new(),
     },
     Lang {
         name: "json",
         aliases: &["json", "jsonc"],
         grammar: tree_sitter_json::LANGUAGE,
         query: include_str!("../queries/json.scm"),
+        compiled: OnceLock::new(),
+    },
+    Lang {
+        name: "go",
+        aliases: &["go", "golang"],
+        grammar: tree_sitter_go::LANGUAGE,
+        query: include_str!("../queries/go.scm"),
+        compiled: OnceLock::new(),
+    },
+    Lang {
+        name: "bash",
+        aliases: &["bash", "sh", "shell", "zsh", "console"],
+        grammar: tree_sitter_bash::LANGUAGE,
+        query: include_str!("../queries/bash.scm"),
+        compiled: OnceLock::new(),
+    },
+    Lang {
+        name: "toml",
+        aliases: &["toml"],
+        grammar: tree_sitter_toml_ng::LANGUAGE,
+        query: include_str!("../queries/toml.scm"),
+        compiled: OnceLock::new(),
     },
 ];
 

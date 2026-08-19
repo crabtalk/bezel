@@ -420,10 +420,20 @@ impl Render for Orb {
 /// Paint one frame of an orb at animation time `t` (seconds, unbounded) — the
 /// pure, host-ticked form of [`Orb`]. Build it inside any render that runs on
 /// a clock of its own; the reduced-motion convention is `t = 0.6`.
-pub fn orb_element(state: OrbState, size: OrbSize, t: f32) -> impl IntoElement {
+///
+/// `frame` is the caller's geometry buffer, overwritten here and handed to the
+/// paint closure. Geometry is a function of `t`, so there is nothing to cache
+/// between frames — but a host that keeps one buffer per orb reuses its two
+/// `Vec`s forever instead of growing a pair from empty on every tick.
+pub fn orb_element(
+    state: OrbState,
+    size: OrbSize,
+    t: f32,
+    frame: &Rc<RefCell<Frame>>,
+) -> impl IntoElement {
     let resolved = resolve_preset(state, size);
     let size_px = size.pixels();
-    let frame = Rc::new(RefCell::new(Frame::new()));
+    let frame = frame.clone();
     draw_mode_into(
         resolved.mode,
         size_px,

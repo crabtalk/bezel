@@ -588,12 +588,14 @@ fn code_block(
             let start = offset;
             offset += line.len() + 1;
             let mut runs = Vec::new();
+            // Runs are measured within the line; spans are byte ranges over the
+            // whole block, so every span is clipped to the line and rebased.
             let mut pos = 0usize;
             if let Some(spans) = &spans {
                 let end = start + line.len();
                 for (range, kind) in spans.iter().filter(|(r, _)| r.end > start && r.start < end) {
-                    let s = range.start.max(start).min(end);
-                    let e = range.end.min(end);
+                    let s = range.start.clamp(start, end) - start;
+                    let e = range.end.min(end) - start;
                     if s > pos {
                         runs.push(run(s - pos, theme.text));
                     }

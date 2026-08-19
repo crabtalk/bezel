@@ -34,11 +34,9 @@ use ui::widgets::Controls;
 /// The document on the page. Canonical markdown — `serialize(parse(SOURCE))`
 /// returns it unchanged, which the gallery's tests assert, so the Source
 /// segment can be compared against this by eye.
-pub const SOURCE: &str = "\
-# Markdown
+pub const SOURCE: &str = r#"# Markdown
 
-Body text with **bold**, _italic_, ~~struck~~, `inline code`, and a \
-[link](https://example.com).
+Body text with **bold**, _italic_, ~~struck~~, `inline code`, and a [link](https://example.com).
 
 ## Lists
 
@@ -60,7 +58,7 @@ Body text with **bold**, _italic_, ~~struck~~, `inline code`, and a \
 
 ```rust
 fn main() {
-    println!(\"hello\");
+    println!("hello");
 }
 ```
 
@@ -71,7 +69,7 @@ fn main() {
 | a | 1 |
 | b | 22 |
 
----";
+---"#;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {

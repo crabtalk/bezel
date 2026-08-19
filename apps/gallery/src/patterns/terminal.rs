@@ -11,8 +11,8 @@
 //! Native-only: `alacritty_terminal` pulls `home`, which does not compile for
 //! wasm32, so the crate (and this page) sits off the web build.
 
-use gpui::{Context, Render, SharedString, Window, div, prelude::*, px};
-use std::time::{Duration, Instant};
+use gpui::{Context, Render, SharedString, Subscription, Task, Window, div, prelude::*, px};
+use std::time::Duration;
 use terminal::{
     emulator::Emulator,
     view::{GridSnapshot, TerminalElement, terminal_panel_bg},
@@ -104,27 +104,22 @@ pub struct Terminal {
     emulator: Emulator,
     /// The script with cumulative arrival times (ms).
     script: Vec<(&'static [u8], u64)>,
-    started: Instant,
+    /// Playback position, advanced one [`TICK_MS`] per tick that actually
+    /// fired. A page nobody is looking at does not tick, so the session pauses
+    /// where it stood rather than replaying into the void.
+    elapsed: u64,
     /// Script beats fed so far.
     fed: usize,
     /// The history-scroll phase has happened.
     scrolled: bool,
+    /// Pending tick. At most one in flight; dropping it pauses the session.
+    tick: Option<Task<()>>,
+    /// Registered lazily on first render, since it needs a `Window`.
+    activation: Option<Subscription>,
 }
 
 impl Terminal {
-    pub fn new(cx: &mut Context<Self>) -> Self {
-        cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(TICK_MS))
-                    .await;
-                // The page is gone: stop the loop with it.
-                let Ok(()) = this.update(cx, |this, cx| this.tick(cx)) else {
-                    return;
-                };
-            }
-        })
-        .detach();
+    pub fn new(_: &mut Context<Self>) -> Self {
         let script = {
             let mut at = 0;
             SCRIPT
@@ -138,17 +133,38 @@ impl Terminal {
         Self {
             emulator: Emulator::new(80, 24),
             script,
-            started: Instant::now(),
+            elapsed: 0,
             fed: 0,
             scrolled: false,
+            tick: None,
+            activation: None,
         }
     }
 
-    /// Play the script from the wall clock: every beat whose time has come is
+    /// Keep the timer already in flight rather than cancel and reschedule it —
+    /// a render between ticks (a click, a scroll) would otherwise push the next
+    /// beat farther out every time and stall playback.
+    fn schedule_tick(&mut self, cx: &mut Context<Self>) {
+        if self.tick.is_some() {
+            return;
+        }
+        self.tick = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(TICK_MS))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.tick = None;
+                this.elapsed += TICK_MS;
+                this.play(cx);
+            });
+        }));
+    }
+
+    /// Play the script from the tick clock: every beat whose time has come is
     /// fed exactly once, so a dropped frame costs nothing. Once the script is
     /// through, scroll back into history, then restart from a fresh grid.
-    fn tick(&mut self, cx: &mut Context<Self>) {
-        let elapsed = self.started.elapsed().as_millis() as u64;
+    fn play(&mut self, cx: &mut Context<Self>) {
+        let elapsed = self.elapsed;
         if self.fed < self.script.len() {
             while self.fed < self.script.len() && self.script[self.fed].1 <= elapsed {
                 let (bytes, _) = self.script[self.fed];
@@ -167,7 +183,7 @@ impl Terminal {
                 self.emulator = Emulator::new(cols, rows);
                 self.fed = 0;
                 self.scrolled = false;
-                self.started = Instant::now();
+                self.elapsed = 0;
             }
         }
         cx.notify();
@@ -210,7 +226,18 @@ impl Terminal {
 }
 
 impl Render for Terminal {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // A backgrounded page stops rendering, so it needs a nudge to pick the
+        // script back up when the window returns.
+        if self.activation.is_none() {
+            self.activation = Some(cx.observe_window_activation(window, |_, _, cx| cx.notify()));
+        }
+        if window.is_window_active() {
+            self.schedule_tick(cx);
+        } else {
+            self.tick = None;
+        }
+
         let theme = Theme::of(cx).clone();
         let this = cx.entity();
         let grid = TerminalElement::new(

@@ -5232,11 +5232,14 @@ version = "0.0.2"
 dependencies = [
  "theme",
  "tree-sitter",
+ "tree-sitter-bash",
+ "tree-sitter-go",
  "tree-sitter-highlight",
  "tree-sitter-json",
  "tree-sitter-language",
  "tree-sitter-python",
  "tree-sitter-rust",
+ "tree-sitter-toml-ng",
  "tree-sitter-typescript",
 ]
 
@@ -5639,6 +5642,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-bash"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e5ec769279cc91b561d3df0d8a5deb26b0ad40d183127f409494d6d8fc53062"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-go"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8560a4d2f835cc0d4d2c2e03cbd0dde2f6114b43bc491164238d333e28b16ea"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-highlight"
 version = "0.26.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5681,6 +5704,16 @@ name = "tree-sitter-rust"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-toml-ng"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9adc2c898ae49730e857d75be403da3f92bb81d8e37a2f918a08dd10de5ebb1"
 dependencies = [
  "cc",
  "tree-sitter-language",
