@@ -9,6 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
+agent.workspace = true
 markdown = { workspace = true, features = ["editor"] }
 motion.workspace = true
 theme.workspace = true

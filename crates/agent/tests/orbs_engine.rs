@@ -1,6 +1,6 @@
 //! Smoke tests + microbench for mode painters.
 
-use ui::orbs::{
+use agent::orbs::{
     ModeKey, OrbSize, OrbState,
     engine::{MAX_ICON_D, MAX_MORPH_DOTS, MAX_NODE_N, ModeOpts, draw_mode, sanitize_mode_opts},
     resolve_preset,

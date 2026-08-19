@@ -27,12 +27,14 @@
 //! get backwards and both are load-bearing here: `max_offset` is the *overflow*
 //! (content minus viewport, not content), and `offset` is **negative** as you
 //! scroll down.
+//!
+//! [`transient`] is the same bar, shown only while its content moves.
 
-use std::{cell::Cell, ops::Range, rc::Rc};
+use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
-    App, DragMoveEvent, Empty, MouseButton, Pixels, ScrollHandle, SharedString, Window, canvas,
-    div, point, prelude::*, px,
+    Animation, AnimationExt, App, DragMoveEvent, ElementId, Empty, MouseButton, Pixels,
+    ScrollHandle, SharedString, Window, canvas, div, point, prelude::*, px,
 };
 
 use theme::ink;
@@ -107,6 +109,43 @@ impl ScrollbarState {
     pub fn dragging(&self) -> bool {
         self.0.get().is_some()
     }
+
+    /// One drag move of the thumb: filter the gesture to this bar's track, then
+    /// translate the pointer into a scroll offset.
+    fn drag(
+        &self,
+        track_id: &SharedString,
+        handle: &ScrollHandle,
+        event: &DragMoveEvent<ScrollbarDrag>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        // Another bar's thumb: `on_drag_move` filters by payload type, and
+        // every bar in the window shares this one.
+        if event.drag(cx).0 != *track_id {
+            return;
+        }
+        let viewport = handle.bounds().size.height;
+        let max_offset = handle.max_offset().y;
+        let Some(range) = thumb(viewport, max_offset, handle.offset().y, MIN_THUMB) else {
+            return;
+        };
+        let size = range.end - range.start;
+        let pointer = event.event.position.y - event.bounds.top();
+        // First move of this drag: the offset has not shifted yet, so the
+        // thumb is still where the press landed on it and the grab is
+        // simply the difference. Held for the rest of the gesture — read it
+        // again later and it would answer "wherever the pointer is now",
+        // which is a thumb that never moves.
+        let grab = self.0.get().unwrap_or_else(|| {
+            let grab = (pointer - range.start).clamp(px(0.0), size);
+            self.0.set(Some(grab));
+            grab
+        });
+        let offset = offset_for_thumb(pointer - grab, viewport, max_offset, size);
+        handle.set_offset(point(handle.offset().x, offset));
+        window.refresh();
+    }
 }
 
 /// The bar: an overlay strip along the right edge of whatever it is laid over,
@@ -154,32 +193,8 @@ pub fn scrollbar(
         .w(px(TRACK))
         .flex()
         .justify_center()
-        .on_drag_move(move |event: &DragMoveEvent<ScrollbarDrag>, window, cx| {
-            // Another bar's thumb: `on_drag_move` filters by payload type, and
-            // every bar in the window shares this one.
-            if event.drag(cx).0 != track_id {
-                return;
-            }
-            let viewport = drag_handle.bounds().size.height;
-            let max_offset = drag_handle.max_offset().y;
-            let Some(range) = thumb(viewport, max_offset, drag_handle.offset().y, MIN_THUMB) else {
-                return;
-            };
-            let size = range.end - range.start;
-            let pointer = event.event.position.y - event.bounds.top();
-            // First move of this drag: the offset has not shifted yet, so the
-            // thumb is still where the press landed on it and the grab is
-            // simply the difference. Held for the rest of the gesture — read it
-            // again later and it would answer "wherever the pointer is now",
-            // which is a thumb that never moves.
-            let grab = drag_state.0.get().unwrap_or_else(|| {
-                let grab = (pointer - range.start).clamp(px(0.0), size);
-                drag_state.0.set(Some(grab));
-                grab
-            });
-            let offset = offset_for_thumb(pointer - grab, viewport, max_offset, size);
-            drag_handle.set_offset(point(drag_handle.offset().x, offset));
-            window.refresh();
+        .on_drag_move(move |event, window, cx| {
+            drag_state.drag(&track_id, &drag_handle, event, window, cx);
         })
         // Both, because a release can land anywhere on screen; a grab left set
         // would make the next press continue the last gesture.
@@ -197,6 +212,166 @@ pub fn scrollbar(
                 .hover(|s| s.bg(ink(0.32)))
                 .on_drag(ScrollbarDrag(id.clone()), |_, _, _, cx| cx.new(|_| Empty)),
         )
+        .child(
+            canvas(
+                move |bounds, window, _| {
+                    // Laid out taller or shorter than the geometry above was
+                    // computed from: that geometry came from last frame's
+                    // handle. Ask for the frame that will paint it right.
+                    // Self-limiting — once they agree, nothing is requested.
+                    if (bounds.size.height - viewport).abs() > px(0.5) {
+                        window.refresh();
+                    }
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        )
+        .into_any_element()
+}
+
+// ---------------------------------------------------------------------------
+// Transient — the same bar, only while the content moves
+// ---------------------------------------------------------------------------
+
+/// How long the thumb stays after the last scroll before fading — the idle
+/// window *is* the fade, because the fork's `Animation` has no delay.
+pub const TRANSIENT_IDLE: Duration = Duration::from_millis(1000);
+
+/// The show-and-fade state behind [`transient`]: the last frame's scroll
+/// state (a change is activity), a generation counter (a fresh animation id
+/// restarts the fade — `AnimationElement` pins its clock to the id it first
+/// laid out with), and the hover flag that holds the thumb up while the
+/// pointer is on the strip.
+#[derive(Clone, Default)]
+pub struct TransientState {
+    cell: Rc<Cell<(Pixels, Pixels, u64, bool)>>,
+    bar: ScrollbarState,
+}
+
+impl TransientState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// The same bar as [`scrollbar`], but it only earns its place while the
+/// content moves: activity raises the thumb, and it fades out over
+/// [`TRANSIENT_IDLE`] once the scrolling stops. Hovering the strip or
+/// dragging the thumb holds it up. With `reduce_motion` there is nothing to
+/// animate, so it renders as the always-on bar.
+pub fn transient(
+    id: impl Into<SharedString>,
+    handle: &ScrollHandle,
+    state: &TransientState,
+    reduce_motion: bool,
+) -> gpui::AnyElement {
+    let id = id.into();
+    let viewport = handle.bounds().size.height;
+    let max_offset = handle.max_offset().y;
+    let Some(range) = thumb(viewport, max_offset, handle.offset().y, MIN_THUMB) else {
+        return Empty.into_any_element();
+    };
+    let size = range.end - range.start;
+
+    // Any change in the scroll state is activity: bump the generation so the
+    // fade restarts under a fresh animation id. The half-pixel slack keeps a
+    // sub-pixel layout jitter from re-showing a settled bar.
+    let mut cell = state.cell.get();
+    if (handle.offset().y - cell.0).abs() > px(0.5) || (max_offset - cell.1).abs() > px(0.5) {
+        cell.0 = handle.offset().y;
+        cell.1 = max_offset;
+        cell.2 += 1;
+        state.cell.set(cell);
+    }
+    let generation = cell.2;
+    let dragging = state.bar.dragging();
+
+    let track_id = id.clone();
+    let drag_handle = handle.clone();
+    let drag_state = state.clone();
+    let release_state = state.clone();
+    let released = move |_: &gpui::MouseUpEvent, _: &mut Window, _: &mut App| {
+        release_state.bar.0.set(None);
+    };
+
+    let track = div()
+        .id(SharedString::from(format!("{id}-track")))
+        .absolute()
+        .top_0()
+        .right_0()
+        .bottom_0()
+        .w(px(TRACK))
+        .flex()
+        .justify_center()
+        .on_drag_move(move |event, window, cx| {
+            drag_state
+                .bar
+                .drag(&track_id, &drag_handle, event, window, cx);
+        })
+        // Both, because a release can land anywhere on screen; a grab left set
+        // would make the next press continue the last gesture.
+        .on_mouse_up(MouseButton::Left, released.clone())
+        .on_mouse_up_out(MouseButton::Left, released)
+        .map(|track| {
+            if reduce_motion {
+                track
+            } else {
+                // The thumb's stand-in at rest: hovering the strip raises it,
+                // and leaving starts its fade.
+                let hover_state = state.clone();
+                track.on_hover(move |hovered: &bool, window, _| {
+                    let mut cell = hover_state.cell.get();
+                    if cell.3 == *hovered {
+                        return;
+                    }
+                    cell.3 = *hovered;
+                    cell.2 += 1;
+                    hover_state.cell.set(cell);
+                    window.refresh();
+                })
+            }
+        });
+
+    let thumb = div()
+        .id(SharedString::from(format!("{id}-thumb")))
+        .absolute()
+        .top(range.start)
+        .h(size)
+        .w(px(THUMB))
+        .rounded_full()
+        .bg(if dragging { ink(0.38) } else { ink(0.2) })
+        .hover(|s| s.bg(ink(0.32)))
+        .on_drag(ScrollbarDrag(id.clone()), |_, _, _, cx| cx.new(|_| Empty));
+
+    let thumb: gpui::AnyElement = if reduce_motion {
+        thumb.into_any_element()
+    } else {
+        // The thumb's presence is the animation: progress 0 is fully up, and
+        // progress 1 — a full idle window later — is hidden, so no frame is
+        // requested once the fade completes.
+        let anim = state.clone();
+        thumb
+            .with_animation(
+                ElementId::from(format!("{id}-fade-{generation}")),
+                Animation::new(TRANSIENT_IDLE),
+                move |el, p| {
+                    let cell = anim.cell.get();
+                    if cell.3 || anim.bar.0.get().is_some() {
+                        el
+                    } else if p < 1.0 {
+                        el.opacity(1.0 - p)
+                    } else {
+                        el.hidden()
+                    }
+                },
+            )
+            .into_any_element()
+    };
+
+    track
+        .child(thumb)
         .child(
             canvas(
                 move |bounds, window, _| {

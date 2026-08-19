@@ -28,6 +28,7 @@
 //! is useful to anyone writing their own gpui components) stays supported and
 //! is not going away.
 
+pub use agent;
 pub use motion;
 pub use syntax;
 pub use theme;

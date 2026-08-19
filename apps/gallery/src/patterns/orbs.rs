@@ -1,6 +1,6 @@
 //! The thinking screen — what an agent surface shows while the model works.
 //!
-//! The orbs themselves are `ui::orbs`, a component; this page is the
+//! The orbs themselves are `agent::orbs`, a component; this page is the
 //! pattern: one live [`Orb`] entity (the builder API a real app reaches for)
 //! above the twelve-state catalog, painted by [`orb_element`] on this page's
 //! own clock. One timer drives every cell — the shape to copy when your host
@@ -12,11 +12,12 @@
 
 use std::time::Duration;
 
-use gpui::{Context, Entity, Render, SharedString, Window, div, prelude::*, px};
+use agent::orbs::{Orb, OrbSize, OrbState, orb_element};
+use gpui::{Context, Entity, Render, ScrollHandle, SharedString, Window, div, prelude::*, px};
 use theme::Theme;
 use ui::{
     focus,
-    orbs::{Orb, OrbSize, OrbState, orb_element},
+    scroll::{self, TransientState},
     widgets::Controls,
 };
 use web_time::Instant;
@@ -29,6 +30,8 @@ pub struct Orbs {
     size: OrbSize,
     featured: Entity<Orb>,
     segments: [gpui::FocusHandle; 4],
+    scroll: ScrollHandle,
+    bar: TransientState,
 }
 
 impl Orbs {
@@ -49,6 +52,8 @@ impl Orbs {
             size: OrbSize::Avatar,
             featured: cx.new(|_| Orb::new().state(OrbState::Searching).size(OrbSize::Avatar)),
             segments: std::array::from_fn(|_| cx.focus_handle().tab_stop(true)),
+            scroll: ScrollHandle::new(),
+            bar: TransientState::new(),
         }
     }
 
@@ -80,58 +85,78 @@ impl Render for Orbs {
         };
         let size = self.size;
 
-        stack()
-            .child(hint(
-                &theme,
-                "A port of gpui-thinking-orbs: twelve hand-tuned states, four \
+        div()
+            .relative()
+            .size_full()
+            .child(
+                div()
+                    .id("orbs-page")
+                    .size_full()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
+                    .child(
+                        stack()
+                            .child(hint(
+                                &theme,
+                                "A port of gpui-thinking-orbs: twelve hand-tuned states, four \
                  sizes, monochrome ink over any substrate. The featured orb is \
                  the builder entity; the grid below is `orb_element` driven by \
                  this page's timer.",
-            ))
-            .child(
-                theme
-                    .toggle_group()
-                    .children(OrbSize::ALL_SIZES.iter().copied().enumerate().map(
-                        |(index, size)| {
-                            pressable(
-                                focus::focusable(
-                                    &theme,
-                                    &self.segments[index],
-                                    theme.toggle_group_item(size.label(), self.size == size),
+                            ))
+                            .child(theme.toggle_group().children(
+                                OrbSize::ALL_SIZES.iter().copied().enumerate().map(
+                                    |(index, size)| {
+                                        pressable(
+                                            focus::focusable(
+                                                &theme,
+                                                &self.segments[index],
+                                                theme.toggle_group_item(
+                                                    size.label(),
+                                                    self.size == size,
+                                                ),
+                                            ),
+                                            SharedString::from(format!("orb-size-{index}")),
+                                            cx,
+                                            move |view, cx| {
+                                                view.size = size;
+                                                view.featured
+                                                    .update(cx, |orb, cx| orb.set_size(size, cx));
+                                                cx.notify();
+                                            },
+                                        )
+                                        .into_any_element()
+                                    },
                                 ),
-                                SharedString::from(format!("orb-size-{index}")),
-                                cx,
-                                move |view, cx| {
-                                    view.size = size;
-                                    view.featured.update(cx, |orb, cx| orb.set_size(size, cx));
-                                    cx.notify();
-                                },
+                            ))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .gap(px(16.0))
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .font_family(theme.font_mono.clone())
+                                            .text_color(theme.text_muted)
+                                            .child("Orb::new().state(..).size(..)"),
+                                    )
+                                    .child(self.featured.clone()),
                             )
-                            .into_any_element()
-                        },
-                    )),
+                            .child(
+                                div().flex().flex_row().flex_wrap().gap(px(20.0)).children(
+                                    OrbState::ALL_STATES
+                                        .iter()
+                                        .map(|state| Self::cell(*state, size, t, &theme)),
+                                ),
+                            ),
+                    ),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(16.0))
-                    .child(
-                        div()
-                            .text_size(px(12.0))
-                            .font_family(theme.font_mono.clone())
-                            .text_color(theme.text_muted)
-                            .child("Orb::new().state(..).size(..)"),
-                    )
-                    .child(self.featured.clone()),
-            )
-            .child(
-                div().flex().flex_row().flex_wrap().gap(px(20.0)).children(
-                    OrbState::ALL_STATES
-                        .iter()
-                        .map(|state| Self::cell(*state, size, t, &theme)),
-                ),
-            )
+            .child(scroll::transient(
+                "orbs-bar",
+                &self.scroll,
+                &self.bar,
+                cx.reduce_motion(),
+            ))
     }
 }

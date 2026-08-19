@@ -429,6 +429,11 @@ pub const PATTERNS: &[Group] = &[
                 "Thinking orbs",
                 "apps/gallery/src/patterns/orbs.rs",
             ),
+            section(
+                "agent-avatar",
+                "Blob avatars",
+                "apps/gallery/src/patterns/avatar.rs",
+            ),
         ],
     },
     Group {
@@ -721,6 +726,7 @@ pub struct Gallery {
     #[cfg(not(target_family = "wasm"))]
     terminal: Entity<patterns::terminal::Terminal>,
     orbs: Entity<patterns::orbs::Orbs>,
+    avatar: Entity<patterns::avatar::Avatars>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -854,6 +860,7 @@ impl Gallery {
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(patterns::terminal::Terminal::new),
             orbs: cx.new(patterns::orbs::Orbs::new),
+            avatar: cx.new(|_| patterns::avatar::Avatars::default()),
             embedded: false,
         }
     }
@@ -2921,6 +2928,7 @@ impl Gallery {
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),
             "agent-orbs" => self.orbs.clone().into_any_element(),
+            "agent-avatar" => self.avatar.clone().into_any_element(),
 
             _ => div().into_any_element(),
         }

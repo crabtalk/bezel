@@ -1,6 +1,7 @@
 [package]
-name = "bezel"
-description = "A SwiftUI-flavored component library for gpui — tokens, motion, and components in one dependency"
+name = "agent"
+
+description = "Agent-related UI — thinking orbs for working state and deterministic blob avatars for identity"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,9 +17,6 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-agent.workspace = true
-motion.workspace = true
-syntax.workspace = true
-theme.workspace = true
-ui.workspace = true
 gpui.workspace = true
+theme.workspace = true
+web-time.workspace = true
