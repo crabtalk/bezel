@@ -48,6 +48,7 @@ actions!(gallery, [OpenPalette, ToggleInspector, ToggleFullScreen]);
 /// bindings were installed natively and missing on the web, so typing worked in
 /// the browser and Backspace did not.
 pub fn init(cx: &mut App) {
+    markdown::set_highlighter(cx, highlight::spans);
     input::init(cx);
     editor::init(cx);
     palette::init(cx);
@@ -61,6 +62,7 @@ pub fn init(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
 }
 
+pub mod highlight;
 /// gpui builds its element inspector into every debug build; release builds
 /// have no such window method, so the whole surface is debug-only.
 #[cfg(debug_assertions)]

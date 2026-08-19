@@ -1868,6 +1868,7 @@ dependencies = [
  "gpui_platform",
  "markdown",
  "motion",
+ "syntax",
  "terminal",
  "theme",
  "ui",
@@ -3060,7 +3061,6 @@ version = "0.0.2"
 dependencies = [
  "gpui",
  "pulldown-cmark",
- "syntax",
  "theme",
 ]
 

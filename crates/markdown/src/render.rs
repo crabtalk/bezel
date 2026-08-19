@@ -570,8 +570,9 @@ fn code_block(
     cx: &mut App,
 ) -> AnyElement {
     // Per line, so the block's height is exactly `lines × line height`.
-    // Highlighting recolors runs only — layout does not move.
-    let spans = language.and_then(|l| syntax::highlight(code, l));
+    // Highlighting recolors runs only — layout does not move, so a build with
+    // no highlighter installed paints the same block in one plain run.
+    let spans = crate::highlight::spans(cx, language, code);
     let mono = font(theme.font_mono.clone());
     let run = |len: usize, color: Hsla| TextRun {
         len,

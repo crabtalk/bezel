@@ -2,12 +2,10 @@
 //! it answers to, the tree-sitter grammar, and its highlights query.
 
 use std::sync::OnceLock;
-
+use theme::HighlightKind;
 use tree_sitter::Language;
 use tree_sitter_highlight::HighlightConfiguration;
 use tree_sitter_language::LanguageFn;
-
-use theme::HighlightKind;
 
 pub struct Lang {
     pub name: &'static str,

@@ -8,6 +8,12 @@ publish = false
 [lints]
 workspace = true
 
+# Runs on the host whatever the target is, which is what lets the web build
+# ship highlighted samples it could never compile tree-sitter to produce.
+[build-dependencies]
+syntax.workspace = true
+theme.workspace = true
+
 [dependencies]
 agent.workspace = true
 markdown = { workspace = true, features = ["editor"] }
@@ -31,3 +37,5 @@ web-time.workspace = true
 # build until that dep is fixed upstream.
 terminal.workspace = true
 gpui_platform.workspace = true
+# The live highlighter. A web build has the build script's table instead.
+syntax.workspace = true

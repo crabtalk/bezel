@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use agent::{
     Face, Pose,
-    avatar::{Eyes, Motion, Shape},
+    avatar::{Eyes, Motion, Shape, seed},
 };
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, Empty, Hsla, Render, ScrollHandle, SharedString,
@@ -46,21 +46,27 @@ const FASTEST: f32 = 4.0;
 /// One press of ← or → on the focused slider.
 const NUDGE: f32 = 0.05;
 
-/// The names a chat client might actually show — a seed is bytes, and the row
-/// is here to say that no script is the default one.
+/// What a chat client might actually hand this thing. A seed is bytes, so the
+/// row is half names and half everything else a caller calls an identity —
+/// and it ends on one person spelled two ways, which is the canonical key
+/// doing its job.
+///
+/// Latin and Cyrillic because that is what the bundled faces carry; a browser
+/// has no font book to fall back on, and a row of tofu is a worse claim about
+/// a script than not printing it.
 const NAMES: &[&str] = &[
     "alain",
     "Grace Hopper",
     "Jürgen Weiß",
     "café-4",
+    "Nguyễn",
     "Пётр",
-    "صبا",
-    "आर्या",
-    "小明",
-    "김하늘",
-    "さくら",
     "@sara",
-    "🦀",
+    "sara@bezel.dev",
+    "0x9e3779b9",
+    "~/.config",
+    "Sara",
+    "SARA",
 ];
 
 /// One cycling face, and whether it is still running.
@@ -408,7 +414,11 @@ impl Render for Avatars {
                             )))
                             .child(heading(&theme, "From a name"))
                             .child(Self::row(NAMES.iter().enumerate().map(|(i, name)| {
-                                let face = Face::from(*name).color(tint(i));
+                                // Tinted by the seed rather than the position,
+                                // so two spellings of one person match in
+                                // colour as well as in shape.
+                                let face = Face::from(*name)
+                                    .color(tint((seed(name) >> 33) as usize));
                                 cell(
                                     ("name", i),
                                     pose(face),

@@ -4,9 +4,23 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import Brand from '$lib/Brand.svelte';
-	import { documented, repo } from '$lib/catalog.js';
+	import { documented, repo, repoApi } from '$lib/catalog.js';
 
 	let { children, data } = $props();
+
+	// The build-time count goes stale between deploys, so refresh it once on
+	// hydration. Unauthenticated, but it is one request per visitor against a
+	// 60/hour per-IP limit, and the baked value stands when it fails.
+	let stars = $state(data.stars);
+
+	$effect(() => {
+		fetch(repoApi)
+			.then((response) => (response.ok ? response.json() : null))
+			.then((json) => {
+				if (typeof json?.stargazers_count === 'number') stars = json.stargazers_count;
+			})
+			.catch(() => {});
+	});
 
 	// One header for the whole site: there is no marketing/docs split here to
 	// signal, so docs get the same chrome with the catalog's tabs added to it.
@@ -75,7 +89,7 @@
 		<a class="action" href={repo}>
 			Star
 			<Brand icon={siGithub} size={14} />
-			{#if data.stars !== null}<span class="count">{data.stars}</span>{/if}
+			{#if stars !== null}<span class="count">{stars}</span>{/if}
 		</a>
 	</nav>
 </header>

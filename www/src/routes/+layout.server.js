@@ -1,5 +1,7 @@
-// Resolved at build time and baked into every page: a star count is social
-// proof, but not worth a request from every visitor's browser.
+import { repoApi } from '$lib/catalog.js';
+
+// The count baked into the page at build time; the layout refreshes it live on
+// hydration and falls back to this when that fetch fails.
 //
 // A server load, so it never runs in a browser and can read a token. The
 // unauthenticated GitHub API allows 60 requests an hour per IP — enough until
@@ -9,7 +11,7 @@
 export async function load() {
 	const token = process.env.GITHUB_TOKEN;
 	try {
-		const response = await fetch('https://api.github.com/repos/crabtalk/bezel', {
+		const response = await fetch(repoApi, {
 			headers: token ? { authorization: `Bearer ${token}` } : {}
 		});
 		if (!response.ok) {

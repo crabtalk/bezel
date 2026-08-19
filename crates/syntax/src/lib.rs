@@ -9,13 +9,11 @@
 //! with one highlights query. Languages are a table ([`lang`]); a grammar
 //! with no match returns `None` and the caller renders plain text.
 
-mod lang;
-
 use std::ops::Range;
-
+use theme::HighlightKind;
 use tree_sitter_highlight::{HighlightEvent, Highlighter};
 
-use theme::HighlightKind;
+mod lang;
 
 /// Highlight `source` as `language` (a fence tag — `rs`, `py`, `tsx`, …).
 /// `None` when the tag names no language.

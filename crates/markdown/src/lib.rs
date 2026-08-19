@@ -22,6 +22,7 @@ pub mod doc;
 pub mod edit;
 #[cfg(feature = "editor")]
 pub mod editor;
+pub mod highlight;
 pub mod parse;
 pub mod render;
 pub mod serialize;
@@ -30,6 +31,7 @@ pub use doc::{Align, Block, BlockKind, Doc, Mark, MarkSpan, Text};
 pub use edit::{Cursor, Shortcut, shortcut};
 #[cfg(feature = "editor")]
 pub use editor::Editor;
+pub use highlight::{Highlighter, set_highlighter};
 pub use parse::parse;
 pub use render::{BlockLayouts, markdown, render, render_with_caret};
 pub use serialize::serialize;

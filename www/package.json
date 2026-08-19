@@ -5,7 +5,7 @@
   "scripts": {
     "catalog": "cd .. && cargo run -q -p web > www/src/lib/catalog.json",
     "wasm": "cd .. && cargo build -p web --lib --target wasm32-unknown-unknown --release && wasm-bindgen --target web --no-typescript --out-dir www/static/gallery target/wasm32-unknown-unknown/release/web.wasm",
-    "dev": "bun run catalog && vite dev",
+    "dev": "bun run wasm && bun run catalog && vite dev",
     "build": "bun run wasm && bun run catalog && vite build",
     "preview": "vite preview",
     "deploy": "bun run build && wrangler pages deploy build --project-name=bezel --branch=main"

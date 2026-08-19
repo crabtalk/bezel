@@ -77,5 +77,7 @@ export const docsHome = documentedSections[0]?.key;
 
 export const repo = 'https://github.com/crabtalk/bezel';
 
+export const repoApi = repo.replace('https://github.com/', 'https://api.github.com/repos/');
+
 /** Canonical URL, used for share links. Swap to bezel.gallery once its DNS is on. */
 export const site = 'https://bezel.pages.dev';

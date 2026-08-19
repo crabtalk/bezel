@@ -36,48 +36,9 @@ markdown = { path = "crates/markdown", version = "0.0.2" }
 syntax = { path = "crates/syntax", version = "0.0.2" }
 terminal = { path = "crates/terminal", version = "0.0.2" }
 
-# gpui from our fork by git rev, not from crates.io. The registry release is
-# months behind this API and its macOS graph does not even resolve, so a version
-# requirement plus `[patch.crates-io]` only ever described a build that could
-# not happen — and it made every consumer repeat the patch in their own root
-# workspace, because patch sections do not travel through dependencies. A git
-# dep resolves for anyone who depends on bezel, with nothing to repeat.
-#
-# `version` disambiguates: the repo holds a second package named `gpui`, the
-# 0.0.0 lint fixture under `tooling/`.
-gpui = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", version = "0.2.2" }
-# Same rev as gpui above, deliberately: a second copy of gpui in the graph is
-# two incompatible type universes.
-#
-# `font-kit` is NOT optional in practice: without it the text system falls back
-# to a handful of bundled faces (no system fonts, no `add_fonts` families), so
-# every glyph resolves to notdef — text reserves layout space and paints
-# nothing. Add `wayland`/`x11` when we build on Linux.
-gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", features = [
-    "font-kit",
-] }
-# The browser platform, taken directly rather than through `gpui_platform`,
-# which would enable `gpui_web/multithreaded` by default and drag in a
-# `wasm_thread` that only builds on nightly. gpui's own browser gallery
-# (longbridge/gpui-component) runs single-threaded with empty rustflags, so the
-# threaded path buys us nothing but a toolchain pin.
-gpui_web = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", default-features = false }
-
-# `std::time::Instant` panics on wasm32-unknown-unknown ("time not implemented
-# on this platform"), and every animation clock in bezel reads one per frame.
-# This re-exports std's types natively and reads `performance.now()` on the web,
-# so the native build is byte-for-byte what it was.
+# crates-io
 web-time = "1"
-
-# Terminal emulator state machine (comet pins 0.26 / vte 0.15; the header of
-# `crates/terminal/src/emulator.rs` records the API notes for that pair).
 alacritty_terminal = "0.26"
-
-# Syntax highlighting. Core and grammar versions follow the zed pin this gpui
-# fork was built against (e0b415b `[workspace.dependencies]`); typescript has
-# no crates.io release, zed pins the same upstream rev. `tree-sitter-highlight`
-# is the standalone capture→kind engine — the piece zed reimplemented in-house
-# under GPL, which is why the engine itself is MIT here.
 tree-sitter = "0.26.9"
 tree-sitter-highlight = "0.26"
 tree-sitter-language = "0.1"
@@ -88,10 +49,16 @@ tree-sitter-typescript = { git = "https://github.com/zed-industries/tree-sitter-
 tree-sitter-go = "0.25"
 tree-sitter-bash = "0.25"
 tree-sitter-toml-ng = "0.7"
-
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
+
+# git
+gpui = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", version = "0.2.2" }
+gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", features = [
+    "font-kit",
+] }
+gpui_web = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", default-features = false }
 
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare
