@@ -1,26 +1,13 @@
 <script>
 	import { base } from '$app/paths';
+	import Gallery from '$lib/Gallery.svelte';
 	import { repo } from '$lib/catalog.js';
 
 	let { data } = $props();
 
 	const src = $derived(`${base}/gallery/?s=${data.section.key}`);
 
-	let dialog = $state(null);
-	// The dialog's iframe is a second wasm instance, so it is not created until
-	// asked for — and it is torn down on close rather than left running behind
-	// the page.
 	let expanded = $state(false);
-
-	function expand() {
-		expanded = true;
-		dialog?.showModal();
-	}
-
-	function collapse() {
-		dialog?.close();
-	}
-
 </script>
 
 <svelte:head>
@@ -43,9 +30,7 @@
 	></iframe>
 
 	<p class="actions">
-		<!-- A dialog, not a link: navigating to the gallery left the reader in a
-		     static page with no way back to the doc they were reading. -->
-		<button class="button" onclick={expand}>Expand</button>
+		<button class="button" onclick={() => (expanded = true)}>Expand</button>
 		{#if data.section.source}
 			<a class="source" href="{repo}/blob/main/{data.section.source}">
 				<code>{data.section.source}</code>
@@ -57,17 +42,7 @@
 	{@html data.html}
 </article>
 
-<dialog bind:this={dialog} onclose={() => (expanded = false)}>
-	<div class="frame">
-		<div class="bar">
-			<span class="what">{data.section.title}</span>
-			<button class="close" onclick={collapse} aria-label="Close">Esc</button>
-		</div>
-		{#if expanded}
-			<iframe class="big" title="{data.section.title}, running" {src}></iframe>
-		{/if}
-	</div>
-</dialog>
+<Gallery title={data.section.title} {src} bind:open={expanded} />
 
 <style>
 	.crumb {
@@ -95,70 +70,6 @@
 	   queue fight for the same rows, which is not what the pattern looks like. */
 	iframe.tall {
 		height: min(76vh, 720px);
-	}
-
-	dialog {
-		width: min(1240px, 94vw);
-		max-width: none;
-		height: min(88vh, 900px);
-		max-height: none;
-		padding: 0;
-		border: 1px solid var(--line-strong);
-		border-radius: 12px;
-		background: var(--bg);
-		color: var(--text);
-		overflow: hidden;
-	}
-
-	dialog::backdrop {
-		background: rgb(0 0 0 / 0.72);
-		backdrop-filter: blur(3px);
-	}
-
-	.frame {
-		display: flex;
-		flex-direction: column;
-		height: 100%;
-	}
-
-	.bar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 16px;
-		padding: 0 14px;
-		height: 40px;
-		border-bottom: 1px solid var(--line);
-		flex: none;
-	}
-
-	.what {
-		color: var(--muted);
-		font-size: 13px;
-	}
-
-	.close {
-		font: inherit;
-		font-size: 12px;
-		cursor: pointer;
-		color: var(--muted);
-		background: none;
-		border: 1px solid var(--line-strong);
-		border-radius: 5px;
-		padding: 3px 8px;
-	}
-
-	.close:hover {
-		color: var(--text);
-		border-color: var(--text);
-	}
-
-	iframe.big {
-		flex: 1;
-		height: auto;
-		margin: 0;
-		border: 0;
-		border-radius: 0;
 	}
 
 	.actions {

@@ -4,7 +4,10 @@
 	import { base } from '$app/paths';
 	import Ascii from '$lib/Ascii.svelte';
 	import Brand from '$lib/Brand.svelte';
+	import Gallery from '$lib/Gallery.svelte';
 	import { catalog, docsHome, repo, sections, site } from '$lib/catalog.js';
+
+	let expanded = $state(false);
 
 	const shareText = 'bezel — a component library for gpui, running in your browser';
 	const shareHref = `https://x.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(site)}`;
@@ -94,10 +97,12 @@
 			{#if docsHome}
 				<a class="button primary" href="{base}/docs/{docsHome}/">Read the docs</a>
 			{/if}
-			<a class="button" href="{base}/gallery/" data-sveltekit-reload>Open the gallery</a>
+			<button class="button" onclick={() => (expanded = true)}>Open the gallery</button>
 		</div>
 	</div>
 </section>
+
+<Gallery title="bezel" src="{base}/gallery/" bind:open={expanded} />
 
 <!-- Not a screenshot of the library: the library, running. The window frame is
      the claim — this is what it looks like on the desktop it targets. -->
@@ -177,9 +182,11 @@
 		padding: 0 16px;
 		height: 40px;
 		color: var(--text);
+		font-family: inherit;
 		font-size: 14px;
 		font-weight: 500;
 		background: var(--bg);
+		cursor: pointer;
 	}
 
 	.button:hover {

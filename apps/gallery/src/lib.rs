@@ -380,7 +380,7 @@ pub const TABS: &[Tab] = &[
     Tab {
         title: "Patterns",
         groups: PATTERNS,
-        home: "agent-activity",
+        home: "agent-avatar",
         full_bleed: true,
     },
 ];
@@ -841,11 +841,7 @@ impl Gallery {
             level: 0.5,
             tab_choice: 0,
             tab: 2,
-            selected: TABS
-                .iter()
-                .enumerate()
-                .map(|(i, tab)| if i == 2 { "agent-diff" } else { tab.home })
-                .collect(),
+            selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
             activity: cx.new(|_| patterns::agent::Activity::default()),
             tool_calls: cx.new(|_| patterns::agent::ToolCalls::default()),
