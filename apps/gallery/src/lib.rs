@@ -855,7 +855,7 @@ impl Gallery {
             terminal: cx.new(patterns::terminal::Terminal::new),
             orbs: cx.new(patterns::orbs::Orbs::new),
             syntax: cx.new(patterns::syntax::Syntax::new),
-            avatar: cx.new(|_| patterns::avatar::Avatars::default()),
+            avatar: cx.new(patterns::avatar::Avatars::new),
             embedded: false,
         }
     }
