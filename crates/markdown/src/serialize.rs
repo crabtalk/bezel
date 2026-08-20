@@ -11,7 +11,7 @@
 //! So `#`, `>`, `-` and friends are escaped only at the start of a line, where
 //! they would actually mean something.
 
-use crate::doc::{Align, Block, BlockKind, Doc, Mark, Text};
+use crate::doc::{Align, Block, BlockKind, Doc, Mark, Part, Text};
 
 /// Four spaces per level: enough to sit inside any list marker's content
 /// column (`- ` is 2, `10. ` is 4), and never enough to become an indented
@@ -94,7 +94,10 @@ fn tight_after(previous: &BlockKind, next: &BlockKind, nested: bool) -> bool {
 }
 
 fn is_empty_marker(kind: &BlockKind) -> bool {
-    is_marker(kind) && Block::new(kind.clone()).text().is_some_and(Text::is_empty)
+    is_marker(kind)
+        && Block::new(kind.clone())
+            .text_at(Part::Body)
+            .is_some_and(Text::is_empty)
 }
 
 fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
@@ -126,11 +129,11 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
             write_lines(out, &prefix, &prefix, &inline(text));
         }
         BlockKind::Code { language, code } => {
-            let fence = "`".repeat(fence_width(code));
+            let fence = "`".repeat(fence_width(&code.text));
             out.push_str(&pad);
             out.push_str(&fence);
             out.push_str(language.as_deref().unwrap_or(""));
-            for line in code.split('\n') {
+            for line in code.text.split('\n') {
                 out.push('\n');
                 out.push_str(&pad);
                 out.push_str(line);

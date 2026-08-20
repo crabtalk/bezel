@@ -70,19 +70,45 @@ canonical corpus and 20,000 generated documents. Byte-identical round tripping
 is deliberately *not* promised — a flat model cannot represent arbitrarily
 nested CommonMark, and neither can Notion.
 
-`doc`, `parse`, `serialize` and `edit` are pure — no gpui, no painting. `render`
-is the gpui layer over them: a flat block list means nesting is left padding
-rather than nested containers, and the gap between two blocks is decided by the
-pair, so items of one list sit tight while a new list gets air.
+A position is `(block, part, offset)` — `select::Cursor`. The **part** is a
+coordinate rather than a path, which is what keeps the model flat while a caret
+still reaches inside a code block or a table cell: a block has one kind of part
+and never a mix, so the three fields order lexicographically and a selection is
+just two of them with `min`/`max` deciding which end is which. Every editable
+region is a `Text`, code included, so one accessor and one edit path cover the
+document.
+
+That ordering is what makes `Doc::replace(Selection, Text)` **the** mutation.
+Typing, backspace, delete, cut and paste are all that call with a different
+argument, so none of them has to know whether the selection was empty, spanned
+two paragraphs, or swallowed a table on the way past. The property test runs it
+over generated documents: an editor that can reach a state its own serializer
+cannot express corrupts the file on save, and no amount of UI polish recovers.
+
+`doc`, `parse`, `serialize`, `select` and `edit` are pure — no gpui, no
+painting. `render` is the gpui layer over them: a flat block list means nesting
+is left padding rather than nested containers, and the gap between two blocks is
+decided by the pair, so items of one list sit tight while a new list gets air.
 
 `editor` is the editing **surface** — a focus handle, key bindings, the platform
-input handler, and turning a click into an offset — behind the `editor` feature,
-off by default. It was a `bezel-editor` crate until its manifest said otherwise:
+input handler, and turning a click into a position — behind the `editor`
+feature, off by default. Its chords are `ui::TextField`'s, because a document is
+not the place to invent a second set, and its rules are that field's too:
+vertical motion is geometry through the painted layouts rather than arithmetic
+on line numbers, and undo coalesces by *adjacency rather than by a pause*, so
+there is no timing threshold to invent. `history` holds whole-document
+snapshots — a transaction log is the machinery collaborative editing needs and
+nothing here asks for it. It was a `bezel-editor` crate until its manifest said otherwise:
 its dependencies were a strict subset of this crate's, so the boundary isolated
 nothing while cutting one feature in half, with *what an edit does* on one side
-and *which key does it* on the other. The feature gates compile time and API
-surface; it does not lighten the graph, because there is no dependency here that
-a reader does not already carry.
+and *which key does it* on the other.
+
+The feature now carries `ui` as well, so it gates the graph and not only compile
+time: the slash menu is `popover::Filter` ranking the block vocabulary and
+`menu_at` anchored where the caret already paints, and the alternative —
+exposing the query and the anchor point and asking every host to build the menu
+— is every consumer reimplementing the thing a component library exists to
+prevent. A reader that only paints markdown still compiles no popovers.
 
 ## Laws
 

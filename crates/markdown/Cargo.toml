@@ -17,11 +17,13 @@ rust-version.workspace = true
 workspace = true
 
 [features]
-# The editing surface. It pulls no dependency the reader does not already
-# carry, so the gate buys compile time and an API surface, not a lighter graph.
-editor = []
+# The editing surface. It carries `ui` for the slash menu and the link prompt,
+# so unlike the reader this gate does lighten the graph — a consumer that only
+# paints markdown compiles no popovers.
+editor = ["dep:ui"]
 
 [dependencies]
 theme.workspace = true
 gpui.workspace = true
 pulldown-cmark = { version = "0.13", default-features = false }
+ui = { workspace = true, optional = true }

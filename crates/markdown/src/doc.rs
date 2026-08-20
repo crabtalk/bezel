@@ -72,23 +72,96 @@ impl Block {
         Self { kind, indent }
     }
 
-    /// The block's editable inline content, if it has any. `None` for the
-    /// blocks an editor treats as atomic (code, images, rules) and for tables,
-    /// whose cells are edited individually.
-    pub fn text(&self) -> Option<&Text> {
-        match &self.kind {
-            BlockKind::Paragraph(text)
-            | BlockKind::Heading { text, .. }
-            | BlockKind::Bullet(text)
-            | BlockKind::Ordered { text, .. }
-            | BlockKind::Task { text, .. }
-            | BlockKind::Quote(text) => Some(text),
-            BlockKind::Code { .. }
-            | BlockKind::Image { .. }
-            | BlockKind::Table { .. }
-            | BlockKind::Rule => None,
+    /// One of the block's editable texts. `None` when the block has no such
+    /// part — every block is atomic to some [`Part`], and images and rules are
+    /// atomic to all of them.
+    pub fn text_at(&self, part: Part) -> Option<&Text> {
+        match (&self.kind, part) {
+            (
+                BlockKind::Paragraph(text)
+                | BlockKind::Heading { text, .. }
+                | BlockKind::Bullet(text)
+                | BlockKind::Ordered { text, .. }
+                | BlockKind::Task { text, .. }
+                | BlockKind::Quote(text),
+                Part::Body,
+            ) => Some(text),
+            (BlockKind::Code { code, .. }, Part::Code) => Some(code),
+            (BlockKind::Table { header, .. }, Part::Cell { row: 0, column }) => header.get(column),
+            (BlockKind::Table { rows, .. }, Part::Cell { row, column }) => {
+                rows.get(row - 1)?.get(column)
+            }
+            _ => None,
         }
     }
+
+    pub fn text_at_mut(&mut self, part: Part) -> Option<&mut Text> {
+        match (&mut self.kind, part) {
+            (
+                BlockKind::Paragraph(text)
+                | BlockKind::Heading { text, .. }
+                | BlockKind::Bullet(text)
+                | BlockKind::Ordered { text, .. }
+                | BlockKind::Task { text, .. }
+                | BlockKind::Quote(text),
+                Part::Body,
+            ) => Some(text),
+            (BlockKind::Code { code, .. }, Part::Code) => Some(code),
+            (BlockKind::Table { header, .. }, Part::Cell { row: 0, column }) => {
+                header.get_mut(column)
+            }
+            (BlockKind::Table { rows, .. }, Part::Cell { row, column }) => {
+                rows.get_mut(row - 1)?.get_mut(column)
+            }
+            _ => None,
+        }
+    }
+
+    /// Every part a caret can sit in, in document order.
+    pub fn parts(&self) -> Vec<Part> {
+        match &self.kind {
+            BlockKind::Paragraph(_)
+            | BlockKind::Heading { .. }
+            | BlockKind::Bullet(_)
+            | BlockKind::Ordered { .. }
+            | BlockKind::Task { .. }
+            | BlockKind::Quote(_) => vec![Part::Body],
+            BlockKind::Code { .. } => vec![Part::Code],
+            BlockKind::Table { header, rows, .. } => {
+                let mut parts = Vec::new();
+                if !header.is_empty() {
+                    parts.extend((0..header.len()).map(|column| Part::Cell { row: 0, column }));
+                }
+                for (ix, row) in rows.iter().enumerate() {
+                    parts.extend((0..row.len()).map(|column| Part::Cell {
+                        row: ix + 1,
+                        column,
+                    }));
+                }
+                parts
+            }
+            BlockKind::Image { .. } | BlockKind::Rule => Vec::new(),
+        }
+    }
+}
+
+/// Which of a block's texts a caret sits in.
+///
+/// A block has one kind of part and never a mix — prose blocks have a body, a
+/// code block has its code, a table has cells — so this is a coordinate rather
+/// than a path, and the model stays flat. The ordering is document order, which
+/// is what makes a [`crate::Cursor`] comparable and therefore what makes a
+/// selection a range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum Part {
+    #[default]
+    Body,
+    Code,
+    /// Row 0 is the header row; row `n` is `rows[n - 1]`.
+    Cell {
+        row: usize,
+        column: usize,
+    },
 }
 
 /// The block vocabulary. Closed by design — it is exactly what the slash menu
@@ -114,9 +187,12 @@ pub enum BlockKind {
         text: Text,
     },
     Quote(Text),
+    /// The code carries a [`Text`] like every other editable region, so one
+    /// accessor and one edit path cover the whole document. Its marks are
+    /// unreachable rather than forbidden: nothing that writes here creates one.
     Code {
         language: Option<String>,
-        code: String,
+        code: Text,
     },
     Image {
         url: String,

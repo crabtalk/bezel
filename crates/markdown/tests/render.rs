@@ -36,7 +36,9 @@ fn runs_cover_the_text_for_every_shape_of_mark() {
         "",
     ] {
         for block in parse(source).blocks {
-            let Some(text) = block.text() else { continue };
+            let Some(text) = block.text_at(Part::Body) else {
+                continue;
+            };
             let flat = flatten(text, FontWeight::NORMAL, &theme);
             assert_eq!(
                 flat.runs.iter().map(|run| run.len).sum::<usize>(),

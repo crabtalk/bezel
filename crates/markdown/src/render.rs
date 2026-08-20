@@ -17,8 +17,8 @@ use gpui::{
 use theme::Theme;
 
 use crate::{
-    doc::{Align, Block, BlockKind, Doc, Mark, Text},
-    edit::Cursor,
+    doc::{Align, Block, BlockKind, Doc, Mark, Part, Text},
+    select::{Cursor, Selection},
 };
 
 /// Space between two ordinary blocks, and the tighter space inside a list.
@@ -59,41 +59,192 @@ const TABLE_MIN_COLUMN_WIDTH: f32 = 96.0;
 /// next click resolves against it. Read-only callers pass nothing and pay
 /// nothing.
 #[derive(Clone, Default)]
-pub struct BlockLayouts(Rc<RefCell<Vec<(usize, TextLayout)>>>);
+pub struct BlockLayouts(Rc<RefCell<Frames>>);
+
+#[derive(Default)]
+struct Frames {
+    texts: Vec<Painted>,
+    /// Each block's whole box, which a text layout does not give: a rule and
+    /// an image hold no text at all, and a gutter handle still has to find them.
+    blocks: Vec<(usize, Bounds<Pixels>)>,
+}
+
+/// One shaped run and the slice of its part it covers.
+///
+/// A paragraph is one entry over all of its text; a code block is one entry per
+/// line. The range is what lets both resolve a click the same way — the layout
+/// answers in its own coordinates and the base puts the answer back into the
+/// part's.
+struct Painted {
+    block: usize,
+    part: Part,
+    range: Range<usize>,
+    layout: TextLayout,
+}
 
 impl BlockLayouts {
-    /// The block and byte offset under `point`.
+    /// The position under `point`.
     ///
-    /// Falls back to the nearest block vertically, so clicking the margin
+    /// Falls back to the nearest text vertically, so clicking the margin
     /// beside a line — or below the last one — still lands somewhere useful
     /// rather than doing nothing.
     pub fn hit(&self, point: Point<Pixels>) -> Option<Cursor> {
-        let entries = self.0.borrow();
-        let offset_in = |layout: &TextLayout| {
-            let (Ok(offset) | Err(offset)) = layout.index_for_position(point);
-            offset
+        let entries = &self.0.borrow().texts;
+        let cursor = |painted: &Painted| {
+            let (Ok(offset) | Err(offset)) = painted.layout.index_for_position(point);
+            Cursor::new(
+                painted.block,
+                painted.part,
+                painted.range.start + offset.min(painted.range.len()),
+            )
         };
-        if let Some((ix, layout)) = entries
+        if let Some(painted) = entries
             .iter()
-            .find(|(_, layout)| layout.bounds().contains(&point))
+            .find(|painted| painted.layout.bounds().contains(&point))
         {
-            return Some(Cursor::new(*ix, offset_in(layout)));
+            return Some(cursor(painted));
         }
-        let (ix, layout) = entries.iter().min_by_key(|(_, layout)| {
-            let bounds = layout.bounds();
-            let above = (bounds.origin.y - point.y).abs();
-            let below = (bounds.origin.y + bounds.size.height - point.y).abs();
-            f32::from(above.min(below)) as i64
-        })?;
-        Some(Cursor::new(*ix, offset_in(layout)))
+        entries
+            .iter()
+            .min_by_key(|painted| {
+                let bounds = painted.layout.bounds();
+                let above = (bounds.origin.y - point.y).abs();
+                let below = (bounds.origin.y + bounds.size.height - point.y).abs();
+                f32::from(above.min(below)) as i64
+            })
+            .map(cursor)
     }
 
-    fn record(&self, ix: usize, layout: TextLayout) {
-        self.0.borrow_mut().push((ix, layout));
+    /// Where a position painted last frame, and how tall its line is.
+    ///
+    /// Vertical motion is geometry rather than arithmetic on line numbers, so
+    /// a wrapped row and a hard newline are the same case and neither needs
+    /// counting — the rule [`ui::TextField`] arrived at.
+    pub fn position(&self, at: Cursor) -> Option<(Point<Pixels>, Pixels)> {
+        let entries = &self.0.borrow().texts;
+        let painted = entries.iter().find(|painted| {
+            painted.block == at.block
+                && painted.part == at.part
+                && painted.range.start <= at.offset
+                && at.offset <= painted.range.end
+        })?;
+        let point = painted
+            .layout
+            .position_for_index(at.offset - painted.range.start)?;
+        Some((point, painted.layout.line_height()))
+    }
+
+    /// The block under `point`, for a gutter handle and a drop target.
+    pub fn block_at(&self, point: Point<Pixels>) -> Option<usize> {
+        let blocks = &self.0.borrow().blocks;
+        blocks
+            .iter()
+            .find(|(_, bounds)| bounds.contains(&point))
+            .or_else(|| {
+                blocks.iter().min_by_key(|(_, bounds)| {
+                    let above = (bounds.origin.y - point.y).abs();
+                    let below = (bounds.origin.y + bounds.size.height - point.y).abs();
+                    f32::from(above.min(below)) as i64
+                })
+            })
+            .map(|(ix, _)| *ix)
+    }
+
+    /// Where a block painted last frame, in window coordinates.
+    pub fn block_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
+        self.0
+            .borrow()
+            .blocks
+            .iter()
+            .find(|(block, _)| *block == ix)
+            .map(|(_, bounds)| *bounds)
+    }
+
+    fn record(&self, block: usize, part: Part, range: Range<usize>, layout: TextLayout) {
+        self.0.borrow_mut().texts.push(Painted {
+            block,
+            part,
+            range,
+            layout,
+        });
+    }
+
+    fn record_block(&self, ix: usize, bounds: Bounds<Pixels>) {
+        self.0.borrow_mut().blocks.push((ix, bounds));
     }
 
     fn clear(&self) {
-        self.0.borrow_mut().clear();
+        let mut frames = self.0.borrow_mut();
+        frames.texts.clear();
+        frames.blocks.clear();
+    }
+}
+
+/// What the editor needs painted into one text: which text it is, where the
+/// caret sits, and where to record the layout a click resolves against.
+///
+/// One bundle rather than four parameters threaded through every block arm —
+/// a read-only render builds it with no caret and no sink, and pays nothing.
+#[derive(Clone, Copy)]
+struct Overlay<'a> {
+    block: usize,
+    part: Part,
+    selection: Option<Selection>,
+    layouts: Option<&'a BlockLayouts>,
+    /// Shown on the caret's block while it holds nothing. The renderer is the
+    /// only thing that knows where that text sits, so the string comes to it.
+    placeholder: Option<&'a SharedString>,
+}
+
+impl<'a> Overlay<'a> {
+    fn at(self, part: Part) -> Self {
+        Self { part, ..self }
+    }
+
+    fn here(&self) -> Cursor {
+        Cursor::new(self.block, self.part, 0)
+    }
+
+    /// The caret's byte offset, if the head is in *this* text.
+    fn caret(&self) -> Option<usize> {
+        self.selection
+            .map(|selection| selection.head)
+            .filter(|head| head.block == self.block && head.part == self.part)
+            .map(|head| head.offset)
+    }
+
+    /// The selected slice of this text, clipped to it.
+    ///
+    /// The comparison is on `(block, part)` alone: a selection covers this text
+    /// entirely when it starts before and ends after, and the offsets only
+    /// matter at the two ends.
+    fn selected(&self, len: usize) -> Option<Range<usize>> {
+        let selection = self.selection?;
+        if selection.is_collapsed() {
+            return None;
+        }
+        let (start, end) = selection.ordered();
+        let here = self.here();
+        let (first, last) = (
+            Cursor::new(start.block, start.part, 0),
+            Cursor::new(end.block, end.part, 0),
+        );
+        if here < first || here > last {
+            return None;
+        }
+        let from = if here == first { start.offset } else { 0 };
+        let to = if here == last { end.offset } else { len };
+        (from < to).then_some(from..to.min(len))
+    }
+
+    /// Whether a block a caret cannot enter — a rule, an image — falls inside
+    /// the selection, and so should show that it is going to be taken.
+    fn covers_block(&self) -> bool {
+        let Some(selection) = self.selection.filter(|s| !s.is_collapsed()) else {
+            return false;
+        };
+        let (start, end) = selection.ordered();
+        start.block < self.block && self.block < end.block
     }
 }
 
@@ -104,20 +255,21 @@ pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
 
 /// Render a document.
 pub fn render(doc: &Doc, window: &mut Window, cx: &mut App) -> AnyElement {
-    render_with_caret(doc, None, None, window, cx)
+    render_with_selection(doc, None, None, None, window, cx)
 }
 
-/// Render a document with a caret in it.
+/// Render a document with a caret and a selection in it.
 ///
-/// The caret is a paint-time concern and nothing else: it reads its position
-/// off the shaped text's own layout handle, the same way the inline-code wash
-/// does, so nothing about layout depends on where it sits. An editor supplies
-/// the position and owns the focus and the keys; painting one line is not worth
-/// a second renderer.
-pub fn render_with_caret(
+/// Both are paint-time concerns and nothing else: they read their positions off
+/// the shaped text's own layout handle, the same way the inline-code wash does,
+/// so nothing about layout depends on where the caret sits. An editor supplies
+/// the selection and owns the focus and the keys; painting a caret and a few
+/// quads is not worth a second renderer.
+pub fn render_with_selection(
     doc: &Doc,
-    caret: Option<Cursor>,
+    selection: Option<Selection>,
     layouts: Option<&BlockLayouts>,
+    placeholder: Option<SharedString>,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
@@ -136,14 +288,37 @@ pub fn render_with_caret(
             Some(previous) if tight(previous, block) => LIST_GAP,
             Some(_) => BLOCK_GAP,
         };
-        let caret = caret
-            .filter(|caret| caret.block == ix)
-            .map(|caret| caret.offset);
+        let overlay = Overlay {
+            block: ix,
+            part: Part::Body,
+            selection,
+            layouts,
+            placeholder: placeholder.as_ref(),
+        };
+        // The block's own box, recorded for a gutter handle and a drop target.
+        // A rule and an image hold no text, so a layout would not find them.
+        let frame = layouts.map(|layouts| {
+            let layouts = layouts.clone();
+            canvas(
+                move |bounds, _, _| layouts.record_block(ix, bounds),
+                |_, _, _, _| (),
+            )
+            .absolute()
+            .size_full()
+        });
         column = column.child(
             div()
                 .mt(px(gap))
                 .pl(px(block.indent as f32 * INDENT_WIDTH))
-                .child(block_element(block, ix, caret, layouts, &theme, window, cx)),
+                .relative()
+                .children(frame)
+                // A block no caret can enter still has to show it is inside the
+                // selection, or a rule between two paragraphs looks untouched
+                // right up until it disappears.
+                .when(overlay.covers_block() && block.parts().is_empty(), |el| {
+                    el.rounded(px(4.0)).bg(theme.selection)
+                })
+                .child(block_element(block, overlay, &theme, window, cx)),
         );
     }
 
@@ -161,41 +336,28 @@ fn tight(previous: &Block, next: &Block) -> bool {
     marker(previous) && (marker(next) || next.indent > previous.indent)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn block_element(
     block: &Block,
-    ix: usize,
-    caret: Option<usize>,
-    layouts: Option<&BlockLayouts>,
+    overlay: Overlay,
     theme: &Theme,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
+    let body = overlay.at(Part::Body);
     match &block.kind {
         BlockKind::Paragraph(text) => text_element(
             text,
             TEXT_SIZE,
             LINE_HEIGHT,
             FontWeight::NORMAL,
-            ix,
-            caret,
-            layouts,
+            body,
             theme,
         ),
         BlockKind::Heading { level, text } => {
             let (size, line) = heading_metrics(*level);
-            text_element(
-                text,
-                size,
-                line,
-                FontWeight::SEMIBOLD,
-                ix,
-                caret,
-                layouts,
-                theme,
-            )
+            text_element(text, size, line, FontWeight::SEMIBOLD, body, theme)
         }
-        BlockKind::Bullet(text) => marker_row(disc(theme), text, ix, caret, layouts, theme),
+        BlockKind::Bullet(text) => marker_row(disc(theme), text, body, theme),
         BlockKind::Ordered { number, text } => marker_row(
             div()
                 .flex_none()
@@ -206,13 +368,11 @@ fn block_element(
                 .child(SharedString::from(format!("{number}.")))
                 .into_any_element(),
             text,
-            ix,
-            caret,
-            layouts,
+            body,
             theme,
         ),
         BlockKind::Task { checked, text } => {
-            marker_row(checkbox(*checked, theme), text, ix, caret, layouts, theme)
+            marker_row(checkbox(*checked, theme), text, body, theme)
         }
         BlockKind::Quote(text) => div()
             .border_l_2()
@@ -226,21 +386,24 @@ fn block_element(
                 TEXT_SIZE,
                 LINE_HEIGHT,
                 FontWeight::NORMAL,
-                ix,
-                caret,
-                layouts,
+                body,
                 theme,
             ))
             .into_any_element(),
-        BlockKind::Code { language, code } => {
-            code_block(language.as_deref(), code, ix, theme, window, cx)
-        }
+        BlockKind::Code { language, code } => code_block(
+            language.as_deref(),
+            &code.text,
+            overlay.at(Part::Code),
+            theme,
+            window,
+            cx,
+        ),
         BlockKind::Image { url, alt } => image(url, alt, theme),
         BlockKind::Table {
             align,
             header,
             rows,
-        } => table(align, header, rows, ix, theme, window),
+        } => table(align, header, rows, overlay, theme, window),
         BlockKind::Rule => div()
             .h(px(1.0))
             .w_full()
@@ -307,14 +470,7 @@ fn checkbox(checked: bool, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-fn marker_row(
-    marker: AnyElement,
-    text: &Text,
-    ix: usize,
-    caret: Option<usize>,
-    layouts: Option<&BlockLayouts>,
-    theme: &Theme,
-) -> AnyElement {
+fn marker_row(marker: AnyElement, text: &Text, overlay: Overlay, theme: &Theme) -> AnyElement {
     div()
         .flex()
         .flex_row()
@@ -325,9 +481,7 @@ fn marker_row(
             TEXT_SIZE,
             LINE_HEIGHT,
             FontWeight::NORMAL,
-            ix,
-            caret,
-            layouts,
+            overlay,
             theme,
         )))
         .into_any_element()
@@ -434,18 +588,45 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn text_element(
     text: &Text,
     size: f32,
     line_height: f32,
     weight: FontWeight,
-    ix: usize,
-    caret: Option<usize>,
-    layouts: Option<&BlockLayouts>,
+    overlay: Overlay,
     theme: &Theme,
 ) -> AnyElement {
     let flat = flatten(text, weight, theme);
+    painted_text(flat, text.text.len(), size, line_height, overlay, theme)
+}
+
+/// Shaped inline content with the editing overlay under it: the selection, the
+/// caret, the inline-code wash, and the layout a click resolves against.
+///
+/// Takes a [`Flat`] rather than a [`Text`] because a table has to shape every
+/// cell to measure the columns before it can paint one.
+fn painted_text(
+    flat: Flat,
+    len: usize,
+    size: f32,
+    line_height: f32,
+    overlay: Overlay,
+    theme: &Theme,
+) -> AnyElement {
+    let (ix, part) = (overlay.block, overlay.part);
+    let (caret, selected) = (overlay.caret(), overlay.selected(len));
+    let span = 0..len;
+    // Only where the caret already is, and only while there is nothing to
+    // read: a hint on every empty block would be a page of grey.
+    let hint = overlay
+        .placeholder
+        .filter(|_| len == 0 && caret.is_some())
+        .map(|hint| {
+            div()
+                .absolute()
+                .text_color(theme.text_faint)
+                .child(hint.clone())
+        });
     let styled = StyledText::new(flat.text).with_runs(flat.runs);
     let layout = styled.layout().clone();
 
@@ -468,12 +649,28 @@ fn text_element(
     let wash = theme.code_wash;
     let code_ranges = flat.code;
     let caret_color = theme.caret;
-    let layouts = layouts.cloned();
+    let selection_color = theme.selection;
+    let layouts = overlay.layouts.cloned();
     let underlay = canvas(
         |_, _, _| (),
         move |_, _, window, _| {
             if let Some(layouts) = &layouts {
-                layouts.record(ix, layout.clone());
+                layouts.record(ix, part, span.clone(), layout.clone());
+            }
+            // Under the glyphs, like the inline-code wash — one quad per visual
+            // row, so a wrapped selection is a stack of rows rather than a box
+            // around all of them.
+            if let Some(range) = &selected {
+                for rect in range_rects(&layout, range, 0.0, 0.0) {
+                    window.paint_quad(quad(
+                        rect,
+                        px(2.0),
+                        selection_color,
+                        px(0.0),
+                        gpui::transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
             }
             if let Some(offset) = caret
                 && let Some(head) = layout.position_for_index(offset)
@@ -509,6 +706,7 @@ fn text_element(
         .line_height(px(line_height))
         .relative()
         .child(underlay)
+        .children(hint)
         .child(painted)
         .into_any_element()
 }
@@ -564,11 +762,12 @@ fn range_rects(
 fn code_block(
     language: Option<&str>,
     code: &str,
-    ix: usize,
+    overlay: Overlay,
     theme: &Theme,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
+    let ix = overlay.block;
     // Per line, so the block's height is exactly `lines × line height`.
     // Highlighting recolors runs only — layout does not move, so a build with
     // no highlighter installed paints the same block in one plain run.
@@ -582,6 +781,9 @@ fn code_block(
         underline: None,
         strikethrough: None,
     };
+    // Each line's own layout, with the slice of the code it covers — the caret
+    // and a click both resolve through these.
+    let mut rows: Vec<(Range<usize>, TextLayout)> = Vec::new();
     let mut offset = 0usize;
     let lines: Vec<AnyElement> = code
         .split('\n')
@@ -610,11 +812,57 @@ fn code_block(
             if runs.is_empty() {
                 runs.push(run(0, theme.text));
             }
-            StyledText::new(SharedString::from(line.to_string()))
-                .with_runs(runs)
-                .into_any_element()
+            let styled = StyledText::new(SharedString::from(line.to_string())).with_runs(runs);
+            rows.push((start..start + line.len(), styled.layout().clone()));
+            styled.into_any_element()
         })
         .collect();
+
+    let caret = overlay.caret();
+    let selected = overlay.selected(code.len());
+    let sink = overlay.layouts.cloned();
+    let (caret_color, selection_color) = (theme.caret, theme.selection);
+    let underlay = canvas(
+        |_, _, _| (),
+        move |_, _, window, _| {
+            for (span, layout) in &rows {
+                if let Some(sink) = &sink {
+                    sink.record(ix, Part::Code, span.clone(), layout.clone());
+                }
+                if let Some(range) = &selected {
+                    let (from, to) = (range.start.max(span.start), range.end.min(span.end));
+                    if from < to {
+                        for rect in
+                            range_rects(layout, &(from - span.start..to - span.start), 0.0, 0.0)
+                        {
+                            window.paint_quad(quad(
+                                rect,
+                                px(2.0),
+                                selection_color,
+                                px(0.0),
+                                gpui::transparent_black(),
+                                BorderStyle::default(),
+                            ));
+                        }
+                    }
+                }
+                if let Some(offset) = caret.filter(|at| span.contains(at) || *at == span.end)
+                    && let Some(head) = layout.position_for_index(offset - span.start)
+                {
+                    window.paint_quad(quad(
+                        Bounds::new(head, size(px(1.5), layout.line_height())),
+                        px(0.0),
+                        caret_color,
+                        px(0.0),
+                        gpui::transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
+            }
+        },
+    )
+    .absolute()
+    .size_full();
 
     div()
         .rounded(px(10.0))
@@ -640,11 +888,13 @@ fn code_block(
             div()
                 .id(ElementId::named_usize("md-code", ix))
                 .overflow_x_scroll()
+                .relative()
                 .px(px(CODE_PADDING_X))
                 .py(px(CODE_PADDING_Y))
                 .text_size(px(CODE_TEXT_SIZE))
                 .line_height(px(CODE_LINE_HEIGHT))
                 .whitespace_nowrap()
+                .child(underlay)
                 .children(lines),
         )
         .child(copy_button(code, ix, theme, window, cx))
@@ -738,10 +988,11 @@ fn table(
     align: &[Align],
     header: &[Text],
     rows: &[Vec<Text>],
-    ix: usize,
+    overlay: Overlay,
     theme: &Theme,
     window: &mut Window,
 ) -> AnyElement {
+    let ix = overlay.block;
     let all: Vec<&[Text]> = std::iter::once(header)
         .filter(|row| !row.is_empty())
         .chain(rows.iter().map(|row| row.as_slice()))
@@ -816,8 +1067,19 @@ fn table(
                 Align::Right => cell_el.text_right(),
             };
             if let Some(flat) = cell {
-                let styled = StyledText::new(flat.text).with_runs(flat.runs);
-                cell_el = cell_el.child(styled);
+                // `all` drops an empty header, so a table without one starts at
+                // part row 1 — row 0 is the header slot whether or not it is
+                // filled.
+                let row = if has_header { r } else { r + 1 };
+                let len = flat.text.len();
+                cell_el = cell_el.child(painted_text(
+                    flat,
+                    len,
+                    TEXT_SIZE,
+                    LINE_HEIGHT,
+                    overlay.at(Part::Cell { row, column: c }),
+                    theme,
+                ));
             }
             row_el = row_el.child(cell_el);
         }

@@ -3,12 +3,17 @@ use markdown::*;
 use markdown::{parse::parse, serialize::serialize};
 
 fn text_of(doc: &Doc, ix: usize) -> &Text {
-    doc.blocks[ix].text().expect("block holds text")
+    doc.blocks[ix]
+        .text_at(Part::Body)
+        .expect("block holds text")
 }
 
 #[test]
 fn typing_at_the_end_of_a_mark_joins_it() {
-    let mut text = parse("**ab**").blocks[0].text().unwrap().clone();
+    let mut text = parse("**ab**").blocks[0]
+        .text_at(Part::Body)
+        .unwrap()
+        .clone();
     text.insert(2, "c");
     assert_eq!(text.text, "abc");
     assert_eq!(text.marks[0].range, 0..3, "left-sticky: the tail is bold");
@@ -16,7 +21,10 @@ fn typing_at_the_end_of_a_mark_joins_it() {
 
 #[test]
 fn typing_at_the_start_of_a_mark_stays_outside_it() {
-    let mut text = parse("**ab**").blocks[0].text().unwrap().clone();
+    let mut text = parse("**ab**").blocks[0]
+        .text_at(Part::Body)
+        .unwrap()
+        .clone();
     text.insert(0, "x");
     assert_eq!(text.text, "xab");
     assert_eq!(text.marks[0].range, 1..3);
@@ -24,7 +32,10 @@ fn typing_at_the_start_of_a_mark_stays_outside_it() {
 
 #[test]
 fn removing_text_collapses_the_marks_over_it() {
-    let mut text = parse("a**bc**d").blocks[0].text().unwrap().clone();
+    let mut text = parse("a**bc**d").blocks[0]
+        .text_at(Part::Body)
+        .unwrap()
+        .clone();
     text.remove(1..3);
     assert_eq!(text.text, "ad");
     assert!(
@@ -86,17 +97,22 @@ fn backspace_walks_out_before_it_merges() {
     let mut doc = parse("- a\n    - b");
     assert_eq!(doc.blocks[1].indent, 1);
 
-    doc.merge_back(1);
+    let start = Cursor::new(1, Part::Body, 0);
+    doc.merge_back(start);
     assert_eq!(doc.blocks[1].indent, 0, "first press outdents");
 
-    doc.merge_back(1);
+    doc.merge_back(start);
     assert!(
         matches!(doc.blocks[1].kind, BlockKind::Paragraph(_)),
         "second press drops the marker"
     );
 
-    let caret = doc.merge_back(1);
-    assert_eq!(caret, Some(1), "third press merges after \"a\"");
+    let caret = doc.merge_back(start);
+    assert_eq!(
+        caret,
+        Some(Cursor::new(0, Part::Body, 1)),
+        "third press merges after \"a\""
+    );
     assert_eq!(doc.blocks.len(), 1);
     assert_eq!(text_of(&doc, 0).text, "ab");
 }
@@ -172,29 +188,53 @@ fn no_edit_sequence_escapes_the_round_trip() {
                     break;
                 }
                 let ix = rng.next() % doc.blocks.len();
-                let len = doc.blocks[ix].text().map_or(0, |text| text.text.len());
+                let len = doc.blocks[ix]
+                    .text_at(Part::Body)
+                    .map_or(0, |text| text.text.len());
                 let a = if len == 0 { 0 } else { rng.next() % (len + 1) };
                 let b = if len == 0 { 0 } else { rng.next() % (len + 1) };
 
-                match rng.next() % 7 {
+                let at = Cursor::new(ix, Part::Body, 0);
+                match rng.next() % 8 {
                     0 => {
                         let word = WORDS[rng.next() % WORDS.len()];
-                        doc.edit_text(ix, |text| text.insert(a, word));
+                        doc.edit_at(at, |text| text.insert(a, word));
                     }
                     1 => {
-                        doc.edit_text(ix, |text| text.remove(a.min(b)..a.max(b)));
+                        doc.edit_at(at, |text| text.remove(a.min(b)..a.max(b)));
                     }
                     2 => {
                         let mark = MARKS[rng.next() % MARKS.len()].clone();
-                        doc.edit_text(ix, |text| text.toggle(a.min(b)..a.max(b), mark));
+                        doc.edit_at(at, |text| text.toggle(a.min(b)..a.max(b), mark));
                     }
                     3 => {
                         doc.split(ix, a);
                     }
                     4 => {
-                        doc.merge_back(ix);
+                        doc.merge_back(at);
                     }
+                    // A selection over any two positions in the document —
+                    // where every cross-block delete, cut and paste lands.
                     5 => {
+                        let jx = rng.next() % doc.blocks.len();
+                        let jlen = doc.blocks[jx]
+                            .text_at(Part::Body)
+                            .map_or(0, |text| text.text.len());
+                        let c = if jlen == 0 {
+                            0
+                        } else {
+                            rng.next() % (jlen + 1)
+                        };
+                        let word = WORDS[rng.next() % WORDS.len()];
+                        doc.replace(
+                            Selection::new(
+                                Cursor::new(ix, Part::Body, a),
+                                Cursor::new(jx, Part::Body, c),
+                            ),
+                            Text::plain(word),
+                        );
+                    }
+                    6 => {
                         doc.indent(ix);
                     }
                     _ => {
@@ -202,9 +242,13 @@ fn no_edit_sequence_escapes_the_round_trip() {
                     }
                 }
 
-                // Offsets must stay inside the text they index.
+                // Offsets must stay inside the text they index — every part of
+                // every block, not just the ones an edit was aimed at.
                 for block in &doc.blocks {
-                    if let Some(text) = block.text() {
+                    for part in block.parts() {
+                        let Some(text) = block.text_at(part) else {
+                            continue;
+                        };
                         for span in &text.marks {
                             assert!(
                                 span.range.end <= text.text.len()

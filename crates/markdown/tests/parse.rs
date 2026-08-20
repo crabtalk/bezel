@@ -163,7 +163,7 @@ fn code_blocks_keep_their_language_and_drop_the_fence_newline() {
             0,
             BlockKind::Code {
                 language: Some("rust".into()),
-                code: "fn main() {}".into()
+                code: Text::plain("fn main() {}")
             }
         )]
     );

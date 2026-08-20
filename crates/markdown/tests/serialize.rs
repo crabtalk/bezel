@@ -136,7 +136,7 @@ fn code_containing_a_fence_gets_a_longer_one() {
     let doc = Doc {
         blocks: vec![Block::new(BlockKind::Code {
             language: None,
-            code: "```\nnested\n```".into(),
+            code: Text::plain("```\nnested\n```"),
         })],
     };
     assert_eq!(parse(&serialize(&doc)), doc);

@@ -464,7 +464,13 @@ impl ParseState {
                     // The fence swallows the final newline; storing it would
                     // grow the block by one blank line on every round trip.
                     let code = code.strip_suffix('\n').map_or(code.clone(), str::to_string);
-                    self.push(BlockKind::Code { language, code }, indent);
+                    self.push(
+                        BlockKind::Code {
+                            language,
+                            code: Text::plain(code),
+                        },
+                        indent,
+                    );
                 }
             }
             TagEnd::List(_) => {

@@ -3061,6 +3061,7 @@ dependencies = [
  "gpui",
  "pulldown-cmark",
  "theme",
+ "ui",
 ]
 
 [[package]]
