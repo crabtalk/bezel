@@ -119,7 +119,7 @@ impl BlockLayouts {
     ///
     /// Vertical motion is geometry rather than arithmetic on line numbers, so
     /// a wrapped row and a hard newline are the same case and neither needs
-    /// counting — the rule [`ui::TextField`] arrived at.
+    /// counting — the rule `ui::TextField` arrived at.
     pub fn position(&self, at: Cursor) -> Option<(Point<Pixels>, Pixels)> {
         let entries = &self.0.borrow().texts;
         let painted = entries.iter().find(|painted| {

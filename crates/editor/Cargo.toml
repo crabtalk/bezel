@@ -1,7 +1,7 @@
 [package]
-name = "markdown"
+name = "editor"
 
-description = "A Notion-style block document model for gpui — markdown in, markdown out"
+description = "A Notion-style block editor for gpui — the editing surface over the markdown document model"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,6 +17,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+markdown.workspace = true
 theme.workspace = true
+ui.workspace = true
 gpui.workspace = true
-pulldown-cmark = { version = "0.13", default-features = false }

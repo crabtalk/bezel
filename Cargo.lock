@@ -1407,6 +1407,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "editor"
+version = "0.0.2"
+dependencies = [
+ "gpui",
+ "markdown",
+ "theme",
+ "ui",
+]
+
+[[package]]
 name = "either"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1863,6 +1873,7 @@ version = "0.0.2"
 dependencies = [
  "agent",
  "chrono",
+ "editor",
  "gpui",
  "gpui_platform",
  "markdown",
@@ -3061,7 +3072,6 @@ dependencies = [
  "gpui",
  "pulldown-cmark",
  "theme",
- "ui",
 ]
 
 [[package]]

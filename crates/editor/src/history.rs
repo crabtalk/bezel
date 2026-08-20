@@ -1,6 +1,6 @@
 //! Undo and redo, as coalesced snapshots.
 //!
-//! A whole [`Doc`] per step rather than a diff. That is what [`ui::TextField`]
+//! A whole [`Doc`] per step rather than a diff. That is what [`ui::input::TextField`]
 //! settled on for a string, and the argument carries: a document held in memory
 //! is small next to the machinery a transaction log needs, and a snapshot cannot
 //! be wrong about what it restores. Steps, not keystrokes — a run of typing
@@ -13,10 +13,7 @@
 
 use std::collections::VecDeque;
 
-use crate::{
-    Doc,
-    select::{Cursor, Selection},
-};
+use markdown::{Cursor, Doc, Selection};
 
 /// How many steps a document keeps.
 ///

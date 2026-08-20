@@ -1,11 +1,8 @@
 //! Coalescing is the whole design, so it is what these pin: a run of typing is
 //! one step, and anything that breaks the run starts another.
 
-use markdown::{
-    history::{EditKind, History},
-    parse::parse,
-    *,
-};
+use editor::{EditKind, History};
+use markdown::{parse::parse, *};
 
 fn body(block: usize, offset: usize) -> Selection {
     Selection::at(Cursor::new(block, Part::Body, offset))

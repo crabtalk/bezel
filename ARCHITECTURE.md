@@ -11,7 +11,8 @@ crates/bezel     the facade               (one dependency, peer namespaces)
 crates/theme     tokens + appearance      (the @Environment layer)
 crates/motion    animation vocabulary     (the Animation/transition layer)
 crates/ui        components               (the View layer)
-crates/markdown  block document model     (markdown in, markdown out; +editor)
+crates/markdown  block document model     (markdown in, markdown out; painted)
+crates/editor    the editing surface       (keys, IME, undo, menus)
 apps/gallery     the documentation — a rail of every component, live
 ```
 
@@ -90,25 +91,20 @@ painting. `render` is the gpui layer over them: a flat block list means nesting
 is left padding rather than nested containers, and the gap between two blocks is
 decided by the pair, so items of one list sit tight while a new list gets air.
 
-`editor` is the editing **surface** — a focus handle, key bindings, the platform
-input handler, and turning a click into a position — behind the `editor`
-feature, off by default. Its chords are `ui::TextField`'s, because a document is
-not the place to invent a second set, and its rules are that field's too:
-vertical motion is geometry through the painted layouts rather than arithmetic
-on line numbers, and undo coalesces by *adjacency rather than by a pause*, so
-there is no timing threshold to invent. `history` holds whole-document
-snapshots — a transaction log is the machinery collaborative editing needs and
-nothing here asks for it. It was a `bezel-editor` crate until its manifest said otherwise:
-its dependencies were a strict subset of this crate's, so the boundary isolated
-nothing while cutting one feature in half, with *what an edit does* on one side
-and *which key does it* on the other.
+## The editing surface
 
-The feature now carries `ui` as well, so it gates the graph and not only compile
-time: the slash menu is `popover::Filter` ranking the block vocabulary and
-`menu_at` anchored where the caret already paints, and the alternative —
-exposing the query and the anchor point and asking every host to build the menu
-— is every consumer reimplementing the thing a component library exists to
-prevent. A reader that only paints markdown still compiles no popovers.
+`editor` is a focus handle, key bindings, the platform input handler, undo, and
+the menus. The boundary is *what an edit does* against *which key does it*, and
+the dependency graph draws the same line: `ui` is the slash menu's
+`popover::Filter` and `menu_at`, and it stops at this crate — a consumer that
+only paints markdown compiles no popovers.
+
+Its chords are `ui::TextField`'s, because a document is not the place to invent
+a second set, and its rules are that field's too: vertical motion is geometry
+through the painted layouts rather than arithmetic on line numbers, and undo
+coalesces by *adjacency rather than by a pause*, so there is no timing threshold
+to invent. `history` holds whole-document snapshots — a transaction log is the
+machinery collaborative editing needs and nothing here asks for it.
 
 ## Laws
 

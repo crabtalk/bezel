@@ -1,166 +1,41 @@
-//! A Notion-style block editor. Behind the `editor` feature, off by default —
-//! a reader that only paints a document never compiles it.
+//! The editing surface.
 //!
 //! The document is the single source of truth. There is no `TextField` per
-//! block: a selection is a pair of [`Cursor`]s into one [`Doc`], which is what
+//! block: a selection is a pair of `Cursor`s into one `Doc`, which is what
 //! makes Enter split, Backspace merge and Tab indent into list operations
 //! rather than negotiations between separate widgets each owning a string.
 //!
-//! Everything about *what* an edit does lives in [`crate::edit`] and
-//! [`crate::select`], and is tested there without a window. This module owns
-//! only what needs one: a focus handle, key bindings, the platform input
-//! handler, and turning a click into a position.
-//!
-//! ```ignore
-//! markdown::editor::init(cx);             // once, at startup
-//! let editor = cx.new(|cx| Editor::new("# Title", cx));
-//! ```
+//! Everything about *what* an edit does lives in `markdown` — `edit` and
+//! `select` — and is tested there without a window. This crate owns only what
+//! needs one: a focus handle, key bindings, the platform input handler, and
+//! turning a click into a position.
 
+use gpui::{
+    App, Context, CursorStyle, ElementInputHandler, Entity, FocusHandle, Focusable, MouseButton,
+    Render, SharedString, Styled as _, Window, canvas, div, prelude::*, px,
+};
+use markdown::{
+    BlockKind, BlockLayouts, Cursor, Doc, Mark, Part, Selection, Text, edit, edit::shortcut,
+};
+use std::ops::Range;
 use theme::Theme;
 
 use crate::{
-    BlockKind, BlockLayouts, Doc, Mark, Part, Text,
-    edit::{self, shortcut},
     history::{EditKind, History},
-    select::{Cursor, Selection},
     slash::Slash,
 };
-use gpui::{
-    App, Context, CursorStyle, ElementInputHandler, Entity, EntityInputHandler, FocusHandle,
-    Focusable, KeyBinding, MouseButton, Render, SharedString, Styled as _, UTF16Selection, Window,
-    actions, canvas, div, prelude::*, px,
+
+mod input;
+mod keys;
+mod menu;
+
+pub use keys::init;
+use keys::{
+    Backspace, Copy, Cut, Delete, Dismiss, Down, DuplicateBlock, End, Home, Indent, Left,
+    MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock, Right, SelectAll, SelectDown,
+    SelectEnd, SelectHome, SelectLeft, SelectRight, SelectUp, SelectWordLeft, SelectWordRight,
+    SplitBlock, ToggleBold, ToggleCode, ToggleItalic, ToggleStrike, Undo, Up, WordLeft, WordRight,
 };
-use std::ops::Range;
-
-actions!(
-    bezel_editor,
-    [
-        Backspace,
-        Delete,
-        Left,
-        Right,
-        Up,
-        Down,
-        Home,
-        End,
-        SelectLeft,
-        SelectRight,
-        SelectUp,
-        SelectDown,
-        SelectHome,
-        SelectEnd,
-        SelectAll,
-        WordLeft,
-        WordRight,
-        SelectWordLeft,
-        SelectWordRight,
-        SplitBlock,
-        Indent,
-        Outdent,
-        Dismiss,
-        Copy,
-        Cut,
-        Paste,
-        Undo,
-        Redo,
-        ToggleBold,
-        ToggleItalic,
-        ToggleStrike,
-        ToggleCode,
-        MoveBlockUp,
-        MoveBlockDown,
-        DuplicateBlock,
-        RemoveBlock,
-    ]
-);
-
-/// Install the editor's key bindings. Scoped to the editor's own key context,
-/// so binding `tab` here does not make `tab` mean "indent" for the whole app.
-///
-/// The chords are [`ui::TextField`]'s, because a document is not the place to
-/// invent a second set: what `alt-left` does in a search box is what a reader
-/// expects it to do here.
-pub fn init(cx: &mut App) {
-    let ctx = Some(CONTEXT);
-    cx.bind_keys([
-        KeyBinding::new("backspace", Backspace, ctx),
-        KeyBinding::new("delete", Delete, ctx),
-        KeyBinding::new("left", Left, ctx),
-        KeyBinding::new("right", Right, ctx),
-        KeyBinding::new("up", Up, ctx),
-        KeyBinding::new("down", Down, ctx),
-        KeyBinding::new("home", Home, ctx),
-        KeyBinding::new("end", End, ctx),
-        KeyBinding::new("shift-left", SelectLeft, ctx),
-        KeyBinding::new("shift-right", SelectRight, ctx),
-        KeyBinding::new("shift-up", SelectUp, ctx),
-        KeyBinding::new("shift-down", SelectDown, ctx),
-        KeyBinding::new("shift-home", SelectHome, ctx),
-        KeyBinding::new("shift-end", SelectEnd, ctx),
-        KeyBinding::new("enter", SplitBlock, ctx),
-        KeyBinding::new("tab", Indent, ctx),
-        KeyBinding::new("shift-tab", Outdent, ctx),
-        KeyBinding::new("escape", Dismiss, ctx),
-    ]);
-
-    // `MoveBlockUp`, `MoveBlockDown`, `DuplicateBlock` and `RemoveBlock` are
-    // deliberately unbound. Every chord that fits is already taken by something
-    // standard — `cmd-shift-up`/`down` select to the ends of a document on
-    // macOS, `alt-up`/`down` move by paragraph — and shadowing one of those in
-    // a text surface is worse than reaching the block menu for it. They are
-    // actions so an app can bind what suits its own keymap.
-
-    #[cfg(target_os = "macos")]
-    cx.bind_keys([
-        KeyBinding::new("cmd-a", SelectAll, ctx),
-        KeyBinding::new("cmd-c", Copy, ctx),
-        KeyBinding::new("cmd-x", Cut, ctx),
-        KeyBinding::new("cmd-v", Paste, ctx),
-        KeyBinding::new("cmd-z", Undo, ctx),
-        KeyBinding::new("cmd-shift-z", Redo, ctx),
-        KeyBinding::new("cmd-b", ToggleBold, ctx),
-        KeyBinding::new("cmd-i", ToggleItalic, ctx),
-        KeyBinding::new("cmd-e", ToggleCode, ctx),
-        KeyBinding::new("cmd-shift-x", ToggleStrike, ctx),
-        // cmd = line, option = word: the macOS convention.
-        KeyBinding::new("cmd-left", Home, ctx),
-        KeyBinding::new("cmd-right", End, ctx),
-        KeyBinding::new("cmd-shift-left", SelectHome, ctx),
-        KeyBinding::new("cmd-shift-right", SelectEnd, ctx),
-        KeyBinding::new("alt-left", WordLeft, ctx),
-        KeyBinding::new("alt-right", WordRight, ctx),
-        KeyBinding::new("alt-shift-left", SelectWordLeft, ctx),
-        KeyBinding::new("alt-shift-right", SelectWordRight, ctx),
-        // The emacs bindings macOS honours in every native text field.
-        KeyBinding::new("ctrl-a", Home, ctx),
-        KeyBinding::new("ctrl-e", End, ctx),
-        KeyBinding::new("ctrl-b", Left, ctx),
-        KeyBinding::new("ctrl-f", Right, ctx),
-        KeyBinding::new("ctrl-n", Down, ctx),
-        KeyBinding::new("ctrl-p", Up, ctx),
-        KeyBinding::new("ctrl-h", Backspace, ctx),
-        KeyBinding::new("ctrl-d", Delete, ctx),
-    ]);
-
-    #[cfg(not(target_os = "macos"))]
-    cx.bind_keys([
-        KeyBinding::new("ctrl-a", SelectAll, ctx),
-        KeyBinding::new("ctrl-c", Copy, ctx),
-        KeyBinding::new("ctrl-x", Cut, ctx),
-        KeyBinding::new("ctrl-v", Paste, ctx),
-        KeyBinding::new("ctrl-z", Undo, ctx),
-        KeyBinding::new("ctrl-shift-z", Redo, ctx),
-        KeyBinding::new("ctrl-b", ToggleBold, ctx),
-        KeyBinding::new("ctrl-i", ToggleItalic, ctx),
-        KeyBinding::new("ctrl-e", ToggleCode, ctx),
-        KeyBinding::new("ctrl-shift-x", ToggleStrike, ctx),
-        // ctrl = word on Windows/Linux, where there is no line modifier.
-        KeyBinding::new("ctrl-left", WordLeft, ctx),
-        KeyBinding::new("ctrl-right", WordRight, ctx),
-        KeyBinding::new("ctrl-shift-left", SelectWordLeft, ctx),
-        KeyBinding::new("ctrl-shift-right", SelectWordRight, ctx),
-    ]);
-}
 
 const CONTEXT: &str = "BezelEditor";
 
@@ -224,7 +99,7 @@ pub struct Editor {
 impl Editor {
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
         Self {
-            doc: crate::parse(source),
+            doc: markdown::parse(source),
             selection: Selection::default(),
             focus_handle: cx.focus_handle(),
             marked: None,
@@ -351,7 +226,7 @@ impl Editor {
     pub fn source(&self) -> String {
         let mut doc = self.doc.clone();
         doc.normalize();
-        crate::serialize(&doc)
+        markdown::serialize(&doc)
     }
 
     /// Replace whatever is selected with `text`, applying a markdown prefix if
@@ -365,7 +240,7 @@ impl Editor {
             // A stored mark applies to what is typed next and to nothing else,
             // so it is spent here.
             for mark in this.stored.drain(..) {
-                typed.marks.push(crate::MarkSpan {
+                typed.marks.push(markdown::MarkSpan {
                     range: 0..typed.text.len(),
                     mark,
                 });
@@ -635,7 +510,7 @@ impl Editor {
         (!self.selection.is_collapsed()).then(|| {
             let mut slice = self.doc.slice(self.selection);
             slice.normalize();
-            crate::serialize(&slice)
+            markdown::serialize(&slice)
         })
     }
 
@@ -668,7 +543,7 @@ impl Editor {
             return self.toggle_mark(Mark::Link(source.trim().to_string()), cx);
         }
         self.edit(EditKind::Structure, cx, |this| {
-            let head = this.doc.splice(this.selection, crate::parse(&source));
+            let head = this.doc.splice(this.selection, markdown::parse(&source));
             this.selection = Selection::at(head.clamp(&this.doc));
         });
     }
@@ -729,146 +604,6 @@ impl Editor {
             this.selection = this.selection.clamp(&this.doc);
         });
     }
-
-    /// The gutter handle, on the block under the pointer.
-    ///
-    /// One handle rather than one per block: only the hovered block shows it,
-    /// so a single element placed from the recorded frames does the whole job
-    /// and the renderer stays clear of editor concerns.
-    fn handle(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        let ix = self.lifted.map(|(from, _)| from).or(self.hovered)?;
-        let bounds = self.layouts.block_bounds(ix)?;
-        Some(
-            div()
-                .id("block-handle")
-                .absolute()
-                .left(bounds.origin.x - self.origin.x - px(HANDLE_GUTTER))
-                .top(bounds.origin.y - self.origin.y)
-                .w(px(HANDLE_SIZE))
-                .h(px(HANDLE_SIZE))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.0))
-                .cursor(CursorStyle::OpenHand)
-                .text_size(px(12.0))
-                .text_color(theme.text_faint)
-                .hover(|el| el.bg(theme.ink(0.08)).text_color(theme.text_muted))
-                .child("⠿")
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
-                        this.handle_pressed = true;
-                        this.lifted = Some((ix, ix));
-                        // A press that never moves is a click and leaves the
-                        // menu open; the first drag move clears it.
-                        this.block_menu = Some((ix, event.position));
-                        cx.notify();
-                    }),
-                )
-                .into_any_element(),
-        )
-    }
-
-    /// The line showing where a lifted block would land.
-    fn drop_indicator(&self, theme: &Theme) -> Option<gpui::AnyElement> {
-        let (from, to) = self.lifted.filter(|(from, to)| from != to)?;
-        let bounds = self.layouts.block_bounds(to)?;
-        // Above the target when moving up, below it when moving down — which
-        // is where the block actually ends up.
-        let y = if to < from {
-            bounds.origin.y
-        } else {
-            bounds.origin.y + bounds.size.height
-        };
-        Some(
-            div()
-                .absolute()
-                .left(px(0.0))
-                .top(y - self.origin.y - px(1.0))
-                .w_full()
-                .h(px(2.0))
-                .rounded(px(1.0))
-                .bg(theme.accent)
-                .into_any_element(),
-        )
-    }
-
-    /// Turn into / Duplicate / Delete, at the handle that opened it.
-    fn block_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        let (ix, at) = self.block_menu?;
-        let turns = crate::slash::items();
-        let rows = turns.into_iter().map(|(label, kind)| {
-            ui::popover::menu_row(theme, false, SharedString::from(format!("turn-{label}")))
-                .id(SharedString::from(format!("turn-row-{label}")))
-                .child(label)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.block_menu = None;
-                    this.set_block(ix, kind.clone(), cx);
-                }))
-        });
-        let action = |label: &'static str, run: fn(&mut Self, usize, &mut Context<Self>)| {
-            ui::popover::menu_row(theme, false, SharedString::from(format!("block-{label}")))
-                .id(SharedString::from(format!("block-row-{label}")))
-                .child(label)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.block_menu = None;
-                    run(this, ix, cx);
-                }))
-        };
-        Some(ui::popover::menu_at(
-            "block-menu",
-            at,
-            div()
-                .w(px(190.0))
-                .max_h(px(320.0))
-                .overflow_hidden()
-                .child(ui::popover::menu_heading(theme, "Turn into"))
-                .children(rows)
-                .child(ui::popover::menu_heading(theme, "Block"))
-                .child(action("Duplicate", |this, ix, cx| {
-                    this.duplicate_block(ix, cx)
-                }))
-                .child(action("Delete", |this, ix, cx| this.remove_block(ix, cx)))
-                .into_any_element(),
-            None,
-        ))
-    }
-
-    /// The menu, anchored under the `/` that opened it.
-    ///
-    /// The anchor comes from the same layout the caret paints against, so it
-    /// costs nothing beyond a lookup and it cannot drift from the text.
-    fn slash_menu(&self, theme: &Theme) -> Option<gpui::AnyElement> {
-        let slash = self.slash.as_ref()?;
-        let (point, line_height) = self.layouts.position(slash.at)?;
-        let items = crate::slash::items();
-        let rows = slash
-            .filter
-            .filtered()
-            .iter()
-            .enumerate()
-            .map(|(row, &ix)| {
-                ui::popover::menu_row(
-                    theme,
-                    Some(row) == slash.filter.active(),
-                    SharedString::from(format!("slash-{ix}")),
-                )
-                .child(items[ix].0.clone())
-            });
-        Some(ui::popover::menu_at(
-            "slash-menu",
-            gpui::point(point.x, point.y + line_height),
-            div()
-                .w(px(200.0))
-                .max_h(px(280.0))
-                .overflow_hidden()
-                .children(rows)
-                .into_any_element(),
-            None,
-        ))
-    }
-
     /// The caret's text, for the input handler's offset arithmetic.
     fn caret_text(&self) -> Option<&Text> {
         let at = self.cursor();
@@ -1084,7 +819,7 @@ impl Render for Editor {
             })
             .relative()
             .child(input)
-            .child(crate::render_with_selection(
+            .child(markdown::render_with_selection(
                 &self.doc,
                 selection,
                 Some(&self.layouts),
@@ -1096,153 +831,6 @@ impl Render for Editor {
             .children(self.handle(&theme, cx))
             .children(self.drop_indicator(&theme))
             .children(self.block_menu(&theme, cx))
-    }
-}
-
-/// Typed text and IME arrive here. Offsets are within the caret's block, which
-/// is the unit the platform is told about — a block is a paragraph's worth of
-/// text, so a candidate window never has to be anchored across one.
-impl EntityInputHandler for Editor {
-    fn text_for_range(
-        &mut self,
-        range: Range<usize>,
-        adjusted: &mut Option<Range<usize>>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<String> {
-        let text = self.caret_text()?;
-        let range = range.start.min(text.text.len())..range.end.min(text.text.len());
-        if range.start != range.end {
-            *adjusted = Some(range.clone());
-        }
-        Some(text.text.get(range)?.to_string())
-    }
-
-    fn selected_text_range(
-        &mut self,
-        _: bool,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<UTF16Selection> {
-        // The platform is told about one text at a time, so a selection that
-        // leaves the caret's own is reported collapsed — there are no
-        // coordinates here in which to express it.
-        let (start, end) = self.selection.ordered();
-        let spans_one = start.block == end.block && start.part == end.part;
-        let head = self.selection.head;
-        let range = if spans_one {
-            start.offset..end.offset
-        } else {
-            head.offset..head.offset
-        };
-        Some(UTF16Selection {
-            reversed: spans_one && self.selection.head == start,
-            range,
-        })
-    }
-
-    fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked.clone()
-    }
-
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
-        self.marked = None;
-    }
-
-    fn replace_text_in_range(
-        &mut self,
-        range: Option<Range<usize>>,
-        text: &str,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // The platform's range is within the caret's own text, so it becomes a
-        // selection there and the insert path does the rest.
-        if let Some(range) = range.or_else(|| self.marked.clone()) {
-            let at = self.cursor();
-            self.selection = Selection::new(
-                Cursor {
-                    offset: range.start,
-                    ..at
-                },
-                Cursor {
-                    offset: range.end,
-                    ..at
-                },
-            );
-        }
-        self.marked = None;
-        self.insert(text, cx);
-    }
-
-    fn replace_and_mark_text_in_range(
-        &mut self,
-        range: Option<Range<usize>>,
-        text: &str,
-        marked: Option<Range<usize>>,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(range) = range.or_else(|| self.marked.clone()) {
-            let at = self.cursor();
-            self.doc.edit_at(at, |body| body.remove(range.clone()));
-            self.place(Cursor {
-                offset: range.start,
-                ..at
-            });
-        }
-        // Composition runs outside the shortcut path: a half-typed candidate is
-        // not a markdown prefix, and turning it into one mid-composition would
-        // pull the text out from under the IME.
-        let at = self.cursor();
-        let start = at.offset;
-        self.doc.edit_at(at, |body| body.insert(start, text));
-        self.marked = Some(start..start + text.len());
-        self.place(Cursor {
-            offset: marked
-                .map(|range| start + range.end.min(text.len()))
-                .unwrap_or(start + text.len()),
-            ..at
-        });
-        cx.notify();
-    }
-
-    /// Where a range paints, so a candidate window opens under the text it is
-    /// composing rather than at the window's origin.
-    fn bounds_for_range(
-        &mut self,
-        range: Range<usize>,
-        _: gpui::Bounds<gpui::Pixels>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<gpui::Bounds<gpui::Pixels>> {
-        let at = self.cursor();
-        let start = Cursor {
-            offset: range.start,
-            ..at
-        };
-        let (origin, line_height) = self.layouts.position(start)?;
-        let end = self
-            .layouts
-            .position(Cursor {
-                offset: range.end,
-                ..at
-            })
-            .map(|(point, _)| point)
-            .filter(|point| point.y == origin.y);
-        let width = end.map_or(gpui::px(0.0), |point| point.x - origin.x);
-        Some(gpui::Bounds::new(origin, gpui::size(width, line_height)))
-    }
-
-    fn character_index_for_point(
-        &mut self,
-        point: gpui::Point<gpui::Pixels>,
-        _: &mut Window,
-        _: &mut Context<Self>,
-    ) -> Option<usize> {
-        let hit = self.layouts.hit(point)?;
-        let at = self.cursor();
-        (hit.block == at.block && hit.part == at.part).then_some(hit.offset)
     }
 }
 

@@ -229,7 +229,7 @@ impl Cursor {
     /// The start of the word at or before the caret — alt-left.
     ///
     /// Whitespace first, then the run of word characters, which is the rule
-    /// every platform's word-left follows and the one [`ui::TextField`] uses.
+    /// every platform's word-left follows and the one `ui::TextField` uses.
     pub fn word_left(self, doc: &Doc) -> Self {
         let here = self.clamp(doc);
         let Some(text) = doc.blocks[here.block].text_at(here.part) else {

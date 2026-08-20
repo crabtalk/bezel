@@ -10,7 +10,6 @@ use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
     actions, div, prelude::*, px, relative,
 };
-use markdown::editor;
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
     Theme,

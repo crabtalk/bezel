@@ -23,11 +23,12 @@
 //! Like the other patterns it is an entity: a screen owns a screen's worth of
 //! state, and its host holds one field.
 
+use editor::Editor;
 use gpui::{
     Context, ElementId, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
     prelude::*, px,
 };
-use markdown::{BlockKind, Doc, Editor};
+use markdown::{BlockKind, Doc};
 use theme::Theme;
 use ui::widgets::Controls;
 

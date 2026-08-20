@@ -1,6 +1,6 @@
 //! The slash menu: `/` at an empty block, then the block vocabulary.
 //!
-//! [`crate::doc::BlockKind`] says it is closed by design because *this* is what
+//! [`markdown::BlockKind`] says it is closed by design because *this* is what
 //! it is for — the menu is the enum, and a consumer that needs another block
 //! widens the enum rather than registering something here.
 //!
@@ -11,10 +11,7 @@
 use gpui::SharedString;
 use ui::popover::Filter;
 
-use crate::{
-    doc::{Align, BlockKind, Text},
-    select::Cursor,
-};
+use markdown::{Align, BlockKind, Cursor, Text};
 
 /// Every block the menu offers, and what each makes.
 ///

@@ -164,9 +164,9 @@ pub enum Part {
     },
 }
 
-/// The block vocabulary. Closed by design — it is exactly what the slash menu
-/// offers, and a consumer that needs a block of its own is a reason to widen
-/// this enum rather than to grow an extension system.
+/// The block vocabulary. Closed by design — a consumer that needs a block of
+/// its own is a reason to widen this enum rather than to grow an extension
+/// system.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockKind {
     Paragraph(Text),
