@@ -119,22 +119,30 @@ impl Editor {
     ///
     /// The anchor comes from the same layout the caret paints against, so it
     /// costs nothing beyond a lookup and it cannot drift from the text.
-    pub(super) fn slash_menu(&self, theme: &Theme) -> Option<AnyElement> {
+    pub(super) fn slash_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         let slash = self.slash.as_ref()?;
         let (point, line_height) = self.layouts.position(slash.at)?;
         let items = crate::slash::items();
+        // The `.id` is not optional: `menu_row` registers its hover fade
+        // imperatively and needs a stateful element to hang it on, so a row
+        // without one neither highlights nor clicks.
         let rows = slash
             .filter
             .filtered()
             .iter()
             .enumerate()
             .map(|(row, &ix)| {
+                let kind = items[ix].1.clone();
                 ui::popover::menu_row(
                     theme,
                     Some(row) == slash.filter.active(),
                     SharedString::from(format!("slash-{ix}")),
                 )
+                .id(SharedString::from(format!("slash-row-{ix}")))
                 .child(items[ix].0.clone())
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.confirm_slash(Some(kind.clone()), cx);
+                }))
             });
         Some(ui::popover::menu_at(
             "slash-menu",

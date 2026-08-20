@@ -11,8 +11,8 @@
 //! turning a click into a position.
 
 use gpui::{
-    App, Context, CursorStyle, ElementInputHandler, Entity, FocusHandle, Focusable, MouseButton,
-    Render, SharedString, Styled as _, Window, canvas, div, prelude::*, px,
+    App, Context, CursorStyle, ElementInputHandler, FocusHandle, Focusable, MouseButton, Render,
+    Styled as _, Window, canvas, div, prelude::*,
 };
 use markdown::{
     BlockKind, BlockLayouts, Cursor, Doc, Mark, Part, Selection, Text, edit, edit::shortcut,
@@ -89,11 +89,15 @@ pub struct Editor {
     origin: gpui::Point<gpui::Pixels>,
     /// Whether the pointer is dragging out a selection.
     dragging: bool,
-    /// The column vertical motion is trying to keep, in pixels. Held across a
-    /// run of up/down so walking through a short line and out the other side
-    /// returns to the column you started in, and dropped by anything
-    /// horizontal — which is every other way the caret moves.
-    goal_x: Option<gpui::Pixels>,
+    /// The point vertical motion is trying to keep. Held across a run of
+    /// up/down so walking through a short line and out the other side returns
+    /// to the column you started in, and dropped by anything horizontal —
+    /// which is every other way the caret moves.
+    ///
+    /// The *row* is held as well as the column because an offset at a soft
+    /// wrap belongs to two rows and answers with the first, so a caret that
+    /// derived its own row would step down into the same one forever.
+    goal: Option<gpui::Point<gpui::Pixels>>,
 }
 
 impl Editor {
@@ -113,7 +117,7 @@ impl Editor {
             handle_pressed: false,
             origin: gpui::Point::default(),
             dragging: false,
-            goal_x: None,
+            goal: None,
         }
     }
 
@@ -132,6 +136,23 @@ impl Editor {
 
     pub fn selection(&self) -> Selection {
         self.selection
+    }
+
+    /// Where the selection sits on screen, in window coordinates, so a host can
+    /// float a toolbar at it.
+    ///
+    /// The head's row only — a selection spanning ten blocks wants its bubble
+    /// where the pointer left off, not centred over the whole span. `None` when
+    /// nothing is selected or the caret has not painted yet.
+    pub fn selection_bounds(&self) -> Option<gpui::Bounds<gpui::Pixels>> {
+        if self.selection.is_collapsed() {
+            return None;
+        }
+        let (point, line_height) = self.layouts.position(self.selection.head)?;
+        Some(gpui::Bounds::new(
+            point,
+            gpui::size(gpui::px(0.0), line_height),
+        ))
     }
 
     /// Where typing would land — the moving end of the selection.
@@ -154,9 +175,9 @@ impl Editor {
     ) {
         let head = to(self.selection.head, &self.doc).clamp(&self.doc);
         self.head_to(head, extend);
-        // Every horizontal motion drops the column; the two vertical ones put
-        // it back after calling this.
-        self.goal_x = None;
+        // Every horizontal motion drops the goal; the two vertical ones put it
+        // back after calling this.
+        self.goal = None;
         cx.notify();
     }
 
@@ -186,38 +207,42 @@ impl Editor {
     ///
     /// Geometry rather than arithmetic on line numbers, so a wrapped paragraph,
     /// a code block's lines and a table's rows are all the same case and none
-    /// needs counting. Falls back to the block-wise motion when the target is
-    /// off the painted area — the first frame, or above the first line.
-    fn vertical(&mut self, rows: f32, extend: bool, cx: &mut Context<Self>) {
+    /// needs counting — but geometry walked in document order rather than
+    /// hit-tested, which is [`markdown::BlockLayouts::step_row`]'s whole point.
+    /// Falls back to the block-wise motion off either end of the document, and
+    /// on the first frame, when nothing has painted to walk.
+    fn vertical(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) {
         // Up and down walk the menu while it is open, not the document.
         if let Some(slash) = &mut self.slash {
-            slash.filter.step(rows as isize);
+            slash.filter.step(if down { 1 } else { -1 });
             return cx.notify();
         }
         let head = self.selection.head;
-        let Some((at, line_height)) = self.layouts.position(head) else {
+        let Some((at, _)) = self.layouts.position(head) else {
             return self.moved(
                 extend,
-                |at, doc| if rows < 0.0 { at.up(doc) } else { at.down(doc) },
+                |at, doc| if down { at.down(doc) } else { at.up(doc) },
                 cx,
             );
         };
-        let goal = self.goal_x.unwrap_or(at.x);
-        let target = gpui::point(goal, at.y + line_height * rows);
-        match self.layouts.hit(target) {
-            Some(hit) if hit != head => self.head_to(hit.clamp(&self.doc), extend),
+        let from = self.goal.unwrap_or(at);
+        match self.layouts.step_row(head, from, down) {
+            Some((to, row)) => {
+                self.head_to(to.clamp(&self.doc), extend);
+                self.goal = Some(gpui::point(from.x, row));
+            }
             // Off the top is the start of the document and off the bottom is
             // its end, which is what every native field does.
-            _ => {
-                let to = if rows < 0.0 {
-                    head.up(&self.doc)
-                } else {
+            None => {
+                let to = if down {
                     head.down(&self.doc)
+                } else {
+                    head.up(&self.doc)
                 };
                 self.head_to(to.clamp(&self.doc), extend);
+                self.goal = Some(from);
             }
         }
-        self.goal_x = Some(goal);
         cx.notify();
     }
 
@@ -298,11 +323,17 @@ impl Editor {
     }
 
     /// Take the highlighted block, replacing the `/query` that summoned it.
-    fn confirm_slash(&mut self, cx: &mut Context<Self>) -> bool {
+    /// Take `kind`, or the highlighted row when the caller names none — Enter
+    /// and a click are the same operation with a different source.
+    pub(super) fn confirm_slash(
+        &mut self,
+        kind: Option<BlockKind>,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some(slash) = &self.slash else {
             return false;
         };
-        let (at, kind) = (slash.at, slash.choice());
+        let (at, kind) = (slash.at, kind.or_else(|| slash.choice()));
         self.slash = None;
         let Some(kind) = kind else {
             return false;
@@ -351,7 +382,10 @@ impl Editor {
             Selection::at(Cursor::new(at.block, at.part, at.offset - 2 * width).clamp(&self.doc));
     }
 
-    fn toggle_mark(&mut self, mark: Mark, cx: &mut Context<Self>) {
+    /// Add `mark` over the selection, or take it away if the whole selection
+    /// already carries it. Public because a toolbar reaches the same operation
+    /// the key does.
+    pub fn toggle_mark(&mut self, mark: Mark, cx: &mut Context<Self>) {
         // With nothing selected there is no range to mark, so the mark waits
         // for the next character — ProseMirror's stored marks, and the only way
         // cmd-B before typing can mean anything.
@@ -455,7 +489,7 @@ impl Editor {
     fn split_block(&mut self, _: &SplitBlock, _: &mut Window, cx: &mut Context<Self>) {
         // The menu owns Enter while it is open, or picking a block would also
         // split the one it is turning.
-        if self.confirm_slash(cx) {
+        if self.confirm_slash(None, cx) {
             return;
         }
         let at = self.cursor();
@@ -776,8 +810,8 @@ impl Render for Editor {
             // flag, so a shift variant cannot drift from the key it shadows.
             .on_action(cx.listener(|this, _: &Left, _, cx| this.moved(false, Cursor::left, cx)))
             .on_action(cx.listener(|this, _: &Right, _, cx| this.moved(false, Cursor::right, cx)))
-            .on_action(cx.listener(|this, _: &Up, _, cx| this.vertical(-1.0, false, cx)))
-            .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(1.0, false, cx)))
+            .on_action(cx.listener(|this, _: &Up, _, cx| this.vertical(false, false, cx)))
+            .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
             .on_action(
                 cx.listener(|this, _: &Home, _, cx| this.moved(false, |at, _| at.home(), cx)),
             )
@@ -794,8 +828,8 @@ impl Render for Editor {
             .on_action(
                 cx.listener(|this, _: &SelectRight, _, cx| this.moved(true, Cursor::right, cx)),
             )
-            .on_action(cx.listener(|this, _: &SelectUp, _, cx| this.vertical(-1.0, true, cx)))
-            .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.vertical(1.0, true, cx)))
+            .on_action(cx.listener(|this, _: &SelectUp, _, cx| this.vertical(false, true, cx)))
+            .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.vertical(true, true, cx)))
             .on_action(
                 cx.listener(|this, _: &SelectHome, _, cx| this.moved(true, |at, _| at.home(), cx)),
             )
@@ -809,14 +843,9 @@ impl Render for Editor {
             .w_full()
             // Text under the pointer, so the pointer says so.
             .cursor(CursorStyle::IBeam)
-            .p(px(2.0))
-            .rounded(px(6.0))
-            .border_1()
-            .border_color(if focused {
-                theme.caret.opacity(0.5)
-            } else {
-                gpui::transparent_black()
-            })
+            // No focus ring. A ring says *widget*, and a document is not one —
+            // the caret already paints only while focused, so a box around the
+            // whole page is a second, louder signal for the same fact.
             .relative()
             .child(input)
             .child(markdown::render_with_selection(
@@ -827,37 +856,9 @@ impl Render for Editor {
                 window,
                 cx,
             ))
-            .children(self.slash_menu(&theme))
+            .children(self.slash_menu(&theme, cx))
             .children(self.handle(&theme, cx))
             .children(self.drop_indicator(&theme))
             .children(self.block_menu(&theme, cx))
     }
 }
-
-/// A label for the block the caret is in, so a host can show what typing will
-/// produce without reaching into the document.
-pub fn block_label(doc: &Doc, cursor: Cursor) -> SharedString {
-    let Some(block) = doc.blocks.get(cursor.block) else {
-        return "empty".into();
-    };
-    match &block.kind {
-        BlockKind::Paragraph(_) => "Text",
-        BlockKind::Heading { level, .. } => match level {
-            1 => "Heading 1",
-            2 => "Heading 2",
-            _ => "Heading 3",
-        },
-        BlockKind::Bullet(_) => "Bullet",
-        BlockKind::Ordered { .. } => "Numbered",
-        BlockKind::Task { .. } => "Task",
-        BlockKind::Quote(_) => "Quote",
-        BlockKind::Code { .. } => "Code",
-        BlockKind::Image { .. } => "Image",
-        BlockKind::Table { .. } => "Table",
-        BlockKind::Rule => "Divider",
-    }
-    .into()
-}
-
-/// A handle a host can keep without naming the entity type.
-pub type EditorHandle = Entity<Editor>;

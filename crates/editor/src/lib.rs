@@ -13,5 +13,5 @@ mod editor;
 mod history;
 mod slash;
 
-pub use editor::{Editor, EditorHandle, block_label, init};
+pub use editor::{Editor, init};
 pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History};

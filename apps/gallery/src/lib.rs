@@ -444,6 +444,7 @@ pub const PATTERNS: &[Group] = &[
                 "Document",
                 "apps/gallery/src/patterns/document.rs",
             ),
+            section("editor", "Editor", "apps/gallery/src/patterns/editor.rs"),
             section("syntax", "Syntax", "apps/gallery/src/patterns/syntax.rs"),
         ],
     },
@@ -718,6 +719,7 @@ pub struct Gallery {
     transcript: Entity<patterns::transcript::Transcript>,
     diff: Entity<patterns::diff::Diff>,
     document: Entity<patterns::document::Document>,
+    editor: Entity<patterns::editor::EditorDemo>,
     #[cfg(not(target_family = "wasm"))]
     terminal: Entity<patterns::terminal::Terminal>,
     orbs: Entity<patterns::orbs::Orbs>,
@@ -848,6 +850,7 @@ impl Gallery {
             transcript: cx.new(|_| patterns::transcript::Transcript::default()),
             diff: cx.new(|_| patterns::diff::Diff),
             document: cx.new(patterns::document::Document::new),
+            editor: cx.new(patterns::editor::EditorDemo::new),
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(patterns::terminal::Terminal::new),
             orbs: cx.new(patterns::orbs::Orbs::new),
@@ -857,16 +860,23 @@ impl Gallery {
         }
     }
 
-    /// One section, alone, for a website page that documents it. Falls back to
-    /// the whole browser when the key is not in the catalog, so a stale link
-    /// lands somewhere useful instead of on an empty pane.
-    pub fn embedded(key: &str, cx: &mut Context<Self>) -> Self {
+    /// The browser, opened on one section — `cargo run -p gallery -- editor`.
+    /// Falls back to the default page when the key is not in the catalog, so a
+    /// stale link lands somewhere useful instead of on an empty pane.
+    pub fn showing(key: &str, cx: &mut Context<Self>) -> Self {
         let mut gallery = Self::new(cx);
         if let Some(tab) = tab_of(key) {
             gallery.tab = tab;
             gallery.selected[tab] = section_at(key).expect("tab_of matched").key;
-            gallery.embedded = true;
         }
+        gallery
+    }
+
+    /// That section *alone*, for a website page that documents it — no rail, no
+    /// tabs, just the pane.
+    pub fn embedded(key: &str, cx: &mut Context<Self>) -> Self {
+        let mut gallery = Self::showing(key, cx);
+        gallery.embedded = tab_of(key).is_some();
         gallery
     }
 
@@ -2916,6 +2926,7 @@ impl Gallery {
             "agent-transcript" => self.transcript.clone().into_any_element(),
             "agent-diff" => self.diff.clone().into_any_element(),
             "document" => self.document.clone().into_any_element(),
+            "editor" => self.editor.clone().into_any_element(),
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),
             "agent-orbs" => self.orbs.clone().into_any_element(),

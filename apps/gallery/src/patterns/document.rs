@@ -1,8 +1,11 @@
 //! The document pattern — a reader, and the screen `markdown` exists for.
 //!
 //! Nothing here is library code. The reader is an outline, a scroll area and a
-//! toggle; the only call into the library is [`markdown::render`]. Copy
-//! this file.
+//! toggle; the only calls into the library are [`markdown::render`] and
+//! [`markdown::serialize`]. Copy this file.
+//!
+//! Editing is the `editor` pattern next door, which is a different screen with
+//! a different crate behind it.
 //!
 //! Two things it is built to show.
 //!
@@ -23,11 +26,7 @@
 //! Like the other patterns it is an entity: a screen owns a screen's worth of
 //! state, and its host holds one field.
 
-use editor::Editor;
-use gpui::{
-    Context, ElementId, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
-    prelude::*, px,
-};
+use gpui::{Context, ElementId, Render, ScrollHandle, SharedString, Window, div, prelude::*, px};
 use markdown::{BlockKind, Doc};
 use theme::Theme;
 use ui::widgets::Controls;
@@ -75,34 +74,22 @@ fn main() {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
     Read,
-    Edit,
     Source,
 }
 
 pub struct Document {
-    editor: Entity<Editor>,
+    doc: Doc,
     view: View,
     scroll: ScrollHandle,
 }
 
 impl Document {
-    /// The editor is an entity of its own, like every other screen's state: it
-    /// owns a document and a caret, and this screen owns the editor.
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(_: &mut Context<Self>) -> Self {
         Self {
-            editor: cx.new(|cx| Editor::new(SOURCE, cx)),
+            doc: markdown::parse(SOURCE),
             view: View::Read,
             scroll: ScrollHandle::new(),
         }
-    }
-}
-
-impl Document {
-    /// The document the panes read from — the editor's once it has been
-    /// touched, so Read and Source show what was typed rather than the
-    /// constant this file opened with.
-    fn current(&self, cx: &Context<Self>) -> Doc {
-        self.editor.read(cx).doc().clone()
     }
 
     /// Every heading, with its level — the table of contents.
@@ -125,7 +112,7 @@ impl Document {
 impl Render for Document {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
-        let doc = self.current(cx);
+        let doc = self.doc.clone();
 
         let outline = div()
             .flex_none()
@@ -153,32 +140,23 @@ impl Render for Document {
 
         let body = match self.view {
             View::Read => markdown::render(&doc, window, cx),
-            View::Edit => self.editor.clone().into_any_element(),
             // The document written back out, not the constant above it.
             View::Source => div()
                 .font_family(theme.font_mono.clone())
                 .text_size(px(12.0))
                 .line_height(px(19.0))
                 .text_color(theme.text_muted)
-                .child(SharedString::from(self.editor.read(cx).source()))
+                .child(SharedString::from(markdown::serialize(&doc)))
                 .into_any_element(),
         };
 
-        let segments = [
-            ("Read", View::Read),
-            ("Edit", View::Edit),
-            ("Source", View::Source),
-        ];
+        let segments = [("Read", View::Read), ("Source", View::Source)];
         let toggle = theme.toggle_group().children(segments.map(|(label, view)| {
             theme
                 .toggle_group_item(label, self.view == view)
                 .id(ElementId::Name(label.into()))
-                .on_click(cx.listener(move |this, _, window, cx| {
+                .on_click(cx.listener(move |this, _, _, cx| {
                     this.view = view;
-                    if view == View::Edit {
-                        let handle = this.editor.read(cx).focus_handle(cx);
-                        handle.focus(window, cx);
-                    }
                     cx.notify();
                 }))
         }));

@@ -553,26 +553,35 @@ impl Doc {
     /// the rest rather than unbolding the half that was already there.
     pub fn toggle_mark(&mut self, selection: Selection, mark: Mark) {
         let spans = self.spans(selection);
-        let carried = |doc: &Doc, at: &Cursor, range: &Range<usize>| {
-            doc.blocks[at.block]
-                .text_at(at.part)
-                .is_some_and(|text| text.covered_by(range, &mark))
-        };
-        let remove = !spans.is_empty()
-            && spans
-                .iter()
-                .all(|(at, range)| at.part == Part::Code || carried(self, at, range));
+        let remove = self.covered_by(selection, &mark);
 
         for (at, range) in spans {
             // Code is literal to its closing fence; nothing in it is markup.
             if at.part == Part::Code {
                 continue;
             }
-            if remove == carried(self, &at, &range) {
+            if remove == self.carries(&at, &range, &mark) {
                 let mark = mark.clone();
                 self.edit_at(at, |text| text.toggle(range, mark));
             }
         }
+    }
+
+    /// Whether every part of a selection already carries `mark` — what decides
+    /// between adding it and taking it away, and what a toolbar button reads to
+    /// know whether it is lit.
+    pub fn covered_by(&self, selection: Selection, mark: &Mark) -> bool {
+        let spans = self.spans(selection);
+        !spans.is_empty()
+            && spans
+                .iter()
+                .all(|(at, range)| at.part == Part::Code || self.carries(at, range, mark))
+    }
+
+    fn carries(&self, at: &Cursor, range: &Range<usize>, mark: &Mark) -> bool {
+        self.blocks[at.block]
+            .text_at(at.part)
+            .is_some_and(|text| text.covered_by(range, mark))
     }
 
     /// The sub-document a selection covers — what a copy puts on the clipboard.

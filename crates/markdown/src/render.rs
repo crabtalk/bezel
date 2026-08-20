@@ -134,6 +134,64 @@ impl BlockLayouts {
         Some((point, painted.layout.line_height()))
     }
 
+    /// The position one painted row above or below `at`, and the row it landed
+    /// on. Walks the recorded runs in paint order — which is document order.
+    ///
+    /// Two things make this refuse to be a hit test. The gap between blocks
+    /// belongs to no run, so a probe there answers with whichever run is
+    /// nearest — and at a boundary that is the block being *left*, whose bottom
+    /// edge is zero pixels away while the next block's top is a whole gap. And
+    /// `from` is passed in rather than derived from `at`, because an offset at
+    /// a soft wrap belongs to two rows and `position_for_index` always answers
+    /// with the first: derive it and every step down recomputes the same row.
+    pub fn step_row(
+        &self,
+        at: Cursor,
+        from: Point<Pixels>,
+        down: bool,
+    ) -> Option<(Cursor, Pixels)> {
+        let entries = &self.0.borrow().texts;
+        let ix = entries.iter().position(|painted| {
+            painted.block == at.block
+                && painted.part == at.part
+                && painted.range.start <= at.offset
+                && at.offset <= painted.range.end
+        })?;
+        let here = &entries[ix];
+        let line = here.layout.line_height();
+        let index_at = |painted: &Painted, y: Pixels| {
+            let (Ok(offset) | Err(offset)) = painted.layout.index_for_position(point(from.x, y));
+            (
+                Cursor::new(
+                    painted.block,
+                    painted.part,
+                    painted.range.start + offset.min(painted.range.len()),
+                ),
+                y,
+            )
+        };
+
+        // A wrapped paragraph is one run holding several rows, so try to stay
+        // inside it before looking for a neighbour.
+        let bounds = here.layout.bounds();
+        let target = if down { from.y + line } else { from.y - line };
+        if target >= bounds.origin.y && target < bounds.origin.y + bounds.size.height {
+            return Some(index_at(here, target));
+        }
+
+        let next = match down {
+            true => entries.get(ix + 1)?,
+            false => entries.get(ix.checked_sub(1)?)?,
+        };
+        // Enter the neighbour on the row facing the one just left.
+        let bounds = next.layout.bounds();
+        let row = match down {
+            true => bounds.origin.y,
+            false => bounds.origin.y + bounds.size.height - next.layout.line_height(),
+        };
+        Some(index_at(next, row))
+    }
+
     /// The block under `point`, for a gutter handle and a drop target.
     pub fn block_at(&self, point: Point<Pixels>) -> Option<usize> {
         let blocks = &self.0.borrow().blocks;
@@ -273,14 +331,21 @@ pub fn render_with_selection(
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
-    // Refilled every frame, in paint order.
-    if let Some(layouts) = layouts {
-        layouts.clear();
-    }
+    // Refilled every frame, in paint order — and emptied in *prepaint*, not
+    // here. An editor reads last frame's positions while building this frame's
+    // tree (a menu anchored at the caret, a handle beside a block), and
+    // clearing at build time takes them away before it can. Placed first in the
+    // column so it runs ahead of every recorder below it.
+    let reset = layouts.map(|layouts| {
+        let layouts = layouts.clone();
+        canvas(move |_, _, _| layouts.clear(), |_, _, _, _| ())
+            .absolute()
+            .size(px(0.0))
+    });
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
-    let mut column = div().flex().flex_col();
+    let mut column = div().flex().flex_col().children(reset);
 
     for (ix, block) in doc.blocks.iter().enumerate() {
         let gap = match doc.blocks.get(ix.wrapping_sub(1)) {

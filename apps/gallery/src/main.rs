@@ -15,9 +15,10 @@ use ui::icons;
 actions!(gallery_app, [Quit]);
 
 fn main() {
+    let section = std::env::args().nth(1);
     gpui_platform::application()
         .with_assets(icons::Assets)
-        .run(|cx: &mut App| {
+        .run(move |cx: &mut App| {
             if let Err(err) = ui::register_fonts(cx) {
                 eprintln!("FONT REGISTRATION FAILED: {err:?}");
             }
@@ -44,7 +45,13 @@ fn main() {
                 },
                 |window, cx| {
                     appearance::observe_window(window, cx).detach();
-                    let gallery = cx.new(Gallery::new);
+                    // `gallery editor` opens on that page — the native half of
+                    // the website's `?s=`, and the shortest way to look at the
+                    // one screen you are working on.
+                    let gallery = cx.new(|cx| match section.as_deref() {
+                        Some(key) => Gallery::showing(key, cx),
+                        None => Gallery::new(cx),
+                    });
                     // The gallery itself takes focus, so its key context is
                     // live from the first frame whatever page is showing.
                     let focus = gallery.read(cx).focus_handle();
