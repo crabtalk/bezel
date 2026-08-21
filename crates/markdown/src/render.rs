@@ -612,6 +612,10 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
 
         let mut face = font(if mono {
             theme.font_mono.clone()
+        } else if italic {
+            // Geist ships no italic face — its only variable axis is weight —
+            // so an italic run asked of it paints upright.
+            theme.font_sans_fallback.clone()
         } else {
             theme.font_sans.clone()
         });
