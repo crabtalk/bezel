@@ -356,10 +356,13 @@ impl Doc {
 
     /// Backspace at the start of a block.
     ///
-    /// Notion's chain, in order: an indented block outdents, a list item
-    /// becomes a paragraph, a code block gives its code back as text, and only
-    /// a plain block at the left margin merges into the one above it. Returns
-    /// where the caret landed, and `None` when nothing moved.
+    /// Notion's chain, in order: an indented block outdents, a block wearing
+    /// syntax around its text gives the syntax up, and only a plain block at
+    /// the left margin merges into the one above it. When that one holds no
+    /// body there is nothing to merge into, so the caret steps into a fence or
+    /// a table, and a rule or an image — which no caret can enter, and so no
+    /// other key can remove — goes. Returns where the caret landed, and `None`
+    /// when nothing moved.
     ///
     /// A table cell is not a position that can swallow its neighbour, so
     /// backspace at the start of one does nothing rather than eating the table.
@@ -372,10 +375,12 @@ impl Doc {
             self.outdent(at.block);
             return Some(Cursor::new(at.block, at.part, 0));
         }
-        // A marker or a code fence is chrome around text; the first backspace
-        // takes the chrome and leaves the text where it was.
+        // Every prefix [`shortcut`] reads is chrome around text; the first
+        // backspace takes the chrome and leaves the text where it was, so what
+        // can be typed in can be typed out.
         let unwrapped = match &block.kind {
             kind if is_marker(kind) => block.text_at(Part::Body).cloned(),
+            BlockKind::Heading { text, .. } | BlockKind::Quote(text) => Some(text.clone()),
             BlockKind::Code { code, .. } => Some(code.clone()),
             _ => None,
         };
@@ -387,14 +392,30 @@ impl Doc {
         if at.block == 0 {
             return None;
         }
-        // Only two blocks that both hold a body can become one.
         let tail = self.blocks[at.block].text_at(Part::Body)?.clone();
-        let head = self.blocks[at.block - 1].text_at_mut(Part::Body)?;
-        let caret = head.text.len();
-        head.append(tail);
-        self.blocks.remove(at.block);
-        self.repair();
-        Some(Cursor::new(at.block - 1, Part::Body, caret))
+        let previous = at.block - 1;
+        match self.blocks[previous].parts().last().copied() {
+            // Only two blocks that both hold a body can become one.
+            Some(Part::Body) => {
+                let head = self.blocks[previous].text_at_mut(Part::Body)?;
+                let caret = head.text.len();
+                head.append(tail);
+                self.blocks.remove(at.block);
+                self.repair();
+                Some(Cursor::new(previous, Part::Body, caret))
+            }
+            Some(part) => {
+                let end = self.blocks[previous]
+                    .text_at(part)
+                    .map_or(0, |text| text.text.len());
+                Some(Cursor::new(previous, part, end))
+            }
+            None => {
+                self.blocks.remove(previous);
+                self.repair();
+                Some(Cursor::new(previous, at.part, at.offset))
+            }
+        }
     }
 
     /// Apply an edit to the text at `at`, then put the block back in order.
