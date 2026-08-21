@@ -5,9 +5,14 @@
 //! painted, so none of them can drift from the text it points at.
 
 use gpui::{AnyElement, Context, CursorStyle, MouseButton, SharedString, div, prelude::*, px};
+use markdown::BlockKind;
 use theme::Theme;
 
 use crate::editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE};
+
+/// How far the language chip reaches past the word it wraps.
+const CHIP_PAD_X: f32 = 6.0;
+const CHIP_PAD_Y: f32 = 3.0;
 
 /// Selector the interaction tests look the painted menu up by.
 pub const SLASH_MENU: &str = "slash-menu";
@@ -77,6 +82,105 @@ impl Editor {
                 .bg(theme.accent)
                 .into_any_element(),
         )
+    }
+
+    /// The click target over a fence's header, where its language sits.
+    ///
+    /// The header paints the name; this only takes the press. A renderer holds
+    /// a `&Doc` and cannot change one, which is why the copy button can live
+    /// down there and a language picker cannot.
+    pub(super) fn language_chip(
+        &self,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        // Whichever fence the reader is at: the one under the pointer, else the
+        // one the caret is in.
+        let ix = [self.hovered, Some(self.cursor().block)]
+            .into_iter()
+            .flatten()
+            .find(|ix| {
+                matches!(
+                    self.doc.blocks.get(*ix).map(|b| &b.kind),
+                    Some(BlockKind::Code { .. })
+                )
+            })?;
+        // The label's box, grown by the chip's padding — so the wash is around
+        // the word and nothing else, whatever the word is.
+        let bounds = self.layouts.language_bounds(ix)?;
+        let anchor = gpui::point(
+            bounds.origin.x - px(CHIP_PAD_X),
+            bounds.origin.y + bounds.size.height + px(CHIP_PAD_Y),
+        );
+        Some(
+            div()
+                .id("language-chip")
+                .absolute()
+                .left(bounds.origin.x - self.origin.x - px(CHIP_PAD_X))
+                .top(bounds.origin.y - self.origin.y - px(CHIP_PAD_Y))
+                .w(bounds.size.width + px(2.0 * CHIP_PAD_X))
+                .h(bounds.size.height + px(2.0 * CHIP_PAD_Y))
+                .rounded(px(4.0))
+                .cursor(CursorStyle::PointingHand)
+                .hover(|el| el.bg(theme.ink(0.06)))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.language_menu = Some((ix, anchor));
+                    cx.notify();
+                }))
+                .into_any_element(),
+        )
+    }
+
+    /// The languages the installed highlighter knows, at the header that asked.
+    pub(super) fn language_menu(
+        &self,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let (ix, at) = self.language_menu?;
+        let Some(BlockKind::Code { language, .. }) = self.doc.blocks.get(ix).map(|b| &b.kind)
+        else {
+            return None;
+        };
+        let current = language.clone();
+        let row = |label: SharedString, tag: Option<String>, lit: bool| {
+            ui::popover::menu_row(theme, lit, SharedString::from(format!("lang-{label}")))
+                .id(SharedString::from(format!("lang-row-{label}")))
+                .child(label.clone())
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.language_menu = None;
+                    this.set_language(ix, tag.clone(), cx);
+                }))
+        };
+        let plain = row(
+            markdown::render::PLAIN_LANGUAGE.into(),
+            None,
+            current.is_none(),
+        );
+        let rows: Vec<AnyElement> = markdown::languages(cx)
+            .to_vec()
+            .into_iter()
+            .map(|name| {
+                let lit = current.as_deref() == Some(name.as_ref());
+                row(name.clone(), Some(name.to_string()), lit).into_any_element()
+            })
+            .collect();
+        Some(ui::popover::menu_at(
+            "language-menu",
+            at,
+            ui::popover::popover_card(theme)
+                .w(px(150.0))
+                .child(
+                    div()
+                        .id("language-menu-rows")
+                        .max_h(px(280.0))
+                        .overflow_y_scroll()
+                        .child(plain)
+                        .children(rows),
+                )
+                .into_any_element(),
+            None,
+        ))
     }
 
     /// Turn into / Duplicate / Delete, at the handle that opened it.

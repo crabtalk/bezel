@@ -37,6 +37,9 @@ const CODE_TEXT_SIZE: f32 = 12.5;
 const CODE_LINE_HEIGHT: f32 = 18.0;
 const CODE_PADDING_X: f32 = 12.0;
 const CODE_PADDING_Y: f32 = 10.0;
+/// What a fence with no info string calls itself, in its header and in a
+/// picker — one spelling, so the label and the menu row cannot disagree.
+pub const PLAIN_LANGUAGE: &str = "Plain";
 /// Inline code's wash is a rounded quad painted under the glyphs: a run's
 /// `background_color` can only ever be a square box.
 const INLINE_CODE_RADIUS: f32 = 4.5;
@@ -67,6 +70,9 @@ struct Frames {
     /// Each block's whole box, which a text layout does not give: a rule and
     /// an image hold no text at all, and a gutter handle still has to find them.
     blocks: Vec<(usize, Bounds<Pixels>)>,
+    /// A fenced block's language label, which a host may want to hang a
+    /// picker on.
+    languages: Vec<(usize, Bounds<Pixels>)>,
 }
 
 /// One shaped run and the slice of its part it covers.
@@ -218,6 +224,19 @@ impl BlockLayouts {
             .map(|(_, bounds)| *bounds)
     }
 
+    /// Where a fenced block's language label painted — the box a host hangs its
+    /// picker on. Recorded rather than derived: the word's width is the text
+    /// system's answer, and padding arithmetic would be wrong the first time
+    /// any of it changed.
+    pub fn language_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
+        self.0
+            .borrow()
+            .languages
+            .iter()
+            .find(|(block, _)| *block == ix)
+            .map(|(_, bounds)| *bounds)
+    }
+
     fn record(&self, block: usize, part: Part, range: Range<usize>, layout: TextLayout) {
         self.0.borrow_mut().texts.push(Painted {
             block,
@@ -231,10 +250,15 @@ impl BlockLayouts {
         self.0.borrow_mut().blocks.push((ix, bounds));
     }
 
+    fn record_language(&self, ix: usize, bounds: Bounds<Pixels>) {
+        self.0.borrow_mut().languages.push((ix, bounds));
+    }
+
     fn clear(&self) {
         let mut frames = self.0.borrow_mut();
         frames.texts.clear();
         frames.blocks.clear();
+        frames.languages.clear();
     }
 }
 
@@ -940,19 +964,45 @@ fn code_block(
         .border_color(theme.border)
         .overflow_hidden()
         .relative()
-        .when_some(language, |el, lang| {
-            el.child(
-                div()
-                    .px(px(CODE_PADDING_X))
-                    .py(px(5.0))
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .bg(theme.ink(0.02))
-                    .text_size(px(11.0))
-                    .text_color(theme.text_muted)
-                    .child(SharedString::from(lang.to_string())),
-            )
-        })
+        // The band is unconditional: it is where the copy button already floats,
+        // and where a host puts its language control — which needs somewhere to
+        // sit on a block that has no language yet.
+        .child(
+            div()
+                .relative()
+                .flex()
+                .flex_row()
+                .items_center()
+                .px(px(CODE_PADDING_X))
+                .py(px(5.0))
+                .border_b_1()
+                .border_color(theme.border)
+                .bg(theme.ink(0.02))
+                .text_size(px(11.0))
+                .text_color(match language {
+                    Some(_) => theme.text_muted,
+                    None => theme.text_faint,
+                })
+                // The label's own box, not the band's: a host hanging a picker
+                // here wants it around the word, and only the word knows how
+                // wide the word is.
+                .child(
+                    div()
+                        .relative()
+                        .children(overlay.layouts.map(|layouts| {
+                            let layouts = layouts.clone();
+                            canvas(
+                                move |bounds, _, _| layouts.record_language(ix, bounds),
+                                |_, _, _, _| (),
+                            )
+                            .absolute()
+                            .size_full()
+                        }))
+                        .child(SharedString::from(
+                            language.unwrap_or(PLAIN_LANGUAGE).to_string(),
+                        )),
+                ),
+        )
         .child(
             div()
                 .id(ElementId::named_usize("md-code", ix))

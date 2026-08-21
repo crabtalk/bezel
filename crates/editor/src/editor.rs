@@ -104,6 +104,8 @@ pub struct Editor {
     lifted: Option<(usize, usize)>,
     /// The block menu the handle opened, and where to anchor it.
     block_menu: Option<(usize, gpui::Point<gpui::Pixels>)>,
+    /// The language menu a fence's header opened, and the block it belongs to.
+    language_menu: Option<(usize, gpui::Point<gpui::Pixels>)>,
     /// Set by the handle's press so the editor's own press does not undo it.
     handle_pressed: bool,
     /// Where the editor's own box starts, so a position recorded in window
@@ -136,6 +138,7 @@ impl Editor {
             hovered: None,
             lifted: None,
             block_menu: None,
+            language_menu: None,
             handle_pressed: false,
             origin: gpui::Point::default(),
             dragging: false,
@@ -718,6 +721,13 @@ impl Editor {
         });
     }
 
+    /// Tag a fenced block with the language it holds, or `None` for plain.
+    pub fn set_language(&mut self, ix: usize, language: Option<String>, cx: &mut Context<Self>) {
+        self.edit(EditKind::Structure, cx, |this| {
+            this.doc.set_language(ix, language);
+        });
+    }
+
     /// Turn the caret's block into `kind` — what the slash menu and the block
     /// menu both do.
     pub fn set_block(&mut self, ix: usize, kind: BlockKind, cx: &mut Context<Self>) {
@@ -789,6 +799,7 @@ impl Render for Editor {
                         return;
                     }
                     this.block_menu = None;
+                    this.language_menu = None;
                     this.focus_handle.clone().focus(window, cx);
                     let Some(hit) = this.layouts.hit(event.position) else {
                         return cx.notify();
@@ -970,6 +981,8 @@ impl Render for Editor {
             .children(self.slash_menu(&theme, cx))
             .children(self.handle(&theme, cx))
             .children(self.drop_indicator(&theme))
+            .children(self.language_chip(&theme, cx))
             .children(self.block_menu(&theme, cx))
+            .children(self.language_menu(&theme, cx))
     }
 }

@@ -47,7 +47,7 @@ actions!(gallery, [OpenPalette, ToggleInspector, ToggleFullScreen]);
 /// bindings were installed natively and missing on the web, so typing worked in
 /// the browser and Backspace did not.
 pub fn init(cx: &mut App) {
-    markdown::set_highlighter(cx, highlight::spans);
+    markdown::set_highlighter(cx, highlight::spans, highlight::languages());
     input::init(cx);
     editor::init(cx);
     palette::init(cx);

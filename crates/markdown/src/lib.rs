@@ -28,7 +28,7 @@ pub mod serialize;
 
 pub use doc::{Align, Block, BlockKind, Doc, Mark, MarkSpan, Part, Text};
 pub use edit::{Shortcut, shortcut};
-pub use highlight::{Highlighter, set_highlighter};
+pub use highlight::{Highlighter, languages, set_highlighter};
 pub use parse::parse;
 pub use render::{BlockLayouts, markdown, render, render_with_selection};
 pub use select::{Cursor, Selection};

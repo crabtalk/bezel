@@ -35,6 +35,14 @@ fn main() {
     }
     out.push_str("];\n");
 
+    // The picker's list. Generated for the same reason the spans are: the web
+    // build has no `syntax` to enumerate at runtime.
+    out.push_str("pub static LANGUAGES: &[&str] = &[\n");
+    for lang in syntax::lang::LANGS {
+        out.push_str(&format!("    {:?},\n", lang.name));
+    }
+    out.push_str("];\n");
+
     let dir = env::var("OUT_DIR").expect("OUT_DIR");
     fs::write(Path::new(&dir).join("highlights.rs"), out).expect("write highlights.rs");
 }

@@ -537,6 +537,17 @@ impl Doc {
         self.repair();
     }
 
+    /// The tag on a fenced block — what the label shows, what the highlighter
+    /// reads, and what the info string carries. Not [`Doc::set_kind`]'s job:
+    /// that carries a *body* across, and a fence has none to give back.
+    pub fn set_language(&mut self, ix: usize, language: Option<String>) {
+        if let Some(BlockKind::Code { language: tag, .. }) =
+            self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        {
+            *tag = language;
+        }
+    }
+
     /// Turn what a selection covers into one code block, leaving whatever it
     /// did not cover as blocks of its own.
     ///

@@ -10,10 +10,23 @@ use std::ops::Range;
 
 use theme::HighlightKind;
 
-/// Install with `markdown::set_highlighter(cx, highlight::spans)`.
+/// Install with `markdown::set_highlighter(cx, highlight::spans, highlight::languages())`.
 #[cfg(not(target_family = "wasm"))]
 pub fn spans(language: &str, code: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
     syntax::highlight(code, language)
+}
+
+/// The names a language picker offers. Whichever grammars the features left in.
+#[cfg(not(target_family = "wasm"))]
+pub fn languages() -> Vec<&'static str> {
+    syntax::lang::LANGS.iter().map(|lang| lang.name).collect()
+}
+
+/// The same list, read from the table rather than the grammars — `syntax` is
+/// not in the web build to ask.
+#[cfg(target_family = "wasm")]
+pub fn languages() -> Vec<&'static str> {
+    LANGUAGES.to_vec()
 }
 
 #[cfg(target_family = "wasm")]
