@@ -22,6 +22,7 @@ use theme::Theme;
 
 use crate::{
     history::{EditKind, History},
+    link::{self, Choice},
     slash::Slash,
 };
 
@@ -70,15 +71,6 @@ fn fenceable(doc: &Doc, selection: Selection) -> bool {
                 .any(|(at, range)| covered(at, range).is_some_and(|text| text.contains('\n'))))
 }
 
-/// Deliberately narrow: a scheme and no whitespace. Anything cleverer starts
-/// linking text that merely contains a dot.
-fn is_url(source: &str) -> bool {
-    let source = source.trim();
-    !source.is_empty()
-        && !source.contains(char::is_whitespace)
-        && (source.starts_with("http://") || source.starts_with("https://"))
-}
-
 pub struct Editor {
     doc: Doc,
     /// Collapsed for an ordinary caret, so there is one position here rather
@@ -98,6 +90,8 @@ pub struct Editor {
     stored: Vec<Mark>,
     /// The open slash menu, if `/` started one.
     slash: Option<Slash>,
+    /// The open paste menu, if a URL landed in a block of its own.
+    pasted: Option<link::Paste>,
     /// The block the pointer is over, which is the only one showing a handle.
     hovered: Option<usize>,
     /// A block being dragged by its handle, and where it would land.
@@ -113,6 +107,9 @@ pub struct Editor {
     origin: gpui::Point<gpui::Pixels>,
     /// Whether the pointer is dragging out a selection.
     dragging: bool,
+    /// Whether the pointer is over painted text, which is the only place the
+    /// editor claims an I-beam.
+    over_text: bool,
     /// The point vertical motion is trying to keep. Held across a run of
     /// up/down so walking through a short line and out the other side returns
     /// to the column you started in, and dropped by anything horizontal —
@@ -139,6 +136,7 @@ impl Editor {
             history: History::default(),
             stored: Vec::new(),
             slash: None,
+            pasted: None,
             hovered: None,
             lifted: None,
             block_menu: None,
@@ -146,6 +144,7 @@ impl Editor {
             handle_pressed: false,
             origin: gpui::Point::default(),
             dragging: false,
+            over_text: false,
             goal: None,
         }
     }
@@ -254,14 +253,19 @@ impl Editor {
         };
         // A motion ends the undo group: typing a word, moving away and typing
         // again must not undo as one step across two places. It also spends any
-        // stored mark, which belonged to the spot the caret just left.
+        // stored mark and any open paste menu, both of which belonged to the
+        // spot the caret just left.
         self.history.interrupt();
         self.stored.clear();
+        self.pasted = None;
     }
 
     /// Every mutation goes through here, so none of them can forget to record
     /// a step and none of them has to know how steps coalesce.
     fn edit(&mut self, kind: EditKind, cx: &mut Context<Self>, edit: impl FnOnce(&mut Self)) {
+        // Any edit answers the paste menu by ignoring it — whatever it offered
+        // was about a block that no longer holds only the link.
+        self.pasted = None;
         self.history.record(kind, &self.doc, self.selection);
         edit(self);
         self.history.landed(kind, self.selection);
@@ -277,9 +281,14 @@ impl Editor {
     /// Falls back to the block-wise motion off either end of the document, and
     /// on the first frame, when nothing has painted to walk.
     fn vertical(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) {
-        // Up and down walk the menu while it is open, not the document.
+        // Up and down walk a menu while it is open, not the document.
+        let delta = if down { 1 } else { -1 };
+        if let Some(pasted) = &mut self.pasted {
+            pasted.step(delta);
+            return cx.notify();
+        }
         if let Some(slash) = &mut self.slash {
-            slash.step(if down { 1 } else { -1 });
+            slash.step(delta);
             return cx.notify();
         }
         let head = self.selection.head;
@@ -592,8 +601,11 @@ impl Editor {
     /// Enter. In a body it splits the block; in a code fence it is a newline,
     /// which is the whole reason a fence is worth typing into.
     fn split_block(&mut self, _: &SplitBlock, _: &mut Window, cx: &mut Context<Self>) {
-        // The menu owns Enter while it is open, or picking a block would also
+        // A menu owns Enter while it is open, or picking a block would also
         // split the one it is turning.
+        if let Some(choice) = self.pasted.as_ref().map(link::Paste::choice) {
+            return self.confirm_paste(choice, cx);
+        }
         if self.confirm_slash(None, cx) {
             return;
         }
@@ -628,10 +640,10 @@ impl Editor {
         });
     }
 
-    /// Escape closes the menu, and otherwise collapses a selection — the two
-    /// things there are to back out of.
+    /// Escape closes an open menu, and otherwise collapses a selection — the
+    /// things there are to back out of, innermost first.
     fn dismiss(&mut self, _: &Dismiss, _: &mut Window, cx: &mut Context<Self>) {
-        if self.slash.take().is_none() {
+        if self.pasted.take().is_none() && self.slash.take().is_none() {
             self.selection = Selection::at(self.selection.head);
         }
         cx.notify();
@@ -676,15 +688,62 @@ impl Editor {
         let Some(source) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
-        // A URL dropped on a selection links it rather than replacing it —
-        // the one paste people expect to *not* overwrite what they chose.
-        if !self.selection.is_collapsed() && is_url(&source) {
-            return self.toggle_mark(Mark::Link(source.trim().to_string()), cx);
+        let url = source.trim();
+        if markdown::is_url(url) {
+            return self.paste_url(url.to_string(), cx);
         }
         self.edit(EditKind::Structure, cx, |this| {
             let head = this.doc.splice(this.selection, markdown::parse(&source));
             this.selection = Selection::at(head.clamp(&this.doc));
         });
+    }
+
+    /// A URL is never spliced in as a block. It links whatever is selected, or
+    /// lands as a link where the caret is — and only when the block it landed
+    /// in held nothing else does it also offer to become a card, which is the
+    /// one place a card would not eat a sentence.
+    fn paste_url(&mut self, url: String, cx: &mut Context<Self>) {
+        // The one paste people expect to *not* overwrite what they chose.
+        if !self.selection.is_collapsed() {
+            return self.toggle_mark(Mark::Link(url), cx);
+        }
+        // A body, because a card is a block: a fence holds its URL literally
+        // and a cell has no room for one.
+        let at = self.cursor();
+        let alone = at.part == Part::Body && self.caret_text().is_some_and(Text::is_empty);
+        self.edit(EditKind::Structure, cx, |this| {
+            let head = this.doc.replace(this.selection, Text::link(&url));
+            this.selection = Selection::at(head.clamp(&this.doc));
+        });
+        if alone {
+            self.pasted = Some(link::Paste::open(at, url));
+            cx.notify();
+        }
+    }
+
+    /// Answer the paste menu: leave the link, or turn its block into a card.
+    pub(super) fn confirm_paste(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        let Some(pasted) = self.pasted.take() else {
+            return;
+        };
+        let ix = pasted.at.block;
+        match choice {
+            Choice::Dismiss => cx.notify(),
+            // One step, not two: turning the block and giving the caret
+            // somewhere to go are one gesture, and undo has to agree.
+            Choice::Bookmark => self.edit(EditKind::Structure, cx, |this| {
+                this.doc
+                    .set_kind(ix, BlockKind::Bookmark { url: pasted.url });
+                // A card holds no caret, so the caret carries on in the block
+                // after it — a fresh one when the card ends the document.
+                if this.doc.blocks.len() <= ix + 1 {
+                    this.doc
+                        .blocks
+                        .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
+                }
+                this.selection = Selection::at(Cursor::new(ix + 1, Part::Body, 0).clamp(&this.doc));
+            }),
+        }
     }
 
     fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
@@ -848,6 +907,7 @@ impl Render for Editor {
                     }
                     this.block_menu = None;
                     this.language_menu = None;
+                    this.pasted = None;
                     this.focus_handle.clone().focus(window, cx);
                     if this.tail_click(event.position, cx) {
                         return;
@@ -873,6 +933,13 @@ impl Render for Editor {
             // payload: a text selection has nothing to carry, and gpui's drag
             // payload is for things being dropped somewhere.
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                // Ahead of every drag branch below, because the pointer's shape
+                // is about where it *is* rather than about what it is doing.
+                let over_text = this.layouts.over_text(event.position);
+                if over_text != this.over_text {
+                    this.over_text = over_text;
+                    cx.notify();
+                }
                 // A lifted block follows the pointer; otherwise the pointer
                 // only decides which block wears the handle.
                 if let Some((from, _)) = this.lifted.filter(|_| event.dragging()) {
@@ -1007,8 +1074,15 @@ impl Render for Editor {
                 this.moved(true, Cursor::word_right, cx)
             }))
             .w_full()
-            // Text under the pointer, so the pointer says so.
-            .cursor(CursorStyle::IBeam)
+            // Text under the pointer, so the pointer says so — and only there,
+            // or while a drag is still sweeping one out. The editor's box
+            // reaches over its gutter, the margin beside a short line, a rule,
+            // an image and a card, none of which a caret can be put into.
+            // Where it has nothing to say it stays quiet rather than
+            // overriding the page with an arrow of its own.
+            .when(self.over_text || self.dragging, |el| {
+                el.cursor(CursorStyle::IBeam)
+            })
             // No focus ring. A ring says *widget*, and a document is not one —
             // the caret already paints only while focused, so a box around the
             // whole page is a second, louder signal for the same fact.
@@ -1030,6 +1104,7 @@ impl Render for Editor {
                 ),
             ))
             .children(self.slash_menu(&theme, cx))
+            .children(self.paste_menu(&theme, cx))
             .children(self.handle(&theme, cx))
             .children(self.drop_indicator(&theme))
             .children(self.language_chip(&theme, cx))

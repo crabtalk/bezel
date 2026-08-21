@@ -10,14 +10,16 @@
 use std::{cell::RefCell, ops::Range, rc::Rc};
 
 use gpui::{
-    AnyElement, App, BorderStyle, Bounds, ElementId, FontStyle, FontWeight, Hsla, InteractiveText,
-    Pixels, Point, SharedString, StrikethroughStyle, StyledText, TextLayout, TextRun,
-    UnderlineStyle, Window, canvas, div, font, img, point, prelude::*, px, quad, size,
+    AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
+    InteractiveText, ObjectFit, Pixels, Point, SharedString, StrikethroughStyle, StyledImage as _,
+    StyledText, TextLayout, TextRun, UnderlineStyle, Window, canvas, div, font, img, point,
+    prelude::*, px, quad, size,
 };
 use theme::Theme;
 
 use crate::{
     doc::{Align, Block, BlockKind, Doc, Mark, Part, Text},
+    preview,
     select::{Cursor, Selection},
 };
 
@@ -45,6 +47,15 @@ pub const PLAIN_LANGUAGE: &str = "Plain";
 const INLINE_CODE_RADIUS: f32 = 4.5;
 const INLINE_CODE_PAD_X: f32 = 2.0;
 const INLINE_CODE_INSET_Y: f32 = 2.0;
+/// Bookmark metrics. Notion's card: 180px of image beside the text, and a
+/// height that fits a title, two lines of blurb and a footer.
+const CARD_HEIGHT: f32 = 116.0;
+const CARD_IMAGE_WIDTH: f32 = 180.0;
+const CARD_PADDING: f32 = 14.0;
+const CARD_TEXT_SIZE: f32 = 12.0;
+const CARD_LINE_HEIGHT: f32 = 17.0;
+const CARD_ICON: f32 = 16.0;
+const CARD_COVER: f32 = 44.0;
 /// Table metrics. The design is frameless: hairlines between rows are the only
 /// chrome — no outer box, no header fill, no rounding.
 const TABLE_CELL_PADDING: f32 = 12.0;
@@ -196,6 +207,20 @@ impl BlockLayouts {
             false => bounds.origin.y + bounds.size.height - next.layout.line_height(),
         };
         Some(index_at(next, row))
+    }
+
+    /// Whether `point` is inside painted text.
+    ///
+    /// [`Self::hit`] answers with the nearest run wherever it is asked, which
+    /// is what a click wants and what a *pointer* must not have: an I-beam
+    /// belongs where a caret would land, not everywhere an editor's box
+    /// reaches.
+    pub fn over_text(&self, point: Point<Pixels>) -> bool {
+        self.0
+            .borrow()
+            .texts
+            .iter()
+            .any(|painted| painted.layout.bounds().contains(&point))
     }
 
     /// The block under `point`, for a gutter handle and a drop target.
@@ -488,6 +513,7 @@ fn block_element(
             cx,
         ),
         BlockKind::Image { url, alt } => image(url, alt, theme),
+        BlockKind::Bookmark { url } => bookmark(overlay.block, url, theme, cx),
         BlockKind::Table {
             align,
             header,
@@ -1094,6 +1120,134 @@ fn image(url: &str, alt: &str, theme: &Theme) -> AnyElement {
                     .child(SharedString::from(alt.to_string())),
             )
         })
+        .into_any_element()
+}
+
+/// A bookmark, in Notion's proportions: a fixed-height row with the text on the
+/// left and an image panel of a fixed width on the right, all of it one click
+/// target.
+///
+/// The height is fixed and the footer pinned to the bottom because a preview
+/// resolves *after* the card has painted — a blurb arriving into a box that
+/// grows would shove every block below it down the page.
+fn bookmark(ix: usize, url: &str, theme: &Theme, cx: &App) -> AnyElement {
+    let preview = preview::of(cx, url).unwrap_or_default();
+    let host = SharedString::from(preview::host(url).to_string());
+    let label = preview.label.clone().unwrap_or_else(|| host.clone());
+    let title = preview
+        .title
+        .clone()
+        .unwrap_or_else(|| SharedString::from(url.to_string()));
+
+    // Owned, because the image panel's fallback outlives this call: gpui asks
+    // for the replacement element only once the fetch has failed.
+    let (icon, muted, wash) = (preview.icon.clone(), theme.text_muted, theme.element_hover);
+    let site = host.clone();
+    let mark = move |size: f32| {
+        let host = site.clone();
+        match icon.clone() {
+            Some(icon) => img(icon)
+                .size(px(size))
+                .rounded(px(size / 4.0))
+                .with_fallback(move || initial(&host, size, muted, wash))
+                .into_any_element(),
+            None => initial(&host, size, muted, wash),
+        }
+    };
+
+    let open = url.to_string();
+    div()
+        .id(ElementId::named_usize("md-bookmark", ix))
+        .flex()
+        .w_full()
+        .h(px(CARD_HEIGHT))
+        .overflow_hidden()
+        .rounded(px(8.0))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.surface_card)
+        .cursor(CursorStyle::PointingHand)
+        .hover(|el| el.bg(theme.element_hover))
+        .on_click(move |_, _, cx| cx.open_url(&open))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .px(px(CARD_PADDING))
+                .py(px(CARD_PADDING - 2.0))
+                .child(
+                    div()
+                        .truncate()
+                        .text_size(px(TEXT_SIZE))
+                        .line_height(px(LINE_HEIGHT))
+                        .text_color(theme.text)
+                        .child(title),
+                )
+                .children(preview.description.map(|blurb| {
+                    div()
+                        .line_clamp(2)
+                        .text_size(px(CARD_TEXT_SIZE))
+                        .line_height(px(CARD_LINE_HEIGHT))
+                        .text_color(theme.text_muted)
+                        .child(blurb)
+                }))
+                .child(
+                    div()
+                        .mt_auto()
+                        .pt(px(6.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .text_size(px(CARD_TEXT_SIZE))
+                        .text_color(theme.text_muted)
+                        .child(mark(CARD_ICON))
+                        .child(div().truncate().child(label)),
+                ),
+        )
+        .child(
+            div()
+                .flex_none()
+                .w(px(CARD_IMAGE_WIDTH))
+                .h_full()
+                .bg(theme.surface)
+                .flex()
+                .items_center()
+                .justify_center()
+                .overflow_hidden()
+                .child(match preview.image {
+                    Some(image) => img(image)
+                        .size_full()
+                        .object_fit(ObjectFit::Cover)
+                        .with_fallback(move || mark(CARD_COVER))
+                        .into_any_element(),
+                    None => mark(CARD_COVER),
+                }),
+        )
+        .into_any_element()
+}
+
+/// The mark a site gets before anyone has fetched its favicon: its host's first
+/// letter, which is a placeholder no icon set has to ship.
+fn initial(host: &str, size: f32, color: Hsla, wash: Hsla) -> AnyElement {
+    div()
+        .flex_none()
+        .size(px(size))
+        .rounded(px(size / 4.0))
+        .bg(wash)
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(size * 0.55))
+        .text_color(color)
+        .child(SharedString::from(
+            host.chars()
+                .next()
+                .unwrap_or('?')
+                .to_uppercase()
+                .to_string(),
+        ))
         .into_any_element()
 }
 

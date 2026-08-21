@@ -8,7 +8,10 @@ use gpui::{AnyElement, Context, CursorStyle, MouseButton, SharedString, div, pre
 use markdown::BlockKind;
 use theme::Theme;
 
-use crate::editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE};
+use crate::{
+    editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE},
+    link::Choice,
+};
 
 /// How far the language chip reaches past the word it wraps.
 const CHIP_PAD_X: f32 = 6.0;
@@ -170,6 +173,10 @@ impl Editor {
             at,
             ui::popover::popover_card(theme)
                 .w(px(150.0))
+                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                    this.language_menu = None;
+                    cx.notify();
+                }))
                 .child(
                     div()
                         .id("language-menu-rows")
@@ -210,6 +217,10 @@ impl Editor {
             at,
             ui::popover::popover_card(theme)
                 .w(px(190.0))
+                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                    this.block_menu = None;
+                    cx.notify();
+                }))
                 .child(
                     div()
                         .id("block-menu-rows")
@@ -223,6 +234,38 @@ impl Editor {
                         }))
                         .child(action("Delete", |this, ix, cx| this.remove_block(ix, cx))),
                 )
+                .into_any_element(),
+            None,
+        ))
+    }
+
+    /// What a pasted URL could be, under the block it landed in.
+    ///
+    /// Anchored at the block's start rather than at the caret: the caret is
+    /// past the end of a URL, which is as far right as a line goes, and a menu
+    /// hanging off there points at nothing.
+    pub(super) fn paste_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let pasted = self.pasted.as_ref()?;
+        let (point, line_height) = self.layouts.position(pasted.at)?;
+        let rows = Choice::ROWS.iter().enumerate().map(|(row, &choice)| {
+            let label = choice.label();
+            ui::popover::menu_row(theme, row == pasted.active, SharedString::from(label))
+                .id(SharedString::from(format!("paste-row-{label}")))
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| this.confirm_paste(choice, cx)))
+        });
+        Some(ui::popover::menu_at(
+            "paste-menu",
+            gpui::point(point.x, point.y + line_height),
+            ui::popover::popover_card(theme)
+                .w(px(180.0))
+                // Clicking away is `Dismiss`, which is a real answer: the link
+                // is already in the block and stays there.
+                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                    this.pasted = None;
+                    cx.notify();
+                }))
+                .children(rows)
                 .into_any_element(),
             None,
         ))
@@ -269,6 +312,10 @@ impl Editor {
                 .debug_selector(|| SLASH_MENU.to_string())
                 .w(px(200.0))
                 .relative()
+                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                    this.slash = None;
+                    cx.notify();
+                }))
                 .child(
                     div()
                         .id("slash-rows")

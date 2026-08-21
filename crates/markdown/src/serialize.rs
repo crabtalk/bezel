@@ -150,6 +150,15 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
             out.push_str(url);
             out.push(')');
         }
+        // The angles are what makes it a card rather than a line with a link
+        // on it, and they are core CommonMark — every other reader still shows
+        // a link here.
+        BlockKind::Bookmark { url } => {
+            out.push_str(&pad);
+            out.push('<');
+            out.push_str(url);
+            out.push('>');
+        }
         BlockKind::Table {
             align,
             header,
@@ -276,6 +285,21 @@ fn inline(text: &Text) -> String {
                 cursor = cursor.max(span.range.end);
                 continue;
             }
+            // A link whose text is the URL it points at is written bare, which
+            // is what the linkifier reads back — so a URL in a sentence
+            // survives byte for byte instead of growing brackets it never had.
+            // Only when no other mark touches it: like a code span this is
+            // emitted whole, and a boundary inside it would have nowhere to
+            // land.
+            if let Mark::Link(url) = &span.mark
+                && text.text.get(span.range.clone()) == Some(url.as_str())
+                && crate::parse::is_url(url)
+                && alone(text, ix)
+            {
+                out.push_str(url);
+                cursor = cursor.max(span.range.end);
+                continue;
+            }
             let italic = italic_delimiter(&out, text, &span.range);
             delimiters[ix] = italic;
             open_mark(&mut out, &span.mark, italic);
@@ -294,6 +318,14 @@ fn inline(text: &Text) -> String {
         close_mark(&mut out, &text.marks[ix].mark, delimiters[ix]);
     }
     out
+}
+
+/// Whether no other mark overlaps this one.
+fn alone(text: &Text, ix: usize) -> bool {
+    let span = &text.marks[ix];
+    text.marks.iter().enumerate().all(|(other, mark)| {
+        other == ix || mark.range.end <= span.range.start || mark.range.start >= span.range.end
+    })
 }
 
 fn fence_width_inline(body: &str) -> usize {

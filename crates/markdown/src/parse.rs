@@ -22,7 +22,8 @@
 //! consecutively. Each of those is a place where writing the document back out
 //! and reading it again would otherwise land somewhere new.
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
+use std::ops::Range;
 
 use crate::doc::{Align, Block, BlockKind, Doc, Mark, MarkSpan, Text};
 
@@ -45,6 +46,9 @@ struct TextBuilder {
     marks: Vec<MarkSpan>,
     /// Indices into `marks` for the marks still open, innermost last.
     open: Vec<usize>,
+    /// Whether an angle autolink opened in this run — `<https://x>`, which is
+    /// how a bookmark is written down. Cleared with the run it belongs to.
+    autolink: bool,
 }
 
 impl TextBuilder {
@@ -85,10 +89,106 @@ impl TextBuilder {
 
     fn take(&mut self) -> Text {
         self.open.clear();
-        normalize(
+        self.autolink = false;
+        let mut text = normalize(
             &std::mem::take(&mut self.text),
             &std::mem::take(&mut self.marks),
-        )
+        );
+        linkify(&mut text);
+        text
+    }
+}
+
+/// The schemes a bare URL may carry. Narrow on purpose: a scheme and no
+/// whitespace. Anything cleverer starts linking text that merely contains a dot.
+const SCHEMES: [&str; 2] = ["https://", "http://"];
+
+/// Every bare URL in `text`, as byte ranges.
+///
+/// One scan answers two questions that have to agree: what [`linkify`] marks,
+/// and what [`crate::serialize`] may write without brackets. Split them and the
+/// round trip drifts the first time the two disagree about a trailing bracket.
+pub(crate) fn urls(text: &str) -> Vec<Range<usize>> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < text.len() {
+        let Some((start, scheme)) = SCHEMES
+            .iter()
+            .filter_map(|scheme| text[at..].find(scheme).map(|ix| (at + ix, *scheme)))
+            .min_by_key(|(ix, _)| *ix)
+        else {
+            break;
+        };
+        let stop = text[start..]
+            .find(char::is_whitespace)
+            .map_or(text.len(), |ix| start + ix);
+        let end = start + trim_url(&text[start..stop]);
+        // A scheme mid-word belongs to the word, and a scheme with no host
+        // behind it is not a URL.
+        let opens = text[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric());
+        if opens && end > start + scheme.len() {
+            found.push(start..end);
+        }
+        at = stop.max(start + 1);
+    }
+    found
+}
+
+/// Whether `source` is exactly one bare URL, and nothing else.
+///
+/// The question an editor asks of a paste, and the one [`crate::serialize`]
+/// asks before writing a link bare — the same question, so it is one function.
+pub fn is_url(source: &str) -> bool {
+    matches!(urls(source).as_slice(), [only] if *only == (0..source.len()))
+}
+
+/// How much of a run the URL is. Closing punctuation belongs to the sentence,
+/// and a bracket only belongs to the URL when the URL opened it.
+fn trim_url(run: &str) -> usize {
+    let mut end = run.len();
+    while let Some(last) = run[..end].chars().next_back() {
+        let keep = match last {
+            '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"' => false,
+            ')' => run[..end].matches('(').count() >= run[..end].matches(')').count(),
+            ']' => run[..end].matches('[').count() >= run[..end].matches(']').count(),
+            _ => true,
+        };
+        if keep {
+            break;
+        }
+        end -= last.len_utf8();
+    }
+    end
+}
+
+/// Mark the bare URLs in a run.
+///
+/// CommonMark links `<http://x>` and nothing else, so a URL typed on its own
+/// arrives as text. Marking it here is what lets a reader click it, what lets
+/// [`crate::serialize`] write it back without brackets, and what makes a URL
+/// alone in a block a [`BlockKind::Bookmark`].
+fn linkify(text: &mut Text) {
+    let fresh: Vec<Range<usize>> = urls(&text.text)
+        .into_iter()
+        .filter(|range| {
+            // A URL already inside a link, an image target or a code span is
+            // spelled by that mark, not by this one.
+            !text.marks.iter().any(|span| {
+                matches!(span.mark, Mark::Link(_) | Mark::Image(_) | Mark::Code)
+                    && span.range.start < range.end
+                    && range.start < span.range.end
+            })
+        })
+        .collect();
+    for range in fresh {
+        let url = text.text[range.clone()].to_string();
+        text.marks.push(MarkSpan {
+            range,
+            mark: Mark::Link(url),
+        });
     }
 }
 
@@ -294,6 +394,7 @@ impl ParseState {
 
     /// Close the current run of inline content as a block.
     fn finish_paragraph(&mut self) {
+        let autolink = self.builder.autolink;
         let text = self.builder.take();
 
         // A paragraph that is nothing but one image is an image block — the
@@ -312,6 +413,31 @@ impl ParseState {
             self.flush_marker();
             let indent = self.indent();
             self.push(BlockKind::Image { url, alt }, indent);
+            return;
+        }
+
+        // A paragraph that is nothing but an autolink is a bookmark — the
+        // `<https://x>`-on-its-own-line shape.
+        //
+        // The angles are the whole point. A bare URL is what someone types when
+        // they mean a link, and `[Title](url)` is what a sentence spells, so
+        // carding either would leave no way to write a link that stays one —
+        // and it is the paste menu's `Dismiss` that has to write it down.
+        if let [
+            MarkSpan {
+                range,
+                mark: Mark::Link(url),
+            },
+        ] = text.marks.as_slice()
+            && autolink
+            && range.start == 0
+            && range.end == text.text.len()
+            && is_url(url)
+        {
+            let url = url.clone();
+            self.flush_marker();
+            let indent = self.indent();
+            self.push(BlockKind::Bookmark { url }, indent);
             return;
         }
 
@@ -431,7 +557,12 @@ impl ParseState {
             Tag::Strikethrough => {
                 self.builder.open(Mark::Strike);
             }
-            Tag::Link { dest_url, .. } => {
+            Tag::Link {
+                link_type,
+                dest_url,
+                ..
+            } => {
+                self.builder.autolink |= link_type == LinkType::Autolink;
                 self.builder.open(Mark::Link(dest_url.into_string()));
             }
             Tag::Image { dest_url, .. } => {

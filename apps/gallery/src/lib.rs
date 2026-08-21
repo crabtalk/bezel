@@ -48,6 +48,7 @@ actions!(gallery, [OpenPalette, ToggleInspector, ToggleFullScreen]);
 /// the browser and Backspace did not.
 pub fn init(cx: &mut App) {
     markdown::set_highlighter(cx, highlight::spans, highlight::languages());
+    markdown::set_link_preview(cx, preview::of);
     input::init(cx);
     editor::init(cx);
     palette::init(cx);
@@ -68,6 +69,7 @@ pub mod highlight;
 pub mod inspector;
 
 pub mod patterns;
+pub mod preview;
 
 pub const LANGUAGES: [&str; 8] = [
     "Rust",

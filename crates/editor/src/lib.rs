@@ -11,6 +11,7 @@
 
 mod editor;
 mod history;
+mod link;
 mod slash;
 
 #[doc(hidden)]

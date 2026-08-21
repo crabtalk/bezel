@@ -73,8 +73,8 @@ impl Block {
     }
 
     /// One of the block's editable texts. `None` when the block has no such
-    /// part — every block is atomic to some [`Part`], and images and rules are
-    /// atomic to all of them.
+    /// part — every block is atomic to some [`Part`], and images, bookmarks and
+    /// rules are atomic to all of them.
     pub fn text_at(&self, part: Part) -> Option<&Text> {
         match (&self.kind, part) {
             (
@@ -140,7 +140,7 @@ impl Block {
                 }
                 parts
             }
-            BlockKind::Image { .. } | BlockKind::Rule => Vec::new(),
+            BlockKind::Image { .. } | BlockKind::Bookmark { .. } | BlockKind::Rule => Vec::new(),
         }
     }
 }
@@ -198,6 +198,12 @@ pub enum BlockKind {
         url: String,
         alt: String,
     },
+    /// A link on its own line, painted as a card. Atomic on purpose: everything
+    /// it shows past the URL comes from [`crate::preview`], so there is nothing
+    /// here for a caret to edit.
+    Bookmark {
+        url: String,
+    },
     Table {
         align: Vec<Align>,
         header: Vec<Text>,
@@ -239,6 +245,18 @@ impl Text {
         Self {
             text: text.into(),
             marks: Vec::new(),
+        }
+    }
+
+    /// A URL that links to itself — what a pasted link is, and what a bookmark
+    /// hands back when it turns into prose.
+    pub fn link(url: &str) -> Self {
+        Self {
+            text: url.to_string(),
+            marks: vec![MarkSpan {
+                range: 0..url.len(),
+                mark: Mark::Link(url.to_string()),
+            }],
         }
     }
 

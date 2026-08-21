@@ -35,6 +35,7 @@ const SOURCE: &str = r#"# Notes
 Select any of this and the toolbar appears. **Bold**, _italic_ and `code` are one keystroke or one button away, and they are the same call underneath.
 
 - Type `/` on an empty line for the block menu
+- Paste a URL on an empty line and it offers to become a card
 - Hover a block and drag its handle to reorder it
 - Everything on the right is what a save would write
 

@@ -50,6 +50,12 @@ Body text with **bold**, _italic_, ~~struck~~, `inline code`, and a [link](https
 - [x] A finished task
 - [ ] An unfinished one
 
+## Links
+
+A bare URL links itself: https://example.com. Alone on a line and in angle brackets it is a card instead, and what the card shows past the URL comes from `set_link_preview`:
+
+<https://bezel.rs>
+
 ## Quoting
 
 > A quote, for the things worth setting apart.

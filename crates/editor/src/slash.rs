@@ -15,8 +15,9 @@ use markdown::{Align, BlockKind, Cursor, Text};
 
 /// Every block the menu offers, and what each makes.
 ///
-/// An image is deliberately absent: it needs a URL, and a block that paints
-/// nothing until one arrives is worse than one the menu does not offer.
+/// An image and a bookmark are deliberately absent: both need a URL, and a
+/// block that paints nothing until one arrives is worse than one the menu does
+/// not offer. A pasted URL is where a bookmark comes from.
 pub fn items() -> Vec<(SharedString, BlockKind)> {
     let text = Text::default;
     vec![

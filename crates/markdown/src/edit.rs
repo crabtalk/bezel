@@ -522,7 +522,12 @@ impl Doc {
         let Some(block) = self.blocks.get_mut(ix) else {
             return;
         };
-        let text = block.text_at(Part::Body).cloned().unwrap_or_default();
+        let text = match &block.kind {
+            // A bookmark's text is the link it shows, so turning one back into
+            // prose hands the URL over instead of an empty block.
+            BlockKind::Bookmark { url } => Text::link(url),
+            _ => block.text_at(Part::Body).cloned().unwrap_or_default(),
+        };
         block.kind = kind;
         match block.text_at_mut(Part::Body) {
             Some(body) => *body = text,
@@ -916,7 +921,10 @@ impl Doc {
                         crate::parse::collapse_to_one_line(cell);
                     }
                 }
-                BlockKind::Code { .. } | BlockKind::Image { .. } | BlockKind::Rule => {}
+                BlockKind::Code { .. }
+                | BlockKind::Image { .. }
+                | BlockKind::Bookmark { .. }
+                | BlockKind::Rule => {}
             }
         }
         // A blank paragraph is the empty line an editor leaves behind, and
