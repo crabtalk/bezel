@@ -126,9 +126,13 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
+        let doc = markdown::parse(source);
         Self {
-            doc: markdown::parse(source),
-            selection: Selection::default(),
+            // Clamped, not defaulted: a document opening on a fence or a table
+            // has no body at block zero, and a caret claiming one resolves
+            // against nothing until something moves it.
+            selection: Selection::at(Cursor::default().clamp(&doc)),
+            doc,
             focus_handle: cx.focus_handle(),
             marked: None,
             layouts: BlockLayouts::default(),
@@ -295,6 +299,16 @@ impl Editor {
             // Off the top is the start of the document and off the bottom is
             // its end, which is what every native field does.
             None => {
+                // Except where the end is a block a caret cannot carry on from,
+                // and going down means the paragraph after it — the one a click
+                // below the document asks for by the same rule.
+                if down
+                    && !extend
+                    && self.cursor().block + 1 == self.doc.blocks.len()
+                    && self.append_tail(cx)
+                {
+                    return;
+                }
                 let to = if down {
                     head.down(&self.doc)
                 } else {
@@ -736,6 +750,40 @@ impl Editor {
             this.selection = this.selection.clamp(&this.doc);
         });
     }
+    /// The paragraph a document ending in a fence, a table, a rule or an image
+    /// has no other way to grow: a fence swallows Enter, a cell has nowhere to
+    /// put one, and a rule or an image holds no caret at all. `false` when the
+    /// last block ends in a body, which can carry on by itself.
+    fn append_tail(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(last) = self.doc.blocks.len().checked_sub(1) else {
+            return false;
+        };
+        if self.doc.blocks[last].parts().last() == Some(&Part::Body) {
+            return false;
+        }
+        self.edit(EditKind::Structure, cx, |this| {
+            this.doc
+                .blocks
+                .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
+            let ix = this.doc.blocks.len() - 1;
+            this.selection = Selection::at(Cursor::new(ix, Part::Body, 0).clamp(&this.doc));
+        });
+        true
+    }
+
+    /// A click past the end of the document. Without this the document has no
+    /// end: the click snaps back into the block above it, and what gets typed
+    /// lands inside the code the reader was trying to escape.
+    fn tail_click(&mut self, at: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) -> bool {
+        let Some(last) = self.doc.blocks.len().checked_sub(1) else {
+            return false;
+        };
+        let Some(bounds) = self.layouts.block_bounds(last) else {
+            return false;
+        };
+        at.y > bounds.origin.y + bounds.size.height && self.append_tail(cx)
+    }
+
     /// The caret's text, for the input handler's offset arithmetic.
     fn caret_text(&self) -> Option<&Text> {
         let at = self.cursor();
@@ -801,6 +849,9 @@ impl Render for Editor {
                     this.block_menu = None;
                     this.language_menu = None;
                     this.focus_handle.clone().focus(window, cx);
+                    if this.tail_click(event.position, cx) {
+                        return;
+                    }
                     let Some(hit) = this.layouts.hit(event.position) else {
                         return cx.notify();
                     };
