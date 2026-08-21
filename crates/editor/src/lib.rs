@@ -13,5 +13,7 @@ mod editor;
 mod history;
 mod slash;
 
+#[doc(hidden)]
+pub use editor::menu::SLASH_MENU;
 pub use editor::{Editor, init};
 pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History};

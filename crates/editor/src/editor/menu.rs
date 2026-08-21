@@ -9,6 +9,9 @@ use theme::Theme;
 
 use crate::editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE};
 
+/// Selector the interaction tests look the painted menu up by.
+pub const SLASH_MENU: &str = "slash-menu";
+
 impl Editor {
     /// The gutter handle, on the block under the pointer.
     ///
@@ -148,6 +151,11 @@ impl Editor {
             "slash-menu",
             gpui::point(point.x, point.y + line_height),
             div()
+                // Compiles to nothing outside a test build. It is here because
+                // the menu's state opening and the menu *painting* are two
+                // different things, and the bug that shipped was the second one
+                // failing while the first looked fine.
+                .debug_selector(|| SLASH_MENU.to_string())
                 .w(px(200.0))
                 .max_h(px(280.0))
                 .overflow_hidden()

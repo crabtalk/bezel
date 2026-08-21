@@ -27,7 +27,7 @@ use crate::{
 
 mod input;
 mod keys;
-mod menu;
+pub(crate) mod menu;
 
 pub use keys::init;
 use keys::{
