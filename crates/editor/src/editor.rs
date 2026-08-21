@@ -31,10 +31,11 @@ pub(crate) mod menu;
 
 pub use keys::init;
 use keys::{
-    Backspace, Copy, Cut, Delete, Dismiss, Down, DuplicateBlock, End, Home, Indent, Left,
-    MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock, Right, SelectAll, SelectDown,
-    SelectEnd, SelectHome, SelectLeft, SelectRight, SelectUp, SelectWordLeft, SelectWordRight,
-    SplitBlock, ToggleBold, ToggleCode, ToggleItalic, ToggleStrike, Undo, Up, WordLeft, WordRight,
+    Backspace, Copy, Cut, Delete, DeleteToHome, DeleteWordLeft, DeleteWordRight, Dismiss, Down,
+    DuplicateBlock, End, Home, Indent, KillLine, Left, MoveBlockDown, MoveBlockUp, Outdent, Paste,
+    Redo, RemoveBlock, Right, SelectAll, SelectDown, SelectEnd, SelectHome, SelectLeft,
+    SelectRight, SelectUp, SelectWordLeft, SelectWordRight, SplitBlock, ToggleBold, ToggleCode,
+    ToggleItalic, ToggleStrike, Undo, Up, WordLeft, WordRight,
 };
 
 const CONTEXT: &str = "BezelEditor";
@@ -179,6 +180,42 @@ impl Editor {
         // back after calling this.
         self.goal = None;
         cx.notify();
+    }
+
+    /// Delete from the caret to wherever `to` lands — every kill chord, sharing
+    /// the cursor functions the motion chords use so the two cannot disagree.
+    ///
+    /// Nothing left to take within the block — the target crossed out of it, or
+    /// landed on the caret — is the block edge, and `forward` is which edge:
+    /// [`Self::delete_forward`] joins the next block, [`Self::delete_back`]
+    /// outdents or strips block syntax before it merges anything. The direction
+    /// has to be the chord's own, because a target that lands on the caret is
+    /// the same cursor whichever way it was reaching.
+    fn delete_to(
+        &mut self,
+        forward: bool,
+        to: impl FnOnce(Cursor, &Doc) -> Cursor,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.selection.is_collapsed() {
+            return self.delete_back(cx);
+        }
+        let at = self.cursor();
+        let target = to(at, &self.doc).clamp(&self.doc);
+        if target.block != at.block || target.part != at.part || target.offset == at.offset {
+            return if forward {
+                self.delete_forward(cx)
+            } else {
+                self.delete_back(cx)
+            };
+        }
+        self.edit(EditKind::Delete, cx, |this| {
+            let head = this
+                .doc
+                .replace(Selection::new(target, at), Text::default());
+            this.selection = Selection::at(head.clamp(&this.doc));
+            this.track_slash("");
+        });
     }
 
     fn head_to(&mut self, head: Cursor, extend: bool) {
@@ -439,9 +476,16 @@ impl Editor {
         self.history.interrupt();
     }
 
+    fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
+        self.delete_back(cx);
+    }
+
     /// Delete backwards: the selection if there is one, otherwise the character
     /// before the caret, otherwise whatever the start of a block means.
-    fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
+    ///
+    /// The kill chords land here too when they have nothing left to take within
+    /// the block, so reaching out of one is decided in a single place.
+    fn delete_back(&mut self, cx: &mut Context<Self>) {
         let at = self.cursor();
         // Reaching out of a block is structural; taking a character is not.
         let kind = if self.selection.is_collapsed() && at.offset == 0 {
@@ -472,6 +516,12 @@ impl Editor {
     }
 
     fn delete(&mut self, _: &Delete, _: &mut Window, cx: &mut Context<Self>) {
+        self.delete_forward(cx);
+    }
+
+    /// Delete forwards, joining the next block when the caret is at the end of
+    /// this one — which is what a kill to the end of a line does there too.
+    fn delete_forward(&mut self, cx: &mut Context<Self>) {
         self.edit(EditKind::Delete, cx, |this| {
             let at = this.cursor();
             let range = if this.selection.is_collapsed() {
@@ -780,6 +830,18 @@ impl Render for Editor {
             )
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
+            .on_action(
+                cx.listener(|this, _: &KillLine, _, cx| this.delete_to(true, Cursor::end, cx)),
+            )
+            .on_action(cx.listener(|this, _: &DeleteWordLeft, _, cx| {
+                this.delete_to(false, Cursor::word_left, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DeleteWordRight, _, cx| {
+                this.delete_to(true, Cursor::word_right, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DeleteToHome, _, cx| {
+                this.delete_to(false, |at, _| at.home(), cx)
+            }))
             .on_action(cx.listener(Self::split_block))
             .on_action(cx.listener(Self::indent))
             .on_action(cx.listener(Self::outdent))
