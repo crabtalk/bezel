@@ -266,7 +266,7 @@ impl Text {
                 if a.mark == b.mark
                     && a.range.start <= b.range.end
                     && b.range.start <= a.range.end
-                    && !matches!(a.mark, Mark::Image(_))
+                    && !matches!(a.mark, Mark::Image(_) | Mark::Mention { .. })
                 {
                     merged = Some((
                         other,
@@ -525,7 +525,7 @@ impl Doc {
         let text = match &block.kind {
             // A bookmark's text is the link it shows, so turning one back into
             // prose hands the URL over instead of an empty block.
-            BlockKind::Bookmark { url } => Text::link(url),
+            BlockKind::Bookmark { url, .. } => Text::link(url),
             _ => block.text_at(Part::Body).cloned().unwrap_or_default(),
         };
         block.kind = kind;

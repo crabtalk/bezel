@@ -61,6 +61,9 @@ gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4
     "font-kit",
 ] }
 gpui_web = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", default-features = false }
+# gpui defaults to a `NullHttpClient`, so a native app that paints a remote
+# image has to bring its own. The wasm platform installs one of its own.
+reqwest_client = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50" }
 
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare

@@ -25,7 +25,7 @@
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 use std::ops::Range;
 
-use crate::doc::{Align, Block, BlockKind, Doc, Mark, MarkSpan, Text};
+use crate::doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Text};
 
 /// Parse a markdown document.
 pub fn parse(source: &str) -> Doc {
@@ -46,9 +46,6 @@ struct TextBuilder {
     marks: Vec<MarkSpan>,
     /// Indices into `marks` for the marks still open, innermost last.
     open: Vec<usize>,
-    /// Whether an angle autolink opened in this run — `<https://x>`, which is
-    /// how a bookmark is written down. Cleared with the run it belongs to.
-    autolink: bool,
 }
 
 impl TextBuilder {
@@ -89,14 +86,59 @@ impl TextBuilder {
 
     fn take(&mut self) -> Text {
         self.open.clear();
-        self.autolink = false;
         let mut text = normalize(
             &std::mem::take(&mut self.text),
             &std::mem::take(&mut self.marks),
         );
+        settle_mentions(&mut text);
         linkify(&mut text);
         text
     }
+}
+
+/// A mention the shorthand cannot spell says its name instead.
+///
+/// [`Form::Auto`] records that `<url>` was written. Where the angles cannot be
+/// written back — a `mailto:`, a boundary inside a span emitted whole — the
+/// form settles here, so the document already holds what the next parse would
+/// produce. A mention alone in its paragraph passes and stays `Auto`, which is
+/// what leaves it to become a card.
+fn settle_mentions(text: &mut Text) {
+    let settled: Vec<usize> = (0..text.marks.len())
+        .filter(|ix| {
+            matches!(
+                text.marks[*ix].mark,
+                Mark::Mention {
+                    form: Form::Auto,
+                    ..
+                }
+            ) && !is_shorthand(text, *ix)
+        })
+        .collect();
+    for ix in settled {
+        if let Mark::Mention { form, .. } = &mut text.marks[ix].mark {
+            *form = Form::Chip;
+        }
+    }
+}
+
+/// Whether the mark at `ix` can be written with the `<url>` shorthand.
+///
+/// The angles hold a bare URL and nothing else, so a mention has to *be* its
+/// URL: `<mailto:x>` is an autolink this cannot spell that way, and
+/// `**<https://x>**` has a boundary inside a span that is written whole and so
+/// has nowhere to put it. Everything that fails here still has the explicit
+/// spelling to fall back on, which is why nothing ever has to stop being a
+/// mention.
+pub(crate) fn is_shorthand(text: &Text, ix: usize) -> bool {
+    let span = &text.marks[ix];
+    let Mark::Mention { url, form } = &span.mark else {
+        return false;
+    };
+    *form == Form::Auto
+        && text.text.get(span.range.clone()) == Some(url.as_str())
+        && is_url(url)
+        && text.alone(ix)
 }
 
 /// The schemes a bare URL may carry. Narrow on purpose: a scheme and no
@@ -177,8 +219,10 @@ fn linkify(text: &mut Text) {
             // A URL already inside a link, an image target or a code span is
             // spelled by that mark, not by this one.
             !text.marks.iter().any(|span| {
-                matches!(span.mark, Mark::Link(_) | Mark::Image(_) | Mark::Code)
-                    && span.range.start < range.end
+                matches!(
+                    span.mark,
+                    Mark::Link(_) | Mark::Mention { .. } | Mark::Image(_) | Mark::Code
+                ) && span.range.start < range.end
                     && range.start < span.range.end
             })
         })
@@ -266,7 +310,7 @@ fn merge_same_mark(mut marks: Vec<MarkSpan>) -> Vec<MarkSpan> {
         for other in ix + 1..marks.len() {
             let (a, b) = (&marks[ix], &marks[other]);
             if a.mark == b.mark
-                && !matches!(a.mark, Mark::Image(_))
+                && !matches!(a.mark, Mark::Image(_) | Mark::Mention { .. })
                 && a.range.start <= b.range.end
                 && b.range.start <= a.range.end
             {
@@ -394,7 +438,6 @@ impl ParseState {
 
     /// Close the current run of inline content as a block.
     fn finish_paragraph(&mut self) {
-        let autolink = self.builder.autolink;
         let text = self.builder.take();
 
         // A paragraph that is nothing but one image is an image block — the
@@ -416,28 +459,35 @@ impl ParseState {
             return;
         }
 
-        // A paragraph that is nothing but an autolink is a bookmark — the
-        // `<https://x>`-on-its-own-line shape.
+        // A paragraph that is nothing but a mention is a bookmark — the same
+        // `<https://x>` that paints as a chip inside a sentence, given a line
+        // of its own. A bare URL is what someone types when they mean a link
+        // and `[Title](url)` is what a sentence spells, so carding either would
+        // leave no way to write a link that stays one — and it is the paste
+        // menu's `Dismiss` that has to write that down.
         //
-        // The angles are the whole point. A bare URL is what someone types when
-        // they mean a link, and `[Title](url)` is what a sentence spells, so
-        // carding either would leave no way to write a link that stays one —
-        // and it is the paste menu's `Dismiss` that has to write it down.
+        // A chip promotes too: off the text flow it can be a real element, and
+        // that is the only place a favicon has room to sit.
+        //
+        // The text has to *be* the URL. `[Example Site](url "chip")` alone on a
+        // line keeps its title and stays a paragraph, because promoting it
+        // would drop words someone wrote — a block shows only what the preview
+        // gave it.
         if let [
             MarkSpan {
                 range,
-                mark: Mark::Link(url),
+                mark: Mark::Mention { url, form },
             },
         ] = text.marks.as_slice()
-            && autolink
             && range.start == 0
             && range.end == text.text.len()
+            && text.text == *url
             && is_url(url)
         {
-            let url = url.clone();
+            let (url, form) = (url.clone(), *form);
             self.flush_marker();
             let indent = self.indent();
-            self.push(BlockKind::Bookmark { url }, indent);
+            self.push(BlockKind::Bookmark { url, form }, indent);
             return;
         }
 
@@ -557,13 +607,24 @@ impl ParseState {
             Tag::Strikethrough => {
                 self.builder.open(Mark::Strike);
             }
+            // A rich link is its own mark rather than a flag on a link: where
+            // the spelling came from is what decides the painting, and a flag
+            // beside the mark is a second place for that to be recorded.
             Tag::Link {
                 link_type,
                 dest_url,
+                title,
                 ..
             } => {
-                self.builder.autolink |= link_type == LinkType::Autolink;
-                self.builder.open(Mark::Link(dest_url.into_string()));
+                let url = dest_url.into_string();
+                let form = match link_type {
+                    LinkType::Autolink => Some(Form::Auto),
+                    _ => Form::from_title(&title),
+                };
+                self.builder.open(match form {
+                    Some(form) => Mark::Mention { url, form },
+                    None => Mark::Link(url),
+                });
             }
             Tag::Image { dest_url, .. } => {
                 self.builder.open(Mark::Image(dest_url.into_string()));

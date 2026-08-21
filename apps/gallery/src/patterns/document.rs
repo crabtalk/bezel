@@ -52,9 +52,17 @@ Body text with **bold**, _italic_, ~~struck~~, `inline code`, and a [link](https
 
 ## Links
 
-A bare URL links itself: https://example.com. Alone on a line and in angle brackets it is a card instead, and what the card shows past the URL comes from `set_link_preview`:
+A bare URL links itself: https://example.com. In angle brackets it is a chip — <https://github.com/crabtalk/bezel> — and alone on a line those same angles make a card:
 
-<https://bezel.rs>
+<https://github.com/crabtalk/bezel>
+
+What a card shows past the URL comes from `set_link_preview`. A `"chip"` title puts a chip on a line of its own, where it has room for the favicon shaped text cannot hold:
+
+[https://github.com/crabtalk/bezel](https://github.com/crabtalk/bezel "chip")
+
+An `"embed"` title is the bigger card, with the picture across its width:
+
+[https://github.com/zed-industries/zed](https://github.com/zed-industries/zed "embed")
 
 ## Quoting
 

@@ -38,7 +38,10 @@ use ui::{
     },
 };
 
-actions!(gallery, [OpenPalette, ToggleInspector, ToggleFullScreen]);
+actions!(
+    gallery,
+    [OpenPalette, ToggleInspector, ToggleFullScreen, CloseOverlay]
+);
 
 /// Every keymap this view needs, in one call.
 ///
@@ -59,7 +62,12 @@ pub fn init(cx: &mut App) {
     tree::init(cx);
     // A pattern is an app: the composer page binds its own keys.
     patterns::agent::init(cx);
-    cx.bind_keys([KeyBinding::new("cmd-k", OpenPalette, None)]);
+    cx.bind_keys([
+        KeyBinding::new("cmd-k", OpenPalette, None),
+        // Scoped to this page's context, so it never shadows the escape a
+        // menu, a combobox or the document editor binds inside its own.
+        KeyBinding::new("escape", CloseOverlay, Some("Gallery")),
+    ]);
 }
 
 pub mod highlight;
@@ -1036,6 +1044,18 @@ impl Gallery {
             popover::reap_popup(cx, |view: &mut Self| &mut view.dialog);
         }
         cx.notify();
+    }
+
+    /// Escape, on whatever is floating over the page.
+    ///
+    /// `popover::modal` and `popover::sheet` are paint, not entities — they
+    /// hold no state and so can bind no key. The state is the caller's
+    /// `Popup`, which makes backing out of one the caller's too, and every
+    /// overlay this page can open answers here.
+    fn close_overlay(&mut self, _: &CloseOverlay, _: &mut Window, cx: &mut Context<Self>) {
+        self.close_dialog(cx);
+        self.close_sheet(cx);
+        self.close_context_menu(cx);
     }
 
     fn close_sheet(&mut self, cx: &mut Context<Self>) {
@@ -3382,6 +3402,7 @@ impl Render for Gallery {
             .on_action(cx.listener(Self::open_palette))
             .on_action(cx.listener(Self::toggle_inspector))
             .on_action(cx.listener(Self::toggle_full_screen))
+            .on_action(cx.listener(Self::close_overlay))
             .on_mouse_down(
                 gpui::MouseButton::Right,
                 cx.listener(|view, event: &gpui::MouseDownEvent, _, cx| {

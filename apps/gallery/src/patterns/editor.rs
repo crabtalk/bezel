@@ -23,7 +23,8 @@
 
 use editor::Editor;
 use gpui::{
-    Context, ElementId, Entity, Focusable, Render, SharedString, Window, div, prelude::*, px,
+    Context, ElementId, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
+    prelude::*, px,
 };
 use markdown::Mark;
 use theme::Theme;
@@ -35,7 +36,7 @@ const SOURCE: &str = r#"# Notes
 Select any of this and the toolbar appears. **Bold**, _italic_ and `code` are one keystroke or one button away, and they are the same call underneath.
 
 - Type `/` on an empty line for the block menu
-- Paste a URL on an empty line and it offers to become a card
+- Paste a URL on an empty line for a card, or into a sentence for a chip
 - Hover a block and drag its handle to reorder it
 - Everything on the right is what a save would write
 
@@ -51,6 +52,9 @@ const MARKS: [(&str, Mark); 4] = [
 
 pub struct EditorDemo {
     editor: Entity<Editor>,
+    /// The document pane's scroll, shared with the editor so the caret can
+    /// bring itself back into view.
+    scroll: ScrollHandle,
     /// Focus lands in the document the first time this page paints. It is the
     /// one screen here whose whole point is that you type on it.
     focused: bool,
@@ -58,7 +62,13 @@ pub struct EditorDemo {
 
 impl EditorDemo {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let editor = cx.new(|cx| Editor::new(SOURCE, cx));
+        // The pane scrolls, so the pane owns the handle — and the editor gets a
+        // copy, which is how typing off the bottom follows the caret down.
+        let scroll = ScrollHandle::new();
+        let editor = cx.new({
+            let scroll = scroll.clone();
+            |cx| Editor::new(SOURCE, cx).with_scroll(scroll)
+        });
         // Typing notifies the *editor*, and this screen reads two things off it
         // that have to keep up — the markdown pane and where the toolbar sits.
         // Without this the right half freezes on the opening text and the
@@ -66,6 +76,7 @@ impl EditorDemo {
         cx.observe(&editor, |_, _, cx| cx.notify()).detach();
         Self {
             editor,
+            scroll,
             focused: false,
         }
     }
@@ -144,6 +155,7 @@ impl Render for EditorDemo {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
+                .track_scroll(&self.scroll)
                 // Clicking the empty space below the last block should still
                 // put a caret in the document, which is what filling the pane
                 // with the editor buys.

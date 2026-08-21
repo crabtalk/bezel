@@ -198,11 +198,17 @@ pub enum BlockKind {
         url: String,
         alt: String,
     },
-    /// A link on its own line, painted as a card. Atomic on purpose: everything
-    /// it shows past the URL comes from [`crate::preview`], so there is nothing
-    /// here for a caret to edit.
+    /// A link with a block to itself, painted richly. Atomic on purpose:
+    /// everything it shows past the URL comes from [`crate::preview`], so there
+    /// is nothing here for a caret to edit.
+    ///
+    /// [`Form`] picks which of the three — a chip, a card, or a card with its
+    /// picture across the width. Off a line of its own the same link is a
+    /// [`Mark::Mention`], which is the same three minus what shaped text cannot
+    /// hold.
     Bookmark {
         url: String,
+        form: Form,
     },
     Table {
         align: Vec<Align>,
@@ -263,12 +269,60 @@ impl Text {
     pub fn is_empty(&self) -> bool {
         self.text.is_empty()
     }
+
+    /// Whether no other mark overlaps the one at `ix`.
+    ///
+    /// A mark written whole — a code span, a mention — leaves no room inside
+    /// itself for another mark's boundary, so this is what decides whether it
+    /// can be spelled its own way at all.
+    pub(crate) fn alone(&self, ix: usize) -> bool {
+        let span = &self.marks[ix].range;
+        self.marks.iter().enumerate().all(|(other, mark)| {
+            other == ix || mark.range.end <= span.start || mark.range.start >= span.end
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarkSpan {
     pub range: Range<usize>,
     pub mark: Mark,
+}
+
+/// How a [`Mark::Mention`] was written down, which is also how it paints.
+///
+/// `Auto` is the shorthand `<https://x>`: a chip in a sentence, a card on a
+/// line of its own. It is a variant rather than a resolved form because the
+/// spelling is what has to survive the round trip — resolve it at parse and
+/// every `<url>` grows brackets the first time the file is saved.
+///
+/// The other two are CommonMark's title slot, `[url](url "chip")`, which is
+/// core, ignored by every other renderer, and the only place left to say what
+/// the shorthand cannot: a chip alone on a line, and the bigger card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Form {
+    Auto,
+    Chip,
+    Embed,
+}
+
+impl Form {
+    /// The title that spells this form, and `None` for the shorthand.
+    pub(crate) fn title(self) -> Option<&'static str> {
+        match self {
+            Self::Auto => None,
+            Self::Chip => Some("chip"),
+            Self::Embed => Some("embed"),
+        }
+    }
+
+    pub(crate) fn from_title(title: &str) -> Option<Self> {
+        match title {
+            "chip" => Some(Self::Chip),
+            "embed" => Some(Self::Embed),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -278,6 +332,16 @@ pub enum Mark {
     Strike,
     Code,
     Link(String),
+    /// A link painted richly rather than as underlined text — a chip inline, a
+    /// [`BlockKind::Bookmark`] with a block to itself.
+    ///
+    /// The chip shows the URL, because a [`Text`] is one string and every caret
+    /// offset is a byte into it: an inline atom painted wider or narrower than
+    /// the text under it has nowhere to put the offsets in between.
+    Mention {
+        url: String,
+        form: Form,
+    },
     /// An image among text. [`BlockKind::Image`] is the shape an editor offers;
     /// this is what keeps `see ![x](u) here` from silently becoming a link when
     /// the document is saved.

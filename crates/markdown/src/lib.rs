@@ -17,6 +17,12 @@
 //! gpui, no painting — and [`render`] is the gpui layer over them, caret and
 //! selection included for a caller that owns them. The editing *surface* is the
 //! `editor` crate.
+//!
+//! An image at an `http` URL — a picture, a favicon, a bookmark's cover —
+//! needs an http client on the app, which `gpui_platform::application` installs
+//! and a hand-built [`gpui::Application`] does not. gpui's own default is a
+//! `NullHttpClient`, and the failure is silent: the element paints the same
+//! fallback it would show while a fetch was still in flight.
 
 pub mod doc;
 pub mod edit;
@@ -27,7 +33,7 @@ pub mod render;
 pub mod select;
 pub mod serialize;
 
-pub use doc::{Align, Block, BlockKind, Doc, Mark, MarkSpan, Part, Text};
+pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, Text};
 pub use edit::{Shortcut, shortcut};
 pub use highlight::{Highlighter, languages, set_highlighter};
 pub use parse::{is_url, parse};

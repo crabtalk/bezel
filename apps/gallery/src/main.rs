@@ -16,7 +16,12 @@ actions!(gallery_app, [Quit]);
 
 fn main() {
     let section = std::env::args().nth(1);
+    // gpui installs a `NullHttpClient` and leaves the real one to the app, so
+    // without this every remote image — a favicon, a card's cover, any
+    // `![](https://…)` — fails before it is fetched and paints its fallback.
+    // The web platform supplies its own; a native one has to be brought.
     gpui_platform::application()
+        .with_http_client(std::sync::Arc::new(reqwest_client::ReqwestClient::new()))
         .with_assets(icons::Assets)
         .run(move |cx: &mut App| {
             if let Err(err) = ui::register_fonts(cx) {

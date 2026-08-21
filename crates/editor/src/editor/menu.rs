@@ -8,10 +8,7 @@ use gpui::{AnyElement, Context, CursorStyle, MouseButton, SharedString, div, pre
 use markdown::BlockKind;
 use theme::Theme;
 
-use crate::{
-    editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE},
-    link::Choice,
-};
+use crate::editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE};
 
 /// How far the language chip reaches past the word it wraps.
 const CHIP_PAD_X: f32 = 6.0;
@@ -247,7 +244,7 @@ impl Editor {
     pub(super) fn paste_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         let pasted = self.pasted.as_ref()?;
         let (point, line_height) = self.layouts.position(pasted.at)?;
-        let rows = Choice::ROWS.iter().enumerate().map(|(row, &choice)| {
+        let rows = pasted.rows.iter().enumerate().map(|(row, &choice)| {
             let label = choice.label();
             ui::popover::menu_row(theme, row == pasted.active, SharedString::from(label))
                 .id(SharedString::from(format!("paste-row-{label}")))

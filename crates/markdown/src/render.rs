@@ -18,7 +18,7 @@ use gpui::{
 use theme::Theme;
 
 use crate::{
-    doc::{Align, Block, BlockKind, Doc, Mark, Part, Text},
+    doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, Text},
     preview,
     select::{Cursor, Selection},
 };
@@ -47,10 +47,22 @@ pub const PLAIN_LANGUAGE: &str = "Plain";
 const INLINE_CODE_RADIUS: f32 = 4.5;
 const INLINE_CODE_PAD_X: f32 = 2.0;
 const INLINE_CODE_INSET_Y: f32 = 2.0;
+/// A mention's chip — the same quad-under-glyphs trick as inline code, with
+/// more room and an outline so the two do not read as the same thing.
+const CHIP_RADIUS: f32 = 6.0;
+const CHIP_PAD_X: f32 = 4.0;
+const CHIP_INSET_Y: f32 = 1.0;
+/// A chip with a block to itself is a real element rather than a wash, so it
+/// has room for the favicon the inline one cannot hold.
+const CHIP_BLOCK_PAD_X: f32 = 8.0;
+const CHIP_BLOCK_PAD_Y: f32 = 3.0;
+const CHIP_ICON: f32 = 15.0;
 /// Bookmark metrics. Notion's card: 180px of image beside the text, and a
-/// height that fits a title, two lines of blurb and a footer.
+/// height that fits a title, two lines of blurb and a footer. A cover moves
+/// that image above the text and gives it the card's full width.
 const CARD_HEIGHT: f32 = 116.0;
 const CARD_IMAGE_WIDTH: f32 = 180.0;
+const CARD_COVER_HEIGHT: f32 = 200.0;
 const CARD_PADDING: f32 = 14.0;
 const CARD_TEXT_SIZE: f32 = 12.0;
 const CARD_LINE_HEIGHT: f32 = 17.0;
@@ -513,7 +525,7 @@ fn block_element(
             cx,
         ),
         BlockKind::Image { url, alt } => image(url, alt, theme),
-        BlockKind::Bookmark { url } => bookmark(overlay.block, url, theme, cx),
+        BlockKind::Bookmark { url, form } => bookmark(overlay.block, url, *form, theme, cx),
         BlockKind::Table {
             align,
             header,
@@ -603,12 +615,13 @@ fn marker_row(marker: AnyElement, text: &Text, overlay: Overlay, theme: &Theme) 
 }
 
 /// Inline content flattened for shaping: one string, its runs, and the ranges
-/// that need painting underneath (link clicks, inline-code washes).
+/// that need painting underneath (link clicks, inline-code washes, chips).
 pub struct Flat {
     pub text: SharedString,
     pub runs: Vec<TextRun>,
     pub links: Vec<(Range<usize>, String)>,
     pub code: Vec<Range<usize>>,
+    pub chips: Vec<Range<usize>>,
 }
 
 /// Marks are ranges, gpui wants consecutive runs — so cut the text at every
@@ -627,6 +640,7 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
     let mut runs = Vec::new();
     let mut links: Vec<(Range<usize>, String)> = Vec::new();
     let mut code: Vec<Range<usize>> = Vec::new();
+    let mut chips: Vec<Range<usize>> = Vec::new();
 
     for pair in cuts.windows(2) {
         let (start, end) = (pair[0], pair[1]);
@@ -636,6 +650,7 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
             .filter(|span| span.range.start <= start && span.range.end >= end);
 
         let (mut bold, mut italic, mut mono, mut strike) = (false, false, false, false);
+        let mut chip = false;
         let mut link = None;
         for span in covering {
             match &span.mark {
@@ -643,6 +658,10 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
                 Mark::Italic => italic = true,
                 Mark::Strike => strike = true,
                 Mark::Code => mono = true,
+                Mark::Mention { url, .. } => {
+                    chip = true;
+                    link = Some(url.clone());
+                }
                 Mark::Link(url) | Mark::Image(url) => link = Some(url.clone()),
             }
         }
@@ -651,6 +670,12 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
             match code.last_mut() {
                 Some(range) if range.end == start => range.end = end,
                 _ => code.push(start..end),
+            }
+        }
+        if chip {
+            match chips.last_mut() {
+                Some(range) if range.end == start => range.end = end,
+                _ => chips.push(start..end),
             }
         }
         if let Some(url) = &link {
@@ -684,10 +709,11 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
             len: end - start,
             font: face,
             // Links stay monochrome and underlined; the accent is reserved for
-            // primary actions.
+            // primary actions. A chip carries its own wash, so underlining it
+            // too would say the same thing twice.
             color: if mono { theme.code_text } else { theme.text },
             background_color: None,
-            underline: link.is_some().then_some(UnderlineStyle {
+            underline: (link.is_some() && !chip).then_some(UnderlineStyle {
                 color: Some(theme.text_muted),
                 thickness: px(1.0),
                 wavy: false,
@@ -704,6 +730,7 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
         runs,
         links,
         code,
+        chips,
     }
 }
 
@@ -767,6 +794,9 @@ fn painted_text(
     // never part of layout.
     let wash = theme.code_wash;
     let code_ranges = flat.code;
+    let chip_wash = theme.element_hover;
+    let chip_edge = theme.border;
+    let chip_ranges = flat.chips;
     let caret_color = theme.caret;
     let selection_color = theme.selection;
     let layouts = overlay.layouts.cloned();
@@ -812,6 +842,20 @@ fn painted_text(
                         px(0.0),
                         gpui::transparent_black(),
                         BorderStyle::default(),
+                    ));
+                }
+            }
+            // Wider, rounder and outlined, so a chip and an inline code span
+            // never read as the same thing at a glance.
+            for range in &chip_ranges {
+                for rect in range_rects(&layout, range, CHIP_PAD_X, CHIP_INSET_Y) {
+                    window.paint_quad(quad(
+                        rect,
+                        px(CHIP_RADIUS),
+                        chip_wash,
+                        px(1.0),
+                        chip_edge,
+                        BorderStyle::Solid,
                     ));
                 }
             }
@@ -1125,12 +1169,15 @@ fn image(url: &str, alt: &str, theme: &Theme) -> AnyElement {
 
 /// A bookmark, in Notion's proportions: a fixed-height row with the text on the
 /// left and an image panel of a fixed width on the right, all of it one click
-/// target.
+/// target. [`Form::Embed`] turns the row into a column and gives the image the
+/// card's full width instead, and [`Form::Chip`] is neither — a pill of favicon
+/// and title, which is what an inline mention would be if shaped text had
+/// anywhere to put a picture.
 ///
-/// The height is fixed and the footer pinned to the bottom because a preview
-/// resolves *after* the card has painted — a blurb arriving into a box that
-/// grows would shove every block below it down the page.
-fn bookmark(ix: usize, url: &str, theme: &Theme, cx: &App) -> AnyElement {
+/// The text is a fixed height and its footer pinned to the bottom because a
+/// preview resolves *after* the card has painted — a blurb arriving into a box
+/// that grows would shove every block below it down the page.
+fn bookmark(ix: usize, url: &str, form: Form, theme: &Theme, cx: &App) -> AnyElement {
     let preview = preview::of(cx, url).unwrap_or_default();
     let host = SharedString::from(preview::host(url).to_string());
     let label = preview.label.clone().unwrap_or_else(|| host.clone());
@@ -1155,12 +1202,96 @@ fn bookmark(ix: usize, url: &str, theme: &Theme, cx: &App) -> AnyElement {
         }
     };
 
+    if form == Form::Chip {
+        let open = url.to_string();
+        let pill = div()
+            .id(ElementId::named_usize("md-chip", ix))
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(CHIP_BLOCK_PAD_X))
+            .py(px(CHIP_BLOCK_PAD_Y))
+            .rounded(px(CHIP_RADIUS))
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.element_hover)
+            .text_size(px(TEXT_SIZE))
+            .line_height(px(LINE_HEIGHT))
+            .text_color(theme.text)
+            .cursor(CursorStyle::PointingHand)
+            .hover(|el| el.bg(theme.element_active))
+            .on_click(move |_, _, cx| cx.open_url(&open))
+            .child(mark(CHIP_ICON))
+            // The host, not the URL, when nothing has resolved it: a chip is
+            // the short form, and a raw URL in a pill is the long one.
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .child(preview.title.unwrap_or(label)),
+            );
+        // A block's own box is `display: block`, where a pill would take the
+        // whole width. One flex row around it is what lets it hug its label.
+        return div().flex().flex_row().child(pill).into_any_element();
+    }
+
+    let words = div()
+        .flex()
+        .flex_col()
+        .min_w_0()
+        .h(px(CARD_HEIGHT))
+        .px(px(CARD_PADDING))
+        .py(px(CARD_PADDING - 2.0))
+        .child(
+            div()
+                .truncate()
+                .text_size(px(TEXT_SIZE))
+                .line_height(px(LINE_HEIGHT))
+                .text_color(theme.text)
+                .child(title),
+        )
+        .children(preview.description.map(|blurb| {
+            div()
+                .line_clamp(2)
+                .text_size(px(CARD_TEXT_SIZE))
+                .line_height(px(CARD_LINE_HEIGHT))
+                .text_color(theme.text_muted)
+                .child(blurb)
+        }))
+        .child(
+            div()
+                .mt_auto()
+                .pt(px(6.0))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .text_size(px(CARD_TEXT_SIZE))
+                .text_color(theme.text_muted)
+                .child(mark(CARD_ICON))
+                .child(div().truncate().child(label)),
+        );
+
+    let picture = div()
+        .bg(theme.surface)
+        .flex()
+        .items_center()
+        .justify_center()
+        .overflow_hidden()
+        .child(match preview.image {
+            Some(image) => img(image)
+                .size_full()
+                .object_fit(ObjectFit::Cover)
+                .with_fallback(move || mark(CARD_COVER))
+                .into_any_element(),
+            None => mark(CARD_COVER),
+        });
+
     let open = url.to_string();
-    div()
+    let card = div()
         .id(ElementId::named_usize("md-bookmark", ix))
         .flex()
         .w_full()
-        .h(px(CARD_HEIGHT))
         .overflow_hidden()
         .rounded(px(8.0))
         .border_1()
@@ -1168,64 +1299,18 @@ fn bookmark(ix: usize, url: &str, theme: &Theme, cx: &App) -> AnyElement {
         .bg(theme.surface_card)
         .cursor(CursorStyle::PointingHand)
         .hover(|el| el.bg(theme.element_hover))
-        .on_click(move |_, _, cx| cx.open_url(&open))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .flex_1()
-                .min_w_0()
-                .px(px(CARD_PADDING))
-                .py(px(CARD_PADDING - 2.0))
-                .child(
-                    div()
-                        .truncate()
-                        .text_size(px(TEXT_SIZE))
-                        .line_height(px(LINE_HEIGHT))
-                        .text_color(theme.text)
-                        .child(title),
-                )
-                .children(preview.description.map(|blurb| {
-                    div()
-                        .line_clamp(2)
-                        .text_size(px(CARD_TEXT_SIZE))
-                        .line_height(px(CARD_LINE_HEIGHT))
-                        .text_color(theme.text_muted)
-                        .child(blurb)
-                }))
-                .child(
-                    div()
-                        .mt_auto()
-                        .pt(px(6.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .text_size(px(CARD_TEXT_SIZE))
-                        .text_color(theme.text_muted)
-                        .child(mark(CARD_ICON))
-                        .child(div().truncate().child(label)),
-                ),
-        )
-        .child(
-            div()
-                .flex_none()
-                .w(px(CARD_IMAGE_WIDTH))
-                .h_full()
-                .bg(theme.surface)
-                .flex()
-                .items_center()
-                .justify_center()
-                .overflow_hidden()
-                .child(match preview.image {
-                    Some(image) => img(image)
-                        .size_full()
-                        .object_fit(ObjectFit::Cover)
-                        .with_fallback(move || mark(CARD_COVER))
-                        .into_any_element(),
-                    None => mark(CARD_COVER),
-                }),
-        )
-        .into_any_element()
+        .on_click(move |_, _, cx| cx.open_url(&open));
+
+    if form == Form::Embed {
+        card.flex_col()
+            .child(picture.w_full().h(px(CARD_COVER_HEIGHT)))
+            .child(words.w_full())
+    } else {
+        card.h(px(CARD_HEIGHT))
+            .child(words.flex_1())
+            .child(picture.flex_none().w(px(CARD_IMAGE_WIDTH)).h_full())
+    }
+    .into_any_element()
 }
 
 /// The mark a site gets before anyone has fetched its favicon: its host's first

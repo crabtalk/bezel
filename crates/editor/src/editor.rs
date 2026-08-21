@@ -15,7 +15,7 @@ use gpui::{
     Styled as _, Window, canvas, div, prelude::*,
 };
 use markdown::{
-    BlockKind, BlockLayouts, Cursor, Doc, Mark, Part, Selection, Text, edit, edit::shortcut,
+    BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Text, edit, edit::shortcut,
 };
 use std::ops::Range;
 use theme::Theme;
@@ -110,6 +110,10 @@ pub struct Editor {
     /// Whether the pointer is over painted text, which is the only place the
     /// editor claims an I-beam.
     over_text: bool,
+    /// The host's scroll box, when it gave one, and whether the caret still
+    /// owes it a reveal.
+    scroll: Option<gpui::ScrollHandle>,
+    reveal: bool,
     /// The point vertical motion is trying to keep. Held across a run of
     /// up/down so walking through a short line and out the other side returns
     /// to the column you started in, and dropped by anything horizontal —
@@ -145,6 +149,8 @@ impl Editor {
             origin: gpui::Point::default(),
             dragging: false,
             over_text: false,
+            scroll: None,
+            reveal: false,
             goal: None,
         }
     }
@@ -156,6 +162,55 @@ impl Editor {
     pub fn with_undo_limit(mut self, limit: usize) -> Self {
         self.history = History::with_limit(limit);
         self
+    }
+
+    /// The box the document scrolls in, so typing off the bottom follows the
+    /// caret down.
+    ///
+    /// The host's rather than the editor's: a document goes in whatever pane
+    /// the app gives it, and the gutter handle, the drop indicator and the
+    /// menus are all placed absolutely against this editor's own origin — put
+    /// the scroll box here and every one of them would be offset twice.
+    pub fn with_scroll(mut self, handle: gpui::ScrollHandle) -> Self {
+        self.scroll = Some(handle);
+        self
+    }
+
+    /// Bring the caret back into view.
+    ///
+    /// Read *after* paint, because a block that has only just appeared — the
+    /// one Enter made — has no position recorded until it has painted once,
+    /// which is exactly the case worth scrolling for.
+    fn reveal_caret(&mut self, cx: &mut Context<Self>) {
+        if !self.reveal {
+            return;
+        }
+        let Some(scroll) = self.scroll.clone() else {
+            self.reveal = false;
+            return;
+        };
+        // Left set when the caret has not painted: a block with no text at all
+        // never answers, and the next move is what gets it back.
+        let Some((at, line)) = self.layouts.position(self.selection.head) else {
+            return;
+        };
+        self.reveal = false;
+
+        let view = scroll.bounds();
+        let offset = scroll.offset();
+        let mut y = offset.y;
+        if at.y < view.top() {
+            y += view.top() - at.y;
+        } else if at.y + line > view.bottom() {
+            y -= at.y + line - view.bottom();
+        }
+        // `set_offset` clamps nothing, and past the ends the document would
+        // scroll away from the caret it was asked to show.
+        let y = y.clamp(-scroll.max_offset().y, gpui::px(0.0));
+        if y != offset.y {
+            scroll.set_offset(gpui::point(offset.x, y));
+            cx.notify();
+        }
     }
 
     pub fn doc(&self) -> &Doc {
@@ -258,6 +313,7 @@ impl Editor {
         self.history.interrupt();
         self.stored.clear();
         self.pasted = None;
+        self.reveal = true;
     }
 
     /// Every mutation goes through here, so none of them can forget to record
@@ -269,6 +325,9 @@ impl Editor {
         self.history.record(kind, &self.doc, self.selection);
         edit(self);
         self.history.landed(kind, self.selection);
+        // Typing moves the caret as surely as an arrow key does, and a split
+        // moves it onto a block that does not exist until this frame paints.
+        self.reveal = true;
         cx.notify();
     }
 
@@ -707,16 +766,16 @@ impl Editor {
         if !self.selection.is_collapsed() {
             return self.toggle_mark(Mark::Link(url), cx);
         }
-        // A body, because a card is a block: a fence holds its URL literally
-        // and a cell has no room for one.
+        // A card needs a block with nothing else in it; a chip needs a body or
+        // a cell to sit in. A fence holds its URL literally and offers neither.
         let at = self.cursor();
         let alone = at.part == Part::Body && self.caret_text().is_some_and(Text::is_empty);
         self.edit(EditKind::Structure, cx, |this| {
             let head = this.doc.replace(this.selection, Text::link(&url));
             this.selection = Selection::at(head.clamp(&this.doc));
         });
-        if alone {
-            self.pasted = Some(link::Paste::open(at, url));
+        if at.part != Part::Code {
+            self.pasted = Some(link::Paste::open(at, url, alone));
             cx.notify();
         }
     }
@@ -729,21 +788,49 @@ impl Editor {
         let ix = pasted.at.block;
         match choice {
             Choice::Dismiss => cx.notify(),
-            // One step, not two: turning the block and giving the caret
-            // somewhere to go are one gesture, and undo has to agree.
-            Choice::Bookmark => self.edit(EditKind::Structure, cx, |this| {
-                this.doc
-                    .set_kind(ix, BlockKind::Bookmark { url: pasted.url });
-                // A card holds no caret, so the caret carries on in the block
-                // after it — a fresh one when the card ends the document.
-                if this.doc.blocks.len() <= ix + 1 {
-                    this.doc
-                        .blocks
-                        .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
-                }
-                this.selection = Selection::at(Cursor::new(ix + 1, Part::Body, 0).clamp(&this.doc));
+            // A chip with a line to itself is a block, which is what gives it
+            // room for a favicon; inside a sentence it is a mark over the text
+            // that is already there, and only the spelling changes.
+            Choice::Chip if pasted.alone => self.turn_into(ix, pasted.url, Form::Chip, cx),
+            Choice::Chip => self.edit(EditKind::Structure, cx, |this| {
+                let end = Cursor {
+                    offset: pasted.at.offset + pasted.url.len(),
+                    ..pasted.at
+                };
+                let text = Text {
+                    text: pasted.url.clone(),
+                    marks: vec![markdown::MarkSpan {
+                        range: 0..pasted.url.len(),
+                        mark: Mark::Mention {
+                            url: pasted.url,
+                            form: markdown::Form::Chip,
+                        },
+                    }],
+                };
+                let head = this.doc.replace(Selection::new(pasted.at, end), text);
+                this.selection = Selection::at(head.clamp(&this.doc));
             }),
+            Choice::Bookmark => self.turn_into(ix, pasted.url, Form::Auto, cx),
+            Choice::Embed => self.turn_into(ix, pasted.url, Form::Embed, cx),
         }
+    }
+
+    /// Give a block over to the link it holds.
+    ///
+    /// One step, not two: turning the block and giving the caret somewhere to
+    /// go are one gesture, and undo has to agree.
+    fn turn_into(&mut self, ix: usize, url: String, form: Form, cx: &mut Context<Self>) {
+        self.edit(EditKind::Structure, cx, |this| {
+            this.doc.set_kind(ix, BlockKind::Bookmark { url, form });
+            // A block like this holds no caret, so the caret carries on in the
+            // one after it — a fresh one when it ends the document.
+            if this.doc.blocks.len() <= ix + 1 {
+                this.doc
+                    .blocks
+                    .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
+            }
+            this.selection = Selection::at(Cursor::new(ix + 1, Part::Body, 0).clamp(&this.doc));
+        });
     }
 
     fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
@@ -1103,6 +1190,18 @@ impl Render for Editor {
                     cx,
                 ),
             ))
+            // Last, so the layouts it reads are this frame's rather than the
+            // one before — children paint in order.
+            .child(
+                canvas(|_, _, _| (), {
+                    let entity = cx.entity();
+                    move |_, _, _, cx| {
+                        entity.update(cx, |this, cx| this.reveal_caret(cx));
+                    }
+                })
+                .absolute()
+                .size(gpui::px(0.0)),
+            )
             .children(self.slash_menu(&theme, cx))
             .children(self.paste_menu(&theme, cx))
             .children(self.handle(&theme, cx))

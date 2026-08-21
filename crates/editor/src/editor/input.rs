@@ -64,6 +64,15 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A whole URL arriving in one insert is a paste whatever delivered it,
+        // and on the web it is the only shape one arrives in: the browser's
+        // clipboard cannot be read synchronously, so gpui hands the DOM paste
+        // event to this handler rather than to the `Paste` action. Typing
+        // cannot reach here — a URL typed by hand arrives a character at a
+        // time, and none of those characters is a URL.
+        if range.is_none() && self.marked.is_none() && markdown::is_url(text.trim()) {
+            return self.paste_url(text.trim().to_string(), cx);
+        }
         // The platform's range is within the caret's own text, so it becomes a
         // selection there and the insert path does the rest.
         if let Some(range) = range.or_else(|| self.marked.clone()) {
