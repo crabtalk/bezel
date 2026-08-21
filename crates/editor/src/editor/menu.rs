@@ -40,12 +40,14 @@ impl Editor {
                 .child("⠿")
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {
                         this.handle_pressed = true;
                         this.lifted = Some((ix, ix));
-                        // A press that never moves is a click and leaves the
-                        // menu open; the first drag move clears it.
-                        this.block_menu = Some((ix, event.position));
+                        // The menu belongs to the release. Opened here it would
+                        // occlude the very moves a drag downwards is made of,
+                        // and the drop target would never leave the block it
+                        // started on.
+                        this.block_menu = None;
                         cx.notify();
                     }),
                 )

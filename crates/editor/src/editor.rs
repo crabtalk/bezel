@@ -728,8 +728,6 @@ impl Render for Editor {
                 if let Some((from, _)) = this.lifted.filter(|_| event.dragging()) {
                     if let Some(to) = this.layouts.block_at(event.position) {
                         this.lifted = Some((from, to));
-                        // Past the first move it is a drag, not a click.
-                        this.block_menu = None;
                         cx.notify();
                     }
                     return;
@@ -749,11 +747,17 @@ impl Render for Editor {
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _: &gpui::MouseUpEvent, _, cx| {
+                cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
                     this.dragging = false;
-                    let Some((from, to)) = this.lifted.take().filter(|(a, b)| a != b) else {
+                    let Some((from, to)) = this.lifted.take() else {
                         return;
                     };
+                    if from == to {
+                        // A press that never moved is a click, and a click on
+                        // the handle is what opens the menu.
+                        this.block_menu = Some((from, event.position));
+                        return cx.notify();
+                    }
                     this.edit(EditKind::Structure, cx, |this| {
                         // `move_block` steps one sibling at a time, so a drop
                         // several blocks away is that many steps. Bounded by
@@ -848,13 +852,20 @@ impl Render for Editor {
             // whole page is a second, louder signal for the same fact.
             .relative()
             .child(input)
-            .child(markdown::render_with_selection(
-                &self.doc,
-                selection,
-                Some(&self.layouts),
-                focused.then(|| PLACEHOLDER.into()),
-                window,
-                cx,
+            // The document is inset by the gutter so the handle has somewhere
+            // to sit *inside* the editor. Outside it the handle is clipped by
+            // any scrolling ancestor, and a drag through it never reaches
+            // `on_mouse_move`, which fires only while this element is the one
+            // under the pointer.
+            .child(div().w_full().pl(gpui::px(HANDLE_GUTTER)).child(
+                markdown::render_with_selection(
+                    &self.doc,
+                    selection,
+                    Some(&self.layouts),
+                    focused.then(|| PLACEHOLDER.into()),
+                    window,
+                    cx,
+                ),
             ))
             .children(self.slash_menu(&theme, cx))
             .children(self.handle(&theme, cx))
