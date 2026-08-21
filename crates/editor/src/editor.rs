@@ -214,7 +214,7 @@ impl Editor {
     fn vertical(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) {
         // Up and down walk the menu while it is open, not the document.
         if let Some(slash) = &mut self.slash {
-            slash.filter.step(if down { 1 } else { -1 });
+            slash.step(if down { 1 } else { -1 });
             return cx.notify();
         }
         let head = self.selection.head;

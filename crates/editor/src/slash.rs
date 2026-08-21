@@ -8,8 +8,8 @@
 //! typed after the `/`, which is how Notion does it and why there is no second
 //! field to hand focus to.
 
-use gpui::SharedString;
-use ui::popover::Filter;
+use gpui::{ScrollHandle, SharedString};
+use ui::{popover::Filter, scroll::TransientState};
 
 use markdown::{Align, BlockKind, Cursor, Text};
 
@@ -83,6 +83,10 @@ pub struct Slash {
     /// backspacing onto it closes the menu.
     pub at: Cursor,
     pub filter: Filter,
+    /// The list's own scroll, so a walk down the rows can bring one below the
+    /// fold into view. Made with the menu, so every open starts at the top.
+    pub scroll: ScrollHandle,
+    pub bar: TransientState,
 }
 
 impl Slash {
@@ -90,11 +94,22 @@ impl Slash {
         Self {
             at,
             filter: Filter::new(items().into_iter().map(|(label, _)| label).collect()),
+            scroll: ScrollHandle::new(),
+            bar: TransientState::new(),
         }
     }
 
     pub fn refilter(&mut self, query: &str) {
         self.filter.refilter(query);
+        self.scroll.scroll_to_item(0);
+    }
+
+    /// Walk the rows, keeping the active one on screen.
+    pub fn step(&mut self, delta: isize) {
+        self.filter.step(delta);
+        if let Some(row) = self.filter.active() {
+            self.scroll.scroll_to_item(row);
+        }
     }
 
     /// The block confirming right now would make.

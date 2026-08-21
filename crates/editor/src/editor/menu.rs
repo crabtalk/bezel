@@ -104,17 +104,21 @@ impl Editor {
         Some(ui::popover::menu_at(
             "block-menu",
             at,
-            div()
+            ui::popover::popover_card(theme)
                 .w(px(190.0))
-                .max_h(px(320.0))
-                .overflow_hidden()
-                .child(ui::popover::menu_heading(theme, "Turn into"))
-                .children(rows)
-                .child(ui::popover::menu_heading(theme, "Block"))
-                .child(action("Duplicate", |this, ix, cx| {
-                    this.duplicate_block(ix, cx)
-                }))
-                .child(action("Delete", |this, ix, cx| this.remove_block(ix, cx)))
+                .child(
+                    div()
+                        .id("block-menu-rows")
+                        .max_h(px(320.0))
+                        .overflow_y_scroll()
+                        .child(ui::popover::menu_heading(theme, "Turn into"))
+                        .children(rows)
+                        .child(ui::popover::menu_heading(theme, "Block"))
+                        .child(action("Duplicate", |this, ix, cx| {
+                            this.duplicate_block(ix, cx)
+                        }))
+                        .child(action("Delete", |this, ix, cx| this.remove_block(ix, cx))),
+                )
                 .into_any_element(),
             None,
         ))
@@ -128,6 +132,7 @@ impl Editor {
         let slash = self.slash.as_ref()?;
         let (point, line_height) = self.layouts.position(slash.at)?;
         let items = crate::slash::items();
+        let reduce_motion = cx.reduce_motion();
         // The `.id` is not optional: `menu_row` registers its hover fade
         // imperatively and needs a stateful element to hang it on, so a row
         // without one neither highlights nor clicks.
@@ -152,16 +157,28 @@ impl Editor {
         Some(ui::popover::menu_at(
             "slash-menu",
             gpui::point(point.x, point.y + line_height),
-            div()
+            ui::popover::popover_card(theme)
                 // Compiles to nothing outside a test build. It is here because
                 // the menu's state opening and the menu *painting* are two
                 // different things, and the bug that shipped was the second one
                 // failing while the first looked fine.
                 .debug_selector(|| SLASH_MENU.to_string())
                 .w(px(200.0))
-                .max_h(px(280.0))
-                .overflow_hidden()
-                .children(rows)
+                .relative()
+                .child(
+                    div()
+                        .id("slash-rows")
+                        .max_h(px(280.0))
+                        .overflow_y_scroll()
+                        .track_scroll(&slash.scroll)
+                        .children(rows),
+                )
+                .child(ui::scroll::transient(
+                    "slash-bar",
+                    &slash.scroll,
+                    &slash.bar,
+                    reduce_motion,
+                ))
                 .into_any_element(),
             None,
         ))
