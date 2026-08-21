@@ -537,6 +537,94 @@ impl Doc {
         self.repair();
     }
 
+    /// Turn what a selection covers into one code block, leaving whatever it
+    /// did not cover as blocks of its own.
+    ///
+    /// The fence is what markdown has for code over more than one line. An
+    /// inline span is not: no CommonMark spelling puts a line break inside
+    /// backticks, so one written that way comes back as a space.
+    ///
+    /// Marks are dropped on the way in, the way [`Doc::set_kind`] drops them
+    /// when it turns a block into a fence — code is literal to its closing
+    /// fence, and nothing in it is markup.
+    pub fn fence(&mut self, selection: Selection) -> Cursor {
+        let lines: Vec<String> = self
+            .spans(selection)
+            .iter()
+            .filter(|(at, _)| at.part == Part::Body)
+            .filter_map(|(at, range)| {
+                let text = self.blocks[at.block].text_at(at.part)?;
+                text.text.get(range.clone()).map(str::to_string)
+            })
+            .collect();
+        if lines.is_empty() {
+            return selection.head.clamp(self);
+        }
+        let code = Text::plain(lines.join("\n"));
+
+        // Cutting the selection leaves the head and the tail it did not cover
+        // joined in one block, with the caret at the seam between them — which
+        // is where the fence goes.
+        let at = self.replace(selection, Text::default());
+        let tail = self.split(at.block, at.offset);
+        let indent = self.blocks[at.block].indent;
+        self.blocks.insert(
+            tail,
+            Block::at(
+                BlockKind::Code {
+                    language: None,
+                    code,
+                },
+                indent,
+            ),
+        );
+        // A selection that covered whole blocks leaves nothing on either side,
+        // and an empty paragraph is not what "turn this into code" asked for.
+        let empty = |block: &Block| {
+            block
+                .text_at(Part::Body)
+                .is_some_and(|text| text.text.is_empty())
+        };
+        if self.blocks.get(tail + 1).is_some_and(empty) {
+            self.blocks.remove(tail + 1);
+        }
+        let mut fence = tail;
+        if empty(&self.blocks[at.block]) {
+            self.blocks.remove(at.block);
+            fence -= 1;
+        }
+        self.repair();
+        Cursor::new(fence, Part::Code, 0).clamp(self)
+    }
+
+    /// The way back out of a fence: every line becomes a paragraph. `None` when
+    /// the selection is not all code, which is what makes this the other half
+    /// of a toggle rather than an operation of its own.
+    pub fn unfence(&mut self, selection: Selection) -> Option<Cursor> {
+        let (start, end) = selection.clamp(self).ordered();
+        let blocks = start.block..=end.block;
+        if !blocks
+            .clone()
+            .all(|ix| matches!(self.blocks[ix].kind, BlockKind::Code { .. }))
+        {
+            return None;
+        }
+        for ix in blocks.rev() {
+            let BlockKind::Code { code, .. } = &self.blocks[ix].kind else {
+                continue;
+            };
+            let indent = self.blocks[ix].indent;
+            let paragraphs: Vec<Block> = code
+                .text
+                .split('\n')
+                .map(|line| Block::at(BlockKind::Paragraph(Text::plain(line)), indent))
+                .collect();
+            self.blocks.splice(ix..=ix, paragraphs);
+        }
+        self.repair();
+        Some(Cursor::new(start.block, Part::Body, 0).clamp(self))
+    }
+
     /// Every text a selection touches, with the slice of it covered.
     ///
     /// One selection can reach across paragraphs and table cells, and a mark

@@ -49,6 +49,27 @@ const PLACEHOLDER: &str = "Type / for commands";
 const HANDLE_SIZE: f32 = 18.0;
 const HANDLE_GUTTER: f32 = 22.0;
 
+/// Whether a selection is prose covering more than one line — two blocks, or
+/// one line break inside a single block.
+///
+/// What a chord means about a selection is the editor's to decide; a [`Doc`]
+/// has no opinion about it. A selection reaching into a table or a fence is not
+/// prose and keeps the inline behaviour, because half a table has no lines to
+/// make a fence out of.
+fn fenceable(doc: &Doc, selection: Selection) -> bool {
+    let spans = doc.spans(selection);
+    let covered = |at: &Cursor, range: &Range<usize>| {
+        doc.blocks[at.block]
+            .text_at(at.part)
+            .and_then(|text| text.text.get(range.clone()))
+    };
+    spans.iter().all(|(at, _)| at.part == Part::Body)
+        && (spans.len() > 1
+            || spans
+                .iter()
+                .any(|(at, range)| covered(at, range).is_some_and(|text| text.contains('\n'))))
+}
+
 /// Deliberately narrow: a scheme and no whitespace. Anything cleverer starts
 /// linking text that merely contains a dot.
 fn is_url(source: &str) -> bool {
@@ -423,10 +444,14 @@ impl Editor {
     /// already carries it. Public because a toolbar reaches the same operation
     /// the key does.
     pub fn toggle_mark(&mut self, mark: Mark, cx: &mut Context<Self>) {
+        // A caret inside a fence is enough to leave one, so this is the mark
+        // that does not wait for a range: nothing typed into code is markup,
+        // which leaves a stored mark there nothing to mean.
+        let leaving_code = matches!(mark, Mark::Code) && self.cursor().part == Part::Code;
         // With nothing selected there is no range to mark, so the mark waits
         // for the next character — ProseMirror's stored marks, and the only way
         // cmd-B before typing can mean anything.
-        if self.selection.is_collapsed() {
+        if self.selection.is_collapsed() && !leaving_code {
             match self.stored.iter().position(|stored| *stored == mark) {
                 Some(ix) => drop(self.stored.remove(ix)),
                 None => self.stored.push(mark),
@@ -435,6 +460,19 @@ impl Editor {
         }
         let selection = self.selection;
         self.edit(EditKind::Structure, cx, |this| {
+            // Code over more than one line is a fence, which is the only shape
+            // markdown has for it, and the same key is the way back out.
+            if matches!(mark, Mark::Code) {
+                if let Some(head) = this.doc.unfence(selection) {
+                    this.selection = Selection::at(head.clamp(&this.doc));
+                    return;
+                }
+                if fenceable(&this.doc, selection) {
+                    let head = this.doc.fence(selection);
+                    this.selection = Selection::at(head.clamp(&this.doc));
+                    return;
+                }
+            }
             this.doc.toggle_mark(selection, mark);
         });
     }
