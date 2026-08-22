@@ -17,7 +17,7 @@ use theme::{
 };
 use ui::{
     combobox::{self, Combobox},
-    control_bar::Shape as ControlBarShape,
+    control_bar::{self, Shape as ControlBarShape},
     date::{self, Calendar, Date},
     focus,
     hover_card::HoverCard,
@@ -30,6 +30,7 @@ use ui::{
     popover,
     scroll::{self, ScrollbarState},
     table::{self, Column, Sort, Width},
+    titlebar,
     tooltip::Tooltip,
     tree::{self, Direction, Move},
     widgets,
@@ -543,6 +544,7 @@ pub const COMPONENTS: &[Group] = &[
                 "crates/ui/src/widgets/scaffolding.rs",
             ),
             section("tabs", "Tabs", "crates/ui/src/widgets/layout.rs"),
+            section("nav-row", "Nav row", "crates/ui/src/widgets/layout.rs"),
             section(
                 "collapsible",
                 "Collapsible",
@@ -553,6 +555,7 @@ pub const COMPONENTS: &[Group] = &[
                 "Resizable split",
                 "crates/ui/src/widgets/layout.rs",
             ),
+            section("titlebar", "Titlebar", "crates/ui/src/titlebar.rs"),
             section("control-bar", "Control bar", "crates/ui/src/control_bar.rs"),
         ],
     },
@@ -683,6 +686,8 @@ pub struct Gallery {
     switched: [bool; 2],
     level: f32,
     tab_choice: usize,
+    nav_choice: usize,
+    titlebar_drag: titlebar::DragState,
     /// Scroll position and thumb-grab for every scrolling surface here. gpui
     /// owns the offset; the second half of each pair is only where in the thumb
     /// a drag took hold.
@@ -851,6 +856,8 @@ impl Gallery {
             switched: [true, false],
             level: 0.5,
             tab_choice: 0,
+            nav_choice: 0,
+            titlebar_drag: titlebar::DragState::default(),
             tab: 2,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
@@ -1269,7 +1276,7 @@ impl Gallery {
 
     /// One section by key. Unknown keys render nothing — [`SECTIONS`] is the
     /// list, and anything off it is a typo at the call site.
-    fn section_body(&mut self, key: &str, cx: &mut Context<Self>) -> AnyElement {
+    fn section_body(&mut self, key: &str, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let view = cx.entity_id();
         let section = stack();
@@ -2016,6 +2023,150 @@ impl Gallery {
                     ),
                 )
                 .into_any_element(),
+
+            "nav-row" => {
+                const ROWS: [(&str, &str); 5] = [
+                    (icons::WIDGET, "Home"),
+                    (icons::GLOBAL, "Browser"),
+                    (icons::BOOK, "Articles"),
+                    (icons::ARCHIVE_MINIMALISTIC, "Archived"),
+                    (icons::DOCUMENT, "Untitled"),
+                ];
+                section
+                    .child(hint(
+                        &theme,
+                        "The sidebar row. Trailing content is the caller's — a \
+                         count and a chevron here, and a control that appears \
+                         on hover, painted off the row's own fade key because \
+                         gpui allows one hover listener per element.",
+                    ))
+                    .child(
+                        div()
+                            .w(px(240.0))
+                            .p(px(6.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.0))
+                            .rounded(px(Theme::PANEL_RADIUS))
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.surface)
+                            .children(ROWS.iter().enumerate().map(|(index, (icon, label))| {
+                                let key = SharedString::from(format!("nav-row-{index}"));
+                                let row = theme
+                                    .nav_row(
+                                        Some(icon),
+                                        *label,
+                                        self.nav_choice == index,
+                                        key.clone(),
+                                    )
+                                    .when(*label == "Archived", |row| {
+                                        row.child(
+                                            div()
+                                                .flex_none()
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(4.0))
+                                                .text_size(px(11.5))
+                                                .text_color(theme.text_faint)
+                                                .child("10")
+                                                .child(
+                                                    icons::icon(icons::ALT_ARROW_RIGHT)
+                                                        .size(px(14.0))
+                                                        .text_color(theme.text_faint),
+                                                ),
+                                        )
+                                    })
+                                    .when(*label == "Untitled", |row| {
+                                        row.child(
+                                            icons::icon(icons::TRASH_BIN_MINIMALISTIC)
+                                                .size(px(14.0))
+                                                .flex_none()
+                                                .text_color(motion::hover_blend(
+                                                    &key,
+                                                    theme.text_muted.opacity(0.0),
+                                                    theme.text_muted,
+                                                )),
+                                        )
+                                    });
+                                pressable(row, key, cx, move |view, cx| {
+                                    view.nav_choice = index;
+                                    cx.notify();
+                                })
+                                .into_any_element()
+                            })),
+                    )
+                    .into_any_element()
+            }
+
+            "titlebar" => {
+                let frame = |body: gpui::Div| {
+                    body.w_full()
+                        .rounded(px(Theme::PANEL_RADIUS))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.surface)
+                        .overflow_hidden()
+                };
+                let caption = |copy: &'static str| {
+                    div()
+                        .flex_1()
+                        .text_size(px(12.5))
+                        .text_color(theme.text_muted)
+                        .child(copy)
+                };
+                section
+                    .child(hint(
+                        &theme,
+                        "Drag either strip to move the window; double-click to \
+                         zoom it. The move starts on the first motion after the \
+                         press, which is what leaves the button in the bar its \
+                         own click.",
+                    ))
+                    .child(
+                        frame(div()).child(
+                            titlebar::titlebar(
+                                "titlebar-lights",
+                                &self.titlebar_drag,
+                                true,
+                                window,
+                            )
+                            .pr(px(8.0))
+                            .child(caption("Traffic lights cleared"))
+                            .child(pressable(
+                                {
+                                    let hover = theme.glass_hover();
+                                    control_bar::bar_button(icons::MAGNIFER, 24.0, theme.text_muted)
+                                        .hover(move |s| s.bg(hover))
+                                },
+                                "titlebar-search",
+                                cx,
+                                |view, cx| view.press("Search", cx),
+                            )),
+                        ),
+                    )
+                    .child(
+                        frame(div()).child(
+                            titlebar::titlebar(
+                                "titlebar-plain",
+                                &self.titlebar_drag,
+                                false,
+                                window,
+                            )
+                            .px(px(8.0))
+                            .child(caption("A pane with no lights over it")),
+                        ),
+                    )
+                    .when_some(self.last_pressed.clone(), |page, label| {
+                        page.child(
+                            div()
+                                .text_size(px(12.5))
+                                .text_color(theme.text_muted)
+                                .child(SharedString::from(format!("pressed: {label}"))),
+                        )
+                    })
+                    .into_any_element()
+            }
 
             "split" => {
                 let hint = hint(&theme, "Drag the divider; it clamps at 15% either side.");
@@ -3327,7 +3478,7 @@ impl Render for Gallery {
         // that a single scroll of everything reads as a wall.
         let section =
             section_at(self.selected[self.tab]).unwrap_or(&TABS[self.tab].groups[0].sections[0]);
-        let body = self.section_body(section.key, cx);
+        let body = self.section_body(section.key, window, cx);
         let pane = div().relative().flex_1().min_h_0().map(|pane| {
             if TABS[self.tab].full_bleed {
                 // A pattern is a screen: it takes the pane whole and

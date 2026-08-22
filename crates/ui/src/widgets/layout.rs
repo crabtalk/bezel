@@ -1,10 +1,11 @@
-//! Organisation chrome — disclosure, collapsible header, split divider, tabs.
+//! Organisation chrome — disclosure, collapsible header, nav row, split
+//! divider, tabs.
 //!
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.collapsible_header(..)`, `theme.split_handle(..)`, `theme.tab(..)`.
 
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
-use theme::{Theme, ThemeExt};
+use theme::{Theme, ThemeExt, card_selected_bg, wash};
 
 /// The drag payload of a [`Layout::split_handle`]. Shipped from here so every
 /// split speaks the same type: `on_drag_move::<SplitDrag>` on one container
@@ -57,6 +58,73 @@ pub trait Layout: ThemeExt {
                     .text_color(theme.text)
                     .child(label.into()),
             )
+    }
+
+    /// A navigation row: leading icon, truncating label, and whatever the
+    /// caller appends — a count, a chevron, a control that shows on hover.
+    /// shadcn calls it `SidebarMenuButton`, MUI `ListItemButton`.
+    ///
+    /// The label is a parameter rather than a child because it carries the
+    /// truncation, and a caller that has to remember `min_w_0().flex_1()`
+    /// forgets it on the first long project name — which pushes the trailing
+    /// content off the row instead of shortening the label.
+    ///
+    /// `fade_key` must be unique app-wide and stable across frames. It is also
+    /// how a trailing control reveals itself on row hover: paint it with
+    /// [`motion::hover_blend`] on this same key, rather than adding an
+    /// `on_hover` of its own — gpui allows only one per element, and this row
+    /// has claimed it.
+    fn nav_row(
+        &self,
+        icon: Option<&'static str>,
+        label: impl Into<SharedString>,
+        selected: bool,
+        fade_key: impl Into<SharedString>,
+    ) -> Div {
+        let theme = self.theme();
+        let fade_key = fade_key.into();
+        // Selected is a flat wash; unselected fades. The tone is
+        // `popover::menu_row`'s and `tree::tree_row`'s, so a sidebar, a menu
+        // and a tree never show three different ideas of "this one".
+        let tint = if selected {
+            theme.text
+        } else {
+            motion::hover_blend(&fade_key, theme.text_muted, theme.text)
+        };
+        let mut row = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(8.0))
+            .w_full()
+            .px(px(8.0))
+            .py(px(6.0))
+            .rounded(px(Theme::CONTROL_RADIUS))
+            .text_size(px(13.0))
+            .text_color(tint)
+            .cursor_pointer();
+        if selected {
+            row = row.bg(card_selected_bg());
+        } else {
+            row = row.bg(motion::hover_blend(
+                &fade_key,
+                wash(0.0),
+                card_selected_bg(),
+            ));
+            row.interactivity()
+                .on_hover(motion::hover_listener(fade_key));
+        }
+        row.when_some(icon, |row, path| {
+            // The tint is set on the svg itself: gpui reads an svg's colour off
+            // that element's own style and paints nothing when it is unset.
+            row.child(
+                crate::icons::icon(path)
+                    .size(px(16.0))
+                    .flex_none()
+                    .text_color(tint),
+            )
+        })
+        .child(div().min_w_0().flex_1().truncate().child(label.into()))
     }
 
     /// The divider between two panes: a hairline centred in a grab strip, lit

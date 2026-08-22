@@ -32,6 +32,12 @@ impl Theme {
     pub const TITLEBAR_HEIGHT: f32 = 38.0;
     /// Downward shift of titlebar content within the bar.
     pub const TITLEBAR_TOP_PAD: f32 = 2.0;
+    /// Leading room the macOS traffic lights need where AppKit puts them —
+    /// zed's `TRAFFIC_LIGHT_PADDING` on the macOS 26 SDK (71.0 before it), and
+    /// the same 78 `../desktop` measured for its Tauri window. An app that
+    /// *moves* the lights with `TitlebarOptions::traffic_light_position` owns
+    /// this number too.
+    pub const TRAFFIC_LIGHT_INSET: f32 = if cfg!(target_os = "macos") { 78.0 } else { 0.0 };
     /// Reserved status strip under the content outlet (the reference `h-6`) — the
     /// WorkingIndicator row; reserving it keeps the composer from shifting.
     pub const STATUS_STRIP_HEIGHT: f32 = 24.0;
