@@ -5,22 +5,14 @@
 	import Ascii from '$lib/Ascii.svelte';
 	import Brand from '$lib/Brand.svelte';
 	import Gallery from '$lib/Gallery.svelte';
-	import { catalog, docsHome, repo, sections, site } from '$lib/catalog.js';
+	import { docsHome, repo } from '$lib/catalog.js';
 
 	let expanded = $state(false);
 
-	const shareText = 'bezel — a component library for gpui, running in your browser';
-	const shareHref = `https://x.com/intent/post?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(site)}`;
+	const author = 'https://x.com/tianyi_gc';
 
 	// Search only — the page itself does not repeat it.
 	const description = 'Design tokens, motion, and materials for native Rust apps, built on gpui.';
-
-	// Derived from the catalog rather than written down, so a number on the
-	// landing page cannot drift from the library it counts.
-	const componentCount = catalog
-		.filter((tab) => tab.title === 'Components')
-		.flatMap((tab) => tab.groups)
-		.flatMap((group) => group.sections).length;
 
 	// What the library is, in its own terms — README and ARCHITECTURE already
 	// argue these. Reasons to use it, not a list of what is in the box.
@@ -89,6 +81,11 @@
 				{@html Copy}{@html Check}
 			</button>
 		</div>
+
+		<p class="facts">
+			<span><strong>MIT</strong> licensed</span>
+			<span>Built on <strong>gpui</strong></span>
+		</p>
 	</div>
 
 	<div class="act">
@@ -116,10 +113,11 @@
 		</div>
 		<iframe title="The bezel gallery, running" src="{base}/gallery/"></iframe>
 	</div>
-	<p class="facts">
-		<span><strong>{componentCount}</strong> components</span>
-		<span><strong>MIT</strong> licensed</span>
-		<span>Built on <strong>gpui</strong></span>
+	<!-- The frame above is the claim, and it is wasm in an iframe — better to say
+	     so here than to let a visitor judge gpui by it. -->
+	<p class="note">
+		Embedded as wasm — the desktop build is where it is at its best.
+		<code>cargo run -p gallery</code>
 	</p>
 </section>
 
@@ -141,7 +139,7 @@
 	</nav>
 	<nav class="right">
 		<a href={repo} aria-label="bezel on GitHub"><Brand icon={siGithub} size={15} /></a>
-		<a href={shareHref} target="_blank" rel="noreferrer" aria-label="Share bezel on X">
+		<a href={author} target="_blank" rel="noreferrer" aria-label="The author on X">
 			<Brand icon={siX} size={14} />
 		</a>
 	</nav>
@@ -313,12 +311,18 @@
 		background: var(--bg);
 	}
 
+	.note {
+		margin: 20px 0 0;
+		color: var(--faint);
+		font-size: 13px;
+		text-align: center;
+	}
+
 	.facts {
 		display: flex;
-		justify-content: center;
 		gap: 28px;
 		flex-wrap: wrap;
-		margin: 20px 0 0;
+		margin: 14px 0 0;
 		color: var(--faint);
 		font-size: 14px;
 	}

@@ -1,9 +1,9 @@
 ---
 title: Document
-description: A reader with an outline, an editor and a source view — the screen the `markdown` crate exists for, and the round trip you can see.
+description: A reader with an outline and a source view — the screen the `markdown` crate exists for, and the round trip you can see.
 ---
 
-Nothing on this page is library code. The reader is an outline, a scroll area and a segmented toggle; the calls into the library are `markdown::render` and `markdown::Editor`, the latter behind the crate's `editor` feature.
+Nothing on this page is library code. The reader is an outline, a scroll area and a segmented toggle; the calls into the library are `markdown::render` and `markdown::serialize`. Typing into a document is the `editor` crate, one page along.
 
 **The outline is a `filter`, not a walk.** A `Doc` is a flat list of blocks carrying their own indent, so the table of contents is one pass picking out headings:
 
