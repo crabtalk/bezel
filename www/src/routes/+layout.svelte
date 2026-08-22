@@ -68,6 +68,10 @@
 	});
 </script>
 
+<svelte:head>
+	<link rel="alternate" type="text/plain" href="{base}/llms.txt" title="Documentation for LLMs" />
+</svelte:head>
+
 <header>
 	<a class="wordmark" href="{base}/">bezel</a>
 

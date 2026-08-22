@@ -79,5 +79,11 @@ export const repo = 'https://github.com/crabtalk/bezel';
 
 export const repoApi = repo.replace('https://github.com/', 'https://api.github.com/repos/');
 
+/** Where a section's implementation lives, for a reader who wants the real thing. */
+export const sourceUrl = (section) => `${repo}/blob/main/${section.source}`;
+
+/** The library in one line — search results, share cards, and the agent surface. */
+export const tagline = 'Design tokens, motion, and materials for native Rust apps, built on gpui.';
+
 /** Canonical URL, used for share links. Swap to bezel.gallery once its DNS is on. */
 export const site = 'https://bezel.pages.dev';

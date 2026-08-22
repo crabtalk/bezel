@@ -24,5 +24,8 @@ const gallery = {
 };
 
 export default {
-	plugins: [gallery, sveltekit()]
+	plugins: [gallery, sveltekit()],
+	// The README is served as itself and heads `llms-full.txt`, and it lives a
+	// directory above: bun.lock is in here, so Vite roots the dev server at www.
+	server: { fs: { allow: ['..'] } }
 };

@@ -1,7 +1,7 @@
 <script>
 	import { base } from '$app/paths';
 	import Gallery from '$lib/Gallery.svelte';
-	import { repo } from '$lib/catalog.js';
+	import { sourceUrl } from '$lib/catalog.js';
 
 	let { data } = $props();
 
@@ -13,6 +13,7 @@
 <svelte:head>
 	<title>{data.section.title} — bezel, a component library for gpui</title>
 	{#if data.description}<meta name="description" content={data.description} />{/if}
+	<link rel="alternate" type="text/markdown" href="{base}/docs/{data.section.key}.md" />
 </svelte:head>
 
 <article>
@@ -31,8 +32,10 @@
 
 	<p class="actions">
 		<button class="button" onclick={() => (expanded = true)}>Expand</button>
+		<!-- How you hand this page to an agent: the same prose, as its source. -->
+		<a class="markdown" href="{base}/docs/{data.section.key}.md">Markdown</a>
 		{#if data.section.source}
-			<a class="source" href="{repo}/blob/main/{data.section.source}">
+			<a class="source" href={sourceUrl(data.section)}>
 				<code>{data.section.source}</code>
 			</a>
 		{/if}
@@ -94,6 +97,11 @@
 	.button:hover {
 		border-color: var(--line-strong);
 		text-decoration: none;
+	}
+
+	.markdown {
+		font-size: 14px;
+		color: var(--muted);
 	}
 
 	.source code {

@@ -5,14 +5,11 @@
 	import Ascii from '$lib/Ascii.svelte';
 	import Brand from '$lib/Brand.svelte';
 	import Gallery from '$lib/Gallery.svelte';
-	import { docsHome, repo } from '$lib/catalog.js';
+	import { docsHome, repo, tagline as description } from '$lib/catalog.js';
 
 	let expanded = $state(false);
 
 	const author = 'https://x.com/tianyi_gc';
-
-	// Search only — the page itself does not repeat it.
-	const description = 'Design tokens, motion, and materials for native Rust apps, built on gpui.';
 
 	// What the library is, in its own terms — README and ARCHITECTURE already
 	// argue these. Reasons to use it, not a list of what is in the box.
