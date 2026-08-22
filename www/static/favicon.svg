@@ -1,4 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-	<rect width="32" height="32" rx="8" fill="#0b0c0e" />
-	<rect x="6.5" y="6.5" width="19" height="19" rx="5" fill="none" stroke="#7aa2f7" stroke-width="2.5" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+	<defs>
+		<linearGradient id="berm" x1="0" y1="156" x2="0" y2="356" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#ededed" />
+			<stop offset="1" stop-color="#8c8c8c" />
+		</linearGradient>
+	</defs>
+	<rect width="512" height="512" rx="112" fill="#000" />
+	<path
+		d="M56 356 A200 200 0 0 1 456 356 L369.86 356 A98.08 98.08 0 0 1 299.38 301.57 A106.56 106.56 0 0 0 96.87 356 Z"
+		fill="url(#berm)"
+	/>
 </svg>
