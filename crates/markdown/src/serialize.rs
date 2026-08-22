@@ -145,7 +145,7 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
         BlockKind::Image { url, alt } => {
             out.push_str(&pad);
             out.push_str("![");
-            escape_inline(out, alt);
+            escape_inline(out, &alt.text);
             out.push_str("](");
             out.push_str(url);
             out.push(')');

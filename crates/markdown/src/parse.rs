@@ -187,6 +187,24 @@ pub fn is_url(source: &str) -> bool {
     matches!(urls(source).as_slice(), [only] if *only == (0..source.len()))
 }
 
+/// Whether a URL or a path names a picture, by the only thing either says
+/// about itself without being fetched — its extension, against what gpui can
+/// decode.
+///
+/// What decides whether a paste or a drop is worth offering as an image. A
+/// server is free to disagree; the answer is a guess about a name, and the
+/// alternative is a menu row that paints a broken box.
+pub fn is_image(source: &str) -> bool {
+    let path = source.split(['?', '#']).next().unwrap_or(source);
+    let Some((_, extension)) = path.rsplit_once('.') else {
+        return false;
+    };
+    matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" | "tif" | "tiff" | "avif"
+    )
+}
+
 /// How much of a run the URL is. Closing punctuation belongs to the sentence,
 /// and a bracket only belongs to the URL when the URL opened it.
 fn trim_url(run: &str) -> usize {
@@ -452,7 +470,7 @@ impl ParseState {
             && range.start == 0
             && range.end == text.text.len()
         {
-            let (url, alt) = (url.clone(), text.text);
+            let (url, alt) = (url.clone(), Text::plain(text.text));
             self.flush_marker();
             let indent = self.indent();
             self.push(BlockKind::Image { url, alt }, indent);

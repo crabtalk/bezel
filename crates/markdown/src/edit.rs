@@ -356,13 +356,13 @@ impl Doc {
 
     /// Backspace at the start of a block.
     ///
-    /// Notion's chain, in order: an indented block outdents, a block wearing
-    /// syntax around its text gives the syntax up, and only a plain block at
-    /// the left margin merges into the one above it. When that one holds no
-    /// body there is nothing to merge into, so the caret steps into a fence or
-    /// a table, and a rule or an image — which no caret can enter, and so no
-    /// other key can remove — goes. Returns where the caret landed, and `None`
-    /// when nothing moved.
+    /// Notion's chain, in order: an indented block outdents, an image with
+    /// nothing written under it goes, a block wearing syntax around its text
+    /// gives the syntax up, and only a plain block at the left margin merges
+    /// into the one above it. When that one holds no body there is nothing to
+    /// merge into, so the caret steps into a fence or a table, and a rule —
+    /// which no caret can enter, and so no other key can remove — goes.
+    /// Returns where the caret landed, and `None` when nothing moved.
     ///
     /// A table cell is not a position that can swallow its neighbour, so
     /// backspace at the start of one does nothing rather than eating the table.
@@ -374,6 +374,22 @@ impl Doc {
         if block.indent > 0 {
             self.outdent(at.block);
             return Some(Cursor::new(at.block, at.part, 0));
+        }
+        // A caption is the only handle a caret has on an image, so with the
+        // caption empty there is nothing left to take but the picture.
+        if at.part == Part::Caption && block.text_at(Part::Caption)?.is_empty() {
+            let previous = at.block.checked_sub(1);
+            self.blocks.remove(at.block);
+            self.repair();
+            let Some(previous) = previous else {
+                return Some(Cursor::default().clamp(self));
+            };
+            let part = self.blocks[previous]
+                .parts()
+                .last()
+                .copied()
+                .unwrap_or_default();
+            return Some(Cursor::new(previous, part, 0).end(self));
         }
         // Every prefix [`shortcut`] reads is chrome around text; the first
         // backspace takes the chrome and leaves the text where it was, so what
@@ -427,8 +443,8 @@ impl Doc {
         let Some(block) = self.blocks.get_mut(at.block) else {
             return;
         };
-        let one_line =
-            matches!(block.kind, BlockKind::Heading { .. }) || matches!(at.part, Part::Cell { .. });
+        let one_line = matches!(block.kind, BlockKind::Heading { .. })
+            || matches!(at.part, Part::Cell { .. } | Part::Caption);
         let Some(text) = block.text_at_mut(at.part) else {
             return;
         };
@@ -526,18 +542,19 @@ impl Doc {
             // A bookmark's text is the link it shows, so turning one back into
             // prose hands the URL over instead of an empty block.
             BlockKind::Bookmark { url, .. } => Text::link(url),
+            BlockKind::Image { alt, .. } => alt.clone(),
             _ => block.text_at(Part::Body).cloned().unwrap_or_default(),
         };
         block.kind = kind;
         match block.text_at_mut(Part::Body) {
             Some(body) => *body = text,
-            // Code is the one kind whose text is not a body, and the one the
+            // The two kinds whose text is not a body. Code is also the one the
             // marks cannot come with.
-            None => {
-                if let BlockKind::Code { code, .. } = &mut block.kind {
-                    *code = Text::plain(text.text);
-                }
-            }
+            None => match &mut block.kind {
+                BlockKind::Code { code, .. } => *code = Text::plain(text.text),
+                BlockKind::Image { alt, .. } => *alt = text,
+                _ => {}
+            },
         }
         self.repair();
     }
@@ -681,8 +698,9 @@ impl Doc {
         let remove = self.covered_by(selection, &mark);
 
         for (at, range) in spans {
-            // Code is literal to its closing fence; nothing in it is markup.
-            if at.part == Part::Code {
+            // Code is literal to its closing fence and a caption has no room
+            // for markup between its brackets; nothing in either is markup.
+            if matches!(at.part, Part::Code | Part::Caption) {
                 continue;
             }
             if remove == self.carries(&at, &range, &mark) {
@@ -698,9 +716,9 @@ impl Doc {
     pub fn covered_by(&self, selection: Selection, mark: &Mark) -> bool {
         let spans = self.spans(selection);
         !spans.is_empty()
-            && spans
-                .iter()
-                .all(|(at, range)| at.part == Part::Code || self.carries(at, range, mark))
+            && spans.iter().all(|(at, range)| {
+                matches!(at.part, Part::Code | Part::Caption) || self.carries(at, range, mark)
+            })
     }
 
     fn carries(&self, at: &Cursor, range: &Range<usize>, mark: &Mark) -> bool {
@@ -801,8 +819,9 @@ impl Doc {
         }
         let (start, end) = selection.clamp(self).ordered();
 
-        // Code is literal, so marks arriving from a paste have nowhere to go.
-        let text = if start.part == Part::Code {
+        // Code is literal and a caption is written between brackets, so marks
+        // arriving from a paste have nowhere to go in either.
+        let text = if matches!(start.part, Part::Code | Part::Caption) {
             Text::plain(text.text)
         } else {
             text
@@ -921,10 +940,10 @@ impl Doc {
                         crate::parse::collapse_to_one_line(cell);
                     }
                 }
-                BlockKind::Code { .. }
-                | BlockKind::Image { .. }
-                | BlockKind::Bookmark { .. }
-                | BlockKind::Rule => {}
+                // A caption lives between brackets, where a line break has no
+                // spelling at all.
+                BlockKind::Image { alt, .. } => crate::parse::collapse_to_one_line(alt),
+                BlockKind::Code { .. } | BlockKind::Bookmark { .. } | BlockKind::Rule => {}
             }
         }
         // A blank paragraph is the empty line an editor leaves behind, and

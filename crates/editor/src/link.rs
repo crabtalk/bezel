@@ -14,6 +14,7 @@ pub enum Choice {
     Chip,
     Bookmark,
     Embed,
+    Image,
 }
 
 impl Choice {
@@ -23,6 +24,7 @@ impl Choice {
             Self::Chip => "Create chip",
             Self::Bookmark => "Create bookmark",
             Self::Embed => "Create embed",
+            Self::Image => "Create image",
         }
     }
 }
@@ -38,7 +40,9 @@ pub struct Paste {
     /// mark over shaped text anywhere else.
     pub alone: bool,
     /// What this spot can hold. A card is a block, so it is offered only where
-    /// the URL has one; a chip fits either way.
+    /// the URL has one; a chip fits either way. A picture is offered where a
+    /// card is, and only for a URL whose name says it is one — a row that
+    /// paints a broken box is worse than a row that is not there.
     pub rows: Vec<Choice>,
     pub active: usize,
 }
@@ -48,6 +52,9 @@ impl Paste {
         let mut rows = vec![Choice::Dismiss, Choice::Chip];
         if alone {
             rows.extend([Choice::Bookmark, Choice::Embed]);
+            if markdown::is_image(&url) {
+                rows.push(Choice::Image);
+            }
         }
         Self {
             at,

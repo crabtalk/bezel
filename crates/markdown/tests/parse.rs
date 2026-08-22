@@ -111,7 +111,7 @@ fn a_lone_image_is_a_block() {
             0,
             BlockKind::Image {
                 url: "media://x".into(),
-                alt: "alt".into()
+                alt: Text::plain("alt")
             }
         )]
     );
@@ -122,7 +122,7 @@ fn a_lone_image_is_a_block() {
             0,
             BlockKind::Image {
                 url: "media://x".into(),
-                alt: String::new()
+                alt: Text::default()
             }
         )]
     );

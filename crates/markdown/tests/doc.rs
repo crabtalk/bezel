@@ -39,9 +39,9 @@ fn every_kind_declares_the_parts_a_caret_can_enter() {
         (
             BlockKind::Image {
                 url: String::new(),
-                alt: String::new(),
+                alt: Text::default(),
             },
-            Vec::new(),
+            vec![Part::Caption],
         ),
         (BlockKind::Rule, Vec::new()),
         (

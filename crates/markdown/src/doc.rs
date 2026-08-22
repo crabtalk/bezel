@@ -73,8 +73,8 @@ impl Block {
     }
 
     /// One of the block's editable texts. `None` when the block has no such
-    /// part — every block is atomic to some [`Part`], and images, bookmarks and
-    /// rules are atomic to all of them.
+    /// part — every block is atomic to some [`Part`], and bookmarks and rules
+    /// are atomic to all of them.
     pub fn text_at(&self, part: Part) -> Option<&Text> {
         match (&self.kind, part) {
             (
@@ -87,6 +87,7 @@ impl Block {
                 Part::Body,
             ) => Some(text),
             (BlockKind::Code { code, .. }, Part::Code) => Some(code),
+            (BlockKind::Image { alt, .. }, Part::Caption) => Some(alt),
             (BlockKind::Table { header, .. }, Part::Cell { row: 0, column }) => header.get(column),
             (BlockKind::Table { rows, .. }, Part::Cell { row, column }) => {
                 rows.get(row - 1)?.get(column)
@@ -107,6 +108,7 @@ impl Block {
                 Part::Body,
             ) => Some(text),
             (BlockKind::Code { code, .. }, Part::Code) => Some(code),
+            (BlockKind::Image { alt, .. }, Part::Caption) => Some(alt),
             (BlockKind::Table { header, .. }, Part::Cell { row: 0, column }) => {
                 header.get_mut(column)
             }
@@ -127,6 +129,7 @@ impl Block {
             | BlockKind::Task { .. }
             | BlockKind::Quote(_) => vec![Part::Body],
             BlockKind::Code { .. } => vec![Part::Code],
+            BlockKind::Image { .. } => vec![Part::Caption],
             BlockKind::Table { header, rows, .. } => {
                 let mut parts = Vec::new();
                 if !header.is_empty() {
@@ -140,8 +143,18 @@ impl Block {
                 }
                 parts
             }
-            BlockKind::Image { .. } | BlockKind::Bookmark { .. } | BlockKind::Rule => Vec::new(),
+            BlockKind::Bookmark { .. } | BlockKind::Rule => Vec::new(),
         }
+    }
+
+    /// Whether what the block paints past its parts holds no caret — a picture,
+    /// a card, a line. What a selection has to wash for itself, since there is
+    /// no text under it to carry the highlight.
+    pub fn opaque(&self) -> bool {
+        matches!(
+            self.kind,
+            BlockKind::Image { .. } | BlockKind::Bookmark { .. } | BlockKind::Rule
+        )
     }
 }
 
@@ -157,6 +170,8 @@ pub enum Part {
     #[default]
     Body,
     Code,
+    /// An image's caption, which is also its alt text.
+    Caption,
     /// Row 0 is the header row; row `n` is `rows[n - 1]`.
     Cell {
         row: usize,
@@ -194,9 +209,12 @@ pub enum BlockKind {
         language: Option<String>,
         code: Text,
     },
+    /// The caption is the alt text — markdown has one slot, and a reader that
+    /// cannot see the picture reads the same words. Like [`BlockKind::Code`]'s,
+    /// its marks are unreachable rather than forbidden.
     Image {
         url: String,
-        alt: String,
+        alt: Text,
     },
     /// A link with a block to itself, painted richly. Atomic on purpose:
     /// everything it shows past the URL comes from [`crate::preview`], so there

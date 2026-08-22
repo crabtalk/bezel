@@ -68,6 +68,16 @@ const CARD_TEXT_SIZE: f32 = 12.0;
 const CARD_LINE_HEIGHT: f32 = 17.0;
 const CARD_ICON: f32 = 16.0;
 const CARD_COVER: f32 = 44.0;
+/// Image metrics. The caption is the smallest type in the document, since it
+/// is read after the picture rather than instead of it.
+const IMAGE_RADIUS: f32 = 8.0;
+const IMAGE_EMPTY_HEIGHT: f32 = 52.0;
+const CAPTION_TEXT_SIZE: f32 = 11.5;
+const CAPTION_LINE_HEIGHT: f32 = 17.0;
+const CAPTION_GAP: f32 = 4.0;
+/// What an image with no URL yet says, and what its caption says while empty.
+const IMAGE_EMPTY: &str = "Add an image";
+const CAPTION_HINT: &str = "Write a caption";
 /// Table metrics. The design is frameless: hairlines between rows are the only
 /// chrome — no outer box, no header fill, no rounding.
 const TABLE_CELL_PADDING: f32 = 12.0;
@@ -356,8 +366,9 @@ impl<'a> Overlay<'a> {
         (from < to).then_some(from..to.min(len))
     }
 
-    /// Whether a block a caret cannot enter — a rule, an image — falls inside
-    /// the selection, and so should show that it is going to be taken.
+    /// Whether a block painting something a caret cannot enter — a rule, a
+    /// picture — falls inside the selection, and so should show that it is
+    /// going to be taken.
     fn covers_block(&self) -> bool {
         let Some(selection) = self.selection.filter(|s| !s.is_collapsed()) else {
             return false;
@@ -438,10 +449,10 @@ pub fn render_with_selection(
                 .pl(px(block.indent as f32 * INDENT_WIDTH))
                 .relative()
                 .children(frame)
-                // A block no caret can enter still has to show it is inside the
+                // What a caret cannot enter still has to show it is inside the
                 // selection, or a rule between two paragraphs looks untouched
                 // right up until it disappears.
-                .when(overlay.covers_block() && block.parts().is_empty(), |el| {
+                .when(overlay.covers_block() && block.opaque(), |el| {
                     el.rounded(px(4.0)).bg(theme.selection)
                 })
                 .child(block_element(block, overlay, &theme, window, cx)),
@@ -524,7 +535,7 @@ fn block_element(
             window,
             cx,
         ),
-        BlockKind::Image { url, alt } => image(url, alt, theme),
+        BlockKind::Image { url, alt } => image(url, alt, overlay, theme),
         BlockKind::Bookmark { url, form } => bookmark(overlay.block, url, *form, theme, cx),
         BlockKind::Table {
             align,
@@ -1143,26 +1154,59 @@ fn copy_button(
         .into_any_element()
 }
 
-fn image(url: &str, alt: &str, theme: &Theme) -> AnyElement {
+/// A picture and the caption under it, which is the alt text a caret can reach.
+///
+/// The caption row appears when there is something to read or somewhere to
+/// type, so a document being read is not a column of pictures each trailing a
+/// blank line. With no URL yet the picture is a dashed row instead — the shape
+/// the slash menu makes, waiting to be told what to show.
+fn image(url: &str, alt: &Text, overlay: Overlay, theme: &Theme) -> AnyElement {
+    let hint = SharedString::new_static(CAPTION_HINT);
+    let overlay = Overlay {
+        placeholder: Some(&hint),
+        ..overlay.at(Part::Caption)
+    };
+    let picture = if url.is_empty() {
+        div()
+            .h(px(IMAGE_EMPTY_HEIGHT))
+            .flex()
+            .items_center()
+            .px(px(CARD_PADDING))
+            .rounded(px(IMAGE_RADIUS))
+            .border_1()
+            .border_dashed()
+            .border_color(theme.border)
+            .text_size(px(TEXT_SIZE))
+            .text_color(theme.text_muted)
+            .child(IMAGE_EMPTY)
+    } else {
+        div()
+            .rounded(px(IMAGE_RADIUS))
+            .overflow_hidden()
+            .border_1()
+            .border_color(theme.border)
+            // A URL is fetched; anything else is a file, and gpui reads one
+            // only from a `PathBuf` — handed a string it looks for an asset
+            // built into the binary and paints nothing.
+            .child(match url.contains("://") {
+                true => img(SharedString::from(url.to_string())).max_w_full(),
+                false => img(std::path::PathBuf::from(url)).max_w_full(),
+            })
+    };
     div()
         .flex()
         .flex_col()
-        .gap(px(4.0))
-        .child(
-            div()
-                .rounded(px(8.0))
-                .overflow_hidden()
-                .border_1()
-                .border_color(theme.border)
-                .child(img(SharedString::from(url.to_string())).max_w_full()),
-        )
-        .when(!alt.is_empty(), |el| {
-            el.child(
-                div()
-                    .text_size(px(11.5))
-                    .text_color(theme.text_muted)
-                    .child(SharedString::from(alt.to_string())),
-            )
+        .gap(px(CAPTION_GAP))
+        .child(picture)
+        .when(!alt.is_empty() || overlay.caret().is_some(), |el| {
+            el.child(text_element(
+                alt,
+                CAPTION_TEXT_SIZE,
+                CAPTION_LINE_HEIGHT,
+                FontWeight::NORMAL,
+                overlay,
+                theme,
+            ))
         })
         .into_any_element()
 }

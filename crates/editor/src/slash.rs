@@ -15,9 +15,10 @@ use markdown::{Align, BlockKind, Cursor, Text};
 
 /// Every block the menu offers, and what each makes.
 ///
-/// An image and a bookmark are deliberately absent: both need a URL, and a
-/// block that paints nothing until one arrives is worse than one the menu does
-/// not offer. A pasted URL is where a bookmark comes from.
+/// A bookmark is deliberately absent: it needs a URL, and a card with none is a
+/// blank the reader cannot fill. A pasted URL is where a bookmark comes from.
+/// An image is here because it *can* wait — with no URL it paints the row that
+/// asks for one.
 pub fn items() -> Vec<(SharedString, BlockKind)> {
     let text = Text::default;
     vec![
@@ -72,6 +73,13 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
                 align: vec![Align::Left; 2],
                 header: vec![text(), text()],
                 rows: vec![vec![text(), text()]],
+            },
+        ),
+        (
+            "Image".into(),
+            BlockKind::Image {
+                url: String::new(),
+                alt: text(),
             },
         ),
         ("Divider".into(), BlockKind::Rule),

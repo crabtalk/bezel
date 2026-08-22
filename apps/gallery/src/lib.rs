@@ -53,6 +53,7 @@ actions!(
 pub fn init(cx: &mut App) {
     markdown::set_highlighter(cx, highlight::spans, highlight::languages());
     markdown::set_link_preview(cx, preview::of);
+    editor::set_image_store(cx, store::of);
     input::init(cx);
     editor::init(cx);
     palette::init(cx);
@@ -79,6 +80,7 @@ pub mod inspector;
 
 pub mod patterns;
 pub mod preview;
+pub mod store;
 
 pub const LANGUAGES: [&str; 8] = [
     "Rust",

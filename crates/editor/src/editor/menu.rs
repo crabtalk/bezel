@@ -46,7 +46,7 @@ impl Editor {
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {
-                        this.handle_pressed = true;
+                        this.press_claimed = true;
                         this.lifted = Some((ix, ix));
                         // The menu belongs to the release. Opened here it would
                         // occlude the very moves a drag downwards is made of,
@@ -60,9 +60,15 @@ impl Editor {
         )
     }
 
-    /// The line showing where a lifted block would land.
+    /// The line showing where a lifted block — or a file dragged in from
+    /// outside — would land.
     pub(super) fn drop_indicator(&self, theme: &Theme) -> Option<AnyElement> {
-        let (from, to) = self.lifted.filter(|(from, to)| from != to)?;
+        let (from, to) = match self.lifted.filter(|(from, to)| from != to) {
+            Some(lifted) => lifted,
+            // A file always lands under the block it is over, so it is a drag
+            // that only ever moves downwards.
+            None => self.dropping.map(|to| (to, to + 1))?,
+        };
         let bounds = self.layouts.block_bounds(to)?;
         // Above the target when moving up, below it when moving down — which
         // is where the block actually ends up.

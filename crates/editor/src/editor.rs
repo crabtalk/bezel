@@ -26,6 +26,7 @@ use crate::{
     slash::Slash,
 };
 
+pub(crate) mod image;
 mod input;
 mod keys;
 pub(crate) mod menu;
@@ -92,6 +93,10 @@ pub struct Editor {
     slash: Option<Slash>,
     /// The open paste menu, if a URL landed in a block of its own.
     pasted: Option<link::Paste>,
+    /// The open prompt, if an image is waiting to be told where to look.
+    url_prompt: Option<image::Prompt>,
+    /// The block a file being dragged over the document would land after.
+    dropping: Option<usize>,
     /// The block the pointer is over, which is the only one showing a handle.
     hovered: Option<usize>,
     /// A block being dragged by its handle, and where it would land.
@@ -100,8 +105,9 @@ pub struct Editor {
     block_menu: Option<(usize, gpui::Point<gpui::Pixels>)>,
     /// The language menu a fence's header opened, and the block it belongs to.
     language_menu: Option<(usize, gpui::Point<gpui::Pixels>)>,
-    /// Set by the handle's press so the editor's own press does not undo it.
-    handle_pressed: bool,
+    /// Set by a floating layer's press — the gutter handle, the URL prompt —
+    /// so the editor's own press does not undo what that press just did.
+    press_claimed: bool,
     /// Where the editor's own box starts, so a position recorded in window
     /// coordinates can be placed inside it.
     origin: gpui::Point<gpui::Pixels>,
@@ -141,11 +147,13 @@ impl Editor {
             stored: Vec::new(),
             slash: None,
             pasted: None,
+            url_prompt: None,
+            dropping: None,
             hovered: None,
             lifted: None,
             block_menu: None,
             language_menu: None,
-            handle_pressed: false,
+            press_claimed: false,
             origin: gpui::Point::default(),
             dragging: false,
             over_text: false,
@@ -445,7 +453,9 @@ impl Editor {
                     .next_back()
                     .is_none_or(char::is_whitespace)
             });
-            if let Some(slash) = opened.filter(|_| starts_word && at.part != Part::Code) {
+            // Only in a body: a fence holds its slash literally, and a caption
+            // belongs to a block that is already what it is.
+            if let Some(slash) = opened.filter(|_| starts_word && at.part == Part::Body) {
                 self.slash = Some(Slash::open(Cursor {
                     offset: slash,
                     ..at
@@ -498,8 +508,9 @@ impl Editor {
     /// keystroke reach it the same way.
     fn apply_inline_rule(&mut self) {
         let at = self.cursor();
-        // Code is literal to its closing fence.
-        if at.part == Part::Code {
+        // Code is literal to its closing fence, and a caption holds no mark a
+        // `![...]` could spell.
+        if matches!(at.part, Part::Code | Part::Caption) {
             return;
         }
         let Some(text) = self
@@ -659,7 +670,7 @@ impl Editor {
 
     /// Enter. In a body it splits the block; in a code fence it is a newline,
     /// which is the whole reason a fence is worth typing into.
-    fn split_block(&mut self, _: &SplitBlock, _: &mut Window, cx: &mut Context<Self>) {
+    fn split_block(&mut self, _: &SplitBlock, window: &mut Window, cx: &mut Context<Self>) {
         // A menu owns Enter while it is open, or picking a block would also
         // split the one it is turning.
         if let Some(choice) = self.pasted.as_ref().map(link::Paste::choice) {
@@ -674,7 +685,20 @@ impl Editor {
             // A cell is one line by definition; Enter has nowhere to put a
             // break, so it does nothing rather than something surprising.
             Part::Cell { .. } => return,
-            Part::Body => {}
+            // An image with nothing to show yet is missing one thing, so Enter
+            // asks for it rather than carrying on past a blank.
+            Part::Caption
+                if matches!(
+                    self.doc.blocks.get(at.block).map(|block| &block.kind),
+                    Some(BlockKind::Image { url, .. }) if url.is_empty()
+                ) =>
+            {
+                return self.prompt_for_url(at.block, window, cx);
+            }
+            // A caption is one line too, but the block it belongs to is the
+            // end of something — so Enter carries on underneath the picture,
+            // which is [`Doc::split`]'s answer for a block with no body.
+            Part::Caption | Part::Body => {}
         }
         self.edit(EditKind::Structure, cx, |this| {
             if !this.selection.is_collapsed() {
@@ -744,7 +768,19 @@ impl Editor {
     /// Markdown in, at the caret. A lone paragraph goes in as inline text with
     /// its marks; anything else arrives as blocks.
     fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(source) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+        let Some(item) = cx.read_from_clipboard() else {
+            return;
+        };
+        // A screenshot before its text, because a clipboard carrying both is
+        // carrying a file name for the picture — which is not the picture.
+        for entry in item.entries() {
+            if let gpui::ClipboardEntry::Image(image) = entry
+                && self.paste_image(image, cx)
+            {
+                return;
+            }
+        }
+        let Some(source) = item.text() else {
             return;
         };
         let url = source.trim();
@@ -774,24 +810,28 @@ impl Editor {
             let head = this.doc.replace(this.selection, Text::link(&url));
             this.selection = Selection::at(head.clamp(&this.doc));
         });
-        if at.part != Part::Code {
+        // A fence holds its URL literally and a caption cannot spell a mark, so
+        // neither has a richer form to offer.
+        if !matches!(at.part, Part::Code | Part::Caption) {
             self.pasted = Some(link::Paste::open(at, url, alone));
             cx.notify();
         }
     }
 
-    /// Answer the paste menu: leave the link, or turn its block into a card.
+    /// Answer the paste menu: leave the link, or turn its block into a card or
+    /// the picture it points at.
     pub(super) fn confirm_paste(&mut self, choice: Choice, cx: &mut Context<Self>) {
         let Some(pasted) = self.pasted.take() else {
             return;
         };
         let ix = pasted.at.block;
+        let card = |url, form| BlockKind::Bookmark { url, form };
         match choice {
             Choice::Dismiss => cx.notify(),
             // A chip with a line to itself is a block, which is what gives it
             // room for a favicon; inside a sentence it is a mark over the text
             // that is already there, and only the spelling changes.
-            Choice::Chip if pasted.alone => self.turn_into(ix, pasted.url, Form::Chip, cx),
+            Choice::Chip if pasted.alone => self.turn_into(ix, card(pasted.url, Form::Chip), cx),
             Choice::Chip => self.edit(EditKind::Structure, cx, |this| {
                 let end = Cursor {
                     offset: pasted.at.offset + pasted.url.len(),
@@ -810,26 +850,48 @@ impl Editor {
                 let head = this.doc.replace(Selection::new(pasted.at, end), text);
                 this.selection = Selection::at(head.clamp(&this.doc));
             }),
-            Choice::Bookmark => self.turn_into(ix, pasted.url, Form::Auto, cx),
-            Choice::Embed => self.turn_into(ix, pasted.url, Form::Embed, cx),
+            Choice::Bookmark => self.turn_into(ix, card(pasted.url, Form::Auto), cx),
+            Choice::Embed => self.turn_into(ix, card(pasted.url, Form::Embed), cx),
+            Choice::Image => self.turn_into(
+                ix,
+                BlockKind::Image {
+                    url: pasted.url,
+                    alt: Text::default(),
+                },
+                cx,
+            ),
         }
     }
 
-    /// Give a block over to the link it holds.
+    /// Give a block over to the link it holds — a card, or the picture it
+    /// points at.
     ///
     /// One step, not two: turning the block and giving the caret somewhere to
     /// go are one gesture, and undo has to agree.
-    fn turn_into(&mut self, ix: usize, url: String, form: Form, cx: &mut Context<Self>) {
+    fn turn_into(&mut self, ix: usize, kind: BlockKind, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
-            this.doc.set_kind(ix, BlockKind::Bookmark { url, form });
-            // A block like this holds no caret, so the caret carries on in the
-            // one after it — a fresh one when it ends the document.
-            if this.doc.blocks.len() <= ix + 1 {
-                this.doc
-                    .blocks
-                    .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
-            }
-            this.selection = Selection::at(Cursor::new(ix + 1, Part::Body, 0).clamp(&this.doc));
+            // The URL is the block's whole text and the new block shows it
+            // already, so [`Doc::set_kind`] is given nothing to carry across —
+            // otherwise a picture prints its own URL as its caption.
+            this.doc.edit_at(Cursor::new(ix, Part::Body, 0), |text| {
+                *text = Text::default()
+            });
+            this.doc.set_kind(ix, kind);
+            // A caret goes where the block admits one, and otherwise carries on
+            // in the block after it — a fresh one when it ends the document.
+            let part = this.doc.blocks[ix].parts().first().copied();
+            let at = match part {
+                Some(part) => Cursor::new(ix, part, 0),
+                None => {
+                    if this.doc.blocks.len() <= ix + 1 {
+                        this.doc
+                            .blocks
+                            .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
+                    }
+                    Cursor::new(ix + 1, Part::Body, 0)
+                }
+            };
+            this.selection = Selection::at(at.clamp(&this.doc));
         });
     }
 
@@ -897,9 +959,9 @@ impl Editor {
         });
     }
     /// The paragraph a document ending in a fence, a table, a rule or an image
-    /// has no other way to grow: a fence swallows Enter, a cell has nowhere to
-    /// put one, and a rule or an image holds no caret at all. `false` when the
-    /// last block ends in a body, which can carry on by itself.
+    /// has no other way to grow: a fence swallows Enter, a cell and a caption
+    /// have nowhere to put one, and a rule holds no caret at all. `false` when
+    /// the last block ends in a body, which can carry on by itself.
     fn append_tail(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(last) = self.doc.blocks.len().checked_sub(1) else {
             return false;
@@ -989,7 +1051,7 @@ impl Render for Editor {
                     // The handle's own listener runs first and claims the
                     // press; without the flag this would close the menu it
                     // just opened. `ui::popover::Popup` solves it the same way.
-                    if std::mem::take(&mut this.handle_pressed) {
+                    if std::mem::take(&mut this.press_claimed) {
                         return;
                     }
                     this.block_menu = None;
@@ -1106,6 +1168,26 @@ impl Render for Editor {
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::redo))
+            .on_action(cx.listener(Self::confirm_url))
+            .on_action(cx.listener(Self::cancel_url))
+            // A file crossing the document lights the same indicator a lifted
+            // block does, so a drop from outside lands where it looks like it
+            // will.
+            .on_drag_move(cx.listener(
+                |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                    let over = this.layouts.block_at(event.event.position);
+                    if over != this.dropping {
+                        this.dropping = over;
+                        cx.notify();
+                    }
+                },
+            ))
+            .on_drop(
+                cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                    this.focus_handle.clone().focus(window, cx);
+                    this.drop_paths(paths, cx);
+                }),
+            )
             .on_action(cx.listener(|this, _: &ToggleBold, _, cx| this.toggle_mark(Mark::Bold, cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleItalic, _, cx| this.toggle_mark(Mark::Italic, cx)),
@@ -1204,6 +1286,8 @@ impl Render for Editor {
             )
             .children(self.slash_menu(&theme, cx))
             .children(self.paste_menu(&theme, cx))
+            .children(self.url_prompt(&theme, cx))
+            .children(self.image_target(cx))
             .children(self.handle(&theme, cx))
             .children(self.drop_indicator(&theme))
             .children(self.language_chip(&theme, cx))

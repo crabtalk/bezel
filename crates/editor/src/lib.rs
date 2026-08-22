@@ -14,6 +14,7 @@ mod history;
 mod link;
 mod slash;
 
+pub use editor::image::{ImageStore, Source, set_image_store};
 #[doc(hidden)]
 pub use editor::menu::SLASH_MENU;
 pub use editor::{Editor, init};

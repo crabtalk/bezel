@@ -40,6 +40,10 @@ Select any of this and the toolbar appears. **Bold**, _italic_ and `code` are on
 - Hover a block and drag its handle to reorder it
 - Everything on the right is what a save would write
 
+![A caption is the alt text, and a caret can sit in it](https://crabtalk.ai/og-home.png)
+
+Drag a picture in from the desktop and it lands where the line says it will. `/image` makes an empty one that asks for a URL.
+
 > A newline inside a block is a line break, here and in Notion both. This paragraph is one long line in the source, so it wraps to the pane instead."#;
 
 /// The marks the toolbar offers, and the glyph each shows.

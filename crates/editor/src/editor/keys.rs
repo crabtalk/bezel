@@ -5,7 +5,7 @@
 
 use gpui::{App, KeyBinding, actions};
 
-use crate::editor::CONTEXT;
+use crate::editor::{CONTEXT, image};
 
 actions!(
     bezel_editor,
@@ -50,6 +50,8 @@ actions!(
         MoveBlockDown,
         DuplicateBlock,
         RemoveBlock,
+        ConfirmUrl,
+        CancelUrl,
     ]
 );
 
@@ -80,6 +82,14 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("tab", Indent, ctx),
         KeyBinding::new("shift-tab", Outdent, ctx),
         KeyBinding::new("escape", Dismiss, ctx),
+    ]);
+
+    // The URL prompt's own context, because the field holds focus while it is
+    // open and the document behind it must not answer the same two keys.
+    let prompt = Some(image::PROMPT_CONTEXT);
+    cx.bind_keys([
+        KeyBinding::new("enter", ConfirmUrl, prompt),
+        KeyBinding::new("escape", CancelUrl, prompt),
     ]);
 
     // `MoveBlockUp`, `MoveBlockDown`, `DuplicateBlock` and `RemoveBlock` are
