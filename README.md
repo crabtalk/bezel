@@ -79,11 +79,15 @@ fn main() {
 
 ## Provenance
 
-The initial components were extracted from [comet][comet](MIT).
-The thinking orbs were ported from [gpui-thinking-orbs][gpui-thinking-orbs] (MIT).
-The blob avatars were ported from [blobatar][blobatar] (MIT).
-Syntax highlighting: tree-sitter core and grammars (MIT), TypeScript/TSX queries from [nvim-treesitter][nvim-treesitter] (Apache-2.0).
-Bundled assets: Solar Icons by480 Design (CC BY 4.0), Geist and Geist Mono © Vercel Inc. (SIL OFL 1.1).
+| What                   | From                               | License     |
+| ---------------------- | ---------------------------------- | ----------- |
+| Initial components     | [comet]                            | MIT         |
+| Thinking orbs          | [gpui-thinking-orbs]               | MIT         |
+| Blob avatars           | [blobatar]                         | MIT         |
+| Syntax highlighting    | tree-sitter core and grammars      | MIT         |
+| TypeScript/TSX queries | [nvim-treesitter]                  | Apache-2.0  |
+| Icons                  | Solar Icons by 480 Design          | CC BY 4.0   |
+| Fonts                  | Geist and Geist Mono © Vercel Inc. | SIL OFL 1.1 |
 
 [gpui]: https://github.com/zed-industries/gpui
 [comet]: https://github.com/zeronsh/comet
