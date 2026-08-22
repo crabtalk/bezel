@@ -1,5 +1,5 @@
 [package]
-name = "ui"
+name = "bezel-ui"
 description = "SwiftUI-flavored components for gpui — popovers, menus, buttons, toggles, and loaders"
 version.workspace = true
 edition.workspace = true
@@ -11,6 +11,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "ui"
 
 [lints]
 workspace = true

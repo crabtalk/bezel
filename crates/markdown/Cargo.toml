@@ -1,5 +1,5 @@
 [package]
-name = "markdown"
+name = "bezel-markdown"
 
 description = "A Notion-style block document model for gpui — markdown in, markdown out"
 version.workspace = true
@@ -12,6 +12,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "markdown"
 
 [lints]
 workspace = true

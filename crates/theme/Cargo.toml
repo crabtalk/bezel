@@ -1,5 +1,5 @@
 [package]
-name = "theme"
+name = "bezel-theme"
 description = "Design tokens for gpui — an environment-driven theme with designed light and dark palettes"
 version.workspace = true
 edition.workspace = true
@@ -11,6 +11,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "theme"
 
 [lints]
 workspace = true

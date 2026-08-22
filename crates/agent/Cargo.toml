@@ -1,5 +1,5 @@
 [package]
-name = "agent"
+name = "bezel-agent"
 
 description = "Agent-related UI — thinking orbs for working state and deterministic blob avatars for identity"
 version.workspace = true
@@ -12,6 +12,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "agent"
 
 [lints]
 workspace = true

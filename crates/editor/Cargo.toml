@@ -1,5 +1,5 @@
 [package]
-name = "editor"
+name = "bezel-editor"
 
 description = "A Notion-style block editor for gpui — the editing surface over the markdown document model"
 version.workspace = true
@@ -12,6 +12,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "editor"
 
 [lints]
 workspace = true

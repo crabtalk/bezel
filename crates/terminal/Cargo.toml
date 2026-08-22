@@ -1,5 +1,5 @@
 [package]
-name = "terminal"
+name = "bezel-terminal"
 
 description = "An alacritty-backed terminal emulator and grid view for gpui — bytes in, cells out"
 version.workspace = true
@@ -12,6 +12,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "terminal"
 
 [lints]
 workspace = true

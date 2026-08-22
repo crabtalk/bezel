@@ -1,5 +1,5 @@
 [package]
-name = "syntax"
+name = "bezel-syntax"
 
 description = "Tree-sitter syntax classification for isolated code blocks — source and a fence tag in, (byte range, kind) spans out"
 version.workspace = true
@@ -12,6 +12,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "syntax"
 
 [lints]
 workspace = true

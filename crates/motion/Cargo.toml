@@ -1,5 +1,5 @@
 [package]
-name = "motion"
+name = "bezel-motion"
 description = "A named animation catalog for gpui — exact CSS cubic-bezier curves and pure phase math"
 version.workspace = true
 edition.workspace = true
@@ -11,6 +11,9 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "motion"
 
 [lints]
 workspace = true
