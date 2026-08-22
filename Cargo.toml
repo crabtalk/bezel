@@ -56,14 +56,11 @@ serde_json = "1"
 tracing = "0.1"
 
 # git
-gpui = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", version = "0.2.2" }
-gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", features = [
+gpui = { git = "https://github.com/crabtalk/zed", rev = "cf1b90ec8cfda974a50b0c9eaebfdab28d7f0423", version = "0.2.2" }
+gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "cf1b90ec8cfda974a50b0c9eaebfdab28d7f0423", features = [
     "font-kit",
 ] }
-gpui_web = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50", default-features = false }
-# gpui defaults to a `NullHttpClient`, so a native app that paints a remote
-# image has to bring its own. The wasm platform installs one of its own.
-reqwest_client = { git = "https://github.com/crabtalk/zed", rev = "e0b415b4bcffe4a2f05221544a788d482f5f6f50" }
+gpui_web = { git = "https://github.com/crabtalk/zed", rev = "cf1b90ec8cfda974a50b0c9eaebfdab28d7f0423", default-features = false }
 
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare

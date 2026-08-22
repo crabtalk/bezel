@@ -38,6 +38,5 @@ web-time.workspace = true
 # build until that dep is fixed upstream.
 terminal.workspace = true
 gpui_platform.workspace = true
-reqwest_client.workspace = true
 # The live highlighter. A web build has the build script's table instead.
 syntax.workspace = true

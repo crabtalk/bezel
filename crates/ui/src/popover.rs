@@ -126,6 +126,17 @@ impl<T> Popup<T> {
         }
     }
 
+    /// Unmount now, with no exit phase.
+    ///
+    /// For a surface that has no exit animation to play — [`modal`], which
+    /// takes no `closing` and paints the same either way. Sending one of those
+    /// through [`Self::begin_close`] buys nothing and costs everything: it
+    /// stays fully painted for the animation's span, and if the reap never
+    /// lands it stays forever, because nothing retries.
+    pub fn close(&mut self) {
+        self.inner = None;
+    }
+
     /// Enter the exit phase. Returns `true` when this call started it (the
     /// caller then schedules [`reap_popup`]); `false` if already closing or
     /// closed.
@@ -166,13 +177,17 @@ impl<T> Popup<T> {
         std::mem::take(&mut self.pressed_while_open)
     }
 
-    /// Drop the state if the exit phase has run its course. A popup reopened
-    /// (or re-closed) since the matching [`begin_close`] is left alone — the
-    /// newer phase's own reap handles it.
+    /// Drop the state now the exit phase has run its course. A popup reopened
+    /// since the matching [`Self::begin_close`] is left alone — it is `None`
+    /// again in the second slot, and the newer phase's own reap handles it.
+    ///
+    /// It does not re-check the clock. [`reap_popup`] already waited out the
+    /// span on the executor's timer, and asking `Instant::elapsed` to agree
+    /// makes one deadline depend on two clocks — where they disagree, and a
+    /// throttled executor is where, the popup is stranded open with nothing
+    /// left to retry.
     pub fn finish_close(&mut self) {
-        if let Some((_, Some(since))) = &self.inner
-            && since.elapsed() >= motion::MENU_OUT.total().mul_f32(motion::speed_scale())
-        {
+        if matches!(&self.inner, Some((_, Some(_)))) {
             self.inner = None;
         }
     }

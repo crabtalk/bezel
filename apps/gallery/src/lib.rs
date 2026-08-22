@@ -1039,10 +1039,11 @@ impl Gallery {
         cx.notify();
     }
 
+    /// Straight off, because `popover::modal` has no exit to play — unlike the
+    /// sheet and the context menu, it takes no `closing` and paints the same
+    /// whether or not one has begun.
     fn close_dialog(&mut self, cx: &mut Context<Self>) {
-        if self.dialog.begin_close() {
-            popover::reap_popup(cx, |view: &mut Self| &mut view.dialog);
-        }
+        self.dialog.close();
         cx.notify();
     }
 
