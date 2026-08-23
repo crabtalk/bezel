@@ -51,6 +51,11 @@ const PLACEHOLDER: &str = "Type / for commands";
 const HANDLE_SIZE: f32 = 18.0;
 const HANDLE_GUTTER: f32 = 22.0;
 
+/// How far a drag on an image's edge handle can shrink it — matches
+/// `markdown::render`'s `TABLE_MIN_COLUMN_WIDTH`, the same floor for the
+/// other block content a drag can resize.
+const MIN_IMAGE_WIDTH: f32 = 96.0;
+
 /// Whether a selection is prose covering more than one line — two blocks, or
 /// one line break inside a single block.
 ///
@@ -101,6 +106,13 @@ pub struct Editor {
     hovered: Option<usize>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
+    /// An image being dragged wider or narrower by its edge handle, and the
+    /// width it holds now — `None` being the natural one, exactly as the
+    /// document spells it. The document only learns the final width on
+    /// release, the same reason `lifted` waits for the drop; carrying the
+    /// document's own value here is what makes a press that never moved
+    /// read back as no change at all.
+    resizing: Option<(usize, Option<u32>)>,
     /// The block menu the handle opened, and where to anchor it.
     block_menu: Option<(usize, gpui::Point<gpui::Pixels>)>,
     /// The language menu a fence's header opened, and the block it belongs to.
@@ -109,8 +121,12 @@ pub struct Editor {
     /// so the editor's own press does not undo what that press just did.
     press_claimed: bool,
     /// Where the editor's own box starts, so a position recorded in window
-    /// coordinates can be placed inside it.
+    /// coordinates can be placed inside it, and how far it reaches — which is
+    /// how wide a resized image is allowed to be. Its own box rather than the
+    /// picture's: a picture already narrowed would otherwise be its own
+    /// ceiling, and no drag could ever widen it again.
     origin: gpui::Point<gpui::Pixels>,
+    width: gpui::Pixels,
     /// Whether the pointer is dragging out a selection.
     dragging: bool,
     /// Whether the pointer is over painted text, which is the only place the
@@ -151,10 +167,12 @@ impl Editor {
             dropping: None,
             hovered: None,
             lifted: None,
+            resizing: None,
             block_menu: None,
             language_menu: None,
             press_claimed: false,
             origin: gpui::Point::default(),
+            width: gpui::Pixels::ZERO,
             dragging: false,
             over_text: false,
             scroll: None,
@@ -857,6 +875,7 @@ impl Editor {
                 BlockKind::Image {
                     url: pasted.url,
                     alt: Text::default(),
+                    width: None,
                 },
                 cx,
             ),
@@ -1024,7 +1043,10 @@ impl Render for Editor {
                 // The gutter handle is placed from positions recorded in window
                 // coordinates, so the box they have to be measured against is
                 // taken here — the one place that knows it.
-                entity.update(cx, |this, _| this.origin = bounds.origin);
+                entity.update(cx, |this, _| {
+                    this.origin = bounds.origin;
+                    this.width = bounds.size.width;
+                });
                 window.handle_input(
                     &handle,
                     ElementInputHandler::new(bounds, entity.clone()),
@@ -1098,6 +1120,15 @@ impl Render for Editor {
                     }
                     return;
                 }
+                // An image being resized follows the pointer the same way — the
+                // document holds nothing until the handle is released.
+                if let Some((ix, _)) = this.resizing.filter(|_| event.dragging()) {
+                    if let Some(width) = this.dragged_width(ix, event.position.x) {
+                        this.resizing = Some((ix, Some(width)));
+                        cx.notify();
+                    }
+                    return;
+                }
                 if this.dragging && event.dragging() {
                     if let Some(hit) = this.layouts.hit(event.position) {
                         this.selection = this.selection.extend_to(hit).clamp(&this.doc);
@@ -1111,10 +1142,23 @@ impl Render for Editor {
                     cx.notify();
                 }
             }))
+            // Both, because a release can land anywhere on screen and only the
+            // first fires over the editor. A resize left running would leave
+            // its stand-in picture painted over the document for good.
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _: &gpui::MouseUpEvent, window, cx| {
+                    this.dragging = false;
+                    this.drop_resize(window, cx);
+                }),
+            )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
+                cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
                     this.dragging = false;
+                    if this.drop_resize(window, cx) {
+                        return;
+                    }
                     let Some((from, to)) = this.lifted.take() else {
                         return;
                     };
@@ -1288,7 +1332,9 @@ impl Render for Editor {
             .children(self.paste_menu(&theme, cx))
             .children(self.url_prompt(&theme, cx))
             .children(self.image_target(cx))
+            .children(self.resize_preview())
             .children(self.handle(&theme, cx))
+            .children(self.resize_handle(&theme, cx))
             .children(self.drop_indicator(&theme))
             .children(self.language_chip(&theme, cx))
             .children(self.block_menu(&theme, cx))

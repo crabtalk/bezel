@@ -142,12 +142,17 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
             out.push_str(&pad);
             out.push_str(&fence);
         }
-        BlockKind::Image { url, alt } => {
+        BlockKind::Image { url, alt, width } => {
             out.push_str(&pad);
             out.push_str("![");
             escape_inline(out, &alt.text);
             out.push_str("](");
             out.push_str(url);
+            if let Some(width) = width {
+                out.push_str(" \"");
+                out.push_str(&width.to_string());
+                out.push('"');
+            }
             out.push(')');
         }
         // The angles are what makes a line with a link on it into a card, and
@@ -385,7 +390,7 @@ fn open_mark(out: &mut String, mark: &Mark, italic: char) {
         Mark::Italic => out.push(italic),
         Mark::Strike => out.push_str("~~"),
         Mark::Link(_) | Mark::Mention { .. } => out.push('['),
-        Mark::Image(_) => out.push_str("!["),
+        Mark::Image(..) => out.push_str("!["),
         Mark::Code => {}
     }
 }
@@ -395,9 +400,19 @@ fn close_mark(out: &mut String, mark: &Mark, italic: char) {
         Mark::Bold => out.push_str("**"),
         Mark::Italic => out.push(italic),
         Mark::Strike => out.push_str("~~"),
-        Mark::Link(url) | Mark::Image(url) => {
+        Mark::Link(url) => {
             out.push_str("](");
             out.push_str(url);
+            out.push(')');
+        }
+        Mark::Image(url, width) => {
+            out.push_str("](");
+            out.push_str(url);
+            if let Some(width) = width {
+                out.push_str(" \"");
+                out.push_str(&width.to_string());
+                out.push('"');
+            }
             out.push(')');
         }
         // The title names the form. It is the only slot CommonMark leaves for

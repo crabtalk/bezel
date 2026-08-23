@@ -40,6 +40,7 @@ fn every_kind_declares_the_parts_a_caret_can_enter() {
             BlockKind::Image {
                 url: String::new(),
                 alt: Text::default(),
+                width: None,
             },
             vec![Part::Caption],
         ),

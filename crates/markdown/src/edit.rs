@@ -174,7 +174,8 @@ impl Text {
 
         let len = self.text.len();
         self.marks.retain(|span| {
-            span.range.end <= len && (!span.range.is_empty() || matches!(span.mark, Mark::Image(_)))
+            span.range.end <= len
+                && (!span.range.is_empty() || matches!(span.mark, Mark::Image(..)))
         });
 
         // A code span is atomic: nothing can start or stop inside one. A mark
@@ -266,7 +267,7 @@ impl Text {
                 if a.mark == b.mark
                     && a.range.start <= b.range.end
                     && b.range.start <= a.range.end
-                    && !matches!(a.mark, Mark::Image(_) | Mark::Mention { .. })
+                    && !matches!(a.mark, Mark::Image(..) | Mark::Mention { .. })
                 {
                     merged = Some((
                         other,

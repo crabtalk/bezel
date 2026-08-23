@@ -239,7 +239,7 @@ fn linkify(text: &mut Text) {
             !text.marks.iter().any(|span| {
                 matches!(
                     span.mark,
-                    Mark::Link(_) | Mark::Mention { .. } | Mark::Image(_) | Mark::Code
+                    Mark::Link(_) | Mark::Mention { .. } | Mark::Image(..) | Mark::Code
                 ) && span.range.start < range.end
                     && range.start < span.range.end
             })
@@ -305,7 +305,7 @@ pub(crate) fn normalize(text: &str, marks: &[MarkSpan]) -> Text {
         // A mark left covering nothing has no spelling that survives a
         // round trip — `****` is literal text, not empty bold. An image is the
         // exception: `![](url)` is exactly a mark over no alt text.
-        .filter(|span| !span.range.is_empty() || matches!(span.mark, Mark::Image(_)))
+        .filter(|span| !span.range.is_empty() || matches!(span.mark, Mark::Image(..)))
         .collect();
 
     Text {
@@ -328,7 +328,7 @@ fn merge_same_mark(mut marks: Vec<MarkSpan>) -> Vec<MarkSpan> {
         for other in ix + 1..marks.len() {
             let (a, b) = (&marks[ix], &marks[other]);
             if a.mark == b.mark
-                && !matches!(a.mark, Mark::Image(_) | Mark::Mention { .. })
+                && !matches!(a.mark, Mark::Image(..) | Mark::Mention { .. })
                 && a.range.start <= b.range.end
                 && b.range.start <= a.range.end
             {
@@ -464,16 +464,16 @@ impl ParseState {
         if let [
             MarkSpan {
                 range,
-                mark: Mark::Image(url),
+                mark: Mark::Image(url, width),
             },
         ] = text.marks.as_slice()
             && range.start == 0
             && range.end == text.text.len()
         {
-            let (url, alt) = (url.clone(), Text::plain(text.text));
+            let (url, width, alt) = (url.clone(), *width, Text::plain(text.text));
             self.flush_marker();
             let indent = self.indent();
-            self.push(BlockKind::Image { url, alt }, indent);
+            self.push(BlockKind::Image { url, alt, width }, indent);
             return;
         }
 
@@ -644,8 +644,12 @@ impl ParseState {
                     None => Mark::Link(url),
                 });
             }
-            Tag::Image { dest_url, .. } => {
-                self.builder.open(Mark::Image(dest_url.into_string()));
+            Tag::Image {
+                dest_url, title, ..
+            } => {
+                let width = title.parse().ok();
+                self.builder
+                    .open(Mark::Image(dest_url.into_string(), width));
             }
             _ => {}
         }

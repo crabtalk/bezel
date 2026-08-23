@@ -106,6 +106,10 @@ struct Frames {
     /// A fenced block's language label, which a host may want to hang a
     /// picker on.
     languages: Vec<(usize, Bounds<Pixels>)>,
+    /// An image block's picture, which is not its block: the block runs the
+    /// full column and carries the caption, and a resize handle belongs on the
+    /// edge of the picture itself.
+    pictures: Vec<(usize, Bounds<Pixels>)>,
 }
 
 /// One shaped run and the slice of its part it covers.
@@ -284,6 +288,19 @@ impl BlockLayouts {
             .map(|(_, bounds)| *bounds)
     }
 
+    /// Where an image block's picture painted, which
+    /// [`BlockLayouts::block_bounds`] does not give: that box spans the column
+    /// and takes in the caption, so a handle placed from it sits off the edge
+    /// of any picture narrower than the page.
+    pub fn picture_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
+        self.0
+            .borrow()
+            .pictures
+            .iter()
+            .find(|(block, _)| *block == ix)
+            .map(|(_, bounds)| *bounds)
+    }
+
     fn record(&self, block: usize, part: Part, range: Range<usize>, layout: TextLayout) {
         self.0.borrow_mut().texts.push(Painted {
             block,
@@ -301,11 +318,16 @@ impl BlockLayouts {
         self.0.borrow_mut().languages.push((ix, bounds));
     }
 
+    fn record_picture(&self, ix: usize, bounds: Bounds<Pixels>) {
+        self.0.borrow_mut().pictures.push((ix, bounds));
+    }
+
     fn clear(&self) {
         let mut frames = self.0.borrow_mut();
         frames.texts.clear();
         frames.blocks.clear();
         frames.languages.clear();
+        frames.pictures.clear();
     }
 }
 
@@ -535,7 +557,7 @@ fn block_element(
             window,
             cx,
         ),
-        BlockKind::Image { url, alt } => image(url, alt, overlay, theme),
+        BlockKind::Image { url, alt, width } => image(url, alt, *width, overlay, theme),
         BlockKind::Bookmark { url, form } => bookmark(overlay.block, url, *form, theme, cx),
         BlockKind::Table {
             align,
@@ -673,7 +695,7 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
                     chip = true;
                     link = Some(url.clone());
                 }
-                Mark::Link(url) | Mark::Image(url) => link = Some(url.clone()),
+                Mark::Link(url) | Mark::Image(url, _) => link = Some(url.clone()),
             }
         }
 
@@ -1160,7 +1182,7 @@ fn copy_button(
 /// type, so a document being read is not a column of pictures each trailing a
 /// blank line. With no URL yet the picture is a dashed row instead — the shape
 /// the slash menu makes, waiting to be told what to show.
-fn image(url: &str, alt: &Text, overlay: Overlay, theme: &Theme) -> AnyElement {
+fn image(url: &str, alt: &Text, width: Option<u32>, overlay: Overlay, theme: &Theme) -> AnyElement {
     let hint = SharedString::new_static(CAPTION_HINT);
     let overlay = Overlay {
         placeholder: Some(&hint),
@@ -1180,18 +1202,43 @@ fn image(url: &str, alt: &Text, overlay: Overlay, theme: &Theme) -> AnyElement {
             .text_color(theme.text_muted)
             .child(IMAGE_EMPTY)
     } else {
-        div()
+        // A URL is fetched; anything else is a file, and gpui reads one only
+        // from a `PathBuf` — handed a string it looks for an asset built into
+        // the binary and paints nothing.
+        let picture = match url.contains("://") {
+            true => img(SharedString::from(url.to_string())),
+            false => img(std::path::PathBuf::from(url)),
+        };
+        let box_ = div()
+            .relative()
             .rounded(px(IMAGE_RADIUS))
             .overflow_hidden()
             .border_1()
             .border_color(theme.border)
-            // A URL is fetched; anything else is a file, and gpui reads one
-            // only from a `PathBuf` — handed a string it looks for an asset
-            // built into the binary and paints nothing.
-            .child(match url.contains("://") {
-                true => img(SharedString::from(url.to_string())).max_w_full(),
-                false => img(std::path::PathBuf::from(url)).max_w_full(),
-            })
+            .children(overlay.layouts.map(|layouts| {
+                let layouts = layouts.clone();
+                let ix = overlay.block;
+                canvas(
+                    move |bounds, _, _| layouts.record_picture(ix, bounds),
+                    |_, _, _, _| (),
+                )
+                .absolute()
+                .size_full()
+            }));
+        match width {
+            // A stated width is the box's: it hugs, so the border is around
+            // the picture rather than around the column beside it, and the
+            // picture fills what the box settled on — which `max_w_full`
+            // holds inside the page however wide the width was written.
+            Some(width) => box_
+                .self_start()
+                .max_w_full()
+                .w(px(width as f32))
+                .child(picture.w(px(width as f32)).max_w_full()),
+            // Unstated, the picture scales itself against the column, which
+            // is a percentage and so needs a box that spans one to measure.
+            None => box_.child(picture.max_w_full()),
+        }
     };
     div()
         .flex()

@@ -80,6 +80,7 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
             BlockKind::Image {
                 url: String::new(),
                 alt: text(),
+                width: None,
             },
         ),
         ("Divider".into(), BlockKind::Rule),

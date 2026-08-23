@@ -10,16 +10,16 @@
 use std::path::Path;
 
 use gpui::{
-    AnyElement, App, Context, CursorStyle, Entity, ExternalPaths, Focusable as _, Global,
-    MouseButton, Point, Window, div, prelude::*, px,
+    AnyElement, App, Axis, Context, CursorStyle, Entity, ExternalPaths, Focusable as _, Global,
+    MouseButton, Point, Window, div, img, prelude::*, px,
 };
 use markdown::{Block, BlockKind, Cursor, Part, Selection, Text};
 use theme::Theme;
-use ui::{input::TextField, popover};
+use ui::{input::TextField, popover, widgets::Layout as _};
 
 use crate::{
     editor::{
-        Editor,
+        Editor, MIN_IMAGE_WIDTH,
         keys::{CancelUrl, ConfirmUrl},
     },
     history::EditKind,
@@ -122,6 +122,7 @@ impl Editor {
                 BlockKind::Image {
                     url,
                     alt: Text::default(),
+                    width: None,
                 },
             );
             this.selection =
@@ -194,6 +195,7 @@ impl Editor {
                         BlockKind::Image {
                             url,
                             alt: Text::default(),
+                            width: None,
                         },
                         indent,
                     ),
@@ -240,6 +242,187 @@ impl Editor {
                         this.prompt_for_url(ix, window, cx);
                     }),
                 )
+                .into_any_element(),
+        )
+    }
+
+    /// How wide the picture at `ix` is allowed to be: from its own left edge
+    /// to the editor's right one, so an indented image gets the narrower
+    /// column it actually sits in.
+    ///
+    /// Never below [`MIN_IMAGE_WIDTH`]: a window narrower than the floor would
+    /// otherwise put the ceiling under it, which clamps the wrong way round
+    /// and panics rather than giving back a small picture.
+    pub(super) fn column_width(&self, ix: usize) -> Option<u32> {
+        let bounds = self.layouts.picture_bounds(ix)?;
+        let column = self.origin.x + self.width - bounds.origin.x;
+        Some(column.max(px(MIN_IMAGE_WIDTH)).as_f32().round() as u32)
+    }
+
+    /// The width a drag reaching `x` asks for, bounded by the column.
+    pub(super) fn dragged_width(&self, ix: usize, x: gpui::Pixels) -> Option<u32> {
+        let bounds = self.layouts.picture_bounds(ix)?;
+        let asked = (x - bounds.origin.x)
+            .max(px(MIN_IMAGE_WIDTH))
+            .as_f32()
+            .round() as u32;
+        Some(asked.min(self.column_width(ix)?))
+    }
+
+    /// Where the picture at `ix` sits at `width`, in this editor's own
+    /// coordinates.
+    ///
+    /// The width is taken from `width` rather than from the box that painted,
+    /// which is a frame behind: a handle placed from that box would sit at the
+    /// picture's previous edge until something unrelated asked for another
+    /// frame. The origin and the height are read back, because neither is
+    /// something this can work out and both are right for the picture as it
+    /// stands.
+    pub(super) fn picture_box(
+        &self,
+        ix: usize,
+        width: Option<u32>,
+    ) -> Option<gpui::Bounds<gpui::Pixels>> {
+        let painted = self.layouts.picture_bounds(ix)?;
+        // Zero until the picture has decoded — nothing to grab yet.
+        if painted.size.width <= px(0.0) {
+            return None;
+        }
+        let column = self.column_width(ix)?;
+        let width = width.map_or(painted.size.width, |width| px(width.min(column) as f32));
+        Some(gpui::Bounds::new(
+            gpui::point(
+                painted.origin.x - self.origin.x,
+                painted.origin.y - self.origin.y,
+            ),
+            gpui::size(width, painted.size.height),
+        ))
+    }
+
+    /// End a resize, writing the width down. `false` when none was running,
+    /// which is what leaves the release to whatever else claims it.
+    pub(super) fn drop_resize(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some((ix, live)) = self.resizing.take() else {
+            return false;
+        };
+        // Dragged back out to the column: forget the width rather than pin it
+        // a pixel short, so letting go all the way round-trips as plain
+        // `![alt](url)` again.
+        let width = match (live, self.column_width(ix)) {
+            (Some(live), Some(full)) if live + 2 >= full => None,
+            _ => live,
+        };
+        let current = self.doc.blocks.get(ix).and_then(|block| match &block.kind {
+            BlockKind::Image { width, .. } => Some(*width),
+            _ => None,
+        });
+        if current != Some(width) {
+            self.edit(EditKind::Structure, cx, |this| {
+                if let Some(BlockKind::Image { width: at, .. }) =
+                    this.doc.blocks.get_mut(ix).map(|block| &mut block.kind)
+                {
+                    *at = width;
+                }
+            });
+            // Handed back its natural width, which only the paint that
+            // measures it knows: the next frame still places the handle from
+            // the width being left behind, and this asks for the one after,
+            // which can see the picture it belongs to.
+            if width.is_none() {
+                window.refresh();
+            }
+        } else {
+            // The stand-in picture is painted from `resizing` and this frame
+            // no longer has one, which an edit would have said for us.
+            cx.notify();
+        }
+        true
+    }
+
+    /// The grab strip along a picture's right edge — the one under the
+    /// pointer, else the one being resized (which can end up outside the
+    /// image once a drag overshoots its bounds).
+    ///
+    /// Painted with [`ui::widgets::Layout::split_handle`] rather than a
+    /// bespoke bar: a pane divider and an image's edge are the same shape,
+    /// a hairline in a wider grab strip, so the resized picture matches the
+    /// rest of the app's resize affordances instead of inventing a second one.
+    pub(super) fn resize_handle(
+        &self,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let has_url = |ix: &usize| {
+            matches!(
+                self.doc.blocks.get(*ix).map(|block| &block.kind),
+                Some(BlockKind::Image { url, .. }) if !url.is_empty()
+            )
+        };
+        let ix = [self.resizing.map(|(ix, _)| ix), self.hovered]
+            .into_iter()
+            .flatten()
+            .find(has_url)?;
+        let dragging = self.resizing.is_some_and(|(resizing, _)| resizing == ix);
+        // The document's own value, so a press that never moves releases into
+        // the width it started from and writes nothing.
+        let current = match self.doc.blocks.get(ix).map(|block| &block.kind) {
+            Some(BlockKind::Image { width, .. }) => *width,
+            _ => None,
+        };
+        let picture = self.picture_box(ix, current)?;
+        Some(
+            theme
+                .split_handle(Axis::Horizontal, dragging)
+                .id("image-resize-handle")
+                .absolute()
+                .left(picture.origin.x + picture.size.width - px(4.5))
+                .top(picture.origin.y)
+                .h(picture.size.height)
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {
+                        this.press_claimed = true;
+                        this.resizing = Some((ix, current));
+                        cx.notify();
+                    }),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// The picture at its live width while a resize is in flight — painted a
+    /// second time, directly over the real one, because that one is
+    /// [`markdown::Doc`] data and the document holds nothing until the handle
+    /// is released.
+    pub(super) fn resize_preview(&self) -> Option<AnyElement> {
+        // Nothing dragged yet, so nothing to stand in for: the picture already
+        // painted is the picture this width means.
+        let (ix, live) = match self.resizing? {
+            (ix, Some(live)) => (ix, live),
+            _ => return None,
+        };
+        let Some(BlockKind::Image { url, .. }) = self.doc.blocks.get(ix).map(|block| &block.kind)
+        else {
+            return None;
+        };
+        let box_ = self.picture_box(ix, Some(live))?;
+        let picture = match url.contains("://") {
+            true => img(gpui::SharedString::from(url.to_string())),
+            false => img(std::path::PathBuf::from(url)),
+        };
+        Some(
+            div()
+                .absolute()
+                .left(box_.origin.x)
+                .top(box_.origin.y)
+                // No height: the picture derives its own from the width it is
+                // given, which is right whatever it is a picture of. Computing
+                // one here would need an aspect ratio, and the only box to
+                // read one off spans the column rather than the picture until
+                // a width has been written down.
+                .w(box_.size.width)
+                .overflow_hidden()
+                .child(picture.w(box_.size.width))
                 .into_any_element(),
         )
     }
