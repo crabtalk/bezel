@@ -1,5 +1,9 @@
 # bezel
 
+[![crates.io](https://img.shields.io/crates/v/bezel.svg?style=flat-square)](https://crates.io/crates/bezel)
+[![license](https://img.shields.io/crates/l/bezel.svg?style=flat-square)](LICENSE)
+[![gpui](https://img.shields.io/crates/v/bezel-gpui.svg?style=flat-square&label=gpui)](https://crates.io/crates/bezel-gpui)
+
 A gpui component library, SwiftUI-lean: style flows through the environment,
 never through parameters.
 
