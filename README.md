@@ -10,6 +10,24 @@ use bezel::ui::widgets::{ButtonStyle, Buttons};
 theme.button("Save", ButtonStyle::Prominent, None)
 ```
 
+## Install
+
+```toml
+[dependencies]
+bezel = "0.1"
+```
+
+An app also names the two crates the facade cannot cover — `gpui` because
+`actions!` expands to literal `gpui::` paths, and `gpui_platform` because the
+facade re-exports gpui but not the platform. Both are our fork of gpui,
+published under `bezel-gpui*`; the `package` key keeps the `gpui::` paths the
+macros and gpui's own docs expect:
+
+```toml
+gpui = { package = "bezel-gpui", version = "0.3" }
+gpui_platform = { package = "bezel-gpui-platform", version = "0.3", features = ["font-kit"] }
+```
+
 ## Theme
 
 To ship your own colors, register a custom palette:
@@ -37,12 +55,8 @@ if bezel::motion::hover_fades_active() {
 ## Build an app
 
 `apps/hello` is the smallest consumer — one window, a button, a toggle.
-Every gpui *type* path goes through `bezel::gpui`, so a crates.io gpui cannot
-creep into the graph; the two dependencies beyond that are both from the same
-fork rev: `gpui` (for `actions!`, which expands to literal `gpui::` paths)
-and `gpui_platform` (the facade re-exports gpui but not the platform, and
-this gpui has no `Application::new()`). The bootstrap, which is the part no
-snippet can skip:
+Every gpui *type* path goes through `bezel::gpui`, so a second gpui cannot
+creep into the graph. The bootstrap, which is the part no snippet can skip:
 
 ```rust
 use bezel::gpui::{App, AppContext as _, Bounds, WindowBounds, WindowOptions, px, size};

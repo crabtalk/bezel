@@ -67,12 +67,11 @@
 	<div class="say">
 		<h1>Build the app, not the buttons.</h1>
 
-		<!-- One dependency, and no `[patch.crates-io]` to repeat: `bezel` re-exports
-		     the gpui it was built against, so a consumer cannot end up with a second
-		     copy in the graph. -->
+		<!-- One dependency: `bezel` re-exports the gpui it was built against, so a
+		     consumer cannot end up with a second copy in the graph. -->
 		<div class="install code-block">
 			<span class="file">Cargo.toml</span>
-			<code>bezel = &#123; git = "https://github.com/crabtalk/bezel" &#125;</code>
+			<code>bezel = "0.1"</code>
 			<button class="copy" type="button" aria-label="Copy">
 				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 				{@html Copy}{@html Check}
