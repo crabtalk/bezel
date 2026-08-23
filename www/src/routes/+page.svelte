@@ -153,6 +153,13 @@
 		padding: 112px 40px 56px;
 	}
 
+	/* The install line below is a scroll container, but a grid item still sizes to
+	   its min-content — without this the column takes the unbreakable code line's
+	   width and the whole page scrolls sideways on a phone. */
+	.say {
+		min-width: 0;
+	}
+
 	.act {
 		position: relative;
 		display: flex;

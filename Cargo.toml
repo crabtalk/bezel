@@ -58,11 +58,11 @@ serde_json = "1"
 tracing = "0.1"
 
 # git
-gpui = { git = "https://github.com/crabtalk/zed", rev = "cf1b90ec8cfda974a50b0c9eaebfdab28d7f0423", version = "0.2.2" }
-gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "cf1b90ec8cfda974a50b0c9eaebfdab28d7f0423", features = [
+gpui = { git = "https://github.com/crabtalk/zed", rev = "247df8fa6225a2ba6ae5044a6d2a0e8de38d396c", version = "0.2.2" }
+gpui_platform = { git = "https://github.com/crabtalk/zed", rev = "247df8fa6225a2ba6ae5044a6d2a0e8de38d396c", features = [
     "font-kit",
 ] }
-gpui_web = { git = "https://github.com/crabtalk/zed", rev = "cf1b90ec8cfda974a50b0c9eaebfdab28d7f0423", default-features = false }
+gpui_web = { git = "https://github.com/crabtalk/zed", rev = "247df8fa6225a2ba6ae5044a6d2a0e8de38d396c", default-features = false }
 
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare
