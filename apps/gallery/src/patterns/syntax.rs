@@ -78,11 +78,12 @@ impl Render for Syntax {
                                         },
                                     )),
                             )
-                            .child(
-                                div()
-                                    .max_w(px(680.0))
-                                    .child(markdown::render(&doc, window, cx)),
-                            ),
+                            .child(div().max_w(px(680.0)).child(markdown::render(
+                                &doc,
+                                markdown::Caption::Shown,
+                                window,
+                                cx,
+                            ))),
                     ),
             )
             .child(scroll::transient(

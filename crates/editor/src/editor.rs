@@ -1312,6 +1312,10 @@ impl Render for Editor {
                     selection,
                     Some(&self.layouts),
                     focused.then(|| PLACEHOLDER.into()),
+                    // A caret goes into the caption here, so it is always
+                    // painted — an editor that could hide it would be hiding
+                    // a place you can already be typing.
+                    markdown::Caption::Shown,
                     window,
                     cx,
                 ),

@@ -239,7 +239,7 @@ fn linkify(text: &mut Text) {
             !text.marks.iter().any(|span| {
                 matches!(
                     span.mark,
-                    Mark::Link(_) | Mark::Mention { .. } | Mark::Image(..) | Mark::Code
+                    Mark::Link(_) | Mark::Mention { .. } | Mark::Image(_) | Mark::Code
                 ) && span.range.start < range.end
                     && range.start < span.range.end
             })
@@ -305,7 +305,7 @@ pub(crate) fn normalize(text: &str, marks: &[MarkSpan]) -> Text {
         // A mark left covering nothing has no spelling that survives a
         // round trip — `****` is literal text, not empty bold. An image is the
         // exception: `![](url)` is exactly a mark over no alt text.
-        .filter(|span| !span.range.is_empty() || matches!(span.mark, Mark::Image(..)))
+        .filter(|span| !span.range.is_empty() || matches!(span.mark, Mark::Image(_)))
         .collect();
 
     Text {
@@ -328,7 +328,7 @@ fn merge_same_mark(mut marks: Vec<MarkSpan>) -> Vec<MarkSpan> {
         for other in ix + 1..marks.len() {
             let (a, b) = (&marks[ix], &marks[other]);
             if a.mark == b.mark
-                && !matches!(a.mark, Mark::Image(..) | Mark::Mention { .. })
+                && !matches!(a.mark, Mark::Image(_) | Mark::Mention { .. })
                 && a.range.start <= b.range.end
                 && b.range.start <= a.range.end
             {
@@ -361,6 +361,26 @@ fn merge_same_mark(mut marks: Vec<MarkSpan>) -> Vec<MarkSpan> {
 pub(crate) fn collapse_to_one_line(text: &mut Text) {
     if text.text.contains('\n') {
         text.text = text.text.replace('\n', " ");
+    }
+}
+
+/// Split a trailing `|480` off an image's alt text, which is where a width is
+/// written down.
+///
+/// Obsidian's spelling, and the only one the parser leaves intact: `{width=480}`
+/// trails as literal text and breaks the paragraph out of being an image at all,
+/// and `=480x` is not an image to begin with. The last `|` wins, so a caption
+/// may hold its own — but one *ending* in `|123` gives that tail up, because the
+/// escape that tells them apart on disk is gone by the time this reads it.
+fn split_width(alt: &str) -> (&str, Option<u32>) {
+    let Some((caption, tail)) = alt.rsplit_once('|') else {
+        return (alt, None);
+    };
+    // A zero would paint a picture no pixels wide, and nothing that writes one
+    // can produce it — the drag floors at `MIN_IMAGE_WIDTH`.
+    match tail.parse().ok().filter(|width| *width > 0) {
+        Some(width) => (caption, Some(width)),
+        None => (alt, None),
     }
 }
 
@@ -464,13 +484,14 @@ impl ParseState {
         if let [
             MarkSpan {
                 range,
-                mark: Mark::Image(url, width),
+                mark: Mark::Image(url),
             },
         ] = text.marks.as_slice()
             && range.start == 0
             && range.end == text.text.len()
         {
-            let (url, width, alt) = (url.clone(), *width, Text::plain(text.text));
+            let (caption, width) = split_width(&text.text);
+            let (url, alt) = (url.clone(), Text::plain(caption.to_string()));
             self.flush_marker();
             let indent = self.indent();
             self.push(BlockKind::Image { url, alt, width }, indent);
@@ -644,12 +665,8 @@ impl ParseState {
                     None => Mark::Link(url),
                 });
             }
-            Tag::Image {
-                dest_url, title, ..
-            } => {
-                let width = title.parse().ok();
-                self.builder
-                    .open(Mark::Image(dest_url.into_string(), width));
+            Tag::Image { dest_url, .. } => {
+                self.builder.open(Mark::Image(dest_url.into_string()));
             }
             _ => {}
         }

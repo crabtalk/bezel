@@ -88,6 +88,25 @@ const TABLE_MIN_COLUMN_CONTENT: f32 = 48.0;
 /// Narrowest a column wraps down to before the table scrolls instead.
 const TABLE_MIN_COLUMN_WIDTH: f32 = 96.0;
 
+/// What an image's one authored string is doing on the page.
+///
+/// SwiftUI keeps three things apart — `accessibilityLabel` for a reader that
+/// cannot see, `.help` for the pointer, and a caption you compose out of a
+/// `Text` under the picture. Markdown has one slot for all three, so this says
+/// which of them it is playing here rather than in the document, where it is
+/// the same string either way.
+///
+/// A named choice rather than a `bool`, so a surface that wants a third answer
+/// gets a variant instead of a second flag.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Caption {
+    /// Under the picture, where a caret can sit in it. The editor's shape.
+    #[default]
+    Shown,
+    /// Kept by the document and painted nowhere — a picture on its own.
+    Hidden,
+}
+
 /// Where each block's text landed, recorded as it painted.
 ///
 /// A caret has to be placeable by pointer, and only paint knows where a glyph
@@ -345,6 +364,7 @@ struct Overlay<'a> {
     /// Shown on the caret's block while it holds nothing. The renderer is the
     /// only thing that knows where that text sits, so the string comes to it.
     placeholder: Option<&'a SharedString>,
+    caption: Caption,
 }
 
 impl<'a> Overlay<'a> {
@@ -402,12 +422,12 @@ impl<'a> Overlay<'a> {
 
 /// Parse and render in one step — the common case for read-only content.
 pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
-    render(&crate::parse(source), window, cx)
+    render(&crate::parse(source), Caption::default(), window, cx)
 }
 
 /// Render a document.
-pub fn render(doc: &Doc, window: &mut Window, cx: &mut App) -> AnyElement {
-    render_with_selection(doc, None, None, None, window, cx)
+pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) -> AnyElement {
+    render_with_selection(doc, None, None, None, caption, window, cx)
 }
 
 /// Render a document with a caret and a selection in it.
@@ -422,6 +442,7 @@ pub fn render_with_selection(
     selection: Option<Selection>,
     layouts: Option<&BlockLayouts>,
     placeholder: Option<SharedString>,
+    caption: Caption,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
@@ -453,6 +474,7 @@ pub fn render_with_selection(
             selection,
             layouts,
             placeholder: placeholder.as_ref(),
+            caption,
         };
         // The block's own box, recorded for a gutter handle and a drop target.
         // A rule and an image hold no text, so a layout would not find them.
@@ -695,7 +717,7 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
                     chip = true;
                     link = Some(url.clone());
                 }
-                Mark::Link(url) | Mark::Image(url, _) => link = Some(url.clone()),
+                Mark::Link(url) | Mark::Image(url) => link = Some(url.clone()),
             }
         }
 
@@ -1245,16 +1267,21 @@ fn image(url: &str, alt: &Text, width: Option<u32>, overlay: Overlay, theme: &Th
         .flex_col()
         .gap(px(CAPTION_GAP))
         .child(picture)
-        .when(!alt.is_empty() || overlay.caret().is_some(), |el| {
-            el.child(text_element(
-                alt,
-                CAPTION_TEXT_SIZE,
-                CAPTION_LINE_HEIGHT,
-                FontWeight::NORMAL,
-                overlay,
-                theme,
-            ))
-        })
+        // An empty caption still paints while the caret is in it, or there
+        // would be nothing to type into and no hint saying so.
+        .when(
+            overlay.caption == Caption::Shown && (!alt.is_empty() || overlay.caret().is_some()),
+            |el| {
+                el.child(text_element(
+                    alt,
+                    CAPTION_TEXT_SIZE,
+                    CAPTION_LINE_HEIGHT,
+                    FontWeight::NORMAL,
+                    overlay,
+                    theme,
+                ))
+            },
+        )
         .into_any_element()
 }
 

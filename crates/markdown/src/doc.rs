@@ -217,7 +217,8 @@ pub enum BlockKind {
         alt: Text,
         /// A drag off the handle in `bezel-editor`, in whole pixels — `None` is
         /// the natural width. `u32` rather than a float: this derives `Eq`, and
-        /// a `f32` cannot because of NaN.
+        /// a `f32` cannot because of NaN. Spelled `![alt|480](url)`, which
+        /// leaves the title slot to say what a title says.
         width: Option<u32>,
     },
     /// A link with a block to itself, painted richly. Atomic on purpose:
@@ -366,8 +367,7 @@ pub enum Mark {
     },
     /// An image among text. [`BlockKind::Image`] is the shape an editor offers;
     /// this is what keeps `see ![x](u) here` from silently becoming a link when
-    /// the document is saved. The width rides along from the parse only to
-    /// reach [`BlockKind::Image`] if this run turns out to be a whole
-    /// paragraph on its own — an inline image has no box of its own to resize.
-    Image(String, Option<u32>),
+    /// the document is saved. No width: one among text has no box of its own to
+    /// resize, and the `|480` that would say so stays the ordinary text it is.
+    Image(String),
 }

@@ -153,7 +153,7 @@ impl Render for Document {
             }));
 
         let body = match self.view {
-            View::Read => markdown::render(&doc, window, cx),
+            View::Read => markdown::render(&doc, markdown::Caption::Shown, window, cx),
             // The document written back out, not the constant above it.
             View::Source => div()
                 .font_family(theme.font_mono.clone())
