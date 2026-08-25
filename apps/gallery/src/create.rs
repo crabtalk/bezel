@@ -8,8 +8,7 @@
 //! thing on screen rather than a second description of it.
 
 use gpui::{
-    AnyElement, Axis, ClipboardItem, Context, DragMoveEvent, Empty, SharedString, div, prelude::*,
-    px,
+    AnyElement, ClipboardItem, Context, DragMoveEvent, Empty, SharedString, div, prelude::*, px,
 };
 use theme::{Appearance, BASE_COLORS, Brand, Theme};
 use ui::{
@@ -181,15 +180,12 @@ fn slider(
                     theme.slider(value / knob.max),
                 )
                 .id(knob.id)
-                .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| Empty))
+                .on_drag(SliderDrag(knob.id.into()), |_, _, _, cx| cx.new(|_| Empty))
                 .on_drag_move(
                     cx.listener(move |_, event: &DragMoveEvent<SliderDrag>, _, cx| {
-                        let fraction = widgets::axis_fraction(
-                            event.event.position,
-                            event.bounds,
-                            Axis::Horizontal,
-                            0.0,
-                        );
+                        let Some(fraction) = widgets::slider_fraction(event, knob.id, cx) else {
+                            return;
+                        };
                         let mut next = theme::brand(cx);
                         (knob.write)(&mut next, fraction * knob.max);
                         theme::set_brand(next, cx);

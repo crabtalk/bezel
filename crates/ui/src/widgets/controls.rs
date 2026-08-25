@@ -5,13 +5,28 @@
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`.
 
-use gpui::{Div, SharedString, div, prelude::*, px};
+use gpui::{App, Axis, Div, DragMoveEvent, ElementId, SharedString, div, prelude::*, px};
 use theme::{Theme, ThemeExt, ink};
 
-/// The drag payload of a [`Controls::slider`], shipped from here for the same
-/// reason [`crate::widgets::SplitDrag`] is: one type per gesture, so two
-/// sliders in one window do not answer each other's `on_drag_move`.
-pub struct SliderDrag;
+/// The drag payload of a [`Controls::slider`], carrying the id of the slider
+/// the gesture started on.
+///
+/// The id is what keeps sliders apart: gpui delivers a drag move to *every*
+/// listener of the payload's type, not just the element under the pointer, so
+/// a page of five sliders would move all five at once.
+pub struct SliderDrag(pub ElementId);
+
+/// Where a slider drag lands on the track it is asked about, or `None` when the
+/// gesture belongs to another slider. `id` is the one that element carries.
+pub fn slider_fraction(
+    event: &DragMoveEvent<SliderDrag>,
+    id: impl Into<ElementId>,
+    cx: &App,
+) -> Option<f32> {
+    (event.drag(cx).0 == id.into()).then(|| {
+        crate::widgets::axis_fraction(event.event.position, event.bounds, Axis::Horizontal, 0.0)
+    })
+}
 
 pub trait Controls: ThemeExt {
     /// Display-only toggle switch (the reference branch-picker.tsx `Toggle`):
@@ -116,15 +131,19 @@ pub trait Controls: ThemeExt {
     /// mouse handlers; this is the paint.
     ///
     /// The element *is* the drag source, so the gesture is
-    /// grab-anywhere-and-slide, and [`axis_fraction`](crate::widgets::axis_fraction)
-    /// turns the pointer into the value:
+    /// grab-anywhere-and-slide, and [`slider_fraction`] turns the pointer into
+    /// the value — passing the element's own id, because every slider hears
+    /// every slider's drag:
     ///
     /// ```ignore
     /// focus::focusable(&theme, &self.slider, theme.slider(self.level))
     ///     .id("slider")
-    ///     .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
+    ///     .on_drag(SliderDrag("slider".into()), |_, _, _, cx| cx.new(|_| gpui::Empty))
     ///     .on_drag_move(cx.listener(|view, event: &DragMoveEvent<SliderDrag>, _, cx| {
-    ///         view.level = axis_fraction(event.event.position, event.bounds, Axis::Horizontal, 0.0);
+    ///         let Some(fraction) = widgets::slider_fraction(event, "slider", cx) else {
+    ///             return;
+    ///         };
+    ///         view.level = fraction;
     ///         cx.notify();
     ///     }))
     /// ```

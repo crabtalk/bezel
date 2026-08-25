@@ -18,7 +18,7 @@ mod status;
 
 pub use buttons::{ButtonStyle, Buttons};
 pub use content::Content;
-pub use controls::{Controls, SliderDrag};
+pub use controls::{Controls, SliderDrag, slider_fraction};
 pub use layout::{Layout, SplitDrag};
 pub use scaffolding::{OPTION_CARD_HEIGHT, OPTION_CARD_RADIUS, Scaffolding};
 pub use status::Status;

@@ -1765,15 +1765,15 @@ impl Gallery {
                             .id("slider")
                             // The element is its own drag source, so the gesture
                             // starts wherever the pointer went down on the track.
-                            .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| Empty))
+                            .on_drag(SliderDrag("slider".into()), |_, _, _, cx| cx.new(|_| Empty))
                             .on_drag_move(cx.listener(
                                 |view, event: &DragMoveEvent<SliderDrag>, _, cx| {
-                                    view.level = widgets::axis_fraction(
-                                        event.event.position,
-                                        event.bounds,
-                                        Axis::Horizontal,
-                                        0.0,
-                                    );
+                                    let Some(fraction) =
+                                        widgets::slider_fraction(event, "slider", cx)
+                                    else {
+                                        return;
+                                    };
+                                    view.level = fraction;
                                     cx.notify();
                                 },
                             ))

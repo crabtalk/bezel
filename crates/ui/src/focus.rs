@@ -93,6 +93,10 @@ pub fn traversal(el: Div) -> Div {
 /// The ring is the same one [`crate::input::TextField`] paints — the border in
 /// [`Theme::caret`] — so a focused button and a focused field read alike.
 ///
+/// Keyboard focus only, like CSS `:focus-visible`. A control also takes focus
+/// when clicked, and a ring that landed on it there would outline a slider for
+/// the whole drag — the pointer already says which control is being used.
+///
 /// It lands on the control's *own* border, which is why every control in
 /// [`crate::widgets`] carries one even where it paints nothing: gpui sizes
 /// border-box, so a border that only appeared on focus would move the content
@@ -112,5 +116,5 @@ pub fn focusable(theme: &Theme, handle: &FocusHandle, el: Div) -> Div {
     let handle = handle.clone().tab_stop(true);
     el.key_context(CONTROL_KEY_CONTEXT)
         .track_focus(&handle)
-        .focus(|style| style.border_color(theme.caret))
+        .focus_visible(|style| style.border_color(theme.caret))
 }

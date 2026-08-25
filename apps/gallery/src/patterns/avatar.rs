@@ -16,7 +16,7 @@ use agent::{
     avatar::{Eyes, Motion, Shape, seed},
 };
 use gpui::{
-    AnyElement, Axis, Context, DragMoveEvent, Empty, Hsla, Render, ScrollHandle, SharedString,
+    AnyElement, Context, DragMoveEvent, Empty, Hsla, Render, ScrollHandle, SharedString,
     Subscription, Task, Window, div, prelude::*, px,
 };
 use theme::Theme;
@@ -326,15 +326,19 @@ impl Render for Avatars {
                                                 .track_focus(&self.slider)
                                                 .id("avatar-speed")
                                             .cursor_pointer()
-                                            .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| Empty))
+                                            .on_drag(SliderDrag("avatar-speed".into()), |_, _, _, cx| {
+                                                cx.new(|_| Empty)
+                                            })
                                             .on_drag_move(cx.listener(
                                                 |view, event: &DragMoveEvent<SliderDrag>, _, cx| {
-                                                    view.speed = widgets::axis_fraction(
-                                                        event.event.position,
-                                                        event.bounds,
-                                                        Axis::Horizontal,
-                                                        0.0,
-                                                    );
+                                                    let Some(fraction) = widgets::slider_fraction(
+                                                        event,
+                                                        "avatar-speed",
+                                                        cx,
+                                                    ) else {
+                                                        return;
+                                                    };
+                                                    view.speed = fraction;
                                                     cx.notify();
                                                 },
                                             ))
