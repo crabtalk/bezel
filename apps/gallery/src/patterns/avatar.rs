@@ -325,7 +325,6 @@ impl Render for Avatars {
                                                 .key_context(focus::CONTROL_KEY_CONTEXT)
                                                 .track_focus(&self.slider)
                                                 .id("avatar-speed")
-                                            .cursor_pointer()
                                             .on_drag(SliderDrag("avatar-speed".into()), |_, _, _, cx| {
                                                 cx.new(|_| Empty)
                                             })

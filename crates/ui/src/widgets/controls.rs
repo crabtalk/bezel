@@ -159,6 +159,7 @@ pub trait Controls: ThemeExt {
             .flex()
             .items_center()
             .relative()
+            .cursor_pointer()
             .child(
                 div()
                     .w_full()
