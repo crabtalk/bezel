@@ -171,7 +171,7 @@ impl Activity {
             .gap(px(6.0))
             .px(px(4.0))
             .py(px(5.0))
-            .rounded(px(Theme::CONTROL_RADIUS))
+            .rounded(px(Theme::control_radius()))
             .cursor_pointer()
             .hover(|s| s.bg(theme::ink(0.03)))
             .on_click(cx.listener(move |view, _, _, cx| {
@@ -275,7 +275,7 @@ impl Render for Activity {
                             .max_w(px(440.0))
                             .px(px(14.0))
                             .py(px(9.0))
-                            .rounded(px(Theme::SURFACE_RADIUS))
+                            .rounded(px(Theme::surface_radius()))
                             .bg(theme.surface_raised)
                             .text_size(px(13.5))
                             .text_color(theme.text)
@@ -524,7 +524,7 @@ impl ToolCalls {
     /// `ui` for it.
     fn box_(theme: &Theme) -> gpui::Div {
         div()
-            .rounded(px(Theme::PANEL_RADIUS))
+            .rounded(px(Theme::panel_radius()))
             .border_1()
             .border_color(theme.border)
             .overflow_hidden()
@@ -859,7 +859,7 @@ impl Render for Composer {
                     .max_w(px(440.0))
                     .px(px(14.0))
                     .py(px(9.0))
-                    .rounded(px(Theme::SURFACE_RADIUS))
+                    .rounded(px(Theme::surface_radius()))
                     .bg(theme.surface_raised)
                     .text_size(px(13.5))
                     .text_color(theme.text)
@@ -893,7 +893,7 @@ impl Render for Composer {
                     // of controls under it, both on one frosted surface.
                     .child(
                         div()
-                            .rounded(px(Theme::SURFACE_RADIUS))
+                            .rounded(px(Theme::surface_radius()))
                             .border_1()
                             .border_color(theme.border)
                             .bg(theme.card_glass_bg())

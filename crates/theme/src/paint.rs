@@ -18,7 +18,8 @@ use crate::Appearance;
 /// outside tests.
 static CURRENT_APPEARANCE: AtomicU8 = AtomicU8::new(0);
 
-/// Bumped every time the appearance actually changes.
+/// Bumped every time a palette is installed — an appearance switch, and equally
+/// a brand change, which moves every token while the appearance stands still.
 ///
 /// Anything that caches *resolved colors* — most importantly the markdown
 /// renderer's cross-frame `TextRun` cache, which bakes an `Hsla` into every run —
@@ -52,6 +53,14 @@ pub fn theme_generation() -> u32 {
 pub fn lock_appearance() -> std::sync::MutexGuard<'static, ()> {
     static APPEARANCE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     APPEARANCE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Mark the installed palette as a new one, so anything caching resolved
+/// colors drops what it has. A brand change moves every token without moving
+/// the appearance, which is why this is separate from
+/// [`set_current_appearance`].
+pub(crate) fn bump_generation() {
+    THEME_GENERATION.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Point the context-free paint helpers at an appearance. Called by

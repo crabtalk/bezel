@@ -382,7 +382,7 @@ pub fn popover_card(theme: &Theme) -> gpui::Div {
     let card = div()
         .border_1()
         .border_color(hairline(0.10))
-        .rounded(px(Theme::SURFACE_RADIUS))
+        .rounded(px(Theme::surface_radius()))
         .shadow_lg()
         .p(px(MENU_PAD))
         .overflow_hidden()
@@ -440,7 +440,7 @@ fn exit_progress(since: web_time::Instant) -> f32 {
 /// hold full strength through the fade and pop off at unmount.
 fn material_menu(exit: Option<f32>, content: AnyElement) -> AnyElement {
     let blur = crate::material::MENU_BLUR * (1.0 - exit.unwrap_or(0.0));
-    crate::material::material(Theme::SURFACE_RADIUS, blur, content).into_any_element()
+    crate::material::material(Theme::surface_radius(), blur, content).into_any_element()
 }
 
 /// Entrance or exit motion for a popover layer. While exiting (the [`Popup`]
@@ -668,7 +668,7 @@ pub fn modal(
 /// the backdrop hue under the blur and the palette came out a flat grey slab
 /// next to the hue-inheriting menus (user report).
 ///
-/// The radius is [`Theme::SURFACE_RADIUS`], not a parameter: a glass-tinted
+/// The radius is [`Theme::surface_radius`], not a parameter: a glass-tinted
 /// modal *is* a popover surface, and the parameter this used to take carried
 /// the doc line "must match the card's rounding" — a footgun handed to the
 /// caller in writing.
@@ -678,7 +678,14 @@ pub fn modal_glass(
     card: AnyElement,
     on_dismiss: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
-    modal_with(id, viewport, card, Theme::SURFACE_RADIUS, 0.35, on_dismiss)
+    modal_with(
+        id,
+        viewport,
+        card,
+        Theme::surface_radius(),
+        0.35,
+        on_dismiss,
+    )
 }
 
 fn modal_with(
@@ -855,7 +862,7 @@ pub fn menu_row(theme: &Theme, active: bool, fade_key: impl Into<SharedString>) 
         // Concentric with the card it sits in rather than a radius of its own:
         // 12 − 4 = 8, which is where the crate's most-repeated corner value
         // came from all along.
-        .rounded(px(Theme::inset_radius(Theme::SURFACE_RADIUS, MENU_PAD)))
+        .rounded(px(Theme::inset_radius(Theme::surface_radius(), MENU_PAD)))
         .text_size(px(13.0))
         .cursor_pointer();
     if active {
@@ -1064,7 +1071,7 @@ pub fn search_input_frame(_theme: &Theme, input: AnyElement) -> gpui::Div {
         .py(px(6.0))
         // Concentric with the card, like [`menu_row`] — this frame sits on the
         // same inset, and its own doc already said so.
-        .rounded(px(Theme::inset_radius(Theme::SURFACE_RADIUS, MENU_PAD)))
+        .rounded(px(Theme::inset_radius(Theme::surface_radius(), MENU_PAD)))
         .bg(ink(0.04))
         .text_size(px(13.0))
         .child(input)
@@ -1130,7 +1137,7 @@ pub fn dialog_field(input: AnyElement) -> gpui::Div {
         .w_full()
         .px(px(12.0))
         .py(px(8.0))
-        .rounded(px(Theme::BUTTON_RADIUS))
+        .rounded(px(Theme::button_radius()))
         .border_1()
         .border_color(hairline(0.08))
         .bg(ink(0.04))
@@ -1158,7 +1165,7 @@ pub fn redacted_rows(
             let phase = motion::staggered_phase(delta, i, 0.08);
             div()
                 .h(px(28.0))
-                .rounded(px(Theme::CONTROL_RADIUS))
+                .rounded(px(Theme::control_radius()))
                 .bg(wash)
                 .opacity(0.35 + 0.4 * motion::pulse_wave(phase))
         }))

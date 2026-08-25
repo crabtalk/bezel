@@ -117,7 +117,7 @@ pub fn table(theme: &Theme) -> gpui::Div {
         .flex()
         .flex_col()
         .w_full()
-        .rounded(px(Theme::PANEL_RADIUS))
+        .rounded(px(Theme::panel_radius()))
         .border_1()
         .border_color(theme.border)
         .overflow_hidden()

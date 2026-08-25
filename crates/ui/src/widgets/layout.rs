@@ -48,7 +48,7 @@ pub trait Layout: ThemeExt {
             .gap(px(6.0))
             .px(px(4.0))
             .py(px(5.0))
-            .rounded(px(Theme::CONTROL_RADIUS))
+            .rounded(px(Theme::control_radius()))
             .cursor_pointer()
             .child(Layout::disclosure(self.theme(), expanded))
             .child(
@@ -99,7 +99,7 @@ pub trait Layout: ThemeExt {
             .w_full()
             .px(px(8.0))
             .py(px(6.0))
-            .rounded(px(Theme::CONTROL_RADIUS))
+            .rounded(px(Theme::control_radius()))
             .text_size(px(13.0))
             .text_color(tint)
             .cursor_pointer();
@@ -189,7 +189,7 @@ pub trait Layout: ThemeExt {
             .px(px(10.0))
             .pb(px(7.0))
             .pt(px(6.0))
-            .rounded_t(px(Theme::CONTROL_RADIUS))
+            .rounded_t(px(Theme::control_radius()))
             .border_1()
             .border_color(crate::widgets::RING_SLOT)
             .text_size(px(13.0))

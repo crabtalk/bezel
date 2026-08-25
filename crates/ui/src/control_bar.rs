@@ -63,7 +63,7 @@ const BAR_GAP: f32 = 8.0;
 pub enum Shape {
     /// A stadium — the radius is half the height. Apple Music's transport.
     Pill,
-    /// A rounded rectangle at [`Theme::BUBBLE_RADIUS`], the radius this library
+    /// A rounded rectangle at [`Theme::bubble_radius`], the radius this library
     /// already gives floating rounded things. What most composers want; a
     /// stadium reads as a media control and a composer is not one.
     Rounded,
@@ -73,7 +73,7 @@ impl Shape {
     fn radius(self) -> f32 {
         match self {
             Shape::Pill => BAR_HEIGHT / 2.0,
-            Shape::Rounded => Theme::BUBBLE_RADIUS,
+            Shape::Rounded => Theme::bubble_radius(),
         }
     }
 }

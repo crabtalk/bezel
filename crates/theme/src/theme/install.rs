@@ -2,7 +2,10 @@
 
 use gpui::{App, Global};
 
-use crate::{Appearance, paint, theme::Theme};
+use crate::{
+    Appearance, paint,
+    theme::{Theme, layout},
+};
 
 impl Theme {
     /// Install the palette for `appearance` as the gpui global and point the
@@ -16,7 +19,11 @@ impl Theme {
         let build = cx
             .try_global::<Palette>()
             .map_or(Self::for_appearance as fn(Appearance) -> Theme, |p| p.0);
-        Self::install_custom(build(appearance), cx);
+        let brand = crate::brand(cx);
+        let mut theme = build(appearance);
+        brand.apply(&mut theme);
+        layout::set_base_radius(brand.radius);
+        Self::install_custom(theme, cx);
     }
 
     /// Install a palette the caller built: brand colours, one retuned token, or
@@ -41,6 +48,7 @@ impl Theme {
     /// [`current_appearance`]: crate::paint::current_appearance
     pub fn install_custom(theme: Theme, cx: &mut App) {
         paint::set_current_appearance(theme.appearance);
+        paint::bump_generation();
         cx.set_global(theme);
     }
 

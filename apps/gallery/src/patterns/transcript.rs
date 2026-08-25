@@ -203,7 +203,7 @@ impl Transcript {
             .max_w(px(440.0))
             .px(px(14.0))
             .py(px(9.0))
-            .rounded(px(Theme::SURFACE_RADIUS))
+            .rounded(px(Theme::surface_radius()))
             .bg(theme.surface_raised)
             .text_size(px(13.5))
             .text_color(theme.text)
@@ -232,7 +232,7 @@ impl Transcript {
             .gap(px(6.0))
             .px(px(4.0))
             .py(px(5.0))
-            .rounded(px(Theme::CONTROL_RADIUS))
+            .rounded(px(Theme::control_radius()))
             .cursor_pointer()
             .hover(|s| s.bg(theme::ink(0.03)))
             .on_click(cx.listener(move |view: &mut Self, _, _, cx| {
@@ -305,7 +305,7 @@ impl Transcript {
                 let start = index;
                 out.push(
                     div()
-                        .rounded(px(Theme::PANEL_RADIUS))
+                        .rounded(px(Theme::panel_radius()))
                         .border_1()
                         .border_color(theme.border)
                         .overflow_hidden()

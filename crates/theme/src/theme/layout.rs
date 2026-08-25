@@ -1,7 +1,18 @@
 //! Layout constants. Numbers drive layout, colors are paint: these live as
 //! plain numbers and never depend on which color is painted.
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use crate::theme::Theme;
+
+/// The branded base radius behind [`Theme::radius`], as raw `f32` bits.
+static BASE: AtomicU32 = AtomicU32::new(Theme::BASE_RADIUS.to_bits());
+
+/// Point the radius accessors at a base. Called by
+/// [`Theme::install`](crate::theme::Theme::install).
+pub(crate) fn set_base_radius(radius: f32) {
+    BASE.store(radius.to_bits(), Ordering::Relaxed);
+}
 
 impl Theme {
     // ---- numbers drive layout (px) ----
@@ -47,8 +58,19 @@ impl Theme {
     /// hover-revealed timestamp) never sits inside the fade when scrolled
     /// to the bottom.
     pub const TRANSCRIPT_FADE_BAND: f32 = 24.0;
+    /// Button, text field and select-trigger radius — the crate's most-used
+    /// corner after the derived ones, and unnamed until the concentric pass
+    /// separated the eight sites that *chose* 8.0 from the ones that only
+    /// arrived at it as `12 − 4`.
+    ///
+    /// Every other corner is a ratio of this one, so
+    /// [`Brand::radius`](crate::Brand::radius) moves the whole set together.
+    pub const BASE_RADIUS: f32 = 8.0;
+
     /// Message bubble corner radius.
-    pub const BUBBLE_RADIUS: f32 = 16.0;
+    pub fn bubble_radius() -> f32 {
+        Self::radius(2.0)
+    }
     /// Floating-surface corner radius — popovers, menus, the command palette,
     /// group boxes.
     ///
@@ -58,18 +80,33 @@ impl Theme {
     /// it shows only on glass and only at the corners. So the radius is named
     /// once and read at both ends, rather than written twice sixty lines apart
     /// — which is how three independent `12.0`s came to exist here.
-    pub const SURFACE_RADIUS: f32 = 12.0;
+    pub fn surface_radius() -> f32 {
+        Self::radius(1.5)
+    }
     /// Panel / card corner radius.
-    pub const PANEL_RADIUS: f32 = 10.0;
-    /// Button, text field and select-trigger radius — the crate's most-used
-    /// corner after the derived ones, and unnamed until the concentric pass
-    /// separated the eight sites that *chose* 8.0 from the ones that only
-    /// arrived at it as `12 − 4`.
-    pub const BUTTON_RADIUS: f32 = 8.0;
+    pub fn panel_radius() -> f32 {
+        Self::radius(1.25)
+    }
+    /// Button, text field and select-trigger radius.
+    pub fn button_radius() -> f32 {
+        Self::radius(1.0)
+    }
     /// Small control radius (chips, tags, steppers) — a size down from
-    /// [`Self::BUTTON_RADIUS`], for things that sit inside a control rather
+    /// [`Self::button_radius`], for things that sit inside a control rather
     /// than being one.
-    pub const CONTROL_RADIUS: f32 = 6.0;
+    pub fn control_radius() -> f32 {
+        Self::radius(0.75)
+    }
+
+    /// A corner as a multiple of the branded base radius.
+    ///
+    /// Read from a process-wide mirror rather than the theme global for the
+    /// reason [`current_appearance`](crate::paint::current_appearance) is: the
+    /// element builders that round a corner are free functions with no `cx` in
+    /// scope, and a radius is one number for the whole app.
+    fn radius(ratio: f32) -> f32 {
+        f32::from_bits(BASE.load(Ordering::Relaxed)) * ratio
+    }
 
     /// The concentric child of a surface: a row inset by `inset` inside a
     /// container of radius `outer` keeps its corners parallel to the

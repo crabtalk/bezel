@@ -70,3 +70,20 @@ gpui_web = { package = "bezel-gpui-web", version = "0.3.2" }
 unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(feature, values("cargo-clippy"))',
 ] }
+
+# `bezel-gpui-web 0.3.2` ships no `assets/` directory, so the
+# `include_bytes!("../../../assets/fonts/…")` in its platform module reaches
+# outside the package and no wasm build can resolve it. The fonts are in the
+# fork at the path the source expects, so a git checkout builds where the
+# registry tarball cannot; `release-0.3.2` is that tree under the published
+# names, generated onto dev by the fork's `script/prepare-publish`.
+#
+# Republishing the crate with its fonts vendored is what lifts this.
+# All three roots, not just the broken one: a lone `bezel-gpui-web` patch brings
+# its own `bezel-gpui` in by path, and the graph ends up with two — `WebPlatform`
+# then implements a `Platform` trait the app does not hold. Patched together they
+# resolve from one source, and the registry copies drop out.
+[patch.crates-io]
+bezel-gpui = { git = "https://github.com/crabtalk/zed", rev = "1f50ad73350cdb2d476c4b947797384d025cd8bb" }
+bezel-gpui-platform = { git = "https://github.com/crabtalk/zed", rev = "1f50ad73350cdb2d476c4b947797384d025cd8bb" }
+bezel-gpui-web = { git = "https://github.com/crabtalk/zed", rev = "1f50ad73350cdb2d476c4b947797384d025cd8bb" }

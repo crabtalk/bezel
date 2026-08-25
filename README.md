@@ -34,15 +34,36 @@ gpui_platform = { package = "bezel-gpui-platform", version = "0.3", features = [
 
 ## Theme
 
-To ship your own colors, register a custom palette:
+Most apps want the shipped palette in their own hues. That is a `Brand` — one
+hue for the greys, one for the accent, one base radius:
+
+```rust
+use bezel::theme::{self, Brand, Tint};
+
+// before appearance::init
+theme::set_brand(
+    Brand {
+        tint: Tint::new(257.417, 0.046),
+        accent: Tint::new(276.935, 0.182),
+        radius: 8.0,
+    },
+    cx,
+);
+```
+
+Lightness is not a knob, so a branded palette keeps the contrast ratios the
+shipped one was verified at. The gallery's **Create** page is this struct with
+sliders on it, and prints the call back.
+
+For colors a hue rotation cannot reach, register a palette builder instead — it
+runs first, and a brand rotates whatever it returns:
 
 ```rust
 use bezel::theme::{Theme, set_palette};
 
-// before appearance::init
 theme::set_palette(|appearance| {
     let mut theme = Theme::for_appearance(appearance);
-    theme.accent = my_brand_accent(appearance);
+    theme.danger = my_red(appearance);
     theme
 }, cx);
 ```

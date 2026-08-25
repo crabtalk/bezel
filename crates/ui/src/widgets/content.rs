@@ -70,7 +70,7 @@ pub trait Content: ThemeExt {
             .pl(px(8.0))
             .pr(px(5.0))
             .py(px(3.0))
-            .rounded(px(Theme::CONTROL_RADIUS))
+            .rounded(px(Theme::control_radius()))
             .bg(ink(0.07))
             .border_1()
             .border_color(theme.border)

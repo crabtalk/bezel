@@ -78,6 +78,7 @@ pub mod highlight;
 #[cfg(debug_assertions)]
 pub mod inspector;
 
+pub mod create;
 pub mod patterns;
 pub mod preview;
 pub mod store;
@@ -470,6 +471,7 @@ pub const FOUNDATIONS: &[Group] = &[
     Group {
         title: "Style",
         sections: &[
+            section("create", "Create", "apps/gallery/src/create.rs"),
             section("color", "Color", "crates/theme/src/lib.rs"),
             section("typography", "Typography", "crates/theme/src/lib.rs"),
             section("layout", "Layout", "crates/theme/src/lib.rs"),
@@ -677,6 +679,10 @@ pub struct Gallery {
     switches: [gpui::FocusHandle; 2],
     segments: [gpui::FocusHandle; 3],
     slider: gpui::FocusHandle,
+    /// The composer's five knobs, and which of its three files is showing.
+    /// What they are *set to* is the brand global — the page keeps no palette.
+    brand_knobs: [gpui::FocusHandle; 5],
+    create_file: usize,
     tab_strip: [gpui::FocusHandle; 3],
     /// Which button was last pressed, and by what — the only way to see that a
     /// keyboard press and a click reach the same place.
@@ -821,6 +827,8 @@ impl Gallery {
             switches: [cx.focus_handle(), cx.focus_handle()],
             segments: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             slider: cx.focus_handle(),
+            brand_knobs: std::array::from_fn(|_| cx.focus_handle()),
+            create_file: 0,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             rail_scroll: gpui::ScrollHandle::new(),
             rail_bar: ScrollbarState::new(),
@@ -1285,6 +1293,8 @@ impl Gallery {
 
         match key {
             // ---- Foundations -------------------------------------------------
+            "create" => create::page(self, &theme, cx),
+
             "color" => section
                 .child(hint(
                     &theme,
@@ -1382,9 +1392,9 @@ impl Gallery {
                 .child(
                     div().flex().flex_row().gap(px(12.0)).children(
                         [
-                            ("CONTROL", Theme::CONTROL_RADIUS),
-                            ("PANEL", Theme::PANEL_RADIUS),
-                            ("BUBBLE", Theme::BUBBLE_RADIUS),
+                            ("CONTROL", Theme::control_radius()),
+                            ("PANEL", Theme::panel_radius()),
+                            ("BUBBLE", Theme::bubble_radius()),
                         ]
                         .into_iter()
                         .map(|(name, value)| {
@@ -1499,7 +1509,7 @@ impl Gallery {
                             .items_center()
                             .gap(px(6.0))
                             .py(px(10.0))
-                            .rounded(px(Theme::CONTROL_RADIUS))
+                            .rounded(px(Theme::control_radius()))
                             .border_1()
                             .border_color(theme.border)
                             .child(
@@ -2049,7 +2059,7 @@ impl Gallery {
                             .flex()
                             .flex_col()
                             .gap(px(2.0))
-                            .rounded(px(Theme::PANEL_RADIUS))
+                            .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
                             .bg(theme.surface)
@@ -2104,7 +2114,7 @@ impl Gallery {
             "titlebar" => {
                 let frame = |body: gpui::Div| {
                     body.w_full()
-                        .rounded(px(Theme::PANEL_RADIUS))
+                        .rounded(px(Theme::panel_radius()))
                         .border_1()
                         .border_color(theme.border)
                         .bg(theme.surface)
@@ -2188,7 +2198,7 @@ impl Gallery {
                             .id("split")
                             .w(px(420.0))
                             .h(px(140.0))
-                            .rounded(px(Theme::PANEL_RADIUS))
+                            .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
                             .overflow_hidden()
@@ -2292,7 +2302,7 @@ impl Gallery {
                         div()
                             .relative()
                             .h(px(130.0))
-                            .rounded(px(Theme::PANEL_RADIUS))
+                            .rounded(px(Theme::panel_radius()))
                             .overflow_hidden()
                             .child(div().absolute().inset_0().flex().flex_row().children(
                                 (0..14).map(|i| {
@@ -2461,7 +2471,7 @@ impl Gallery {
                     div()
                         .h(px(120.0))
                         .w_full()
-                        .rounded(px(Theme::PANEL_RADIUS))
+                        .rounded(px(Theme::panel_radius()))
                         .border_1()
                         .border_color(theme.border)
                         .flex()
@@ -2577,7 +2587,7 @@ impl Gallery {
                         // Standalone: one step in its own box.
                         div()
                             .w(px(420.0))
-                            .rounded(px(Theme::PANEL_RADIUS))
+                            .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
                             .overflow_hidden()
@@ -2591,7 +2601,7 @@ impl Gallery {
                     .child(
                         div()
                             .w(px(420.0))
-                            .rounded(px(Theme::PANEL_RADIUS))
+                            .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
                             .overflow_hidden()
@@ -2745,7 +2755,7 @@ impl Gallery {
                         .relative()
                         .h(px(220.0))
                         .w_full()
-                        .rounded(px(Theme::PANEL_RADIUS))
+                        .rounded(px(Theme::panel_radius()))
                         .border_1()
                         .border_color(theme.border)
                         .overflow_hidden()
@@ -2831,7 +2841,7 @@ impl Gallery {
                         .relative()
                         .h(px(180.0))
                         .w_full()
-                        .rounded(px(Theme::PANEL_RADIUS))
+                        .rounded(px(Theme::panel_radius()))
                         .border_1()
                         .border_color(theme.border)
                         .overflow_hidden()
@@ -2982,7 +2992,7 @@ impl Gallery {
                             .relative()
                             .h(px(200.0))
                             .w_full()
-                            .rounded(px(Theme::PANEL_RADIUS))
+                            .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
                             .overflow_hidden()
@@ -3041,7 +3051,7 @@ impl Gallery {
                             .relative()
                             .h(px(220.0))
                             .w_full()
-                            .rounded(px(Theme::PANEL_RADIUS))
+                            .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
                             .overflow_hidden()
@@ -3115,7 +3125,7 @@ impl Gallery {
 }
 
 /// The vertical rhythm every page body uses.
-fn stack() -> gpui::Div {
+pub(crate) fn stack() -> gpui::Div {
     div().flex().flex_col().gap(px(12.0))
 }
 
@@ -3225,7 +3235,7 @@ fn swatch(theme: &Theme, name: &'static str, color: gpui::Hsla) -> gpui::Div {
             div()
                 .h(px(44.0))
                 .w_full()
-                .rounded(px(Theme::CONTROL_RADIUS))
+                .rounded(px(Theme::control_radius()))
                 .border_1()
                 .border_color(theme.border)
                 .bg(color),
@@ -3338,7 +3348,7 @@ fn type_row(theme: &Theme, family: SharedString, name: &'static str) -> gpui::Di
 
 /// One muted line telling you how to try a component whose whole behaviour is
 /// an interaction — the page would otherwise look like a dead button.
-fn hint(theme: &Theme, copy: &str) -> gpui::Div {
+pub(crate) fn hint(theme: &Theme, copy: &str) -> gpui::Div {
     div()
         .text_size(px(12.5))
         .text_color(theme.text_muted)

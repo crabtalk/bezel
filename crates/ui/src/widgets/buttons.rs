@@ -26,7 +26,7 @@ fn frame(mut el: Div) -> Div {
     el = el
         .px(px(12.0))
         .py(px(6.0))
-        .rounded(px(Theme::BUTTON_RADIUS))
+        .rounded(px(Theme::button_radius()))
         .text_size(px(13.0))
         .cursor_pointer();
     el

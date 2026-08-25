@@ -27,6 +27,13 @@ pub fn oklch(l: f32, c: f32, h_deg: f32) -> Hsla {
 /// oklch → sRGB (each 0..1, clamped/gamut-clipped per channel).
 /// Reference: Björn Ottosson's OKLab definition (the same matrices CSS Color 4 uses).
 pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> [f32; 3] {
+    let [r, g, b] = oklch_to_linear(l, c, h_deg);
+    [gamma_encode(r), gamma_encode(g), gamma_encode(b)]
+}
+
+/// oklch → *linear* sRGB, unclamped: a component outside 0..1 is a color the
+/// display cannot make, which is what [`fit_chroma`] tests for.
+fn oklch_to_linear(l: f32, c: f32, h_deg: f32) -> [f32; 3] {
     let h = h_deg.to_radians();
     let a = c * h.cos();
     let b = c * h.sin();
@@ -42,7 +49,7 @@ pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> [f32; 3] {
     let g = -1.268_438 * l3 + 2.609_757_4 * m3 - 0.341_319_4 * s3;
     let b = -0.004_196_086_3 * l3 - 0.703_418_6 * m3 + 1.707_614_7 * s3;
 
-    [gamma_encode(r), gamma_encode(g), gamma_encode(b)]
+    [r, g, b]
 }
 
 fn gamma_encode(x: f32) -> f32 {
@@ -52,6 +59,60 @@ fn gamma_encode(x: f32) -> f32 {
     } else {
         1.055 * x.powf(1.0 / 2.4) - 0.055
     }
+}
+
+fn gamma_decode(x: f32) -> f32 {
+    let x = x.clamp(0.0, 1.0);
+    if x <= 0.040_449_936 {
+        x / 12.92
+    } else {
+        ((x + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// The oklch lightness of an achromatic tone: [`neutral`] inverted.
+///
+/// Only greys round-trip through this. A grey's three channels are equal, and
+/// the three LMS matrix rows each sum to 1, so the whole OKLab transform
+/// collapses to one cube root — no inverse matrix needed.
+pub fn lightness(color: Hsla) -> f32 {
+    gamma_decode(color.l).cbrt()
+}
+
+/// The most chroma sRGB can hold at this lightness and hue, up to `chroma`.
+///
+/// Near black and near white the gamut is a needle: asking for a mid-ramp
+/// chroma there produces an out-of-range component, and clamping it per channel
+/// shifts the hue instead of dropping the saturation. Tailwind's neutral ramps
+/// taper their chroma at both ends by hand for the same reason; here the taper
+/// is whatever the gamut allows, so no ramp has to be tabulated.
+fn fit_chroma(l: f32, chroma: f32, hue: f32) -> f32 {
+    let fits = |c: f32| {
+        oklch_to_linear(l, c, hue)
+            .iter()
+            .all(|x| (-1e-4..=1.0 + 1e-4).contains(x))
+    };
+    if fits(chroma) {
+        return chroma;
+    }
+    let (mut lo, mut hi) = (0.0, chroma);
+    for _ in 0..24 {
+        let mid = 0.5 * (lo + hi);
+        if fits(mid) { lo = mid } else { hi = mid }
+    }
+    lo
+}
+
+/// Re-emit an achromatic tone at `hue`, carrying as much `chroma` as its
+/// lightness can hold. Alpha rides through untouched.
+pub fn tint(color: Hsla, hue: f32, chroma: f32) -> Hsla {
+    if chroma <= 0.0 {
+        return color;
+    }
+    let l = lightness(color);
+    let mut out = oklch(l, fit_chroma(l, chroma, hue), hue);
+    out.a = color.a;
+    out
 }
 
 /// sRGB (0..1 components) → HSL, all components 0..1 (gpui's Hsla convention).

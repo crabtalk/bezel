@@ -168,7 +168,7 @@ pub trait Scaffolding: ThemeExt {
         let theme = self.theme();
         div()
             .mt(px(24.0))
-            .rounded(px(Theme::SURFACE_RADIUS))
+            .rounded(px(Theme::surface_radius()))
             .border_1()
             .border_color(theme.border)
             .bg(theme.card_glass_bg())
@@ -199,7 +199,7 @@ pub trait Scaffolding: ThemeExt {
         div()
             .flex_none()
             .size(px(36.0))
-            .rounded(px(Theme::PANEL_RADIUS))
+            .rounded(px(Theme::panel_radius()))
             .border_1()
             .border_color(theme.border)
             .bg(ink(0.03))

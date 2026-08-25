@@ -559,7 +559,7 @@ fn mix_endpoints_and_midpoint() {
 fn inset_radius_is_concentric_and_floors_at_zero() {
     // The case the whole pass came out of: `popover_card` is 12 with a 4px
     // inset, and 8.0 was the crate's most-repeated corner value.
-    assert_eq!(Theme::inset_radius(Theme::SURFACE_RADIUS, 4.0), 8.0);
+    assert_eq!(Theme::inset_radius(Theme::surface_radius(), 4.0), 8.0);
     // The segmented track, the other pair that turned out to be derived.
     assert_eq!(Theme::inset_radius(9.0, 2.0), 7.0);
     // A dialog insets by more than it rounds; its children are square.
@@ -571,5 +571,5 @@ fn inset_radius_is_concentric_and_floors_at_zero() {
 fn layout_numbers_match_the_reference() {
     assert_eq!(Theme::HEADER_HEIGHT, 44.0); // h-11
     assert_eq!(Theme::STATUS_STRIP_HEIGHT, 24.0); // h-6
-    assert_eq!(Theme::BUBBLE_RADIUS, 16.0);
+    assert_eq!(Theme::bubble_radius(), 16.0);
 }
