@@ -219,6 +219,7 @@ impl Render for Diff {
                                 div()
                                     .id("diff-rows")
                                     .overflow_x_scroll()
+                                    .restrict_scroll_to_axis()
                                     .py(px(4.0))
                                     .flex()
                                     .flex_col()

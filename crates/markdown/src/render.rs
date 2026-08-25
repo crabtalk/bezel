@@ -1132,6 +1132,10 @@ fn code_block(
             div()
                 .id(ElementId::named_usize("md-code", ix))
                 .overflow_x_scroll()
+                // Without it a scroll down the page turns sideways the moment
+                // the pointer crosses a code block: gpui remaps input to
+                // whichever axis a container can scroll.
+                .restrict_scroll_to_axis()
                 .relative()
                 .px(px(CODE_PADDING_X))
                 .py(px(CODE_PADDING_Y))
@@ -1566,6 +1570,7 @@ fn table(
         .id(ElementId::named_usize("md-table", ix))
         .w_full()
         .overflow_x_scroll()
+        .restrict_scroll_to_axis()
         .child(inner)
         .into_any_element()
 }
