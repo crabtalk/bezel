@@ -4,10 +4,10 @@
 //! The view itself lives in `lib.rs`, so `shots` can mount its sections one at
 //! a time; this file is the window around it.
 
-use gallery::{Gallery, ToggleFullScreen, ToggleInspector};
+use gallery::{Gallery, TRAFFIC_LIGHT_ORIGIN, ToggleFullScreen, ToggleInspector};
 use gpui::{
-    App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, WindowBounds, WindowOptions, actions,
-    px, size,
+    App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions, WindowBounds,
+    WindowOptions, actions, point, px, size,
 };
 use theme::{Theme, appearance};
 use ui::icons;
@@ -38,6 +38,18 @@ fn main() {
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    // No strip of its own: the traffic lights float over the
+                    // rail. `app_owns_titlebar_drag` stays false, so AppKit
+                    // still moves the window by the top edge and the app owes
+                    // no drag bar of its own.
+                    titlebar: Some(TitlebarOptions {
+                        appears_transparent: true,
+                        traffic_light_position: Some(point(
+                            px(TRAFFIC_LIGHT_ORIGIN),
+                            px(TRAFFIC_LIGHT_ORIGIN),
+                        )),
+                        ..Default::default()
+                    }),
                     // Glass needs a blurred window background to blur INTO;
                     // without it `material` has nothing behind it.
                     window_background: Theme::of(cx).window_background_appearance(),

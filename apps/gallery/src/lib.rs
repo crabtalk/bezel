@@ -107,6 +107,18 @@ pub const COMMANDS: [&str; 8] = [
 
 const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 
+/// How far the floating rail sits off the window edges, and the padding inside
+/// it. Read together: they set the rail's grid, and the traffic lights are
+/// placed on that grid rather than left where AppKit drops them — which is
+/// relative to the window, and so lands in the card's rounded corner.
+const RAIL_INSET: f32 = 10.0;
+const RAIL_PAD: f32 = 10.0;
+
+/// Where the traffic lights' top-left corner goes: the rail's first row. Passed
+/// to `TitlebarOptions::traffic_light_position`, whose `x`/`y` are the gap from
+/// the window's left and top edges to the buttons.
+pub const TRAFFIC_LIGHT_ORIGIN: f32 = RAIL_INSET + RAIL_PAD;
+
 /// What one press of ← or → moves the slider. The step is never the library's:
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
 /// owns the value decides what they are worth.
@@ -1094,63 +1106,116 @@ impl Gallery {
     /// The navigation rail: every component, one row each, the current one
     /// carrying the same selected wash a menu row does — this is the library
     /// browsing itself.
-    fn rail(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+    fn rail(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let tab = &TABS[self.tab];
         let selected = self.selected[self.tab];
         div()
-            .relative()
             .flex_none()
             .w(px(220.0))
-            .h_full()
-            .border_r_1()
+            // Floating: inset from the window edges rather than butted against
+            // them, so the frost reads as a plane the rail sits on.
+            .m(px(RAIL_INSET))
+            .flex()
+            .flex_col()
+            .rounded(px(Theme::panel_radius()))
+            .bg(theme.card_glass_bg())
+            .border_1()
             .border_color(theme.border)
+            .overflow_hidden()
             .child(
                 div()
-                    .id("gallery-rail")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.rail_scroll)
-                    .child(div().flex().flex_col().gap(px(2.0)).p(px(10.0)).children(
-                        tab.groups.iter().flat_map(|group| {
-                            let heading =
-                                popover::menu_heading(theme, group.title).into_any_element();
-                            let rows = group.sections.iter().map(|section| {
-                                popover::menu_row(
-                                    theme,
-                                    section.key == selected,
-                                    SharedString::from(format!("rail-{}", section.key)),
-                                )
-                                .id(SharedString::from(format!("rail-item-{}", section.key)))
-                                .on_click(cx.listener(move |view, _, _, cx| {
-                                    let tab = view.tab;
-                                    view.selected[tab] = section.key;
-                                    cx.notify();
-                                }))
-                                // Unbuilt rows stay legible but recede, so the rail
-                                // reads as "what exists" and "what is left" at once.
-                                .when(section.source.is_none() && section.key != selected, |row| {
-                                    row.text_color(theme.text_faint)
-                                })
-                                .child(SharedString::from(section.title))
-                                .into_any_element()
-                            });
-                            std::iter::once(heading).chain(rows)
-                        }),
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .child(
+                        div()
+                            .id("gallery-rail")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.rail_scroll)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(2.0))
+                                    .p(px(RAIL_PAD))
+                                    // The lights sit over the rail's own top
+                                    // corner. Full screen takes them away, and
+                                    // the reserved strip would be a hole.
+                                    .when(!window.is_fullscreen(), |list| {
+                                        list.pt(px(Theme::TITLEBAR_HEIGHT - RAIL_INSET))
+                                    })
+                                    .children(tab.groups.iter().flat_map(|group| {
+                                        let heading = popover::menu_heading(theme, group.title)
+                                            .into_any_element();
+                                        let rows = group.sections.iter().map(|section| {
+                                            popover::menu_row(
+                                                theme,
+                                                section.key == selected,
+                                                SharedString::from(format!("rail-{}", section.key)),
+                                            )
+                                            .id(SharedString::from(format!(
+                                                "rail-item-{}",
+                                                section.key
+                                            )))
+                                            .on_click(cx.listener(move |view, _, _, cx| {
+                                                let tab = view.tab;
+                                                view.selected[tab] = section.key;
+                                                cx.notify();
+                                            }))
+                                            // Unbuilt rows stay legible but recede, so the rail
+                                            // reads as "what exists" and "what is left" at once.
+                                            .when(
+                                                section.source.is_none() && section.key != selected,
+                                                |row| row.text_color(theme.text_faint),
+                                            )
+                                            .child(SharedString::from(section.title))
+                                            .into_any_element()
+                                        });
+                                        std::iter::once(heading).chain(rows)
+                                    })),
+                            ),
+                    )
+                    // After the content: hitboxes and paint are both
+                    // order-dependent in gpui, so a bar added first would sit
+                    // under what it reports on.
+                    .child(scroll::scrollbar(
+                        "rail-bar",
+                        &self.rail_scroll,
+                        &self.rail_bar,
                     )),
             )
-            // After the content: hitboxes and paint are both order-dependent in
-            // gpui, so a bar added first would sit under what it reports on.
-            .child(scroll::scrollbar(
-                "rail-bar",
-                &self.rail_scroll,
-                &self.rail_bar,
-            ))
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .flex_row()
+                    .items_baseline()
+                    .gap(px(6.0))
+                    .px(px(12.0))
+                    .py(px(10.0))
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child("bezel"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .font_family(theme.font_mono.clone())
+                            .text_color(theme.text_faint)
+                            .child(env!("CARGO_PKG_VERSION")),
+                    ),
+            )
             .into_any_element()
     }
 
-    /// The top nav: the wordmark, the kind of thing you are browsing, and the
-    /// appearance switch. Everything here is global — per-page detail belongs
-    /// in [`Self::header`].
+    /// The top nav: the kind of thing you are browsing, and the appearance
+    /// switch. Everything here is global — per-page detail belongs in
+    /// [`Self::header`].
     fn nav(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let current = self.tab;
         let dark = matches!(theme.appearance, theme::Appearance::Dark);
@@ -1164,13 +1229,6 @@ impl Gallery {
             .gap(px(18.0))
             .border_b_1()
             .border_color(theme.border)
-            .child(
-                div()
-                    .px(px(8.0))
-                    .text_size(px(14.0))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("bezel"),
-            )
             .children(TABS.iter().enumerate().map(|(index, tab)| {
                 let selected = index == current;
                 let mut item = div()
@@ -3528,26 +3586,19 @@ impl Render for Gallery {
         } else {
             div()
                 .flex()
-                .flex_col()
+                .flex_row()
                 .size_full()
-                .child(self.nav(&theme, cx))
+                .child(self.rail(&theme, window, cx))
                 .child(
                     div()
-                        .flex()
-                        .flex_row()
                         .flex_1()
-                        .min_h_0()
-                        .child(self.rail(&theme, cx))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .h_full()
-                                .flex()
-                                .flex_col()
-                                .child(self.header(section, &theme))
-                                .child(pane),
-                        ),
+                        .min_w_0()
+                        .h_full()
+                        .flex()
+                        .flex_col()
+                        .child(self.nav(&theme, cx))
+                        .child(self.header(section, &theme))
+                        .child(pane),
                 )
         };
 
