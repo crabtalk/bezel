@@ -8,33 +8,37 @@ use crate::theme::Theme;
 /// The branded base radius behind [`Theme::radius`], as raw `f32` bits.
 static BASE: AtomicU32 = AtomicU32::new(Theme::BASE_RADIUS.to_bits());
 
+/// The branded frost alpha behind [`Theme::glass`], as raw `f32` bits.
+static FROST: AtomicU32 = AtomicU32::new(Theme::GLASS_ALPHA.to_bits());
+
 /// Point the radius accessors at a base. Called by
 /// [`Theme::install`](crate::theme::Theme::install).
 pub(crate) fn set_base_radius(radius: f32) {
     BASE.store(radius.to_bits(), Ordering::Relaxed);
 }
 
+/// Point [`Theme::glass`] at a frost alpha. Called by
+/// [`Theme::install`](crate::theme::Theme::install).
+pub(crate) fn set_frost(alpha: f32) {
+    FROST.store(alpha.to_bits(), Ordering::Relaxed);
+}
+
+pub(crate) fn frost() -> f32 {
+    f32::from_bits(FROST.load(Ordering::Relaxed))
+}
+
 impl Theme {
     // ---- numbers drive layout (px) ----
-    /// Frost translucency over the blurred window background (macOS vibrancy).
-    /// Opaque elsewhere: Linux/Windows get no compositor-blur guarantee, and a
-    /// merely transparent window would show raw desktop through the sidebar.
-    /// Darkness matched by eye to a reference Electron app's dark glass. That
-    /// scrim is 0.76 over `hsl(0 0% 3%)`, but it sits on Electron's
-    /// `under-window` vibrancy MATERIAL, which pre-darkens the blur; our bare
-    /// backdrop blur has no material layer, so the scrim runs heavier to land
-    /// on the same perceived tone (see [`Theme::glass`]).
-    pub const GLASS_ALPHA: f32 = if cfg!(target_os = "macos") { 0.80 } else { 1.0 };
-    /// Light-mode frost alpha — glass-forward, like dark mode.
+    /// The frost alpha [`Brand::glass`](crate::Brand::glass) starts from.
+    /// Matched by eye to a reference Electron app's dark glass: its scrim is
+    /// 0.76 over `hsl(0 0% 3%)`, but sits on the `under-window` vibrancy
+    /// MATERIAL, which pre-darkens the blur; a bare backdrop blur has no such
+    /// layer, so ours runs heavier to land on the same perceived tone.
     ///
-    /// A light tint controls the blur less than a dark one: the desktop's
-    /// colour bleeds through more readily, so light frost runs *heavier* than
-    /// an equal-looking dark frost to keep the chrome on a known-enough
-    /// background for its labels (macOS light sidebars do the same — their
-    /// vibrancy material is mostly white). Floating cards compensate further:
-    /// see [`Self::glass_overlay`], where light coverage steps up to keep menu
-    /// text legible over an unknown backdrop.
-    pub const GLASS_ALPHA_LIGHT: f32 = if cfg!(target_os = "macos") { 0.80 } else { 1.0 };
+    /// Opaque off macOS: Linux and Windows get no compositor-blur guarantee,
+    /// and a merely transparent window would show raw desktop through the
+    /// sidebar. An app that knows its compositor sets the brand field anyway.
+    pub const GLASS_ALPHA: f32 = if cfg!(target_os = "macos") { 0.80 } else { 1.0 };
     /// Main-panel header height (the reference `h-11`) — in-card headers (changes pane).
     pub const HEADER_HEIGHT: f32 = 44.0;
     /// The unified window titlebar (traffic lights + cluster + tabs). Content

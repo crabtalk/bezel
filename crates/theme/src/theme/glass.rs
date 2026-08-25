@@ -3,41 +3,46 @@
 
 use gpui::{Hsla, WindowBackgroundAppearance};
 
-use crate::{Appearance, color, paint, theme::Theme};
+use crate::{
+    Appearance, color, paint,
+    theme::{Theme, layout},
+};
 
 impl Theme {
-    /// The frost tint painted over the blurred window background (macOS glass).
-    /// Dark: darker than `surface`, matched to the reference vibrancy scrim
-    /// `hsl(0 0% 3%)`. Light: a near-white frost run heavier than dark's — see
-    /// [`Self::GLASS_ALPHA_LIGHT`]. On opaque platforms this IS the surface
-    /// tone (no tint swap).
+    /// The frost tint painted over the blurred window background (macOS glass),
+    /// at [`Brand::glass`](crate::Brand::glass)'s alpha. Dark: darker than
+    /// `surface`, matched to the reference vibrancy scrim `hsl(0 0% 3%)`.
+    /// Light: a near-white frost. Opaque, this IS the surface tone.
     pub fn glass(&self) -> Hsla {
+        let alpha = layout::frost();
+        if alpha >= 1.0 {
+            return self.surface;
+        }
         match self.appearance {
-            Appearance::Dark => {
-                if Self::GLASS_ALPHA < 1.0 {
-                    color::grey(8).opacity(Self::GLASS_ALPHA)
-                } else {
-                    self.surface
-                }
-            }
-            Appearance::Light => {
-                if Self::GLASS_ALPHA_LIGHT < 1.0 {
-                    // 0xfa, not the surface's 0xf4-ish grey: at 90% coverage
-                    // the tint IS the sidebar tone, and the darker grey read
-                    // as a dingy pane next to the white content card.
-                    color::grey(0xfa).opacity(Self::GLASS_ALPHA_LIGHT)
-                } else {
-                    self.surface
-                }
-            }
+            Appearance::Dark => color::grey(8).opacity(alpha),
+            // 0xfa, not the surface's 0xf4-ish grey: at 90% coverage the tint
+            // IS the sidebar tone, and the darker grey read as a dingy pane
+            // next to the white content card.
+            Appearance::Light => color::grey(0xfa).opacity(alpha),
+        }
+    }
+
+    /// The app's root fill: the frost where glass is on, the opaque panel
+    /// where it is not. What a root element paints instead of
+    /// [`Self::bg`](Self#structfield.bg), so a window that opens blurred is not
+    /// then covered over by the paint that made the blur pointless.
+    pub fn window_bg(&self) -> Hsla {
+        if self.is_glass() {
+            self.glass()
+        } else {
+            self.bg
         }
     }
 
     /// Whether this appearance paints translucent chrome over the blurred
     /// desktop. Glass-only recipes — backdrop blurs, translucent popover
-    /// tints, per-glyph edge fades — must gate on this, not on
-    /// [`Self::GLASS_ALPHA`]: that constant is platform-wide, while the frost
-    /// alpha (and with it whether glass is on at all) is per-appearance.
+    /// tints, per-glyph edge fades — must gate on this rather than reading the
+    /// brand's alpha, because an opaque appearance can still be asked for one.
     pub fn is_glass(&self) -> bool {
         self.glass().a < 1.0
     }
@@ -109,12 +114,12 @@ impl Theme {
         paint::scrim_for(self.appearance, paint::SCRIM_ALPHA_DARK)
     }
 
-    /// How the platform should composite the window behind our paint.
+    /// How the platform should composite the window behind our paint. The mode
+    /// falls out of the alpha: frost under 1.0 wants the blurred desktop,
+    /// opaque wants opaque compositing (subpixel-friendly, no vibrancy cost for
+    /// a blur nothing shows).
     ///
-    /// Only dark macOS wants the blurred desktop — light chrome is opaque by
-    /// design ([`Self::GLASS_ALPHA_LIGHT`]), so it keeps opaque compositing
-    /// (subpixel-friendly, no vibrancy cost for a blur nothing shows). This is
-    /// a method rather than a constant because it has to be *re-applied* after
+    /// This is a method rather than a constant because it has to be *re-applied* after
     /// every theme swap: gpui's macOS backend tears the `NSVisualEffectView`
     /// out of the hierarchy whenever the value is anything but `Blurred`, and
     /// the re-apply in `appearance::apply` is what restores vibrancy when the

@@ -679,9 +679,9 @@ pub struct Gallery {
     switches: [gpui::FocusHandle; 2],
     segments: [gpui::FocusHandle; 3],
     slider: gpui::FocusHandle,
-    /// The composer's five knobs, and which of its three files is showing.
-    /// What they are *set to* is the brand global — the page keeps no palette.
-    brand_knobs: [gpui::FocusHandle; 5],
+    /// The composer's knobs, and which of its three files is showing. What they
+    /// are *set to* is the brand global — the page keeps no palette.
+    brand_knobs: [gpui::FocusHandle; create::KNOB_COUNT],
     create_file: usize,
     tab_strip: [gpui::FocusHandle; 3],
     /// Which button was last pressed, and by what — the only way to see that a
@@ -3580,7 +3580,7 @@ impl Render for Gallery {
                 }),
             )
             .size_full()
-            .bg(theme.bg)
+            .bg(theme.window_bg())
             .font_family(theme.font_sans.clone())
             .text_color(theme.text)
             .text_size(px(14.0))

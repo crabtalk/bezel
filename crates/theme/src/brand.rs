@@ -60,6 +60,10 @@ pub struct Brand {
     /// The base corner radius; every other corner is a ratio of it. See
     /// [`Theme::BASE_RADIUS`].
     pub radius: f32,
+    /// How opaque the frost over the blurred window is — `1.0` is opaque, and
+    /// turns glass off entirely. See [`Theme::GLASS_ALPHA`], which is where it
+    /// starts, and [`Theme::glass`].
+    pub glass: f32,
 }
 
 impl Global for Brand {}
@@ -70,6 +74,7 @@ impl Default for Brand {
             tint: Tint::NONE,
             accent: Tint::NONE,
             radius: Theme::BASE_RADIUS,
+            glass: Theme::GLASS_ALPHA,
         }
     }
 }
@@ -216,5 +221,9 @@ pub fn brand(cx: &App) -> Brand {
 pub fn set_brand(brand: Brand, cx: &mut App) {
     cx.set_global(brand);
     Theme::install(crate::paint::current_appearance(), cx);
+    // Crossing 1.0 is what puts the `NSVisualEffectView` in or takes it out,
+    // and nothing else does it — a repaint alone leaves a window that was
+    // opaque at boot opaque forever.
+    crate::appearance::reapply_window_background(cx);
     cx.refresh_windows();
 }

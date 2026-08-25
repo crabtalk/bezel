@@ -18,7 +18,11 @@ use ui::{
 
 use crate::{Gallery, stack};
 
-/// One slider. Five near-identical rows collapse to a table plus a loop, and
+/// How many focus handles the page needs — one per row of [`KNOBS`], so adding
+/// a knob cannot outrun the handles the view holds for them.
+pub const KNOB_COUNT: usize = KNOBS.len();
+
+/// One slider. Six near-identical rows collapse to a table plus a loop, and
 /// adding a knob is a row rather than another forty lines of drag wiring.
 struct Knob {
     label: &'static str,
@@ -35,7 +39,7 @@ struct Knob {
 /// neutral is Slate at chroma 0.046, the shipped accents peak at red-400's
 /// 0.191, and the largest corner in the library is the message bubble at twice
 /// the base radius.
-const KNOBS: [Knob; 5] = [
+const KNOBS: [Knob; 6] = [
     Knob {
         label: "Base hue",
         id: "tint-hue",
@@ -80,6 +84,17 @@ const KNOBS: [Knob; 5] = [
         decimals: 1,
         read: |b| b.radius,
         write: |b, v| b.radius = v,
+    },
+    // Left is more desktop. At 1.00 glass is off and the window composites
+    // opaque again, which is what every platform but macOS starts at.
+    Knob {
+        label: "Frost",
+        id: "glass",
+        max: 1.0,
+        step: 0.05,
+        decimals: 2,
+        read: |b| b.glass,
+        write: |b, v| b.glass = v,
     },
 ];
 
@@ -354,11 +369,17 @@ fn call(brand: &Brand) -> String {
              Brand {{\n        \
                  tint: Tint::new({:.3}, {:.3}),\n        \
                  accent: Tint::new({:.3}, {:.3}),\n        \
-                 radius: {:.1},\n    \
+                 radius: {:.1},\n        \
+                 glass: {:.2},\n    \
              }},\n    \
              cx,\n\
          );",
-        brand.tint.hue, brand.tint.chroma, brand.accent.hue, brand.accent.chroma, brand.radius,
+        brand.tint.hue,
+        brand.tint.chroma,
+        brand.accent.hue,
+        brand.accent.chroma,
+        brand.radius,
+        brand.glass,
     )
 }
 
