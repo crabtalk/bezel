@@ -8,7 +8,7 @@
 //! thing on screen rather than a second description of it.
 
 use gpui::{
-    AnyElement, ClipboardItem, Context, DragMoveEvent, Empty, SharedString, div, prelude::*, px,
+    AnyElement, App, Context, DragMoveEvent, Empty, SharedString, Window, div, prelude::*, px,
 };
 use theme::{Appearance, BASE_COLORS, Brand, Theme};
 use ui::{
@@ -16,7 +16,7 @@ use ui::{
     widgets::{self, ButtonStyle, Buttons, Content, Controls, SliderDrag},
 };
 
-use crate::{Gallery, hint, stack};
+use crate::{Gallery, stack};
 
 /// One slider. Five near-identical rows collapse to a table plus a loop, and
 /// adding a knob is a row rather than another forty lines of drag wiring.
@@ -83,25 +83,23 @@ const KNOBS: [Knob; 5] = [
     },
 ];
 
-/// Which of the three files the code panel is showing.
-const FILES: [&str; 3] = ["Brand", "Cargo.toml", "main.rs"];
+/// Which of the three files the code panel is showing, and the fence tag that
+/// colors it.
+const FILES: [(&str, &str); 3] = [
+    ("Brand", "rust"),
+    ("Cargo.toml", "toml"),
+    ("main.rs", "rust"),
+];
 
-pub fn page(view: &Gallery, theme: &Theme, cx: &mut Context<Gallery>) -> AnyElement {
+pub fn page(
+    view: &Gallery,
+    theme: &Theme,
+    window: &mut Window,
+    cx: &mut Context<Gallery>,
+) -> AnyElement {
     let brand = theme::brand(cx);
     stack()
-        .child(hint(
-            theme,
-            "Every knob writes the theme global, so the whole gallery repaints — \
-             browse away and it stays. Lightness is never a knob: only hue moves, \
-             which is what keeps the contrast the shipped palette was tuned to.",
-        ))
         .child(popover::menu_heading(theme, "Base color"))
-        .child(hint(
-            theme,
-            "Tailwind's five neutral families, at the chroma each carries mid-ramp. \
-             Chroma is constant across our ramp rather than tapered per step, and \
-             falls off only where sRGB runs out at the extremes.",
-        ))
         .child(presets(theme, &brand, cx))
         .children(
             KNOBS.iter().enumerate().map(|(index, knob)| {
@@ -109,18 +107,12 @@ pub fn page(view: &Gallery, theme: &Theme, cx: &mut Context<Gallery>) -> AnyElem
             }),
         )
         .child(popover::menu_heading(theme, "Contrast"))
-        .child(hint(
-            theme,
-            "Both appearances, measured on the brand above — the accent plate is \
-             the one a hue can break, because a mid-lightness fill has no label \
-             left to carry.",
-        ))
         .child(contrast(theme, &brand))
         .child(popover::menu_heading(theme, "Specimen"))
         .child(specimen(theme))
         .child(popover::menu_heading(theme, "Copy"))
         .child(files(view, theme, cx))
-        .child(code(theme, &source(view.create_file, &brand)))
+        .child(code(view.create_file, &brand, window, cx))
         .into_any_element()
 }
 
@@ -318,50 +310,31 @@ fn specimen(theme: &Theme) -> AnyElement {
 }
 
 fn files(view: &Gallery, theme: &Theme, cx: &mut Context<Gallery>) -> AnyElement {
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.0))
-        .child(
+    theme
+        .toggle_group()
+        .children(FILES.iter().enumerate().map(|(index, (name, _))| {
             theme
-                .toggle_group()
-                .children(FILES.iter().enumerate().map(|(index, name)| {
-                    theme
-                        .toggle_group_item(*name, view.create_file == index)
-                        .id(SharedString::from(*name))
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            view.create_file = index;
-                            cx.notify();
-                        }))
-                })),
-        )
-        .child(
-            theme
-                .button("Copy", ButtonStyle::Ghost, None)
-                .id("copy-brand")
-                .on_click(cx.listener(|view, _, _, cx| {
-                    let text = source(view.create_file, &theme::brand(cx));
-                    cx.write_to_clipboard(ClipboardItem::new_string(text));
-                })),
-        )
+                .toggle_group_item(*name, view.create_file == index)
+                .id(SharedString::from(*name))
+                .cursor_pointer()
+                .on_click(cx.listener(move |view, _, _, cx| {
+                    view.create_file = index;
+                    cx.notify();
+                }))
+        }))
         .into_any_element()
 }
 
-fn code(theme: &Theme, text: &str) -> AnyElement {
-    div()
-        .w_full()
-        .p(px(14.0))
-        .rounded(px(Theme::panel_radius()))
-        .bg(theme.code_wash)
-        .border_1()
-        .border_color(theme.border)
-        .font_family(theme.font_mono.clone())
-        .text_size(px(12.0))
-        .text_color(theme.code_text)
-        .child(SharedString::from(text.to_string()))
-        .into_any_element()
+/// Fenced, so the markdown block colors it and carries the copy button — the
+/// snippet on screen and the one on the clipboard are then the same string by
+/// construction.
+fn code(file: usize, brand: &Brand, window: &mut Window, cx: &mut App) -> AnyElement {
+    let (_, tag) = FILES[file];
+    markdown::markdown(
+        &format!("```{tag}\n{}\n```", source(file, brand)),
+        window,
+        cx,
+    )
 }
 
 /// The three files, printed from the live brand.

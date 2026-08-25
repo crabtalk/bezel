@@ -1286,14 +1286,19 @@ impl Gallery {
 
     /// One section by key. Unknown keys render nothing — [`SECTIONS`] is the
     /// list, and anything off it is a typo at the call site.
-    fn section_body(&mut self, key: &str, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn section_body(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let theme = Theme::of(cx).clone();
         let view = cx.entity_id();
         let section = stack();
 
         match key {
             // ---- Foundations -------------------------------------------------
-            "create" => create::page(self, &theme, cx),
+            "create" => create::page(self, &theme, window, cx),
 
             "color" => section
                 .child(hint(
