@@ -39,6 +39,17 @@ pub fn serialize(doc: &Doc) -> String {
         previous = Some((&block.kind, indent));
     }
 
+    // GFM reads `[ ]` as a task marker only when whitespace follows it, and an
+    // empty task has no text to supply it. Every block but the last is followed
+    // by the newline of the block after; the last is followed by nothing.
+    if doc
+        .blocks
+        .last()
+        .is_some_and(|block| matches!(&block.kind, BlockKind::Task { text, .. } if text.is_empty()))
+    {
+        out.push(' ');
+    }
+
     out
 }
 
@@ -76,10 +87,12 @@ fn is_marker(kind: &BlockKind) -> bool {
 /// read as a lazy continuation of its item.
 ///
 /// `nested` says the next block opens a level deeper, which makes it a *new*
-/// list rather than the next item of this one — and a new list has to interrupt
-/// the paragraph above it to be seen at all. A bullet may; an ordered list may
-/// only when it starts at 1. So a nested `2.` written tight is read as more text
-/// in the item above, and needs the blank line that ends that paragraph.
+/// list whatever its marker — a checklist under a bullet is as much its own list
+/// as a bullet under a bullet, so all that is left to ask is whether it can
+/// interrupt the paragraph above it, which it has to do to be seen at all. A
+/// bullet may; an ordered list may only when it starts at 1. So a nested `2.`
+/// written tight is read as more text in the item above, and needs the blank
+/// line that ends that paragraph.
 fn tight_after(previous: &BlockKind, next: &BlockKind, nested: bool) -> bool {
     if is_empty_marker(previous) {
         return true;
@@ -87,8 +100,10 @@ fn tight_after(previous: &BlockKind, next: &BlockKind, nested: bool) -> bool {
     if is_empty_marker(next) {
         return false;
     }
-    if nested && matches!(next, BlockKind::Ordered { number, .. } if *number != 1) {
-        return false;
+    if nested {
+        return is_marker(previous)
+            && is_marker(next)
+            && !matches!(next, BlockKind::Ordered { number, .. } if *number != 1);
     }
     marker_kind(previous).is_some() && marker_kind(previous) == marker_kind(next)
 }
@@ -191,7 +206,14 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
 
 /// A list item: the marker on the first line, its content column on the rest.
 fn write_marked(out: &mut String, pad: &str, marker: &str, text: &Text) {
-    let first = format!("{pad}{marker}");
+    // An empty item has nothing for the marker's space to hold apart from it,
+    // so the space is trailing whitespace no one typed.
+    let opener = if text.is_empty() {
+        marker.trim_end()
+    } else {
+        marker
+    };
+    let first = format!("{pad}{opener}");
     let rest = format!("{pad}{}", " ".repeat(marker.chars().count()));
     write_lines(out, &first, &rest, &inline(text));
 }
