@@ -34,3 +34,8 @@ motion.workspace = true
 gpui.workspace = true
 unicode-segmentation = "1"
 web-time.workspace = true
+
+[dev-dependencies]
+# `TestAppContext` and `Window::simulate_next_frame` — a window and a clock
+# without a display, which is what lets frame counts be asserted.
+gpui = { workspace = true, features = ["test-support"] }
