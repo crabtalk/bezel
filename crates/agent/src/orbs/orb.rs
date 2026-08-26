@@ -326,9 +326,6 @@ impl Orb {
     }
 
     /// Queue the next redraw, honouring [`Self::target_fps`].
-    ///
-    /// This replaces `window.request_animation_frame()`, which re-notifies at
-    /// the display's refresh rate — 60 Hz or more — with no way to opt down.
     fn schedule_tick(&mut self, cx: &mut Context<Self>) {
         // Parent renders may happen between animation frames. Keep the timer
         // already in flight rather than cancel/reallocate it and push the next

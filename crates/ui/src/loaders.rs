@@ -6,10 +6,10 @@
 //! what a thinking surface should reach for. The older three are grids of
 //! cells.
 //!
-//! Rendering pattern: each cell is its own `with_animation` repeating element
-//! sharing one period; per-cell offsets come from [`motion::staggered_phase`],
-//! so all cells stay phase-locked (they start on the same frame) without a
-//! shared clock. Cells animate inside fixed-size slots — opacity and inner size
+//! Rendering pattern: one shared clock ([`motion::pulse_delta`]) drives the
+//! view, and per-cell offsets come from [`motion::staggered_phase`] off that
+//! single delta, so every cell stays phase-locked. Cells animate inside
+//! fixed-size slots — opacity and inner size
 //! are paint-local and never move surrounding layout. Reduced motion snaps every
 //! cell to its rest state automatically (gpui `reduce_motion`).
 

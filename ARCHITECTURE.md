@@ -131,27 +131,27 @@ machinery collaborative editing needs and nothing here asks for it.
    unit-tested. No inline durations or curves in components.
 4. **Numbers drive layout, colors are paint.** Layout constants are plain
    numbers on `Theme`; no layout ever depends on which color is painted.
+5. **Frames are leased, never requested.** Repeating motion takes its phase
+   from `motion::pulse_delta`, which leases the calling view onto one 30fps
+   app-wide clock and parks when the last lease lapses. No component calls
+   `with_animation(…).repeat()` — that request is the *window's*, so a single
+   mounted element holds the whole window at display rate. One-shot
+   `with_animation` is fine; it ends.
 
 ## Dependencies
 
-Crates declare `gpui = "0.2.2"` — a version requirement, because crates.io
-rejects a bare git dependency — and `[patch.crates-io]` supplies the real
-source. The registry release trails the API we build against by months, so
-the patch is what actually compiles.
+gpui comes from crates.io as `bezel-gpui`, published from our fork
+[crabtalk/zed](https://github.com/crabtalk/zed) — where the gpui patches we
+carry live — with the whole crate closure renamed. The workspace renames it
+back, `gpui = { package = "bezel-gpui", version = "0.3.3" }`, so the `gpui::`
+paths the macros expect still resolve and a consumer writes plain registry
+dependencies.
 
-That patch currently points at a **sibling `../zed` checkout**: our fork of
-gpui's home repo, [crabtalk/zed](https://github.com/crabtalk/zed), where the
-gpui patches we carry live (first up: `Window::paint_backdrop_blur`, which
-`ui::material` needs). A local path is the honest source while those commits
-are unpushed — the trade is that a fresh clone needs that sibling checkout.
-Once the branch is pushed, the patch becomes `{ git = …, rev = …, version =
-"=0.2.2" }` and nothing else changes.
-
-`gpui_platform` (unpublished, gallery only) must resolve to the *same*
-checkout. Two copies of gpui in one graph are two incompatible type
-universes; the failure is a trait-bound error at best and, at worst, a window
-that paints shapes but no text — one text system holding the fonts while the
-other draws the frame.
+`gpui`, `gpui_platform` and `gpui_web` must resolve to the *same* version.
+Two copies of gpui in one graph are two incompatible type universes; the
+failure is a trait-bound error at best and, at worst, a window that paints
+shapes but no text — one text system holding the fonts while the other draws
+the frame.
 
 ## Roadmap
 

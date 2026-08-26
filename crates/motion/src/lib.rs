@@ -50,13 +50,10 @@ pub mod phase;
 
 /// Repeat-tick interval for the pulse/spinner loaders (~30fps).
 ///
-/// The loaders used to run as gpui `with_animation(...repeating...)` elements,
-/// which request a redraw every display frame for as long as they are mounted
-/// — one Working session row pinned the whole window at 120Hz (measured 36%
-/// CPU on an M-series laptop, with the always-hot Metal pipeline holding
-/// hundreds of MB of graphics buffers). A shared 30fps clock is visually
-/// equivalent for these chunky cell waves at a quarter of the redraws, and a
-/// window with no spinner mounted schedules nothing at all.
+/// 2026-08, M-series laptop: one spinner drawn at 120Hz cost 36% of a core —
+/// the window redraw, with the animation math itself at 0.3%. 30fps is
+/// visually equivalent for these chunky cell waves at a quarter of the draws,
+/// and a window with no spinner mounted schedules nothing at all.
 const PULSE_TICK: Duration = Duration::from_millis(33);
 
 /// How long a view stays on the tick list after its last spinner paint. One
@@ -87,6 +84,14 @@ impl Default for PulseClock {
 /// mounted. All cells across all views share one epoch, so multi-instance
 /// loaders stay phase-locked. Reduced motion returns a static 0 and schedules
 /// nothing.
+///
+/// This is the entry point for any repeating animation, yours included:
+/// [`MotionSpec::new`] is `const` and its fields are public, so a component
+/// outside this library rides the same clock by calling this with its own spec.
+/// gpui's `with_animation(…).repeat()` asks the *window* for a frame at the
+/// display's rate for as long as it stays mounted, and one such element is
+/// enough to hold the whole window there; this notifies one view at 30fps and
+/// parks when the last spinner unmounts.
 pub fn pulse_delta(spec: &MotionSpec, view: EntityId, cx: &mut App) -> f32 {
     if cx.reduce_motion() {
         return 0.0;

@@ -33,6 +33,14 @@ if motion::hover_fades_active() {
 
 Not optional. The listener dirties the window once as the pointer crosses; every frame after that has to be asked for, and an app that skips this paints the blend's first frame and holds it until something unrelated repaints. It is also the tick that evicts fades whose elements are gone, so skipping it leaks an entry per hovered element.
 
-The repeating loaders share one 30fps clock rather than running as repeating animations. A `with_animation` loop requests a redraw every display frame for as long as it is mounted — one spinner row measured 36% CPU at 120Hz — while `pulse_delta` leases the calling view onto a shared epoch, keeps every instance phase-locked, and parks the clock entirely when the last spinner unmounts.
+The repeating loaders share one 30fps clock rather than running as repeating animations. A `with_animation` loop requests a redraw every display frame for as long as it is mounted, and the request is the *window's* — one spinner row measured 36% CPU at 120Hz on an M-series laptop in August 2026, nearly all of it the window rebuilding its element tree rather than the animation's own arithmetic. `pulse_delta` leases the calling view onto a shared epoch instead, keeps every instance phase-locked, and parks the clock entirely when the last spinner unmounts. gpui's own `Animation::with_max_fps` will swap that per-frame request for a timer per animated element; the clock here is one timer for the whole app.
+
+Your own repeating animation belongs on it too. `MotionSpec::new` is `const` and its fields are public, so a component outside this library rides the same clock by naming its own spec:
+
+```rust
+const BREATHE: MotionSpec = MotionSpec::new(1800, motion::EASE_IN_OUT);
+
+let phase = motion::pulse_delta(&BREATHE, cx.entity_id(), cx);
+```
 
 `set_speed(10.0)` stretches every timeline in the catalog, which is how a screenshot burst samples a 200ms tween frame by frame. Reduced motion is gpui's own flag: `with_animation` elements snap to their end state and schedule nothing, and `pulse_delta` returns a static 0.
