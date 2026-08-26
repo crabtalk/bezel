@@ -4,7 +4,10 @@
 //! The view itself lives in `lib.rs`, so `shots` can mount its sections one at
 //! a time; this file is the window around it.
 
-use gallery::{Gallery, TRAFFIC_LIGHT_ORIGIN, ToggleFullScreen, ToggleInspector};
+use gallery::{
+    Gallery, ResetFrameOverlayStats, TRAFFIC_LIGHT_ORIGIN, ToggleFpsOverlay, ToggleFullScreen,
+    ToggleInspector,
+};
 use gpui::{
     App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions, WindowBounds,
     WindowOptions, actions, point, px, size,
@@ -26,6 +29,9 @@ fn main() {
             gallery::init(cx);
             cx.bind_keys([
                 KeyBinding::new("cmd-alt-i", ToggleInspector, None),
+                // The chords zed's own keymap carries for these two.
+                KeyBinding::new("ctrl-alt-shift-p", ToggleFpsOverlay, None),
+                KeyBinding::new("ctrl-alt-shift-o", ResetFrameOverlayStats, None),
                 // Both of the macOS defaults. Bound before `set_menus` so the
                 // menu item can pick the keystroke up off the keymap.
                 KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),

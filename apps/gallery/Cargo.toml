@@ -8,6 +8,10 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+# gpui paints the frame-stat overlay itself; this only opens the door to it.
+profiler = ["gpui/profiler"]
+
 # Runs on the host whatever the target is, which is what lets the web build
 # ship highlighted samples it could never compile tree-sitter to produce.
 [build-dependencies]

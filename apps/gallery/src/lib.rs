@@ -41,7 +41,14 @@ use ui::{
 
 actions!(
     gallery,
-    [OpenPalette, ToggleInspector, ToggleFullScreen, CloseOverlay]
+    [
+        OpenPalette,
+        ToggleInspector,
+        ToggleFullScreen,
+        CloseOverlay,
+        ToggleFpsOverlay,
+        ResetFrameOverlayStats
+    ]
 );
 
 /// Every keymap this view needs, in one call.
@@ -975,6 +982,39 @@ impl Gallery {
     ) {
         #[cfg(debug_assertions)]
         _window.toggle_inspector(_cx);
+    }
+
+    /// `ctrl-alt-shift-p` — zed's own chord for the same overlay, cycling
+    /// hidden → last frame's draw time → percentiles and total frame count.
+    ///
+    /// The number to watch is FRAMES while nothing on screen is moving: a
+    /// window at rest should hold it still. gpui paints the panel as raw quads
+    /// straight into the scene, skipping layout, text and invalidation, so
+    /// reading the count does not add to it.
+    ///
+    /// Built on `--features profiler`; the histograms behind it are not free,
+    /// so without that flag the whole affordance compiles out.
+    fn toggle_fps_overlay(
+        &mut self,
+        _: &ToggleFpsOverlay,
+        _window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
+        #[cfg(feature = "profiler")]
+        _window.cycle_debug_frame_overlay_mode();
+    }
+
+    /// `ctrl-alt-shift-o`. Clears the percentile window so the next reading
+    /// describes what you are about to do rather than the scrolling you did to
+    /// reach it. The total frame count survives on purpose.
+    fn reset_frame_overlay_stats(
+        &mut self,
+        _: &ResetFrameOverlayStats,
+        _window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
+        #[cfg(feature = "profiler")]
+        _window.reset_debug_frame_overlay_stats();
     }
 
     /// `ctrl-cmd-f`. macOS draws that shortcut on the Window menu of a nib-built
@@ -3621,6 +3661,8 @@ impl Render for Gallery {
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::open_palette))
             .on_action(cx.listener(Self::toggle_inspector))
+            .on_action(cx.listener(Self::toggle_fps_overlay))
+            .on_action(cx.listener(Self::reset_frame_overlay_stats))
             .on_action(cx.listener(Self::toggle_full_screen))
             .on_action(cx.listener(Self::close_overlay))
             .on_mouse_down(
