@@ -23,7 +23,7 @@ use gpui::{
     Animation, AnimationExt, AnyElement, Context, IntoElement, ParentElement, Render, Styled,
     TestAppContext, Window, WindowHandle, div, px, size,
 };
-use motion::Painter;
+use motion::{AppExt as _, Painter};
 use theme::{Appearance, Theme};
 use ui::loaders;
 
@@ -104,7 +104,13 @@ impl Render for Counted {
 }
 
 fn open(cx: &mut TestAppContext, drive: Drive) -> (Rc<RefCell<usize>>, WindowHandle<Counted>) {
-    cx.update(|cx| Theme::install_custom(Theme::for_appearance(Appearance::Dark), cx));
+    cx.update(|cx| {
+        Theme::install_custom(Theme::for_appearance(Appearance::Dark), cx);
+        // A test window is never the platform's *active* window, and the
+        // library refuses claims for an app nobody is looking at. What these
+        // measure is what a foreground app costs, so say so.
+        cx.set_pause_when_inactive(false);
+    });
     let renders = Rc::new(RefCell::new(0));
     let window = cx.open_window(size(px(200.), px(200.)), {
         let renders = renders.clone();

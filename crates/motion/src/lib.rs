@@ -16,9 +16,9 @@
 //!
 //! Reduced motion: gpui's `App::reduce_motion` flag is honored *automatically* by
 //! every `with_animation` element — oneshot animations snap to their end state,
-//! repeating ones to their start state, and no frames are scheduled. The
-//! [`set_reduced_motion`]/[`reduced_motion`] wrappers make it a single global
-//! switch; pure helpers take the flag explicitly where they run outside elements.
+//! repeating ones to their start state, and no frames are scheduled.
+//! [`AppExt`] carries that switch and the rest of the app-level settings; pure
+//! helpers take the flag explicitly where they run outside elements.
 //!
 //! translateY is implemented as a relative-position `top` inset: taffy applies
 //! relative insets after layout, so — like a CSS transform — siblings never move.
@@ -44,7 +44,10 @@ use gpui::{
 /// [`pulse_delta`], which leases the view instead of pinning the window.
 pub use gpui::AnimationExt;
 
+mod app;
 pub mod phase;
+
+pub use app::AppExt;
 
 // ---------------------------------------------------------------------------
 // The clock — one leased drive for everything that repeats
@@ -179,6 +182,12 @@ impl From<EntityId> for Painter {
 }
 
 fn lease(view: EntityId, fps: f32, until: Duration, cx: &mut App) {
+    // Nobody is looking. Refusing the claim is enough to stop the clock: the
+    // ones already held lapse, the loop runs out of work and parks, and the
+    // refresh gpui does on activation brings the renders that claim again.
+    if cx.pause_when_inactive() && cx.active_window().is_none() {
+        return;
+    }
     let now = cx.background_executor().now();
     let period = Duration::from_secs_f32(1.0 / fps.clamp(1.0, 240.0));
     let clock = cx.default_global::<PulseClock>();
@@ -739,7 +748,7 @@ pub fn set_hover(fade: &Fade, hovered: bool, reduced: bool) {
 /// event-dispatch context, where `Window::current_view()` asserts.
 pub fn hover_listener(fade: Fade) -> impl Fn(&bool, &mut Window, &mut App) + 'static {
     move |hovered, _window, cx| {
-        set_hover(&fade, *hovered, reduced_motion(cx));
+        set_hover(&fade, *hovered, cx.reduced_motion());
         fade.painter.lease(HOVER_FPS, HoverFades::duration(), cx);
     }
 }
@@ -829,15 +838,4 @@ pub fn set_speed(scale: f32) {
 pub fn lock_speed() -> std::sync::MutexGuard<'static, ()> {
     static SPEED_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     SPEED_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Global reduced-motion flag. gpui snaps every `with_animation` element when
-/// set (end state for oneshots, rest state for loops) and schedules no frames.
-pub fn set_reduced_motion(cx: &mut App, reduced: bool) {
-    cx.set_reduce_motion(reduced);
-}
-
-/// Read the global reduced-motion flag.
-pub fn reduced_motion(cx: &App) -> bool {
-    cx.reduce_motion()
 }
