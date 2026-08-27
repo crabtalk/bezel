@@ -16,6 +16,8 @@
 //!     .child(page)
 //!     .child(div().absolute().top(px(16.0)).right(px(16.0)).child(meter.clone()))
 //! ```
+//!
+//! [`crate::floating::panel`] is what makes one draggable.
 
 use std::time::Duration;
 
@@ -26,7 +28,10 @@ use motion::Painter;
 use theme::Theme;
 use web_time::Instant;
 
-use crate::{material, popover};
+use crate::{
+    material::{self, Frosted as _},
+    popover,
+};
 
 /// How often the meter refreshes once nothing else is drawing, and so the span
 /// each reading is measured over.
@@ -35,7 +40,9 @@ const TICK: Duration = Duration::from_millis(500);
 /// How long the claim on the clock outlives the render that took it.
 const LEASE: Duration = Duration::from_secs(1);
 
-const BOX_WIDTH: f32 = 148.0;
+/// The box's width. Public because a host placing the meter by its trailing
+/// edge has to know how wide it is.
+pub const WIDTH: f32 = 148.0;
 
 /// Width of the value column, so a digit arriving or leaving never reflows the
 /// row it is in.
@@ -99,7 +106,7 @@ impl Render for Stats {
         let theme = Theme::of(cx).clone();
         let reading = self.reading;
         let card = popover::popover_card(&theme)
-            .w(px(BOX_WIDTH))
+            .w(px(WIDTH))
             .p(px(10.0))
             .flex()
             .flex_col()
@@ -113,7 +120,7 @@ impl Render for Stats {
                     .map_or_else(|| "—".to_string(), |cpu| format!("{cpu:.1}%")),
             ));
 
-        material::material(Theme::surface_radius(), material::PANEL_BLUR, card)
+        card.material(material::PANEL_BLUR)
     }
 }
 

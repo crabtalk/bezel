@@ -20,17 +20,19 @@ use ui::{
     combobox::{self, Combobox},
     control_bar::{self, Shape as ControlBarShape},
     date::{self, Calendar, Date},
+    floating::{self, Floating},
     focus,
     hover_card::HoverCard,
     icons,
     input::{self, Shape, TextField},
     list, loaders,
+    material::Frosted as _,
     menubar::{self, Item, Menu, Menubar, MenubarEvent},
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
     popover,
     scroll::{self, ScrollbarState, TransientState},
-    stats::Stats,
+    stats::{self, Stats},
     table::{self, Column, Sort, Width},
     titlebar,
     tooltip::Tooltip,
@@ -597,6 +599,7 @@ pub const COMPONENTS: &[Group] = &[
             ),
             section("titlebar", "Titlebar", "crates/ui/src/titlebar.rs"),
             section("control-bar", "Control bar", "crates/ui/src/control_bar.rs"),
+            section("floating", "Floating panel", "crates/ui/src/floating.rs"),
         ],
     },
     // Nothing here is built. It is one whole group on purpose: the data
@@ -797,6 +800,11 @@ pub struct Gallery {
     /// neither would ever read zero.
     stats: Entity<Stats>,
     stats_shown: bool,
+    /// Where the meter has been dragged to, if it has.
+    stats_at: Floating,
+    /// The Floating panel page's own panel, so dragging the demo never moves
+    /// the meter — one state per panel is what keeps two of them apart.
+    panel_demo: Floating,
     /// The Stats page's spinner — what the meter is there to catch.
     stats_spinner: bool,
     /// Renders one section alone, without the nav, rail or header around it.
@@ -931,6 +939,8 @@ impl Gallery {
             mascot: cx.new(|_| patterns::mascot::Mascots::default()),
             stats: cx.new(Stats::new),
             stats_shown: false,
+            stats_at: Floating::new(Painter::of(cx)),
+            panel_demo: Floating::new(Painter::of(cx)),
             stats_spinner: false,
             embedded: false,
         }
@@ -2602,6 +2612,37 @@ impl Gallery {
                     .into_any_element()
             }
 
+            "floating" => section
+                .child(hint(
+                    &theme,
+                    "Grab the card and move it. The panel lays a layer over the \
+                     surface it is mounted in and places the box inside it, so a \
+                     pointer that outruns a frame is still heard and the box never \
+                     stalls behind the cursor. It clamps nothing: dragged half off \
+                     the edge it stays there, and the point you grabbed it by is \
+                     under the pointer to drag it back.",
+                ))
+                .child(
+                    div()
+                        .relative()
+                        .h(px(280.0))
+                        .w_full()
+                        .rounded(px(Theme::panel_radius()))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.surface)
+                        .overflow_hidden()
+                        .child(floating::panel(
+                            "floating-demo",
+                            &self.panel_demo,
+                            gpui::point(px(40.0), px(40.0)),
+                            popover::popover_card(&theme)
+                                .w(px(180.0))
+                                .child(popover::menu_heading(&theme, "Drag me")),
+                        )),
+                )
+                .into_any_element(),
+
             "palette" => section
                 .child(
                     row()
@@ -2700,14 +2741,13 @@ impl Gallery {
                         )
                         .child(
                             div().absolute().top(px(28.0)).left(px(60.0)).child(
-                                ui::material::material(
-                                    12.0,
-                                    ui::material::MENU_BLUR,
-                                    popover::popover_card(&theme).w(px(220.0)).child(
+                                popover::popover_card(&theme)
+                                    .w(px(220.0))
+                                    .child(
                                         popover::menu_row(&theme, false, Fade::new(view, "mat-a"))
                                             .child("Blurred"),
-                                    ),
-                                ),
+                                    )
+                                    .material(ui::material::MENU_BLUR),
                             ),
                         ),
                 )
@@ -3764,13 +3804,19 @@ impl Render for Gallery {
             .text_size(px(14.0))
             .child(content)
             .when(self.stats_shown, |root| {
-                root.child(
-                    div()
-                        .absolute()
-                        .top(px(Theme::HEADER_HEIGHT + CARD_PAD))
-                        .right(px(CARD_PAD))
-                        .child(self.stats.clone()),
-                )
+                // Home is read off the viewport rather than stored, so the
+                // corner it opens in is the corner of *this* window.
+                let viewport = window.viewport_size();
+                let home = gpui::point(
+                    viewport.width - px(stats::WIDTH + CARD_PAD),
+                    px(Theme::HEADER_HEIGHT + CARD_PAD),
+                );
+                root.child(floating::panel(
+                    "meter",
+                    &self.stats_at,
+                    home,
+                    self.stats.clone(),
+                ))
             })
             .when_some(
                 self.context_menu

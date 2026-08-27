@@ -12,8 +12,8 @@
 //! translucent tint over the OS window blur.
 
 use gpui::{
-    AnyElement, App, Bounds, Corners, Element, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, Pixels, Window, px,
+    AbsoluteLength, AnyElement, App, Bounds, Corners, Element, GlobalElementId, InspectorElementId,
+    IntoElement, LayoutId, Pixels, Styled, Window, px,
 };
 
 use theme::Theme;
@@ -28,18 +28,53 @@ pub const MENU_BLUR: f32 = 44.0;
 /// quarter of the box's width the backdrop resolves to one flat tone.
 pub const PANEL_BLUR: f32 = 12.0;
 
-/// Frost `child` (a popover card): backdrop-blurred on glass, pass-through on
-/// opaque platforms. `corner_radius` must match the card's rounding.
+/// Frost a card whose rounding the caller states — the shape the popover layers
+/// need, where the card arrives already erased to an [`AnyElement`] and its
+/// radius belongs to the surface kind. Backdrop-blurred on glass, pass-through
+/// on opaque platforms.
 pub fn material(corner_radius: f32, blur_radius: f32, child: impl IntoElement) -> Material {
+    let radius = AbsoluteLength::from(px(corner_radius));
     Material {
-        corner_radius,
+        corners: Corners {
+            top_left: radius,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: radius,
+        },
         blur_radius,
         child: child.into_any_element(),
     }
 }
 
+/// Frost this card at the corner radius it already carries.
+///
+/// The radius comes off the element's own style, so a caller chaining its own
+/// rounding — `card.rounded(px(4.0)).material(MENU_BLUR)` — gets a blur cut to
+/// the corners it just asked for.
+pub trait Frosted: Styled + IntoElement + Sized {
+    fn material(mut self, blur_radius: f32) -> Material {
+        let square = AbsoluteLength::from(px(0.0));
+        let radii = &self.style().corner_radii;
+        let corners = Corners {
+            top_left: radii.top_left.unwrap_or(square),
+            top_right: radii.top_right.unwrap_or(square),
+            bottom_right: radii.bottom_right.unwrap_or(square),
+            bottom_left: radii.bottom_left.unwrap_or(square),
+        };
+        Material {
+            corners,
+            blur_radius,
+            child: self.into_any_element(),
+        }
+    }
+}
+
+impl<E: Styled + IntoElement> Frosted for E {}
+
 pub struct Material {
-    corner_radius: f32,
+    /// Held unresolved: a rem-rounded card only becomes pixels against the
+    /// window's rem size, which paint is the first place to have.
+    corners: Corners<AbsoluteLength>,
     blur_radius: f32,
     child: AnyElement,
 }
@@ -89,12 +124,15 @@ impl Element for Material {
         cx: &mut App,
     ) {
         if Theme::of(cx).is_glass() {
+            let rem = window.rem_size();
+            let corners = Corners {
+                top_left: self.corners.top_left.to_pixels(rem),
+                top_right: self.corners.top_right.to_pixels(rem),
+                bottom_right: self.corners.bottom_right.to_pixels(rem),
+                bottom_left: self.corners.bottom_left.to_pixels(rem),
+            };
             window.paint_layer(bounds, |window| {
-                window.paint_backdrop_blur(
-                    bounds,
-                    Corners::all(px(self.corner_radius)),
-                    px(self.blur_radius),
-                );
+                window.paint_backdrop_blur(bounds, corners, px(self.blur_radius));
                 self.child.paint(window, cx);
             });
         } else {
