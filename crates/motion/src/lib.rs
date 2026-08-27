@@ -40,6 +40,8 @@ use gpui::{
     SharedString, Styled, Window, px,
 };
 
+/// What the catalog's one-shot entrances are built on. Repeats belong on
+/// [`pulse_delta`], which leases the view instead of pinning the window.
 pub use gpui::AnimationExt;
 
 pub mod phase;
@@ -350,12 +352,6 @@ impl MotionSpec {
     pub fn animation(&self) -> Animation {
         let spec = *self;
         Animation::new(spec.total().mul_f32(speed_scale())).with_easing(move |d| spec.progress(d))
-    }
-
-    /// A repeating gpui [`Animation`] with linear easing over the raw period —
-    /// for the pulse/wave loaders whose per-cell easing happens in the animator.
-    pub fn repeating(&self) -> Animation {
-        Animation::new(self.total()).repeat()
     }
 }
 

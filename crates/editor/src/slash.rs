@@ -8,7 +8,7 @@
 //! typed after the `/`, which is how Notion does it and why there is no second
 //! field to hand focus to.
 
-use gpui::{ScrollHandle, SharedString};
+use gpui::{EntityId, ScrollHandle, SharedString};
 use ui::{popover::Filter, scroll::TransientState};
 
 use markdown::{Align, BlockKind, Cursor, Text};
@@ -100,12 +100,12 @@ pub struct Slash {
 }
 
 impl Slash {
-    pub fn open(at: Cursor) -> Self {
+    pub fn open(at: Cursor, view: EntityId) -> Self {
         Self {
             at,
             filter: Filter::new(items().into_iter().map(|(label, _)| label).collect()),
             scroll: ScrollHandle::new(),
-            bar: TransientState::new(),
+            bar: TransientState::new(view),
         }
     }
 

@@ -11,8 +11,8 @@
 //! turning a click into a position.
 
 use gpui::{
-    App, Context, CursorStyle, ElementInputHandler, FocusHandle, Focusable, MouseButton, Render,
-    Styled as _, Window, canvas, div, prelude::*,
+    App, Context, CursorStyle, ElementInputHandler, EntityId, FocusHandle, Focusable, MouseButton,
+    Render, Styled as _, Window, canvas, div, prelude::*,
 };
 use markdown::{
     BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Text, edit, edit::shortcut,
@@ -317,12 +317,13 @@ impl Editor {
                 self.delete_back(cx)
             };
         }
+        let view = cx.entity_id();
         self.edit(EditKind::Delete, cx, |this| {
             let head = this
                 .doc
                 .replace(Selection::new(target, at), Text::default());
             this.selection = Selection::at(head.clamp(&this.doc));
-            this.track_slash("");
+            this.track_slash("", view);
         });
     }
 
@@ -429,6 +430,7 @@ impl Editor {
     /// Typing, backspace, delete and IME all land here, so none of them has to
     /// ask whether a selection was empty.
     fn insert(&mut self, text: &str, cx: &mut Context<Self>) {
+        let view = cx.entity_id();
         self.edit(EditKind::Insert, cx, |this| {
             let mut typed = Text::plain(text);
             // A stored mark applies to what is typed next and to nothing else,
@@ -443,7 +445,7 @@ impl Editor {
             this.selection = Selection::at(head.clamp(&this.doc));
             this.apply_shortcut();
             this.apply_inline_rule();
-            this.track_slash(text);
+            this.track_slash(text, view);
         });
     }
 
@@ -452,7 +454,7 @@ impl Editor {
     /// The query is the text between the `/` and the caret, so there is no
     /// second field and no focus to hand over — typing filters because typing
     /// is what it already was.
-    fn track_slash(&mut self, typed: &str) {
+    fn track_slash(&mut self, typed: &str, view: EntityId) {
         let at = self.cursor();
         let text = self
             .doc
@@ -474,10 +476,13 @@ impl Editor {
             // Only in a body: a fence holds its slash literally, and a caption
             // belongs to a block that is already what it is.
             if let Some(slash) = opened.filter(|_| starts_word && at.part == Part::Body) {
-                self.slash = Some(Slash::open(Cursor {
-                    offset: slash,
-                    ..at
-                }));
+                self.slash = Some(Slash::open(
+                    Cursor {
+                        offset: slash,
+                        ..at
+                    },
+                    view,
+                ));
             }
             return;
         }
@@ -645,6 +650,7 @@ impl Editor {
         } else {
             EditKind::Delete
         };
+        let view = cx.entity_id();
         self.edit(kind, cx, |this| {
             let head = if !this.selection.is_collapsed() {
                 this.doc.replace(this.selection, Text::default())
@@ -663,7 +669,7 @@ impl Editor {
             this.selection = Selection::at(head.clamp(&this.doc));
             // Deleting narrows the query too, and backspacing onto the slash
             // itself is what closes the menu.
-            this.track_slash("");
+            this.track_slash("", view);
         });
     }
 

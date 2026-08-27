@@ -44,7 +44,6 @@ actions!(
     gallery,
     [
         OpenPalette,
-        ToggleInspector,
         ToggleFullScreen,
         CloseOverlay,
         ToggleFpsOverlay,
@@ -81,10 +80,6 @@ pub fn init(cx: &mut App) {
 }
 
 pub mod highlight;
-/// gpui builds its element inspector into every debug build; release builds
-/// have no such window method, so the whole surface is debug-only.
-#[cfg(debug_assertions)]
-pub mod inspector;
 
 pub mod create;
 pub mod patterns;
@@ -851,25 +846,25 @@ impl Gallery {
             create_file: 0,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             rail_scroll: gpui::ScrollHandle::new(),
-            rail_bar: ScrollbarState::new(),
+            rail_bar: ScrollbarState::new(cx.entity_id()),
             pane_scroll: gpui::ScrollHandle::new(),
-            pane_bar: ScrollbarState::new(),
+            pane_bar: ScrollbarState::new(cx.entity_id()),
             demo_scroll: gpui::ScrollHandle::new(),
-            demo_bar: ScrollbarState::new(),
+            demo_bar: ScrollbarState::new(cx.entity_id()),
             log_scroll: gpui::ScrollHandle::new(),
-            log_bar: ScrollbarState::new(),
+            log_bar: ScrollbarState::new(cx.entity_id()),
             log_follow: scroll::FollowState::new(),
             // Enough to overflow the box on arrival, so the pin has something
             // to hold onto before you press anything.
             log_lines: 24,
             table_scroll: gpui::ScrollHandle::new(),
-            table_bar: ScrollbarState::new(),
+            table_bar: ScrollbarState::new(cx.entity_id()),
             table_sort: None,
             page: 1,
             tree_scroll: gpui::ScrollHandle::new(),
-            tree_bar: ScrollbarState::new(),
+            tree_bar: ScrollbarState::new(cx.entity_id()),
             rows_scroll: gpui::UniformListScrollHandle::new(),
-            rows_bar: ScrollbarState::new(),
+            rows_bar: ScrollbarState::new(cx.entity_id()),
             rows_built: Rc::new(Cell::new(0)),
             // Opened so the page shows nesting on arrival rather than a flat
             // list of two folders.
@@ -891,10 +886,10 @@ impl Gallery {
             tab: 2,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
-            activity: cx.new(|_| patterns::agent::Activity::default()),
+            activity: cx.new(patterns::agent::Activity::new),
             tool_calls: cx.new(|_| patterns::agent::ToolCalls::default()),
             agent_composer: cx.new(patterns::agent::Composer::new),
-            transcript: cx.new(|_| patterns::transcript::Transcript::default()),
+            transcript: cx.new(patterns::transcript::Transcript::new),
             diff: cx.new(|_| patterns::diff::Diff),
             document: cx.new(patterns::document::Document::new),
             editor: cx.new(patterns::editor::EditorDemo::new),
@@ -967,22 +962,6 @@ impl Gallery {
         palette.update(cx, |palette, cx| palette.focus(window, cx));
         self.palette = Some(palette);
         cx.notify();
-    }
-
-    /// `cmd-alt-i`. The handler lives on this view rather than on the app so
-    /// it has the window in hand — `App::active_window` is a guess, and it is
-    /// `None` whenever the app is not frontmost.
-    ///
-    /// Debug builds only: `Window::toggle_inspector` does not exist in release,
-    /// so the whole affordance compiles out.
-    fn toggle_inspector(
-        &mut self,
-        _: &ToggleInspector,
-        _window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        #[cfg(debug_assertions)]
-        _window.toggle_inspector(_cx);
     }
 
     /// `ctrl-alt-shift-p` — zed's own chord for the same overlay, cycling
@@ -3663,7 +3642,6 @@ impl Render for Gallery {
             .key_context("Gallery")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::open_palette))
-            .on_action(cx.listener(Self::toggle_inspector))
             .on_action(cx.listener(Self::toggle_fps_overlay))
             .on_action(cx.listener(Self::reset_frame_overlay_stats))
             .on_action(cx.listener(Self::toggle_full_screen))

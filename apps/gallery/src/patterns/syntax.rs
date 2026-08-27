@@ -26,7 +26,7 @@ pub struct Syntax {
 }
 
 impl Syntax {
-    pub fn new(_: &mut Context<Self>) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             docs: SAMPLES
                 .iter()
@@ -34,7 +34,7 @@ impl Syntax {
                 .collect(),
             selected: 0,
             scroll: ScrollHandle::new(),
-            bar: TransientState::new(),
+            bar: TransientState::new(cx.entity_id()),
         }
     }
 }

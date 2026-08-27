@@ -57,7 +57,7 @@ impl Orbs {
             size: OrbSize::Avatar,
             segments: std::array::from_fn(|_| cx.focus_handle().tab_stop(true)),
             scroll: ScrollHandle::new(),
-            bar: TransientState::new(),
+            bar: TransientState::new(cx.entity_id()),
             frames: OrbState::ALL_STATES
                 .iter()
                 .map(|_| Rc::new(RefCell::new(Frame::new())))

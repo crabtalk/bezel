@@ -33,7 +33,7 @@
 use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
-    Animation, AnimationExt, App, DragMoveEvent, ElementId, Empty, MouseButton, Pixels,
+    Animation, AnimationExt, App, DragMoveEvent, ElementId, Empty, EntityId, MouseButton, Pixels,
     ScrollHandle, SharedString, Window, canvas, div, point, prelude::*, px,
 };
 
@@ -97,17 +97,26 @@ pub struct ScrollbarDrag(pub SharedString);
 /// and the bar clones — for the same reason: both mutate through `&self`, so
 /// the bar carries its whole gesture without the view wiring a single listener.
 /// Without it the thumb would jump its middle to the pointer on every press.
-#[derive(Clone, Default)]
-pub struct ScrollbarState(Rc<Cell<Option<Pixels>>>);
+#[derive(Clone)]
+pub struct ScrollbarState {
+    grab: Rc<Cell<Option<Pixels>>>,
+    /// The view that paints this bar. A drag runs in event-dispatch context,
+    /// where the window cannot resolve which view is asking, so the only frame
+    /// it could request was the whole window's.
+    view: EntityId,
+}
 
 impl ScrollbarState {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(view: EntityId) -> Self {
+        Self {
+            grab: Rc::new(Cell::new(None)),
+            view,
+        }
     }
 
     /// Whether a thumb drag is in flight.
     pub fn dragging(&self) -> bool {
-        self.0.get().is_some()
+        self.grab.get().is_some()
     }
 
     /// One drag move of the thumb: filter the gesture to this bar's track, then
@@ -117,7 +126,6 @@ impl ScrollbarState {
         track_id: &SharedString,
         handle: &ScrollHandle,
         event: &DragMoveEvent<ScrollbarDrag>,
-        window: &mut Window,
         cx: &mut App,
     ) {
         // Another bar's thumb: `on_drag_move` filters by payload type, and
@@ -137,14 +145,14 @@ impl ScrollbarState {
         // simply the difference. Held for the rest of the gesture — read it
         // again later and it would answer "wherever the pointer is now",
         // which is a thumb that never moves.
-        let grab = self.0.get().unwrap_or_else(|| {
+        let grab = self.grab.get().unwrap_or_else(|| {
             let grab = (pointer - range.start).clamp(px(0.0), size);
-            self.0.set(Some(grab));
+            self.grab.set(Some(grab));
             grab
         });
         let offset = offset_for_thumb(pointer - grab, viewport, max_offset, size);
         handle.set_offset(point(handle.offset().x, offset));
-        window.refresh();
+        cx.notify(self.view);
     }
 }
 
@@ -181,7 +189,7 @@ pub fn scrollbar(
     let drag_state = state.clone();
     let release_state = state.clone();
     let released = move |_: &gpui::MouseUpEvent, _: &mut Window, _: &mut App| {
-        release_state.0.set(None);
+        release_state.grab.set(None);
     };
 
     div()
@@ -193,8 +201,8 @@ pub fn scrollbar(
         .w(px(TRACK))
         .flex()
         .justify_center()
-        .on_drag_move(move |event, window, cx| {
-            drag_state.drag(&track_id, &drag_handle, event, window, cx);
+        .on_drag_move(move |event, _, cx| {
+            drag_state.drag(&track_id, &drag_handle, event, cx);
         })
         // Both, because a release can land anywhere on screen; a grab left set
         // would make the next press continue the last gesture.
@@ -220,7 +228,7 @@ pub fn scrollbar(
                     // handle. Ask for the frame that will paint it right.
                     // Self-limiting — once they agree, nothing is requested.
                     if (bounds.size.height - viewport).abs() > px(0.5) {
-                        window.refresh();
+                        window.request_animation_frame();
                     }
                 },
                 |_, _, _, _| {},
@@ -244,15 +252,18 @@ pub const TRANSIENT_IDLE: Duration = Duration::from_millis(1000);
 /// restarts the fade — `AnimationElement` pins its clock to the id it first
 /// laid out with), and the hover flag that holds the thumb up while the
 /// pointer is on the strip.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct TransientState {
     cell: Rc<Cell<(Pixels, Pixels, u64, bool)>>,
     bar: ScrollbarState,
 }
 
 impl TransientState {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(view: EntityId) -> Self {
+        Self {
+            cell: Rc::new(Cell::new(Default::default())),
+            bar: ScrollbarState::new(view),
+        }
     }
 }
 
@@ -293,7 +304,7 @@ pub fn transient(
     let drag_state = state.clone();
     let release_state = state.clone();
     let released = move |_: &gpui::MouseUpEvent, _: &mut Window, _: &mut App| {
-        release_state.bar.0.set(None);
+        release_state.bar.grab.set(None);
     };
 
     let track = div()
@@ -305,10 +316,8 @@ pub fn transient(
         .w(px(TRACK))
         .flex()
         .justify_center()
-        .on_drag_move(move |event, window, cx| {
-            drag_state
-                .bar
-                .drag(&track_id, &drag_handle, event, window, cx);
+        .on_drag_move(move |event, _, cx| {
+            drag_state.bar.drag(&track_id, &drag_handle, event, cx);
         })
         // Both, because a release can land anywhere on screen; a grab left set
         // would make the next press continue the last gesture.
@@ -321,7 +330,8 @@ pub fn transient(
                 // The thumb's stand-in at rest: hovering the strip raises it,
                 // and leaving starts its fade.
                 let hover_state = state.clone();
-                track.on_hover(move |hovered: &bool, window, _| {
+                let hover_view = state.bar.view;
+                track.on_hover(move |hovered: &bool, _, cx: &mut App| {
                     let mut cell = hover_state.cell.get();
                     if cell.3 == *hovered {
                         return;
@@ -329,7 +339,7 @@ pub fn transient(
                     cell.3 = *hovered;
                     cell.2 += 1;
                     hover_state.cell.set(cell);
-                    window.refresh();
+                    cx.notify(hover_view);
                 })
             }
         });
@@ -358,7 +368,7 @@ pub fn transient(
                 Animation::new(TRANSIENT_IDLE),
                 move |el, p| {
                     let cell = anim.cell.get();
-                    if cell.3 || anim.bar.0.get().is_some() {
+                    if cell.3 || anim.bar.dragging() {
                         el
                     } else if p < 1.0 {
                         el.opacity(1.0 - p)
@@ -380,7 +390,7 @@ pub fn transient(
                     // handle. Ask for the frame that will paint it right.
                     // Self-limiting — once they agree, nothing is requested.
                     if (bounds.size.height - viewport).abs() > px(0.5) {
-                        window.refresh();
+                        window.request_animation_frame();
                     }
                 },
                 |_, _, _, _| {},
@@ -488,7 +498,7 @@ pub fn follow(handle: &ScrollHandle, state: &FollowState) -> gpui::AnyElement {
 
             if pinned && (offset + max_offset).abs() > px(0.5) {
                 handle.set_offset(point(handle.offset().x, -max_offset));
-                window.refresh();
+                window.request_animation_frame();
             }
             state.0.set((pinned, max_offset));
         },

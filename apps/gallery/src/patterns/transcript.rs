@@ -182,14 +182,14 @@ pub struct Transcript {
     bar: ScrollbarState,
 }
 
-impl Default for Transcript {
-    fn default() -> Self {
+impl Transcript {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             work: std::collections::HashMap::new(),
             open_output: std::collections::HashSet::new(),
             scroll: gpui::ScrollHandle::new(),
             follow: FollowState::new(),
-            bar: ScrollbarState::new(),
+            bar: ScrollbarState::new(cx.entity_id()),
         }
     }
 }

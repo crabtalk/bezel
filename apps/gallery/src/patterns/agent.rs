@@ -97,14 +97,14 @@ pub struct Activity {
     bar: ScrollbarState,
 }
 
-impl Default for Activity {
-    fn default() -> Self {
+impl Activity {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             run: None,
             thought: widgets::Takeover::default(),
             scroll: gpui::ScrollHandle::new(),
             follow: FollowState::new(),
-            bar: ScrollbarState::new(),
+            bar: ScrollbarState::new(cx.entity_id()),
         }
     }
 }

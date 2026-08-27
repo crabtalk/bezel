@@ -6,7 +6,6 @@
 
 use gallery::{
     Gallery, ResetFrameOverlayStats, TRAFFIC_LIGHT_ORIGIN, ToggleFpsOverlay, ToggleFullScreen,
-    ToggleInspector,
 };
 use gpui::{
     App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions, WindowBounds,
@@ -28,7 +27,6 @@ fn main() {
             appearance::init(appearance::AppearanceMode::System, cx);
             gallery::init(cx);
             cx.bind_keys([
-                KeyBinding::new("cmd-alt-i", ToggleInspector, None),
                 // The chords zed's own keymap carries for these two.
                 KeyBinding::new("ctrl-alt-shift-p", ToggleFpsOverlay, None),
                 KeyBinding::new("ctrl-alt-shift-o", ResetFrameOverlayStats, None),
@@ -37,8 +35,6 @@ fn main() {
                 KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
                 KeyBinding::new("fn-f", ToggleFullScreen, None),
             ]);
-            #[cfg(debug_assertions)]
-            gallery::inspector::init(cx);
             set_menus(cx);
             let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);
             cx.open_window(

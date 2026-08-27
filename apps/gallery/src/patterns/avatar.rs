@@ -122,7 +122,7 @@ impl Avatars {
             lanes: [Lane::default(); LANES],
             slider: cx.focus_handle().tab_stop(true),
             scroll: ScrollHandle::new(),
-            bar: TransientState::new(),
+            bar: TransientState::new(cx.entity_id()),
             tick: None,
             activation: None,
         }
