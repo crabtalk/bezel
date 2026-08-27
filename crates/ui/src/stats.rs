@@ -1,5 +1,5 @@
 //! [`Stats`] — the meter: how many frames this window is drawing, and what the
-//! process costs, while you watch it.
+//! process and the GPU cost, while you watch it.
 //!
 //! A window at rest reads `0`. The count comes from this view's own renders,
 //! which is the same number: gpui re-renders every uncached view once per
@@ -57,6 +57,8 @@ pub struct Stats {
     since: Instant,
     /// Process CPU time at [`Self::since`].
     cpu_since: Option<Duration>,
+    /// GPU time spent on this window's frames at [`Self::since`].
+    gpu_since: Option<Duration>,
     /// Held between recomputes, so the digits stand still long enough to read.
     reading: Reading,
 }
@@ -66,6 +68,9 @@ struct Reading {
     fps: f32,
     /// Percent of one core, the figure Activity Monitor prints.
     cpu: Option<f32>,
+    /// Percent of wall time the GPU was busy on this window's frames. `None`
+    /// off Metal, where nothing measures it.
+    gpu: Option<f32>,
 }
 
 impl Stats {
@@ -75,13 +80,14 @@ impl Stats {
             frames: 0,
             since: Instant::now(),
             cpu_since: cpu_time(),
+            gpu_since: None,
             reading: Reading::default(),
         }
     }
 }
 
 impl Render for Stats {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.painter.woken(cx) {
             self.frames += 1;
         }
@@ -89,16 +95,19 @@ impl Render for Stats {
         let now = Instant::now();
         let elapsed = now.duration_since(self.since);
         if elapsed >= TICK {
-            let cpu = cpu_time();
+            let share = |then: Duration, now: Duration| {
+                now.saturating_sub(then).as_secs_f32() / elapsed.as_secs_f32() * 100.0
+            };
+            let (cpu, gpu) = (cpu_time(), window.gpu_time());
             self.reading = Reading {
                 fps: self.frames as f32 / elapsed.as_secs_f32(),
-                cpu: self.cpu_since.zip(cpu).map(|(then, cpu)| {
-                    cpu.saturating_sub(then).as_secs_f32() / elapsed.as_secs_f32() * 100.0
-                }),
+                cpu: self.cpu_since.zip(cpu).map(|(then, cpu)| share(then, cpu)),
+                gpu: self.gpu_since.zip(gpu).map(|(then, gpu)| share(then, gpu)),
             };
             self.frames = 0;
             self.since = now;
             self.cpu_since = cpu;
+            self.gpu_since = gpu;
         }
 
         self.painter.lease(1.0 / TICK.as_secs_f32(), LEASE, cx);
@@ -118,6 +127,13 @@ impl Render for Stats {
                 reading
                     .cpu
                     .map_or_else(|| "—".to_string(), |cpu| format!("{cpu:.1}%")),
+            ))
+            .child(row(
+                &theme,
+                "GPU",
+                reading
+                    .gpu
+                    .map_or_else(|| "—".to_string(), |gpu| format!("{gpu:.1}%")),
             ));
 
         card.material(material::PANEL_BLUR)
