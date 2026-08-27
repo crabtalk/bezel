@@ -4,16 +4,21 @@
 //! a name and [`Shape::random`] are the same kind of value and there is no
 //! vocabulary to outgrow. Colour comes from the theme.
 //!
+//! [`mascot`] draws the same face as cells — one identity at two resolutions,
+//! since a rail and a chat header showing one name should show one being.
+//!
 //! ```ignore
 //! agent::avatar(Face::from("Sara").pose(t)).w(px(48.)).h(px(48.))
 //! ```
 
 mod eyes;
 mod motion;
+mod pixels;
 mod shape;
 
 pub use eyes::{Eye, Eyes};
 pub use motion::{Beat, Motion};
+pub use pixels::{GRID, mascot};
 pub use shape::{Lobe, SAMPLES, Shape, seed};
 
 use gpui::{

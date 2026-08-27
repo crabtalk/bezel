@@ -463,6 +463,11 @@ pub const PATTERNS: &[Group] = &[
                 "Blob avatars",
                 "apps/gallery/src/patterns/avatar.rs",
             ),
+            section(
+                "agent-mascot",
+                "Pixel mascots",
+                "apps/gallery/src/patterns/mascot.rs",
+            ),
         ],
     },
     Group {
@@ -763,6 +768,7 @@ pub struct Gallery {
     orbs: Entity<patterns::orbs::Orbs>,
     syntax: Entity<patterns::syntax::Syntax>,
     avatar: Entity<patterns::avatar::Avatars>,
+    mascot: Entity<patterns::mascot::Mascots>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -898,6 +904,7 @@ impl Gallery {
             orbs: cx.new(patterns::orbs::Orbs::new),
             syntax: cx.new(patterns::syntax::Syntax::new),
             avatar: cx.new(patterns::avatar::Avatars::new),
+            mascot: cx.new(|_| patterns::mascot::Mascots::default()),
             embedded: false,
         }
     }
@@ -3213,6 +3220,7 @@ impl Gallery {
             "agent-orbs" => self.orbs.clone().into_any_element(),
             "syntax" => self.syntax.clone().into_any_element(),
             "agent-avatar" => self.avatar.clone().into_any_element(),
+            "agent-mascot" => self.mascot.clone().into_any_element(),
 
             _ => div().into_any_element(),
         }
