@@ -6,7 +6,7 @@
 //! the looks that ship, while per-call overrides stay chain modifiers.
 
 use gpui::{Div, SharedString, div, prelude::*, px};
-use motion;
+use motion::{self, Fade};
 use theme::{Theme, ThemeExt, ink, wash};
 
 /// The shipped looks (the reference `btnGhost` / `btnPrimary` /
@@ -33,27 +33,25 @@ fn frame(mut el: Div) -> Div {
 }
 
 pub trait Buttons: ThemeExt {
-    /// A labeled button in one of the shipped styles. `fade_key` matters only
-    /// for [`ButtonStyle::Ghost`]: `Some` animates the hover wash per instance
-    /// (pass a unique key per button), `None` is the plain ghost with the
-    /// hover left to the caller.
+    /// A labeled button in one of the shipped styles. `fade` matters only for
+    /// [`ButtonStyle::Ghost`]: `Some` animates the hover wash per instance,
+    /// `None` is the plain ghost with the hover left to the caller.
     fn button(
         &self,
         label: impl Into<SharedString>,
         style: ButtonStyle,
-        fade_key: Option<SharedString>,
+        fade: Option<Fade>,
     ) -> Div {
         let theme = self.theme();
         let label = label.into();
         match style {
-            ButtonStyle::Ghost => match fade_key {
-                Some(fade_key) => {
+            ButtonStyle::Ghost => match fade {
+                Some(fade) => {
                     let mut btn = frame(div())
-                        .text_color(motion::hover_blend(&fade_key, theme.text_muted, theme.text))
-                        .bg(motion::hover_blend(&fade_key, wash(0.0), ink(0.06)))
+                        .text_color(motion::hover_blend(&fade, theme.text_muted, theme.text))
+                        .bg(motion::hover_blend(&fade, wash(0.0), ink(0.06)))
                         .child(label);
-                    btn.interactivity()
-                        .on_hover(motion::hover_listener(fade_key));
+                    btn.interactivity().on_hover(motion::hover_listener(fade));
                     btn
                 }
                 None => frame(div()).text_color(theme.text_muted).child(label),

@@ -68,15 +68,6 @@ theme::set_palette(|appearance| {
 }, cx);
 ```
 
-One thing is not optional if you use hover fades — ask for frames in your root
-render, or fades paint once and stick:
-
-```rust
-if bezel::motion::hover_fades_active() {
-    window.request_animation_frame();
-}
-```
-
 ## Build an app
 
 `apps/hello` is the smallest consumer — one window, a button, a toggle.

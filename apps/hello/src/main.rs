@@ -6,7 +6,6 @@ use bezel::gpui::{
     App, AppContext as _, Bounds, Context, FocusHandle, Menu, MenuItem, Window, WindowBounds,
     WindowOptions, actions, div, prelude::*, px, size,
 };
-use bezel::motion;
 use bezel::theme::{
     self, Appearance, Theme,
     appearance::{self, AppearanceMode},
@@ -65,13 +64,8 @@ impl Hello {
 }
 
 impl Render for Hello {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx);
-        // Hover fades paint once and stick unless a frame is asked for — see
-        // the README's Theme section.
-        if motion::hover_fades_active() {
-            window.request_animation_frame();
-        }
         let dark = matches!(theme.appearance, Appearance::Dark);
         // The switch's state lives in the appearance global, not in the view —
         // flipping it repaints the whole window.

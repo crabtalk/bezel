@@ -45,88 +45,156 @@ pub use gpui::AnimationExt;
 pub mod phase;
 
 // ---------------------------------------------------------------------------
-// Pulse clock — throttled drive for the repeating loaders
+// The clock — one leased drive for everything that repeats
 // ---------------------------------------------------------------------------
 
-/// Repeat-tick interval for the pulse/spinner loaders (~30fps).
+/// Redraw rate for the pulse/spinner loaders.
 ///
 /// 2026-08, M-series laptop: one spinner drawn at 120Hz cost 36% of a core —
 /// the window redraw, with the animation math itself at 0.3%. 30fps is
 /// visually equivalent for these chunky cell waves at a quarter of the draws,
 /// and a window with no spinner mounted schedules nothing at all.
-const PULSE_TICK: Duration = Duration::from_millis(33);
+const PULSE_FPS: f32 = 30.0;
 
 /// How long a view stays on the tick list after its last spinner paint. One
 /// lease outlives a few missed frames; an unmounted spinner stops renewing and
 /// the view drops off, letting the clock park.
 const PULSE_LEASE: Duration = Duration::from_millis(300);
 
+/// Redraw rate for hover fades. [`HOVER_FADE`] is 150ms, so this paints it in
+/// nine steps — the drive it replaces ran at the display's rate, whatever that
+/// was.
+const HOVER_FPS: f32 = 60.0;
+
+/// Floor on how long the clock sleeps between wake-ups, so a lease asking for
+/// an absurd rate cannot turn the loop into a spin.
+const MIN_SLEEP: Duration = Duration::from_millis(1);
+
+/// One view's claim on the clock.
+struct Lease {
+    /// When this view is next owed a redraw. `None` between a notify and the
+    /// render that renews the lease — which is what stops the clock running
+    /// ahead of a view that has not drawn yet.
+    due: Option<Instant>,
+    /// When the claim lapses if nothing renews it.
+    until: Instant,
+}
+
+#[derive(Default)]
 struct PulseClock {
-    epoch: Instant,
-    leases: HashMap<EntityId, Instant>,
+    /// Set on first use. Everything here reads the executor's clock rather than
+    /// `Instant::now()` — one time source for scheduling and for phase, and the
+    /// only way a test can advance a second of animation without waiting one.
+    epoch: Option<Instant>,
+    leases: HashMap<EntityId, Lease>,
     running: bool,
+}
+
+impl PulseClock {
+    /// When the loop should next wake: the earliest thing owed to anyone, or
+    /// the earliest lapse if every lease is waiting on a render.
+    fn next_wake(&self) -> Option<Instant> {
+        self.leases
+            .values()
+            .map(|lease| lease.due.unwrap_or(lease.until).min(lease.until))
+            .min()
+    }
 }
 
 impl Global for PulseClock {}
 
-impl Default for PulseClock {
-    fn default() -> Self {
-        Self {
-            epoch: Instant::now(),
-            leases: HashMap::new(),
-            running: false,
-        }
+/// Claim `fps` redraws a second for `view`, lapsing `until` from now unless
+/// something renews it. One timer serves the whole app: it wakes only when a
+/// view is owed a frame, notifies that view alone, and parks when the last
+/// claim lapses.
+///
+/// This is the drive for any repeating animation, yours included. gpui's
+/// `with_animation(…).repeat()` asks the *window* for a frame at the display's
+/// rate for as long as it stays mounted, and one such element is enough to hold
+/// the whole window there.
+///
+/// Renew it from `render` — that is what makes a lease self-cancelling, since
+/// an element that unmounts stops renewing and drops off. The rate is a
+/// per-view minimum of everything claiming it, so a 60fps claim never drags a
+/// 30fps one up with it.
+pub fn lease(view: EntityId, fps: f32, until: Duration, cx: &mut App) {
+    let now = cx.background_executor().now();
+    let period = Duration::from_secs_f32(1.0 / fps.clamp(1.0, 240.0));
+    let clock = cx.default_global::<PulseClock>();
+    clock
+        .leases
+        .entry(view)
+        .and_modify(|lease| {
+            lease.due = Some(lease.due.map_or(now + period, |due| due.min(now + period)));
+            lease.until = lease.until.max(now + until);
+        })
+        .or_insert(Lease {
+            due: Some(now + period),
+            until: now + until,
+        });
+    if clock.running {
+        return;
     }
+    clock.running = true;
+    cx.spawn(async move |cx| {
+        loop {
+            let sleep = cx.update(|cx| {
+                let now = cx.background_executor().now();
+                let clock = cx.default_global::<PulseClock>();
+                clock
+                    .next_wake()
+                    .map(|wake| wake.saturating_duration_since(now).max(MIN_SLEEP))
+            });
+            let Some(sleep) = sleep else { break };
+            cx.background_executor().timer(sleep).await;
+            let parked = cx.update(|cx| {
+                let now = cx.background_executor().now();
+                // The clock is the fade store's tick too: it is what advances
+                // the frame counter that evicts fades whose elements went away.
+                tick_hover_fades();
+                let clock = cx.default_global::<PulseClock>();
+                clock.leases.retain(|_, lease| lease.until > now);
+                if clock.leases.is_empty() {
+                    clock.running = false;
+                    return true;
+                }
+                // Owed a frame now. Clearing `due` is what holds the clock at
+                // this view's rate rather than the loop's: only the render this
+                // notify provokes puts it back on the schedule.
+                let mut owed = Vec::new();
+                for (view, lease) in clock.leases.iter_mut() {
+                    if lease.due.is_some_and(|due| due <= now) {
+                        lease.due = None;
+                        owed.push(*view);
+                    }
+                }
+                for view in owed {
+                    cx.notify(view);
+                }
+                false
+            });
+            if parked {
+                break;
+            }
+        }
+    })
+    .detach();
 }
 
-/// Current phase `[0,1)` of a repeating spec, plus a lease that keeps the
-/// calling view re-rendering at [`PULSE_TICK`] while its spinner stays
-/// mounted. All cells across all views share one epoch, so multi-instance
-/// loaders stay phase-locked. Reduced motion returns a static 0 and schedules
-/// nothing.
-///
-/// This is the entry point for any repeating animation, yours included:
-/// [`MotionSpec::new`] is `const` and its fields are public, so a component
-/// outside this library rides the same clock by calling this with its own spec.
-/// gpui's `with_animation(…).repeat()` asks the *window* for a frame at the
-/// display's rate for as long as it stays mounted, and one such element is
-/// enough to hold the whole window there; this notifies one view at 30fps and
-/// parks when the last spinner unmounts.
+/// Current phase `[0,1)` of a repeating spec, plus a [`lease`] that keeps the
+/// calling view re-rendering at [`PULSE_FPS`] while its spinner stays mounted.
+/// All cells across all views share one epoch, so multi-instance loaders stay
+/// phase-locked. Reduced motion returns a static 0 and schedules nothing.
 pub fn pulse_delta(spec: &MotionSpec, view: EntityId, cx: &mut App) -> f32 {
     if cx.reduce_motion() {
         return 0.0;
     }
+    lease(view, PULSE_FPS, PULSE_LEASE, cx);
+    let now = cx.background_executor().now();
     let clock = cx.default_global::<PulseClock>();
-    clock.leases.insert(view, Instant::now() + PULSE_LEASE);
+    let epoch = *clock.epoch.get_or_insert(now);
     let period = spec.total().as_secs_f32();
-    let phase = (clock.epoch.elapsed().as_secs_f32() / period).fract();
-    if !clock.running {
-        clock.running = true;
-        cx.spawn(async move |cx| {
-            loop {
-                cx.background_executor().timer(PULSE_TICK).await;
-                let parked = cx.update(|cx| {
-                    let clock = cx.default_global::<PulseClock>();
-                    let now = Instant::now();
-                    clock.leases.retain(|_, until| *until > now);
-                    if clock.leases.is_empty() {
-                        clock.running = false;
-                        return true;
-                    }
-                    let views: Vec<EntityId> = clock.leases.keys().copied().collect();
-                    for view in views {
-                        cx.notify(view);
-                    }
-                    false
-                });
-                if parked {
-                    break;
-                }
-            }
-        })
-        .detach();
-    }
-    phase
+    ((now - epoch).as_secs_f32() / period).fract()
 }
 
 // ---------------------------------------------------------------------------
@@ -448,9 +516,9 @@ pub fn lerp(from: f32, to: f32, t: f32) -> f32 {
 // mouse listeners, the render tail).
 //
 // Staleness: an element that unmounts mid-hover never gets its leave event, so
-// entries are stamped with a frame counter on every read and pruned by
-// [`hover_fades_active`] (the once-per-frame tick) when a full frame passes
-// without a read — a reopened menu never inherits a dead entry's wash.
+// entries are stamped with a frame counter on every read and pruned by the
+// clock's tick when a full tick passes without a read — a reopened menu never
+// inherits a dead entry's wash.
 
 /// One element's hover fade: progress runs `origin → target` over
 /// [`HOVER_FADE`], re-anchored at `origin` whenever the pointer flips
@@ -479,11 +547,32 @@ impl FadeEntry {
     }
 }
 
-/// Per-key hover progress store. Pure core (explicit `now`) — unit-testable;
-/// the thread-local wrappers below feed it wall time.
+/// Which fade: the view that paints it, and which element inside that view.
+///
+/// The view is half the identity because the store is one map for the whole
+/// app. Keyed on the string alone, two views using `"row-3"` trade each other's
+/// wash — which is why the ghost button used to ask callers for a key unique
+/// across the entire program.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Fade {
+    pub view: EntityId,
+    pub key: SharedString,
+}
+
+impl Fade {
+    pub fn new(view: EntityId, key: impl Into<SharedString>) -> Self {
+        Self {
+            view,
+            key: key.into(),
+        }
+    }
+}
+
+/// Per-fade progress store. Pure core (explicit `now`) — unit-testable; the
+/// thread-local wrappers below feed it the clock.
 #[derive(Default)]
 pub struct HoverFades {
-    pub entries: HashMap<String, FadeEntry>,
+    pub entries: HashMap<Fade, FadeEntry>,
     frame: u64,
 }
 
@@ -492,23 +581,23 @@ impl HoverFades {
         HOVER_FADE.total().mul_f32(speed_scale())
     }
 
-    /// Pointer entered (`hovered`) or left the element behind `key`. Reduced
+    /// Pointer entered (`hovered`) or left the element behind `fade`. Reduced
     /// motion snaps straight to the endpoint.
-    pub fn set_at(&mut self, key: &str, hovered: bool, reduced: bool, now: Instant) {
+    pub fn set_at(&mut self, fade: &Fade, hovered: bool, reduced: bool, now: Instant) {
         let target = if hovered { 1.0 } else { 0.0 };
         let duration = Self::duration();
         let current = self
             .entries
-            .get(key)
+            .get(fade)
             .map(|e| e.value(now, duration))
             .unwrap_or(0.0);
-        if target == 0.0 && !self.entries.contains_key(key) {
+        if target == 0.0 && !self.entries.contains_key(fade) {
             return; // never-hovered element reporting a leave — nothing to do
         }
         let origin = if reduced { target } else { current };
         let seen = self.frame;
         self.entries.insert(
-            key.to_string(),
+            fade.clone(),
             FadeEntry {
                 origin,
                 target,
@@ -518,10 +607,10 @@ impl HoverFades {
         );
     }
 
-    /// Hover progress (0..1) for `key` at `now`; stamps liveness.
-    pub fn value_at(&mut self, key: &str, now: Instant) -> f32 {
+    /// Hover progress (0..1) for `fade` at `now`; stamps liveness.
+    pub fn value_at(&mut self, fade: &Fade, now: Instant) -> f32 {
         let frame = self.frame;
-        match self.entries.get_mut(key) {
+        match self.entries.get_mut(fade) {
             Some(entry) => {
                 entry.seen = frame;
                 entry.value(now, Self::duration())
@@ -559,55 +648,38 @@ thread_local! {
     static HOVER_FADES: RefCell<HoverFades> = RefCell::new(HoverFades::default());
 }
 
-/// Hover progress (0..1) for `key` this frame.
-pub fn hover_t(key: &str) -> f32 {
-    HOVER_FADES.with(|fades| fades.borrow_mut().value_at(key, Instant::now()))
+/// Hover progress (0..1) for `fade` this frame.
+pub fn hover_t(fade: &Fade) -> f32 {
+    HOVER_FADES.with(|fades| fades.borrow_mut().value_at(fade, Instant::now()))
 }
 
-/// Record a hover flip for `key` (reduced motion snaps).
-pub fn set_hover(key: &str, hovered: bool, reduced: bool) {
+/// Record a hover flip for `fade` (reduced motion snaps). Prefer
+/// [`hover_listener`], which also asks the clock for the frames to paint it.
+pub fn set_hover(fade: &Fade, hovered: bool, reduced: bool) {
     HOVER_FADES.with(|fades| {
         fades
             .borrow_mut()
-            .set_at(key, hovered, reduced, Instant::now())
+            .set_at(fade, hovered, reduced, Instant::now())
     });
 }
 
-/// An `.on_hover` listener driving the fade for `key` — pair with
-/// [`hover_t`]/[`hover_blend`] reads of the same key in the same element.
-pub fn hover_listener(
-    key: impl Into<SharedString>,
-) -> impl Fn(&bool, &mut Window, &mut App) + 'static {
-    let key = key.into();
-    move |hovered, window, cx| {
-        set_hover(&key, *hovered, reduced_motion(cx));
-        // Event-dispatch context: `request_animation_frame` is draw-phase-only
-        // (it resolves the current view) — `refresh` marks the whole window
-        // dirty, the root render re-evaluates the blend and keeps frames
-        // coming via its tail while the fade is mid-flight.
-        window.refresh();
+/// An `.on_hover` listener driving the fade — pair with [`hover_t`] or
+/// [`hover_blend`] reads of the same [`Fade`] in the same element.
+///
+/// The view comes in on the `Fade` rather than being resolved here: this runs in
+/// event-dispatch context, where `Window::current_view()` asserts.
+pub fn hover_listener(fade: Fade) -> impl Fn(&bool, &mut Window, &mut App) + 'static {
+    move |hovered, _window, cx| {
+        set_hover(&fade, *hovered, reduced_motion(cx));
+        lease(fade.view, HOVER_FPS, HoverFades::duration(), cx);
     }
 }
 
-/// Frame-drive hook: call ONCE per window frame, from the app's root render:
-///
-/// ```ignore
-/// if motion::hover_fades_active() {
-///     window.request_animation_frame();
-/// }
-/// ```
-///
-/// **Not optional.** A hover fade is a colour computed at paint time rather than
-/// an animation element that drives itself: [`hover_listener`] dirties the
-/// window once as the pointer crosses, and every frame after that one has to be
-/// asked for. An app that skips this paints the blend's first frame — at rest —
-/// and then holds it until something unrelated repaints, which looks like a wash
-/// that sticks and then jumps rather than one that is simply off.
-///
-/// It is also the tick: the frame counter it advances is what evicts fades whose
-/// elements have gone away, so skipping it leaks an entry per hovered element.
-pub fn hover_fades_active() -> bool {
-    HOVER_FADES.with(|fades| fades.borrow_mut().tick_at(Instant::now()))
+/// Once-per-tick bookkeeping for the fade store, driven by the clock.
+fn tick_hover_fades() {
+    HOVER_FADES.with(|fades| {
+        fades.borrow_mut().tick_at(Instant::now());
+    });
 }
 
 /// Blend two colors by `t` the way the browser transitions them: component
@@ -635,9 +707,9 @@ pub fn mix(from: Hsla, to: Hsla, t: f32) -> Hsla {
     })
 }
 
-/// The standard hover blend: rest → hover color at `key`'s current progress.
-pub fn hover_blend(key: &str, rest: Hsla, hover: Hsla) -> Hsla {
-    mix(rest, hover, hover_t(key))
+/// The standard hover blend: rest → hover color at this fade's progress.
+pub fn hover_blend(fade: &Fade, rest: Hsla, hover: Hsla) -> Hsla {
+    mix(rest, hover, hover_t(fade))
 }
 
 // ---------------------------------------------------------------------------

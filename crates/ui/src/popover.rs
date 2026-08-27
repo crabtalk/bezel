@@ -14,7 +14,7 @@
 use gpui::{
     Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
 };
-use motion::{self as motion, AnimationExt as _, PULSE};
+use motion::{self as motion, AnimationExt as _, Fade, PULSE};
 use theme::{Theme, hairline, ink};
 
 // ---------------------------------------------------------------------------
@@ -848,10 +848,10 @@ pub fn sheet(
 /// One menu row (the reference `menuItem`): `gap-2.5 rounded-lg px-2 py-1.5
 /// text-[13px]`, active = `bg-white/10 text-foreground`, hover wash
 /// `white/[0.08]` fading over `transition-colors` (floating-styles.ts) via the
-/// per-`fade_key` [`motion::hover_blend`]. The caller adds the id/click
-/// listener — `fade_key` must be unique app-wide and stable across frames
-/// (the id string is a good choice).
-pub fn menu_row(theme: &Theme, active: bool, fade_key: impl Into<SharedString>) -> gpui::Div {
+/// per-[`Fade`] [`motion::hover_blend`]. The caller adds the id/click listener
+/// — the fade's key must be stable across frames (the id string is a good
+/// choice).
+pub fn menu_row(theme: &Theme, active: bool, fade: Fade) -> gpui::Div {
     let row = div()
         .flex()
         .flex_row()
@@ -868,22 +868,20 @@ pub fn menu_row(theme: &Theme, active: bool, fade_key: impl Into<SharedString>) 
     if active {
         row.bg(theme::card_selected_bg()).text_color(theme.text)
     } else {
-        let fade_key = fade_key.into();
         let mut row = row
             .text_color(motion::hover_blend(
-                &fade_key,
+                &fade,
                 theme.text.opacity(0.9),
                 theme.text,
             ))
             .bg(motion::hover_blend(
-                &fade_key,
+                &fade,
                 theme::wash(0.0),
                 theme::card_selected_bg(),
             ));
         // Imperative form — the caller's `.id(...)` makes the element stateful
         // (hover listeners need element state, `.on_hover` needs `Stateful`).
-        row.interactivity()
-            .on_hover(motion::hover_listener(fade_key));
+        row.interactivity().on_hover(motion::hover_listener(fade));
         row
     }
 }
@@ -892,13 +890,8 @@ pub fn menu_row(theme: &Theme, active: bool, fade_key: impl Into<SharedString>) 
 /// carries the full `bg-white/10` wash, the keyboard cursor the lighter
 /// `bg-white/[0.08]` (the reference's `data-[highlighted]` styling) — two selected-
 /// looking rows never appear at once.
-pub fn menu_row_nav(
-    theme: &Theme,
-    selected: bool,
-    highlighted: bool,
-    fade_key: impl Into<SharedString>,
-) -> gpui::Div {
-    let row = menu_row(theme, selected, fade_key);
+pub fn menu_row_nav(theme: &Theme, selected: bool, highlighted: bool, fade: Fade) -> gpui::Div {
+    let row = menu_row(theme, selected, fade);
     if !selected && highlighted {
         row.bg(theme::card_selected_bg()).text_color(theme.text)
     } else {

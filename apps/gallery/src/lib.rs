@@ -10,6 +10,7 @@ use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
     actions, div, prelude::*, px, relative,
 };
+use motion::Fade;
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
     Theme,
@@ -1147,6 +1148,7 @@ impl Gallery {
     /// carrying the same selected wash a menu row does — this is the library
     /// browsing itself.
     fn rail(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let view = cx.entity_id();
         let tab = &TABS[self.tab];
         let selected = self.selected[self.tab];
         div()
@@ -1192,7 +1194,7 @@ impl Gallery {
                                             popover::menu_row(
                                                 theme,
                                                 section.key == selected,
-                                                SharedString::from(format!("rail-{}", section.key)),
+                                                Fade::new(view, format!("rail-{}", section.key)),
                                             )
                                             .id(SharedString::from(format!(
                                                 "rail-item-{}",
@@ -1639,7 +1641,11 @@ impl Gallery {
             "buttons" => {
                 let labels = ["Ghost", "Prominent", "Destructive"];
                 let faces = [
-                    theme.button(labels[0], ButtonStyle::Ghost, Some("g-ghost".into())),
+                    theme.button(
+                        labels[0],
+                        ButtonStyle::Ghost,
+                        Some(Fade::new(view, "g-ghost")),
+                    ),
                     theme.button(labels[1], ButtonStyle::Prominent, None),
                     theme.button(labels[2], ButtonStyle::Destructive, None),
                 ];
@@ -1759,9 +1765,10 @@ impl Gallery {
                                                     popover::menu_row(
                                                         &theme,
                                                         index == self.theme_choice,
-                                                        SharedString::from(format!(
-                                                            "theme-row-{index}"
-                                                        )),
+                                                        Fade::new(
+                                                            view,
+                                                            format!("theme-row-{index}"),
+                                                        ),
                                                     )
                                                     .id(SharedString::from(format!(
                                                         "theme-{index}"
@@ -1980,7 +1987,7 @@ impl Gallery {
                                             "Start a run"
                                         },
                                         ButtonStyle::Ghost,
-                                        Some("g-takeover-run".into()),
+                                        Some(Fade::new(view, "g-takeover-run")),
                                     )),
                             )
                             // Which of the two rules is answering, on the page —
@@ -2082,7 +2089,7 @@ impl Gallery {
                             .child(theme.button(
                                 "Hover me",
                                 ButtonStyle::Ghost,
-                                Some("g-tip".into()),
+                                Some(Fade::new(view, "g-tip")),
                             )),
                     ),
                 )
@@ -2167,7 +2174,7 @@ impl Gallery {
                             .border_color(theme.border)
                             .bg(theme.surface)
                             .children(ROWS.iter().enumerate().map(|(index, (icon, label))| {
-                                let key = SharedString::from(format!("nav-row-{index}"));
+                                let key = Fade::new(view, format!("nav-row-{index}"));
                                 let row = theme
                                     .nav_row(
                                         Some(icon),
@@ -2204,7 +2211,7 @@ impl Gallery {
                                                 )),
                                         )
                                     });
-                                pressable(row, key, cx, move |view, cx| {
+                                pressable(row, key.key.clone(), cx, move |view, cx| {
                                     view.nav_choice = index;
                                     cx.notify();
                                 })
@@ -2447,14 +2454,14 @@ impl Gallery {
                 .child(
                     popover::popover_card(&theme).w(px(240.0)).children([
                         popover::menu_heading(&theme, "Section").into_any_element(),
-                        popover::menu_row(&theme, false, "m-one")
+                        popover::menu_row(&theme, false, Fade::new(view, "m-one"))
                             .child("First item")
                             .into_any_element(),
-                        popover::menu_row(&theme, true, "m-two")
+                        popover::menu_row(&theme, true, Fade::new(view, "m-two"))
                             .child("Active item")
                             .into_any_element(),
                         popover::divider().into_any_element(),
-                        popover::menu_row(&theme, false, "m-three")
+                        popover::menu_row(&theme, false, Fade::new(view, "m-three"))
                             .child("Third item")
                             .into_any_element(),
                     ]),
@@ -2562,7 +2569,7 @@ impl Gallery {
                             .child(theme.button(
                                 "Open sheet",
                                 ButtonStyle::Ghost,
-                                Some("g-sheet".into()),
+                                Some(Fade::new(view, "g-sheet")),
                             )),
                     ),
                 )
@@ -2599,7 +2606,7 @@ impl Gallery {
                             .child(theme.button(
                                 "Open dialog",
                                 ButtonStyle::Ghost,
-                                Some("g-dialog".into()),
+                                Some(Fade::new(view, "g-dialog")),
                             )),
                     ),
                 )
@@ -2607,34 +2614,40 @@ impl Gallery {
 
             // Exercises the fork's backdrop-blur primitive: the card blurs the
             // striped band painted behind it.
-            "material" => {
-                section
-                    .child(
-                        div()
-                            .relative()
-                            .w(px(420.0))
-                            .h(px(150.0))
-                            .child(div().absolute().inset_0().flex().flex_row().children(
-                                (0..14).map(|i| {
+            "material" => section
+                .child(
+                    div()
+                        .relative()
+                        .w(px(420.0))
+                        .h(px(150.0))
+                        .child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .flex()
+                                .flex_row()
+                                .children((0..14).map(|i| {
                                     div().w(px(30.0)).h_full().bg(if i % 2 == 0 {
                                         theme.accent
                                     } else {
                                         theme.warning
                                     })
-                                }),
-                            ))
-                            .child(div().absolute().top(px(28.0)).left(px(60.0)).child(
+                                })),
+                        )
+                        .child(
+                            div().absolute().top(px(28.0)).left(px(60.0)).child(
                                 ui::material::material(
                                     12.0,
                                     ui::material::MENU_BLUR,
                                     popover::popover_card(&theme).w(px(220.0)).child(
-                                        popover::menu_row(&theme, false, "mat-a").child("Blurred"),
+                                        popover::menu_row(&theme, false, Fade::new(view, "mat-a"))
+                                            .child("Blurred"),
                                     ),
                                 ),
-                            )),
-                    )
-                    .into_any_element()
-            }
+                            ),
+                        ),
+                )
+                .into_any_element(),
 
             "alerts" => section
                 .child(theme.error_strip("Something went wrong."))
@@ -2905,7 +2918,7 @@ impl Gallery {
                                 .child(theme.button(
                                     "Append a line",
                                     ButtonStyle::Ghost,
-                                    Some("g-follow-add".into()),
+                                    Some(Fade::new(view, "g-follow-add")),
                                 )),
                         )
                         .child(
@@ -2918,7 +2931,7 @@ impl Gallery {
                                 .child(theme.button(
                                     "Jump to latest",
                                     ButtonStyle::Ghost,
-                                    Some("g-follow-pin".into()),
+                                    Some(Fade::new(view, "g-follow-pin")),
                                 )),
                         )
                         // The state, on the page — the same trick the virtualized
@@ -3587,6 +3600,7 @@ fn column() -> gpui::Div {
 
 impl Render for Gallery {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity_id();
         let theme = Theme::of(cx).clone();
 
         // Rail on the left, one component in the pane — the set is long enough
@@ -3642,17 +3656,6 @@ impl Render for Gallery {
                 )
         };
 
-        // A hover fade is a colour computed at paint time, not an animation
-        // element that drives itself: `hover_listener` marks the window dirty
-        // once when the pointer crosses, and everything after that frame is the
-        // host's to ask for. Without this the blend paints its first frame — at
-        // rest — and then freezes until something unrelated repaints, which
-        // reads as a wash that sticks and then jumps. It also ticks the fade
-        // table, which is what evicts entries for elements that have gone away.
-        if motion::hover_fades_active() {
-            window.request_animation_frame();
-        }
-
         // Traversal goes on the root so `tab` works wherever focus happens to
         // be, rather than only inside whatever claimed it.
         focus::traversal(div())
@@ -3694,7 +3697,7 @@ impl Render for Gallery {
                                     popover::menu_row(
                                         &theme,
                                         false,
-                                        SharedString::from(format!("ctx-{index}")),
+                                        Fade::new(view, format!("ctx-{index}")),
                                     )
                                     .id(SharedString::from(format!("ctx-item-{index}")))
                                     .on_click(
@@ -3743,7 +3746,7 @@ impl Render for Gallery {
                                         .child(theme.button(
                                             "Cancel",
                                             ButtonStyle::Ghost,
-                                            Some("g-dialog-no".into()),
+                                            Some(Fade::new(view, "g-dialog-no")),
                                         )),
                                 )
                                 .child(
@@ -3788,7 +3791,7 @@ impl Render for Gallery {
                                         .child(theme.button(
                                             "Close",
                                             ButtonStyle::Ghost,
-                                            Some("g-sheet-close".into()),
+                                            Some(Fade::new(view, "g-sheet-close")),
                                         )),
                                 ),
                         )

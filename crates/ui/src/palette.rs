@@ -23,6 +23,7 @@ use gpui::{
     actions, div, prelude::*, px,
 };
 
+use motion::Fade;
 use theme::Theme;
 
 use crate::{
@@ -138,6 +139,7 @@ impl Focusable for CommandPalette {
 impl Render for CommandPalette {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
+        let view = cx.entity_id();
         let rows: Vec<gpui::AnyElement> = self
             .filter
             .filtered()
@@ -147,7 +149,7 @@ impl Render for CommandPalette {
                 popover::menu_row(
                     &theme,
                     Some(position) == self.filter.active(),
-                    SharedString::from(format!("palette-row-{item}")),
+                    Fade::new(view, format!("palette-row-{item}")),
                 )
                 .id(SharedString::from(format!("palette-{item}")))
                 .on_click(cx.listener(move |_, _, _, cx| {

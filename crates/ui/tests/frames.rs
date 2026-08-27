@@ -45,6 +45,10 @@ const THROTTLE_FPS: f32 = 30.0;
 /// what any of these are measuring.
 const PERIOD: Duration = Duration::from_secs(2);
 
+/// How long a bare `lease` is taken for — long enough to outlive the second
+/// each rate test advances, so what lapses the lease is the test asking it to.
+const LEASE_UNTIL: Duration = Duration::from_secs(30);
+
 /// How the same animation gets its frames.
 #[derive(Clone, Copy)]
 enum Drive {
@@ -54,8 +58,10 @@ enum Drive {
     DisplayRate,
     /// gpui's own throttle: a timer per animated element.
     Throttled,
-    /// bezel's `PulseClock`: one timer per app, leased per view.
+    /// bezel's clock: one timer per app, leased per view.
     SharedClock,
+    /// The clock's primitive on its own, at a rate this view picks.
+    Leased(f32),
 }
 
 struct Counted {
@@ -86,6 +92,10 @@ impl Render for Counted {
                 let theme = Theme::of(cx).clone();
                 let view = cx.entity_id();
                 loaders::pulse_loader("pulse", &theme, 8.0, view, cx).into_any_element()
+            }
+            Drive::Leased(fps) => {
+                motion::lease(cx.entity_id(), fps, LEASE_UNTIL, cx);
+                div().into_any_element()
             }
         };
         div().size_full().child(body)
@@ -179,6 +189,57 @@ fn gpuis_throttle_leaves_no_per_frame_callback(cx: &mut TestAppContext) {
     assert!(
         drawn > 0 && drawn < DISPLAY_RATE / 2,
         "throttled to {THROTTLE_FPS}fps but drew {drawn} times in a second"
+    );
+}
+
+/// The property that lets one timer serve everything: a fast claim must not
+/// drag a slow one up with it. Both views share the app's single clock.
+#[gpui::test]
+fn two_leases_are_each_notified_at_their_own_rate(cx: &mut TestAppContext) {
+    let (slow, _slow_window) = open(cx, Drive::Leased(10.0));
+    let (fast, _fast_window) = open(cx, Drive::Leased(60.0));
+    let (slow_settled, fast_settled) = (*slow.borrow(), *fast.borrow());
+
+    advance_a_second(cx);
+    let (slow_drawn, fast_drawn) = (*slow.borrow() - slow_settled, *fast.borrow() - fast_settled);
+
+    assert!(
+        (5..=15).contains(&slow_drawn),
+        "a 10fps lease drew {slow_drawn} times in a second"
+    );
+    assert!(
+        (40..=80).contains(&fast_drawn),
+        "a 60fps lease drew {fast_drawn} times in a second"
+    );
+    assert!(
+        fast_drawn > slow_drawn * 2,
+        "the two rates collapsed together: {slow_drawn} and {fast_drawn}"
+    );
+}
+
+/// The other half of a lease: it is self-cancelling. Nothing unsubscribes — the
+/// spinner stops rendering, so nothing renews, so the clock runs out of work.
+#[gpui::test]
+fn the_clock_parks_when_the_last_lease_lapses(cx: &mut TestAppContext) {
+    let (renders, window) = open(cx, Drive::SharedClock);
+    advance_a_second(cx);
+    assert!(*renders.borrow() > 1, "the loader never started");
+
+    window
+        .update(cx, |view, _, cx| {
+            view.drive = Drive::Still;
+            cx.notify();
+        })
+        .unwrap();
+    // Past the lease, plus room for the tick that notices it lapsed.
+    advance_a_second(cx);
+    let parked = *renders.borrow();
+
+    advance_a_second(cx);
+    assert_eq!(
+        *renders.borrow(),
+        parked,
+        "the clock kept drawing after the last lease lapsed"
     );
 }
 

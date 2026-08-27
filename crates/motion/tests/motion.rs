@@ -2,6 +2,12 @@ use std::time::Duration;
 
 use gpui::Rgba;
 use motion::*;
+
+/// A fade in a stand-in view. `EntityId: From<u64>`, so the pure store needs no
+/// app to key on one.
+fn fade(key: &'static str) -> Fade {
+    Fade::new(gpui::EntityId::from(1), key)
+}
 use web_time::Instant;
 
 #[test]
@@ -173,25 +179,29 @@ fn hover_fade_ramps_and_reverses_continuously() {
     let ms = |m: u64| t0 + Duration::from_millis(m);
 
     // Enter: 0 at the flip, mid-flight strictly between, 1 at 150ms.
-    fades.set_at("pill", true, false, t0);
-    assert_eq!(fades.value_at("pill", t0), 0.0);
-    let mid = fades.value_at("pill", ms(75));
+    fades.set_at(&fade("pill"), true, false, t0);
+    assert_eq!(fades.value_at(&fade("pill"), t0), 0.0);
+    let mid = fades.value_at(&fade("pill"), ms(75));
     assert!(mid > 0.0 && mid < 1.0, "mid-flight enter: {mid}");
-    assert_eq!(fades.value_at("pill", ms(150)), 1.0);
-    assert_eq!(fades.value_at("pill", ms(400)), 1.0, "clamps past the end");
+    assert_eq!(fades.value_at(&fade("pill"), ms(150)), 1.0);
+    assert_eq!(
+        fades.value_at(&fade("pill"), ms(400)),
+        1.0,
+        "clamps past the end"
+    );
 
     // Leave mid-flight re-anchors at the current value — no jump.
-    fades.set_at("pill", true, false, t0);
-    let at_flip = fades.value_at("pill", ms(75));
-    fades.set_at("pill", false, false, ms(75));
-    let after_flip = fades.value_at("pill", ms(75));
+    fades.set_at(&fade("pill"), true, false, t0);
+    let at_flip = fades.value_at(&fade("pill"), ms(75));
+    fades.set_at(&fade("pill"), false, false, ms(75));
+    let after_flip = fades.value_at(&fade("pill"), ms(75));
     assert!(
         (after_flip - at_flip).abs() < 1e-4,
         "continuity: {at_flip} vs {after_flip}"
     );
-    let falling = fades.value_at("pill", ms(140));
+    let falling = fades.value_at(&fade("pill"), ms(140));
     assert!(falling < after_flip, "fades back down");
-    assert_eq!(fades.value_at("pill", ms(225)), 0.0, "lands at rest");
+    assert_eq!(fades.value_at(&fade("pill"), ms(225)), 0.0, "lands at rest");
 }
 
 #[test]
@@ -199,19 +209,19 @@ fn hover_fade_reduced_motion_snaps() {
     let _guard = lock_speed();
     let mut fades = HoverFades::default();
     let t0 = Instant::now();
-    fades.set_at("row", true, true, t0);
-    assert_eq!(fades.value_at("row", t0), 1.0, "enter snaps to 1");
-    fades.set_at("row", false, true, t0);
-    assert_eq!(fades.value_at("row", t0), 0.0, "leave snaps to 0");
+    fades.set_at(&fade("row"), true, true, t0);
+    assert_eq!(fades.value_at(&fade("row"), t0), 1.0, "enter snaps to 1");
+    fades.set_at(&fade("row"), false, true, t0);
+    assert_eq!(fades.value_at(&fade("row"), t0), 0.0, "leave snaps to 0");
 }
 
 #[test]
 fn hover_fade_leave_without_enter_is_inert() {
     let mut fades = HoverFades::default();
     let t0 = Instant::now();
-    fades.set_at("ghost", false, false, t0);
+    fades.set_at(&fade("ghost"), false, false, t0);
     assert!(fades.entries.is_empty(), "no entry for a leave-only key");
-    assert_eq!(fades.value_at("ghost", t0), 0.0);
+    assert_eq!(fades.value_at(&fade("ghost"), t0), 0.0);
 }
 
 #[test]
@@ -221,21 +231,21 @@ fn hover_tick_reports_flight_and_prunes() {
     let t0 = Instant::now();
     let ms = |m: u64| t0 + Duration::from_millis(m);
 
-    fades.set_at("a", true, false, t0);
+    fades.set_at(&fade("a"), true, false, t0);
     // Mid-flight: active, frames must keep coming (read each frame).
     assert!(fades.tick_at(ms(50)));
-    fades.value_at("a", ms(50));
+    fades.value_at(&fade("a"), ms(50));
     assert!(fades.tick_at(ms(100)));
-    fades.value_at("a", ms(100));
+    fades.value_at(&fade("a"), ms(100));
     // Settled hovered (still read): no more frames needed, entry kept.
     assert!(!fades.tick_at(ms(200)));
-    fades.value_at("a", ms(200));
-    assert_eq!(fades.value_at("a", ms(250)), 1.0);
+    fades.value_at(&fade("a"), ms(200));
+    assert_eq!(fades.value_at(&fade("a"), ms(250)), 1.0);
 
     // Leave → fades → settles at rest → entry evicted.
-    fades.set_at("a", false, false, ms(250));
+    fades.set_at(&fade("a"), false, false, ms(250));
     assert!(fades.tick_at(ms(300)));
-    fades.value_at("a", ms(300));
+    fades.value_at(&fade("a"), ms(300));
     assert!(!fades.tick_at(ms(500)), "settled at rest");
     assert!(fades.entries.is_empty(), "rest entries are pruned");
 }
@@ -248,13 +258,13 @@ fn hover_tick_evicts_unread_entries() {
     let mut fades = HoverFades::default();
     let t0 = Instant::now();
     let ms = |m: u64| t0 + Duration::from_millis(m);
-    fades.set_at("menu-row", true, false, t0);
+    fades.set_at(&fade("menu-row"), true, false, t0);
     fades.tick_at(ms(16));
-    fades.value_at("menu-row", ms(16)); // frame 1: mounted, read
+    fades.value_at(&fade("menu-row"), ms(16)); // frame 1: mounted, read
     fades.tick_at(ms(32)); // frame 2: unmounted — no read
     fades.tick_at(ms(48)); // frame 3: a full unread frame has passed
     assert!(fades.entries.is_empty(), "unread entry evicted");
-    assert_eq!(fades.value_at("menu-row", ms(64)), 0.0);
+    assert_eq!(fades.value_at(&fade("menu-row"), ms(64)), 0.0);
 }
 
 #[test]

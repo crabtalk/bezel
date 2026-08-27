@@ -24,6 +24,7 @@ use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, Pixels, SharedString,
     Window, actions, canvas, div, prelude::*, px,
 };
+use motion::Fade;
 use theme::Theme;
 
 actions!(
@@ -169,7 +170,7 @@ impl Combobox {
                     theme,
                     Some(item) == self.chosen,
                     Some(position) == self.filter.active(),
-                    SharedString::from(format!("combobox-{view}-row-{item}")),
+                    Fade::new(view, format!("combobox-row-{item}")),
                 )
                 .id(SharedString::from(format!("row-{item}")))
                 .on_click(cx.listener(move |combobox, _, _, cx| combobox.choose(item, cx)))

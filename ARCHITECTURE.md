@@ -131,12 +131,6 @@ machinery collaborative editing needs and nothing here asks for it.
    unit-tested. No inline durations or curves in components.
 4. **Numbers drive layout, colors are paint.** Layout constants are plain
    numbers on `Theme`; no layout ever depends on which color is painted.
-5. **Frames are leased, never requested.** Repeating motion takes its phase
-   from `motion::pulse_delta`, which leases the calling view onto one 30fps
-   app-wide clock and parks when the last lease lapses. No component calls
-   `with_animation(…).repeat()` — that request is the *window's*, so a single
-   mounted element holds the whole window at display rate. One-shot
-   `with_animation` is fine; it ends.
 
 ## Dependencies
 
@@ -152,10 +146,3 @@ Two copies of gpui in one graph are two incompatible type universes; the
 failure is a trait-bound error at best and, at worst, a window that paints
 shapes but no text — one text system holding the fonts while the other draws
 the frame.
-
-## Roadmap
-
-A new crate appears in `crates/` only when the component is real, and heavier
-layers (markdown, syntax, terminal) arrive as their own crates rather than
-swelling `ui` — so a consumer never compiles a tree-sitter grammar to get a
-button.

@@ -39,6 +39,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
+use motion::Fade;
 use theme::{Theme, ink};
 
 use crate::popover;
@@ -325,7 +326,7 @@ impl Menubar {
                             theme,
                             false,
                             self.highlighted == Some(index),
-                            SharedString::from(format!("menubar-{view}-{menu}-{index}")),
+                            Fade::new(view, format!("menubar-{menu}-{index}")),
                         )
                         .justify_between()
                         .id(SharedString::from(format!("item-{menu}-{index}")))

@@ -6,6 +6,7 @@
 
 use gpui::{AnyElement, Context, CursorStyle, MouseButton, SharedString, div, prelude::*, px};
 use markdown::BlockKind;
+use motion::Fade;
 use theme::Theme;
 
 use crate::editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE};
@@ -143,6 +144,7 @@ impl Editor {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        let view = cx.entity_id();
         let (ix, at) = self.language_menu?;
         let Some(BlockKind::Code { language, .. }) = self.doc.blocks.get(ix).map(|b| &b.kind)
         else {
@@ -150,7 +152,7 @@ impl Editor {
         };
         let current = language.clone();
         let row = |label: SharedString, tag: Option<String>, lit: bool| {
-            ui::popover::menu_row(theme, lit, SharedString::from(format!("lang-{label}")))
+            ui::popover::menu_row(theme, lit, Fade::new(view, format!("lang-{label}")))
                 .id(SharedString::from(format!("lang-row-{label}")))
                 .child(label.clone())
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -195,10 +197,11 @@ impl Editor {
 
     /// Turn into / Duplicate / Delete, at the handle that opened it.
     pub(super) fn block_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let view = cx.entity_id();
         let (ix, at) = self.block_menu?;
         let turns = crate::slash::items();
         let rows = turns.into_iter().map(|(label, kind)| {
-            ui::popover::menu_row(theme, false, SharedString::from(format!("turn-{label}")))
+            ui::popover::menu_row(theme, false, Fade::new(view, format!("turn-{label}")))
                 .id(SharedString::from(format!("turn-row-{label}")))
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -207,7 +210,7 @@ impl Editor {
                 }))
         });
         let action = |label: &'static str, run: fn(&mut Self, usize, &mut Context<Self>)| {
-            ui::popover::menu_row(theme, false, SharedString::from(format!("block-{label}")))
+            ui::popover::menu_row(theme, false, Fade::new(view, format!("block-{label}")))
                 .id(SharedString::from(format!("block-row-{label}")))
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -248,11 +251,12 @@ impl Editor {
     /// past the end of a URL, which is as far right as a line goes, and a menu
     /// hanging off there points at nothing.
     pub(super) fn paste_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let view = cx.entity_id();
         let pasted = self.pasted.as_ref()?;
         let (point, line_height) = self.layouts.position(pasted.at)?;
         let rows = pasted.rows.iter().enumerate().map(|(row, &choice)| {
             let label = choice.label();
-            ui::popover::menu_row(theme, row == pasted.active, SharedString::from(label))
+            ui::popover::menu_row(theme, row == pasted.active, Fade::new(view, label))
                 .id(SharedString::from(format!("paste-row-{label}")))
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| this.confirm_paste(choice, cx)))
@@ -279,6 +283,7 @@ impl Editor {
     /// The anchor comes from the same layout the caret paints against, so it
     /// costs nothing beyond a lookup and it cannot drift from the text.
     pub(super) fn slash_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let view = cx.entity_id();
         let slash = self.slash.as_ref()?;
         let (point, line_height) = self.layouts.position(slash.at)?;
         let items = crate::slash::items();
@@ -296,7 +301,7 @@ impl Editor {
                 ui::popover::menu_row(
                     theme,
                     Some(row) == slash.filter.active(),
-                    SharedString::from(format!("slash-{ix}")),
+                    Fade::new(view, format!("slash-{ix}")),
                 )
                 .id(SharedString::from(format!("slash-row-{ix}")))
                 .child(items[ix].0.clone())

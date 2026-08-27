@@ -5,6 +5,7 @@
 //! `theme.collapsible_header(..)`, `theme.split_handle(..)`, `theme.tab(..)`.
 
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
+use motion::{self, Fade};
 use theme::{Theme, ThemeExt, card_selected_bg, wash};
 
 /// The drag payload of a [`Layout::split_handle`]. Shipped from here so every
@@ -69,9 +70,9 @@ pub trait Layout: ThemeExt {
     /// forgets it on the first long project name — which pushes the trailing
     /// content off the row instead of shortening the label.
     ///
-    /// `fade_key` must be unique app-wide and stable across frames. It is also
-    /// how a trailing control reveals itself on row hover: paint it with
-    /// [`motion::hover_blend`] on this same key, rather than adding an
+    /// `fade` must be stable across frames. It is also how a trailing control
+    /// reveals itself on row hover: paint it with
+    /// [`motion::hover_blend`] on this same fade, rather than adding an
     /// `on_hover` of its own — gpui allows only one per element, and this row
     /// has claimed it.
     fn nav_row(
@@ -79,17 +80,16 @@ pub trait Layout: ThemeExt {
         icon: Option<&'static str>,
         label: impl Into<SharedString>,
         selected: bool,
-        fade_key: impl Into<SharedString>,
+        fade: Fade,
     ) -> Div {
         let theme = self.theme();
-        let fade_key = fade_key.into();
         // Selected is a flat wash; unselected fades. The tone is
         // `popover::menu_row`'s and `tree::tree_row`'s, so a sidebar, a menu
         // and a tree never show three different ideas of "this one".
         let tint = if selected {
             theme.text
         } else {
-            motion::hover_blend(&fade_key, theme.text_muted, theme.text)
+            motion::hover_blend(&fade, theme.text_muted, theme.text)
         };
         let mut row = div()
             .flex()
@@ -106,13 +106,8 @@ pub trait Layout: ThemeExt {
         if selected {
             row = row.bg(card_selected_bg());
         } else {
-            row = row.bg(motion::hover_blend(
-                &fade_key,
-                wash(0.0),
-                card_selected_bg(),
-            ));
-            row.interactivity()
-                .on_hover(motion::hover_listener(fade_key));
+            row = row.bg(motion::hover_blend(&fade, wash(0.0), card_selected_bg()));
+            row.interactivity().on_hover(motion::hover_listener(fade));
         }
         row.when_some(icon, |row, path| {
             // The tint is set on the svg itself: gpui reads an svg's colour off
