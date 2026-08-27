@@ -15,7 +15,18 @@ pub struct SplitDrag;
 
 /// Width of the divider's grab strip: the 1px line plus zed's own 4px of slack
 /// each side (`workspace::HANDLE_HITBOX_SIZE`) — a 1px target is unhittable.
-const SPLIT_HANDLE_HIT: f32 = 9.0;
+pub const SPLIT_HANDLE_HIT: f32 = 9.0;
+
+/// What a [`Layout::split_handle`] paints. `Ghost` is for a pane that already
+/// draws the edge itself; the strip still takes the drag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitStyle {
+    /// A hairline of its own, lit while grabbed.
+    Line {
+        dragging: bool,
+    },
+    Ghost,
+}
 
 pub trait Layout: ThemeExt {
     /// The disclosure chevron: right when collapsed, down when expanded.
@@ -138,27 +149,36 @@ pub trait Layout: ThemeExt {
     ///     }))
     ///     .child(div().w(relative(self.fraction)).child(left))
     ///     .child(
-    ///         theme.split_handle(Axis::Horizontal, self.dragging)
+    ///         theme.split_handle(Axis::Horizontal, SplitStyle::Line { dragging: self.dragging })
     ///             .id("split-handle")
     ///             .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| gpui::Empty)),
     ///     )
     ///     .child(div().flex_1().child(right))
     /// ```
-    fn split_handle(&self, axis: gpui::Axis, dragging: bool) -> Div {
+    fn split_handle(&self, axis: gpui::Axis, style: SplitStyle) -> Div {
         let theme = self.theme();
-        let line = if dragging { theme.caret } else { theme.border };
+        let line = match style {
+            SplitStyle::Line { dragging } => {
+                Some(if dragging { theme.caret } else { theme.border })
+            }
+            SplitStyle::Ghost => None,
+        };
         let handle = div().flex_none().flex().items_center().justify_center();
         match axis {
             gpui::Axis::Horizontal => handle
                 .w(px(SPLIT_HANDLE_HIT))
                 .h_full()
                 .cursor_col_resize()
-                .child(div().w(px(1.0)).h_full().bg(line)),
+                .when_some(line, |el, line| {
+                    el.child(div().w(px(1.0)).h_full().bg(line))
+                }),
             gpui::Axis::Vertical => handle
                 .h(px(SPLIT_HANDLE_HIT))
                 .w_full()
                 .cursor_row_resize()
-                .child(div().h(px(1.0)).w_full().bg(line)),
+                .when_some(line, |el, line| {
+                    el.child(div().h(px(1.0)).w_full().bg(line))
+                }),
         }
     }
 

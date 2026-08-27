@@ -40,7 +40,8 @@ use ui::{
     tree::{self, Direction, Move},
     widgets,
     widgets::{
-        ButtonStyle, Buttons, Content, Controls, Layout, Scaffolding, SliderDrag, SplitDrag, Status,
+        ButtonStyle, Buttons, Content, Controls, Layout, Scaffolding, SliderDrag, SplitDrag,
+        SplitStyle, Status,
     },
 };
 
@@ -2308,7 +2309,12 @@ impl Gallery {
                             ))))
                             .child(
                                 theme
-                                    .split_handle(Axis::Horizontal, self.split_dragging)
+                                    .split_handle(
+                                        Axis::Horizontal,
+                                        SplitStyle::Line {
+                                            dragging: self.split_dragging,
+                                        },
+                                    )
                                     .id("split-handle")
                                     .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| Empty)),
                             )

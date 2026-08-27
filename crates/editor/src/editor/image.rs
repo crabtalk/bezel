@@ -15,7 +15,11 @@ use gpui::{
 };
 use markdown::{Block, BlockKind, Cursor, Part, Selection, Text};
 use theme::Theme;
-use ui::{input::TextField, popover, widgets::Layout as _};
+use ui::{
+    input::TextField,
+    popover,
+    widgets::{Layout as _, SplitStyle},
+};
 
 use crate::{
     editor::{
@@ -372,7 +376,7 @@ impl Editor {
         let picture = self.picture_box(ix, current)?;
         Some(
             theme
-                .split_handle(Axis::Horizontal, dragging)
+                .split_handle(Axis::Horizontal, SplitStyle::Line { dragging })
                 .id("image-resize-handle")
                 .absolute()
                 .left(picture.origin.x + picture.size.width - px(4.5))
