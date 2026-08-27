@@ -78,9 +78,10 @@ struct Lease {
     period: Duration,
     /// When this view is next owed a redraw.
     due: Instant,
-    /// A notify is out and the render that renews this lease has not run yet.
-    /// The clock steps such a lease on by a period instead of notifying again,
-    /// which is what stops it running ahead of a view that has not drawn.
+    /// A notify is out and the render it provoked has not renewed this lease
+    /// yet. Read by [`Painter::woken`] — never by the schedule, because a
+    /// claim taken from an *event* is renewed by no render at all: a hover
+    /// fade would paint one frame and freeze there.
     in_flight: bool,
     /// When the claim lapses if nothing renews it.
     until: Instant,
@@ -238,11 +239,6 @@ fn lease(view: EntityId, fps: f32, until: Duration, cx: &mut App) {
                     // slot is now rather than a run of slots already missed.
                     if lease.due <= now {
                         lease.due = now + lease.period;
-                    }
-                    // The last notify has not been drawn yet: skip this slot
-                    // rather than queue a second frame behind it.
-                    if lease.in_flight {
-                        continue;
                     }
                     lease.in_flight = true;
                     owed.push(*view);
