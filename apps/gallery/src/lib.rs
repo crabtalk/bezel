@@ -2500,21 +2500,26 @@ impl Gallery {
                 .into_any_element(),
 
             "stats" => {
-                // The page documents the box in the corner, so the box has to
-                // be there while you read it.
+                // Showing the page is showing the meter: it moves out of the
+                // window's corner and into the column here, so the page
+                // documents a component you are looking at rather than one it
+                // describes. One instance either way — two of them would each
+                // count the other's frames.
                 if !self.stats_shown {
                     self.show_stats(true, cx);
                 }
                 section
                     .child(hint(
                         &theme,
-                        "The meter in the corner is measuring this window. At rest \
-                         it reads 0 — nothing on screen is asking for a frame, and \
-                         the meter's own two-a-second tick is the one draw it does \
-                         not count. Mount the spinner and read what one animation \
-                         costs a whole window: every frame it asks for is a full \
-                         redraw, and the number is the rate it is really getting.",
+                        "This is the meter, measuring the window it is sitting in. \
+                         At rest it reads 0 — nothing on screen is asking for a \
+                         frame, and its own two-a-second tick is the one draw it \
+                         does not count. Mount the spinner and read what one \
+                         animation costs a whole window: every frame it asks for is \
+                         a full redraw, and the number is the rate it is really \
+                         getting.",
                     ))
+                    .child(self.stats.clone())
                     .child(
                         row()
                             .child(
@@ -3746,7 +3751,9 @@ impl Render for Gallery {
             .text_color(theme.text)
             .text_size(px(14.0))
             .child(content)
-            .when(self.stats_shown, |root| {
+            // Not on the page that documents it: that page mounts the meter in
+            // its own column, and the entity can only be in one place.
+            .when(self.stats_shown && section.key != "stats", |root| {
                 // Home is read off the viewport rather than stored, so the
                 // corner it opens in is the corner of *this* window.
                 let viewport = window.viewport_size();
