@@ -5,7 +5,8 @@
 //! a time; this file is the window around it.
 
 use gallery::{
-    Gallery, ResetFrameOverlayStats, TRAFFIC_LIGHT_ORIGIN, ToggleFpsOverlay, ToggleFullScreen,
+    Gallery, ResetFrameOverlayStats, TRAFFIC_LIGHT_X, TRAFFIC_LIGHT_Y, ToggleFpsOverlay,
+    ToggleFullScreen,
 };
 use gpui::{
     App, AppContext as _, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions, WindowBounds,
@@ -40,15 +41,15 @@ fn main() {
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    // No strip of its own: the traffic lights float over the
-                    // rail. `app_owns_titlebar_drag` stays false, so AppKit
+                    // No strip of its own: the traffic lights sit in the
+                    // nav. `app_owns_titlebar_drag` stays false, so AppKit
                     // still moves the window by the top edge and the app owes
                     // no drag bar of its own.
                     titlebar: Some(TitlebarOptions {
                         appears_transparent: true,
                         traffic_light_position: Some(point(
-                            px(TRAFFIC_LIGHT_ORIGIN),
-                            px(TRAFFIC_LIGHT_ORIGIN),
+                            px(TRAFFIC_LIGHT_X),
+                            px(TRAFFIC_LIGHT_Y),
                         )),
                         ..Default::default()
                     }),

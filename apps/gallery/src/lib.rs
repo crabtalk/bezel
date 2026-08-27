@@ -29,7 +29,7 @@ use ui::{
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
     popover,
-    scroll::{self, ScrollbarState},
+    scroll::{self, ScrollbarState, TransientState},
     table::{self, Column, Sort, Width},
     titlebar,
     tooltip::Tooltip,
@@ -110,17 +110,32 @@ pub const COMMANDS: [&str; 8] = [
 
 const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 
-/// How far the floating rail sits off the window edges, and the padding inside
-/// it. Read together: they set the rail's grid, and the traffic lights are
-/// placed on that grid rather than left where AppKit drops them — which is
-/// relative to the window, and so lands in the card's rounded corner.
-const RAIL_INSET: f32 = 10.0;
-const RAIL_PAD: f32 = 10.0;
+/// The rail's padding — the grid its rows, its footer and the traffic lights
+/// all sit on.
+const RAIL_PAD: f32 = 20.0;
 
-/// Where the traffic lights' top-left corner goes: the rail's first row. Passed
-/// to `TitlebarOptions::traffic_light_position`, whose `x`/`y` are the gap from
-/// the window's left and top edges to the buttons.
-pub const TRAFFIC_LIGHT_ORIGIN: f32 = RAIL_INSET + RAIL_PAD;
+/// The rail's width, and the padding inside the content card. Read together
+/// they are the window's two columns: the nav strip aligns to the card's grid
+/// so its tabs sit over the section header and its switch over the header's
+/// trailing edge.
+const RAIL_WIDTH: f32 = 200.0;
+const CARD_PAD: f32 = 24.0;
+
+/// Padding inside one nav tab, subtracted back out of the strip so the tabs'
+/// text starts on the card's grid rather than their hit boxes.
+const NAV_ITEM_PAD: f32 = 4.0;
+
+/// macOS traffic light diameter — measured 2026-08-27 on macOS 26. AppKit owns
+/// the buttons and gpui reads their frame off the live views, so no constant
+/// here can derive it.
+const TRAFFIC_LIGHT_SIZE: f32 = 14.0;
+
+/// The traffic lights' top-left corner, passed to
+/// `TitlebarOptions::traffic_light_position`: the rail's grid across, the nav
+/// strip's centre down. macOS sizes the button container to `height + 2y`, so
+/// the `y` that centres them is the one making that container the strip.
+pub const TRAFFIC_LIGHT_X: f32 = RAIL_PAD;
+pub const TRAFFIC_LIGHT_Y: f32 = (Theme::HEADER_HEIGHT - TRAFFIC_LIGHT_SIZE) / 2.0;
 
 /// What one press of ← or → moves the slider. The step is never the library's:
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
@@ -720,9 +735,9 @@ pub struct Gallery {
     /// owns the offset; the second half of each pair is only where in the thumb
     /// a drag took hold.
     rail_scroll: gpui::ScrollHandle,
-    rail_bar: ScrollbarState,
+    rail_bar: TransientState,
     pane_scroll: gpui::ScrollHandle,
-    pane_bar: ScrollbarState,
+    pane_bar: TransientState,
     demo_scroll: gpui::ScrollHandle,
     demo_bar: ScrollbarState,
     /// The follow-scroll demo: a log that grows under a view pinned to its end.
@@ -852,9 +867,9 @@ impl Gallery {
             create_file: 0,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             rail_scroll: gpui::ScrollHandle::new(),
-            rail_bar: ScrollbarState::new(Painter::of(cx)),
+            rail_bar: TransientState::new(Painter::of(cx)),
             pane_scroll: gpui::ScrollHandle::new(),
-            pane_bar: ScrollbarState::new(Painter::of(cx)),
+            pane_bar: TransientState::new(Painter::of(cx)),
             demo_scroll: gpui::ScrollHandle::new(),
             demo_bar: ScrollbarState::new(Painter::of(cx)),
             log_scroll: gpui::ScrollHandle::new(),
@@ -1133,23 +1148,15 @@ impl Gallery {
     /// The navigation rail: every component, one row each, the current one
     /// carrying the same selected wash a menu row does — this is the library
     /// browsing itself.
-    fn rail(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn rail(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
         let view = Painter::of(cx);
         let tab = &TABS[self.tab];
         let selected = self.selected[self.tab];
         div()
             .flex_none()
-            .w(px(220.0))
-            // Floating: inset from the window edges rather than butted against
-            // them, so the frost reads as a plane the rail sits on.
-            .m(px(RAIL_INSET))
+            .w(px(RAIL_WIDTH))
             .flex()
             .flex_col()
-            .rounded(px(Theme::panel_radius()))
-            .bg(theme.card_glass_bg())
-            .border_1()
-            .border_color(theme.border)
-            .overflow_hidden()
             .child(
                 div()
                     .relative()
@@ -1167,12 +1174,6 @@ impl Gallery {
                                     .flex_col()
                                     .gap(px(2.0))
                                     .p(px(RAIL_PAD))
-                                    // The lights sit over the rail's own top
-                                    // corner. Full screen takes them away, and
-                                    // the reserved strip would be a hole.
-                                    .when(!window.is_fullscreen(), |list| {
-                                        list.pt(px(Theme::TITLEBAR_HEIGHT - RAIL_INSET))
-                                    })
                                     .children(tab.groups.iter().flat_map(|group| {
                                         let heading = popover::menu_heading(theme, group.title)
                                             .into_any_element();
@@ -1207,10 +1208,11 @@ impl Gallery {
                     // After the content: hitboxes and paint are both
                     // order-dependent in gpui, so a bar added first would sit
                     // under what it reports on.
-                    .child(scroll::scrollbar(
+                    .child(scroll::transient(
                         "rail-bar",
                         &self.rail_scroll,
                         &self.rail_bar,
+                        cx.reduce_motion(),
                     )),
             )
             .child(
@@ -1220,10 +1222,10 @@ impl Gallery {
                     .flex_row()
                     .items_baseline()
                     .gap(px(6.0))
-                    .px(px(12.0))
+                    // Lines the wordmark up with the row labels above it: the
+                    // rail's padding plus `menu_row`'s own.
+                    .px(px(RAIL_PAD + 8.0))
                     .py(px(10.0))
-                    .border_t_1()
-                    .border_color(theme.border)
                     .child(
                         div()
                             .text_size(px(13.0))
@@ -1250,19 +1252,17 @@ impl Gallery {
         div()
             .flex_none()
             .h(px(Theme::HEADER_HEIGHT))
-            .px(px(16.0))
+            .pl(px(RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD))
+            .pr(px(CARD_PAD))
             .flex()
             .flex_row()
             .items_center()
             .gap(px(18.0))
-            .border_b_1()
-            .border_color(theme.border)
             .children(TABS.iter().enumerate().map(|(index, tab)| {
                 let selected = index == current;
                 let mut item = div()
                     .id(SharedString::from(format!("nav-{}", tab.title)))
-                    .px(px(4.0))
-                    .py(px(4.0))
+                    .p(px(NAV_ITEM_PAD))
                     .text_size(px(13.0))
                     .cursor_pointer()
                     .on_click(cx.listener(move |view, _, _, cx| {
@@ -1331,7 +1331,7 @@ impl Gallery {
         div()
             .flex_none()
             .h(px(Theme::HEADER_HEIGHT))
-            .px(px(24.0))
+            .px(px(CARD_PAD))
             .flex()
             .flex_row()
             .items_center()
@@ -3589,6 +3589,7 @@ impl Render for Gallery {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let view = Painter::of(cx);
         let theme = Theme::of(cx).clone();
+        let reduce_motion = cx.reduce_motion();
 
         // Rail on the left, one component in the pane — the set is long enough
         // that a single scroll of everything reads as a wall.
@@ -3613,10 +3614,11 @@ impl Render for Gallery {
                         // to the whole pane.
                         .child(div().p(px(32.0)).child(column().child(body))),
                 )
-                .child(scroll::scrollbar(
+                .child(scroll::transient(
                     "pane-bar",
                     &self.pane_scroll,
                     &self.pane_bar,
+                    reduce_motion,
                 ))
             }
         });
@@ -3627,19 +3629,35 @@ impl Render for Gallery {
         } else {
             div()
                 .flex()
-                .flex_row()
+                .flex_col()
                 .size_full()
-                .child(self.rail(&theme, window, cx))
+                .child(self.nav(&theme, cx))
                 .child(
                     div()
                         .flex_1()
-                        .min_w_0()
-                        .h_full()
+                        .min_h_0()
                         .flex()
-                        .flex_col()
-                        .child(self.nav(&theme, cx))
-                        .child(self.header(section, &theme))
-                        .child(pane),
+                        .flex_row()
+                        .child(self.rail(&theme, cx))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .h_full()
+                                .flex()
+                                .flex_col()
+                                // Runs off the window's right and bottom edges,
+                                // so the only corner that floats is the one
+                                // that gets rounded.
+                                .rounded_tl(px(Theme::panel_radius()))
+                                .bg(theme.surface)
+                                .border_t_1()
+                                .border_l_1()
+                                .border_color(theme.border)
+                                .overflow_hidden()
+                                .child(self.header(section, &theme))
+                                .child(pane),
+                        ),
                 )
         };
 
