@@ -522,7 +522,7 @@ fn day_cell(
         // grid can never nudge a single cell by a pixel.
         .border_1()
         .border_color(if cursor {
-            theme.caret
+            theme.ring
         } else {
             widgets::RING_SLOT
         })

@@ -3361,6 +3361,7 @@ fn color_groups(theme: &Theme) -> Vec<(&'static str, Vec<(&'static str, gpui::Hs
                 ("element_active", theme.element_active),
                 ("selection", theme.selection),
                 ("caret", theme.caret),
+                ("ring", theme.ring),
                 ("solid", theme.solid),
             ],
         ),

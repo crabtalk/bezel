@@ -208,7 +208,7 @@ pub trait Controls: ThemeExt {
             .rounded(px(Theme::button_radius()))
             .bg(theme.input_bg)
             .border_1()
-            .border_color(if open { theme.caret } else { theme.border })
+            .border_color(if open { theme.ring } else { theme.border })
             .text_size(px(13.0))
             .text_color(theme.text)
             .cursor_pointer()

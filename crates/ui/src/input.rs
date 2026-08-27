@@ -1298,7 +1298,7 @@ impl Render for TextField {
             .bg(theme.input_bg)
             .border_1()
             .border_color(if self.focus_handle.is_focused(_window) {
-                theme.caret
+                theme.ring
             } else {
                 theme.border
             })

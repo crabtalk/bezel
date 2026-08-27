@@ -91,7 +91,7 @@ pub fn traversal(el: Div) -> Div {
 /// let `enter`/`space` press it.
 ///
 /// The ring is the same one [`crate::input::TextField`] paints — the border in
-/// [`Theme::caret`] — so a focused button and a focused field read alike.
+/// [`Theme::ring`] — so a focused button and a focused field read alike.
 ///
 /// Keyboard focus only, like CSS `:focus-visible`. A control also takes focus
 /// when clicked, and a ring that landed on it there would outline a slider for
@@ -116,5 +116,5 @@ pub fn focusable(theme: &Theme, handle: &FocusHandle, el: Div) -> Div {
     let handle = handle.clone().tab_stop(true);
     el.key_context(CONTROL_KEY_CONTEXT)
         .track_focus(&handle)
-        .focus_visible(|style| style.border_color(theme.caret))
+        .focus_visible(|style| style.border_color(theme.ring))
 }

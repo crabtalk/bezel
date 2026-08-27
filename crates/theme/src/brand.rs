@@ -108,7 +108,7 @@ impl Brand {
         // danger, warning, success — is semantic and keeps it. Translucent ink
         // is skipped because it paints over whatever is beneath it, which is
         // tinted already.
-        let tokens: [&mut Hsla; 38] = [
+        let tokens: [&mut Hsla; 39] = [
             &mut theme.bg,
             &mut theme.surface,
             &mut theme.surface_raised,
@@ -141,6 +141,7 @@ impl Brand {
             &mut theme.selection,
             &mut theme.cursor,
             &mut theme.caret,
+            &mut theme.ring,
             &mut theme.danger_strong,
             &mut theme.code_text,
             &mut theme.code_wash,

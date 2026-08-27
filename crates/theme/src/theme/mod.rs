@@ -139,13 +139,16 @@ pub struct Theme {
     pub selection: Hsla,
     /// Terminal block cursor.
     pub cursor: Hsla,
-    /// Text caret, and the focus ring that shares its weight.
+    /// Text caret.
     ///
     /// The body text colour, because that is what a caret is: the next glyph,
     /// before you type it. It was a sampled blue once — carried over from the
     /// app this library was extracted from, derived from nothing here — which
     /// is why a caret in a plain paragraph arrived tinted.
     pub caret: Hsla,
+    /// Keyboard focus ring — a hairline, so it marks the control without
+    /// restating the label inside it.
+    pub ring: Hsla,
     /// Destructive-action button fill (danger plate, carries [`Self::on_accent`]).
     pub danger_strong: Hsla,
 
