@@ -10,7 +10,7 @@ use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
     actions, div, prelude::*, px, relative,
 };
-use motion::{Fade, Painter};
+use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
@@ -965,6 +965,18 @@ impl Gallery {
         cx.notify();
     }
 
+    /// Show or hide the meter, and tell the app what that means for animation.
+    ///
+    /// A meter that stops the moment you look at something else cannot report
+    /// what the app costs in the background, which is the case worth catching.
+    /// So while it is up the app keeps animating unfocused — the reading and
+    /// the thing being read are the same cost, and that is the honest trade.
+    fn show_stats(&mut self, shown: bool, cx: &mut Context<Self>) {
+        self.stats_shown = shown;
+        cx.set_pause_when_inactive(!shown);
+        cx.notify();
+    }
+
     /// The browser, opened on one section — `cargo run -p gallery -- editor`.
     /// Falls back to the default page when the key is not in the catalog, so a
     /// stale link lands somewhere useful instead of on an empty pane.
@@ -1233,8 +1245,7 @@ impl Gallery {
                     .p(px(4.0))
                     .cursor_pointer()
                     .on_click(cx.listener(|view, _, _, cx| {
-                        view.stats_shown = !view.stats_shown;
-                        cx.notify();
+                        view.show_stats(!view.stats_shown, cx);
                     }))
                     .child(icons::icon(icons::CPU).size(px(15.0)).text_color(
                         if self.stats_shown {
@@ -2491,7 +2502,9 @@ impl Gallery {
             "stats" => {
                 // The page documents the box in the corner, so the box has to
                 // be there while you read it.
-                self.stats_shown = true;
+                if !self.stats_shown {
+                    self.show_stats(true, cx);
+                }
                 section
                     .child(hint(
                         &theme,
@@ -2530,6 +2543,14 @@ impl Gallery {
                         "CPU is the whole process — user plus system, every thread — \
                          as a percentage of one core, the figure Activity Monitor \
                          prints. The web build has no such call and reads —.",
+                    ))
+                    .child(hint(
+                        &theme,
+                        "While the meter is up this app keeps animating when you \
+                         switch away from it, so the numbers carry on where they \
+                         would otherwise freeze. That is the cost being measured, \
+                         paid on purpose: switch the meter off and the app parks \
+                         itself in the background again.",
                     ))
                     .into_any_element()
             }
