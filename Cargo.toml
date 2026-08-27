@@ -59,11 +59,11 @@ serde_json = "1"
 tracing = "0.1"
 
 # Our zed fork, published from crabtalk/zed; the keys are what the source imports.
-gpui = { package = "bezel-gpui", version = "0.3.3" }
-gpui_platform = { package = "bezel-gpui-platform", version = "0.3.3", features = [
+gpui = { package = "bezel-gpui", version = "0.3.4" }
+gpui_platform = { package = "bezel-gpui-platform", version = "0.3.4", features = [
     "font-kit",
 ] }
-gpui_web = { package = "bezel-gpui-web", version = "0.3.3" }
+gpui_web = { package = "bezel-gpui-web", version = "0.3.4" }
 
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare
