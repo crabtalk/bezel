@@ -51,6 +51,12 @@ impl Theme {
         paint::set_current_appearance(theme.appearance);
         paint::bump_generation();
         cx.set_global(theme);
+        // Every window, cached subtrees included. gpui busts a view's cache
+        // when an *entity* it read changes, and a palette is a global — so a
+        // cached view would go on painting the palette it was built under, and
+        // an app that caches anything would find the appearance switch half
+        // working.
+        cx.refresh_windows();
     }
 
     /// Read the theme global.

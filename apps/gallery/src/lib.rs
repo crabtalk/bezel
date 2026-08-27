@@ -11,6 +11,7 @@ use gpui::{
     actions, div, prelude::*, px, relative,
 };
 use motion::{Fade, Painter};
+use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
     Theme,
@@ -87,6 +88,7 @@ pub mod highlight;
 pub mod create;
 pub mod patterns;
 pub mod preview;
+mod rail;
 pub mod store;
 
 pub const LANGUAGES: [&str; 8] = [
@@ -115,13 +117,13 @@ const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 
 /// The rail's padding — the grid its rows, its footer and the traffic lights
 /// all sit on.
-const RAIL_PAD: f32 = 20.0;
+pub(crate) const RAIL_PAD: f32 = 20.0;
 
 /// The rail's width, and the padding inside the content card. Read together
 /// they are the window's two columns: the nav strip aligns to the card's grid
 /// so its tabs sit over the section header and its switch over the header's
 /// trailing edge.
-const RAIL_WIDTH: f32 = 200.0;
+pub(crate) const RAIL_WIDTH: f32 = 200.0;
 const CARD_PAD: f32 = 24.0;
 
 /// Padding inside one nav tab, subtracted back out of the strip so the tabs'
@@ -739,8 +741,9 @@ pub struct Gallery {
     /// Scroll position and thumb-grab for every scrolling surface here. gpui
     /// owns the offset; the second half of each pair is only where in the thumb
     /// a drag took hold.
-    rail_scroll: gpui::ScrollHandle,
-    rail_bar: TransientState,
+    /// The rail is its own view so it can be cached: forty rows that change
+    /// only on a tab or a selection, and were being rebuilt every frame.
+    rail: Entity<Rail>,
     pane_scroll: gpui::ScrollHandle,
     pane_bar: TransientState,
     demo_scroll: gpui::ScrollHandle,
@@ -815,6 +818,12 @@ pub struct Gallery {
 
 impl Gallery {
     pub fn new(cx: &mut Context<Self>) -> Self {
+        // Opened on the same page the fields below start at.
+        let rail = cx.new(|cx| Rail::new(2, TABS[2].home, cx));
+        cx.subscribe(&rail, |view, _, selected: &Selected, cx| {
+            view.open(view.tab, selected.0, cx);
+        })
+        .detach();
         // The bar reports a place in the menus it was given; the host is what
         // turns that back into a name, and what decides it means anything.
         let menubar = cx.new(|cx| Menubar::new(demo_menus(), cx));
@@ -883,8 +892,7 @@ impl Gallery {
             brand_knobs: std::array::from_fn(|_| cx.focus_handle()),
             create_file: 0,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
-            rail_scroll: gpui::ScrollHandle::new(),
-            rail_bar: TransientState::new(Painter::of(cx)),
+            rail,
             pane_scroll: gpui::ScrollHandle::new(),
             pane_bar: TransientState::new(Painter::of(cx)),
             demo_scroll: gpui::ScrollHandle::new(),
@@ -946,14 +954,24 @@ impl Gallery {
         }
     }
 
+    /// The one place a page is opened. Everything that changes what the browser
+    /// shows goes through here, because the rail is cached: it repaints when it
+    /// is told to, and a notify raised mid-render never reaches it — the frame
+    /// it would have to arrive in has already decided the rail is clean.
+    fn open(&mut self, tab: usize, key: &'static str, cx: &mut Context<Self>) {
+        self.tab = tab;
+        self.selected[tab] = key;
+        self.rail.update(cx, |rail, cx| rail.show(tab, key, cx));
+        cx.notify();
+    }
+
     /// The browser, opened on one section — `cargo run -p gallery -- editor`.
     /// Falls back to the default page when the key is not in the catalog, so a
     /// stale link lands somewhere useful instead of on an empty pane.
     pub fn showing(key: &str, cx: &mut Context<Self>) -> Self {
         let mut gallery = Self::new(cx);
         if let Some(tab) = tab_of(key) {
-            gallery.tab = tab;
-            gallery.selected[tab] = section_at(key).expect("tab_of matched").key;
+            gallery.open(tab, section_at(key).expect("tab_of matched").key, cx);
         }
         gallery
     }
@@ -1170,101 +1188,6 @@ impl Gallery {
     /// The navigation rail: every component, one row each, the current one
     /// carrying the same selected wash a menu row does — this is the library
     /// browsing itself.
-    fn rail(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-        let view = Painter::of(cx);
-        let tab = &TABS[self.tab];
-        let selected = self.selected[self.tab];
-        div()
-            .flex_none()
-            .w(px(RAIL_WIDTH))
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .min_h_0()
-                    .child(
-                        div()
-                            .id("gallery-rail")
-                            .size_full()
-                            .overflow_y_scroll()
-                            .track_scroll(&self.rail_scroll)
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(2.0))
-                                    .p(px(RAIL_PAD))
-                                    .children(tab.groups.iter().flat_map(|group| {
-                                        let heading = popover::menu_heading(theme, group.title)
-                                            .into_any_element();
-                                        let rows = group.sections.iter().map(|section| {
-                                            popover::menu_row(
-                                                theme,
-                                                section.key == selected,
-                                                Fade::new(view, format!("rail-{}", section.key)),
-                                            )
-                                            .id(SharedString::from(format!(
-                                                "rail-item-{}",
-                                                section.key
-                                            )))
-                                            .on_click(cx.listener(move |view, _, _, cx| {
-                                                let tab = view.tab;
-                                                view.selected[tab] = section.key;
-                                                cx.notify();
-                                            }))
-                                            // Unbuilt rows stay legible but recede, so the rail
-                                            // reads as "what exists" and "what is left" at once.
-                                            .when(
-                                                section.source.is_none() && section.key != selected,
-                                                |row| row.text_color(theme.text_faint),
-                                            )
-                                            .child(SharedString::from(section.title))
-                                            .into_any_element()
-                                        });
-                                        std::iter::once(heading).chain(rows)
-                                    })),
-                            ),
-                    )
-                    // After the content: hitboxes and paint are both
-                    // order-dependent in gpui, so a bar added first would sit
-                    // under what it reports on.
-                    .child(scroll::transient(
-                        "rail-bar",
-                        &self.rail_scroll,
-                        &self.rail_bar,
-                        cx.reduce_motion(),
-                    )),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .flex()
-                    .flex_row()
-                    .items_baseline()
-                    .gap(px(6.0))
-                    // Lines the wordmark up with the row labels above it: the
-                    // rail's padding plus `menu_row`'s own.
-                    .px(px(RAIL_PAD + 8.0))
-                    .py(px(10.0))
-                    .child(
-                        div()
-                            .text_size(px(13.0))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("bezel"),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .font_family(theme.font_mono.clone())
-                            .text_color(theme.text_faint)
-                            .child(env!("CARGO_PKG_VERSION")),
-                    ),
-            )
-            .into_any_element()
-    }
-
     /// The top nav: the kind of thing you are browsing, and the appearance
     /// switch. Everything here is global — per-page detail belongs in
     /// [`Self::header`].
@@ -1288,8 +1211,7 @@ impl Gallery {
                     .text_size(px(13.0))
                     .cursor_pointer()
                     .on_click(cx.listener(move |view, _, _, cx| {
-                        view.tab = index;
-                        cx.notify();
+                        view.open(index, view.selected[index], cx);
                     }))
                     .child(SharedString::from(tab.title));
                 item = if selected {
@@ -3756,7 +3678,7 @@ impl Render for Gallery {
                         .min_h_0()
                         .flex()
                         .flex_row()
-                        .child(self.rail(&theme, cx))
+                        .child(self.rail.clone().cached(rail::style()))
                         .child(
                             div()
                                 .flex_1()
