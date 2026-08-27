@@ -33,10 +33,11 @@
 use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
-    Animation, AnimationExt, App, DragMoveEvent, ElementId, Empty, EntityId, MouseButton, Pixels,
+    Animation, AnimationExt, App, DragMoveEvent, ElementId, Empty, MouseButton, Pixels,
     ScrollHandle, SharedString, Window, canvas, div, point, prelude::*, px,
 };
 
+use motion::Painter;
 use theme::ink;
 
 /// Shortest a thumb may get, however long the document — below this it stops
@@ -100,17 +101,16 @@ pub struct ScrollbarDrag(pub SharedString);
 #[derive(Clone)]
 pub struct ScrollbarState {
     grab: Rc<Cell<Option<Pixels>>>,
-    /// The view that paints this bar. A drag runs in event-dispatch context,
-    /// where the window cannot resolve which view is asking, so the only frame
-    /// it could request was the whole window's.
-    view: EntityId,
+    /// A drag runs in event-dispatch context, where the window cannot resolve
+    /// which view is asking — so the bar carries its own.
+    painter: Painter,
 }
 
 impl ScrollbarState {
-    pub fn new(view: EntityId) -> Self {
+    pub fn new(painter: Painter) -> Self {
         Self {
             grab: Rc::new(Cell::new(None)),
-            view,
+            painter,
         }
     }
 
@@ -152,7 +152,7 @@ impl ScrollbarState {
         });
         let offset = offset_for_thumb(pointer - grab, viewport, max_offset, size);
         handle.set_offset(point(handle.offset().x, offset));
-        cx.notify(self.view);
+        self.painter.notify(cx);
     }
 }
 
@@ -259,10 +259,10 @@ pub struct TransientState {
 }
 
 impl TransientState {
-    pub fn new(view: EntityId) -> Self {
+    pub fn new(painter: Painter) -> Self {
         Self {
             cell: Rc::new(Cell::new(Default::default())),
-            bar: ScrollbarState::new(view),
+            bar: ScrollbarState::new(painter),
         }
     }
 }
@@ -330,7 +330,7 @@ pub fn transient(
                 // The thumb's stand-in at rest: hovering the strip raises it,
                 // and leaving starts its fade.
                 let hover_state = state.clone();
-                let hover_view = state.bar.view;
+                let hover_painter = state.bar.painter;
                 track.on_hover(move |hovered: &bool, _, cx: &mut App| {
                     let mut cell = hover_state.cell.get();
                     if cell.3 == *hovered {
@@ -339,7 +339,7 @@ pub fn transient(
                     cell.3 = *hovered;
                     cell.2 += 1;
                     hover_state.cell.set(cell);
-                    cx.notify(hover_view);
+                    hover_painter.notify(cx);
                 })
             }
         });

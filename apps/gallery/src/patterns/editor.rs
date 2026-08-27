@@ -27,7 +27,7 @@ use gpui::{
     prelude::*, px,
 };
 use markdown::Mark;
-use motion::Fade;
+use motion::{Fade, Painter};
 use theme::Theme;
 
 /// Opens on something worth selecting: a heading, a list, and a sentence with
@@ -91,7 +91,7 @@ impl EditorDemo {
     /// Anchored in window coordinates through `popover::menu_at`, so this file
     /// never has to know where its own box starts.
     fn toolbar(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let editor = self.editor.read(cx);
         let bounds = editor.selection_bounds()?;
         let (doc, selection) = (editor.doc().clone(), editor.selection());

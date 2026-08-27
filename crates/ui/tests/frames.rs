@@ -23,6 +23,7 @@ use gpui::{
     Animation, AnimationExt, AnyElement, Context, IntoElement, ParentElement, Render, Styled,
     TestAppContext, Window, WindowHandle, div, px, size,
 };
+use motion::Painter;
 use theme::{Appearance, Theme};
 use ui::loaders;
 
@@ -90,11 +91,11 @@ impl Render for Counted {
                 .into_any_element(),
             Drive::SharedClock => {
                 let theme = Theme::of(cx).clone();
-                let view = cx.entity_id();
-                loaders::pulse_loader("pulse", &theme, 8.0, view, cx).into_any_element()
+                let painter = Painter::of(cx);
+                loaders::pulse_loader("pulse", &theme, 8.0, painter, cx).into_any_element()
             }
             Drive::Leased(fps) => {
-                motion::lease(cx.entity_id(), fps, LEASE_UNTIL, cx);
+                Painter::of(cx).lease(fps, LEASE_UNTIL, cx);
                 div().into_any_element()
             }
         };

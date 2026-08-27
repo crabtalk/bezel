@@ -36,8 +36,8 @@ use std::{
 use web_time::Instant;
 
 use gpui::{
-    Animation, AnimationElement, App, ElementId, EntityId, Global, Hsla, IntoElement, Rgba,
-    SharedString, Styled, Window, px,
+    Animation, AnimationElement, App, Context, ElementId, EntityId, Global, Hsla, IntoElement,
+    Rgba, SharedString, Styled, Window, px,
 };
 
 /// What the catalog's one-shot entrances are built on. Repeats belong on
@@ -105,21 +105,60 @@ impl PulseClock {
 
 impl Global for PulseClock {}
 
-/// Claim `fps` redraws a second for `view`, lapsing `until` from now unless
-/// something renews it. One timer serves the whole app: it wakes only when a
-/// view is owed a frame, notifies that view alone, and parks when the last
-/// claim lapses.
+/// A component's line back to the view that paints it.
 ///
-/// This is the drive for any repeating animation, yours included. gpui's
-/// `with_animation(…).repeat()` asks the *window* for a frame at the display's
-/// rate for as long as it stays mounted, and one such element is enough to hold
-/// the whole window there.
-///
-/// Renew it from `render` — that is what makes a lease self-cancelling, since
-/// an element that unmounts stops renewing and drops off. The rate is a
-/// per-view minimum of everything claiming it, so a 60fps claim never drags a
-/// 30fps one up with it.
-pub fn lease(view: EntityId, fps: f32, until: Duration, cx: &mut App) {
+/// Component state that outlives a render — a hover fade, a gesture — has to
+/// name its view, because event-dispatch context cannot resolve one and the
+/// only alternative left is refreshing the whole window. Holding a `Painter`
+/// is what makes the two sanctioned frame requests reachable, and it is the
+/// one surface to review when asking who in the library can ask for a frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Painter(EntityId);
+
+impl Painter {
+    /// The view this render belongs to. Take it once, where the state is
+    /// built, and keep it for as long as the state lives.
+    pub fn of<T: 'static>(cx: &Context<T>) -> Self {
+        Self(cx.entity_id())
+    }
+
+    /// Redraw this view once.
+    pub fn notify(self, cx: &mut App) {
+        cx.notify(self.0);
+    }
+
+    /// Claim `fps` redraws a second, lapsing `until` from now unless something
+    /// renews it. One timer serves the whole app: it wakes only when a view is
+    /// owed a frame, notifies that view alone, and parks when the last claim
+    /// lapses.
+    ///
+    /// This is the drive for any repeating animation, yours included. gpui's
+    /// `with_animation(…).repeat()` asks the *window* for a frame at the
+    /// display's rate for as long as it stays mounted, and one such element is
+    /// enough to hold the whole window there.
+    ///
+    /// Renew it from `render` — that is what makes a claim self-cancelling,
+    /// since an element that unmounts stops renewing and drops off. The rate is
+    /// a per-view minimum of everything claiming it, so a 60fps claim never
+    /// drags a 30fps one up with it.
+    pub fn lease(self, fps: f32, until: Duration, cx: &mut App) {
+        lease(self.0, fps, until, cx);
+    }
+}
+
+impl From<Painter> for EntityId {
+    fn from(painter: Painter) -> Self {
+        painter.0
+    }
+}
+
+impl From<EntityId> for Painter {
+    fn from(view: EntityId) -> Self {
+        Self(view)
+    }
+}
+
+fn lease(view: EntityId, fps: f32, until: Duration, cx: &mut App) {
     let now = cx.background_executor().now();
     let period = Duration::from_secs_f32(1.0 / fps.clamp(1.0, 240.0));
     let clock = cx.default_global::<PulseClock>();
@@ -187,11 +226,11 @@ pub fn lease(view: EntityId, fps: f32, until: Duration, cx: &mut App) {
 /// calling view re-rendering at [`PULSE_FPS`] while its spinner stays mounted.
 /// All cells across all views share one epoch, so multi-instance loaders stay
 /// phase-locked. Reduced motion returns a static 0 and schedules nothing.
-pub fn pulse_delta(spec: &MotionSpec, view: EntityId, cx: &mut App) -> f32 {
+pub fn pulse_delta(spec: &MotionSpec, painter: Painter, cx: &mut App) -> f32 {
     if cx.reduce_motion() {
         return 0.0;
     }
-    lease(view, PULSE_FPS, PULSE_LEASE, cx);
+    painter.lease(PULSE_FPS, PULSE_LEASE, cx);
     let now = cx.background_executor().now();
     let clock = cx.default_global::<PulseClock>();
     let epoch = *clock.epoch.get_or_insert(now);
@@ -551,14 +590,14 @@ impl FadeEntry {
 /// across the entire program.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fade {
-    pub view: EntityId,
+    pub painter: Painter,
     pub key: SharedString,
 }
 
 impl Fade {
-    pub fn new(view: EntityId, key: impl Into<SharedString>) -> Self {
+    pub fn new(painter: Painter, key: impl Into<SharedString>) -> Self {
         Self {
-            view,
+            painter,
             key: key.into(),
         }
     }
@@ -667,7 +706,7 @@ pub fn set_hover(fade: &Fade, hovered: bool, reduced: bool) {
 pub fn hover_listener(fade: Fade) -> impl Fn(&bool, &mut Window, &mut App) + 'static {
     move |hovered, _window, cx| {
         set_hover(&fade, *hovered, reduced_motion(cx));
-        lease(fade.view, HOVER_FPS, HoverFades::duration(), cx);
+        fade.painter.lease(HOVER_FPS, HoverFades::duration(), cx);
     }
 }
 

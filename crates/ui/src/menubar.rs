@@ -39,7 +39,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use motion::Fade;
+use motion::{Fade, Painter};
 use theme::{Theme, ink};
 
 use crate::popover;
@@ -303,7 +303,7 @@ impl Menubar {
     fn card(&self, menu: usize, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
         // Fade keys are a process-wide map, so they carry the entity id — an app
         // may hold more than one bar.
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         popover::popover_card(theme)
             .min_w(px(180.0))
             .children(

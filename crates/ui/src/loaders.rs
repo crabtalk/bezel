@@ -13,9 +13,9 @@
 //! are paint-local and never move surrounding layout. Reduced motion snaps every
 //! cell to its rest state automatically (gpui `reduce_motion`).
 
-use gpui::{App, EntityId, IntoElement, ParentElement, SharedString, Styled, div, px};
+use gpui::{App, IntoElement, ParentElement, SharedString, Styled, div, px};
 
-use motion::{self, GRADIENT_SPIN, ORB, PULSE, PULSE_STAGGER};
+use motion::{self, GRADIENT_SPIN, ORB, PULSE, PULSE_STAGGER, Painter};
 use theme::Theme;
 
 pub use motion::phase::{GSPIN_DIM, GSPIN_ROW_TINTS, MATRIX_SIDE, PULSE_CELLS};
@@ -29,12 +29,12 @@ pub fn pulse_loader(
     _id: &'static str,
     theme: &Theme,
     cell_px: f32,
-    view: EntityId,
+    painter: Painter,
     cx: &mut App,
 ) -> impl IntoElement {
     let color = theme.text;
     let slot = cell_px;
-    let delta = motion::pulse_delta(&PULSE, view, cx);
+    let delta = motion::pulse_delta(&PULSE, painter, cx);
     div()
         .flex()
         .flex_row()
@@ -67,12 +67,12 @@ pub fn gradient_spinner(
     _id: &'static str,
     _theme: &Theme,
     cell_px: f32,
-    view: EntityId,
+    painter: Painter,
     cx: &mut App,
 ) -> impl IntoElement {
     let center = (MATRIX_SIDE as f32 - 1.0) / 2.0;
     let max = MATRIX_SIDE as f32 - 1.0 + center;
-    let delta = motion::pulse_delta(&GRADIENT_SPIN, view, cx);
+    let delta = motion::pulse_delta(&GRADIENT_SPIN, painter, cx);
     div()
         .flex()
         .flex_col()
@@ -105,7 +105,7 @@ pub fn gradient_spinner(
 pub fn mini_gradient_spinner(
     key: impl Into<SharedString>,
     cell_px: f32,
-    view: EntityId,
+    painter: Painter,
     cx: &mut App,
 ) -> impl IntoElement {
     const COLS: usize = 2;
@@ -115,7 +115,7 @@ pub fn mini_gradient_spinner(
     const RING: [[usize; COLS]; ROWS] = [[0, 1], [5, 2], [4, 3]];
     const RING_LEN: f32 = (COLS * ROWS) as f32;
     let _key = key.into();
-    let delta = motion::pulse_delta(&GRADIENT_SPIN, view, cx);
+    let delta = motion::pulse_delta(&GRADIENT_SPIN, painter, cx);
     div()
         .flex()
         .flex_col()
@@ -182,11 +182,11 @@ pub fn orb(
     key: impl Into<SharedString>,
     size_px: f32,
     theme: &Theme,
-    view: EntityId,
+    painter: Painter,
     cx: &mut App,
 ) -> impl IntoElement {
     let _key = key.into();
-    let delta = motion::pulse_delta(&ORB, view, cx);
+    let delta = motion::pulse_delta(&ORB, painter, cx);
     let accent = theme.accent;
 
     // A circle placed by its centre, since every seat below is a centre.

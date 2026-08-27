@@ -14,7 +14,7 @@
 use gpui::{
     Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
 };
-use motion::{self as motion, AnimationExt as _, Fade, PULSE};
+use motion::{self as motion, AnimationExt as _, Fade, PULSE, Painter};
 use theme::{Theme, hairline, ink};
 
 // ---------------------------------------------------------------------------
@@ -1144,11 +1144,11 @@ pub fn redacted_rows(
     _id: &'static str,
     _theme: &Theme,
     count: usize,
-    view: gpui::EntityId,
+    painter: Painter,
     cx: &mut gpui::App,
 ) -> AnyElement {
     let wash = ink(0.04);
-    let delta = motion::pulse_delta(&PULSE, view, cx);
+    let delta = motion::pulse_delta(&PULSE, painter, cx);
     div()
         .flex()
         .flex_col()

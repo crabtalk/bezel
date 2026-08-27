@@ -19,6 +19,7 @@ use gpui::{
     AnyElement, Context, DragMoveEvent, Empty, Hsla, Render, ScrollHandle, SharedString,
     Subscription, Task, Window, div, prelude::*, px,
 };
+use motion::Painter;
 use theme::Theme;
 use ui::{
     focus,
@@ -122,7 +123,7 @@ impl Avatars {
             lanes: [Lane::default(); LANES],
             slider: cx.focus_handle().tab_stop(true),
             scroll: ScrollHandle::new(),
-            bar: TransientState::new(cx.entity_id()),
+            bar: TransientState::new(Painter::of(cx)),
             tick: None,
             activation: None,
         }

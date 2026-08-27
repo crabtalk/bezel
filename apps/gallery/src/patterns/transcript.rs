@@ -22,6 +22,7 @@
 //! scroll measurement and cloud-error parsing — an app's job, all of it.
 
 use gpui::{AnyElement, Context, Render, SharedString, Window, div, prelude::*, px};
+use motion::Painter;
 use theme::Theme;
 use ui::{
     icons, popover,
@@ -189,7 +190,7 @@ impl Transcript {
             open_output: std::collections::HashSet::new(),
             scroll: gpui::ScrollHandle::new(),
             follow: FollowState::new(),
-            bar: ScrollbarState::new(cx.entity_id()),
+            bar: ScrollbarState::new(Painter::of(cx)),
         }
     }
 }

@@ -23,7 +23,7 @@ use gpui::{
     AnyElement, Context, Entity, Render, SharedString, Window, div, linear_color_stop,
     linear_gradient, prelude::*, px,
 };
-use motion::Fade;
+use motion::{Fade, Painter};
 use theme::Theme;
 use ui::{
     icons,
@@ -104,7 +104,7 @@ impl Activity {
             thought: widgets::Takeover::default(),
             scroll: gpui::ScrollHandle::new(),
             follow: FollowState::new(),
-            bar: ScrollbarState::new(cx.entity_id()),
+            bar: ScrollbarState::new(Painter::of(cx)),
         }
     }
 }
@@ -151,7 +151,7 @@ impl Activity {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         let running = self.running();
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         // Built here rather than inside the row, because gpui reads an svg's
         // colour off that element's own style: a chevron tinted by its parent
         // paints nothing at all.
@@ -245,7 +245,7 @@ impl Activity {
 
 impl Render for Activity {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let theme = Theme::of(cx).clone();
         let running = self.running();
         let open = self.thought.get(running);
@@ -805,7 +805,7 @@ impl Composer {
     /// `TextField::offset_bounds` is the same measurement the IME candidate
     /// panel anchors to, so it follows the caret down as the box grows.
     fn picker(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let hash = self.mention?;
         let anchor = self.field.read(cx).offset_bounds(hash, window)?;
         let rows: Vec<AnyElement> = self

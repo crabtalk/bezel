@@ -8,6 +8,7 @@
 
 use gpui::{Context, ElementId, Render, ScrollHandle, Window, div, prelude::*, px};
 use markdown::Doc;
+use motion::Painter;
 use theme::Theme;
 use ui::{
     scroll::{self, TransientState},
@@ -34,7 +35,7 @@ impl Syntax {
                 .collect(),
             selected: 0,
             scroll: ScrollHandle::new(),
-            bar: TransientState::new(cx.entity_id()),
+            bar: TransientState::new(Painter::of(cx)),
         }
     }
 }

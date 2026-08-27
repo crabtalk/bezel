@@ -6,7 +6,7 @@
 
 use gpui::{AnyElement, Context, CursorStyle, MouseButton, SharedString, div, prelude::*, px};
 use markdown::BlockKind;
-use motion::Fade;
+use motion::{Fade, Painter};
 use theme::Theme;
 
 use crate::editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE};
@@ -144,7 +144,7 @@ impl Editor {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let (ix, at) = self.language_menu?;
         let Some(BlockKind::Code { language, .. }) = self.doc.blocks.get(ix).map(|b| &b.kind)
         else {
@@ -197,7 +197,7 @@ impl Editor {
 
     /// Turn into / Duplicate / Delete, at the handle that opened it.
     pub(super) fn block_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let (ix, at) = self.block_menu?;
         let turns = crate::slash::items();
         let rows = turns.into_iter().map(|(label, kind)| {
@@ -251,7 +251,7 @@ impl Editor {
     /// past the end of a URL, which is as far right as a line goes, and a menu
     /// hanging off there points at nothing.
     pub(super) fn paste_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let pasted = self.pasted.as_ref()?;
         let (point, line_height) = self.layouts.position(pasted.at)?;
         let rows = pasted.rows.iter().enumerate().map(|(row, &choice)| {
@@ -283,7 +283,7 @@ impl Editor {
     /// The anchor comes from the same layout the caret paints against, so it
     /// costs nothing beyond a lookup and it cannot drift from the text.
     pub(super) fn slash_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let slash = self.slash.as_ref()?;
         let (point, line_height) = self.layouts.position(slash.at)?;
         let items = crate::slash::items();

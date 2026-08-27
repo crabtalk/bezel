@@ -6,7 +6,7 @@ use motion::*;
 /// A fade in a stand-in view. `EntityId: From<u64>`, so the pure store needs no
 /// app to key on one.
 fn fade(key: &'static str) -> Fade {
-    Fade::new(gpui::EntityId::from(1), key)
+    Fade::new(gpui::EntityId::from(1).into(), key)
 }
 use web_time::Instant;
 

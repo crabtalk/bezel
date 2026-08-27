@@ -23,7 +23,7 @@ use gpui::{
     actions, div, prelude::*, px,
 };
 
-use motion::Fade;
+use motion::{Fade, Painter};
 use theme::Theme;
 
 use crate::{
@@ -139,7 +139,7 @@ impl Focusable for CommandPalette {
 impl Render for CommandPalette {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let rows: Vec<gpui::AnyElement> = self
             .filter
             .filtered()

@@ -10,7 +10,7 @@ use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
     actions, div, prelude::*, px, relative,
 };
-use motion::Fade;
+use motion::{Fade, Painter};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
     Theme,
@@ -846,25 +846,25 @@ impl Gallery {
             create_file: 0,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             rail_scroll: gpui::ScrollHandle::new(),
-            rail_bar: ScrollbarState::new(cx.entity_id()),
+            rail_bar: ScrollbarState::new(Painter::of(cx)),
             pane_scroll: gpui::ScrollHandle::new(),
-            pane_bar: ScrollbarState::new(cx.entity_id()),
+            pane_bar: ScrollbarState::new(Painter::of(cx)),
             demo_scroll: gpui::ScrollHandle::new(),
-            demo_bar: ScrollbarState::new(cx.entity_id()),
+            demo_bar: ScrollbarState::new(Painter::of(cx)),
             log_scroll: gpui::ScrollHandle::new(),
-            log_bar: ScrollbarState::new(cx.entity_id()),
+            log_bar: ScrollbarState::new(Painter::of(cx)),
             log_follow: scroll::FollowState::new(),
             // Enough to overflow the box on arrival, so the pin has something
             // to hold onto before you press anything.
             log_lines: 24,
             table_scroll: gpui::ScrollHandle::new(),
-            table_bar: ScrollbarState::new(cx.entity_id()),
+            table_bar: ScrollbarState::new(Painter::of(cx)),
             table_sort: None,
             page: 1,
             tree_scroll: gpui::ScrollHandle::new(),
-            tree_bar: ScrollbarState::new(cx.entity_id()),
+            tree_bar: ScrollbarState::new(Painter::of(cx)),
             rows_scroll: gpui::UniformListScrollHandle::new(),
-            rows_bar: ScrollbarState::new(cx.entity_id()),
+            rows_bar: ScrollbarState::new(Painter::of(cx)),
             rows_built: Rc::new(Cell::new(0)),
             // Opened so the page shows nesting on arrival rather than a flat
             // list of two folders.
@@ -1127,7 +1127,7 @@ impl Gallery {
     /// carrying the same selected wash a menu row does — this is the library
     /// browsing itself.
     fn rail(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> AnyElement {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let tab = &TABS[self.tab];
         let selected = self.selected[self.tab];
         div()
@@ -1372,7 +1372,7 @@ impl Gallery {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = Theme::of(cx).clone();
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let section = stack();
 
         match key {
@@ -3579,7 +3579,7 @@ fn column() -> gpui::Div {
 
 impl Render for Gallery {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity_id();
+        let view = Painter::of(cx);
         let theme = Theme::of(cx).clone();
 
         // Rail on the left, one component in the pane — the set is long enough
