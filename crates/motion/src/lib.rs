@@ -74,10 +74,14 @@ const MIN_SLEEP: Duration = Duration::from_millis(1);
 
 /// One view's claim on the clock.
 struct Lease {
-    /// When this view is next owed a redraw. `None` between a notify and the
-    /// render that renews the lease — which is what stops the clock running
-    /// ahead of a view that has not drawn yet.
-    due: Option<Instant>,
+    /// The fastest rate anything on this view has claimed.
+    period: Duration,
+    /// When this view is next owed a redraw.
+    due: Instant,
+    /// A notify is out and the render that renews this lease has not run yet.
+    /// The clock steps such a lease on by a period instead of notifying again,
+    /// which is what stops it running ahead of a view that has not drawn.
+    in_flight: bool,
     /// When the claim lapses if nothing renews it.
     until: Instant,
 }
@@ -94,11 +98,16 @@ struct PulseClock {
 
 impl PulseClock {
     /// When the loop should next wake: the earliest thing owed to anyone, or
-    /// the earliest lapse if every lease is waiting on a render.
+    /// the earliest lapse, whichever comes first.
+    ///
+    /// Every lease answers with a real time. A lease that fell back to its
+    /// *lapse* while waiting on a render is what held every drive in the
+    /// library to one frame per lease rather than one per period — a spinner
+    /// asking for 30fps drew about 5.
     fn next_wake(&self) -> Option<Instant> {
         self.leases
             .values()
-            .map(|lease| lease.due.unwrap_or(lease.until).min(lease.until))
+            .map(|lease| lease.due.min(lease.until))
             .min()
     }
 }
@@ -152,7 +161,7 @@ impl Painter {
     pub fn woken(self, cx: &App) -> bool {
         cx.try_global::<PulseClock>()
             .and_then(|clock| clock.leases.get(&self.0))
-            .is_some_and(|lease| lease.due.is_none())
+            .is_some_and(|lease| lease.in_flight)
     }
 }
 
@@ -176,11 +185,18 @@ fn lease(view: EntityId, fps: f32, until: Duration, cx: &mut App) {
         .leases
         .entry(view)
         .and_modify(|lease| {
-            lease.due = Some(lease.due.map_or(now + period, |due| due.min(now + period)));
+            lease.period = lease.period.min(period);
+            // The tick already booked the next slot; this render only pulls it
+            // earlier if the claim is faster. Re-dating it from *now* would add
+            // the frame's own cost to every period — 30fps drew 20.
+            lease.due = lease.due.min(now + period);
+            lease.in_flight = false;
             lease.until = lease.until.max(now + until);
         })
         .or_insert(Lease {
-            due: Some(now + period),
+            period,
+            due: now + period,
+            in_flight: false,
             until: now + until,
         });
     if clock.running {
@@ -209,15 +225,27 @@ fn lease(view: EntityId, fps: f32, until: Duration, cx: &mut App) {
                     clock.running = false;
                     return true;
                 }
-                // Owed a frame now. Clearing `due` is what holds the clock at
-                // this view's rate rather than the loop's: only the render this
-                // notify provokes puts it back on the schedule.
+                // Owed a frame now. The slot moves on whatever happens next,
+                // so the cadence is the period and not the period plus however
+                // long the frame took.
                 let mut owed = Vec::new();
                 for (view, lease) in clock.leases.iter_mut() {
-                    if lease.due.is_some_and(|due| due <= now) {
-                        lease.due = None;
-                        owed.push(*view);
+                    if lease.due > now {
+                        continue;
                     }
+                    lease.due += lease.period;
+                    // Frames are costing more than the rate asked for; the next
+                    // slot is now rather than a run of slots already missed.
+                    if lease.due <= now {
+                        lease.due = now + lease.period;
+                    }
+                    // The last notify has not been drawn yet: skip this slot
+                    // rather than queue a second frame behind it.
+                    if lease.in_flight {
+                        continue;
+                    }
+                    lease.in_flight = true;
+                    owed.push(*view);
                 }
                 for view in owed {
                     cx.notify(view);
