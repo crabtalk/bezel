@@ -144,6 +144,16 @@ impl Painter {
     pub fn lease(self, fps: f32, until: Duration, cx: &mut App) {
         lease(self.0, fps, until, cx);
     }
+
+    /// Whether the clock is what asked for the render running now, rather than
+    /// the app. True only in the render a tick provoked: the clock clears what
+    /// this view is owed when it notifies, and the render's own [`lease`] is
+    /// what puts it back. Read it before renewing.
+    pub fn woken(self, cx: &App) -> bool {
+        cx.try_global::<PulseClock>()
+            .and_then(|clock| clock.leases.get(&self.0))
+            .is_some_and(|lease| lease.due.is_none())
+    }
 }
 
 impl From<Painter> for EntityId {

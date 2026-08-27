@@ -41,6 +41,7 @@ syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.1.1" }
 terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.1.1" }
 
 # crates-io
+libc = "0.2"
 web-time = "1"
 alacritty_terminal = "0.26"
 tree-sitter = "0.26.9"

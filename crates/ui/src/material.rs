@@ -23,6 +23,11 @@ use theme::Theme;
 /// thin enough that a 16px blur leaves backdrop detail ghosting through rows.
 pub const MENU_BLUR: f32 = 44.0;
 
+/// Backdrop-blur sigma for a small floating panel — a meter, a HUD. A sigma is
+/// only frost while the box is wide enough to show what it softened; at a
+/// quarter of the box's width the backdrop resolves to one flat tone.
+pub const PANEL_BLUR: f32 = 12.0;
+
 /// Frost `child` (a popover card): backdrop-blurred on glass, pass-through on
 /// opaque platforms. `corner_radius` must match the card's rounding.
 pub fn material(corner_radius: f32, blur_radius: f32, child: impl IntoElement) -> Material {

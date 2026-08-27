@@ -30,6 +30,7 @@ use ui::{
     palette::{self, CommandPalette, PaletteEvent},
     popover,
     scroll::{self, ScrollbarState, TransientState},
+    stats::Stats,
     table::{self, Column, Sort, Width},
     titlebar,
     tooltip::Tooltip,
@@ -638,6 +639,7 @@ pub const COMPONENTS: &[Group] = &[
             section("alerts", "Alert strips", "crates/ui/src/widgets/status.rs"),
             section("step-row", "Step row", "crates/ui/src/widgets/status.rs"),
             section("loaders", "Loaders", "crates/ui/src/loaders.rs"),
+            section("stats", "Stats", "crates/ui/src/stats.rs"),
         ],
     },
 ];
@@ -790,6 +792,13 @@ pub struct Gallery {
     /// where you left, not at the top.
     selected: Vec<&'static str>,
     dialog: popover::Popup<()>,
+    /// The frame meter, mounted once and floated over whichever page is open.
+    /// One instance: two of them would each count the other's frames, and
+    /// neither would ever read zero.
+    stats: Entity<Stats>,
+    stats_shown: bool,
+    /// The Stats page's spinner — what the meter is there to catch.
+    stats_spinner: bool,
     /// Renders one section alone, without the nav, rail or header around it.
     /// The website embeds a page per component this way, so a doc page shows
     /// the component it documents rather than the whole browser.
@@ -920,6 +929,9 @@ impl Gallery {
             syntax: cx.new(patterns::syntax::Syntax::new),
             avatar: cx.new(patterns::avatar::Avatars::new),
             mascot: cx.new(|_| patterns::mascot::Mascots::default()),
+            stats: cx.new(Stats::new),
+            stats_shown: false,
+            stats_spinner: false,
             embedded: false,
         }
     }
@@ -1278,8 +1290,28 @@ impl Gallery {
                 };
                 item.into_any_element()
             }))
-            // Pushes the appearance switch to the trailing edge.
+            // Pushes the trailing controls to the far edge.
             .child(div().flex_1())
+            // The frame meter, on any page rather than only the one that
+            // documents it: what a window costs is a property of what you are
+            // looking at, so it has to follow you around to be worth reading.
+            .child(
+                div()
+                    .id("stats-toggle")
+                    .p(px(4.0))
+                    .cursor_pointer()
+                    .on_click(cx.listener(|view, _, _, cx| {
+                        view.stats_shown = !view.stats_shown;
+                        cx.notify();
+                    }))
+                    .child(icons::icon(icons::CPU).size(px(15.0)).text_color(
+                        if self.stats_shown {
+                            theme.text
+                        } else {
+                            theme.text_faint
+                        },
+                    )),
+            )
             // A switch, not three segments. It reads the *resolved* appearance
             // rather than the mode, so it shows what you are actually looking
             // at while the app is still following the OS — and the first flip
@@ -2524,6 +2556,52 @@ impl Gallery {
                 )
                 .into_any_element(),
 
+            "stats" => {
+                // The page documents the box in the corner, so the box has to
+                // be there while you read it.
+                self.stats_shown = true;
+                section
+                    .child(hint(
+                        &theme,
+                        "The meter in the corner is measuring this window. At rest \
+                         it reads 0 — nothing on screen is asking for a frame, and \
+                         the meter's own two-a-second tick is the one draw it does \
+                         not count. Mount the spinner and read what one animation \
+                         costs a whole window: every frame it asks for is a full \
+                         redraw, and the number is the rate it is really getting.",
+                    ))
+                    .child(
+                        row()
+                            .child(
+                                theme
+                                    .toggle(self.stats_spinner)
+                                    .id("stats-spinner")
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        view.stats_spinner = !view.stats_spinner;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(div().child("Mount a spinner"))
+                            .when(self.stats_spinner, |row| {
+                                row.child(loaders::pulse_loader(
+                                    "stats-pulse",
+                                    &theme,
+                                    8.0,
+                                    view,
+                                    cx,
+                                ))
+                            }),
+                    )
+                    .child(hint(
+                        &theme,
+                        "CPU is the whole process — user plus system, every thread — \
+                         as a percentage of one core, the figure Activity Monitor \
+                         prints. The web build has no such call and reads —.",
+                    ))
+                    .into_any_element()
+            }
+
             "palette" => section
                 .child(
                     row()
@@ -3685,6 +3763,15 @@ impl Render for Gallery {
             .text_color(theme.text)
             .text_size(px(14.0))
             .child(content)
+            .when(self.stats_shown, |root| {
+                root.child(
+                    div()
+                        .absolute()
+                        .top(px(Theme::HEADER_HEIGHT + CARD_PAD))
+                        .right(px(CARD_PAD))
+                        .child(self.stats.clone()),
+                )
+            })
             .when_some(
                 self.context_menu
                     .get()

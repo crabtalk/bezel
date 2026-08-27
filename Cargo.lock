@@ -973,6 +973,7 @@ dependencies = [
  "bezel-gpui",
  "bezel-motion",
  "bezel-theme",
+ "libc",
  "unicode-segmentation",
  "web-time",
 ]

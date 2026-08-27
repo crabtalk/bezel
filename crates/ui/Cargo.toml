@@ -35,6 +35,11 @@ gpui.workspace = true
 unicode-segmentation = "1"
 web-time.workspace = true
 
+# `getrusage` for the process CPU reading in `stats`. Nothing else in the
+# library calls the platform.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 # `TestAppContext` and `Window::simulate_next_frame` — a window and a clock
 # without a display, which is what lets frame counts be asserted.
