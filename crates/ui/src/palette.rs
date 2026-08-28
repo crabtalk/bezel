@@ -28,7 +28,7 @@ use theme::Theme;
 
 use crate::{
     input::{self, TextField},
-    material::Frosted as _,
+    material::Glass as _,
     popover,
 };
 

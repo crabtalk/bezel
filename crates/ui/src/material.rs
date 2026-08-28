@@ -10,10 +10,13 @@
 //! `Window::paint_backdrop_blur` from our gpui fork (macOS Metal only);
 //! elsewhere the primitive is ignored and the glass reads as the theme's
 //! translucent tint over the OS window blur.
+//!
+//! [`Glass::glass_effect`] is the liquid surface: a bevel at the rim that
+//! refracts the backdrop, and a fill of its own.
 
 use gpui::{
     AbsoluteLength, AnyElement, App, Bounds, Corners, Element, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, Pixels, Styled, Window, px,
+    IntoElement, LayoutId, Pixels, Styled, Window, fill, px,
 };
 
 use theme::Theme;
@@ -42,41 +45,119 @@ pub fn material(corner_radius: f32, blur_radius: f32, child: impl IntoElement) -
             bottom_left: radius,
         },
         blur_radius,
+        glass: false,
+        tint: None,
+        blur_override: None,
         child: child.into_any_element(),
     }
 }
 
-/// Frost this card at the corner radius it already carries.
-///
-/// The radius comes off the element's own style, so a caller chaining its own
-/// rounding — `card.rounded(px(4.0)).material(MENU_BLUR)` — gets a blur cut to
-/// the corners it just asked for.
-pub trait Frosted: Styled + IntoElement + Sized {
+/// The backdrop surfaces, on any element carrying a corner radius.
+pub trait Glass: Styled + IntoElement + Sized {
+    /// Frost this card at the corner radius it already carries.
+    ///
+    /// The radius comes off the element's own style, so a caller chaining its
+    /// own rounding — `card.rounded(px(4.0)).material(MENU_BLUR)` — gets a blur
+    /// cut to the corners it just asked for.
     fn material(mut self, blur_radius: f32) -> Material {
-        let square = AbsoluteLength::from(px(0.0));
-        let radii = &self.style().corner_radii;
-        let corners = Corners {
-            top_left: radii.top_left.unwrap_or(square),
-            top_right: radii.top_right.unwrap_or(square),
-            bottom_right: radii.bottom_right.unwrap_or(square),
-            bottom_left: radii.bottom_left.unwrap_or(square),
-        };
+        Material {
+            corners: corners_of(&mut self),
+            blur_radius,
+            glass: false,
+            tint: None,
+            blur_override: None,
+            child: self.into_any_element(),
+        }
+    }
+
+    /// Paint this card as liquid glass — SwiftUI's `Glass.clear`: a refracting
+    /// bevel at the rim, a lit edge, and [`Theme::glass_clear`]'s dimming.
+    ///
+    /// Blur, bevel and tint all come off [`Theme`], and the shape off the
+    /// card's own rounding: the lens dies if any of the three is wrong.
+    ///
+    /// It clears the card's `bg`, since the lens paints the fill. Where the
+    /// lens cannot run — every renderer but macOS Metal — it paints the frosted
+    /// tint instead, so the surface is never invisible.
+    fn glass_effect(mut self) -> Material {
+        let corners = corners_of(&mut self);
+        // The lens paints the fill, so the card's own is dropped here rather
+        // than at the call site: painting both is what buries the lens, and a
+        // caller who has to remember that is a caller who will forget.
+        self.style().background = None;
         Material {
             corners,
-            blur_radius,
+            blur_radius: 0.0,
+            glass: true,
+            tint: None,
+            blur_override: None,
             child: self.into_any_element(),
         }
     }
 }
 
-impl<E: Styled + IntoElement> Frosted for E {}
+/// The rounding an element already carries, as the blur needs it.
+fn corners_of(styled: &mut impl Styled) -> Corners<AbsoluteLength> {
+    let square = AbsoluteLength::from(px(0.0));
+    let radii = &styled.style().corner_radii;
+    Corners {
+        top_left: radii.top_left.unwrap_or(square),
+        top_right: radii.top_right.unwrap_or(square),
+        bottom_right: radii.bottom_right.unwrap_or(square),
+        bottom_left: radii.bottom_left.unwrap_or(square),
+    }
+}
+
+impl<E: Styled + IntoElement> Glass for E {}
 
 pub struct Material {
+    /// The glass's own tint, when the caller wants one. `None` is
+    /// [`Theme::glass_clear`]'s neutral lift.
+    tint: Option<gpui::Hsla>,
+    /// Frost under the lens. Glass does not frost by default.
+    blur_override: Option<f32>,
     /// Held unresolved: a rem-rounded card only becomes pixels against the
     /// window's rem size, which paint is the first place to have.
     corners: Corners<AbsoluteLength>,
     blur_radius: f32,
+    glass: bool,
     child: AnyElement,
+}
+
+/// Whether this build has the backdrop-blur primitive behind it — the Metal
+/// renderer is the only one that reads it off the scene.
+const LENSED: bool = cfg!(target_os = "macos");
+
+impl Material {
+    /// Tint the glass — SwiftUI's `Glass.tint(_:)`, for a control important
+    /// enough to carry colour. Pass the colour at the coverage you want; it
+    /// stands in for [`Theme::glass_clear`]'s neutral lift rather than adding
+    /// to it, so a heavy alpha reads as paint and a light one as glass.
+    ///
+    /// A plain material's fill is still its caller's, and this does not
+    /// reach it.
+    pub fn tint(mut self, color: gpui::Hsla) -> Self {
+        self.tint = Some(color);
+        self
+    }
+
+    /// Frost the backdrop under the lens. Glass is clear by default — seeing
+    /// through is the point — but a surface that has to carry dense content
+    /// can buy legibility with a sigma of its own.
+    pub fn blurred(mut self, sigma: f32) -> Self {
+        self.blur_override = Some(sigma);
+        self
+    }
+
+    /// The card's rounding in pixels, which only a rem size resolves.
+    fn corners(&self, rem: Pixels) -> Corners<Pixels> {
+        Corners {
+            top_left: self.corners.top_left.to_pixels(rem),
+            top_right: self.corners.top_right.to_pixels(rem),
+            bottom_right: self.corners.bottom_right.to_pixels(rem),
+            bottom_left: self.corners.bottom_left.to_pixels(rem),
+        }
+    }
 }
 
 impl Element for Material {
@@ -123,16 +204,44 @@ impl Element for Material {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if Theme::of(cx).is_glass() {
-            let rem = window.rem_size();
-            let corners = Corners {
-                top_left: self.corners.top_left.to_pixels(rem),
-                top_right: self.corners.top_right.to_pixels(rem),
-                bottom_right: self.corners.bottom_right.to_pixels(rem),
-                bottom_left: self.corners.bottom_left.to_pixels(rem),
+        let theme = Theme::of(cx);
+        // The backdrop-blur primitive is macOS Metal's alone. Glass moved the
+        // card's fill into it, so anywhere it will not run the fill is painted
+        // here instead, or the card comes out a hole with rows floating in it.
+        if self.glass && !(LENSED && theme.is_glass()) {
+            let backing = if theme.is_glass() {
+                theme.glass_overlay()
+            } else {
+                theme.surface_overlay
             };
+            let corners = self.corners(window.rem_size());
+            window.paint_quad(fill(bounds, backing).corner_radii(corners));
+        }
+        if theme.is_glass() {
+            // Only glass tints: a plain material paints what it always has,
+            // and its caller still owns the fill.
+            let (bevel, tint) = if self.glass {
+                let extent = bounds.size.width.min(bounds.size.height);
+                (
+                    Theme::glass_bevel(f32::from(extent)),
+                    self.tint.unwrap_or_else(|| theme.glass_clear()),
+                )
+            } else {
+                (0.0, gpui::transparent_black())
+            };
+            let corners = self.corners(window.rem_size());
             window.paint_layer(bounds, |window| {
-                window.paint_backdrop_blur(bounds, corners, px(self.blur_radius));
+                window.paint_backdrop_blur(
+                    bounds,
+                    corners,
+                    gpui::GlassEffect {
+                        blur_radius: px(self.blur_override.unwrap_or(self.blur_radius)),
+                        lens: px(bevel),
+                        magnify: Theme::glass_magnify(),
+                        dispersion: Theme::glass_dispersion(),
+                        tint,
+                    },
+                );
                 self.child.paint(window, cx);
             });
         } else {

@@ -8,7 +8,7 @@
 
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
-    actions, div, prelude::*, px, relative,
+    actions, div, point, prelude::*, px, relative,
 };
 use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
@@ -27,7 +27,7 @@ use ui::{
     icons,
     input::{self, Shape, TextField},
     list, loaders,
-    material::Frosted as _,
+    material::Glass as _,
     menubar::{self, Item, Menu, Menubar, MenubarEvent},
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
@@ -811,6 +811,20 @@ pub struct Gallery {
     panel_demo: Floating,
     /// The Stats page's spinner — what the meter is there to catch.
     stats_spinner: bool,
+    /// The glass probe: where it has been dragged, its size and rounding as
+    /// slider fractions, and which backdrop it is over. Sizes are fractions
+    /// because that is what a slider reports.
+    probe_at: Floating,
+    probe_w: f32,
+    probe_h: f32,
+    probe_r: f32,
+    probe_bg: usize,
+    probe_glass: bool,
+    probe_bevel: f32,
+    probe_tint: bool,
+    probe_magnify: f32,
+    probe_blur: f32,
+    probe_fill: f32,
     /// Renders one section alone, without the nav, rail or header around it.
     /// The website embeds a page per component this way, so a doc page shows
     /// the component it documents rather than the whole browser.
@@ -951,6 +965,18 @@ impl Gallery {
             stats_at: Floating::new(Painter::of(cx)),
             panel_demo: Floating::new(Painter::of(cx)),
             stats_spinner: false,
+            probe_at: Floating::new(Painter::of(cx)),
+            // 168 x 168 at r34, as fractions of the slider ranges.
+            probe_w: (168.0 - 120.0) / 480.0,
+            probe_h: (168.0 - 30.0) / 220.0,
+            probe_r: 34.0 / 84.0,
+            probe_bg: 5,
+            probe_glass: true,
+            probe_bevel: 0.225,
+            probe_tint: false,
+            probe_magnify: 0.585,
+            probe_blur: 0.0,
+            probe_fill: 0.34,
             embedded: false,
         }
     }
@@ -2671,41 +2697,279 @@ impl Gallery {
                 )
                 .into_any_element(),
 
-            // Exercises the fork's backdrop-blur primitive: the card blurs the
-            // striped band painted behind it.
-            "material" => section
-                .child(
-                    div()
-                        .relative()
-                        .w(px(420.0))
-                        .h(px(150.0))
-                        .child(
-                            div()
-                                .absolute()
-                                .inset_0()
-                                .flex()
-                                .flex_row()
-                                .children((0..14).map(|i| {
-                                    div().w(px(30.0)).h_full().bg(if i % 2 == 0 {
-                                        theme.accent
-                                    } else {
-                                        theme.warning
+            // Exercises the fork's backdrop-blur primitive. The backdrop is
+            // big curved edges and text on a dark field, not a tiling pattern:
+            // a lens reads as a *named* edge bending, and a tile whose period
+            // matches the bevel just maps onto itself.
+            "material" => {
+                // The probe: drag the glass over a backdrop, resize it live.
+                // Mirrors the SwiftUI reference harness so the two can be put
+                // side by side on identical content.
+                let bg_names = ["flat", "bars", "h-ruler", "v-ruler", "gradient", "text"];
+                let probe_bg = |i: usize| {
+                    let base = div().absolute().inset_0().overflow_hidden();
+                    match i {
+                        0 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)),
+                        1 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).child(
+                            div().absolute().inset_0().flex().flex_row().children(
+                                (0..6).map(|j| {
+                                    div().flex_1().h_full().bg(match j {
+                                        0 => theme.text_muted,
+                                        1 => theme.warning,
+                                        2 => theme.danger,
+                                        3 => theme.success,
+                                        4 => theme.accent,
+                                        _ => theme.warning_muted,
                                     })
-                                })),
-                        )
-                        .child(
-                            div().absolute().top(px(28.0)).left(px(60.0)).child(
-                                popover::popover_card(&theme)
-                                    .w(px(220.0))
-                                    .child(
-                                        popover::menu_row(&theme, false, Fade::new(view, "mat-a"))
-                                            .child("Blurred"),
-                                    )
-                                    .material(ui::material::MENU_BLUR),
+                                }),
                             ),
                         ),
-                )
-                .into_any_element(),
+                        2 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).children((0..30).map(|k| {
+                            div()
+                                .absolute()
+                                .top(px(k as f32 * 12.0))
+                                .left_0()
+                                .right_0()
+                                .h(px(2.0))
+                                .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
+                        })),
+                        3 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).children((0..70).map(|k| {
+                            div()
+                                .absolute()
+                                .left(px(k as f32 * 12.0))
+                                .top_0()
+                                .bottom_0()
+                                .w(px(2.0))
+                                .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
+                        })),
+                        4 => base.bg(theme.accent).child(
+                            div().absolute().inset_0().flex().flex_row().children(
+                                (0..40).map(|k| {
+                                    div().flex_1().h_full().bg(theme.warning.opacity(
+                                        k as f32 / 39.0,
+                                    ))
+                                }),
+                            ),
+                        ),
+                        // What glass actually sits on in an app. Letterforms
+                        // are the honest probe: a displacement shows up as
+                        // text you can no longer read straight.
+                        _ => base.bg(theme.bg).children((0..16).map(|k| {
+                            div()
+                                .absolute()
+                                .top(px(8.0 + k as f32 * 21.0))
+                                .left(px(12.0))
+                                .right(px(12.0))
+                                .text_size(px(15.0))
+                                .text_color(theme.text)
+                                .whitespace_nowrap()
+                                .overflow_hidden()
+                                .child(
+                                    "the quick brown fox jumps over the lazy dog \
+                                     and back again",
+                                )
+                        })),
+                    }
+                };
+                let sigma = self.probe_blur * 60.0;
+                let pw = 120.0 + self.probe_w * 480.0;
+                let ph = 30.0 + self.probe_h * 220.0;
+                let pr = self.probe_r * (pw.min(ph) / 2.0);
+                let chip = |i: usize, on: bool| {
+                    div()
+                        .id(bg_names[i])
+                        .px(px(10.0))
+                        .py(px(4.0))
+                        .rounded(px(Theme::control_radius()))
+                        .text_size(px(12.0))
+                        .text_color(if on { theme.text } else { theme.text_muted })
+                        .bg(if on { theme.glass_hover() } else { theme.bg })
+                        .cursor_pointer()
+                        .child(bg_names[i])
+                        .on_click(cx.listener(move |view, _, _, cx| {
+                            view.probe_bg = i;
+                            cx.notify();
+                        }))
+                };
+                let knob = |id: &'static str, value: f32, label: SharedString| {
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .w(px(56.0))
+                                .text_size(px(11.0))
+                                .text_color(theme.text_muted)
+                                .child(label),
+                        )
+                        .child(
+                            div()
+                                .w(px(130.0))
+                                .child(theme.slider(value))
+                                .id(id)
+                                .on_drag(SliderDrag(id.into()), |_, _, _, cx| cx.new(|_| Empty))
+                                .on_drag_move(cx.listener(
+                                    move |view, event: &DragMoveEvent<SliderDrag>, _, cx| {
+                                        let Some(f) = widgets::slider_fraction(event, id, cx)
+                                        else {
+                                            return;
+                                        };
+                                        match id {
+                                            "probe-w" => view.probe_w = f,
+                                            "probe-h" => view.probe_h = f,
+                                            "probe-b" => {
+                                                view.probe_bevel = f;
+                                                theme::set_glass_bevel(f);
+                                            }
+                                            // 0..1 spans -2..+2, so the sweep
+                                            // passes through zero and the lens
+                                            // inverts halfway.
+                                            "probe-m" => {
+                                                view.probe_magnify = f;
+                                                theme::set_glass_magnify(f * 4.0 - 2.0);
+                                            }
+                                            "probe-blur" => view.probe_blur = f,
+                                            "probe-fill" => view.probe_fill = f,
+                                            _ => view.probe_r = f,
+                                        }
+                                        cx.notify();
+                                    },
+                                )),
+                        )
+                };
+                let probe = div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .relative()
+                            .h(px(340.0))
+                            .w_full()
+                            .rounded(px(Theme::panel_radius()))
+                            .overflow_hidden()
+                            .child(probe_bg(self.probe_bg))
+                            .child(floating::panel(
+                                "glass-probe",
+                                &self.probe_at,
+                                point(px(120.0), px(120.0)),
+                                if self.probe_glass {
+                                    let mut glass =
+                                        div().w(px(pw)).h(px(ph)).rounded(px(pr)).glass_effect();
+                                    if sigma > 0.0 {
+                                        glass = glass.blurred(sigma);
+                                    }
+                                    if self.probe_tint {
+                                        glass
+                                            .tint(
+                                                gpui::hsla(0.58, 0.85, 0.55, 1.0)
+                                                    .opacity(self.probe_fill),
+                                            )
+                                            .into_any_element()
+                                    } else {
+                                        glass.into_any_element()
+                                    }
+                                } else {
+                                    div()
+                                        .w(px(pw))
+                                        .h(px(ph))
+                                        .rounded(px(pr))
+                                        .bg(theme.glass_overlay().opacity(self.probe_fill))
+                                        .material(if sigma > 0.0 {
+                                            sigma
+                                        } else {
+                                            ui::material::MENU_BLUR
+                                        })
+                                        .into_any_element()
+                                },
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_3()
+                            .flex_wrap()
+                            .children((0..6).map(|i| chip(i, self.probe_bg == i)))
+                            .child(
+                                div()
+                                    .id("probe-surface")
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded(px(Theme::control_radius()))
+                                    .text_size(px(12.0))
+                                    .text_color(theme.text)
+                                    .bg(theme.glass_hover())
+                                    .cursor_pointer()
+                                    .child(if self.probe_glass { "glass" } else { "frosted" })
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        view.probe_glass = !view.probe_glass;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .id("probe-tint")
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded(px(Theme::control_radius()))
+                                    .text_size(px(12.0))
+                                    .text_color(if self.probe_tint {
+                                        theme.text
+                                    } else {
+                                        theme.text_muted
+                                    })
+                                    .bg(if self.probe_tint {
+                                        theme.glass_hover()
+                                    } else {
+                                        theme.bg
+                                    })
+                                    .cursor_pointer()
+                                    .child("tint")
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        view.probe_tint = !view.probe_tint;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(knob("probe-w", self.probe_w, format!("w {}", pw as i32).into()))
+                            .child(knob("probe-h", self.probe_h, format!("h {}", ph as i32).into()))
+                            .child(knob("probe-r", self.probe_r, format!("r {}", pr as i32).into()))
+                            .child(knob(
+                                "probe-b",
+                                self.probe_bevel,
+                                format!("bevel {:.2}", self.probe_bevel).into(),
+                            ))
+                            .child(knob(
+                                "probe-m",
+                                self.probe_magnify,
+                                format!("mag {:+.2}", self.probe_magnify * 4.0 - 2.0).into(),
+                            ))
+                            .child(knob(
+                                "probe-blur",
+                                self.probe_blur,
+                                format!("blur {}", sigma as i32).into(),
+                            ))
+                            .child(knob(
+                                "probe-fill",
+                                self.probe_fill,
+                                format!("fill {:.2}", self.probe_fill).into(),
+                            )),
+                    );
+
+                section
+                    .child(hint(
+                        &theme,
+                        "Drag the glass, resize it, switch what is behind it. \
+                         Frosted blurs what it covers; glass lifts it and lenses \
+                         at the rim. Both read very differently depending on the \
+                         backdrop, which is what the switcher is for.",
+                    ))
+                    .child(probe)
+                    .into_any_element()
+            }
 
             "alerts" => section
                 .child(theme.error_strip("Something went wrong."))

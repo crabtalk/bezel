@@ -29,7 +29,7 @@ use theme::Theme;
 use web_time::Instant;
 
 use crate::{
-    material::{self, Frosted as _},
+    material::{self, Glass as _},
     popover,
 };
 

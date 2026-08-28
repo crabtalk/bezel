@@ -11,6 +11,16 @@ static BASE: AtomicU32 = AtomicU32::new(Theme::BASE_RADIUS.to_bits());
 /// The branded frost alpha behind [`Theme::glass`], as raw `f32` bits.
 static FROST: AtomicU32 = AtomicU32::new(Theme::GLASS_ALPHA.to_bits());
 
+/// What share of a glass shape's smaller side the lens profile spans.
+/// Measured off SwiftUI's `.glassEffect(.clear)` (2026-08): on a 460x120
+/// capsule the ruler behind it is displaced over the outer 27pt and is exactly
+/// unperturbed below that — a bezel with a flat interior, not a lens across
+/// the whole body.
+static BEVEL: AtomicU32 = AtomicU32::new(0.225f32.to_bits());
+
+/// The lens amplitude behind [`Theme::glass_magnify`], as raw `f32` bits.
+static MAGNIFY: AtomicU32 = AtomicU32::new(0.34f32.to_bits());
+
 /// Point the radius accessors at a base. Called by
 /// [`Theme::install`](crate::theme::Theme::install).
 pub(crate) fn set_base_radius(radius: f32) {
@@ -21,6 +31,24 @@ pub(crate) fn set_base_radius(radius: f32) {
 /// [`Theme::install`](crate::theme::Theme::install).
 pub(crate) fn set_frost(alpha: f32) {
     FROST.store(alpha.to_bits(), Ordering::Relaxed);
+}
+
+/// Point [`Theme::glass_bevel`] at a share of the inradius.
+pub fn set_glass_bevel(share: f32) {
+    BEVEL.store(share.to_bits(), Ordering::Relaxed);
+}
+
+/// Point [`Theme::glass_magnify`] at an amplitude. Signed.
+pub fn set_glass_magnify(amount: f32) {
+    MAGNIFY.store(amount.to_bits(), Ordering::Relaxed);
+}
+
+pub(crate) fn magnify() -> f32 {
+    f32::from_bits(MAGNIFY.load(Ordering::Relaxed))
+}
+
+pub(crate) fn bevel() -> f32 {
+    f32::from_bits(BEVEL.load(Ordering::Relaxed))
 }
 
 pub(crate) fn frost() -> f32 {

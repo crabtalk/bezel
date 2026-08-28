@@ -11,6 +11,7 @@ mod palettes;
 mod syntax;
 
 pub use install::set_palette;
+pub use layout::{set_glass_bevel, set_glass_magnify};
 pub use syntax::{HighlightKind, SyntaxPalette};
 
 /// The app theme. Two concrete instances — [`Theme::dark`] and [`Theme::light`].

@@ -109,6 +109,42 @@ impl Theme {
         }
     }
 
+    /// The lift behind liquid glass (`bezel::ui::material::Glass::glass_effect`).
+    ///
+    /// White, and composited *additively*: measured off `NSGlassEffectView`
+    /// over flat fields at five luminances (2026-08), its interior comes out
+    /// at `1.042 * backdrop + 19/255` — a veil that brightens whatever is
+    /// behind it, at every level, rather than a scrim that dims it.
+    pub fn glass_clear(&self) -> Hsla {
+        gpui::hsla(0.0, 0.0, 1.0, 0.075)
+    }
+
+    /// How far in from the rim the refracting profile reaches, given `extent`
+    /// — the shape's smaller side.
+    ///
+    /// The interior is a straight pass-through: measurement of Apple's own
+    /// output shows the backdrop unperturbed to within a hundredth of a point
+    /// below the band, with every displacement inside it.
+    pub fn glass_bevel(extent: f32) -> f32 {
+        extent * layout::bevel()
+    }
+
+    /// Displacement amplitude of the glass lens, signed: positive magnifies
+    /// the interior and compresses what it displaces into the rim, negative
+    /// inverts it. 0.34 is what a single glass surface at eta 1.52 bends by,
+    /// which is where the physical model this replaced happened to land;
+    /// the number is a knob now rather than an index.
+    pub fn glass_magnify() -> f32 {
+        layout::magnify()
+    }
+
+    /// Per-channel spread of the displacement — the chromatic fringe at the
+    /// rim. Sub-percent: the fringe scales with the displacement, and at the
+    /// lens amplitude a wider spread reads as rainbow rather than glass.
+    pub fn glass_dispersion() -> f32 {
+        0.005
+    }
+
     /// The standard modal backdrop — see [`scrim`](crate::paint::scrim).
     pub fn scrim(&self) -> Hsla {
         paint::scrim_for(self.appearance, paint::SCRIM_ALPHA_DARK)

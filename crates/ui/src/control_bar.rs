@@ -9,7 +9,7 @@
 //! Two things it exists to get right.
 //!
 //! **The blur corners follow the border.** [`Shape`] rounds the bar, and
-//! [`crate::material::Frosted::material`] cuts the backdrop blur to the rounding it finds — a
+//! [`crate::material::Glass::material`] cuts the backdrop blur to the rounding it finds — a
 //! blur squarer than its border frosts the corners outside it.
 //!
 //! **The centre is centred on the bar, not on what the clusters leave.** The
@@ -44,7 +44,7 @@
 use gpui::{AnyElement, IntoElement, ParentElement as _, Styled as _, div, px};
 use theme::{Theme, hairline};
 
-use crate::material::{self, Frosted as _};
+use crate::material::{self, Glass as _};
 
 /// Height of the bar, and so half the radius of a [`Shape::Pill`]. One number
 /// rather than a parameter: a stadium's radius has to be derived from it for
