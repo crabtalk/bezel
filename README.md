@@ -7,7 +7,7 @@
 A gpui component library, SwiftUI-lean: style flows through the environment,
 never through parameters.
 
-https://github.com/user-attachments/assets/6b5f16d0-9f58-48d6-8398-09acb1afa402
+https://github.com/user-attachments/assets/ba8a8946-edd9-4bc9-9fd2-a39fa249f495
 
 ```rust
 use bezel::ui::widgets::{ButtonStyle, Buttons};
