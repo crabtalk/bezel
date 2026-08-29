@@ -2877,11 +2877,7 @@ impl Gallery {
                                         .h(px(ph))
                                         .rounded(px(pr))
                                         .bg(theme.glass_overlay().opacity(self.probe_fill))
-                                        .material(if sigma > 0.0 {
-                                            sigma
-                                        } else {
-                                            ui::material::MENU_BLUR
-                                        })
+                                        .material(sigma)
                                         .into_any_element()
                                 },
                             )),
@@ -2907,6 +2903,12 @@ impl Gallery {
                                     .child(if self.probe_glass { "glass" } else { "frosted" })
                                     .on_click(cx.listener(|view, _, _, cx| {
                                         view.probe_glass = !view.probe_glass;
+                                        // Frost with no blur is a sharp pane, so arriving
+                                        // there lands on a readable one. Glass keeps 0,
+                                        // which is what clear means.
+                                        if !view.probe_glass && view.probe_blur == 0.0 {
+                                            view.probe_blur = 8.0 / 60.0;
+                                        }
                                         cx.notify();
                                     })),
                             )
@@ -2967,6 +2969,14 @@ impl Gallery {
                          at the rim. Both read very differently depending on the \
                          backdrop, which is what the switcher is for.",
                     ))
+                    .when(!ui::material::lensed(&theme), |el| {
+                        el.child(theme.warning_strip(
+                            "Liquid glass is macOS only — the lens is a Metal \
+                             primitive. Here it falls back to the backdrop tint: \
+                             the card and its shape, without the refraction at \
+                             the rim.",
+                        ))
+                    })
                     .child(probe)
                     .into_any_element()
             }

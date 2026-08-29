@@ -66,7 +66,8 @@ impl Theme {
     /// Opaque off macOS: Linux and Windows get no compositor-blur guarantee,
     /// and a merely transparent window would show raw desktop through the
     /// sidebar. An app that knows its compositor sets the brand field anyway.
-    pub const GLASS_ALPHA: f32 = if cfg!(target_os = "macos") { 0.80 } else { 1.0 };
+    pub const GLASS_ALPHA: f32 =
+        if cfg!(any(target_os = "macos", target_family = "wasm")) { 0.80 } else { 1.0 };
     /// Main-panel header height (the reference `h-11`) — in-card headers (changes pane).
     pub const HEADER_HEIGHT: f32 = 44.0;
     /// The unified window titlebar (traffic lights + cluster + tabs). Content

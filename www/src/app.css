@@ -126,6 +126,19 @@ pre code.hljs {
 	color: var(--text);
 }
 
+/* A platform caveat the reader has to see before they build on the API. The
+   left rule carries it, so it reads as an aside rather than a second heading. */
+blockquote {
+	margin: 20px 0;
+	padding: 2px 0 2px 16px;
+	border-left: 2px solid var(--line-strong);
+	color: var(--muted);
+}
+
+blockquote strong {
+	color: var(--text);
+}
+
 h1,
 h2,
 h3 {

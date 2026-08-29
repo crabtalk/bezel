@@ -124,9 +124,17 @@ pub struct Material {
     child: AnyElement,
 }
 
-/// Whether this build has the backdrop-blur primitive behind it — the Metal
-/// renderer is the only one that reads it off the scene.
-const LENSED: bool = cfg!(target_os = "macos");
+/// Whether this build has the backdrop-blur primitive behind it. Metal reads it
+/// off the scene, and so does wgpu now that the fork implements it there —
+/// which is why this tracks the gpui in use rather than the platform alone.
+const LENSED: bool = cfg!(any(target_os = "macos", target_family = "wasm"));
+
+/// Whether [`Glass::glass_effect`] will actually refract here, rather than
+/// falling back to the flat backdrop tint. The primitive is macOS Metal's, and
+/// an opaque appearance has nothing behind it to lens.
+pub fn lensed(theme: &Theme) -> bool {
+    LENSED && theme.is_glass()
+}
 
 impl Material {
     /// Tint the glass — SwiftUI's `Glass.tint(_:)`, for a control important
@@ -206,16 +214,16 @@ impl Element for Material {
     ) {
         let theme = Theme::of(cx);
         // The backdrop-blur primitive is macOS Metal's alone. Glass moved the
-        // card's fill into it, so anywhere it will not run the fill is painted
-        // here instead, or the card comes out a hole with rows floating in it.
-        if self.glass && !(LENSED && theme.is_glass()) {
-            let backing = if theme.is_glass() {
-                theme.glass_overlay()
-            } else {
-                theme.surface_overlay
-            };
+        // card's fill into it, so anywhere the lens will not run the fill is
+        // painted here — the overlay tint, so the card degrades to a surface
+        // with the page showing through rather than to an opaque slab.
+        if self.glass && !lensed(theme) {
             let corners = self.corners(window.rem_size());
-            window.paint_quad(fill(bounds, backing).corner_radii(corners));
+            window.paint_quad(fill(bounds, theme.glass_overlay()).corner_radii(corners));
+            // The lens is what would have carried the caller's colour.
+            if let Some(tint) = self.tint {
+                window.paint_quad(fill(bounds, tint).corner_radii(corners));
+            }
         }
         if theme.is_glass() {
             // Only glass tints: a plain material paints what it always has,
