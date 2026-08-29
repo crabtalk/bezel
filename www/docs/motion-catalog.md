@@ -37,4 +37,17 @@ const BREATHE: MotionSpec = MotionSpec::new(1800, motion::EASE_IN_OUT);
 let phase = motion::pulse_delta(&BREATHE, cx.entity_id(), cx);
 ```
 
-`set_speed(10.0)` stretches every timeline in the catalog, which is how a screenshot burst samples a 200ms tween frame by frame. Reduced motion is gpui's own flag: `with_animation` elements snap to their end state and schedule nothing, and `pulse_delta` returns a static 0.
+`set_speed(10.0)` stretches every timeline in the catalog, which is how a screenshot burst samples a 200ms tween frame by frame.
+
+The app-level settings hang off `App` itself, through `AppExt`:
+
+```rust
+use motion::AppExt as _;
+
+cx.set_reduced_motion(true);
+cx.set_pause_when_inactive(false);
+```
+
+Reduced motion is gpui's own flag: `with_animation` elements snap to their end state and schedule nothing, and `pulse_delta` returns a static 0.
+
+`pause_when_inactive` is on by default, and stops the clock while no window is active. Nothing above stops on its own — a spinner in a backgrounded window held 30fps and 22% of a core indefinitely (2026-08, debug build), against 2% with this on. The claim is refused rather than cancelled, so nothing has to resume it: the ones already held lapse, the loop runs out of work and parks, and the refresh gpui does on activation brings the renders that claim again. Turn it off for a window that must keep moving while something else has focus — a side panel, a floating HUD.
