@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "catalog": "cd .. && cargo run -q -p web > www/src/lib/catalog.json",
-    "wasm": "cd .. && cargo build -p web --lib --target wasm32-unknown-unknown --release && wasm-bindgen --target web --no-typescript --remove-name-section --out-dir www/static/gallery target/wasm32-unknown-unknown/release/web.wasm",
+    "wasm": "cd .. && cargo build -p web --lib --target wasm32-unknown-unknown --release && wasm-bindgen --target web --no-typescript --remove-name-section --out-dir www/static/gallery target/wasm32-unknown-unknown/release/web.wasm && node www/scripts/patch-ios-wasm-loader.js",
     "dev": "bun run wasm && bun run catalog && vite dev",
     "build": "bun run wasm && wasm-opt -Oz -o static/gallery/web_bg.wasm static/gallery/web_bg.wasm && bun run catalog && vite build",
     "preview": "vite preview",
