@@ -152,7 +152,12 @@ impl Render for Stats {
                 ),
             ));
 
-        card.material(material::PANEL_BLUR)
+        // The lens rather than frost alone: a meter floats over the thing it is
+        // measuring, and refracting what moves under it is what says so. Frost
+        // stays underneath — four rows of small digits are the dense content
+        // `blurred` exists for, and clear glass alone leaves them on whatever
+        // the page happens to be painting.
+        card.glass_effect().blurred(material::PANEL_BLUR)
     }
 }
 
