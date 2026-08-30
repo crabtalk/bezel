@@ -127,6 +127,19 @@ pub(crate) const RAIL_PAD: f32 = 20.0;
 pub(crate) const RAIL_WIDTH: f32 = 200.0;
 const CARD_PAD: f32 = 24.0;
 
+/// The pane's own padding around the column, and the width that column is.
+const PANE_PAD: f32 = 32.0;
+const COLUMN_WIDTH: f32 = 420.0;
+
+/// Below this the two-column form does not fit — the rail plus the padded
+/// column every component page is designed for. Derived rather than chosen, so
+/// moving either width moves the breakpoint with it.
+const COMPACT_BELOW: f32 = RAIL_WIDTH + PANE_PAD * 2.0 + COLUMN_WIDTH;
+
+/// The floor under a pattern's canvas once it is being panned rather than
+/// fitted: the narrowest pane the two-column layout ever hands one.
+const CANVAS_MIN: f32 = COMPACT_BELOW - RAIL_WIDTH;
+
 /// Padding inside one nav tab, subtracted back out of the strip so the tabs'
 /// text starts on the card's grid rather than their hit boxes.
 const NAV_ITEM_PAD: f32 = 4.0;
@@ -142,6 +155,21 @@ const TRAFFIC_LIGHT_SIZE: f32 = 14.0;
 /// the `y` that centres them is the one making that container the strip.
 pub const TRAFFIC_LIGHT_X: f32 = RAIL_PAD;
 pub const TRAFFIC_LIGHT_Y: f32 = (Theme::HEADER_HEIGHT - TRAFFIC_LIGHT_SIZE) / 2.0;
+
+/// Centre-to-centre spacing of the three buttons — measured 2026-08-30 on macOS
+/// 26, off a live window's `AXButton` frames. Same reason as the diameter above:
+/// AppKit owns the cluster and gpui reports no frame for it.
+const TRAFFIC_LIGHT_PITCH: f32 = 23.0;
+
+/// What the nav owes the leading edge once the rail is a drawer. The wide
+/// layout clears the cluster by accident — the rail is wider than it — so this
+/// is the only place the cluster's own extent has to be named. A browser tab
+/// has no titlebar to clear, and on a phone that inset is a fifth of the width.
+const COMPACT_NAV_PAD: f32 = if cfg!(target_os = "macos") {
+    TRAFFIC_LIGHT_X + TRAFFIC_LIGHT_PITCH * 2.0 + TRAFFIC_LIGHT_SIZE + RAIL_PAD
+} else {
+    RAIL_PAD
+};
 
 /// What one press of ← or → moves the slider. The step is never the library's:
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
@@ -707,6 +735,8 @@ pub struct Gallery {
     /// action, not a value — so the host is where the answer lands.
     last_menu_item: Option<SharedString>,
     sheet: popover::Popup<()>,
+    /// The rail, when the window is too narrow to carry it beside the pane.
+    drawer: popover::Popup<()>,
     /// Where the split's divider sits, as a fraction of the container.
     split: f32,
     split_dragging: bool,
@@ -837,6 +867,9 @@ impl Gallery {
         let rail = cx.new(|cx| Rail::new(2, TABS[2].home, cx));
         cx.subscribe(&rail, |view, _, selected: &Selected, cx| {
             view.open(view.tab, selected.0, cx);
+            // A drawer that stays up over the page it just opened is a drawer
+            // you have to dismiss to see what you picked.
+            view.close_drawer(cx);
         })
         .detach();
         // The bar reports a place in the menus it was given; the host is what
@@ -895,6 +928,7 @@ impl Gallery {
             details: widgets::Takeover::default(),
             context_menu: popover::Popup::default(),
             sheet: popover::Popup::default(),
+            drawer: popover::Popup::default(),
             split: 0.4,
             split_dragging: false,
             focus_handle: cx.focus_handle(),
@@ -1206,12 +1240,25 @@ impl Gallery {
     fn close_overlay(&mut self, _: &CloseOverlay, _: &mut Window, cx: &mut Context<Self>) {
         self.close_dialog(cx);
         self.close_sheet(cx);
+        self.close_drawer(cx);
         self.close_context_menu(cx);
     }
 
     fn close_sheet(&mut self, cx: &mut Context<Self>) {
         if self.sheet.begin_close() {
             popover::reap_popup(cx, |view: &mut Self| &mut view.sheet);
+        }
+        cx.notify();
+    }
+
+    fn open_drawer(&mut self, cx: &mut Context<Self>) {
+        self.drawer.open(());
+        cx.notify();
+    }
+
+    fn close_drawer(&mut self, cx: &mut Context<Self>) {
+        if self.drawer.begin_close() {
+            popover::reap_popup(cx, |view: &mut Self| &mut view.drawer);
         }
         cx.notify();
     }
@@ -1230,58 +1277,93 @@ impl Gallery {
     /// The top nav: the kind of thing you are browsing, and the appearance
     /// switch. Everything here is global — per-page detail belongs in
     /// [`Self::header`].
-    fn nav(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+    fn nav(&self, theme: &Theme, compact: bool, cx: &mut Context<Self>) -> AnyElement {
         let current = self.tab;
         let dark = matches!(theme.appearance, theme::Appearance::Dark);
         div()
             .flex_none()
             .h(px(Theme::HEADER_HEIGHT))
-            .pl(px(RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD))
+            .pl(px(if compact {
+                COMPACT_NAV_PAD - NAV_ITEM_PAD
+            } else {
+                RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD
+            }))
             .pr(px(CARD_PAD))
             .flex()
             .flex_row()
             .items_center()
             .gap(px(18.0))
-            .children(TABS.iter().enumerate().map(|(index, tab)| {
-                let selected = index == current;
-                let mut item = div()
-                    .id(SharedString::from(format!("nav-{}", tab.title)))
-                    .p(px(NAV_ITEM_PAD))
-                    .text_size(px(13.0))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |view, _, _, cx| {
-                        view.open(index, view.selected[index], cx);
-                    }))
-                    .child(SharedString::from(tab.title));
-                item = if selected {
-                    item.font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(theme.text)
-                } else {
-                    item.text_color(theme.text_muted)
-                };
-                item.into_any_element()
-            }))
-            // Pushes the trailing controls to the far edge.
-            .child(div().flex_1())
+            .when(compact, |strip| {
+                strip.child(
+                    div()
+                        .id("drawer-toggle")
+                        .p(px(NAV_ITEM_PAD))
+                        .cursor_pointer()
+                        .on_click(cx.listener(|view, _, _, cx| view.open_drawer(cx)))
+                        .child(
+                            icons::icon(icons::SIDEBAR_MINIMALISTIC_LEFT)
+                                .size(px(15.0))
+                                .text_color(theme.text_muted),
+                        ),
+                )
+            })
+            // Takes the free space, which is what pushes the trailing controls
+            // to the far edge — and once there is none left the tabs scroll
+            // under them rather than shoving them off the window.
+            .child(
+                div()
+                    .id("nav-tabs")
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(18.0))
+                    .when(compact, |strip| strip.overflow_x_scroll())
+                    .children(TABS.iter().enumerate().map(|(index, tab)| {
+                        let selected = index == current;
+                        let mut item = div()
+                            .id(SharedString::from(format!("nav-{}", tab.title)))
+                            .flex_none()
+                            .p(px(NAV_ITEM_PAD))
+                            .text_size(px(13.0))
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |view, _, _, cx| {
+                                view.open(index, view.selected[index], cx);
+                            }))
+                            .child(SharedString::from(tab.title));
+                        item = if selected {
+                            item.font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(theme.text)
+                        } else {
+                            item.text_color(theme.text_muted)
+                        };
+                        item.into_any_element()
+                    })),
+            )
             // The frame meter, on any page rather than only the one that
             // documents it: what a window costs is a property of what you are
             // looking at, so it has to follow you around to be worth reading.
-            .child(
-                div()
-                    .id("stats-toggle")
-                    .p(px(4.0))
-                    .cursor_pointer()
-                    .on_click(cx.listener(|view, _, _, cx| {
-                        view.show_stats(!view.stats_shown, cx);
-                    }))
-                    .child(icons::icon(icons::CPU).size(px(15.0)).text_color(
-                        if self.stats_shown {
-                            theme.text
-                        } else {
-                            theme.text_faint
-                        },
-                    )),
-            )
+            // Except where it cannot be read — the panel it opens is dragged,
+            // and a drag on a touch screen is a pan.
+            .when(!compact, |strip| {
+                strip.child(
+                    div()
+                        .id("stats-toggle")
+                        .p(px(4.0))
+                        .cursor_pointer()
+                        .on_click(cx.listener(|view, _, _, cx| {
+                            view.show_stats(!view.stats_shown, cx);
+                        }))
+                        .child(icons::icon(icons::CPU).size(px(15.0)).text_color(
+                            if self.stats_shown {
+                                theme.text
+                            } else {
+                                theme.text_faint
+                            },
+                        )),
+                )
+            })
             // A switch, not three segments. It reads the *resolved* appearance
             // rather than the mode, so it shows what you are actually looking
             // at while the app is still following the OS — and the first flip
@@ -1675,7 +1757,8 @@ impl Gallery {
                 ))
                 .child(
                     div()
-                        .w(px(320.0))
+                        .w_full()
+                        .max_w(px(320.0))
                         .flex()
                         .flex_col()
                         .gap(px(10.0))
@@ -1927,7 +2010,8 @@ impl Gallery {
                 section
                     .child(
                         div()
-                            .w(px(320.0))
+                            .w_full()
+                            .max_w(px(320.0))
                             .child(
                                 div()
                                     .id("collapse")
@@ -1998,7 +2082,8 @@ impl Gallery {
                     )
                     .child(
                         div()
-                            .w(px(320.0))
+                            .w_full()
+                            .max_w(px(320.0))
                             .child(
                                 div()
                                     .id("takeover-head")
@@ -2294,7 +2379,8 @@ impl Gallery {
                     .child(
                         div()
                             .id("split")
-                            .w(px(420.0))
+                            .w_full()
+                            .max_w(px(420.0))
                             .h(px(140.0))
                             .rounded(px(Theme::panel_radius()))
                             .border_1()
@@ -2706,71 +2792,81 @@ impl Gallery {
                 // Mirrors the SwiftUI reference harness so the two can be put
                 // side by side on identical content.
                 let bg_names = ["flat", "bars", "h-ruler", "v-ruler", "gradient", "text"];
-                let probe_bg = |i: usize| {
-                    let base = div().absolute().inset_0().overflow_hidden();
-                    match i {
-                        0 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)),
-                        1 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).child(
-                            div().absolute().inset_0().flex().flex_row().children(
-                                (0..6).map(|j| {
-                                    div().flex_1().h_full().bg(match j {
-                                        0 => theme.text_muted,
-                                        1 => theme.warning,
-                                        2 => theme.danger,
-                                        3 => theme.success,
-                                        4 => theme.accent,
-                                        _ => theme.warning_muted,
-                                    })
-                                }),
-                            ),
-                        ),
-                        2 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).children((0..30).map(|k| {
-                            div()
-                                .absolute()
-                                .top(px(k as f32 * 12.0))
-                                .left_0()
-                                .right_0()
-                                .h(px(2.0))
-                                .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
-                        })),
-                        3 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).children((0..70).map(|k| {
-                            div()
-                                .absolute()
-                                .left(px(k as f32 * 12.0))
-                                .top_0()
-                                .bottom_0()
-                                .w(px(2.0))
-                                .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
-                        })),
-                        4 => base.bg(theme.accent).child(
-                            div().absolute().inset_0().flex().flex_row().children(
-                                (0..40).map(|k| {
-                                    div().flex_1().h_full().bg(theme.warning.opacity(
-                                        k as f32 / 39.0,
-                                    ))
-                                }),
-                            ),
-                        ),
-                        // What glass actually sits on in an app. Letterforms
-                        // are the honest probe: a displacement shows up as
-                        // text you can no longer read straight.
-                        _ => base.bg(theme.bg).children((0..16).map(|k| {
-                            div()
-                                .absolute()
-                                .top(px(8.0 + k as f32 * 21.0))
-                                .left(px(12.0))
-                                .right(px(12.0))
-                                .text_size(px(15.0))
-                                .text_color(theme.text)
-                                .whitespace_nowrap()
-                                .overflow_hidden()
-                                .child(
-                                    "the quick brown fox jumps over the lazy dog \
-                                     and back again",
+                let probe_bg =
+                    |i: usize| {
+                        let base = div().absolute().inset_0().overflow_hidden();
+                        match i {
+                            0 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)),
+                            1 => {
+                                base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).child(
+                                    div().absolute().inset_0().flex().flex_row().children(
+                                        (0..6).map(|j| {
+                                            div().flex_1().h_full().bg(match j {
+                                                0 => theme.text_muted,
+                                                1 => theme.warning,
+                                                2 => theme.danger,
+                                                3 => theme.success,
+                                                4 => theme.accent,
+                                                _ => theme.warning_muted,
+                                            })
+                                        }),
+                                    ),
                                 )
-                        })),
-                    }
-                };
+                            }
+                            2 => base
+                                .bg(gpui::hsla(0.0, 0.0, 0.5, 1.0))
+                                .children((0..30).map(|k| {
+                                    div()
+                                        .absolute()
+                                        .top(px(k as f32 * 12.0))
+                                        .left_0()
+                                        .right_0()
+                                        .h(px(2.0))
+                                        .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
+                                })),
+                            3 => base
+                                .bg(gpui::hsla(0.0, 0.0, 0.5, 1.0))
+                                .children((0..70).map(|k| {
+                                    div()
+                                        .absolute()
+                                        .left(px(k as f32 * 12.0))
+                                        .top_0()
+                                        .bottom_0()
+                                        .w(px(2.0))
+                                        .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
+                                })),
+                            4 => {
+                                base.bg(theme.accent).child(
+                                    div().absolute().inset_0().flex().flex_row().children(
+                                        (0..40).map(|k| {
+                                            div()
+                                                .flex_1()
+                                                .h_full()
+                                                .bg(theme.warning.opacity(k as f32 / 39.0))
+                                        }),
+                                    ),
+                                )
+                            }
+                            // What glass actually sits on in an app. Letterforms
+                            // are the honest probe: a displacement shows up as
+                            // text you can no longer read straight.
+                            _ => base.bg(theme.bg).children((0..16).map(|k| {
+                                div()
+                                    .absolute()
+                                    .top(px(8.0 + k as f32 * 21.0))
+                                    .left(px(12.0))
+                                    .right(px(12.0))
+                                    .text_size(px(15.0))
+                                    .text_color(theme.text)
+                                    .whitespace_nowrap()
+                                    .overflow_hidden()
+                                    .child(
+                                        "the quick brown fox jumps over the lazy dog \
+                                     and back again",
+                                    )
+                            })),
+                        }
+                    };
                 let sigma = self.probe_blur * 60.0;
                 let pw = 120.0 + self.probe_w * 480.0;
                 let ph = 30.0 + self.probe_h * 220.0;
@@ -2936,9 +3032,21 @@ impl Gallery {
                                         cx.notify();
                                     })),
                             )
-                            .child(knob("probe-w", self.probe_w, format!("w {}", pw as i32).into()))
-                            .child(knob("probe-h", self.probe_h, format!("h {}", ph as i32).into()))
-                            .child(knob("probe-r", self.probe_r, format!("r {}", pr as i32).into()))
+                            .child(knob(
+                                "probe-w",
+                                self.probe_w,
+                                format!("w {}", pw as i32).into(),
+                            ))
+                            .child(knob(
+                                "probe-h",
+                                self.probe_h,
+                                format!("h {}", ph as i32).into(),
+                            ))
+                            .child(knob(
+                                "probe-r",
+                                self.probe_r,
+                                format!("r {}", pr as i32).into(),
+                            ))
                             .child(knob(
                                 "probe-b",
                                 self.probe_bevel,
@@ -3034,7 +3142,8 @@ impl Gallery {
                     .child(
                         // Standalone: one step in its own box.
                         div()
-                            .w(px(420.0))
+                            .w_full()
+                            .max_w(px(420.0))
                             .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
@@ -3048,7 +3157,8 @@ impl Gallery {
                     ))
                     .child(
                         div()
-                            .w(px(420.0))
+                            .w_full()
+                            .max_w(px(420.0))
                             .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
@@ -3929,7 +4039,12 @@ fn row() -> gpui::Div {
 }
 
 fn column() -> gpui::Div {
-    div().w(px(420.0)).flex().flex_col().gap(px(28.0))
+    div()
+        .w_full()
+        .max_w(px(COLUMN_WIDTH))
+        .flex()
+        .flex_col()
+        .gap(px(28.0))
 }
 
 impl Render for Gallery {
@@ -3937,6 +4052,15 @@ impl Render for Gallery {
         let view = Painter::of(cx);
         let theme = Theme::of(cx).clone();
         let reduce_motion = cx.reduce_motion();
+        // gpui has no media query: every responsive decision in this file is
+        // this one read, and it is the window rather than the element — the
+        // same thing a CSS breakpoint measures.
+        let compact = window.viewport_size().width < px(COMPACT_BELOW);
+        // A rail that is showing beside the pane must not also be in the
+        // drawer: one entity, two mounts. Widening the window is the case.
+        if !compact {
+            self.drawer.close();
+        }
 
         // Rail on the left, one component in the pane — the set is long enough
         // that a single scroll of everything reads as a wall.
@@ -3948,7 +4072,23 @@ impl Render for Gallery {
                 // A pattern is a screen: it takes the pane whole and
                 // scrolls its own parts, so neither the fixed column nor
                 // the pane's own scrollbar applies to it.
-                pane.child(div().size_full().p(px(24.0)).child(body))
+                //
+                // Narrower than a screen it stays one anyway, and you pan
+                // across it — a pattern is a file you copy into a desktop app,
+                // and thirteen phone layouts of one document nothing.
+                pane.child(
+                    div()
+                        .id("gallery-canvas")
+                        .size_full()
+                        .when(compact, |canvas| canvas.overflow_scroll())
+                        .child(
+                            div()
+                                .size_full()
+                                .when(compact, |screen| screen.min_w(px(CANVAS_MIN)))
+                                .p(px(24.0))
+                                .child(body),
+                        ),
+                )
             } else {
                 pane.child(
                     div()
@@ -3959,7 +4099,13 @@ impl Render for Gallery {
                         // The column width components are designed for;
                         // several are `w_full` and would otherwise stretch
                         // to the whole pane.
-                        .child(div().p(px(32.0)).child(column().child(body))),
+                        .child(
+                            div()
+                                // Compact drops to the header's padding, so the
+                                // body and the section title share one grid.
+                                .p(px(if compact { CARD_PAD } else { PANE_PAD }))
+                                .child(column().child(body)),
+                        ),
                 )
                 .child(scroll::transient(
                     "pane-bar",
@@ -3978,14 +4124,16 @@ impl Render for Gallery {
                 .flex()
                 .flex_col()
                 .size_full()
-                .child(self.nav(&theme, cx))
+                .child(self.nav(&theme, compact, cx))
                 .child(
                     div()
                         .flex_1()
                         .min_h_0()
                         .flex()
                         .flex_row()
-                        .child(self.rail.clone().cached(rail::style()))
+                        .when(!compact, |row| {
+                            row.child(self.rail.clone().cached(rail::style()))
+                        })
                         .child(
                             div()
                                 .flex_1()
@@ -3993,15 +4141,19 @@ impl Render for Gallery {
                                 .h_full()
                                 .flex()
                                 .flex_col()
+                                .bg(theme.surface)
+                                .overflow_hidden()
                                 // Runs off the window's right and bottom edges,
                                 // so the only corner that floats is the one
-                                // that gets rounded.
-                                .rounded_tl(px(Theme::panel_radius()))
-                                .bg(theme.surface)
-                                .border_t_1()
-                                .border_l_1()
-                                .border_color(theme.border)
-                                .overflow_hidden()
+                                // that gets rounded. The seam it rounds against
+                                // is the rail, so a drawer leaves it nothing to
+                                // round and the pane meets the window edge.
+                                .when(!compact, |card| {
+                                    card.rounded_tl(px(Theme::panel_radius()))
+                                        .border_t_1()
+                                        .border_l_1()
+                                        .border_color(theme.border)
+                                })
                                 .child(self.header(section, &theme))
                                 .child(pane),
                         ),
@@ -4032,23 +4184,47 @@ impl Render for Gallery {
             .text_color(theme.text)
             .text_size(px(14.0))
             .child(content)
-            // Not on the page that documents it: that page mounts the meter in
-            // its own column, and the entity can only be in one place.
-            .when(self.stats_shown && section.key != "stats", |root| {
-                // Home is read off the viewport rather than stored, so the
-                // corner it opens in is the corner of *this* window.
-                let viewport = window.viewport_size();
-                let home = gpui::point(
-                    viewport.width - px(stats::WIDTH + CARD_PAD),
-                    px(Theme::HEADER_HEIGHT + CARD_PAD),
-                );
-                root.child(floating::panel(
-                    "meter",
-                    &self.stats_at,
-                    home,
-                    self.stats.clone(),
+            // The rail, once it no longer fits beside the pane. Same width, so
+            // the cached layout `rail::style` reports still describes it.
+            .when(self.drawer.get().is_some(), |root| {
+                root.child(popover::sheet(
+                    "gallery-drawer",
+                    window.viewport_size(),
+                    popover::Side::Left,
+                    px(RAIL_WIDTH),
+                    popover::sheet_panel(&theme, popover::Side::Left)
+                        // Starts where the rail starts in the wide layout —
+                        // below the nav strip. The scrim dims that strip but
+                        // cannot dim the traffic lights over it, which AppKit
+                        // paints above the canvas.
+                        .pt(px(Theme::HEADER_HEIGHT))
+                        .child(self.rail.clone().cached(rail::style()))
+                        .into_any_element(),
+                    self.drawer.closing_since(),
+                    cx.listener(|view, _, _, cx| view.close_drawer(cx)),
                 ))
             })
+            // Not on the page that documents it: that page mounts the meter in
+            // its own column, and the entity can only be in one place. Nor on a
+            // narrow window, where its home corner is most of the width.
+            .when(
+                self.stats_shown && !compact && section.key != "stats",
+                |root| {
+                    // Home is read off the viewport rather than stored, so the
+                    // corner it opens in is the corner of *this* window.
+                    let viewport = window.viewport_size();
+                    let home = gpui::point(
+                        viewport.width - px(stats::WIDTH + CARD_PAD),
+                        px(Theme::HEADER_HEIGHT + CARD_PAD),
+                    );
+                    root.child(floating::panel(
+                        "meter",
+                        &self.stats_at,
+                        home,
+                        self.stats.clone(),
+                    ))
+                },
+            )
             .when_some(
                 self.context_menu
                     .get()

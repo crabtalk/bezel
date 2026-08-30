@@ -4,7 +4,6 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import Brand from '$lib/Brand.svelte';
-	import MobileNotice from '$lib/MobileNotice.svelte';
 	import { documented, repo, repoApi } from '$lib/catalog.js';
 
 	let { children, data } = $props();
@@ -72,8 +71,6 @@
 <svelte:head>
 	<link rel="alternate" type="text/plain" href="{base}/llms.txt" title="Documentation for LLMs" />
 </svelte:head>
-
-<MobileNotice />
 
 <header>
 	<a class="wordmark" href="{base}/">bezel</a>
