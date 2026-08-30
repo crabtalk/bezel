@@ -1357,48 +1357,36 @@ impl Gallery {
                         )),
                 )
             })
-            // A switch, not three segments. It reads the *resolved* appearance
-            // rather than the mode, so it shows what you are actually looking
-            // at while the app is still following the OS — and the first flip
-            // is what pins it. Returning to `System` is `set_mode`, which is a
-            // settings-level action rather than a nav-level one.
+            // One button carrying the appearance it is already in, not three
+            // segments and not a switch: the glyph says which of two you are
+            // looking at, so a track and a second icon only say it again.
+            //
+            // It reads the *resolved* appearance rather than the mode, so it
+            // shows what is actually on screen while the app is still following
+            // the OS — and the first press is what pins it. Returning to
+            // `System` is `set_mode`, a settings-level action rather than a
+            // nav-level one.
             .child(
                 div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(icons::icon(icons::SUN).size(px(14.0)).text_color(if dark {
-                        theme.text_faint
-                    } else {
-                        theme.text
+                    .id("appearance")
+                    .p(px(NAV_ITEM_PAD))
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |_, _, _, cx| {
+                        appearance::set_mode(
+                            if dark {
+                                AppearanceMode::Light
+                            } else {
+                                AppearanceMode::Dark
+                            },
+                            cx,
+                        );
+                        cx.notify();
                     }))
-                    // id + click on the switch itself, not on a wrapper around
-                    // it: a `div().id(..)` wrapped around a control takes
-                    // clicks over a box narrower than what it paints, which is
-                    // the open hit-testing bug in this tree.
                     .child(
-                        theme
-                            .toggle(dark)
-                            .id("appearance")
-                            .cursor_pointer()
-                            .on_click(cx.listener(move |_, _, _, cx| {
-                                appearance::set_mode(
-                                    if dark {
-                                        AppearanceMode::Light
-                                    } else {
-                                        AppearanceMode::Dark
-                                    },
-                                    cx,
-                                );
-                                cx.notify();
-                            })),
-                    )
-                    .child(icons::icon(icons::MOON).size(px(14.0)).text_color(if dark {
-                        theme.text
-                    } else {
-                        theme.text_faint
-                    })),
+                        icons::icon(if dark { icons::MOON } else { icons::SUN })
+                            .size(px(15.0))
+                            .text_color(theme.text_muted),
+                    ),
             )
             .into_any_element()
     }
@@ -1466,8 +1454,8 @@ impl Gallery {
             "color" => section
                 .child(hint(
                     &theme,
-                    "Tokens read at paint time from the theme global — the switch \
-                     above swaps every one of them.",
+                    "Tokens read at paint time from the theme global — the appearance \
+                     button above swaps every one of them.",
                 ))
                 .children(color_groups(&theme).into_iter().map(|(title, tokens)| {
                     stack()
