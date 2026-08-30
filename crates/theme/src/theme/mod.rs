@@ -11,8 +11,38 @@ mod palettes;
 mod syntax;
 
 pub use install::set_palette;
-pub use layout::{set_glass_bevel, set_glass_magnify};
 pub use syntax::{HighlightKind, SyntaxPalette};
+
+/// One shipped glass look. `out = gain * backdrop + tint`, over a backdrop
+/// blurred at `blur`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlassSpec {
+    /// Slope of the transfer line. Below 1 compresses contrast toward
+    /// `tint`; above 1 it brightens and slightly expands, which is what light
+    /// `Clear` measures. Named for what it is, not for one of its directions.
+    pub gain: f32,
+    /// Its offset — the look's own tone.
+    pub tint: Hsla,
+    /// Gaussian sigma under the lens, in logical pixels. It stands in for the
+    /// average attenuation of fine detail, which the real material gets from
+    /// snapshotting its backdrop coarsely.
+    pub blur: f32,
+    /// How far in from the rim the lens bends the backdrop, in logical pixels.
+    /// A length rather than a share of the box: the displacement curve measured
+    /// 2026-08-30 is one curve, the same from a 96pt box to a 320pt one and
+    /// from r24 to r84. Past it the backdrop is untouched.
+    pub rim: f32,
+    /// How much white the lit rim adds at the edge itself, 0..1.
+    pub edge: f32,
+    /// How far in that light falls off to nothing, in logical pixels. Even the
+    /// whole way round: measured 2026-08-30, the real rim reads the same on all
+    /// four sides.
+    pub edge_width: f32,
+    /// The coverage ramp at the shape's own boundary, in logical pixels. 0.5
+    /// is one device pixel at 2x — the plain rasteriser's answer; 0 is the hard
+    /// edge it replaced.
+    pub edge_aa: f32,
+}
 
 /// The app theme. Two concrete instances — [`Theme::dark`] and [`Theme::light`].
 #[derive(Debug, Clone)]
@@ -167,6 +197,21 @@ pub struct Theme {
     pub diff_del: Hsla,
     /// Diff: hunk-header wash (bluish grey).
     pub diff_hunk_bg: Hsla,
+
+    // ---- glass ----
+    //
+    // Numbers, so they flow with the appearance the way every other token
+    // does. `Glass::glass_effect` reads them off the theme it is handed;
+    // nothing here is a parameter on a component.
+    /// The two shipped looks — SwiftUI's `Glass.regular` and `Glass.clear`.
+    /// Blur belongs to the look, not to the caller: Apple exposes no blur
+    /// parameter on glass at all, only the variant.
+    pub glass_regular: GlassSpec,
+    pub glass_clear: GlassSpec,
+    /// Lens displacement amplitude, signed; negative inverts it.
+    pub glass_magnify: f32,
+    /// Per-channel spread of that displacement — the chromatic fringe.
+    pub glass_dispersion: f32,
 
     // ---- fonts ----
     /// UI font family — the name the text system resolves, not the bytes. Point

@@ -19,7 +19,7 @@ use gpui::{
     IntoElement, LayoutId, Pixels, Styled, Window, fill, px,
 };
 
-use theme::Theme;
+use theme::{GlassSpec, Theme};
 
 /// Backdrop-blur sigma for floating menu/dialog glass — the reference
 /// `.glass-surface` runs `blur(44px)`, and the [`Theme::glass_overlay`] tint is
@@ -45,10 +45,43 @@ pub fn material(corner_radius: f32, blur_radius: f32, child: impl IntoElement) -
             bottom_left: radius,
         },
         blur_radius,
-        glass: false,
+        glass: None,
         tint: None,
-        blur_override: None,
         child: child.into_any_element(),
+    }
+}
+
+/// Which shipped glass look to paint — SwiftUI's `Glass.regular` and
+/// `Glass.clear`. A closed variant rather than knobs: Apple exposes no
+/// numbers on glass either, only the variant and a tint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlassStyle {
+    /// The everyday material: it blurs what it covers and dims it hard.
+    Regular,
+    /// Near-transparent — the backdrop reads through, bent only at the rim.
+    Clear,
+}
+
+/// The glass numbers, read off the theme at build time the way every other
+/// widget reads its colours. Not parameters: a caller who wants different
+/// glass hands over a different theme.
+#[derive(Clone, Copy)]
+struct GlassTokens {
+    spec: GlassSpec,
+    magnify: f32,
+    dispersion: f32,
+}
+
+impl GlassTokens {
+    fn of(theme: &Theme, style: GlassStyle) -> Self {
+        Self {
+            spec: match style {
+                GlassStyle::Regular => theme.glass_regular,
+                GlassStyle::Clear => theme.glass_clear,
+            },
+            magnify: theme.glass_magnify,
+            dispersion: theme.glass_dispersion,
+        }
     }
 }
 
@@ -63,9 +96,8 @@ pub trait Glass: Styled + IntoElement + Sized {
         Material {
             corners: corners_of(&mut self),
             blur_radius,
-            glass: false,
+            glass: None,
             tint: None,
-            blur_override: None,
             child: self.into_any_element(),
         }
     }
@@ -79,7 +111,7 @@ pub trait Glass: Styled + IntoElement + Sized {
     /// It clears the card's `bg`, since the lens paints the fill. Where the
     /// lens cannot run — every renderer but macOS Metal — it paints the frosted
     /// tint instead, so the surface is never invisible.
-    fn glass_effect(mut self) -> Material {
+    fn glass_effect(mut self, theme: &Theme, style: GlassStyle) -> Material {
         let corners = corners_of(&mut self);
         // The lens paints the fill, so the card's own is dropped here rather
         // than at the call site: painting both is what buries the lens, and a
@@ -88,9 +120,8 @@ pub trait Glass: Styled + IntoElement + Sized {
         Material {
             corners,
             blur_radius: 0.0,
-            glass: true,
+            glass: Some(GlassTokens::of(theme, style)),
             tint: None,
-            blur_override: None,
             child: self.into_any_element(),
         }
     }
@@ -114,13 +145,12 @@ pub struct Material {
     /// The glass's own tint, when the caller wants one. `None` is
     /// [`Theme::glass_clear`]'s neutral lift.
     tint: Option<gpui::Hsla>,
-    /// Frost under the lens. Glass does not frost by default.
-    blur_override: Option<f32>,
     /// Held unresolved: a rem-rounded card only becomes pixels against the
     /// window's rem size, which paint is the first place to have.
     corners: Corners<AbsoluteLength>,
     blur_radius: f32,
-    glass: bool,
+    /// `Some` is liquid glass, carrying the theme's numbers.
+    glass: Option<GlassTokens>,
     child: AnyElement,
 }
 
@@ -146,14 +176,6 @@ impl Material {
     /// reach it.
     pub fn tint(mut self, color: gpui::Hsla) -> Self {
         self.tint = Some(color);
-        self
-    }
-
-    /// Frost the backdrop under the lens. Glass is clear by default — seeing
-    /// through is the point — but a surface that has to carry dense content
-    /// can buy legibility with a sigma of its own.
-    pub fn blurred(mut self, sigma: f32) -> Self {
-        self.blur_override = Some(sigma);
         self
     }
 
@@ -217,7 +239,7 @@ impl Element for Material {
         // card's fill into it, so anywhere the lens will not run the fill is
         // painted here — the overlay tint, so the card degrades to a surface
         // with the page showing through rather than to an opaque slab.
-        if self.glass && !lensed(theme) {
+        if self.glass.is_some() && !lensed(theme) {
             let corners = self.corners(window.rem_size());
             window.paint_quad(fill(bounds, theme.glass_overlay()).corner_radii(corners));
             // The lens is what would have carried the caller's colour.
@@ -228,14 +250,25 @@ impl Element for Material {
         if theme.is_glass() {
             // Only glass tints: a plain material paints what it always has,
             // and its caller still owns the fill.
-            let (bevel, tint) = if self.glass {
-                let extent = bounds.size.width.min(bounds.size.height);
-                (
-                    Theme::glass_bevel(f32::from(extent)),
-                    self.tint.unwrap_or_else(|| theme.glass_clear()),
-                )
-            } else {
-                (0.0, gpui::transparent_black())
+            let extent = f32::from(bounds.size.width.min(bounds.size.height));
+            let (bevel, tint, gain, magnify, dispersion, edge, edge_width, edge_aa) = match self
+                .glass
+            {
+                Some(g) => (
+                    // A length, not a share of the box — but two rims cannot
+                    // meet in the middle of a small one.
+                    g.spec.rim.min(extent / 2.0),
+                    self.tint.unwrap_or(g.spec.tint),
+                    g.spec.gain,
+                    g.magnify,
+                    g.dispersion,
+                    g.spec.edge,
+                    g.spec.edge_width,
+                    g.spec.edge_aa,
+                ),
+                // A plain material paints what it always has, and its caller
+                // still owns the fill.
+                None => (0.0, gpui::transparent_black(), 1.0, 0.0, 0.0, 0.0, 0.0, 0.5),
             };
             let corners = self.corners(window.rem_size());
             window.paint_layer(bounds, |window| {
@@ -243,11 +276,19 @@ impl Element for Material {
                     bounds,
                     corners,
                     gpui::GlassEffect {
-                        blur_radius: px(self.blur_override.unwrap_or(self.blur_radius)),
+                        blur_radius: px(self.glass.map_or(self.blur_radius, |g| g.spec.blur)),
                         lens: px(bevel),
-                        magnify: Theme::glass_magnify(),
-                        dispersion: Theme::glass_dispersion(),
+                        // At the rim the lens reaches the shape's own centre:
+                        // a 92pt box shows its middle in the outer pixel, and a
+                        // 192pt one does the same.
+                        reach: px(extent / 2.0),
+                        gain,
+                        magnify,
+                        dispersion,
                         tint,
+                        edge,
+                        edge_width: px(edge_width),
+                        edge_aa: px(edge_aa),
                     },
                 );
                 self.child.paint(window, cx);

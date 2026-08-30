@@ -4,7 +4,7 @@ use gpui::hsla;
 
 use crate::{
     Appearance, color, paint,
-    theme::{Theme, syntax::SyntaxPalette},
+    theme::{GlassSpec, Theme, syntax::SyntaxPalette},
 };
 
 impl Theme {
@@ -58,6 +58,39 @@ impl Theme {
             diff_add: color::oklch(0.765, 0.177, 163.223), // emerald-400
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
+            // Measured 2026-08-30, macOS 26.3 dark, off a real
+            // NSGlassEffectView: a nine-step grey staircase read through the
+            // flat interior gives the line, 48pt bands give the sigma. The rim
+            // and the lit edge are `Clear`'s, unmeasured for this look.
+            glass_regular: GlassSpec {
+                gain: 0.139,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 41.0 / 255.0),
+                blur: 3.5,
+                rim: 18.75,
+                edge: 0.26,
+                edge_width: 1.4,
+                edge_aa: 0.5,
+            },
+            // `Clear` refit 2026-08-30 over the gallery's own backdrops, rms
+            // 0.4 levels on backdrop 0..212. A window that is not key carries a
+            // different material, and this is the key one. The sigma is off a
+            // 2pt rule, which a 48pt band is too wide to resolve. The rim is
+            // off the position-coded backdrop, pooled over four shapes from
+            // 96pt to 320pt and r24 to r84: one curve, rms 1.8pt.
+            glass_clear: GlassSpec {
+                gain: 1.029,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 16.0 / 255.0),
+                blur: 1.2,
+                rim: 18.75,
+                edge: 0.26,
+                edge_width: 1.4,
+                edge_aa: 0.5,
+            },
+            // Matched on screen against a real NSGlassEffectView, which is a
+            // higher bar than the dome's algebra: fitting the formula to their
+            // measured curve lands ~15% short of what the shader then renders.
+            glass_magnify: 1.1,
+            glass_dispersion: 0.005,
             font_sans: "Geist".into(),
             font_mono: "Geist Mono".into(),
             font_sans_fallback: system_sans().into(),
@@ -139,6 +172,36 @@ impl Theme {
             diff_add: color::oklch(0.596, 0.145, 163.225), // emerald-600
             diff_del: color::oklch(0.577, 0.245, 27.325),  // red-600
             diff_hunk_bg: hsla(0.6, 0.35, 0.35, 0.07),
+            // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The
+            // material is not a tone-flip of dark: `regular` keeps its opacity
+            // (86%) and swaps a 19% grey base for a 97% white one, which is why
+            // it reads as ordinary frost here. `clear` stops compressing
+            // altogether — it is very nearly a pure lift.
+            // Same: gain, tint and sigma are light's own, the rest is dark's.
+            glass_regular: GlassSpec {
+                gain: 0.142,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 212.5 / 255.0),
+                blur: 6.0,
+                rim: 18.75,
+                edge: 0.26,
+                edge_width: 1.4,
+                edge_aa: 0.5,
+            },
+            // Carries dark's rim, sigma and edge: light has not been
+            // re-measured since the instrument learned to hold the window key.
+            glass_clear: GlassSpec {
+                gain: 1.041,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 18.8 / 255.0),
+                blur: 1.2,
+                rim: 18.75,
+                edge: 0.26,
+                edge_width: 1.4,
+                edge_aa: 0.5,
+            },
+            // At 1-3pt inside the rim the real material drags the backdrop 26pt
+            // or more, and lets go by 5.5pt; on the shader's profile that is 8.
+            glass_magnify: 1.1,
+            glass_dispersion: 0.005,
             font_sans: "Geist".into(),
             font_mono: "Geist Mono".into(),
             font_sans_fallback: system_sans().into(),

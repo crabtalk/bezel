@@ -29,7 +29,7 @@ use theme::Theme;
 use web_time::Instant;
 
 use crate::{
-    material::{self, Glass as _},
+    material::{Glass as _, GlassStyle},
     popover,
 };
 
@@ -152,12 +152,11 @@ impl Render for Stats {
                 ),
             ));
 
-        // The lens rather than frost alone: a meter floats over the thing it is
-        // measuring, and refracting what moves under it is what says so. Frost
-        // stays underneath — four rows of small digits are the dense content
-        // `blurred` exists for, and clear glass alone leaves them on whatever
-        // the page happens to be painting.
-        card.glass_effect().blurred(material::PANEL_BLUR)
+        // Regular, not clear: a meter floats over the thing it is measuring,
+        // and the everyday material is the one that both refracts and carries
+        // dense content. Its blur and its dimming come with the look — Apple
+        // exposes no way to ask for either, and neither does this.
+        card.glass_effect(&theme, GlassStyle::Regular)
     }
 }
 
