@@ -1436,7 +1436,7 @@ impl Gallery {
                     .id("appearance")
                     .p(px(NAV_ITEM_PAD))
                     .cursor_pointer()
-                    .on_click(cx.listener(move |_, _, _, cx| {
+                    .on_click(cx.listener(move |view, _, _, cx| {
                         appearance::set_mode(
                             if dark {
                                 AppearanceMode::Light
@@ -1445,6 +1445,11 @@ impl Gallery {
                             },
                             cx,
                         );
+                        // The probe's knobs are a look's numbers, and the two
+                        // appearances do not share them: carrying dark's over
+                        // paints light with dark's material and reads as the
+                        // theme being broken.
+                        view.probe_spec = view.probe_look(cx);
                         cx.notify();
                     }))
                     .child(

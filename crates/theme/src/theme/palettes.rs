@@ -58,18 +58,21 @@ impl Theme {
             diff_add: color::oklch(0.765, 0.177, 163.223), // emerald-400
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
-            // Matched on screen 2026-08-30 against a real NSGlassEffectView,
-            // both probes on the same backdrop with the reference window key.
-            // Saturation is what a gain alone cannot reach: over the neutral
-            // bar the real material lands at 0.39 of the backdrop, and on a
-            // saturated one its channels spread 0.60/0.37/0.19 — dark, with
-            // the colour still there. The rim and the lit edge are `Clear`'s,
-            // untouched for this look.
+            // Measured 2026-08-31 off a real NSGlassEffectView, one
+            // whole-canvas tone at a time: a fill the size of the probe cannot
+            // be contaminated by a 10pt blur, which is what every earlier
+            // reading of this look got wrong. Six greys give the line at rms
+            // 0.9 levels, four saturated tones agree on the saturation to 0.1,
+            // and the sigma is the gaussian that best fits a 70pt bar edge at
+            // the centre of a 320pt glass, rms 0.4 levels. Over a backdrop that
+            // is NOT locally flat the real material saturates less than these
+            // numbers reproduce, so its saturation is not the per-pixel one
+            // this models. Rim and lit edge are `Clear`'s.
             glass_regular: GlassSpec {
-                gain: 0.39,
-                saturation: 2.4,
-                tint: gpui::hsla(0.0, 0.0, 1.0, 41.0 / 255.0),
-                blur: 7.0,
+                gain: 0.311,
+                saturation: 2.55,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 11.0 / 255.0),
+                blur: 10.8,
                 rim: 18.75,
                 edge: 0.26,
                 edge_width: 1.4,
@@ -182,13 +185,16 @@ impl Theme {
             // (86%) and swaps a 19% grey base for a 97% white one, which is why
             // it reads as ordinary frost here. `clear` stops compressing
             // altogether — it is very nearly a pure lift.
-            // Same: gain, tint and sigma are light's own, the rest is dark's.
-            // Saturation is unread in either appearance; 1 is the identity.
+            // Measured 2026-08-31, same instrument as dark. Light `regular`
+            // is very nearly a white sheet — 84% of the output is tint — so
+            // the little backdrop that survives is pushed much harder to keep
+            // its colour: saturation 4.27 against dark's 2.55, each within 0.1
+            // over four hues. Rim and lit edge are dark's, unmeasured here.
             glass_regular: GlassSpec {
-                gain: 0.142,
-                saturation: 1.0,
-                tint: gpui::hsla(0.0, 0.0, 1.0, 212.5 / 255.0),
-                blur: 6.0,
+                gain: 0.139,
+                saturation: 4.27,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 214.0 / 255.0),
+                blur: 8.9,
                 rim: 18.75,
                 edge: 0.26,
                 edge_width: 1.4,
