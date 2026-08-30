@@ -2664,8 +2664,10 @@ impl Gallery {
                     .child(hint(
                         &theme,
                         "CPU is the whole process — user plus system, every thread — \
-                         as a percentage of one core, the figure Activity Monitor \
-                         prints. The web build has no such call and reads —.",
+                         as a percentage of one core, and MEM is that same \
+                         process's resident memory: the two figures Activity \
+                         Monitor prints. A browser tab can see neither of its own \
+                         process, so both read — on the web build.",
                     ))
                     .child(hint(
                         &theme,
