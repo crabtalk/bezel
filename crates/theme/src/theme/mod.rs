@@ -13,14 +13,19 @@ mod syntax;
 pub use install::set_palette;
 pub use syntax::{HighlightKind, SyntaxPalette};
 
-/// One shipped glass look. `out = gain * backdrop + tint`, over a backdrop
-/// blurred at `blur`.
+/// One shipped glass look. `out = gain * saturated(backdrop) + tint`, over a
+/// backdrop blurred at `blur`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GlassSpec {
     /// Slope of the transfer line. Below 1 compresses contrast toward
     /// `tint`; above 1 it brightens and slightly expands, which is what light
     /// `Clear` measures. Named for what it is, not for one of its directions.
     pub gain: f32,
+    /// How far the backdrop's chroma is pushed from its own grey, before the
+    /// gain drops the level. A gain alone moves level and colour together, so
+    /// this is the only way a surface goes dark and keeps its colours. 1 is
+    /// the pass-through `Clear` measures.
+    pub saturation: f32,
     /// Its offset — the look's own tone.
     pub tint: Hsla,
     /// Gaussian sigma under the lens, in logical pixels. It stands in for the

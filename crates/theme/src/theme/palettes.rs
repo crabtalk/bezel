@@ -58,14 +58,18 @@ impl Theme {
             diff_add: color::oklch(0.765, 0.177, 163.223), // emerald-400
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
-            // Measured 2026-08-30, macOS 26.3 dark, off a real
-            // NSGlassEffectView: a nine-step grey staircase read through the
-            // flat interior gives the line, 48pt bands give the sigma. The rim
-            // and the lit edge are `Clear`'s, unmeasured for this look.
+            // Matched on screen 2026-08-30 against a real NSGlassEffectView,
+            // both probes on the same backdrop with the reference window key.
+            // Saturation is what a gain alone cannot reach: over the neutral
+            // bar the real material lands at 0.39 of the backdrop, and on a
+            // saturated one its channels spread 0.60/0.37/0.19 — dark, with
+            // the colour still there. The rim and the lit edge are `Clear`'s,
+            // untouched for this look.
             glass_regular: GlassSpec {
-                gain: 0.139,
+                gain: 0.39,
+                saturation: 2.4,
                 tint: gpui::hsla(0.0, 0.0, 1.0, 41.0 / 255.0),
-                blur: 3.5,
+                blur: 7.0,
                 rim: 18.75,
                 edge: 0.26,
                 edge_width: 1.4,
@@ -79,6 +83,7 @@ impl Theme {
             // 96pt to 320pt and r24 to r84: one curve, rms 1.8pt.
             glass_clear: GlassSpec {
                 gain: 1.029,
+                saturation: 1.0,
                 tint: gpui::hsla(0.0, 0.0, 1.0, 16.0 / 255.0),
                 blur: 1.2,
                 rim: 18.75,
@@ -178,8 +183,10 @@ impl Theme {
             // it reads as ordinary frost here. `clear` stops compressing
             // altogether — it is very nearly a pure lift.
             // Same: gain, tint and sigma are light's own, the rest is dark's.
+            // Saturation is unread in either appearance; 1 is the identity.
             glass_regular: GlassSpec {
                 gain: 0.142,
+                saturation: 1.0,
                 tint: gpui::hsla(0.0, 0.0, 1.0, 212.5 / 255.0),
                 blur: 6.0,
                 rim: 18.75,
@@ -191,6 +198,7 @@ impl Theme {
             // re-measured since the instrument learned to hold the window key.
             glass_clear: GlassSpec {
                 gain: 1.041,
+                saturation: 1.0,
                 tint: gpui::hsla(0.0, 0.0, 1.0, 18.8 / 255.0),
                 blur: 1.2,
                 rim: 18.75,

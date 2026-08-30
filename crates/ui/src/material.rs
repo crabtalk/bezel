@@ -248,49 +248,45 @@ impl Element for Material {
             }
         }
         if theme.is_glass() {
-            // Only glass tints: a plain material paints what it always has,
-            // and its caller still owns the fill.
             let extent = f32::from(bounds.size.width.min(bounds.size.height));
-            let (bevel, tint, gain, magnify, dispersion, edge, edge_width, edge_aa) = match self
-                .glass
-            {
-                Some(g) => (
+            // Each look is one `GlassEffect`; a plain material is the same
+            // primitive with the lens off, and its caller still owns the fill.
+            let effect = match self.glass {
+                Some(g) => gpui::GlassEffect {
+                    blur_radius: px(g.spec.blur),
                     // A length, not a share of the box — but two rims cannot
                     // meet in the middle of a small one.
-                    g.spec.rim.min(extent / 2.0),
-                    self.tint.unwrap_or(g.spec.tint),
-                    g.spec.gain,
-                    g.magnify,
-                    g.dispersion,
-                    g.spec.edge,
-                    g.spec.edge_width,
-                    g.spec.edge_aa,
-                ),
-                // A plain material paints what it always has, and its caller
-                // still owns the fill.
-                None => (0.0, gpui::transparent_black(), 1.0, 0.0, 0.0, 0.0, 0.0, 0.5),
+                    lens: px(g.spec.rim.min(extent / 2.0)),
+                    // At the rim the lens reaches the shape's own centre: a
+                    // 92pt box shows its middle in the outer pixel, and a
+                    // 192pt one does the same.
+                    reach: px(extent / 2.0),
+                    gain: g.spec.gain,
+                    saturation: g.spec.saturation,
+                    magnify: g.magnify,
+                    dispersion: g.dispersion,
+                    tint: self.tint.unwrap_or(g.spec.tint),
+                    edge: g.spec.edge,
+                    edge_width: px(g.spec.edge_width),
+                    edge_aa: px(g.spec.edge_aa),
+                },
+                None => gpui::GlassEffect {
+                    blur_radius: px(self.blur_radius),
+                    lens: px(0.0),
+                    reach: px(extent / 2.0),
+                    gain: 1.0,
+                    saturation: 1.0,
+                    magnify: 0.0,
+                    dispersion: 0.0,
+                    tint: gpui::transparent_black(),
+                    edge: 0.0,
+                    edge_width: px(0.0),
+                    edge_aa: px(0.5),
+                },
             };
             let corners = self.corners(window.rem_size());
             window.paint_layer(bounds, |window| {
-                window.paint_backdrop_blur(
-                    bounds,
-                    corners,
-                    gpui::GlassEffect {
-                        blur_radius: px(self.glass.map_or(self.blur_radius, |g| g.spec.blur)),
-                        lens: px(bevel),
-                        // At the rim the lens reaches the shape's own centre:
-                        // a 92pt box shows its middle in the outer pixel, and a
-                        // 192pt one does the same.
-                        reach: px(extent / 2.0),
-                        gain,
-                        magnify,
-                        dispersion,
-                        tint,
-                        edge,
-                        edge_width: px(edge_width),
-                        edge_aa: px(edge_aa),
-                    },
-                );
+                window.paint_backdrop_blur(bounds, corners, effect);
                 self.child.paint(window, cx);
             });
         } else {
