@@ -59,6 +59,7 @@ const CARD_HEIGHT: f32 = 116.0;
 const CARD_IMAGE_WIDTH: f32 = 180.0;
 const CARD_COVER_HEIGHT: f32 = 200.0;
 const CARD_PADDING: f32 = 14.0;
+const CARD_BORDER: f32 = 1.0;
 const CARD_ICON: f32 = 16.0;
 const CARD_COVER: f32 = 44.0;
 /// Image metrics.
@@ -1332,9 +1333,10 @@ fn image(
 /// and title, which is what an inline mention would be if shaped text had
 /// anywhere to put a picture.
 ///
-/// The text is a fixed height and its footer pinned to the bottom because a
+/// The row is a fixed height with its footer pinned to the bottom, because a
 /// preview resolves *after* the card has painted — a blurb arriving into a box
-/// that grows would shove every block below it down the page.
+/// that grows would shove every block below it down the page. An embed's cover
+/// holds that height, so its text hugs.
 fn bookmark(
     ix: usize,
     url: &str,
@@ -1405,7 +1407,6 @@ fn bookmark(
         .flex()
         .flex_col()
         .min_w_0()
-        .h(px(CARD_HEIGHT))
         .px(px(CARD_PADDING))
         .py(px(CARD_PADDING - 2.0))
         .child(
@@ -1437,16 +1438,14 @@ fn bookmark(
                 .child(div().truncate().child(label)),
         );
 
-    let picture = div()
+    let picture = corners(div(), form)
         .bg(theme.surface)
         .flex()
         .items_center()
         .justify_center()
         .overflow_hidden()
         .child(match preview.image {
-            Some(image) => img(image)
-                .size_full()
-                .object_fit(ObjectFit::Cover)
+            Some(image) => corners(img(image).size_full().object_fit(ObjectFit::Cover), form)
                 .with_fallback(move || mark(CARD_COVER))
                 .into_any_element(),
             None => mark(CARD_COVER),
@@ -1459,7 +1458,7 @@ fn bookmark(
         .w_full()
         .overflow_hidden()
         .rounded(px(Theme::button_radius()))
-        .border_1()
+        .border(px(CARD_BORDER))
         .border_color(theme.border)
         .bg(theme.surface_card)
         .cursor(CursorStyle::PointingHand)
@@ -1476,6 +1475,17 @@ fn bookmark(
             .child(picture.flex_none().w(px(CARD_IMAGE_WIDTH)).h_full())
     }
     .into_any_element()
+}
+
+/// The card's corners, on the panel that reaches them: a content mask is a
+/// rectangle, so a picture paints square over a rounded card unless it carries
+/// the radius itself, concentric inside the card's border.
+fn corners<T: Styled>(element: T, form: Form) -> T {
+    let corner = px(Theme::inset_radius(Theme::button_radius(), CARD_BORDER));
+    match form {
+        Form::Embed => element.rounded_t(corner),
+        _ => element.rounded_r(corner),
+    }
 }
 
 /// The mark a site gets before anyone has fetched its favicon: its host's first
