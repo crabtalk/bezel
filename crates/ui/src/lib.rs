@@ -19,6 +19,7 @@ pub mod icons;
 pub mod input;
 pub mod list;
 pub mod loaders;
+pub mod menu;
 pub mod menubar;
 pub mod pagination;
 pub mod palette;
