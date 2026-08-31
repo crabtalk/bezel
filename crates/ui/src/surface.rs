@@ -1,4 +1,4 @@
-//! [`surface`] — the backdrop surface a floating card sits on: wraps a
+//! [`crate::surface`] — the backdrop surface a floating card sits on: wraps a
 //! popover/dialog card so its ENTIRE subtree paints inside one scene layer (a
 //! single draw order).
 //!

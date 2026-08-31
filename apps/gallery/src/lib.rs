@@ -586,7 +586,7 @@ pub const FOUNDATIONS: &[Group] = &[
             section("color", "Color", "crates/theme/src/lib.rs"),
             section("typography", "Typography", "crates/theme/src/lib.rs"),
             section("layout", "Layout", "crates/theme/src/lib.rs"),
-            section("material", "Materials", "crates/ui/src/material.rs"),
+            section("material", "Materials", "crates/ui/src/surface.rs"),
         ],
     },
     Group {

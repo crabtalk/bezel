@@ -9,8 +9,8 @@
 //! Two things it exists to get right.
 //!
 //! **The blur corners follow the border.** [`Shape`] rounds the bar, and
-//! [`crate::material::Glass::material`] cuts the backdrop blur to the rounding it finds — a
-//! blur squarer than its border frosts the corners outside it.
+//! [`crate::surface::Surfaced::surface`] cuts the surface to the rounding it
+//! finds — a blur squarer than its border frosts the corners outside it.
 //!
 //! **The centre is centred on the bar, not on what the clusters leave.** The
 //! two rails are equal-flex and the centre is not: clusters of five controls

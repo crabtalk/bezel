@@ -169,7 +169,7 @@ pub enum Orb {
 ///
 /// Everything is circles, because that is the whole vocabulary gpui gives at
 /// the pinned rev: no rotation transform, no conic gradient, and no blur filter
-/// on an element ([`crate::material`]'s backdrop blur blurs what is *behind* a
+/// on an element ([`crate::surface`]'s backdrop blur blurs what is *behind* a
 /// surface and cannot soften the surface itself). So the glow is a `BoxShadow`,
 /// the ring is eight positioned dots rather than a swept arc, and every
 /// position is arithmetic — all of it pure and unit-tested in

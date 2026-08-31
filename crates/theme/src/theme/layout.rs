@@ -83,7 +83,7 @@ impl Theme {
     /// group boxes.
     ///
     /// A glass surface paints this on its border **and** hands the same number
-    /// to `bezel::ui::material`'s backdrop blur. The two must agree: a blur cut
+    /// to `bezel::ui::surface`'s backdrop blur. The two must agree: a blur cut
     /// to a different radius frosts square corners outside a round border, and
     /// it shows only on glass and only at the corners. So the radius is named
     /// once and read at both ends, rather than written twice sixty lines apart
