@@ -43,3 +43,14 @@ pub use ui;
 /// The exact gpui these components were built against. Depend on this rather
 /// than declaring your own — see the crate docs.
 pub use gpui;
+
+/// The platform backend, under the `platform` feature: `application()` and the
+/// `Platform` for the target being built.
+///
+/// gpui core knows no platform — `Application` can only be built
+/// `with_platform` — so this is the crate that opens a window, and its version
+/// has to be the one above. Gated rather than carried, because a wasm consumer
+/// reaches for the browser's backend instead and a library consumer opens no
+/// window at all.
+#[cfg(feature = "platform")]
+pub use gpui_platform;

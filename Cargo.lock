@@ -575,6 +575,7 @@ version = "0.1.4"
 dependencies = [
  "bezel-agent",
  "bezel-gpui",
+ "bezel-gpui-platform",
  "bezel-motion",
  "bezel-theme",
  "bezel-ui",
