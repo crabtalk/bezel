@@ -52,7 +52,7 @@ theme::set_brand(
 ```
 
 Lightness is not a knob, so a branded palette keeps the contrast ratios the
-shipped one was verified at. The gallery's **Create** page is this struct with
+shipped one was verified at. The gallery's **Theme** page is this struct with
 sliders on it, and prints the call back.
 
 For colors a hue rotation cannot reach, register a palette builder instead — it

@@ -86,7 +86,7 @@ pub fn init(cx: &mut App) {
 
 pub mod highlight;
 
-pub mod create;
+pub mod brand;
 pub mod patterns;
 pub mod preview;
 mod rail;
@@ -582,7 +582,7 @@ pub const FOUNDATIONS: &[Group] = &[
     Group {
         title: "Style",
         sections: &[
-            section("create", "Create", "apps/gallery/src/create.rs"),
+            section("theme", "Theme", "apps/gallery/src/brand.rs"),
             section("color", "Color", "crates/theme/src/lib.rs"),
             section(
                 "typography",
@@ -801,10 +801,10 @@ pub struct Gallery {
     /// The composer's knobs, and which of its three files is showing. What they
     /// are *set to* is the brand global — the page keeps no palette.
     probe_knobs: [gpui::FocusHandle; 13],
-    brand_knobs: [gpui::FocusHandle; create::KNOB_COUNT],
+    brand_knobs: [gpui::FocusHandle; brand::KNOB_COUNT],
     /// The type-scale probe on the Typography page.
     type_probe: gpui::FocusHandle,
-    create_file: usize,
+    brand_file: usize,
     tab_strip: [gpui::FocusHandle; 3],
     /// Which button was last pressed, and by what — the only way to see that a
     /// keyboard press and a click reach the same place.
@@ -993,7 +993,7 @@ impl Gallery {
             brand_knobs: std::array::from_fn(|_| cx.focus_handle()),
             probe_knobs: std::array::from_fn(|_| cx.focus_handle()),
             type_probe: cx.focus_handle(),
-            create_file: 0,
+            brand_file: 0,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             rail,
             pane_scroll: gpui::ScrollHandle::new(),
@@ -1541,7 +1541,7 @@ impl Gallery {
 
         match key {
             // ---- Foundations -------------------------------------------------
-            "create" => create::page(self, &theme, window, cx),
+            "theme" => brand::page(self, &theme, window, cx),
 
             "color" => section
                 .child(hint(
