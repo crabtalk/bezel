@@ -287,6 +287,10 @@ pub struct TextField {
     /// A context this field claims *in addition* to [`KEY_CONTEXT`] and
     /// [`MULTILINE_KEY_CONTEXT`] — see [`Self::with_key_context`].
     key_context: Option<SharedString>,
+    /// Whether the field paints a box around itself. Off for a field that
+    /// stands in for text already in place — a rename in a list row, where the
+    /// box would be a second frame inside the row's own.
+    frame: bool,
     /// Set by anything that moves the caret, cleared once a frame has scrolled
     /// it back into view.
     ///
@@ -302,6 +306,7 @@ impl TextField {
             // A field is a tab stop from birth; a stateless control needs
             // `focus::focusable` because its handle lives in the caller.
             focus_handle: cx.focus_handle().tab_stop(true),
+            frame: true,
             content: "".into(),
             placeholder: "".into(),
             shape: Shape::Line,
@@ -363,6 +368,13 @@ impl TextField {
     /// ```
     pub fn with_key_context(mut self, context: impl Into<SharedString>) -> Self {
         self.key_context = Some(context.into());
+        self
+    }
+
+    /// Draw without the box, padding and focus ring. The caller owns the
+    /// spacing then, and owns showing that the field is focused.
+    pub fn with_frame(mut self, frame: bool) -> Self {
+        self.frame = frame;
         self
     }
 
@@ -1292,15 +1304,18 @@ impl Render for TextField {
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .w_full()
-            .px(px(10.0))
-            .py(px(7.0))
-            .rounded(px(Theme::button_radius()))
-            .bg(theme.input_bg)
-            .border_1()
-            .border_color(if self.focus_handle.is_focused(_window) {
-                theme.ring
-            } else {
-                theme.border
+            .when(self.frame, |field| {
+                field
+                    .px(px(10.0))
+                    .py(px(7.0))
+                    .rounded(px(Theme::button_radius()))
+                    .bg(theme.input_bg)
+                    .border_1()
+                    .border_color(if self.focus_handle.is_focused(_window) {
+                        theme.ring
+                    } else {
+                        theme.border
+                    })
             })
             .text_size(px(13.0))
             .line_height(px(18.0))
