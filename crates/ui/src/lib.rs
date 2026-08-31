@@ -24,6 +24,7 @@ pub mod pagination;
 pub mod palette;
 pub mod popover;
 pub mod scroll;
+pub mod stack;
 pub mod stats;
 pub mod surface;
 pub mod table;

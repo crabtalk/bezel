@@ -5,6 +5,7 @@
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`.
 
+use crate::stack;
 use gpui::{App, Axis, Div, DragMoveEvent, ElementId, SharedString, div, prelude::*, px};
 use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
 
@@ -198,12 +199,8 @@ pub trait Controls: ThemeExt {
     /// abstraction and cost the caller its control over both.
     fn select_trigger(&self, label: impl Into<SharedString>) -> Div {
         let theme = self.theme();
-        div()
-            .flex()
-            .flex_row()
-            .items_center()
+        stack::row()
             .justify_between()
-            .gap(px(8.0))
             .px(px(10.0))
             .py(px(7.0))
             .rounded(px(Theme::button_radius()))

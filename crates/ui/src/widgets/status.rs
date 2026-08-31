@@ -6,7 +6,7 @@
 use gpui::{Div, SharedString, div, prelude::*, px};
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
-use crate::widgets::Layout;
+use crate::{stack, widgets::Layout};
 
 /// Padding inside a [`Status::step_row`] and the [`Status::step_output`] under
 /// it — the two have to agree or the output's first character sits left of the
@@ -45,11 +45,7 @@ pub trait Status: ThemeExt {
         expanded: Option<bool>,
     ) -> Div {
         let theme = self.theme();
-        div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(8.0))
+        stack::row()
             .px(px(STEP_PAD_X))
             .py(px(STEP_PAD_Y))
             .cursor_pointer()
@@ -155,7 +151,7 @@ pub trait Status: ThemeExt {
             .flex()
             .flex_row()
             .items_start()
-            .gap(px(8.0))
+            .gap(px(Theme::SPACE))
             .child(
                 div().flex_none().mt(px(2.0)).child(
                     crate::icons::icon(crate::icons::DANGER_TRIANGLE)
@@ -186,7 +182,7 @@ pub trait Status: ThemeExt {
             .flex()
             .flex_row()
             .items_start()
-            .gap(px(8.0))
+            .gap(px(Theme::SPACE))
             .child(
                 div().flex_none().mt(px(2.0)).child(
                     crate::icons::icon(crate::icons::DANGER_TRIANGLE)

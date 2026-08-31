@@ -64,7 +64,7 @@ impl Render for Tooltip {
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(8.0))
+            .gap(px(Theme::SPACE))
             .text_style(TextStyle::Callout)
             .text_color(theme.text)
             .child(self.text.clone())

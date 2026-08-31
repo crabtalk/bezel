@@ -8,6 +8,7 @@
 //! empty because every method below has a default. Not object-safe — its
 //! methods are statically dispatched onto [`Theme`].
 
+use crate::stack;
 use gpui::{AnyElement, Div, SharedString, div, prelude::*, px};
 use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
 
@@ -127,13 +128,10 @@ pub trait Scaffolding: ThemeExt {
         // element rounds itself, and the outer radius is the inner one plus the gap
         // it sits behind. Always present, transparent when unselected, so selecting a
         // card never reflows the row.
-        div()
+        stack::column()
             .flex_1()
             .min_w_0()
-            .flex()
-            .flex_col()
             .items_center()
-            .gap(px(8.0))
             .cursor_pointer()
             .child(
                 div()
@@ -233,7 +231,7 @@ pub trait Scaffolding: ThemeExt {
             .flex_row()
             .flex_wrap()
             .items_center()
-            .gap_x(px(8.0))
+            .gap_x(px(Theme::SPACE))
             .gap_y(px(2.0))
             .text_style(TextStyle::Subheadline)
             .text_color(theme.text_muted.opacity(0.65));

@@ -5,7 +5,9 @@
 [![gpui](https://img.shields.io/crates/v/bezel-gpui.svg?style=flat-square&label=gpui)](https://crates.io/crates/bezel-gpui)
 
 A gpui component library, SwiftUI-lean: style flows through the environment,
-never through parameters.
+never through parameters, and its numbers are measured rather than chosen — the
+type ladder is `NSFont.preferredFont(forTextStyle:)`, the gap between siblings
+is `NSStackView().spacing`. [CONTRIBUTING.md](CONTRIBUTING.md) has the laws.
 
 https://github.com/user-attachments/assets/ba8a8946-edd9-4bc9-9fd2-a39fa249f495
 

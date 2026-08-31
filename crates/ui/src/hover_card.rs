@@ -98,7 +98,7 @@ impl Render for HoverCard {
             .p(px(12.0))
             .flex()
             .flex_col()
-            .gap(px(8.0))
+            .gap(px(Theme::SPACE))
             .child(heading)
             .child(
                 div()

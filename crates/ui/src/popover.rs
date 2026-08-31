@@ -11,7 +11,7 @@
 //! classification) lives in free functions with unit tests; the elements only
 //! feed them measurements/events.
 
-use crate::icons;
+use crate::{icons, stack};
 use gpui::{
     Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
 };
@@ -1060,11 +1060,7 @@ pub fn kbd_hint(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
 /// the row labels' own inset so the line reads as the head of the list rather
 /// than a control dropped on top of it.
 pub fn search_line(theme: &Theme, input: AnyElement) -> gpui::Div {
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(8.0))
+    stack::row()
         .mx(px(-MENU_PAD))
         .px(px(MENU_PAD + 8.0))
         .py(px(7.0))
@@ -1181,7 +1177,7 @@ pub fn error_row(theme: &Theme, message: impl Into<SharedString>) -> gpui::Div {
         .flex()
         .flex_col()
         .gap(px(6.0))
-        .p(px(Theme::SPACE_SM))
+        .p(px(Theme::SPACE))
         .text_style(TextStyle::Callout)
         .text_color(theme.danger)
         .child(message.into())

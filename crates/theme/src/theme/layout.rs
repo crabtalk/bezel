@@ -205,9 +205,15 @@ impl Theme {
     pub const fn inset_radius(outer: f32, inset: f32) -> f32 {
         if outer > inset { outer - inset } else { 0.0 }
     }
-    /// Base spacing steps.
-    pub const SPACE_XS: f32 = 4.0;
-    pub const SPACE_SM: f32 = 8.0;
-    pub const SPACE_MD: f32 = 12.0;
-    pub const SPACE_LG: f32 = 16.0;
+    /// The gap between siblings. Measured on macOS 26, 2026-08-31:
+    /// `NSStackView().spacing`, visual format's `-`, and
+    /// `constraint(equalToSystemSpacingAfter:multiplier: 1)` all report 8.
+    ///
+    /// Carried by `ui::stack::row` and `ui::stack::column`, so a call site
+    /// that wants the standard gap writes no number at all — SwiftUI's shape,
+    /// where `VStack(spacing:)` takes the system's when given nothing.
+    pub const SPACE: f32 = 8.0;
+    /// The margin from content to its container's edge. Same measurement,
+    /// visual format's `|-`.
+    pub const CONTENT_MARGIN: f32 = 20.0;
 }
