@@ -24,7 +24,7 @@
 //! relative insets after layout, so — like a CSS transform — siblings never move.
 //! gpui has no scale transform for `div`s at the pinned rev (only `svg`
 //! transformations), so `menu-in`/`dialog-in` approximate their scale component
-//! with fade + translate; see the module report in ARCHITECTURE §4 follow-ups.
+//! with fade + translate.
 
 use std::{
     cell::RefCell,
