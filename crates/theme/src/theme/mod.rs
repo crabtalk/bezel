@@ -311,6 +311,12 @@ pub struct Theme {
     // Numbers, so they flow with the appearance the way every other token
     // does. `Glass::glass_effect` reads them off the theme it is handed;
     // nothing here is a parameter on a component.
+    /// How opaque the frost over the blurred window is; `1.0` composites the
+    /// window opaque.
+    pub glass_alpha: f32,
+    /// Whether chrome paints the glass recipes — translucent popovers and
+    /// cards, and the lens. An opaque window can still carry layered chrome.
+    pub glass_chrome: bool,
     /// The surfaces this theme can paint. Blur belongs to the look, not to
     /// the caller: Apple exposes no blur parameter on either family, only the
     /// thickness or the variant.

@@ -3,10 +3,7 @@
 
 use gpui::{Hsla, WindowBackgroundAppearance, hsla};
 
-use crate::{
-    Appearance, color, paint,
-    theme::{Theme, layout},
-};
+use crate::{Appearance, color, paint, theme::Theme};
 
 impl Theme {
     /// The frost tint painted over the blurred window background (macOS glass),
@@ -14,7 +11,7 @@ impl Theme {
     /// `surface`, matched to the reference vibrancy scrim `hsl(0 0% 3%)`.
     /// Light: the material's own measured tone. Opaque, this IS the surface tone.
     pub fn glass(&self) -> Hsla {
-        let alpha = layout::frost();
+        let alpha = self.glass_alpha;
         if alpha >= 1.0 {
             return self.surface;
         }
@@ -29,18 +26,17 @@ impl Theme {
     /// [`Self::bg`](Self#structfield.bg), so a window that opens blurred is not
     /// then covered over by the paint that made the blur pointless.
     pub fn window_bg(&self) -> Hsla {
-        if self.is_glass() {
+        if self.glass_window() {
             self.glass()
         } else {
             self.bg
         }
     }
 
-    /// Whether this appearance paints translucent chrome over the blurred
-    /// desktop. Glass-only recipes — backdrop blurs, translucent popover
-    /// tints, per-glyph edge fades — must gate on this rather than reading the
-    /// brand's alpha, because an opaque appearance can still be asked for one.
-    pub fn is_glass(&self) -> bool {
+    /// Whether the window composites translucent. The window's own fill and
+    /// compositing mode gate on this; what is painted inside it gates on
+    /// [`Self::glass_chrome`](crate::Theme#structfield.glass_chrome).
+    pub fn glass_window(&self) -> bool {
         self.glass().a < 1.0
     }
 
@@ -69,7 +65,7 @@ impl Theme {
     /// over the 0.80 frost — lowered on user request). Dark's 3% white wash
     /// is already glass-native.
     pub fn input_glass_bg(&self) -> Hsla {
-        if self.is_glass() && matches!(self.appearance, Appearance::Light) {
+        if self.glass_chrome && matches!(self.appearance, Appearance::Light) {
             self.input_bg.opacity(0.30)
         } else {
             self.input_bg
@@ -84,7 +80,7 @@ impl Theme {
     /// already needs to keep rows on a known background. An opaque platform has
     /// no frost beneath the card, so it takes the grey below its white page.
     pub fn card_glass_bg(&self) -> Hsla {
-        if !self.is_glass() {
+        if !self.glass_chrome {
             return self.surface;
         }
         match self.appearance {
@@ -110,7 +106,7 @@ impl Theme {
     /// user switches back to dark. See zed's `crates/zed/src/main.rs`, which
     /// runs the same loop on every settings change.
     pub fn window_background_appearance(&self) -> WindowBackgroundAppearance {
-        if self.is_glass() {
+        if self.glass_window() {
             WindowBackgroundAppearance::Blurred
         } else {
             WindowBackgroundAppearance::Opaque

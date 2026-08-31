@@ -60,10 +60,14 @@ pub struct Brand {
     /// The base corner radius; every other corner is a ratio of it. See
     /// [`Theme::BASE_RADIUS`].
     pub radius: f32,
-    /// How opaque the frost over the blurred window is — `1.0` is opaque, and
-    /// turns glass off entirely. See [`Theme::GLASS_ALPHA`], which is where it
-    /// starts, and [`Theme::glass`].
+    /// How opaque the frost over the blurred window is — `1.0` composites the
+    /// window opaque. See [`Theme::GLASS_ALPHA`], which is where it starts,
+    /// and [`Theme::glass`].
     pub glass: f32,
+    /// Whether chrome paints the glass recipes. Separate from [`Self::glass`]:
+    /// an opaque window can still carry layered chrome, which is what a
+    /// Reduce-transparency setting asks for and the system's own does not do.
+    pub glass_chrome: bool,
 }
 
 impl Global for Brand {}
@@ -75,6 +79,7 @@ impl Default for Brand {
             accent: Tint::NONE,
             radius: Theme::BASE_RADIUS,
             glass: Theme::GLASS_ALPHA,
+            glass_chrome: Theme::GLASS_ALPHA < 1.0,
         }
     }
 }
@@ -103,6 +108,8 @@ impl Theme {
 impl Brand {
     /// Rotate a palette onto this brand's hues.
     pub fn apply(&self, theme: &mut Theme) {
+        theme.glass_alpha = self.glass;
+        theme.glass_chrome = self.glass_chrome;
         // Every colour token, with the rule doing the choosing: a token that is
         // already grey takes the tint, and one that already carries a hue —
         // danger, warning, success — is semantic and keeps it. Translucent ink

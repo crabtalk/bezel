@@ -80,23 +80,10 @@ impl<E: Styled> Sizing for E {}
 /// The branded base radius behind [`Theme::radius`], as raw `f32` bits.
 static BASE: AtomicU32 = AtomicU32::new(Theme::BASE_RADIUS.to_bits());
 
-/// The branded frost alpha behind [`Theme::glass`], as raw `f32` bits.
-static FROST: AtomicU32 = AtomicU32::new(Theme::GLASS_ALPHA.to_bits());
-
 /// Point the radius accessors at a base. Called by
 /// [`Theme::install`](crate::theme::Theme::install).
 pub(crate) fn set_base_radius(radius: f32) {
     BASE.store(radius.to_bits(), Ordering::Relaxed);
-}
-
-/// Point [`Theme::glass`] at a frost alpha. Called by
-/// [`Theme::install`](crate::theme::Theme::install).
-pub(crate) fn set_frost(alpha: f32) {
-    FROST.store(alpha.to_bits(), Ordering::Relaxed);
-}
-
-pub(crate) fn frost() -> f32 {
-    f32::from_bits(FROST.load(Ordering::Relaxed))
 }
 
 impl Theme {

@@ -23,7 +23,6 @@ impl Theme {
         let mut theme = build(appearance);
         brand.apply(&mut theme);
         layout::set_base_radius(brand.radius);
-        layout::set_frost(brand.glass);
         Self::install_custom(theme, cx);
     }
 

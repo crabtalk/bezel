@@ -157,11 +157,11 @@ pub struct Surface {
 /// which is why this tracks the gpui in use rather than the platform alone.
 const LENSED: bool = cfg!(any(target_os = "macos", target_family = "wasm"));
 
-/// Whether [`Glass::glass_effect`] will actually refract here, rather than
-/// falling back to the flat backdrop tint. The primitive is macOS Metal's, and
-/// an opaque appearance has nothing behind it to lens.
+/// Whether [`Glass::glass_effect`] will actually refract here, or fall back to
+/// the flat backdrop tint. The primitive is macOS Metal's and wgpu's, and
+/// chrome with the recipes off paints no lens.
 pub fn lensed(theme: &Theme) -> bool {
-    LENSED && theme.is_glass()
+    LENSED && theme.glass_chrome
 }
 
 impl Surface {
@@ -245,7 +245,7 @@ impl Element for Surface {
             let tint = self.tint.unwrap_or(glass.spec.tint);
             window.paint_quad(fill(bounds, tint).corner_radii(corners));
         }
-        if theme.is_glass() {
+        if theme.glass_chrome {
             let extent = f32::from(bounds.size.width.min(bounds.size.height));
             let effect = gpui::GlassEffect {
                 blur_radius: px(glass.spec.blur),
