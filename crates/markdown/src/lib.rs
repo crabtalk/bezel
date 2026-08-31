@@ -32,6 +32,7 @@ pub mod preview;
 pub mod render;
 pub mod select;
 pub mod serialize;
+pub mod typography;
 
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, Text};
 pub use edit::{Shortcut, shortcut};
@@ -41,3 +42,4 @@ pub use preview::{LinkPreview, Preview, set_link_preview};
 pub use render::{BlockLayouts, Caption, markdown, render, render_with_selection};
 pub use select::{Cursor, Selection};
 pub use serialize::serialize;
+pub use typography::{Metrics, Typography, set_typography};

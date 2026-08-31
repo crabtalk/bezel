@@ -62,6 +62,11 @@ impl TextStyle {
         }
     }
 
+    /// The size this role paints at, which [`set_base_text_size`] moves.
+    pub fn painted(self) -> f32 {
+        self.size() * base_text_size() / Self::Body.size()
+    }
+
     /// The role's weight. Three roles share 13pt and three share 10pt, so this
     /// is what separates them.
     pub const fn weight(self) -> FontWeight {
@@ -77,8 +82,8 @@ impl TextStyle {
 pub trait Typeset: Styled + Sized {
     /// Size and weight together, from [`TextStyle`].
     fn text_style(self, style: TextStyle) -> Self {
-        let scaled = style.size() * base_text_size() / TextStyle::Body.size();
-        self.text_size(px(scaled)).font_weight(style.weight())
+        self.text_size(px(style.painted()))
+            .font_weight(style.weight())
     }
 }
 
