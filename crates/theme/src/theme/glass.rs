@@ -1,7 +1,7 @@
 //! Glass recipes: translucent chrome over the blurred window background, and
 //! the modal scrim.
 
-use gpui::{Hsla, WindowBackgroundAppearance};
+use gpui::{Hsla, WindowBackgroundAppearance, hsla};
 
 use crate::{
     Appearance, color, paint,
@@ -12,7 +12,7 @@ impl Theme {
     /// The frost tint painted over the blurred window background (macOS glass),
     /// at [`Brand::glass`](crate::Brand::glass)'s alpha. Dark: darker than
     /// `surface`, matched to the reference vibrancy scrim `hsl(0 0% 3%)`.
-    /// Light: a near-white frost. Opaque, this IS the surface tone.
+    /// Light: the material's own measured tone. Opaque, this IS the surface tone.
     pub fn glass(&self) -> Hsla {
         let alpha = layout::frost();
         if alpha >= 1.0 {
@@ -20,10 +20,7 @@ impl Theme {
         }
         match self.appearance {
             Appearance::Dark => color::grey(8).opacity(alpha),
-            // 0xfa, not the surface's 0xf4-ish grey: at 90% coverage the tint
-            // IS the sidebar tone, and the darker grey read as a dingy pane
-            // next to the white content card.
-            Appearance::Light => color::grey(0xfa).opacity(alpha),
+            Appearance::Light => self.frost.tone.opacity(alpha),
         }
     }
 
@@ -79,15 +76,20 @@ impl Theme {
         }
     }
 
-    /// Section-card fill (settings cards and similar in-panel cards). The
-    /// opaque `surface` tone read as a harsh solid slab floating on the
-    /// frosted blur (user report), so glass thins it to a translucent tint;
-    /// opaque platforms keep the true card tone.
+    /// Section-card fill — the group box, and the in-panel cards built like it.
+    ///
+    /// Each appearance plates in the direction it has room in: dark lifts on a
+    /// white wash (`../desktop`'s `--color-card`), light lands a near-opaque
+    /// white card on the grey frost, at the coverage [`Self::glass_overlay`]
+    /// already needs to keep rows on a known background. An opaque platform has
+    /// no frost beneath the card, so it takes the grey below its white page.
     pub fn card_glass_bg(&self) -> Hsla {
-        if self.is_glass() {
-            self.surface.opacity(0.40)
-        } else {
-            self.surface
+        if !self.is_glass() {
+            return self.surface;
+        }
+        match self.appearance {
+            Appearance::Dark => hsla(0.0, 0.0, 1.0, 0.06),
+            Appearance::Light => self.surface_card.opacity(0.85),
         }
     }
 

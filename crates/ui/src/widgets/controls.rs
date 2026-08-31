@@ -239,8 +239,9 @@ pub trait Controls: ThemeExt {
             .border_color(theme.border)
     }
 
-    /// One segment. The selected segment carries a raised plate; the rest are
-    /// bare, so exactly one reads as pressed.
+    /// One segment. The selected segment carries the active wash over the
+    /// track's own — the two alphas stack, which is what makes it read — and
+    /// the rest are bare, so exactly one is pressed.
     fn toggle_group_item(&self, label: impl Into<SharedString>, selected: bool) -> Div {
         let theme = self.theme();
         let mut item = div()
@@ -257,7 +258,7 @@ pub trait Controls: ThemeExt {
             .cursor_pointer()
             .child(label.into());
         item = if selected {
-            item.bg(theme.surface_raised)
+            item.bg(theme.element_active)
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(theme.text)
         } else {
