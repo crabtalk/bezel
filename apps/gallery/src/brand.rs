@@ -127,7 +127,7 @@ pub fn page(
         .child(specimen(theme))
         .child(popover::menu_heading(theme, "Copy"))
         .child(files(view, theme, cx))
-        .child(code(view.create_file, &brand, window, cx))
+        .child(code(view.brand_file, &brand, window, cx))
         .into_any_element()
 }
 
@@ -329,11 +329,11 @@ fn files(view: &Gallery, theme: &Theme, cx: &mut Context<Gallery>) -> AnyElement
         .toggle_group()
         .children(FILES.iter().enumerate().map(|(index, (name, _))| {
             theme
-                .toggle_group_item(*name, view.create_file == index)
+                .toggle_group_item(*name, view.brand_file == index)
                 .id(SharedString::from(*name))
                 .cursor_pointer()
                 .on_click(cx.listener(move |view, _, _, cx| {
-                    view.create_file = index;
+                    view.brand_file = index;
                     cx.notify();
                 }))
         }))

@@ -22,6 +22,7 @@ use ui::{
 };
 
 use crate::{
+    comment::Delta,
     editor::{
         Editor, MIN_IMAGE_WIDTH,
         keys::{CancelUrl, ConfirmUrl},
@@ -132,6 +133,7 @@ impl Editor {
             );
             this.selection =
                 Selection::at(Cursor::new(prompt.block, Part::Caption, 0).clamp(&this.doc));
+            vec![]
         });
     }
 
@@ -186,8 +188,13 @@ impl Editor {
             let empty = here.is_some_and(
                 |block| matches!(&block.kind, BlockKind::Paragraph(text) if text.is_empty()),
             );
+            let mut deltas = Vec::new();
             let first = if empty {
                 this.doc.blocks.remove(ix);
+                deltas.push(Delta::Moved {
+                    at: ix..ix + 1,
+                    to: None,
+                });
                 ix
             } else {
                 (ix + 1).min(this.doc.blocks.len())
@@ -208,6 +215,11 @@ impl Editor {
             }
             this.doc.repair();
             this.selection = Selection::at(Cursor::new(last, Part::Caption, 0).clamp(&this.doc));
+            deltas.push(Delta::Opened {
+                at: first,
+                count: last + 1 - first,
+            });
+            deltas
         });
     }
 
@@ -328,6 +340,7 @@ impl Editor {
                 {
                     *at = width;
                 }
+                vec![]
             });
             // Handed back its natural width, which only the paint that
             // measures it knows: the next frame still places the handle from

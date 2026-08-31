@@ -591,6 +591,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bezel-blocks"
+version = "0.1.4"
+dependencies = [
+ "bezel-gpui",
+ "bezel-theme",
+]
+
+[[package]]
 name = "bezel-editor"
 version = "0.1.4"
 dependencies = [
@@ -2498,6 +2506,7 @@ name = "gallery"
 version = "0.1.4"
 dependencies = [
  "bezel-agent",
+ "bezel-blocks",
  "bezel-editor",
  "bezel-gpui",
  "bezel-gpui-platform",

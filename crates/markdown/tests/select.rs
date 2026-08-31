@@ -66,7 +66,7 @@ fn replacing_within_one_block_keeps_the_marks_around_it() {
     let mut doc = parse("a **bold** tail");
     let head = doc.replace(Selection::new(body(0, 0), body(0, 1)), Text::plain("X"));
     assert_eq!(text_of(&doc, 0), "X bold tail");
-    assert_eq!(head, body(0, 1));
+    assert_eq!(head.caret, body(0, 1));
     assert_eq!(
         serialize(&doc),
         "X **bold** tail",
@@ -93,7 +93,7 @@ fn replacing_across_blocks_leaves_the_head_kind() {
         "tail",
         "the block past the end is untouched"
     );
-    assert_eq!(head, body(0, 2));
+    assert_eq!(head.caret, body(0, 2));
 }
 
 #[test]

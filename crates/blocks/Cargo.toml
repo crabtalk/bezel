@@ -1,0 +1,31 @@
+[package]
+name = "bezel-blocks"
+
+description = "Painted fenced blocks for the bezel markdown renderer — a fence tag and its source in, an element out"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "blocks"
+
+[lints]
+workspace = true
+
+# One per block, the way `syntax` carries one per grammar. A block that needs a
+# parser declares it `optional` here, so turning the block off drops the parser
+# with it.
+[features]
+default = ["chart"]
+chart = []
+
+[dependencies]
+theme.workspace = true
+gpui.workspace = true

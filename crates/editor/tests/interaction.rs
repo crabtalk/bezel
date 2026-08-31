@@ -19,6 +19,13 @@ const SOURCE: &str = "# Title\n\nA paragraph long enough that it has to wrap mor
 
 /// Open a focused editor in a drawn window.
 fn open(cx: &mut TestAppContext) -> (Entity<Editor>, WindowHandle<Editor>, VisualTestContext) {
+    open_with(SOURCE, cx)
+}
+
+fn open_with(
+    source: &str,
+    cx: &mut TestAppContext,
+) -> (Entity<Editor>, WindowHandle<Editor>, VisualTestContext) {
     cx.update(|cx| {
         // `appearance::init` asks AppKit what the system is set to, and there
         // is no NSApplication under the test platform. Installing the palette
@@ -26,7 +33,7 @@ fn open(cx: &mut TestAppContext) -> (Entity<Editor>, WindowHandle<Editor>, Visua
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
     });
-    let window = cx.add_window(|_, cx| Editor::new(SOURCE, cx));
+    let window = cx.add_window(|_, cx| Editor::new(source, cx));
     let editor = window.root(cx).unwrap();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
 
@@ -247,4 +254,52 @@ fn tab_indents_a_list_item_and_shift_tab_puts_it_back(cx: &mut TestAppContext) {
         source(&editor, &mut cx).contains("- first\n- second"),
         "and shift-tab lifts it back"
     );
+}
+
+/// The handle used to follow the pointer and nothing else, so a document being
+/// worked in by keyboard had no handle at all until you reached for the mouse.
+#[gpui::test]
+fn the_handle_follows_the_caret(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open(cx);
+    let at = cx
+        .debug_bounds(editor::BLOCK_HANDLE)
+        .expect("a focused document shows a handle without being hovered");
+
+    go_to_block(&editor, &mut cx, 2);
+    cx.run_until_parked();
+    let moved = cx
+        .debug_bounds(editor::BLOCK_HANDLE)
+        .expect("and still shows one");
+    assert!(
+        moved.origin.y > at.origin.y,
+        "it followed the caret down the document"
+    );
+}
+
+/// The bug: backspace at the start of an empty block steps the caret into the
+/// previous block's last part — right while the block still holds text, and a
+/// trap once it does not. Nothing above an atomic block merges, so the empty
+/// one was left behind with no way left to reach it.
+#[gpui::test]
+fn an_empty_block_after_an_atomic_one_deletes(cx: &mut TestAppContext) {
+    for (name, source) in [
+        ("a rule", "a\n\n---\n\nx"),
+        ("a fence", "a\n\n```rs\nk\n```\n\nx"),
+        ("an image", "a\n\n![c](https://e.com/i.png)\n\nx"),
+        ("a table", "a\n\n| h |\n| - |\n| c |\n\nx"),
+    ] {
+        let (editor, _window, mut cx) = open_with(source, &mut *cx);
+        // Empty the trailing paragraph, then try to take the paragraph itself.
+        for _ in 0..25 {
+            cx.simulate_keystrokes("down");
+        }
+        cx.simulate_keystrokes("end backspace");
+        let before = cx.update(|_, cx| editor.read(cx).doc().blocks.len());
+        cx.simulate_keystrokes("backspace");
+        assert_eq!(
+            cx.update(|_, cx| editor.read(cx).doc().blocks.len()),
+            before - 1,
+            "an empty paragraph after {name} is deletable"
+        );
+    }
 }

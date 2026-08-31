@@ -11,19 +11,21 @@
 //! turning a click into a position.
 
 use gpui::{
-    App, Context, CursorStyle, ElementInputHandler, FocusHandle, Focusable, MouseButton, Render,
-    Styled as _, Window, canvas, div, prelude::*,
+    App, Context, CursorStyle, ElementInputHandler, EventEmitter, FocusHandle, Focusable,
+    MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
 };
 use markdown::{
-    Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Text, edit,
-    edit::shortcut,
+    Annotation, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Splice,
+    Text, edit, edit::shortcut,
 };
 use motion::Painter;
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 use theme::Theme;
 
 use crate::{
+    comment::{Anchor, CommentId, Delta},
     history::{EditKind, History},
+    layout::Layout,
     link::{self, Choice},
     slash::Slash,
 };
@@ -44,14 +46,30 @@ use keys::{
 
 const CONTEXT: &str = "BezelEditor";
 
+/// What the editor tells its host about.
+///
+/// An app holding comment threads has to hear that the document moved, or its
+/// side of the pairing goes stale against anchors that did not. Split the way
+/// [`ui::input::FieldEvent`] is, so a listener takes only the half it needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditorEvent {
+    /// The document is different, and the anchors have been mapped through it.
+    Changed,
+    /// A click landed on a comment's range.
+    CommentActivated(CommentId),
+}
+
 /// Shown on the focused block while it is empty — the only discoverable place
 /// to say that `/` does anything.
 const PLACEHOLDER: &str = "Type / for commands";
 
-/// The handle's box, and how far left of the text it sits. Wide enough to be
-/// hit without crowding the margin.
+/// Half the caret's blink period — `ui::TextField`'s, which is the 500ms on,
+/// 500ms off macOS itself uses.
+const BLINK: Duration = Duration::from_millis(500);
+
+/// The handle's box. Wide enough to be hit without crowding the margin; how
+/// far left of the text it sits is [`Layout::text_inset`](crate::Layout).
 const HANDLE_SIZE: f32 = 18.0;
-const HANDLE_GUTTER: f32 = 22.0;
 
 /// How far a drag on an image's edge handle can shrink it — matches
 /// `markdown::render`'s `TABLE_MIN_COLUMN_WIDTH`, the same floor for the
@@ -109,6 +127,14 @@ pub struct Editor {
     /// caret. Only paint knows this, so the renderer fills it.
     layouts: BlockLayouts,
     history: History,
+    /// Which half of the blink the caret is in. Flipped by [`Self::start_blink`].
+    caret_on: bool,
+    /// The blink, alive only while the document holds focus.
+    blink: Option<Task<()>>,
+    /// Comment ranges, mapped through every edit and snapshotted with the
+    /// document. Here rather than in the app because an undo restores a whole
+    /// document and leaves no delta an app could map its own copy through.
+    anchors: Vec<Anchor>,
     /// Marks the next typed character will carry — cmd-B at a collapsed caret,
     /// which otherwise has no range to apply to and so would do nothing.
     /// Cleared by any motion, because they belong to a spot and not to a mood.
@@ -180,6 +206,9 @@ impl Editor {
             marked: None,
             layouts: BlockLayouts::default(),
             history: History::default(),
+            caret_on: true,
+            blink: None,
+            anchors: Vec::new(),
             stored: Vec::new(),
             slash: None,
             pasted: None,
@@ -267,6 +296,19 @@ impl Editor {
         self.selection
     }
 
+    /// Put the selection somewhere — what a thread in a sidebar does when it is
+    /// clicked, and what a caret restored with a document needs.
+    ///
+    /// Clamped, because the caller's range came from somewhere the document may
+    /// have moved on from.
+    pub fn select(&mut self, selection: Selection, cx: &mut Context<Self>) {
+        self.selection = selection.clamp(&self.doc);
+        self.history.interrupt();
+        self.reveal = true;
+        self.caret_moved();
+        cx.notify();
+    }
+
     /// Where the selection sits on screen, in window coordinates, so a host can
     /// float a toolbar at it.
     ///
@@ -282,6 +324,83 @@ impl Editor {
             point,
             gpui::size(gpui::px(0.0), line_height),
         ))
+    }
+
+    /// The comment ranges, mapped up to date with the document.
+    ///
+    /// A range that reads [`Anchor::detached`] lost the words it pointed at.
+    /// It is kept rather than dropped, because whether that means "outdated" or
+    /// "resolved" is the app's question.
+    pub fn anchors(&self) -> &[Anchor] {
+        &self.anchors
+    }
+
+    /// Hand over the whole list — the app keeps the threads, this keeps their
+    /// ranges. One entry point rather than add/remove/update, since the app is
+    /// already holding the list that decides all three.
+    pub fn set_anchors(&mut self, anchors: Vec<Anchor>, cx: &mut Context<Self>) {
+        self.anchors = anchors;
+        cx.notify();
+    }
+
+    /// The comment under a point in window coordinates — the space
+    /// [`Self::anchor_bounds`] answers in and the press handler resolves in.
+    ///
+    /// The last match wins, so the newer of two overlapping ranges is the one a
+    /// click opens.
+    pub fn comment_at(&self, at: gpui::Point<gpui::Pixels>) -> Option<CommentId> {
+        let at = self.layouts.hit(at)?;
+        self.anchors
+            .iter()
+            .rfind(|anchor| {
+                let (start, end) = anchor.range.ordered();
+                !anchor.detached() && start <= at && at <= end
+            })
+            .map(|anchor| anchor.id)
+    }
+
+    /// Where to float a thread, mirroring [`Self::selection_bounds`].
+    pub fn anchor_bounds(&self, id: CommentId) -> Option<gpui::Bounds<gpui::Pixels>> {
+        let anchor = self.anchors.iter().find(|anchor| anchor.id == id)?;
+        let (point, line_height) = self.layouts.position(anchor.range.ordered().0)?;
+        Some(gpui::Bounds::new(
+            point,
+            gpui::size(gpui::px(0.0), line_height),
+        ))
+    }
+
+    /// The ranges the renderer washes, clamped because a block can change kind
+    /// under an anchor and take its part with it.
+    fn annotations(&self) -> Vec<(Selection, Annotation)> {
+        self.anchors
+            .iter()
+            .filter(|anchor| !anchor.detached())
+            .map(|anchor| (anchor.range.clamp(&self.doc), anchor.state))
+            .collect()
+    }
+
+    /// The caret moved: drop the blink so the next render starts a fresh one.
+    /// Without the reset it would blink through your own typing, which reads as
+    /// a dropped keystroke.
+    fn caret_moved(&mut self) {
+        self.blink = None;
+    }
+
+    /// Blink the caret for as long as the document holds focus.
+    fn start_blink(&mut self, cx: &mut Context<Self>) {
+        self.caret_on = true;
+        self.blink = Some(cx.spawn(async move |editor, cx| {
+            loop {
+                cx.background_executor().timer(BLINK).await;
+                let flipped = editor.update(cx, |editor, cx| {
+                    editor.caret_on = !editor.caret_on;
+                    cx.notify();
+                });
+                if flipped.is_err() {
+                    break;
+                }
+            }
+        }));
     }
 
     /// Where typing would land — the moving end of the selection.
@@ -339,11 +458,12 @@ impl Editor {
         }
         let painter = Painter::of(cx);
         self.edit(EditKind::Delete, cx, |this| {
-            let head = this
+            let splice = this
                 .doc
                 .replace(Selection::new(target, at), Text::default());
-            this.selection = Selection::at(head.clamp(&this.doc));
+            this.selection = Selection::at(splice.caret.clamp(&this.doc));
             this.track_slash("", painter);
+            vec![Delta::Spliced(splice)]
         });
     }
 
@@ -361,16 +481,29 @@ impl Editor {
         self.stored.clear();
         self.pasted = None;
         self.reveal = true;
+        self.caret_moved();
     }
 
     /// Every mutation goes through here, so none of them can forget to record
     /// a step and none of them has to know how steps coalesce.
-    fn edit(&mut self, kind: EditKind, cx: &mut Context<Self>, edit: impl FnOnce(&mut Self)) {
+    fn edit(
+        &mut self,
+        kind: EditKind,
+        cx: &mut Context<Self>,
+        edit: impl FnOnce(&mut Self) -> Vec<Delta>,
+    ) {
         // Any edit answers the paste menu by ignoring it — whatever it offered
         // was about a block that no longer holds only the link.
         self.pasted = None;
-        self.history.record(kind, &self.doc, self.selection);
-        edit(self);
+        self.history
+            .record(kind, &self.doc, self.selection, &self.anchors);
+        // A list rather than one: Enter clears a selection *and* splits, and an
+        // anchor mapped through only half of that lands in the wrong place.
+        for delta in edit(self) {
+            for anchor in &mut self.anchors {
+                anchor.map(&delta);
+            }
+        }
         // Deleting the last block is the other way to an empty document, and
         // the caret belongs at the start of whatever replaces it.
         if ensure_block(&mut self.doc) {
@@ -380,6 +513,8 @@ impl Editor {
         // Typing moves the caret as surely as an arrow key does, and a split
         // moves it onto a block that does not exist until this frame paints.
         self.reveal = true;
+        self.caret_moved();
+        cx.emit(EditorEvent::Changed);
         cx.notify();
     }
 
@@ -466,11 +601,12 @@ impl Editor {
                     mark,
                 });
             }
-            let head = this.doc.replace(this.selection, typed);
-            this.selection = Selection::at(head.clamp(&this.doc));
+            let splice = this.doc.replace(this.selection, typed);
+            this.selection = Selection::at(splice.caret.clamp(&this.doc));
             this.apply_shortcut();
             this.apply_inline_rule();
             this.track_slash(text, painter);
+            vec![Delta::Spliced(splice)]
         });
     }
 
@@ -546,6 +682,11 @@ impl Editor {
             this.doc.set_kind(at.block, kind);
             this.selection =
                 Selection::at(Cursor::new(at.block, Part::Body, at.offset).clamp(&this.doc));
+            vec![Delta::Spliced(Splice {
+                removed: Selection::new(at, caret),
+                caret: at,
+                blocks: 0,
+            })]
         });
         true
     }
@@ -606,18 +747,30 @@ impl Editor {
         self.edit(EditKind::Structure, cx, |this| {
             // Code over more than one line is a fence, which is the only shape
             // markdown has for it, and the same key is the way back out.
+            let before = this.doc.blocks.len();
+            // Fencing and unfencing rebuild the blocks the selection covered,
+            // so what sat inside it has no position left to keep.
+            let refenced = |doc: &Doc, head: Cursor| {
+                vec![Delta::Spliced(Splice {
+                    removed: selection,
+                    caret: head,
+                    blocks: doc.blocks.len() as isize - before as isize,
+                })]
+            };
             if matches!(mark, Mark::Code) {
                 if let Some(head) = this.doc.unfence(selection) {
                     this.selection = Selection::at(head.clamp(&this.doc));
-                    return;
+                    return refenced(&this.doc, head);
                 }
                 if fenceable(&this.doc, selection) {
                     let head = this.doc.fence(selection);
                     this.selection = Selection::at(head.clamp(&this.doc));
-                    return;
+                    return refenced(&this.doc, head);
                 }
             }
+            // A mark is paint over text that does not move.
             this.doc.toggle_mark(selection, mark);
+            vec![]
         });
     }
 
@@ -677,7 +830,8 @@ impl Editor {
         };
         let painter = Painter::of(cx);
         self.edit(kind, cx, |this| {
-            let head = if !this.selection.is_collapsed() {
+            let before = this.doc.blocks.len();
+            let splice = if !this.selection.is_collapsed() {
                 this.doc.replace(this.selection, Text::default())
             } else if at.offset > 0 {
                 this.doc
@@ -687,14 +841,22 @@ impl Editor {
                 // whichever the block's state calls for — and says where the
                 // caret landed.
                 match this.doc.merge_back(at) {
-                    Some(head) => head,
-                    None => return,
+                    // The seam between where the caret was and where it landed
+                    // is exactly what the merge closed up.
+                    Some(head) => Splice {
+                        removed: Selection::new(head, at),
+                        caret: head,
+                        blocks: this.doc.blocks.len() as isize - before as isize,
+                    },
+                    None => return vec![],
                 }
             };
+            let head = splice.caret;
             this.selection = Selection::at(head.clamp(&this.doc));
             // Deleting narrows the query too, and backspacing onto the slash
             // itself is what closes the menu.
             this.track_slash("", painter);
+            vec![Delta::Spliced(splice)]
         });
     }
 
@@ -712,8 +874,9 @@ impl Editor {
             } else {
                 this.selection
             };
-            let head = this.doc.replace(range, Text::default());
-            this.selection = Selection::at(head.clamp(&this.doc));
+            let splice = this.doc.replace(range, Text::default());
+            this.selection = Selection::at(splice.caret.clamp(&this.doc));
+            vec![Delta::Spliced(splice)]
         });
     }
 
@@ -750,25 +913,37 @@ impl Editor {
             Part::Caption | Part::Body => {}
         }
         self.edit(EditKind::Structure, cx, |this| {
+            let mut deltas = Vec::new();
             if !this.selection.is_collapsed() {
-                let head = this.doc.replace(this.selection, Text::default());
-                this.selection = Selection::at(head.clamp(&this.doc));
+                let splice = this.doc.replace(this.selection, Text::default());
+                this.selection = Selection::at(splice.caret.clamp(&this.doc));
+                deltas.push(Delta::Spliced(splice));
             }
             let at = this.cursor();
             let new = this.doc.split(at.block, at.offset);
             this.selection = Selection::at(Cursor::new(new, Part::Body, 0).clamp(&this.doc));
+            // What followed the caret moved into a block of its own, which
+            // everything below it now sits under.
+            deltas.push(Delta::Spliced(Splice {
+                removed: Selection::at(at),
+                caret: Cursor::new(new, Part::Body, 0),
+                blocks: 1,
+            }));
+            deltas
         });
     }
 
     fn indent(&mut self, _: &Indent, _: &mut Window, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
             this.doc.indent(this.cursor().block);
+            vec![]
         });
     }
 
     fn outdent(&mut self, _: &Outdent, _: &mut Window, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
             this.doc.outdent(this.cursor().block);
+            vec![]
         });
     }
 
@@ -809,8 +984,9 @@ impl Editor {
         };
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(source));
         self.edit(EditKind::Structure, cx, |this| {
-            let head = this.doc.replace(this.selection, Text::default());
-            this.selection = Selection::at(head.clamp(&this.doc));
+            let splice = this.doc.replace(this.selection, Text::default());
+            this.selection = Selection::at(splice.caret.clamp(&this.doc));
+            vec![Delta::Spliced(splice)]
         });
     }
 
@@ -837,8 +1013,15 @@ impl Editor {
             return self.paste_url(url.to_string(), cx);
         }
         self.edit(EditKind::Structure, cx, |this| {
-            let head = this.doc.splice(this.selection, markdown::parse(&source));
+            let removed = this.selection;
+            let before = this.doc.blocks.len();
+            let head = this.doc.splice(removed, markdown::parse(&source));
             this.selection = Selection::at(head.clamp(&this.doc));
+            vec![Delta::Spliced(Splice {
+                removed,
+                caret: head,
+                blocks: this.doc.blocks.len() as isize - before as isize,
+            })]
         });
     }
 
@@ -856,8 +1039,9 @@ impl Editor {
         let at = self.cursor();
         let alone = at.part == Part::Body && self.caret_text().is_some_and(Text::is_empty);
         self.edit(EditKind::Structure, cx, |this| {
-            let head = this.doc.replace(this.selection, Text::link(&url));
-            this.selection = Selection::at(head.clamp(&this.doc));
+            let splice = this.doc.replace(this.selection, Text::link(&url));
+            this.selection = Selection::at(splice.caret.clamp(&this.doc));
+            vec![Delta::Spliced(splice)]
         });
         // A fence holds its URL literally and a caption cannot spell a mark, so
         // neither has a richer form to offer.
@@ -896,8 +1080,9 @@ impl Editor {
                         },
                     }],
                 };
-                let head = this.doc.replace(Selection::new(pasted.at, end), text);
-                this.selection = Selection::at(head.clamp(&this.doc));
+                let splice = this.doc.replace(Selection::new(pasted.at, end), text);
+                this.selection = Selection::at(splice.caret.clamp(&this.doc));
+                vec![Delta::Spliced(splice)]
             }),
             Choice::Bookmark => self.turn_into(ix, card(pasted.url, Form::Auto), cx),
             Choice::Embed => self.turn_into(ix, card(pasted.url, Form::Embed), cx),
@@ -923,6 +1108,9 @@ impl Editor {
             // The URL is the block's whole text and the new block shows it
             // already, so [`Doc::set_kind`] is given nothing to carry across —
             // otherwise a picture prints its own URL as its caption.
+            let held = this.doc.blocks[ix]
+                .text_at(Part::Body)
+                .map_or(0, |text| text.text.len());
             this.doc.edit_at(Cursor::new(ix, Part::Body, 0), |text| {
                 *text = Text::default()
             });
@@ -942,23 +1130,40 @@ impl Editor {
                 }
             };
             this.selection = Selection::at(at.clamp(&this.doc));
+            vec![Delta::Spliced(Splice {
+                removed: Selection::new(
+                    Cursor::new(ix, Part::Body, 0),
+                    Cursor::new(ix, Part::Body, held),
+                ),
+                caret: Cursor::new(ix, Part::Body, 0),
+                blocks: 0,
+            })]
         });
     }
 
     fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some((doc, selection)) = self.history.undo(&self.doc, self.selection) {
-            self.doc = doc;
-            self.selection = selection.clamp(&self.doc);
-            cx.notify();
+        if let Some(step) = self.history.undo(&self.doc, self.selection, &self.anchors) {
+            self.restore(step, cx);
         }
     }
 
     fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some((doc, selection)) = self.history.redo(&self.doc, self.selection) {
-            self.doc = doc;
-            self.selection = selection.clamp(&self.doc);
-            cx.notify();
+        if let Some(step) = self.history.redo(&self.doc, self.selection, &self.anchors) {
+            self.restore(step, cx);
         }
+    }
+
+    /// Put a whole moment back — document, caret and anchors together.
+    ///
+    /// The anchors come from the snapshot rather than from mapping, because a
+    /// step back is not an edit: there is no delta between here and a document
+    /// two hundred keystrokes ago.
+    fn restore(&mut self, step: crate::history::Step, cx: &mut Context<Self>) {
+        self.doc = step.doc;
+        self.selection = step.selection.clamp(&self.doc);
+        self.anchors = step.anchors;
+        cx.emit(EditorEvent::Changed);
+        cx.notify();
     }
 
     /// Move the caret's block, children and all, and follow it.
@@ -968,28 +1173,39 @@ impl Editor {
     pub fn move_block(&mut self, ix: usize, delta: isize, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
             let caret = this.cursor();
-            if let Some(to) = this.doc.move_block(ix, delta) {
-                // The caret rides along, keeping its depth within the subtree
-                // that moved and its offset within its own text.
-                let block = to + caret.block.saturating_sub(ix);
-                this.selection = Selection::at(Cursor { block, ..caret }.clamp(&this.doc));
-            }
+            let at = this.doc.subtree(ix);
+            let Some(to) = this.doc.move_block(ix, delta) else {
+                return vec![];
+            };
+            // The caret rides along, keeping its depth within the subtree
+            // that moved and its offset within its own text.
+            let block = to + caret.block.saturating_sub(ix);
+            this.selection = Selection::at(Cursor { block, ..caret }.clamp(&this.doc));
+            vec![Delta::Moved { at, to: Some(to) }]
         });
     }
 
     pub fn duplicate_block(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
-            if let Some(copy) = this.doc.duplicate(ix) {
-                this.selection = Selection::at(Cursor::new(copy, Part::Body, 0).clamp(&this.doc));
-            }
+            let span = this.doc.subtree(ix);
+            let Some(copy) = this.doc.duplicate(ix) else {
+                return vec![];
+            };
+            this.selection = Selection::at(Cursor::new(copy, Part::Body, 0).clamp(&this.doc));
+            vec![Delta::Opened {
+                at: copy,
+                count: span.len(),
+            }]
         });
     }
 
     pub fn remove_block(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
+            let at = this.doc.subtree(ix);
             this.doc.remove_block(ix);
             this.selection =
                 Selection::at(Cursor::new(ix.saturating_sub(1), Part::Body, 0).clamp(&this.doc));
+            vec![Delta::Moved { at, to: None }]
         });
     }
 
@@ -997,6 +1213,7 @@ impl Editor {
     pub fn set_language(&mut self, ix: usize, language: Option<String>, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
             this.doc.set_language(ix, language);
+            vec![]
         });
     }
 
@@ -1006,6 +1223,7 @@ impl Editor {
         self.edit(EditKind::Structure, cx, |this| {
             this.doc.set_kind(ix, kind);
             this.selection = this.selection.clamp(&this.doc);
+            vec![]
         });
     }
     /// The paragraph a document ending in a fence, a table, a rule or an image
@@ -1025,6 +1243,7 @@ impl Editor {
                 .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
             let ix = this.doc.blocks.len() - 1;
             this.selection = Selection::at(Cursor::new(ix, Part::Body, 0).clamp(&this.doc));
+            vec![]
         });
         true
     }
@@ -1049,6 +1268,8 @@ impl Editor {
     }
 }
 
+impl EventEmitter<EditorEvent> for Editor {}
+
 impl Focusable for Editor {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -1058,7 +1279,17 @@ impl Focusable for Editor {
 impl Render for Editor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
+        let layout = Layout::of(cx);
         let focused = self.focus_handle.is_focused(window);
+        // The only place the blink starts: `caret_moved` drops the task, so the
+        // next render brings it back in phase, lit beat first.
+        if focused {
+            if self.blink.is_none() {
+                self.start_blink(cx);
+            }
+        } else {
+            self.blink = None;
+        }
         let selection = focused.then_some(self.selection);
 
         // Typed text and IME reach an entity only through an input handler
@@ -1093,6 +1324,10 @@ impl Render for Editor {
         let handle = self.focus_handle.clone().tab_stop(true);
 
         div()
+            // Stateful only so the pointer leaving can be heard: `on_hover` is
+            // what tells the gutter handle to stop pointing at a block the
+            // pointer left behind.
+            .id("bezel-editor")
             .key_context(CONTEXT)
             .track_focus(&handle)
             // Tracking focus does not take it. Without this, clicking into the
@@ -1128,12 +1363,23 @@ impl Render for Editor {
                     .clamp(&this.doc);
                     this.dragging = event.click_count == 1 && !event.modifiers.shift;
                     this.history.interrupt();
+                    this.caret_moved();
+                    // Only the editor sees the press, so only the editor can
+                    // say which thread it landed on.
+                    if let Some(id) = this.comment_at(event.position) {
+                        cx.emit(EditorEvent::CommentActivated(id));
+                    }
                     cx.notify();
                 }),
             )
             // The drag has to be tracked from the container rather than from a
             // payload: a text selection has nothing to carry, and gpui's drag
             // payload is for things being dropped somewhere.
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                if !*hovered && this.hovered.take().is_some() {
+                    cx.notify();
+                }
+            }))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                 // Ahead of every drag branch below, because the pointer's shape
                 // is about where it *is* rather than about what it is doing.
@@ -1205,10 +1451,19 @@ impl Render for Editor {
                         // the block count, which no drag can exceed.
                         let delta = if to > from { 1 } else { -1 };
                         let mut at = from;
+                        // Each step is its own move, so each is its own delta —
+                        // folding them into one would have to compose the
+                        // hops, and they are already in order.
+                        let mut deltas = Vec::new();
                         for _ in 0..this.doc.blocks.len() {
+                            let span = this.doc.subtree(at);
                             let Some(next) = this.doc.move_block(at, delta) else {
                                 break;
                             };
+                            deltas.push(Delta::Moved {
+                                at: span,
+                                to: Some(next),
+                            });
                             at = next;
                             if (delta > 0 && at >= to) || (delta < 0 && at <= to) {
                                 break;
@@ -1216,6 +1471,7 @@ impl Render for Editor {
                         }
                         this.selection =
                             Selection::at(Cursor::new(at, Part::Body, 0).clamp(&this.doc));
+                        deltas
                     });
                 }),
             )
@@ -1337,20 +1593,27 @@ impl Render for Editor {
             // any scrolling ancestor, and a drag through it never reaches
             // `on_mouse_move`, which fires only while this element is the one
             // under the pointer.
-            .child(div().w_full().pl(gpui::px(HANDLE_GUTTER)).child(
-                markdown::render_with_selection(
-                    &self.doc,
-                    selection,
-                    Some(&self.layouts),
-                    focused.then(|| PLACEHOLDER.into()),
-                    // A caret goes into the caption here, so it is always
-                    // painted — an editor that could hide it would be hiding
-                    // a place you can already be typing.
-                    markdown::Caption::Shown,
-                    window,
-                    cx,
-                ),
-            ))
+            .child(
+                div()
+                    .w_full()
+                    .pl(gpui::px(layout.text_inset))
+                    .child(markdown::render_with(
+                        &self.doc,
+                        markdown::Editing {
+                            selection,
+                            caret_on: self.caret_on,
+                            layouts: Some(&self.layouts),
+                            annotations: &self.annotations(),
+                            placeholder: focused.then(|| PLACEHOLDER.into()),
+                            // A caret goes into the caption here, so it is always
+                            // painted — an editor that could hide it would be
+                            // hiding a place you can already be typing.
+                            caption: markdown::Caption::Shown,
+                        },
+                        window,
+                        cx,
+                    )),
+            )
             // Last, so the layouts it reads are this frame's rather than the
             // one before — children paint in order.
             .child(
@@ -1368,7 +1631,7 @@ impl Render for Editor {
             .children(self.url_prompt(&theme, cx))
             .children(self.image_target(cx))
             .children(self.resize_preview())
-            .children(self.handle(&theme, cx))
+            .children(self.handle(focused, &theme, cx))
             .children(self.resize_handle(&theme, cx))
             .children(self.drop_indicator(&theme))
             .children(self.language_chip(&theme, cx))

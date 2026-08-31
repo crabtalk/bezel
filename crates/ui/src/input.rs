@@ -21,14 +21,14 @@ use std::{ops::Range, time::Duration};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, KeyBinding,
-    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
-    SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine,
-    actions, div, fill, prelude::*, px, relative,
+    EntityInputHandler, EventEmitter, FocusHandle, Focusable, FontWeight, GlobalElementId,
+    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    Pixels, Point, SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window,
+    WrappedLine, actions, div, fill, prelude::*, px, relative,
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
-use theme::{TextStyle, Theme, Typeset};
+use theme::{Metrics, TextStyle, Theme};
 
 actions!(
     bezel_text_field,
@@ -96,6 +96,10 @@ const BLINK: Duration = Duration::from_millis(500);
 /// Width of the caret. Named because horizontal scrolling has to keep the caret
 /// itself on screen, not merely the character before it.
 const CARET_WIDTH: Pixels = px(2.);
+
+/// What a field is set in unless told otherwise — the 18px it was tuned at over
+/// the body size it was tuned against, so the line box grows with the type.
+const FIELD_METRICS: Metrics = Metrics::new(TextStyle::Body, 18.0 / 13.0, FontWeight::NORMAL);
 
 /// The key context the field claims; bindings from [`init`] are scoped to it.
 pub const KEY_CONTEXT: &str = "TextField";
@@ -309,6 +313,9 @@ pub struct TextField {
     /// stands in for text already in place — a rename in a list row, where the
     /// box would be a second frame inside the row's own.
     frame: bool,
+    /// What the text is set in. Its leading is a multiple of the painted size,
+    /// so the whole line box follows [`theme::set_base_text_size`].
+    metrics: Metrics,
     /// Which half of the blink the caret is in. Flipped by [`Self::start_blink`].
     caret_on: bool,
     /// The blink, alive only while the field holds focus.
@@ -347,6 +354,7 @@ impl TextField {
             undo_limit: DEFAULT_UNDO_LIMIT,
             last_edit: None,
             key_context: None,
+            metrics: FIELD_METRICS,
             caret_on: true,
             blink: None,
             follow_caret: false,
@@ -401,6 +409,14 @@ impl TextField {
     /// spacing then, and owns showing that the field is focused.
     pub fn with_frame(mut self, frame: bool) -> Self {
         self.frame = frame;
+        self
+    }
+
+    /// Set the text in something other than body copy —
+    /// `Typography::of(cx).h1` sets a field the way a document sets its own
+    /// heading.
+    pub fn with_metrics(mut self, metrics: Metrics) -> Self {
+        self.metrics = metrics;
         self
     }
 
@@ -1384,8 +1400,9 @@ impl Render for TextField {
                         theme.border
                     })
             })
-            .text_style(TextStyle::Body)
-            .line_height(px(18.0))
+            .text_size(px(self.metrics.size()))
+            .font_weight(self.metrics.weight)
+            .line_height(px(self.metrics.line_height()))
             .text_color(theme.text)
             .child(TextFieldElement { field: cx.entity() })
     }
@@ -1612,7 +1629,12 @@ impl Element for TextFieldElement {
             (
                 Vec::new(),
                 Some(fill(
-                    Bounds::new(origin + at, gpui::size(CARET_WIDTH, line_height)),
+                    // The font's size rather than the line's: leading is not
+                    // the caret's to fill.
+                    Bounds::new(
+                        origin + at + gpui::point(px(0.), (line_height - font_size) / 2.),
+                        gpui::size(CARET_WIDTH, font_size),
+                    ),
                     theme.caret,
                 )),
             )

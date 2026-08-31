@@ -30,6 +30,23 @@ use crate::{
     select::{Cursor, Selection},
 };
 
+/// What a [`Doc::replace`] did, for anything holding a position it moved.
+///
+/// The caret is [`Doc::replace`]'s own answer and every caller wants it. The
+/// other two are for a caller keeping a position of its own — a comment anchor,
+/// a bookmark into the document — which has no other way to learn that the text
+/// under it shifted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Splice {
+    /// What the call covered, clamped and in document order.
+    pub removed: Selection,
+    /// Where the caret landed: the end of what went in.
+    pub caret: Cursor,
+    /// The change in block count, which every block after [`Self::removed`]
+    /// moves by.
+    pub blocks: isize,
+}
+
 impl Text {
     /// Insert at a byte offset, moving the marks with it.
     pub fn insert(&mut self, at: usize, s: &str) {
@@ -424,6 +441,14 @@ impl Doc {
                 let end = self.blocks[previous]
                     .text_at(part)
                     .map_or(0, |text| text.text.len());
+                // Stepping into a fence, a caption or a cell leaves this block
+                // where it is, which is right while it still holds something
+                // and a trap once it does not: nothing above it merges, so a
+                // block left empty here is one backspace can never reach again.
+                if tail.is_empty() {
+                    self.blocks.remove(at.block);
+                    self.repair();
+                }
                 Some(Cursor::new(previous, part, end))
             }
             None => {
@@ -598,7 +623,7 @@ impl Doc {
         // Cutting the selection leaves the head and the tail it did not cover
         // joined in one block, with the caret at the seam between them — which
         // is where the fence goes.
-        let at = self.replace(selection, Text::default());
+        let at = self.replace(selection, Text::default()).caret;
         let tail = self.split(at.block, at.offset);
         let indent = self.blocks[at.block].indent;
         self.blocks.insert(
@@ -770,10 +795,10 @@ impl Doc {
             _ => None,
         };
         if let Some(text) = inline {
-            return self.replace(selection, text);
+            return self.replace(selection, text).caret;
         }
 
-        let caret = self.replace(selection, Text::default());
+        let caret = self.replace(selection, Text::default()).caret;
         let base = self.blocks[caret.block].indent;
         // Split so what followed the caret follows the paste too. An empty
         // remainder is the blank block a paste at the end would leave behind.
@@ -810,14 +835,18 @@ impl Doc {
     /// this call with a different argument, which is why none of them needs to
     /// know whether a selection was empty, spanned two paragraphs, or swallowed
     /// a table on the way past.
-    pub fn replace(&mut self, selection: Selection, text: Text) -> Cursor {
+    pub fn replace(&mut self, selection: Selection, text: Text) -> Splice {
         // An empty document has no block to put anything in; editing one opens
         // the paragraph every other path then assumes exists.
         if self.blocks.is_empty() {
             self.blocks
                 .push(Block::new(BlockKind::Paragraph(Text::default())));
         }
+        // Counted after that, so the block a nothing-document opens with is not
+        // a shift anything downstream has to hear about.
+        let before = self.blocks.len();
         let (start, end) = selection.clamp(self).ordered();
+        let removed = Selection::new(start, end);
 
         // Code is literal and a caption is written between brackets, so marks
         // arriving from a paste have nowhere to go in either.
@@ -840,11 +869,15 @@ impl Doc {
                 }
                 body.normalize_marks();
             });
-            return Cursor {
-                offset: at,
-                ..start
-            }
-            .clamp(self);
+            return Splice {
+                removed,
+                caret: Cursor {
+                    offset: at,
+                    ..start
+                }
+                .clamp(self),
+                blocks: 0,
+            };
         }
 
         // Across cells of one table the table itself survives: the covered
@@ -868,7 +901,14 @@ impl Doc {
                     body.remove(from..to)
                 });
             }
-            return self.replace(Selection::at(start), text);
+            // The recursion is the insert alone, so what it covered is not what
+            // this call covered — only the caret comes back out of it.
+            let caret = self.replace(Selection::at(start), text).caret;
+            return Splice {
+                removed,
+                caret,
+                blocks: self.blocks.len() as isize - before as isize,
+            };
         }
 
         // Across blocks the head keeps its kind and takes the tail's
@@ -908,7 +948,12 @@ impl Doc {
         };
         self.repair();
         let caret = caret.clamp(self);
-        self.replace(Selection::at(caret), text)
+        let caret = self.replace(Selection::at(caret), text).caret;
+        Splice {
+            removed,
+            caret,
+            blocks: self.blocks.len() as isize - before as isize,
+        }
     }
 
     /// Put the document into the form markdown can hold — the save step.

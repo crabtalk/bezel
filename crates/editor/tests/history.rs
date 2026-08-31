@@ -12,9 +12,9 @@ fn body(block: usize, offset: usize) -> Selection {
 /// editor does.
 fn type_out(history: &mut History, doc: &mut Doc, mut at: Selection, text: &str) -> Selection {
     for ch in text.chars() {
-        history.record(EditKind::Insert, doc, at);
-        let head = doc.replace(at, Text::plain(ch.to_string()));
-        at = Selection::at(head);
+        history.record(EditKind::Insert, doc, at, &[]);
+        let splice = doc.replace(at, Text::plain(ch.to_string()));
+        at = Selection::at(splice.caret);
         history.landed(EditKind::Insert, at);
     }
     at
@@ -27,10 +27,10 @@ fn a_run_of_typing_undoes_as_one_step() {
     let at = type_out(&mut history, &mut doc, body(0, 0), "hello");
     assert_eq!(serialize(&doc), "hello");
 
-    let (back, _) = history.undo(&doc, at).expect("one step to take");
+    let back = history.undo(&doc, at, &[]).expect("one step to take").doc;
     assert_eq!(serialize(&back), "", "the whole word came back at once");
     assert!(
-        history.undo(&back, at).is_none(),
+        history.undo(&back, at, &[]).is_none(),
         "and it was the only step"
     );
 }
@@ -45,9 +45,9 @@ fn a_motion_between_two_runs_makes_two_steps() {
     let at = type_out(&mut history, &mut doc, at, "two");
     assert_eq!(serialize(&doc), "onetwo");
 
-    let (back, _) = history.undo(&doc, at).expect("the second run");
+    let back = history.undo(&doc, at, &[]).expect("the second run").doc;
     assert_eq!(serialize(&back), "one");
-    let (back, _) = history.undo(&back, at).expect("the first run");
+    let back = history.undo(&back, at, &[]).expect("the first run").doc;
     assert_eq!(serialize(&back), "");
 }
 
@@ -61,9 +61,9 @@ fn typing_somewhere_else_starts_a_new_step() {
     let at2 = type_out(&mut history, &mut doc, jumped, "Y");
     assert_eq!(serialize(&doc), "alphaX\n\nbetaY");
 
-    let (back, _) = history.undo(&doc, at2).expect("the second block");
+    let back = history.undo(&doc, at2, &[]).expect("the second block").doc;
     assert_eq!(serialize(&back), "alphaX\n\nbeta");
-    let (back, _) = history.undo(&back, at).expect("the first");
+    let back = history.undo(&back, at, &[]).expect("the first").doc;
     assert_eq!(serialize(&back), "alpha\n\nbeta");
 }
 
@@ -72,13 +72,13 @@ fn a_structural_edit_never_coalesces() {
     let mut history = History::default();
     let mut doc = parse("ab");
     for _ in 0..2 {
-        history.record(EditKind::Structure, &doc, body(0, 1));
+        history.record(EditKind::Structure, &doc, body(0, 1), &[]);
         doc.split(0, 1);
         history.landed(EditKind::Structure, body(0, 1));
     }
-    assert!(history.undo(&doc, body(0, 1)).is_some());
+    assert!(history.undo(&doc, body(0, 1), &[]).is_some());
     // The second step is still there, which a coalesced pair would not leave.
-    assert!(history.undo(&doc, body(0, 1)).is_some());
+    assert!(history.undo(&doc, body(0, 1), &[]).is_some());
 }
 
 #[test]
@@ -87,9 +87,13 @@ fn redo_replays_what_undo_took() {
     let mut doc = parse("");
     let at = type_out(&mut history, &mut doc, body(0, 0), "text");
 
-    let (back, back_at) = history.undo(&doc, at).unwrap();
+    let step = history.undo(&doc, at, &[]).unwrap();
+    let (back, back_at) = (step.doc, step.selection);
     assert_eq!(serialize(&back), "");
-    let (forward, _) = history.redo(&back, back_at).expect("a step to replay");
+    let forward = history
+        .redo(&back, back_at, &[])
+        .expect("a step to replay")
+        .doc;
     assert_eq!(serialize(&forward), "text");
 }
 
@@ -98,12 +102,13 @@ fn a_fresh_edit_drops_the_redo_stack() {
     let mut history = History::default();
     let mut doc = parse("");
     let at = type_out(&mut history, &mut doc, body(0, 0), "one");
-    let (back, back_at) = history.undo(&doc, at).unwrap();
+    let step = history.undo(&doc, at, &[]).unwrap();
+    let (back, back_at) = (step.doc, step.selection);
 
     let mut doc = back;
     type_out(&mut history, &mut doc, back_at, "two");
     assert!(
-        history.redo(&doc, back_at).is_none(),
+        history.redo(&doc, back_at, &[]).is_none(),
         "redo cannot resurrect a branch the document has diverged from"
     );
 }
@@ -119,8 +124,8 @@ fn the_limit_bounds_what_is_kept() {
     }
     let mut steps = 0;
     let mut state = doc.clone();
-    while let Some((back, _)) = history.undo(&state, at) {
-        state = back;
+    while let Some(step) = history.undo(&state, at, &[]) {
+        state = step.doc;
         steps += 1;
     }
     assert_eq!(steps, 3, "the oldest steps fall off the front");

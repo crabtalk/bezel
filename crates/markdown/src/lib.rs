@@ -24,6 +24,7 @@
 //! `NullHttpClient`, and the failure is silent: the element paints the same
 //! fallback it would show while a fetch was still in flight.
 
+pub mod block;
 pub mod doc;
 pub mod edit;
 pub mod highlight;
@@ -34,12 +35,13 @@ pub mod select;
 pub mod serialize;
 pub mod typography;
 
+pub use block::{BlockRenderer, set_block_renderer};
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, Text};
-pub use edit::{Shortcut, shortcut};
+pub use edit::{Shortcut, Splice, shortcut};
 pub use highlight::{Highlighter, languages, set_highlighter};
 pub use parse::{is_image, is_url, parse};
 pub use preview::{LinkPreview, Preview, set_link_preview};
-pub use render::{BlockLayouts, Caption, markdown, render, render_with_selection};
+pub use render::{Annotation, BlockLayouts, Caption, Editing, markdown, render, render_with};
 pub use select::{Cursor, Selection};
 pub use serialize::serialize;
-pub use typography::{Metrics, Typography, set_typography};
+pub use typography::{Typography, set_typography};

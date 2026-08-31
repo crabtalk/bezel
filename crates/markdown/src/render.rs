@@ -18,6 +18,7 @@ use gpui::{
 use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
+    block,
     doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, Text},
     preview,
     select::{Cursor, Selection},
@@ -25,19 +26,22 @@ use crate::{
 };
 
 /// Space between two ordinary blocks, and the tighter space inside a list.
-const BLOCK_GAP: f32 = Theme::SPACE_MD;
-const LIST_GAP: f32 = Theme::SPACE_XS;
+const BLOCK_GAP: f32 = 12.0;
+const LIST_GAP: f32 = 4.0;
 /// One indent level. Wide enough to clear a marker and read as a level.
 const INDENT_WIDTH: f32 = 22.0;
 /// The marker column of a list row.
 const MARKER_WIDTH: f32 = 18.0;
-const MARKER_GAP: f32 = Theme::SPACE_SM;
+const MARKER_GAP: f32 = 8.0;
 /// A fence's height is `lines × the code leading` plus this padding.
-const CODE_PADDING_X: f32 = Theme::SPACE_MD;
+const CODE_PADDING_X: f32 = 12.0;
 const CODE_PADDING_Y: f32 = 10.0;
 /// What a fence with no info string calls itself, in its header and in a
 /// picker — one spelling, so the label and the menu row cannot disagree.
 pub const PLAIN_LANGUAGE: &str = "Plain";
+/// Width of the caret. Wider than a hairline, because it has to read at a
+/// glance against the text it sits in.
+const CARET_WIDTH: f32 = 1.5;
 /// Inline code's wash is a rounded quad painted under the glyphs: a run's
 /// `background_color` can only ever be a square box.
 const INLINE_CODE_RADIUS: f32 = 4.5;
@@ -49,7 +53,7 @@ const CHIP_PAD_X: f32 = 4.0;
 const CHIP_INSET_Y: f32 = 1.0;
 /// A chip with a block to itself is a real element rather than a wash, so it
 /// has room for the favicon the inline one cannot hold.
-const CHIP_BLOCK_PAD_X: f32 = Theme::SPACE_SM;
+const CHIP_BLOCK_PAD_X: f32 = 8.0;
 const CHIP_BLOCK_PAD_Y: f32 = 3.0;
 const CHIP_ICON: f32 = 15.0;
 /// Bookmark metrics. Notion's card: 180px of image beside the text, and a
@@ -59,17 +63,18 @@ const CARD_HEIGHT: f32 = 116.0;
 const CARD_IMAGE_WIDTH: f32 = 180.0;
 const CARD_COVER_HEIGHT: f32 = 200.0;
 const CARD_PADDING: f32 = 14.0;
+const CARD_BORDER: f32 = 1.0;
 const CARD_ICON: f32 = 16.0;
 const CARD_COVER: f32 = 44.0;
 /// Image metrics.
 const IMAGE_EMPTY_HEIGHT: f32 = 52.0;
-const CAPTION_GAP: f32 = Theme::SPACE_XS;
+const CAPTION_GAP: f32 = 4.0;
 /// What an image with no URL yet says, and what its caption says while empty.
 const IMAGE_EMPTY: &str = "Add an image";
 const CAPTION_HINT: &str = "Write a caption";
 /// Table metrics. The design is frameless: hairlines between rows are the only
 /// chrome — no outer box, no header fill, no rounding.
-const TABLE_CELL_PADDING: f32 = Theme::SPACE_MD;
+const TABLE_CELL_PADDING: f32 = 12.0;
 const TABLE_DIVIDER: f32 = 1.0;
 /// Floor for a column's max-content share, so a short column ("1k") beside a
 /// prose column keeps a readable width.
@@ -94,6 +99,70 @@ pub enum Caption {
     Shown,
     /// Kept by the document and painted nowhere — a picture on its own.
     Hidden,
+}
+
+/// A range the caller wants washed, and which of the three washes it gets.
+///
+/// A comment thread is what asks for this, and none of what it *says* is here:
+/// the caller keeps the thread and hands over the range, the way it hands over
+/// a [`crate::Preview`]. A closed set rather than a color, so the environment
+/// keeps deciding the paint.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Annotation {
+    /// A thread still waiting on someone.
+    #[default]
+    Open,
+    /// Answered, and kept for the record.
+    Resolved,
+    /// The one whose thread the reader has in front of them.
+    Active,
+}
+
+impl Annotation {
+    fn wash(self, theme: &Theme) -> Hsla {
+        match self {
+            Self::Open => theme.warning.opacity(0.20),
+            Self::Resolved => theme.warning.opacity(0.08),
+            Self::Active => theme.warning.opacity(0.38),
+        }
+    }
+}
+
+/// What an editor paints over a document.
+///
+/// One value rather than six parameters, and the reason it is public: the
+/// caret, the selection, the comment washes and the layout sink all arrive
+/// together or not at all, and a read-only [`render`] sets none of them.
+#[derive(Clone)]
+pub struct Editing<'a> {
+    /// The caret and what it has selected. `None` paints neither — a document
+    /// nobody is editing.
+    pub selection: Option<Selection>,
+    /// The blink's lit half. A caret painted on every frame reads as frozen,
+    /// and the phase belongs to whoever owns the focus.
+    pub caret_on: bool,
+    /// Filled as the document paints, for a caller resolving clicks against it.
+    pub layouts: Option<&'a BlockLayouts>,
+    /// Ranges washed under the text, in the order given.
+    pub annotations: &'a [(Selection, Annotation)],
+    /// Shown on the caret's block while it holds nothing.
+    pub placeholder: Option<SharedString>,
+    pub caption: Caption,
+}
+
+impl Default for Editing<'_> {
+    fn default() -> Self {
+        Self {
+            selection: None,
+            // Lit, so that a caller setting a selection and nothing else gets a
+            // caret rather than a mystery.
+            caret_on: true,
+            layouts: None,
+            annotations: &[],
+            placeholder: None,
+            caption: Caption::default(),
+        }
+    }
 }
 
 /// Where each block's text landed, recorded as it painted.
@@ -366,7 +435,10 @@ struct Overlay<'a> {
     block: usize,
     part: Part,
     selection: Option<Selection>,
+    caret_on: bool,
     layouts: Option<&'a BlockLayouts>,
+    /// Ranges washed under the text, in the order the caller gave them.
+    annotations: &'a [(Selection, Annotation)],
     /// Shown on the caret's block while it holds nothing. The renderer is the
     /// only thing that knows where that text sits, so the string comes to it.
     placeholder: Option<&'a SharedString>,
@@ -382,6 +454,15 @@ impl<'a> Overlay<'a> {
         Cursor::new(self.block, self.part, 0)
     }
 
+    /// The caret to paint: where it is, and only on the blink's lit half.
+    ///
+    /// Separate from [`Self::caret`] because the blink must not reach anything
+    /// but the quad — a block whose paint depends on holding the caret would
+    /// otherwise swap itself out twice a second.
+    fn caret_painted(&self) -> Option<usize> {
+        self.caret_on.then(|| self.caret()).flatten()
+    }
+
     /// The caret's byte offset, if the head is in *this* text.
     fn caret(&self) -> Option<usize> {
         self.selection
@@ -391,12 +472,25 @@ impl<'a> Overlay<'a> {
     }
 
     /// The selected slice of this text, clipped to it.
+    fn selected(&self, len: usize) -> Option<Range<usize>> {
+        self.clip(self.selection?, len)
+    }
+
+    /// The annotated slices of this text, already resolved to their paint —
+    /// the wash goes into a `move` closure that the theme does not travel into.
+    fn annotated(&self, len: usize, theme: &Theme) -> Vec<(Range<usize>, Hsla)> {
+        self.annotations
+            .iter()
+            .filter_map(|(range, kind)| Some((self.clip(*range, len)?, kind.wash(theme))))
+            .collect()
+    }
+
+    /// A range clipped to this text, and `None` when it does not reach it.
     ///
-    /// The comparison is on `(block, part)` alone: a selection covers this text
+    /// The comparison is on `(block, part)` alone: a range covers this text
     /// entirely when it starts before and ends after, and the offsets only
     /// matter at the two ends.
-    fn selected(&self, len: usize) -> Option<Range<usize>> {
-        let selection = self.selection?;
+    fn clip(&self, selection: Selection, len: usize) -> Option<Range<usize>> {
         if selection.is_collapsed() {
             return None;
         }
@@ -433,7 +527,15 @@ pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
 
 /// Render a document.
 pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) -> AnyElement {
-    render_with_selection(doc, None, None, None, caption, window, cx)
+    render_with(
+        doc,
+        Editing {
+            caption,
+            ..Editing::default()
+        },
+        window,
+        cx,
+    )
 }
 
 /// Render a document with a caret and a selection in it.
@@ -443,15 +545,15 @@ pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) ->
 /// so nothing about layout depends on where the caret sits. An editor supplies
 /// the selection and owns the focus and the keys; painting a caret and a few
 /// quads is not worth a second renderer.
-pub fn render_with_selection(
-    doc: &Doc,
-    selection: Option<Selection>,
-    layouts: Option<&BlockLayouts>,
-    placeholder: Option<SharedString>,
-    caption: Caption,
-    window: &mut Window,
-    cx: &mut App,
-) -> AnyElement {
+pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut App) -> AnyElement {
+    let Editing {
+        selection,
+        caret_on,
+        layouts,
+        annotations,
+        placeholder,
+        caption,
+    } = editing;
     // Refilled every frame, in paint order — and emptied in *prepaint*, not
     // here. An editor reads last frame's positions while building this frame's
     // tree (a menu anchored at the caret, a handle beside a block), and
@@ -479,7 +581,9 @@ pub fn render_with_selection(
             block: ix,
             part: Part::Body,
             selection,
+            caret_on,
             layouts,
+            annotations,
             placeholder: placeholder.as_ref(),
             caption,
         };
@@ -600,15 +704,36 @@ fn block_element(
                 theme,
             ))
             .into_any_element(),
-        BlockKind::Code { language, code } => code_block(
-            language.as_deref(),
-            &code.text,
-            overlay.at(Part::Code),
-            typography,
-            theme,
-            window,
-            cx,
-        ),
+        BlockKind::Code { language, code } => {
+            let overlay = overlay.at(Part::Code);
+            // The caret in the fence gives the source back. A painted block is
+            // still an editable one, and typing into it otherwise edits what
+            // the reader cannot see.
+            let painted = overlay
+                .caret()
+                .is_none()
+                .then(|| block::render(language.as_deref(), &code.text, window, cx))
+                .flatten();
+            match painted {
+                // Painted, there is no text under the selection to carry it —
+                // the wash an opaque block gets at the container comes here.
+                Some(element) => div()
+                    .when(overlay.covers_block(), |el| {
+                        el.rounded(px(4.0)).bg(theme.selection)
+                    })
+                    .child(element)
+                    .into_any_element(),
+                None => code_block(
+                    language.as_deref(),
+                    &code.text,
+                    overlay,
+                    typography,
+                    theme,
+                    window,
+                    cx,
+                ),
+            }
+        }
         BlockKind::Image { url, alt, width } => image(url, alt, *width, overlay, typography, theme),
         BlockKind::Bookmark { url, form } => {
             bookmark(overlay.block, url, *form, typography, theme, cx)
@@ -843,13 +968,15 @@ fn painted_text(
     theme: &Theme,
 ) -> AnyElement {
     let (ix, part) = (overlay.block, overlay.part);
-    let (caret, selected) = (overlay.caret(), overlay.selected(len));
+    let (caret, selected) = (overlay.caret_painted(), overlay.selected(len));
     let span = 0..len;
     // Only where the caret already is, and only while there is nothing to
     // read: a hint on every empty block would be a page of grey.
     let hint = overlay
         .placeholder
-        .filter(|_| len == 0 && caret.is_some())
+        // The caret's own presence, not the blink's phase — a hint that came
+        // and went twice a second would be unreadable.
+        .filter(|_| len == 0 && overlay.caret().is_some())
         .map(|hint| {
             div()
                 .absolute()
@@ -882,12 +1009,27 @@ fn painted_text(
     let chip_ranges = flat.chips;
     let caret_color = theme.caret;
     let selection_color = theme.selection;
+    let annotated = overlay.annotated(len, theme);
     let layouts = overlay.layouts.cloned();
     let underlay = canvas(
         |_, _, _| (),
         move |_, _, window, _| {
             if let Some(layouts) = &layouts {
                 layouts.record(ix, part, span.clone(), layout.clone());
+            }
+            // Below the selection, so dragging across a comment still reads as
+            // selected rather than as a third colour nobody chose.
+            for (range, wash) in &annotated {
+                for rect in range_rects(&layout, range, 0.0, 0.0) {
+                    window.paint_quad(quad(
+                        rect,
+                        px(2.0),
+                        *wash,
+                        px(0.0),
+                        gpui::transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
             }
             // Under the glyphs, like the inline-code wash — one quad per visual
             // row, so a wrapped selection is a stack of rows rather than a box
@@ -908,7 +1050,7 @@ fn painted_text(
                 && let Some(head) = layout.position_for_index(offset)
             {
                 window.paint_quad(quad(
-                    Bounds::new(head, gpui::size(px(1.5), layout.line_height())),
+                    caret_quad(head, size, layout.line_height()),
                     px(0.0),
                     caret_color,
                     px(0.0),
@@ -955,6 +1097,19 @@ fn painted_text(
         .children(hint)
         .child(painted)
         .into_any_element()
+}
+
+/// The caret's quad: the text's own size, centred in the line box.
+///
+/// The leading is not the caret's to take. A document is set with air around
+/// its lines, and a caret filling all of it reads as a second, larger font
+/// standing where the text should be.
+fn caret_quad(head: Point<Pixels>, size: f32, line_height: Pixels) -> Bounds<Pixels> {
+    let inset = (line_height - px(size)) / 2.0;
+    Bounds::new(
+        head + point(px(0.0), inset),
+        gpui::size(px(CARET_WIDTH), px(size)),
+    )
 }
 
 /// The rectangles a byte range occupies, one per visual row.
@@ -1065,9 +1220,11 @@ fn code_block(
         })
         .collect();
 
-    let caret = overlay.caret();
+    let caret = overlay.caret_painted();
     let selected = overlay.selected(code.len());
     let sink = overlay.layouts.cloned();
+    let code_size = typography.code.size();
+    let annotated = overlay.annotated(code.len(), theme);
     let (caret_color, selection_color) = (theme.caret, theme.selection);
     let underlay = canvas(
         |_, _, _| (),
@@ -1075,6 +1232,23 @@ fn code_block(
             for (span, layout) in &rows {
                 if let Some(sink) = &sink {
                     sink.record(ix, Part::Code, span.clone(), layout.clone());
+                }
+                for (range, wash) in &annotated {
+                    let (from, to) = (range.start.max(span.start), range.end.min(span.end));
+                    if from < to {
+                        for rect in
+                            range_rects(layout, &(from - span.start..to - span.start), 0.0, 0.0)
+                        {
+                            window.paint_quad(quad(
+                                rect,
+                                px(2.0),
+                                *wash,
+                                px(0.0),
+                                gpui::transparent_black(),
+                                BorderStyle::default(),
+                            ));
+                        }
+                    }
                 }
                 if let Some(range) = &selected {
                     let (from, to) = (range.start.max(span.start), range.end.min(span.end));
@@ -1097,7 +1271,7 @@ fn code_block(
                     && let Some(head) = layout.position_for_index(offset - span.start)
                 {
                     window.paint_quad(quad(
-                        Bounds::new(head, size(px(1.5), layout.line_height())),
+                        caret_quad(head, code_size, layout.line_height()),
                         px(0.0),
                         caret_color,
                         px(0.0),
@@ -1332,9 +1506,10 @@ fn image(
 /// and title, which is what an inline mention would be if shaped text had
 /// anywhere to put a picture.
 ///
-/// The text is a fixed height and its footer pinned to the bottom because a
+/// The row is a fixed height with its footer pinned to the bottom, because a
 /// preview resolves *after* the card has painted — a blurb arriving into a box
-/// that grows would shove every block below it down the page.
+/// that grows would shove every block below it down the page. An embed's cover
+/// holds that height, so its text hugs.
 fn bookmark(
     ix: usize,
     url: &str,
@@ -1405,7 +1580,6 @@ fn bookmark(
         .flex()
         .flex_col()
         .min_w_0()
-        .h(px(CARD_HEIGHT))
         .px(px(CARD_PADDING))
         .py(px(CARD_PADDING - 2.0))
         .child(
@@ -1437,16 +1611,14 @@ fn bookmark(
                 .child(div().truncate().child(label)),
         );
 
-    let picture = div()
+    let picture = corners(div(), form)
         .bg(theme.surface)
         .flex()
         .items_center()
         .justify_center()
         .overflow_hidden()
         .child(match preview.image {
-            Some(image) => img(image)
-                .size_full()
-                .object_fit(ObjectFit::Cover)
+            Some(image) => corners(img(image).size_full().object_fit(ObjectFit::Cover), form)
                 .with_fallback(move || mark(CARD_COVER))
                 .into_any_element(),
             None => mark(CARD_COVER),
@@ -1459,7 +1631,7 @@ fn bookmark(
         .w_full()
         .overflow_hidden()
         .rounded(px(Theme::button_radius()))
-        .border_1()
+        .border(px(CARD_BORDER))
         .border_color(theme.border)
         .bg(theme.surface_card)
         .cursor(CursorStyle::PointingHand)
@@ -1476,6 +1648,17 @@ fn bookmark(
             .child(picture.flex_none().w(px(CARD_IMAGE_WIDTH)).h_full())
     }
     .into_any_element()
+}
+
+/// The card's corners, on the panel that reaches them: a content mask is a
+/// rectangle, so a picture paints square over a rounded card unless it carries
+/// the radius itself, concentric inside the card's border.
+fn corners<T: Styled>(element: T, form: Form) -> T {
+    let corner = px(Theme::inset_radius(Theme::button_radius(), CARD_BORDER));
+    match form {
+        Form::Embed => element.rounded_t(corner),
+        _ => element.rounded_r(corner),
+    }
 }
 
 /// The mark a site gets before anyone has fetched its favicon: its host's first

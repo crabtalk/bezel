@@ -5,38 +5,7 @@
 //! only what it defaults to.
 
 use gpui::{App, FontWeight, Global};
-use theme::TextStyle;
-
-/// One markdown role: a rung on the type ladder, the leading it carries, and
-/// the weight it is set in.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Metrics {
-    pub role: TextStyle,
-    /// Line height as a multiple of the painted size, so leading follows the
-    /// type wherever [`theme::set_base_text_size`] puts it.
-    pub leading: f32,
-    /// The ladder carries one bold cell and a document needs four heading
-    /// weights, so this is named here rather than read off the role.
-    pub weight: FontWeight,
-}
-
-impl Metrics {
-    pub const fn new(role: TextStyle, leading: f32, weight: FontWeight) -> Self {
-        Self {
-            role,
-            leading,
-            weight,
-        }
-    }
-
-    pub fn size(self) -> f32 {
-        self.role.painted()
-    }
-
-    pub fn line_height(self) -> f32 {
-        self.size() * self.leading
-    }
-}
+use theme::{Metrics, TextStyle};
 
 /// What a document is set in, role by role.
 #[derive(Clone, Copy, Debug, PartialEq)]
