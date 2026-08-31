@@ -51,7 +51,9 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo .github/scripts/linux-deps
       - run: cargo build --workspace --all-targets
-      - run: cargo nextest run --workspace
+      # No fail-fast: one platform-specific test hiding the other 297 is not
+      # a report anyone can act on.
+      - run: cargo nextest run --workspace --no-fail-fast
 
   # The gallery ships to the browser, and wasm fails in ways no native build
   # sees — `std::time::Instant` panics there, and a missing renderer feature
