@@ -15,7 +15,8 @@ use gpui::{
     Styled as _, Window, canvas, div, prelude::*,
 };
 use markdown::{
-    BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Text, edit, edit::shortcut,
+    Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Text, edit,
+    edit::shortcut,
 };
 use motion::Painter;
 use std::ops::Range;
@@ -76,6 +77,23 @@ fn fenceable(doc: &Doc, selection: Selection) -> bool {
             || spans
                 .iter()
                 .any(|(at, range)| covered(at, range).is_some_and(|text| text.contains('\n'))))
+}
+
+/// Give an empty document a block to hold a caret, and say whether one was
+/// needed.
+///
+/// A [`Doc`] with no blocks is a legitimate document — it is what `parse("")`
+/// returns — but it is not something that can be edited: nothing paints, so
+/// there is no caret and no placeholder, and neither a click nor a hit test
+/// has a target to find. An empty file would sit inert until something typed
+/// a block into existence, which is the one thing you cannot do with no caret.
+fn ensure_block(doc: &mut Doc) -> bool {
+    if !doc.blocks.is_empty() {
+        return false;
+    }
+    doc.blocks
+        .push(Block::new(BlockKind::Paragraph(Text::default())));
+    true
 }
 
 pub struct Editor {
@@ -150,7 +168,8 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
-        let doc = markdown::parse(source);
+        let mut doc = markdown::parse(source);
+        ensure_block(&mut doc);
         Self {
             // Clamped, not defaulted: a document opening on a fence or a table
             // has no body at block zero, and a caret claiming one resolves
@@ -352,6 +371,11 @@ impl Editor {
         self.pasted = None;
         self.history.record(kind, &self.doc, self.selection);
         edit(self);
+        // Deleting the last block is the other way to an empty document, and
+        // the caret belongs at the start of whatever replaces it.
+        if ensure_block(&mut self.doc) {
+            self.selection = Selection::at(Cursor::default());
+        }
         self.history.landed(kind, self.selection);
         // Typing moves the caret as surely as an arrow key does, and a split
         // moves it onto a block that does not exist until this frame paints.
