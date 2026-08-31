@@ -42,4 +42,4 @@ pub use preview::{LinkPreview, Preview, set_link_preview};
 pub use render::{BlockLayouts, Caption, markdown, render, render_with_selection};
 pub use select::{Cursor, Selection};
 pub use serialize::serialize;
-pub use typography::{Metrics, Typography, set_typography};
+pub use typography::{Typography, set_typography};

@@ -24,6 +24,7 @@ use theme::Theme;
 
 use crate::{
     history::{EditKind, History},
+    layout::Layout,
     link::{self, Choice},
     slash::Slash,
 };
@@ -48,10 +49,9 @@ const CONTEXT: &str = "BezelEditor";
 /// to say that `/` does anything.
 const PLACEHOLDER: &str = "Type / for commands";
 
-/// The handle's box, and how far left of the text it sits. Wide enough to be
-/// hit without crowding the margin.
+/// The handle's box. Wide enough to be hit without crowding the margin; how
+/// far left of the text it sits is [`Layout::text_inset`](crate::Layout).
 const HANDLE_SIZE: f32 = 18.0;
-const HANDLE_GUTTER: f32 = 22.0;
 
 /// How far a drag on an image's edge handle can shrink it — matches
 /// `markdown::render`'s `TABLE_MIN_COLUMN_WIDTH`, the same floor for the
@@ -1058,6 +1058,7 @@ impl Focusable for Editor {
 impl Render for Editor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
+        let layout = Layout::of(cx);
         let focused = self.focus_handle.is_focused(window);
         let selection = focused.then_some(self.selection);
 
@@ -1337,7 +1338,7 @@ impl Render for Editor {
             // any scrolling ancestor, and a drag through it never reaches
             // `on_mouse_move`, which fires only while this element is the one
             // under the pointer.
-            .child(div().w_full().pl(gpui::px(HANDLE_GUTTER)).child(
+            .child(div().w_full().pl(gpui::px(layout.text_inset)).child(
                 markdown::render_with_selection(
                     &self.doc,
                     selection,

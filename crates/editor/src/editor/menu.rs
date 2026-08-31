@@ -9,7 +9,10 @@ use markdown::BlockKind;
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
 
-use crate::editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE};
+use crate::{
+    editor::{Editor, HANDLE_SIZE},
+    layout::Layout,
+};
 
 /// How far the language chip reaches past the word it wraps.
 const CHIP_PAD_X: f32 = 6.0;
@@ -38,7 +41,7 @@ impl Editor {
             div()
                 .id("block-handle")
                 .absolute()
-                .left(bounds.origin.x - self.origin.x - px(HANDLE_GUTTER))
+                .left(bounds.origin.x - self.origin.x - px(Layout::of(cx).text_inset))
                 .top(top - self.origin.y)
                 .w(px(HANDLE_SIZE))
                 .h(px(HANDLE_SIZE))

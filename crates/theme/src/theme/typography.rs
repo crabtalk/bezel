@@ -78,6 +78,37 @@ impl TextStyle {
     }
 }
 
+/// One role as it is actually set: a rung on the ladder, the leading it carries,
+/// and the weight it is set in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Metrics {
+    pub role: TextStyle,
+    /// Line height as a multiple of the painted size, so leading follows the
+    /// type wherever [`set_base_text_size`] puts it.
+    pub leading: f32,
+    /// The ladder carries one bold cell, so a set needing several heading
+    /// weights names its own here rather than reading it off the role.
+    pub weight: FontWeight,
+}
+
+impl Metrics {
+    pub const fn new(role: TextStyle, leading: f32, weight: FontWeight) -> Self {
+        Self {
+            role,
+            leading,
+            weight,
+        }
+    }
+
+    pub fn size(self) -> f32 {
+        self.role.painted()
+    }
+
+    pub fn line_height(self) -> f32 {
+        self.size() * self.leading
+    }
+}
+
 /// The ladder, on anything styled.
 pub trait Typeset: Styled + Sized {
     /// Size and weight together, from [`TextStyle`].
