@@ -9,18 +9,20 @@
 //! all of it testable without a window. What lives here is the half that needs
 //! one: focus, keys, the platform input handler, the mouse, undo, and the menus.
 
+mod comment;
 mod editor;
 mod history;
 mod layout;
 mod link;
 mod slash;
 
+pub use comment::{Anchor, CommentId};
 #[doc(hidden)]
 pub use editor::menu::SLASH_MENU;
 pub use editor::{
-    Editor,
+    Editor, EditorEvent,
     image::{ImageStore, Source, set_image_store},
     init,
 };
-pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History};
+pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};
 pub use layout::{Layout, set_layout};

@@ -97,6 +97,33 @@ pub enum Caption {
     Hidden,
 }
 
+/// A range the caller wants washed, and which of the three washes it gets.
+///
+/// A comment thread is what asks for this, and none of what it *says* is here:
+/// the caller keeps the thread and hands over the range, the way it hands over
+/// a [`crate::Preview`]. A closed set rather than a color, so the environment
+/// keeps deciding the paint.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Annotation {
+    /// A thread still waiting on someone.
+    #[default]
+    Open,
+    /// Answered, and kept for the record.
+    Resolved,
+    /// The one whose thread the reader has in front of them.
+    Active,
+}
+
+impl Annotation {
+    fn wash(self, theme: &Theme) -> Hsla {
+        match self {
+            Self::Open => theme.warning.opacity(0.20),
+            Self::Resolved => theme.warning.opacity(0.08),
+            Self::Active => theme.warning.opacity(0.38),
+        }
+    }
+}
+
 /// Where each block's text landed, recorded as it painted.
 ///
 /// A caret has to be placeable by pointer, and only paint knows where a glyph
@@ -368,6 +395,8 @@ struct Overlay<'a> {
     part: Part,
     selection: Option<Selection>,
     layouts: Option<&'a BlockLayouts>,
+    /// Ranges washed under the text, in the order the caller gave them.
+    annotations: &'a [(Selection, Annotation)],
     /// Shown on the caret's block while it holds nothing. The renderer is the
     /// only thing that knows where that text sits, so the string comes to it.
     placeholder: Option<&'a SharedString>,
@@ -392,12 +421,25 @@ impl<'a> Overlay<'a> {
     }
 
     /// The selected slice of this text, clipped to it.
+    fn selected(&self, len: usize) -> Option<Range<usize>> {
+        self.clip(self.selection?, len)
+    }
+
+    /// The annotated slices of this text, already resolved to their paint —
+    /// the wash goes into a `move` closure that the theme does not travel into.
+    fn annotated(&self, len: usize, theme: &Theme) -> Vec<(Range<usize>, Hsla)> {
+        self.annotations
+            .iter()
+            .filter_map(|(range, kind)| Some((self.clip(*range, len)?, kind.wash(theme))))
+            .collect()
+    }
+
+    /// A range clipped to this text, and `None` when it does not reach it.
     ///
-    /// The comparison is on `(block, part)` alone: a selection covers this text
+    /// The comparison is on `(block, part)` alone: a range covers this text
     /// entirely when it starts before and ends after, and the offsets only
     /// matter at the two ends.
-    fn selected(&self, len: usize) -> Option<Range<usize>> {
-        let selection = self.selection?;
+    fn clip(&self, selection: Selection, len: usize) -> Option<Range<usize>> {
         if selection.is_collapsed() {
             return None;
         }
@@ -434,7 +476,7 @@ pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
 
 /// Render a document.
 pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) -> AnyElement {
-    render_with_selection(doc, None, None, None, caption, window, cx)
+    render_with_selection(doc, None, None, &[], None, caption, window, cx)
 }
 
 /// Render a document with a caret and a selection in it.
@@ -444,10 +486,14 @@ pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) ->
 /// so nothing about layout depends on where the caret sits. An editor supplies
 /// the selection and owns the focus and the keys; painting a caret and a few
 /// quads is not worth a second renderer.
+// Six of these plus gpui's own two. Bundling them would put a public struct in
+// front of the one function an editor calls, for no reader's benefit.
+#[allow(clippy::too_many_arguments)]
 pub fn render_with_selection(
     doc: &Doc,
     selection: Option<Selection>,
     layouts: Option<&BlockLayouts>,
+    annotations: &[(Selection, Annotation)],
     placeholder: Option<SharedString>,
     caption: Caption,
     window: &mut Window,
@@ -481,6 +527,7 @@ pub fn render_with_selection(
             part: Part::Body,
             selection,
             layouts,
+            annotations,
             placeholder: placeholder.as_ref(),
             caption,
         };
@@ -883,12 +930,27 @@ fn painted_text(
     let chip_ranges = flat.chips;
     let caret_color = theme.caret;
     let selection_color = theme.selection;
+    let annotated = overlay.annotated(len, theme);
     let layouts = overlay.layouts.cloned();
     let underlay = canvas(
         |_, _, _| (),
         move |_, _, window, _| {
             if let Some(layouts) = &layouts {
                 layouts.record(ix, part, span.clone(), layout.clone());
+            }
+            // Below the selection, so dragging across a comment still reads as
+            // selected rather than as a third colour nobody chose.
+            for (range, wash) in &annotated {
+                for rect in range_rects(&layout, range, 0.0, 0.0) {
+                    window.paint_quad(quad(
+                        rect,
+                        px(2.0),
+                        *wash,
+                        px(0.0),
+                        gpui::transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
             }
             // Under the glyphs, like the inline-code wash — one quad per visual
             // row, so a wrapped selection is a stack of rows rather than a box
@@ -1069,6 +1131,7 @@ fn code_block(
     let caret = overlay.caret();
     let selected = overlay.selected(code.len());
     let sink = overlay.layouts.cloned();
+    let annotated = overlay.annotated(code.len(), theme);
     let (caret_color, selection_color) = (theme.caret, theme.selection);
     let underlay = canvas(
         |_, _, _| (),
@@ -1076,6 +1139,23 @@ fn code_block(
             for (span, layout) in &rows {
                 if let Some(sink) = &sink {
                     sink.record(ix, Part::Code, span.clone(), layout.clone());
+                }
+                for (range, wash) in &annotated {
+                    let (from, to) = (range.start.max(span.start), range.end.min(span.end));
+                    if from < to {
+                        for rect in
+                            range_rects(layout, &(from - span.start..to - span.start), 0.0, 0.0)
+                        {
+                            window.paint_quad(quad(
+                                rect,
+                                px(2.0),
+                                *wash,
+                                px(0.0),
+                                gpui::transparent_black(),
+                                BorderStyle::default(),
+                            ));
+                        }
+                    }
                 }
                 if let Some(range) = &selected {
                     let (from, to) = (range.start.max(span.start), range.end.min(span.end));

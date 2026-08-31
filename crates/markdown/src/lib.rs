@@ -35,11 +35,11 @@ pub mod serialize;
 pub mod typography;
 
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, Text};
-pub use edit::{Shortcut, shortcut};
+pub use edit::{Shortcut, Splice, shortcut};
 pub use highlight::{Highlighter, languages, set_highlighter};
 pub use parse::{is_image, is_url, parse};
 pub use preview::{LinkPreview, Preview, set_link_preview};
-pub use render::{BlockLayouts, Caption, markdown, render, render_with_selection};
+pub use render::{Annotation, BlockLayouts, Caption, markdown, render, render_with_selection};
 pub use select::{Cursor, Selection};
 pub use serialize::serialize;
 pub use typography::{Typography, set_typography};
