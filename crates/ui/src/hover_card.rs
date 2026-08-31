@@ -24,7 +24,7 @@ use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelud
 use crate::widgets::Content;
 use theme::Theme;
 
-use crate::popover;
+use crate::{popover, surface::Surfaced as _};
 
 pub struct HoverCard {
     title: SharedString,
@@ -116,5 +116,6 @@ impl Render for HoverCard {
                         .child(meta),
                 )
             })
+            .surface(&theme, theme.popover_surface)
     }
 }

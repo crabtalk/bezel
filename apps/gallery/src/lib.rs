@@ -14,7 +14,7 @@ use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
-    GlassSpec, Theme,
+    Frost, Glass, SurfaceSpec, SurfaceStyle, Theme,
     appearance::{self, AppearanceMode},
 };
 use ui::{
@@ -27,13 +27,13 @@ use ui::{
     icons,
     input::{self, Shape, TextField},
     list, loaders,
-    material::{Glass as _, GlassStyle},
     menubar::{self, Item, Menu, Menubar, MenubarEvent},
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
     popover,
     scroll::{self, ScrollbarState, TransientState},
     stats::{self, Stats},
+    surface::Surfaced as _,
     table::{self, Column, Sort, Width},
     titlebar,
     tooltip::Tooltip,
@@ -183,6 +183,30 @@ const SLIDER_STEP: f32 = 0.05;
 /// What the rest of the probe's knobs span. One range has to hold both shipped
 /// looks, which is why `clear` sits high in the gain track and `regular` low.
 const GAIN_RANGE: f32 = 1.5;
+/// Every surface the probe can paint: the frost scale, then the two glasses.
+const PROBE_STYLES: [SurfaceStyle; 7] = [
+    SurfaceStyle::Frost(Frost::UltraThin),
+    SurfaceStyle::Frost(Frost::Thin),
+    SurfaceStyle::Frost(Frost::Regular),
+    SurfaceStyle::Frost(Frost::Thick),
+    SurfaceStyle::Frost(Frost::UltraThick),
+    SurfaceStyle::Glass(Glass::Regular),
+    SurfaceStyle::Glass(Glass::Clear),
+];
+
+/// Its chip label, which is also its element id.
+fn probe_style_name(style: SurfaceStyle) -> &'static str {
+    match style {
+        SurfaceStyle::Frost(Frost::UltraThin) => "ultraThin",
+        SurfaceStyle::Frost(Frost::Thin) => "thin",
+        SurfaceStyle::Frost(Frost::Regular) => "frost",
+        SurfaceStyle::Frost(Frost::Thick) => "thick",
+        SurfaceStyle::Frost(Frost::UltraThick) => "ultraThick",
+        SurfaceStyle::Glass(Glass::Regular) => "regular",
+        SurfaceStyle::Glass(Glass::Clear) => "clear",
+    }
+}
+
 /// Saturation spans grey through the pass-through `clear` measures to well
 /// past any boost `regular` could plausibly want.
 const SAT_RANGE: f32 = 3.0;
@@ -191,11 +215,9 @@ const EDGE_RANGE: f32 = 0.6;
 const EDGE_W_RANGE: f32 = 4.0;
 const DISPERSION_RANGE: f32 = 0.05;
 
-/// What the probe's blur knob spans on glass, in points — `regular` smears a
-/// bar edge over some 12pt, so a track that stopped at `clear`'s couple of
-/// points could not reach it. Frost keeps its own wash over a whole card.
-const GLASS_BLUR_RANGE: f32 = 24.0;
-const FROST_BLUR_RANGE: f32 = 60.0;
+/// What the probe's blur knob spans, in points. One track for every look, so
+/// it has to hold `clear`'s 1.2 and frost's 44 at once.
+const BLUR_RANGE: f32 = 60.0;
 
 /// One arrow press on a probe knob: mag by 0.1, width by 1.5pt, rim by 0.1pt —
 /// the resolution those are measured at, which is finer than a control needs.
@@ -869,13 +891,12 @@ pub struct Gallery {
     probe_h: f32,
     probe_r: f32,
     probe_bg: usize,
-    probe_glass: bool,
+    /// Which look the probe paints — one three-way, since frost is a look.
+    probe_style: SurfaceStyle,
     /// The look under the knobs, in the units it ships in — a spec rather than
     /// six fractions, so seating it on a shipped look is an assignment and the
     /// labels are the numbers to write back into the palette.
-    probe_spec: GlassSpec,
-    /// Which shipped look the glass probe is painting.
-    probe_clear: bool,
+    probe_spec: SurfaceSpec,
     probe_tint: bool,
     probe_magnify: f32,
     probe_disp: f32,
@@ -1030,11 +1051,10 @@ impl Gallery {
             probe_h: (168.0 - 30.0) / 220.0,
             probe_r: 34.0 / 84.0,
             probe_bg: 5,
-            probe_glass: true,
+            probe_style: SurfaceStyle::Glass(Glass::Clear),
             // The knobs open on the shipped look rather than on copies of its
             // numbers: a theme change moves the probe with it.
             probe_spec: Theme::of(cx).glass_clear,
-            probe_clear: true,
             probe_tint: false,
             probe_magnify: (Theme::of(cx).glass_magnify + 16.0) / 32.0,
             probe_disp: Theme::of(cx).glass_dispersion,
@@ -1240,13 +1260,9 @@ impl Gallery {
     /// The slider by keyboard. Clamped here rather than in the widget: the
     /// paint clamps what it draws, but the value is this view's to keep sane.
     /// The shipped look the probe's variant chip is pointing at.
-    fn probe_look(&self, cx: &App) -> GlassSpec {
+    fn probe_look(&self, cx: &App) -> SurfaceSpec {
         let theme = Theme::of(cx);
-        if self.probe_clear {
-            theme.glass_clear
-        } else {
-            theme.glass_regular
-        }
+        self.probe_style.spec(theme)
     }
 
     /// The probe knob a slider id drives. Drag writes its value, the arrows add
@@ -2580,23 +2596,77 @@ impl Gallery {
                     .into_any_element()
             }
 
-            "menu" => section
-                .child(
+            "menu" => {
+                // The card reads `menu_style` to know whether it owes a fill, a
+                // hairline and a shadow — so demoing a look the app has not
+                // chosen means handing it a theme that has, the same rule the
+                // probe tunes glass by.
+                let card = |style: SurfaceStyle, tag: &'static str| {
+                    let theme = Theme {
+                        popover_surface: style,
+                        ..theme.clone()
+                    };
                     popover::popover_card(&theme).w(px(240.0)).children([
                         popover::menu_heading(&theme, "Section").into_any_element(),
-                        popover::menu_row(&theme, false, Fade::new(view, "m-one"))
+                        popover::menu_row(&theme, false, Fade::new(view, tag))
                             .child("First item")
                             .into_any_element(),
-                        popover::menu_row(&theme, true, Fade::new(view, "m-two"))
+                        popover::menu_row(&theme, true, Fade::new(view, "m-active"))
                             .child("Active item")
                             .into_any_element(),
                         popover::divider().into_any_element(),
-                        popover::menu_row(&theme, false, Fade::new(view, "m-three"))
+                        popover::menu_row(&theme, false, Fade::new(view, "m-third"))
                             .child("Third item")
                             .into_any_element(),
-                    ]),
-                )
-                .into_any_element(),
+                    ])
+                };
+                // Over content, not the page: a menu on a flat backdrop cannot
+                // tell the two looks apart, because the one thing separating
+                // them is what they do to what is behind.
+                let band =
+                    |style: SurfaceStyle, tag: &'static str| {
+                        div()
+                            .relative()
+                            .h(px(280.0))
+                            .rounded(px(Theme::panel_radius()))
+                            .overflow_hidden()
+                            .child(div().absolute().inset_0().flex().flex_row().children(
+                                (0..14).map(|i| {
+                                    div().flex_1().h_full().bg(if i % 2 == 0 {
+                                        theme.accent
+                                    } else {
+                                        theme.warning
+                                    })
+                                }),
+                            ))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .inset_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(ui::surface::of(
+                                        Theme::surface_radius(),
+                                        style,
+                                        card(style, tag),
+                                    )),
+                            )
+                    };
+                section
+                    .child(hint(
+                        &theme,
+                        "The same menu on both looks. Frost washes what it \
+                         covers; glass dims it and bends it at the rim. \
+                         `Theme::menu_style` picks which one every menu, dialog \
+                         and sheet in the app mounts on.",
+                    ))
+                    .child(theme.field_label("Frost — Regular"))
+                    .child(band(SurfaceStyle::Frost(Frost::Regular), "m-frosted"))
+                    .child(theme.field_label("Glass — Regular"))
+                    .child(band(SurfaceStyle::Glass(Glass::Regular), "m-regular"))
+                    .into_any_element()
+            }
 
             "group-box" => section
                 .child(
@@ -2757,7 +2827,8 @@ impl Gallery {
                             gpui::point(px(40.0), px(40.0)),
                             popover::popover_card(&theme)
                                 .w(px(180.0))
-                                .child(popover::menu_heading(&theme, "Drag me")),
+                                .child(popover::menu_heading(&theme, "Drag me"))
+                                .surface(&theme, theme.popover_surface),
                         )),
                 )
                 .into_any_element(),
@@ -2946,16 +3017,11 @@ impl Gallery {
                 // from the environment, so the honest way to demonstrate them
                 // is to hand this one card a different environment — which is
                 // exactly what branding the lens would do.
-                let probe_style = if self.probe_clear {
-                    GlassStyle::Clear
-                } else {
-                    GlassStyle::Regular
-                };
-                // Both looks carry the knobs: the variant chip seats them, so
-                // whichever one is painting is the one being tuned.
+                // The chips load a look's numbers and the knobs move them from
+                // there, so what the probe paints is always `probe_spec` — one
+                // conduit, whichever style named the numbers in it.
                 let probe_theme = Theme {
                     glass_regular: self.probe_spec,
-                    glass_clear: self.probe_spec,
                     glass_magnify: self.probe_magnify * 32.0 - 16.0,
                     glass_dispersion: self.probe_disp,
                     ..theme.clone()
@@ -3048,12 +3114,12 @@ impl Gallery {
                                 "glass-probe",
                                 &self.probe_at,
                                 point(px(120.0), px(120.0)),
-                                if self.probe_glass {
+                                {
                                     let glass = div()
                                         .w(px(pw))
                                         .h(px(ph))
                                         .rounded(px(pr))
-                                        .glass_effect(&probe_theme, probe_style);
+                                        .surface(&probe_theme, SurfaceStyle::Glass(Glass::Regular));
                                     if self.probe_tint {
                                         glass
                                             .tint(
@@ -3064,14 +3130,6 @@ impl Gallery {
                                     } else {
                                         glass.into_any_element()
                                     }
-                                } else {
-                                    div()
-                                        .w(px(pw))
-                                        .h(px(ph))
-                                        .rounded(px(pr))
-                                        .bg(theme.glass_overlay().opacity(self.probe_fill))
-                                        .material(self.probe_spec.blur)
-                                        .into_any_element()
                                 },
                             )),
                     )
@@ -3093,78 +3151,51 @@ impl Gallery {
                             .items_center()
                             .gap_3()
                             .flex_wrap()
-                            .child(
+                            .children(PROBE_STYLES.map(|style| {
+                                let on = self.probe_style == style;
                                 div()
-                                    .id("probe-surface")
+                                    .id(probe_style_name(style))
                                     .px(px(10.0))
                                     .py(px(4.0))
                                     .rounded(px(Theme::control_radius()))
                                     .text_size(px(12.0))
-                                    .text_color(theme.text)
-                                    .bg(theme.glass_hover())
+                                    .text_color(if on { theme.text } else { theme.text_muted })
+                                    .bg(if on { theme.glass_hover() } else { theme.bg })
                                     .cursor_pointer()
-                                    .child(if self.probe_glass { "glass" } else { "frosted" })
+                                    .child(probe_style_name(style))
+                                    // Land on the look's shipped numbers, so
+                                    // the sliders explore from the truth
+                                    // rather than overriding it silently.
+                                    .on_click(cx.listener(move |view, _, _, cx| {
+                                        view.probe_style = style;
+                                        view.probe_spec = view.probe_look(cx);
+                                        cx.notify();
+                                    }))
+                            }))
+                            .child(
+                                div()
+                                    .id("probe-tint")
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded(px(Theme::control_radius()))
+                                    .text_size(px(12.0))
+                                    .text_color(if self.probe_tint {
+                                        theme.text
+                                    } else {
+                                        theme.text_muted
+                                    })
+                                    .bg(if self.probe_tint {
+                                        theme.glass_hover()
+                                    } else {
+                                        theme.bg
+                                    })
+                                    .cursor_pointer()
+                                    .child("tint")
                                     .on_click(cx.listener(|view, _, _, cx| {
-                                        view.probe_glass = !view.probe_glass;
-                                        // The knob spans a different range in
-                                        // each mode, so arriving re-seats it on
-                                        // that mode's shipped value rather than
-                                        // carrying a fraction across.
-                                        view.probe_spec.blur = if view.probe_glass {
-                                            view.probe_look(cx).blur
-                                        } else {
-                                            8.0
-                                        };
+                                        view.probe_tint = !view.probe_tint;
                                         cx.notify();
                                     })),
                             )
-                            .when(self.probe_glass, |row| {
-                                row.child(
-                                    div()
-                                        .id("probe-variant")
-                                        .px(px(10.0))
-                                        .py(px(4.0))
-                                        .rounded(px(Theme::control_radius()))
-                                        .text_size(px(12.0))
-                                        .bg(theme.glass_hover())
-                                        .cursor_pointer()
-                                        .child(if self.probe_clear { "clear" } else { "regular" })
-                                        // Land on the look's shipped value, so
-                                        // the slider explores from the truth
-                                        // rather than overriding it silently.
-                                        .on_click(cx.listener(|view, _, _, cx| {
-                                            view.probe_clear = !view.probe_clear;
-                                            view.probe_spec = view.probe_look(cx);
-                                            cx.notify();
-                                        })),
-                                )
-                            })
-                            .when(self.probe_glass, |row| {
-                                row.child(
-                                    div()
-                                        .id("probe-tint")
-                                        .px(px(10.0))
-                                        .py(px(4.0))
-                                        .rounded(px(Theme::control_radius()))
-                                        .text_size(px(12.0))
-                                        .text_color(if self.probe_tint {
-                                            theme.text
-                                        } else {
-                                            theme.text_muted
-                                        })
-                                        .bg(if self.probe_tint {
-                                            theme.glass_hover()
-                                        } else {
-                                            theme.bg
-                                        })
-                                        .cursor_pointer()
-                                        .child("tint")
-                                        .on_click(cx.listener(|view, _, _, cx| {
-                                            view.probe_tint = !view.probe_tint;
-                                            cx.notify();
-                                        })),
-                                )
-                            })
                             // The corner is the one place a second window can be
                             // put in exactly, which is what makes two probes
                             // comparable without dragging either.
@@ -3205,89 +3236,77 @@ impl Gallery {
                                 1.0,
                                 format!("r {}", pr as i32).into(),
                             ))
-                            // Both have one. Glass's is the look's own sigma —
-                            // small, and measured — where frost's is a wash.
                             .child(knob(
                                 "probe-blur",
                                 6,
                                 self.probe_spec.blur,
-                                if self.probe_glass {
-                                    GLASS_BLUR_RANGE
-                                } else {
-                                    FROST_BLUR_RANGE
-                                },
+                                BLUR_RANGE,
                                 format!("blur {:.1}pt", self.probe_spec.blur).into(),
                             ))
-                            // A knob shows up where it moves what is
-                            // painted: frost is a blurred fill, and reads none
-                            // of the lens's numbers.
-                            .when(self.probe_glass, |row| {
-                                row.child(knob(
-                                    "probe-b",
-                                    3,
-                                    self.probe_spec.rim,
-                                    RIM_RANGE,
-                                    format!("rim {:.1}pt", self.probe_spec.rim).into(),
-                                ))
-                                // The one knob still a fraction: it spans -16..+16,
-                                // so the sweep passes through zero and inverts.
-                                .child(knob(
-                                    "probe-m",
-                                    4,
-                                    self.probe_magnify,
-                                    1.0,
-                                    format!("mag {:+.1}", self.probe_magnify * 32.0 - 16.0).into(),
-                                ))
-                                .child(knob(
-                                    "probe-dim",
-                                    5,
-                                    self.probe_spec.gain,
-                                    GAIN_RANGE,
-                                    format!("gain {:.3}", self.probe_spec.gain).into(),
-                                ))
-                                // A gain alone moves level and colour
-                                // together; this is what takes the level down
-                                // and leaves the colours where they were.
-                                .child(knob(
-                                    "probe-sat",
-                                    12,
-                                    self.probe_spec.saturation,
-                                    SAT_RANGE,
-                                    format!("sat {:.2}", self.probe_spec.saturation).into(),
-                                ))
-                                .child(knob(
-                                    "probe-lift",
-                                    8,
-                                    self.probe_spec.tint.a,
-                                    LIFT_RANGE,
-                                    format!("lift {:.0}/255", self.probe_spec.tint.a * 255.0)
-                                        .into(),
-                                ))
-                                .child(knob(
-                                    "probe-edge",
-                                    9,
-                                    self.probe_spec.edge,
-                                    EDGE_RANGE,
-                                    format!("edge {:.2}", self.probe_spec.edge).into(),
-                                ))
-                                .child(knob(
-                                    "probe-edgew",
-                                    10,
-                                    self.probe_spec.edge_width,
-                                    EDGE_W_RANGE,
-                                    format!("edge w {:.1}pt", self.probe_spec.edge_width).into(),
-                                ))
-                                .child(knob(
-                                    "probe-disp",
-                                    11,
-                                    self.probe_disp,
-                                    DISPERSION_RANGE,
-                                    format!("disp {:.3}", self.probe_disp).into(),
-                                ))
-                            })
-                            // Frost's fill is the card itself; glass paints its
-                            // own, and only a tinted one reads this.
-                            .when(!self.probe_glass || self.probe_tint, |row| {
+                            .child(knob(
+                                "probe-b",
+                                3,
+                                self.probe_spec.rim,
+                                RIM_RANGE,
+                                format!("rim {:.1}pt", self.probe_spec.rim).into(),
+                            ))
+                            // The one knob still a fraction: it spans -16..+16,
+                            // so the sweep passes through zero and inverts.
+                            .child(knob(
+                                "probe-m",
+                                4,
+                                self.probe_magnify,
+                                1.0,
+                                format!("mag {:+.1}", self.probe_magnify * 32.0 - 16.0).into(),
+                            ))
+                            .child(knob(
+                                "probe-dim",
+                                5,
+                                self.probe_spec.gain,
+                                GAIN_RANGE,
+                                format!("gain {:.3}", self.probe_spec.gain).into(),
+                            ))
+                            // A gain alone moves level and colour
+                            // together; this is what takes the level down
+                            // and leaves the colours where they were.
+                            .child(knob(
+                                "probe-sat",
+                                12,
+                                self.probe_spec.saturation,
+                                SAT_RANGE,
+                                format!("sat {:.2}", self.probe_spec.saturation).into(),
+                            ))
+                            .child(knob(
+                                "probe-lift",
+                                8,
+                                self.probe_spec.tint.a,
+                                LIFT_RANGE,
+                                format!("lift {:.0}/255", self.probe_spec.tint.a * 255.0).into(),
+                            ))
+                            .child(knob(
+                                "probe-edge",
+                                9,
+                                self.probe_spec.edge,
+                                EDGE_RANGE,
+                                format!("edge {:.2}", self.probe_spec.edge).into(),
+                            ))
+                            .child(knob(
+                                "probe-edgew",
+                                10,
+                                self.probe_spec.edge_width,
+                                EDGE_W_RANGE,
+                                format!("edge w {:.1}pt", self.probe_spec.edge_width).into(),
+                            ))
+                            .child(knob(
+                                "probe-disp",
+                                11,
+                                self.probe_disp,
+                                DISPERSION_RANGE,
+                                format!("disp {:.3}", self.probe_disp).into(),
+                            ))
+                            // Only a tinted surface reads this: everywhere else
+                            // the look's own tint is the fill.
+                            .when(self.probe_tint, |row| {
                                 row.child(knob(
                                     "probe-fill",
                                     7,
@@ -3306,7 +3325,7 @@ impl Gallery {
                          at the rim. Both read very differently depending on the \
                          backdrop, which is what the switcher is for.",
                     ))
-                    .when(!ui::material::lensed(&theme), |el| {
+                    .when(!ui::surface::lensed(&theme), |el| {
                         el.child(theme.warning_strip(
                             "Liquid glass is macOS only — the lens is a Metal \
                              primitive. Here it falls back to the backdrop tint: \

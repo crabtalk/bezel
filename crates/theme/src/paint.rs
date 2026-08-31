@@ -252,6 +252,30 @@ pub fn glass_selected_shadows() -> Vec<BoxShadow> {
     card_selected_shadows()
 }
 
+/// The elevation shadow a floating surface casts — `shadow_lg`'s shape, which
+/// is where it lived until the surface moved into the material. Painted cut to
+/// outside the shape, because the same drop shadow under a translucent fill is
+/// the grey plate [`card_selected_shadows`] records. `GlassSpec::shadow` says
+/// which looks carry one.
+pub fn surface_shadows() -> Vec<BoxShadow> {
+    vec![
+        BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, 0.1),
+            offset: point(px(0.0), px(10.0)),
+            blur_radius: px(15.0),
+            spread_radius: px(-3.0),
+            inset: false,
+        },
+        BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, 0.1),
+            offset: point(px(0.0), px(4.0)),
+            blur_radius: px(6.0),
+            spread_radius: px(-4.0),
+            inset: false,
+        },
+    ]
+}
+
 /// Selection outline for rows and chips INSIDE a floating card (menu rows,
 /// the picker rail, segmented chips): the inset ring alone, in both
 /// appearances. Card rows fill with a translucent wash

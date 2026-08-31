@@ -366,13 +366,11 @@ pub fn classify_key(key: &str, cmd: bool, ctrl: bool) -> MenuKey {
 // Elements
 // ---------------------------------------------------------------------------
 
-/// The floating-menu surface (the reference `.glass-surface` + `menuSurface`):
-/// `rounded-xl border border-white/[0.1] p-1` over the material glass tint —
-/// the real recipe now that the fork paints backdrop blur: the
-/// [`Theme::glass_overlay`] tint (`oklch(0.33 0 0 / 34%)` on dark) over the
-/// [`crate::material::MENU_BLUR`] blur from the mount helpers below, plus the
-/// same hairline + baked-in shadow. Opaque platforms keep the near-opaque
-/// tone the reference composites to on the dark panels (~#161616).
+/// The floating-menu surface: `rounded-xl border border-white/[0.1] p-1` over
+/// whichever look [`Theme::menu_style`] names — the hairline and the baked-in
+/// shadow are the card's, and the surface under it paints everything inside
+/// them. Opaque platforms keep the near-opaque tone the reference composites
+/// to on the dark panels (~#161616).
 /// The inner inset of a [`popover_card`], and so the amount [`menu_row`]'s
 /// corners come in by. Named because two things read it: the card's padding and
 /// its rows' radius. Change it and the rows follow.
@@ -380,20 +378,21 @@ pub(crate) const MENU_PAD: f32 = 4.0;
 
 pub fn popover_card(theme: &Theme) -> gpui::Div {
     let card = div()
-        .border_1()
-        .border_color(hairline(0.10))
         .rounded(px(Theme::surface_radius()))
-        .shadow_lg()
         .p(px(MENU_PAD))
         .overflow_hidden()
         .text_size(px(13.0))
         .text_color(theme.text);
+    // Contents only. Fill, boundary and shadow are the surface's — every look
+    // paints its own, so nothing here has to know which one is under it. An
+    // opaque appearance has no surface at all, and keeps the card that was.
     if theme.is_glass() {
-        // Translucent tint — the backdrop blur beneath it comes from the
-        // [`crate::material::material`] wrapper at the mount helpers below.
-        card.bg(theme.glass_overlay())
+        card
     } else {
         card.bg(theme.surface_overlay)
+            .border_1()
+            .border_color(hairline(0.10))
+            .shadow_lg()
     }
 }
 
@@ -434,13 +433,12 @@ fn exit_progress(since: web_time::Instant) -> f32 {
     motion::MENU_OUT.progress(raw)
 }
 
-/// The material card for a popover layer: full blur while open; while exiting
-/// the blur radius rides the exit progress down to 0 — the `BackdropBlur`
-/// primitive ignores `element_opacity`, so without this the glass slab would
-/// hold full strength through the fade and pop off at unmount.
-fn material_menu(exit: Option<f32>, content: AnyElement) -> AnyElement {
-    let blur = crate::material::MENU_BLUR * (1.0 - exit.unwrap_or(0.0));
-    crate::material::material(Theme::surface_radius(), blur, content).into_any_element()
+/// The surface under a popover layer, on whichever look [`Theme::menu_style`]
+/// names. It needs no exit ramp of its own: the primitive reads the element
+/// tree's opacity, so a layer playing `menu_out` fades its surface with
+/// everything else in it.
+fn material_menu(content: AnyElement) -> AnyElement {
+    crate::surface::popover(Theme::surface_radius(), content).into_any_element()
 }
 
 /// Entrance or exit motion for a popover layer. While exiting (the [`Popup`]
@@ -472,7 +470,7 @@ pub fn anchored_menu(
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
     let exit = closing.map(exit_progress);
-    let content = material_menu(exit, content);
+    let content = material_menu(content);
     pinned_layer(
         gpui::deferred(
             gpui::anchored()
@@ -511,7 +509,7 @@ pub fn anchored_menu_below_gap(
     gap: f32,
 ) -> AnyElement {
     let exit = closing.map(exit_progress);
-    let content = material_menu(exit, content);
+    let content = material_menu(content);
     div()
         .absolute()
         .bottom_0()
@@ -543,7 +541,7 @@ pub fn anchored_menu_above(
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
     let exit = closing.map(exit_progress);
-    let content = material_menu(exit, content);
+    let content = material_menu(content);
     pinned_layer(
         gpui::deferred(
             gpui::anchored()
@@ -587,7 +585,7 @@ pub fn anchored_menu_above_end(
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
     let exit = closing.map(exit_progress);
-    let content = material_menu(exit, content);
+    let content = material_menu(content);
     div()
         .absolute()
         .top_0()
@@ -619,7 +617,7 @@ pub fn menu_at(
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
     let exit = closing.map(exit_progress);
-    let content = material_menu(exit, content);
+    let content = material_menu(content);
     gpui::deferred(
         gpui::anchored()
             .position(position)
@@ -696,8 +694,7 @@ fn modal_with(
     scrim: f32,
     on_dismiss: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
-    let card = crate::material::material(corner_radius, crate::material::MENU_BLUR, card)
-        .into_any_element();
+    let card = crate::surface::popover(corner_radius, card).into_any_element();
     gpui::deferred(
         gpui::anchored()
             .position(gpui::point(px(0.0), px(0.0)))
@@ -793,14 +790,12 @@ pub fn sheet(
 ) -> AnyElement {
     let id = id.into();
     let exit = closing.map(exit_progress);
-    let blur = crate::material::MENU_BLUR * (1.0 - exit.unwrap_or(0.0));
-
     let panel = div()
         .absolute()
         .top_0()
         .bottom_0()
         .w(width)
-        .child(crate::material::material(DIALOG_RADIUS, blur, content));
+        .child(crate::surface::popover(DIALOG_RADIUS, content));
     // `t` runs 0 (fully off-screen) → 1 (seated against the edge).
     let seat = move |el: gpui::Div, t: f32| {
         let inset = width * (t - 1.0);

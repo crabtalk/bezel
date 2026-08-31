@@ -25,13 +25,10 @@ use gpui::{
     Context, IntoElement, ParentElement as _, Render, SharedString, Styled as _, Window, div, px,
 };
 use motion::Painter;
-use theme::Theme;
+use theme::{Glass, SurfaceStyle, Theme};
 use web_time::Instant;
 
-use crate::{
-    material::{Glass as _, GlassStyle},
-    popover,
-};
+use crate::{popover, surface::Surfaced as _};
 
 /// How often the meter refreshes once nothing else is drawing, and so the span
 /// each reading is measured over.
@@ -117,7 +114,13 @@ impl Render for Stats {
 
         self.painter.lease(1.0 / TICK.as_secs_f32(), LEASE, cx);
 
-        let theme = Theme::of(cx).clone();
+        // Regular whatever the app mounts its menus on, and the card is handed
+        // the same choice — a card that thinks it is frost paints a fill, and a
+        // fill over a lens buries it.
+        let theme = Theme {
+            popover_surface: SurfaceStyle::Glass(Glass::Regular),
+            ..Theme::of(cx).clone()
+        };
         let reading = self.reading;
         let card = popover::popover_card(&theme)
             .w(px(WIDTH))
@@ -156,7 +159,7 @@ impl Render for Stats {
         // and the everyday material is the one that both refracts and carries
         // dense content. Its blur and its dimming come with the look — Apple
         // exposes no way to ask for either, and neither does this.
-        card.glass_effect(&theme, GlassStyle::Regular)
+        card.surface(&theme, theme.popover_surface)
     }
 }
 

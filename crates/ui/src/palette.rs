@@ -28,8 +28,8 @@ use theme::Theme;
 
 use crate::{
     input::{self, TextField},
-    material::Glass as _,
     popover,
+    surface::Surfaced as _,
 };
 
 actions!(
@@ -189,7 +189,7 @@ impl Render for CommandPalette {
             .on_action(cx.listener(Self::select_previous))
             .on_action(cx.listener(Self::confirm))
             .on_action(cx.listener(Self::dismiss))
-            .child(card.material(crate::material::MENU_BLUR))
+            .child(card.surface(&theme, theme.popover_surface))
     }
 }
 
