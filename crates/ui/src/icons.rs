@@ -160,6 +160,9 @@ icon_assets![
     // menu-check.tsx / logo.tsx).
     (TERMINAL, "terminal"),
     (PLUS, "plus"),
+    // Hand-drawn dots in the Solar Linear style — the embedded set has no
+    // menu-dots, and the `···` is what opens a row's menu.
+    (MENU_DOTS, "menu-dots"),
     (CLOSE, "close"),
     (STOP, "stop"),
     (CHECK, "check"),

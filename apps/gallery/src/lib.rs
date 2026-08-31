@@ -1804,6 +1804,42 @@ impl Gallery {
                             .into_any_element()
                         })),
                     )
+                    .child(hint(
+                        &theme,
+                        "the ghost frame below carries its own click and tooltip and \
+                         leaves padding and children to the caller, which is what lets \
+                         a glyph sit before the text.",
+                    ))
+                    .child(
+                        row()
+                            .child(
+                                theme
+                                    .ghost("ghost-menu")
+                                    .p(px(5.0))
+                                    .child(
+                                        icons::icon(icons::MENU_DOTS)
+                                            .size(px(14.0))
+                                            .text_color(theme.text_faint),
+                                    )
+                                    .on_click(cx.listener(|view, _, _, cx| view.press("menu", cx))),
+                            )
+                            .child(
+                                theme
+                                    .ghost("ghost-new")
+                                    .px(px(8.0))
+                                    .py(px(4.0))
+                                    .gap(px(6.0))
+                                    .text_size(px(12.5))
+                                    .text_color(theme.text_muted)
+                                    .child(
+                                        icons::icon(icons::PLUS)
+                                            .size(px(13.0))
+                                            .text_color(theme.text_faint),
+                                    )
+                                    .child("New")
+                                    .on_click(cx.listener(|view, _, _, cx| view.press("New", cx))),
+                            ),
+                    )
                     .when_some(self.last_pressed.clone(), |page, label| {
                         page.child(
                             div()
