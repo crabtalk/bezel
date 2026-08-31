@@ -12,6 +12,7 @@ mod syntax;
 mod typography;
 
 pub use install::set_palette;
+pub use layout::{ControlSize, Sizing};
 pub use syntax::{HighlightKind, SyntaxPalette};
 pub use typography::{TextStyle, Typeset, base_text_size, set_base_text_size};
 

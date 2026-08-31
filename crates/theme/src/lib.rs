@@ -54,8 +54,8 @@ pub use paint::{
     user_bubble_bg, wash,
 };
 pub use theme::{
-    Frost, FrostSpec, Glass, HighlightKind, SurfaceSpec, SurfaceStyle, SyntaxPalette, TextStyle,
-    Theme, Typeset, base_text_size, set_base_text_size, set_palette,
+    ControlSize, Frost, FrostSpec, Glass, HighlightKind, Sizing, SurfaceSpec, SurfaceStyle,
+    SyntaxPalette, TextStyle, Theme, Typeset, base_text_size, set_base_text_size, set_palette,
 };
 
 /// The carrier seam for catalog traits: any type holding a [`Theme`] exposes

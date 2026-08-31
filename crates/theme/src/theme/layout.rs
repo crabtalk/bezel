@@ -3,7 +3,78 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::theme::Theme;
+use gpui::{Styled, px};
+
+use crate::theme::{
+    Theme,
+    typography::{TextStyle, Typeset},
+};
+
+/// A control's size — SwiftUI's `ControlSize`. A closed pair, not a scale: the
+/// two that ship are the row of a form and the chip on an overlay.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlSize {
+    /// The chip: `Callout` on a `control_radius` corner.
+    Small,
+    /// The form row: `Body` on a `button_radius` corner.
+    Regular,
+}
+
+impl ControlSize {
+    /// The type role the size paints at, which decides the rest.
+    pub const fn text(self) -> TextStyle {
+        match self {
+            ControlSize::Small => TextStyle::Callout,
+            ControlSize::Regular => TextStyle::Body,
+        }
+    }
+
+    /// Height: the role's line box plus [`Self::pad_y`] twice.
+    pub const fn height(self) -> f32 {
+        match self {
+            ControlSize::Small => Theme::CONTROL_HEIGHT_SMALL,
+            ControlSize::Regular => Theme::BUTTON_HEIGHT,
+        }
+    }
+
+    pub const fn pad_x(self) -> f32 {
+        match self {
+            ControlSize::Small => 8.0,
+            ControlSize::Regular => 12.0,
+        }
+    }
+
+    pub const fn pad_y(self) -> f32 {
+        match self {
+            ControlSize::Small => 3.0,
+            ControlSize::Regular => 6.0,
+        }
+    }
+
+    pub fn radius(self) -> f32 {
+        match self {
+            ControlSize::Small => Theme::control_radius(),
+            ControlSize::Regular => Theme::button_radius(),
+        }
+    }
+}
+
+/// The size ladder, on anything styled — SwiftUI's `.controlSize(..)`, and
+/// [`Typeset`]'s shape for the metrics that come with a type role.
+///
+/// It carries horizontal padding, so a control whose width is its height
+/// instead (an icon button) is not one of these.
+pub trait Sizing: Styled + Sized {
+    fn control_size(self, size: ControlSize) -> Self {
+        self.min_h(px(size.height()))
+            .px(px(size.pad_x()))
+            .py(px(size.pad_y()))
+            .rounded(px(size.radius()))
+            .text_style(size.text())
+    }
+}
+
+impl<E: Styled> Sizing for E {}
 
 /// The branded base radius behind [`Theme::radius`], as raw `f32` bits.
 static BASE: AtomicU32 = AtomicU32::new(Theme::BASE_RADIUS.to_bits());
@@ -66,6 +137,12 @@ impl Theme {
     /// hover-revealed timestamp) never sits inside the fade when scrolled
     /// to the bottom.
     pub const TRANSCRIPT_FADE_BAND: f32 = 24.0;
+    /// Button height — `TextStyle::Body`'s line box (13pt on gpui's `phi()`,
+    /// rounded to 21) plus the 6px the button pads above and below it.
+    pub const BUTTON_HEIGHT: f32 = 33.0;
+    /// The same sum a size down: `Callout`'s line box (12pt, rounded to 19)
+    /// plus 3px above and below.
+    pub const CONTROL_HEIGHT_SMALL: f32 = 25.0;
     /// Button, text field and select-trigger radius — the crate's most-used
     /// corner after the derived ones, and unnamed until the concentric pass
     /// separated the eight sites that *chose* 8.0 from the ones that only

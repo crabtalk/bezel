@@ -14,7 +14,7 @@ use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
-    Frost, Glass, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset,
+    ControlSize, Frost, Glass, Sizing, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset,
     appearance::{self, AppearanceMode},
 };
 use ui::{
@@ -793,6 +793,7 @@ pub struct Gallery {
     /// nowhere to keep a handle, so the view that composes it holds them —
     /// the same place it already holds what each one is set to.
     buttons: [gpui::FocusHandle; 3],
+    icon_buttons: [gpui::FocusHandle; 3],
     checkboxes: [gpui::FocusHandle; 2],
     radios: [gpui::FocusHandle; 2],
     switches: [gpui::FocusHandle; 2],
@@ -985,6 +986,7 @@ impl Gallery {
             split_dragging: false,
             focus_handle: cx.focus_handle(),
             buttons: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+            icon_buttons: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             checkboxes: [cx.focus_handle(), cx.focus_handle()],
             radios: [cx.focus_handle(), cx.focus_handle()],
             switches: [cx.focus_handle(), cx.focus_handle()],
@@ -1870,6 +1872,72 @@ impl Gallery {
                     theme.button(labels[1], ButtonStyle::Prominent, None),
                     theme.button(labels[2], ButtonStyle::Destructive, None),
                 ];
+                let glyphs = [
+                    (icons::PEN, ButtonStyle::Ghost, "pen"),
+                    (icons::PLUS, ButtonStyle::Prominent, "plus"),
+                    (
+                        icons::TRASH_BIN_MINIMALISTIC,
+                        ButtonStyle::Destructive,
+                        "trash",
+                    ),
+                ];
+                let toolbar = [
+                    (icons::SIDEBAR_MINIMALISTIC_LEFT, "sidebar"),
+                    (icons::MAGNIFER, "search"),
+                    (icons::SETTINGS_MINIMALISTIC, "settings"),
+                ];
+                let cluster =
+                    theme
+                        .control_group()
+                        .children(toolbar.into_iter().map(|(glyph, name)| {
+                            theme
+                                .icon_button(glyph, ButtonStyle::Ghost, Some(Fade::new(view, name)))
+                                .id(name)
+                                .on_click(cx.listener(move |view, _, _, cx| view.press(name, cx)))
+                                .into_any_element()
+                        }));
+                let texts =
+                    theme
+                        .control_group()
+                        .children(["Cut", "Copy", "Paste"].into_iter().map(|label| {
+                            theme
+                                .button(label, ButtonStyle::Ghost, Some(Fade::new(view, label)))
+                                .control_size(ControlSize::Small)
+                                .id(label)
+                                .on_click(cx.listener(move |view, _, _, cx| view.press(label, cx)))
+                                .into_any_element()
+                        }));
+                let lensed = row().children(toolbar.into_iter().map(|(glyph, name)| {
+                    theme
+                        .icon_button(
+                            glyph,
+                            ButtonStyle::Ghost,
+                            Some(Fade::new(view, format!("lens-{name}"))),
+                        )
+                        .rounded_full()
+                        .id(SharedString::from(format!("lens-{name}")))
+                        .on_click(cx.listener(move |view, _, _, cx| view.press(name, cx)))
+                        .surface(&theme, theme.popover_surface)
+                        .into_any_element()
+                }));
+                let split = theme
+                    .control_group()
+                    .child(
+                        theme
+                            .button("Save", ButtonStyle::Prominent, None)
+                            .id("group-save")
+                            .on_click(cx.listener(|view, _, _, cx| view.press("Save", cx))),
+                    )
+                    .child(
+                        theme
+                            .icon_button(
+                                icons::ALT_ARROW_DOWN,
+                                ButtonStyle::Ghost,
+                                Some(Fade::new(view, "group-more")),
+                            )
+                            .id("group-more")
+                            .on_click(cx.listener(|view, _, _, cx| view.press("more", cx))),
+                    );
                 section
                     .child(hint(
                         &theme,
@@ -1888,6 +1956,43 @@ impl Gallery {
                             .into_any_element()
                         })),
                     )
+                    .child(hint(
+                        &theme,
+                        "the same three styles with a glyph where the label goes. \
+                         square at the height the labeled button already stands, so \
+                         the two line up wherever they meet.",
+                    ))
+                    .child(row().children(glyphs.into_iter().enumerate().map(
+                        |(index, (glyph, style, name))| {
+                            pressable(
+                                focus::focusable(
+                                    &theme,
+                                    &self.icon_buttons[index],
+                                    theme.icon_button(glyph, style, None),
+                                ),
+                                SharedString::from(format!("icon-button-{index}")),
+                                cx,
+                                move |view, cx| view.press(name, cx),
+                            )
+                            .into_any_element()
+                        },
+                    )))
+                    .child(hint(
+                        &theme,
+                        "a control group gathers the buttons beside it onto one \
+                         background, the way a toolbar does with the items it finds \
+                         adjacent. a second cluster is a second group.",
+                    ))
+                    .child(row().child(cluster).child(split))
+                    .child(row().child(texts))
+                    .child(hint(
+                        &theme,
+                        "cut the same button to a circle, hand it the surface the \
+                         theme already names, and it is the control a macOS 26 \
+                         toolbar floats. the lens paints the fill, so the wash a \
+                         ghost hovers with is gone and only the glyph still lifts.",
+                    ))
+                    .child(lensed)
                     .child(hint(
                         &theme,
                         "the ghost frame below carries its own click and tooltip and \
