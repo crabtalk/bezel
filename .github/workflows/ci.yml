@@ -1,13 +1,17 @@
 name: ci
 
+# Branches reach `main` through a pull request, so `pull_request` covers them —
+# pushing to a branch that has one open would otherwise run everything twice.
+# `push` is left for `main` itself, which is merged into rather than pushed.
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
 
 # A second push to the same branch cancels the first: only the tip matters.
+# Keyed on the source branch, since a pull request's own ref is not it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 env:
