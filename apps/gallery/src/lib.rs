@@ -1707,10 +1707,8 @@ impl Gallery {
                 .child(
                     stack().children(
                         [
-                            ("SPACE_XS", Theme::SPACE_XS),
-                            ("SPACE_SM", Theme::SPACE_SM),
-                            ("SPACE_MD", Theme::SPACE_MD),
-                            ("SPACE_LG", Theme::SPACE_LG),
+                            ("SPACE", Theme::SPACE),
+                            ("CONTENT_MARGIN", Theme::CONTENT_MARGIN),
                         ]
                         .into_iter()
                         .map(|(name, value)| measure(&theme, name, value).into_any_element()),
@@ -4158,9 +4156,13 @@ impl Gallery {
     }
 }
 
-/// The vertical rhythm every page body uses.
+/// The gallery's own rhythm, looser than the system gap the library defaults to.
+const GALLERY_RHYTHM: f32 = 12.0;
+
+/// The vertical rhythm every page body uses — the gallery's own, said once
+/// here the way `VStack(spacing: 12)` says it.
 pub(crate) fn stack() -> gpui::Div {
-    div().flex().flex_col().gap(px(12.0))
+    ui::stack::column().gap(px(GALLERY_RHYTHM))
 }
 
 /// How far the body size runs: macOS's smallest UI size (`labelFontSize 10`,
@@ -4526,7 +4528,7 @@ fn today() -> Date {
 }
 
 fn row() -> gpui::Div {
-    div().flex().flex_row().items_center().gap(px(12.0))
+    ui::stack::row().gap(px(GALLERY_RHYTHM))
 }
 
 fn column() -> gpui::Div {

@@ -4,6 +4,7 @@
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.collapsible_header(..)`, `theme.split_handle(..)`, `theme.tab(..)`.
 
+use crate::stack;
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
 use motion::{self, Fade};
 use theme::{TextStyle, Theme, ThemeExt, Typeset, card_selected_bg, wash};
@@ -102,11 +103,7 @@ pub trait Layout: ThemeExt {
         } else {
             motion::hover_blend(&fade, theme.text_muted, theme.text)
         };
-        let mut row = div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(8.0))
+        let mut row = stack::row()
             .w_full()
             .px(px(8.0))
             .py(px(6.0))

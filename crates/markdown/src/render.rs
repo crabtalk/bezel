@@ -25,15 +25,15 @@ use crate::{
 };
 
 /// Space between two ordinary blocks, and the tighter space inside a list.
-const BLOCK_GAP: f32 = Theme::SPACE_MD;
-const LIST_GAP: f32 = Theme::SPACE_XS;
+const BLOCK_GAP: f32 = 12.0;
+const LIST_GAP: f32 = 4.0;
 /// One indent level. Wide enough to clear a marker and read as a level.
 const INDENT_WIDTH: f32 = 22.0;
 /// The marker column of a list row.
 const MARKER_WIDTH: f32 = 18.0;
-const MARKER_GAP: f32 = Theme::SPACE_SM;
+const MARKER_GAP: f32 = 8.0;
 /// A fence's height is `lines × the code leading` plus this padding.
-const CODE_PADDING_X: f32 = Theme::SPACE_MD;
+const CODE_PADDING_X: f32 = 12.0;
 const CODE_PADDING_Y: f32 = 10.0;
 /// What a fence with no info string calls itself, in its header and in a
 /// picker — one spelling, so the label and the menu row cannot disagree.
@@ -49,7 +49,7 @@ const CHIP_PAD_X: f32 = 4.0;
 const CHIP_INSET_Y: f32 = 1.0;
 /// A chip with a block to itself is a real element rather than a wash, so it
 /// has room for the favicon the inline one cannot hold.
-const CHIP_BLOCK_PAD_X: f32 = Theme::SPACE_SM;
+const CHIP_BLOCK_PAD_X: f32 = 8.0;
 const CHIP_BLOCK_PAD_Y: f32 = 3.0;
 const CHIP_ICON: f32 = 15.0;
 /// Bookmark metrics. Notion's card: 180px of image beside the text, and a
@@ -64,13 +64,13 @@ const CARD_ICON: f32 = 16.0;
 const CARD_COVER: f32 = 44.0;
 /// Image metrics.
 const IMAGE_EMPTY_HEIGHT: f32 = 52.0;
-const CAPTION_GAP: f32 = Theme::SPACE_XS;
+const CAPTION_GAP: f32 = 4.0;
 /// What an image with no URL yet says, and what its caption says while empty.
 const IMAGE_EMPTY: &str = "Add an image";
 const CAPTION_HINT: &str = "Write a caption";
 /// Table metrics. The design is frameless: hairlines between rows are the only
 /// chrome — no outer box, no header fill, no rounding.
-const TABLE_CELL_PADDING: f32 = Theme::SPACE_MD;
+const TABLE_CELL_PADDING: f32 = 12.0;
 const TABLE_DIVIDER: f32 = 1.0;
 /// Floor for a column's max-content share, so a short column ("1k") beside a
 /// prose column keeps a readable width.
