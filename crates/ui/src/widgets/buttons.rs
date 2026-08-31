@@ -1,13 +1,14 @@
-//! The button — one component, three shipped looks. A catalog trait like
+//! The button — one component, three shipped looks — and [`Buttons::ghost`],
+//! the frame a control paints when it is only a glyph. A catalog trait like
 //! every widget group: `use ui::widgets::{ButtonStyle, Buttons};` →
 //! `theme.button("Save", ButtonStyle::Prominent, None)`.
 //!
 //! [`ButtonStyle`] is a closed enum, not free-form knobs: it selects between
 //! the looks that ship, while per-call overrides stay chain modifiers.
 
-use gpui::{Div, SharedString, div, prelude::*, px};
+use gpui::{Div, ElementId, SharedString, Stateful, div, prelude::*, px};
 use motion::{self, Fade};
-use theme::{Theme, ThemeExt, ink, wash};
+use theme::{TextStyle, Theme, ThemeExt, Typeset, ink, wash};
 
 /// The shipped looks (the reference `btnGhost` / `btnPrimary` /
 /// `btnDestructive`).
@@ -27,7 +28,7 @@ fn frame(mut el: Div) -> Div {
         .px(px(12.0))
         .py(px(6.0))
         .rounded(px(Theme::button_radius()))
-        .text_size(px(13.0))
+        .text_style(TextStyle::Body)
         .cursor_pointer();
     el
 }
@@ -69,6 +70,21 @@ pub trait Buttons: ThemeExt {
                 .hover(|s| s.opacity(0.9))
                 .child(label),
         }
+    }
+
+    /// A quiet control: nothing at rest, a wash on hover. Stateful, so it
+    /// carries its own click and tooltip; padding and children are the
+    /// caller's, which is what lets a glyph sit before the text.
+    fn ghost(&self, id: impl Into<ElementId>) -> Stateful<Div> {
+        let tint = self.theme().glass_hover();
+        div()
+            .id(id)
+            .flex()
+            .flex_row()
+            .items_center()
+            .rounded(px(Theme::control_radius()))
+            .cursor_pointer()
+            .hover(move |el| el.bg(tint))
     }
 }
 

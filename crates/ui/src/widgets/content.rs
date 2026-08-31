@@ -4,10 +4,10 @@
 //! `theme.badge(..)`, `theme.avatar(..)`, `theme.empty_state(..)`.
 
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
-use theme::{Theme, ThemeExt, ink};
+use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
 
 pub trait Content: ThemeExt {
-    /// Right-anchored badge pill: `rounded-full border px-2 py-0.5 text-[10.5px]`.
+    /// Right-anchored badge pill: `rounded-full border px-2 py-0.5`.
     fn badge(&self, label: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         div()
@@ -17,7 +17,7 @@ pub trait Content: ThemeExt {
             .rounded_full()
             .border_1()
             .border_color(theme.border)
-            .text_size(px(10.5))
+            .text_style(TextStyle::Caption)
             .text_color(theme.text_muted)
             .child(label.into())
     }
@@ -34,7 +34,7 @@ pub trait Content: ThemeExt {
             .py(px(2.0))
             .rounded_full()
             .bg(emerald.opacity(0.12))
-            .text_size(px(10.5))
+            .text_style(TextStyle::Caption)
             .text_color(emerald_text.opacity(0.9))
             .child(label.into())
     }
@@ -51,7 +51,7 @@ pub trait Content: ThemeExt {
             .flex()
             .items_center()
             .justify_center()
-            .text_size(px(11.0))
+            .text_style(TextStyle::Subheadline)
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(theme.text_muted)
             .child(initials.into())
@@ -74,7 +74,7 @@ pub trait Content: ThemeExt {
             .bg(ink(0.07))
             .border_1()
             .border_color(theme.border)
-            .text_size(px(12.0))
+            .text_style(TextStyle::Callout)
             .text_color(theme.text)
             .child(label.into())
             .child(
@@ -102,7 +102,7 @@ pub trait Content: ThemeExt {
         let mut crumb = div()
             .min_w_0()
             .truncate()
-            .text_size(px(12.5))
+            .text_style(TextStyle::Callout)
             .child(label.into());
         crumb = if current {
             crumb.text_color(theme.text)
@@ -143,14 +143,13 @@ pub trait Content: ThemeExt {
             )
             .child(
                 div()
-                    .text_size(px(13.5))
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_style(TextStyle::Headline)
                     .text_color(theme.text)
                     .child(title.into()),
             )
             .child(
                 div()
-                    .text_size(px(12.5))
+                    .text_style(TextStyle::Callout)
                     .text_color(theme.text_muted)
                     .child(hint.into()),
             )

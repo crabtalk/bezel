@@ -28,7 +28,7 @@
 
 use gpui::{Context, ElementId, Render, ScrollHandle, SharedString, Window, div, prelude::*, px};
 use markdown::{BlockKind, Doc};
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 use ui::widgets::Controls;
 
 /// The document on the page. Canonical markdown — `serialize(parse(SOURCE))`
@@ -136,14 +136,14 @@ impl Render for Document {
             .gap(px(6.0))
             .child(
                 div()
-                    .text_size(px(11.0))
+                    .text_style(TextStyle::Subheadline)
                     .text_color(theme.text_faint)
                     .child("OUTLINE"),
             )
             .children(self.outline(&doc).into_iter().map(|(level, title)| {
                 div()
                     .pl(px((level.saturating_sub(1) as f32) * 12.0))
-                    .text_size(px(12.5))
+                    .text_style(TextStyle::Callout)
                     .text_color(if level <= 1 {
                         theme.text
                     } else {
@@ -157,7 +157,7 @@ impl Render for Document {
             // The document written back out, not the constant above it.
             View::Source => div()
                 .font_family(theme.font_mono.clone())
-                .text_size(px(12.0))
+                .text_style(TextStyle::Callout)
                 .line_height(px(19.0))
                 .text_color(theme.text_muted)
                 .child(SharedString::from(markdown::serialize(&doc)))

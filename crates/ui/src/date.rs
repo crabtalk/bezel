@@ -30,7 +30,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use theme::{Theme, ink};
+use theme::{TextStyle, Theme, Typeset, ink};
 
 use crate::{icons, popover, widgets, widgets::Controls};
 
@@ -423,8 +423,7 @@ impl Calendar {
                         div()
                             .flex_1()
                             .text_align(gpui::TextAlign::Center)
-                            .text_size(px(13.0))
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_style(TextStyle::Headline)
                             .text_color(theme.text)
                             .child(SharedString::from(heading)),
                     )
@@ -442,7 +441,7 @@ impl Calendar {
                         div()
                             .w(px(CELL))
                             .text_align(gpui::TextAlign::Center)
-                            .text_size(px(10.5))
+                            .text_style(TextStyle::Caption)
                             .text_color(theme.text_faint)
                             .child(SharedString::from(label))
                     })),
@@ -513,7 +512,7 @@ fn day_cell(
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(12.5))
+        .text_style(TextStyle::Callout)
         .text_color(text)
         .when(selected, |cell| {
             cell.bg(theme.accent).font_weight(gpui::FontWeight::MEDIUM)
@@ -568,7 +567,7 @@ impl Render for Calendar {
                         cx.listener(|calendar, _, _, _| calendar.menu.note_trigger_press()),
                     )
                     .on_click(cx.listener(|calendar, _, window, cx| calendar.toggle(window, cx)))
-                    .child(theme.select_trigger(label, open)),
+                    .child(theme.select_trigger(label)),
             )
             .when_some(card, |trigger, card| {
                 trigger.child(popover::anchored_menu_below(

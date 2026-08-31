@@ -22,7 +22,7 @@
 use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelude::*, px};
 
 use crate::widgets::Content;
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{popover, surface::Surfaced as _};
 
@@ -87,8 +87,7 @@ impl Render for HoverCard {
             })
             .child(
                 div()
-                    .text_size(px(13.0))
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_style(TextStyle::Headline)
                     .text_color(theme.text)
                     .child(self.title.clone()),
             );
@@ -103,7 +102,7 @@ impl Render for HoverCard {
             .child(heading)
             .child(
                 div()
-                    .text_size(px(12.5))
+                    .text_style(TextStyle::Callout)
                     .line_height(px(18.0))
                     .text_color(theme.text_muted)
                     .child(self.body.clone()),
@@ -111,7 +110,7 @@ impl Render for HoverCard {
             .when_some(self.meta.clone(), |card, meta| {
                 card.child(
                     div()
-                        .text_size(px(11.5))
+                        .text_style(TextStyle::Subheadline)
                         .text_color(theme.text_faint)
                         .child(meta),
                 )

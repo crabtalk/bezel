@@ -25,7 +25,7 @@ use gpui::{
     Context, IntoElement, ParentElement as _, Render, SharedString, Styled as _, Window, div, px,
 };
 use motion::Painter;
-use theme::{Glass, SurfaceStyle, Theme};
+use theme::{Glass, SurfaceStyle, TextStyle, Theme, Typeset};
 use web_time::Instant;
 
 use crate::{popover, surface::Surfaced as _};
@@ -172,7 +172,7 @@ fn row(theme: &Theme, label: &'static str, value: String) -> impl IntoElement {
         .gap(px(10.0))
         .child(
             div()
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .text_color(theme.text_faint)
                 .child(label),
         )
@@ -181,7 +181,7 @@ fn row(theme: &Theme, label: &'static str, value: String) -> impl IntoElement {
                 .w(px(VALUE_WIDTH))
                 .text_right()
                 .font_family(theme.font_mono.clone())
-                .text_size(px(13.0))
+                .text_style(TextStyle::Body)
                 .text_color(theme.text)
                 .child(SharedString::from(value)),
         )

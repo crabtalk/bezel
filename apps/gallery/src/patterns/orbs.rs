@@ -24,7 +24,7 @@ use gpui::{
     Context, Render, ScrollHandle, SharedString, Subscription, Task, Window, div, prelude::*, px,
 };
 use motion::Painter;
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 use ui::{
     focus,
     scroll::{self, TransientState},
@@ -101,7 +101,7 @@ impl Orbs {
             .child(orb_element(state, size, t, frame))
             .child(
                 div()
-                    .text_size(px(10.5))
+                    .text_style(TextStyle::Caption)
                     .font_family(theme.font_mono.clone())
                     .text_color(theme.text_faint)
                     .child(state.label()),

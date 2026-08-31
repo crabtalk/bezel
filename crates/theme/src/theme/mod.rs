@@ -9,9 +9,11 @@ mod install;
 mod layout;
 mod palettes;
 mod syntax;
+mod typography;
 
 pub use install::set_palette;
 pub use syntax::{HighlightKind, SyntaxPalette};
+pub use typography::{TextStyle, Typeset, base_text_size, set_base_text_size};
 
 /// The two shipped glasses — SwiftUI's `Glass.regular` and `Glass.clear`. A
 /// closed variant rather than knobs: Apple exposes no numbers on glass either,

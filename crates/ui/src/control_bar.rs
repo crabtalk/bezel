@@ -42,7 +42,7 @@
 //! ```
 
 use gpui::{AnyElement, IntoElement, ParentElement as _, Styled as _, div, px};
-use theme::{Theme, hairline};
+use theme::{TextStyle, Theme, Typeset, hairline};
 
 use crate::surface::Surfaced as _;
 
@@ -103,7 +103,7 @@ pub fn control_bar(
         .flex()
         .flex_row()
         .items_center()
-        .text_size(px(13.0))
+        .text_style(TextStyle::Body)
         .text_color(theme.text)
         .bg(if theme.is_glass() {
             theme.glass_overlay()

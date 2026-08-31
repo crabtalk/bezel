@@ -20,7 +20,7 @@ use gpui::{
     Subscription, Task, Window, div, prelude::*, px,
 };
 use motion::Painter;
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 use ui::{
     focus,
     scroll::{self, TransientState},
@@ -193,7 +193,7 @@ fn cell(
         .child(div().w(px(size)).h(px(size)).child(glyph))
         .child(
             div()
-                .text_size(px(10.0))
+                .text_style(TextStyle::Caption)
                 .font_family(theme.font_mono.clone())
                 .text_color(if lit { theme.text } else { theme.text_faint })
                 .child(label.into()),
@@ -362,7 +362,7 @@ impl Render for Avatars {
                                     .child(
                                         div()
                                             .w(px(52.0))
-                                            .text_size(px(10.5))
+                                            .text_style(TextStyle::Caption)
                                             .font_family(theme.font_mono.clone())
                                             .text_color(theme.text_muted)
                                             .child(format!("{rate:.2}×")),
@@ -496,7 +496,7 @@ impl Render for Avatars {
 
 fn heading(theme: &Theme, label: &str) -> AnyElement {
     div()
-        .text_size(px(11.0))
+        .text_style(TextStyle::Subheadline)
         .font_family(theme.font_mono.clone())
         .text_color(theme.text_muted)
         .child(label.to_string())

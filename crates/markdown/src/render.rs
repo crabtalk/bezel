@@ -15,29 +15,25 @@ use gpui::{
     StyledText, TextLayout, TextRun, UnderlineStyle, Window, canvas, div, font, img, point,
     prelude::*, px, quad, size,
 };
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
     doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, Text},
     preview,
     select::{Cursor, Selection},
+    typography::Typography,
 };
 
 /// Space between two ordinary blocks, and the tighter space inside a list.
-const BLOCK_GAP: f32 = 12.0;
-const LIST_GAP: f32 = 4.0;
-/// Body scale.
-const TEXT_SIZE: f32 = 14.0;
-const LINE_HEIGHT: f32 = 22.0;
+const BLOCK_GAP: f32 = Theme::SPACE_MD;
+const LIST_GAP: f32 = Theme::SPACE_XS;
 /// One indent level. Wide enough to clear a marker and read as a level.
 const INDENT_WIDTH: f32 = 22.0;
 /// The marker column of a list row.
 const MARKER_WIDTH: f32 = 18.0;
-const MARKER_GAP: f32 = 8.0;
-/// Code metrics — a block's height is `lines × CODE_LINE_HEIGHT` plus padding.
-const CODE_TEXT_SIZE: f32 = 12.5;
-const CODE_LINE_HEIGHT: f32 = 18.0;
-const CODE_PADDING_X: f32 = 12.0;
+const MARKER_GAP: f32 = Theme::SPACE_SM;
+/// A fence's height is `lines × the code leading` plus this padding.
+const CODE_PADDING_X: f32 = Theme::SPACE_MD;
 const CODE_PADDING_Y: f32 = 10.0;
 /// What a fence with no info string calls itself, in its header and in a
 /// picker — one spelling, so the label and the menu row cannot disagree.
@@ -49,12 +45,11 @@ const INLINE_CODE_PAD_X: f32 = 2.0;
 const INLINE_CODE_INSET_Y: f32 = 2.0;
 /// A mention's chip — the same quad-under-glyphs trick as inline code, with
 /// more room and an outline so the two do not read as the same thing.
-const CHIP_RADIUS: f32 = 6.0;
 const CHIP_PAD_X: f32 = 4.0;
 const CHIP_INSET_Y: f32 = 1.0;
 /// A chip with a block to itself is a real element rather than a wash, so it
 /// has room for the favicon the inline one cannot hold.
-const CHIP_BLOCK_PAD_X: f32 = 8.0;
+const CHIP_BLOCK_PAD_X: f32 = Theme::SPACE_SM;
 const CHIP_BLOCK_PAD_Y: f32 = 3.0;
 const CHIP_ICON: f32 = 15.0;
 /// Bookmark metrics. Notion's card: 180px of image beside the text, and a
@@ -64,23 +59,17 @@ const CARD_HEIGHT: f32 = 116.0;
 const CARD_IMAGE_WIDTH: f32 = 180.0;
 const CARD_COVER_HEIGHT: f32 = 200.0;
 const CARD_PADDING: f32 = 14.0;
-const CARD_TEXT_SIZE: f32 = 12.0;
-const CARD_LINE_HEIGHT: f32 = 17.0;
 const CARD_ICON: f32 = 16.0;
 const CARD_COVER: f32 = 44.0;
-/// Image metrics. The caption is the smallest type in the document, since it
-/// is read after the picture rather than instead of it.
-const IMAGE_RADIUS: f32 = 8.0;
+/// Image metrics.
 const IMAGE_EMPTY_HEIGHT: f32 = 52.0;
-const CAPTION_TEXT_SIZE: f32 = 11.5;
-const CAPTION_LINE_HEIGHT: f32 = 17.0;
-const CAPTION_GAP: f32 = 4.0;
+const CAPTION_GAP: f32 = Theme::SPACE_XS;
 /// What an image with no URL yet says, and what its caption says while empty.
 const IMAGE_EMPTY: &str = "Add an image";
 const CAPTION_HINT: &str = "Write a caption";
 /// Table metrics. The design is frameless: hairlines between rows are the only
 /// chrome — no outer box, no header fill, no rounding.
-const TABLE_CELL_PADDING: f32 = 12.0;
+const TABLE_CELL_PADDING: f32 = Theme::SPACE_MD;
 const TABLE_DIVIDER: f32 = 1.0;
 /// Floor for a column's max-content share, so a short column ("1k") beside a
 /// prose column keeps a readable width.
@@ -284,6 +273,23 @@ impl BlockLayouts {
             .map(|(ix, _)| *ix)
     }
 
+    /// Where a block's first painted row sits, and how tall that row is — what
+    /// a mark in the gutter has to line up with.
+    ///
+    /// [`Self::block_bounds`] is not that: it spans every row the block holds,
+    /// and a heading's single row is taller than a paragraph's, so anything
+    /// placed from the top of the box rides above the text it points at.
+    /// `None` for a block that paints no text at all, a rule being the one
+    /// that does.
+    pub fn first_row(&self, ix: usize) -> Option<(Pixels, Pixels)> {
+        let texts = &self.0.borrow().texts;
+        let painted = texts.iter().find(|painted| painted.block == ix)?;
+        Some((
+            painted.layout.bounds().origin.y,
+            painted.layout.line_height(),
+        ))
+    }
+
     /// Where a block painted last frame, in window coordinates.
     pub fn block_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
         self.0
@@ -460,6 +466,7 @@ pub fn render_with_selection(
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
+    let typography = Typography::of(cx);
     let mut column = div().flex().flex_col().children(reset);
 
     for (ix, block) in doc.blocks.iter().enumerate() {
@@ -499,7 +506,14 @@ pub fn render_with_selection(
                 .when(overlay.covers_block() && block.opaque(), |el| {
                     el.rounded(px(4.0)).bg(theme.selection)
                 })
-                .child(block_element(block, overlay, &theme, window, cx)),
+                .child(block_element(
+                    block,
+                    overlay,
+                    &typography,
+                    &theme,
+                    window,
+                    cx,
+                )),
         );
     }
 
@@ -520,6 +534,7 @@ fn tight(previous: &Block, next: &Block) -> bool {
 fn block_element(
     block: &Block,
     overlay: Overlay,
+    typography: &Typography,
     theme: &Theme,
     window: &mut Window,
     cx: &mut App,
@@ -528,33 +543,47 @@ fn block_element(
     match &block.kind {
         BlockKind::Paragraph(text) => text_element(
             text,
-            TEXT_SIZE,
-            LINE_HEIGHT,
+            typography.body.size(),
+            typography.body.line_height(),
             FontWeight::NORMAL,
             body,
             theme,
         ),
         BlockKind::Heading { level, text } => {
-            let (size, line) = heading_metrics(*level);
-            text_element(text, size, line, FontWeight::SEMIBOLD, body, theme)
+            let heading = typography.heading(*level);
+            text_element(
+                text,
+                heading.size(),
+                heading.line_height(),
+                heading.weight,
+                body,
+                theme,
+            )
         }
-        BlockKind::Bullet(text) => marker_row(disc(theme), text, body, theme),
+        BlockKind::Bullet(text) => {
+            marker_row(disc(typography, theme), text, body, typography, theme)
+        }
         BlockKind::Ordered { number, text } => marker_row(
             div()
                 .flex_none()
                 .w(px(MARKER_WIDTH))
-                .text_size(px(TEXT_SIZE))
-                .line_height(px(LINE_HEIGHT))
+                .text_size(px(typography.body.size()))
+                .line_height(px(typography.body.line_height()))
                 .text_color(theme.text_muted)
                 .child(SharedString::from(format!("{number}.")))
                 .into_any_element(),
             text,
             body,
+            typography,
             theme,
         ),
-        BlockKind::Task { checked, text } => {
-            marker_row(checkbox(*checked, theme), text, body, theme)
-        }
+        BlockKind::Task { checked, text } => marker_row(
+            checkbox(*checked, typography, theme),
+            text,
+            body,
+            typography,
+            theme,
+        ),
         BlockKind::Quote(text) => div()
             .border_l_2()
             .border_color(theme.border_strong)
@@ -564,8 +593,8 @@ fn block_element(
             .text_color(theme.text_muted)
             .child(text_element(
                 text,
-                TEXT_SIZE,
-                LINE_HEIGHT,
+                typography.body.size(),
+                typography.body.line_height(),
                 FontWeight::NORMAL,
                 body,
                 theme,
@@ -575,17 +604,20 @@ fn block_element(
             language.as_deref(),
             &code.text,
             overlay.at(Part::Code),
+            typography,
             theme,
             window,
             cx,
         ),
-        BlockKind::Image { url, alt, width } => image(url, alt, *width, overlay, theme),
-        BlockKind::Bookmark { url, form } => bookmark(overlay.block, url, *form, theme, cx),
+        BlockKind::Image { url, alt, width } => image(url, alt, *width, overlay, typography, theme),
+        BlockKind::Bookmark { url, form } => {
+            bookmark(overlay.block, url, *form, typography, theme, cx)
+        }
         BlockKind::Table {
             align,
             header,
             rows,
-        } => table(align, header, rows, overlay, theme, window),
+        } => table(align, header, rows, overlay, typography, theme, window),
         BlockKind::Rule => div()
             .h(px(1.0))
             .w_full()
@@ -594,22 +626,12 @@ fn block_element(
     }
 }
 
-/// A tight scale: headings step down toward body size quickly.
-fn heading_metrics(level: u8) -> (f32, f32) {
-    match level {
-        1 => (19.0, 27.0),
-        2 => (16.0, 24.0),
-        3 => (15.0, 22.0),
-        _ => (14.0, 22.0),
-    }
-}
-
-/// A real 5px disc rather than the "•" glyph, which reads too small at 14px.
-fn disc(theme: &Theme) -> AnyElement {
+/// A real 5px disc rather than the "•" glyph, which reads too small at body size.
+fn disc(typography: &Typography, theme: &Theme) -> AnyElement {
     div()
         .flex_none()
         .w(px(MARKER_WIDTH))
-        .h(px(LINE_HEIGHT))
+        .h(px(typography.body.line_height()))
         .flex()
         .items_center()
         .child(
@@ -623,7 +645,7 @@ fn disc(theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-fn checkbox(checked: bool, theme: &Theme) -> AnyElement {
+fn checkbox(checked: bool, typography: &Typography, theme: &Theme) -> AnyElement {
     let mut box_ = div()
         .w(px(13.0))
         .h(px(13.0))
@@ -635,7 +657,7 @@ fn checkbox(checked: bool, theme: &Theme) -> AnyElement {
     box_ = if checked {
         box_.bg(theme.solid)
             .border_color(theme.solid)
-            .text_size(px(9.0))
+            .text_style(TextStyle::Caption)
             .text_color(theme.on_solid)
             .child("✓")
     } else {
@@ -645,14 +667,20 @@ fn checkbox(checked: bool, theme: &Theme) -> AnyElement {
     div()
         .flex_none()
         .w(px(MARKER_WIDTH))
-        .h(px(LINE_HEIGHT))
+        .h(px(typography.body.line_height()))
         .flex()
         .items_center()
         .child(box_)
         .into_any_element()
 }
 
-fn marker_row(marker: AnyElement, text: &Text, overlay: Overlay, theme: &Theme) -> AnyElement {
+fn marker_row(
+    marker: AnyElement,
+    text: &Text,
+    overlay: Overlay,
+    typography: &Typography,
+    theme: &Theme,
+) -> AnyElement {
     div()
         .flex()
         .flex_row()
@@ -660,8 +688,8 @@ fn marker_row(marker: AnyElement, text: &Text, overlay: Overlay, theme: &Theme) 
         .child(marker)
         .child(div().flex_1().min_w_0().child(text_element(
             text,
-            TEXT_SIZE,
-            LINE_HEIGHT,
+            typography.body.size(),
+            typography.body.line_height(),
             FontWeight::NORMAL,
             overlay,
             theme,
@@ -906,7 +934,7 @@ fn painted_text(
                 for rect in range_rects(&layout, range, CHIP_PAD_X, CHIP_INSET_Y) {
                     window.paint_quad(quad(
                         rect,
-                        px(CHIP_RADIUS),
+                        px(Theme::control_radius()),
                         chip_wash,
                         px(1.0),
                         chip_edge,
@@ -981,6 +1009,7 @@ fn code_block(
     language: Option<&str>,
     code: &str,
     overlay: Overlay,
+    typography: &Typography,
     theme: &Theme,
     window: &mut Window,
     cx: &mut App,
@@ -1083,7 +1112,7 @@ fn code_block(
     .size_full();
 
     div()
-        .rounded(px(10.0))
+        .rounded(px(Theme::panel_radius()))
         .bg(theme.ink(0.035))
         .border_1()
         .border_color(theme.border)
@@ -1103,7 +1132,7 @@ fn code_block(
                 .border_b_1()
                 .border_color(theme.border)
                 .bg(theme.ink(0.02))
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .text_color(match language {
                     Some(_) => theme.text_muted,
                     None => theme.text_faint,
@@ -1139,8 +1168,8 @@ fn code_block(
                 .relative()
                 .px(px(CODE_PADDING_X))
                 .py(px(CODE_PADDING_Y))
-                .text_size(px(CODE_TEXT_SIZE))
-                .line_height(px(CODE_LINE_HEIGHT))
+                .text_size(px(typography.code.size()))
+                .line_height(px(typography.code.line_height()))
                 .whitespace_nowrap()
                 .child(underlay)
                 .children(lines),
@@ -1177,7 +1206,7 @@ fn copy_button(
         .flex()
         .items_center()
         .cursor_pointer()
-        .text_size(px(10.5))
+        .text_style(TextStyle::Caption)
         .text_color(theme.text_muted)
         .hover(|el| el.bg(theme.ink(0.08)))
         .child(if showing { "Copied" } else { "Copy" })
@@ -1208,7 +1237,14 @@ fn copy_button(
 /// type, so a document being read is not a column of pictures each trailing a
 /// blank line. With no URL yet the picture is a dashed row instead — the shape
 /// the slash menu makes, waiting to be told what to show.
-fn image(url: &str, alt: &Text, width: Option<u32>, overlay: Overlay, theme: &Theme) -> AnyElement {
+fn image(
+    url: &str,
+    alt: &Text,
+    width: Option<u32>,
+    overlay: Overlay,
+    typography: &Typography,
+    theme: &Theme,
+) -> AnyElement {
     let hint = SharedString::new_static(CAPTION_HINT);
     let overlay = Overlay {
         placeholder: Some(&hint),
@@ -1220,11 +1256,11 @@ fn image(url: &str, alt: &Text, width: Option<u32>, overlay: Overlay, theme: &Th
             .flex()
             .items_center()
             .px(px(CARD_PADDING))
-            .rounded(px(IMAGE_RADIUS))
+            .rounded(px(Theme::button_radius()))
             .border_1()
             .border_dashed()
             .border_color(theme.border)
-            .text_size(px(TEXT_SIZE))
+            .text_size(px(typography.body.size()))
             .text_color(theme.text_muted)
             .child(IMAGE_EMPTY)
     } else {
@@ -1237,7 +1273,7 @@ fn image(url: &str, alt: &Text, width: Option<u32>, overlay: Overlay, theme: &Th
         };
         let box_ = div()
             .relative()
-            .rounded(px(IMAGE_RADIUS))
+            .rounded(px(Theme::button_radius()))
             .overflow_hidden()
             .border_1()
             .border_color(theme.border)
@@ -1278,8 +1314,8 @@ fn image(url: &str, alt: &Text, width: Option<u32>, overlay: Overlay, theme: &Th
             |el| {
                 el.child(text_element(
                     alt,
-                    CAPTION_TEXT_SIZE,
-                    CAPTION_LINE_HEIGHT,
+                    typography.caption.size(),
+                    typography.caption.line_height(),
                     FontWeight::NORMAL,
                     overlay,
                     theme,
@@ -1299,7 +1335,14 @@ fn image(url: &str, alt: &Text, width: Option<u32>, overlay: Overlay, theme: &Th
 /// The text is a fixed height and its footer pinned to the bottom because a
 /// preview resolves *after* the card has painted — a blurb arriving into a box
 /// that grows would shove every block below it down the page.
-fn bookmark(ix: usize, url: &str, form: Form, theme: &Theme, cx: &App) -> AnyElement {
+fn bookmark(
+    ix: usize,
+    url: &str,
+    form: Form,
+    typography: &Typography,
+    theme: &Theme,
+    cx: &App,
+) -> AnyElement {
     let preview = preview::of(cx, url).unwrap_or_default();
     let host = SharedString::from(preview::host(url).to_string());
     let label = preview.label.clone().unwrap_or_else(|| host.clone());
@@ -1334,12 +1377,12 @@ fn bookmark(ix: usize, url: &str, form: Form, theme: &Theme, cx: &App) -> AnyEle
             .gap(px(6.0))
             .px(px(CHIP_BLOCK_PAD_X))
             .py(px(CHIP_BLOCK_PAD_Y))
-            .rounded(px(CHIP_RADIUS))
+            .rounded(px(Theme::control_radius()))
             .border_1()
             .border_color(theme.border)
             .bg(theme.element_hover)
-            .text_size(px(TEXT_SIZE))
-            .line_height(px(LINE_HEIGHT))
+            .text_size(px(typography.body.size()))
+            .line_height(px(typography.body.line_height()))
             .text_color(theme.text)
             .cursor(CursorStyle::PointingHand)
             .hover(|el| el.bg(theme.element_active))
@@ -1368,16 +1411,16 @@ fn bookmark(ix: usize, url: &str, form: Form, theme: &Theme, cx: &App) -> AnyEle
         .child(
             div()
                 .truncate()
-                .text_size(px(TEXT_SIZE))
-                .line_height(px(LINE_HEIGHT))
+                .text_size(px(typography.body.size()))
+                .line_height(px(typography.body.line_height()))
                 .text_color(theme.text)
                 .child(title),
         )
         .children(preview.description.map(|blurb| {
             div()
                 .line_clamp(2)
-                .text_size(px(CARD_TEXT_SIZE))
-                .line_height(px(CARD_LINE_HEIGHT))
+                .text_size(px(typography.card.size()))
+                .line_height(px(typography.card.line_height()))
                 .text_color(theme.text_muted)
                 .child(blurb)
         }))
@@ -1388,7 +1431,7 @@ fn bookmark(ix: usize, url: &str, form: Form, theme: &Theme, cx: &App) -> AnyEle
                 .flex()
                 .items_center()
                 .gap(px(6.0))
-                .text_size(px(CARD_TEXT_SIZE))
+                .text_size(px(typography.card.size()))
                 .text_color(theme.text_muted)
                 .child(mark(CARD_ICON))
                 .child(div().truncate().child(label)),
@@ -1415,7 +1458,7 @@ fn bookmark(ix: usize, url: &str, form: Form, theme: &Theme, cx: &App) -> AnyEle
         .flex()
         .w_full()
         .overflow_hidden()
-        .rounded(px(8.0))
+        .rounded(px(Theme::button_radius()))
         .border_1()
         .border_color(theme.border)
         .bg(theme.surface_card)
@@ -1469,6 +1512,7 @@ fn table(
     header: &[Text],
     rows: &[Vec<Text>],
     overlay: Overlay,
+    typography: &Typography,
     theme: &Theme,
     window: &mut Window,
 ) -> AnyElement {
@@ -1502,7 +1546,12 @@ fn table(
             if !flat.text.is_empty() {
                 let width = f32::from(
                     text_system
-                        .shape_line(flat.text.clone(), px(TEXT_SIZE), &flat.runs, None)
+                        .shape_line(
+                            flat.text.clone(),
+                            px(typography.body.size()),
+                            &flat.runs,
+                            None,
+                        )
                         .width(),
                 );
                 *natural = natural.max(width);
@@ -1539,8 +1588,8 @@ fn table(
                 .flex_basis(px(0.0))
                 .min_w(px(minimums[c]))
                 .p(px(TABLE_CELL_PADDING))
-                .text_size(px(TEXT_SIZE))
-                .line_height(px(LINE_HEIGHT));
+                .text_size(px(typography.body.size()))
+                .line_height(px(typography.body.line_height()));
             cell_el = match align.get(c).copied().unwrap_or_default() {
                 Align::Left => cell_el,
                 Align::Center => cell_el.text_center(),
@@ -1555,8 +1604,8 @@ fn table(
                 cell_el = cell_el.child(painted_text(
                     flat,
                     len,
-                    TEXT_SIZE,
-                    LINE_HEIGHT,
+                    typography.body.size(),
+                    typography.body.line_height(),
                     overlay.at(Part::Cell { row, column: c }),
                     theme,
                 ));

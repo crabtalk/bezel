@@ -15,7 +15,7 @@
 
 use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelude::*, px};
 
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{popover, surface::Surfaced as _};
 
@@ -65,13 +65,13 @@ impl Render for Tooltip {
             .flex_row()
             .items_center()
             .gap(px(8.0))
-            .text_size(px(12.0))
+            .text_style(TextStyle::Callout)
             .text_color(theme.text)
             .child(self.text.clone())
             .when_some(self.keystroke.clone(), |card, keystroke| {
                 card.child(
                     div()
-                        .text_size(px(11.0))
+                        .text_style(TextStyle::Subheadline)
                         .text_color(theme.text_faint)
                         .child(keystroke),
                 )

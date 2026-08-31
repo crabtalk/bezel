@@ -28,7 +28,7 @@ use gpui::{
 };
 use markdown::Mark;
 use motion::{Fade, Painter};
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 /// Opens on something worth selecting: a heading, a list, and a sentence with
 /// marks already in it.
@@ -98,7 +98,7 @@ impl EditorDemo {
 
         let buttons = MARKS.map(|(glyph, mark)| {
             let lit = doc.covered_by(selection, &mark);
-            ui::popover::menu_row(theme, lit, Fade::new(view, format!("bubble-{glyph}")))
+            ui::popover::menu_row(theme, lit, Some(Fade::new(view, format!("bubble-{glyph}"))))
                 .id(ElementId::Name(format!("bubble-{glyph}").into()))
                 .px(px(7.0))
                 .child(glyph)
@@ -149,7 +149,7 @@ impl Render for EditorDemo {
                 .gap(px(8.0))
                 .child(
                     div()
-                        .text_size(px(11.0))
+                        .text_style(TextStyle::Subheadline)
                         .text_color(theme.text_faint)
                         .child(label),
                 )
@@ -178,7 +178,7 @@ impl Render for EditorDemo {
                 .rounded(px(8.0))
                 .bg(theme.ink(0.02))
                 .font_family(theme.font_mono.clone())
-                .text_size(px(12.0))
+                .text_style(TextStyle::Callout)
                 .line_height(px(19.0))
                 .text_color(theme.text_muted)
                 .child(SharedString::from(source)),

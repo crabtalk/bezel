@@ -23,8 +23,7 @@ use gpui::{
     actions, div, prelude::*, px,
 };
 
-use motion::{Fade, Painter};
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
     input::{self, TextField},
@@ -75,9 +74,12 @@ impl EventEmitter<PaletteEvent> for CommandPalette {}
 
 impl CommandPalette {
     pub fn new(items: Vec<SharedString>, cx: &mut Context<Self>) -> Self {
-        let query = cx.new(|cx| TextField::new(cx).with_placeholder("Type a command…"));
-        // Re-filter whenever the field's content changes.
-        cx.observe(&query, |palette, _, cx| {
+        let query = cx.new(|cx| {
+            TextField::new(cx)
+                .with_placeholder("Type a command…")
+                .with_frame(false)
+        });
+        cx.subscribe(&query, |palette, _, _: &input::FieldEvent, cx| {
             palette.refilter(cx);
         })
         .detach();
@@ -140,30 +142,31 @@ impl Focusable for CommandPalette {
 impl Render for CommandPalette {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
-        let view = Painter::of(cx);
         let rows: Vec<gpui::AnyElement> = self
             .filter
             .filtered()
             .iter()
             .enumerate()
             .map(|(position, &item)| {
-                popover::menu_row(
-                    &theme,
-                    Some(position) == self.filter.active(),
-                    Fade::new(view, format!("palette-row-{item}")),
-                )
-                .id(SharedString::from(format!("palette-{item}")))
-                .on_click(cx.listener(move |_, _, _, cx| {
-                    cx.emit(PaletteEvent::Selected(item));
-                }))
-                .child(self.filter.items()[item].clone())
-                .into_any_element()
+                popover::menu_row(&theme, Some(position) == self.filter.active(), None)
+                    .id(SharedString::from(format!("palette-{item}")))
+                    .on_mouse_move(cx.listener(move |palette: &mut Self, _, _, cx| {
+                        if palette.filter.active() != Some(position) {
+                            palette.filter.set_active(position);
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |_, _, _, cx| {
+                        cx.emit(PaletteEvent::Selected(item));
+                    }))
+                    .child(self.filter.items()[item].clone())
+                    .into_any_element()
             })
             .collect();
 
         let card = popover::popover_card(&theme)
             .w(px(420.0))
-            .child(popover::search_input_frame(
+            .child(popover::search_line(
                 &theme,
                 self.query.clone().into_any_element(),
             ))
@@ -171,7 +174,7 @@ impl Render for CommandPalette {
                 div()
                     .px(px(10.0))
                     .py(px(8.0))
-                    .text_size(px(13.0))
+                    .text_style(TextStyle::Body)
                     .text_color(theme.text_muted)
                     .child("No matches")
                     .into_any_element()

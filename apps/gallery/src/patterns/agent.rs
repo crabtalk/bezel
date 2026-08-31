@@ -24,10 +24,10 @@ use gpui::{
     linear_gradient, prelude::*, px,
 };
 use motion::{Fade, Painter};
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 use ui::{
     icons,
-    input::{Shape, TextField},
+    input::{FieldEvent, Shape, TextField},
     loaders, popover,
     scroll::{self, FollowState, ScrollbarState},
     widgets,
@@ -183,7 +183,7 @@ impl Activity {
             .child(div().flex().w(px(14.0)).justify_center().child(glyph))
             .child(
                 div()
-                    .text_size(px(12.5))
+                    .text_style(TextStyle::Callout)
                     .text_color(theme.text_muted)
                     .child(SharedString::from(if running {
                         "Thinking".to_string()
@@ -224,7 +224,7 @@ impl Activity {
                             .child(div().flex().flex_col().gap(px(4.0)).pr(px(14.0)).children(
                                 REASONING.iter().take(self.shown()).map(|line| {
                                     div()
-                                        .text_size(px(12.5))
+                                        .text_style(TextStyle::Callout)
                                         .text_color(theme.text_muted.opacity(0.7))
                                         .child(SharedString::from(*line))
                                 }),
@@ -279,7 +279,7 @@ impl Render for Activity {
                             .py(px(9.0))
                             .rounded(px(Theme::surface_radius()))
                             .bg(theme.surface_raised)
-                            .text_size(px(13.5))
+                            .text_style(TextStyle::Body)
                             .text_color(theme.text)
                             .child(PROMPT),
                     )
@@ -296,7 +296,7 @@ impl Render for Activity {
                     .when(!running, |page| {
                         page.child(
                             div()
-                                .text_size(px(13.5))
+                                .text_style(TextStyle::Body)
                                 .text_color(theme.text)
                                 .child(ANSWER),
                         )
@@ -684,8 +684,12 @@ impl Composer {
                 .with_key_context(COMPOSER_CONTEXT)
                 .with_placeholder("Ask anything, or # to attach a file")
         });
-        cx.observe(&field, |composer: &mut Self, _, cx| composer.reread(cx))
-            .detach();
+        // Both variants: the mention behind the caret changes when the text does
+        // and when the caret alone moves.
+        cx.subscribe(&field, |composer: &mut Self, _, _: &FieldEvent, cx| {
+            composer.reread(cx)
+        })
+        .detach();
         Self {
             field,
             mention: None,
@@ -805,7 +809,6 @@ impl Composer {
     /// `TextField::offset_bounds` is the same measurement the IME candidate
     /// panel anchors to, so it follows the caret down as the box grows.
     fn picker(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let view = Painter::of(cx);
         let hash = self.mention?;
         let anchor = self.field.read(cx).offset_bounds(hash, window)?;
         let rows: Vec<AnyElement> = self
@@ -814,15 +817,17 @@ impl Composer {
             .iter()
             .enumerate()
             .map(|(position, &item)| {
-                popover::menu_row(
-                    theme,
-                    Some(position) == self.filter.active(),
-                    Fade::new(view, format!("mention-{item}")),
-                )
-                .id(SharedString::from(format!("mention-{item}")))
-                .on_click(cx.listener(move |composer, _, _, cx| composer.accept(item, cx)))
-                .child(self.filter.items()[item].clone())
-                .into_any_element()
+                popover::menu_row(theme, Some(position) == self.filter.active(), None)
+                    .id(SharedString::from(format!("mention-{item}")))
+                    .on_mouse_move(cx.listener(move |composer: &mut Self, _, _, cx| {
+                        if composer.filter.active() != Some(position) {
+                            composer.filter.set_active(position);
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |composer, _, _, cx| composer.accept(item, cx)))
+                    .child(self.filter.items()[item].clone())
+                    .into_any_element()
             })
             .collect();
         if rows.is_empty() {
@@ -864,7 +869,7 @@ impl Render for Composer {
                     .py(px(9.0))
                     .rounded(px(Theme::surface_radius()))
                     .bg(theme.surface_raised)
-                    .text_size(px(13.5))
+                    .text_style(TextStyle::Body)
                     .text_color(theme.text)
                     .child(message.clone())
                     .into_any_element()
@@ -916,7 +921,7 @@ impl Render for Composer {
                                     .px(px(6.0))
                                     .child(
                                         div()
-                                            .text_size(px(11.5))
+                                            .text_style(TextStyle::Subheadline)
                                             .font_family(theme.font_mono.clone())
                                             .text_color(theme.text_faint)
                                             .child(if self.mention.is_some() {

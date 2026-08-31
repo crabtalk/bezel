@@ -34,7 +34,7 @@
 
 use gpui::{AnyElement, Pixels, SharedString, div, prelude::*, px, relative};
 
-use theme::{Theme, ink};
+use theme::{TextStyle, Theme, Typeset, ink};
 
 use crate::icons;
 
@@ -144,7 +144,7 @@ pub fn header_cell(theme: &Theme, column: &Column, sorted: Option<bool>) -> gpui
     cell_frame(column)
         .py(px(8.0))
         .gap(px(4.0))
-        .text_size(px(11.5))
+        .text_style(TextStyle::Subheadline)
         .font_weight(gpui::FontWeight::MEDIUM)
         .text_color(if sorted.is_some() {
             theme.text
@@ -192,7 +192,7 @@ pub fn row(
         .when(!first, |row| {
             row.border_t_1().border_color(theme.border.opacity(0.6))
         })
-        .text_size(px(12.5))
+        .text_style(TextStyle::Callout)
         .text_color(theme.text);
     row = if selected {
         row.bg(theme::card_selected_bg())

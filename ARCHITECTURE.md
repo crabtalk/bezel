@@ -45,7 +45,14 @@ to get a button, and made the facade fail outright for
 `markdown` names no highlighter to avoid. A gate would have hidden that behind a
 default; not carrying the crate removes it.
 
-Its only feature flags are one per bundled face — `geist-sans`, `geist-mono`,
+`gpui_platform` is carried, under a `platform` feature that is off by default.
+It is the crate that opens a window — gpui core knows no platform, so
+`Application` can only be built `with_platform` — and its version has to be the
+gpui above, which is the same reason gpui itself is re-exported. The gate is
+what a wasm consumer, reaching for the browser's backend, and a library
+consumer, opening no window at all, turn off.
+
+Its other feature flags are one per bundled face — `geist-sans`, `geist-mono`,
 `geist-weights` — all on by default and forwarded to `ui`: an app that registers
 its own typeface points `Theme::font_sans` at it and drops the Geist it no
 longer paints. `ui` is also the one dependency spelled out rather than

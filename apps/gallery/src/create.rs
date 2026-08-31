@@ -10,7 +10,7 @@
 use gpui::{
     AnyElement, App, Context, DragMoveEvent, Empty, SharedString, Window, div, prelude::*, px,
 };
-use theme::{Appearance, BASE_COLORS, Brand, Theme};
+use theme::{Appearance, BASE_COLORS, Brand, TextStyle, Theme, Typeset};
 use ui::{
     focus, popover,
     widgets::{self, ButtonStyle, Buttons, Content, Controls, SliderDrag},
@@ -175,7 +175,7 @@ fn slider(
             div()
                 .w(px(96.0))
                 .flex_none()
-                .text_size(px(12.5))
+                .text_style(TextStyle::Callout)
                 .text_color(theme.text_muted)
                 .child(knob.label),
         )
@@ -207,7 +207,7 @@ fn slider(
             div()
                 .w(px(56.0))
                 .flex_none()
-                .text_size(px(12.0))
+                .text_style(TextStyle::Callout)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_faint)
                 .child(SharedString::from(format!("{value:.*}", knob.decimals))),
@@ -243,7 +243,7 @@ fn contrast(theme: &Theme, brand: &Brand) -> AnyElement {
                     div()
                         .w(px(150.0))
                         .flex_none()
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
                         .child(*label),
                 )
@@ -261,7 +261,7 @@ fn contrast(theme: &Theme, brand: &Brand) -> AnyElement {
                             div()
                                 .w(px(46.0))
                                 .flex_none()
-                                .text_size(px(12.0))
+                                .text_style(TextStyle::Callout)
                                 .font_family(theme.font_mono.clone())
                                 .text_color(theme.text)
                                 .child(SharedString::from(format!("{ratio:.2}"))),
@@ -273,7 +273,7 @@ fn contrast(theme: &Theme, brand: &Brand) -> AnyElement {
                         }))
                         .child(
                             div()
-                                .text_size(px(11.5))
+                                .text_style(TextStyle::Subheadline)
                                 .text_color(theme.text_faint)
                                 .child(if source.appearance.is_dark() {
                                     "dark"
@@ -306,7 +306,7 @@ fn specimen(theme: &Theme) -> AnyElement {
                 .bg(theme.input_bg)
                 .border_1()
                 .border_color(theme.border)
-                .text_size(px(12.5))
+                .text_style(TextStyle::Callout)
                 .text_color(theme.text_faint)
                 .child("input plate"),
         )
@@ -317,7 +317,7 @@ fn specimen(theme: &Theme) -> AnyElement {
                 .rounded(px(Theme::control_radius()))
                 .bg(theme.code_wash)
                 .font_family(theme.font_mono.clone())
-                .text_size(px(12.0))
+                .text_style(TextStyle::Callout)
                 .text_color(theme.code_text)
                 .child("code"),
         )

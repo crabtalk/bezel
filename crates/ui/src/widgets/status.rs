@@ -4,7 +4,7 @@
 //! `theme.step_row(..)`, `theme.step_output(..)`, `theme.error_strip(..)`.
 
 use gpui::{Div, SharedString, div, prelude::*, px};
-use theme::{Theme, ThemeExt};
+use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 use crate::widgets::Layout;
 
@@ -67,7 +67,7 @@ pub trait Status: ThemeExt {
             .child(
                 div()
                     .flex_none()
-                    .text_size(px(12.5))
+                    .text_style(TextStyle::Callout)
                     .text_color(theme.text)
                     .child(title.into()),
             )
@@ -76,7 +76,7 @@ pub trait Status: ThemeExt {
                     div()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.0))
+                        .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
                         .child(detail),
                 )
@@ -93,7 +93,7 @@ pub trait Status: ThemeExt {
                         cluster.child(
                             div()
                                 .font_family(theme.font_mono.clone())
-                                .text_size(px(12.0))
+                                .text_style(TextStyle::Callout)
                                 .text_color(theme.text_muted)
                                 .child(meta),
                         )
@@ -130,7 +130,7 @@ pub trait Status: ThemeExt {
             .px(px(STEP_PAD_X))
             .py(px(STEP_PAD_Y))
             .font_family(theme.font_mono.clone())
-            .text_size(px(12.0))
+            .text_style(TextStyle::Callout)
             .text_color(theme.text_muted)
             .child(text.into())
     }
@@ -150,7 +150,7 @@ pub trait Status: ThemeExt {
             .border_1()
             .border_color(red.opacity(0.2))
             .bg(red.opacity(0.06))
-            .text_size(px(12.5))
+            .text_style(TextStyle::Callout)
             .text_color(red_text.opacity(0.9))
             .flex()
             .flex_row()
@@ -181,7 +181,7 @@ pub trait Status: ThemeExt {
             .border_1()
             .border_color(amber.opacity(0.2))
             .bg(amber.opacity(0.06))
-            .text_size(px(12.0))
+            .text_style(TextStyle::Callout)
             .text_color(amber_text.opacity(0.9))
             .flex()
             .flex_row()

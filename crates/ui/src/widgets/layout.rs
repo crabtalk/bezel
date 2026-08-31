@@ -6,7 +6,7 @@
 
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
 use motion::{self, Fade};
-use theme::{Theme, ThemeExt, card_selected_bg, wash};
+use theme::{TextStyle, Theme, ThemeExt, Typeset, card_selected_bg, wash};
 
 /// The drag payload of a [`Layout::split_handle`]. Shipped from here so every
 /// split speaks the same type: `on_drag_move::<SplitDrag>` on one container
@@ -65,7 +65,7 @@ pub trait Layout: ThemeExt {
             .child(Layout::disclosure(self.theme(), expanded))
             .child(
                 div()
-                    .text_size(px(12.5))
+                    .text_style(TextStyle::Callout)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.text)
                     .child(label.into()),
@@ -111,7 +111,7 @@ pub trait Layout: ThemeExt {
             .px(px(8.0))
             .py(px(6.0))
             .rounded(px(Theme::control_radius()))
-            .text_size(px(13.0))
+            .text_style(TextStyle::Body)
             .text_color(tint)
             .cursor_pointer();
         if selected {
@@ -207,7 +207,7 @@ pub trait Layout: ThemeExt {
             .rounded_t(px(Theme::control_radius()))
             .border_1()
             .border_color(crate::widgets::RING_SLOT)
-            .text_size(px(13.0))
+            .text_style(TextStyle::Body)
             .font_weight(if active {
                 gpui::FontWeight::MEDIUM
             } else {

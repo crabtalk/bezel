@@ -9,7 +9,7 @@
 //! methods are statically dispatched onto [`Theme`].
 
 use gpui::{AnyElement, Div, SharedString, div, prelude::*, px};
-use theme::{Theme, ThemeExt, ink};
+use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
 
 /// Default height of an [`Scaffolding::option_card`] preview frame.
 pub const OPTION_CARD_HEIGHT: f32 = 148.0;
@@ -39,8 +39,8 @@ pub trait Scaffolding: ThemeExt {
             .flex_col()
     }
 
-    /// Page headline row: `flex items-baseline gap-2.5` — `text-base font-semibold`
-    /// title + `text-[13px]` count sharing a baseline (the reference settings.devices.tsx).
+    /// Page headline row: `flex items-baseline gap-2.5` — title and count
+    /// sharing a baseline (the reference settings.devices.tsx).
     fn page_header(&self, title: impl Into<SharedString>, count: Option<usize>) -> Div {
         let theme = self.theme();
         div()
@@ -50,37 +50,36 @@ pub trait Scaffolding: ThemeExt {
             .gap(px(10.0))
             .child(
                 div()
-                    .text_size(px(16.0))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_style(TextStyle::Title2)
                     .text_color(theme.text)
                     .child(title.into()),
             )
             .when_some(count, |el, count| {
                 el.child(
                     div()
-                        .text_size(px(13.0))
+                        .text_style(TextStyle::Body)
                         .text_color(theme.text_muted.opacity(0.7))
                         .child(format!("{count}")),
                 )
             })
     }
 
-    /// Subtitle under the headline: `mt-1 text-[13px] text-muted-foreground`.
+    /// Subtitle under the headline: `mt-1 text-muted-foreground`.
     fn page_subtitle(&self, copy: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         div()
             .mt(px(4.0))
-            .text_size(px(13.0))
+            .text_style(TextStyle::Body)
             .text_color(theme.text_muted)
             .child(copy.into())
     }
 
-    /// Small label above a group of controls (`text-[13px] font-medium`) — the
+    /// Small label above a group of controls (`font-medium`) — the
     /// "Theme" caption over a picker, not a page headline.
     fn field_label(&self, label: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         div()
-            .text_size(px(13.0))
+            .text_style(TextStyle::Body)
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(theme.text)
             .child(label.into())
@@ -151,7 +150,7 @@ pub trait Scaffolding: ThemeExt {
             )
             .child(
                 div()
-                    .text_size(px(13.0))
+                    .text_style(TextStyle::Body)
                     .text_color(if selected {
                         theme.text
                     } else {
@@ -213,20 +212,19 @@ pub trait Scaffolding: ThemeExt {
             )
     }
 
-    /// Row title: `text-[13.5px] font-medium leading-tight`.
+    /// Row title.
     fn row_title(&self, title: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         div()
             .min_w_0()
             .truncate()
-            .text_size(px(13.5))
-            .font_weight(gpui::FontWeight::MEDIUM)
+            .text_style(TextStyle::Headline)
             .text_color(theme.text)
             .child(title.into())
     }
 
-    /// The quiet meta line under a row title: `text-[11.5px]
-    /// text-muted-foreground/65` fragments joined by dots.
+    /// The quiet meta line under a row title: `text-muted-foreground/65`
+    /// fragments joined by dots.
     fn meta_line(&self, fragments: Vec<AnyElement>) -> Div {
         let theme = self.theme();
         let mut line = div()
@@ -237,7 +235,7 @@ pub trait Scaffolding: ThemeExt {
             .items_center()
             .gap_x(px(8.0))
             .gap_y(px(2.0))
-            .text_size(px(11.5))
+            .text_style(TextStyle::Subheadline)
             .text_color(theme.text_muted.opacity(0.65));
         let mut first = true;
         for fragment in fragments {

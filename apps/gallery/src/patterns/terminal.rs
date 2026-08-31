@@ -17,7 +17,7 @@ use terminal::{
     emulator::Emulator,
     view::{GridSnapshot, TerminalElement, terminal_panel_bg},
 };
-use theme::{Theme, hairline};
+use theme::{TextStyle, Theme, Typeset, hairline};
 
 /// Timer tick, driving the wall-clock script playback.
 const TICK_MS: u64 = 80;
@@ -211,14 +211,14 @@ impl Terminal {
                     .min_w_0()
                     .truncate()
                     .font_family(theme.font_mono.clone())
-                    .text_size(px(12.0))
+                    .text_style(TextStyle::Callout)
                     .text_color(theme.text)
                     .child(SharedString::from(title.unwrap_or("bezel"))),
             )
             .child(
                 div()
                     .font_family(theme.font_mono.clone())
-                    .text_size(px(11.0))
+                    .text_style(TextStyle::Subheadline)
                     .text_color(theme.text_faint)
                     .child("scripted bytes — the PTY is the host's job"),
             )

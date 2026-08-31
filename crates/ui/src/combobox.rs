@@ -16,6 +16,7 @@
 //! ```
 
 use crate::{
+    icons,
     input::{self, TextField},
     popover,
     widgets::Controls,
@@ -24,8 +25,7 @@ use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, Pixels, SharedString,
     Window, actions, canvas, div, prelude::*, px,
 };
-use motion::{Fade, Painter};
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 actions!(
     bezel_combobox,
@@ -78,9 +78,13 @@ impl Combobox {
         placeholder: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let query = cx.new(|cx| TextField::new(cx).with_placeholder("Search…"));
-        cx.observe(&query, |combobox, _, cx| {
-            let query = combobox.query.read(cx).content().clone();
+        let query = cx.new(|cx| {
+            TextField::new(cx)
+                .with_placeholder("Search…")
+                .with_frame(false)
+        });
+        cx.subscribe(&query, |combobox, query, _: &input::FieldEvent, cx| {
+            let query = query.read(cx).content().clone();
             combobox.filter.refilter(&query);
             cx.notify();
         })
@@ -157,32 +161,38 @@ impl Combobox {
     }
 
     fn menu_card(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
-        // Element ids are namespaced by the view; hover-fade keys are a global
-        // map, so those carry the entity id — a form can hold several of these.
-        let view = Painter::of(cx);
         let rows: Vec<gpui::AnyElement> = self
             .filter
             .filtered()
             .iter()
             .enumerate()
             .map(|(position, &item)| {
-                popover::menu_row_nav(
-                    theme,
-                    Some(item) == self.chosen,
-                    Some(position) == self.filter.active(),
-                    Fade::new(view, format!("combobox-row-{item}")),
-                )
-                .id(SharedString::from(format!("row-{item}")))
-                .on_click(cx.listener(move |combobox, _, _, cx| combobox.choose(item, cx)))
-                .child(self.filter.items()[item].clone())
-                .into_any_element()
+                popover::menu_row(theme, Some(position) == self.filter.active(), None)
+                    .justify_between()
+                    .id(SharedString::from(format!("row-{item}")))
+                    .on_mouse_move(cx.listener(move |combobox: &mut Self, _, _, cx| {
+                        if combobox.filter.active() != Some(position) {
+                            combobox.filter.set_active(position);
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |combobox, _, _, cx| combobox.choose(item, cx)))
+                    .child(self.filter.items()[item].clone())
+                    .when(Some(item) == self.chosen, |row| {
+                        row.child(
+                            icons::icon(icons::CHECK)
+                                .size(px(13.0))
+                                .text_color(theme.text),
+                        )
+                    })
+                    .into_any_element()
             })
             .collect();
 
         popover::popover_card(theme)
             .w(self.trigger_width.unwrap_or(px(200.0)))
             .on_mouse_down_out(cx.listener(|combobox, _, _, cx| combobox.close(cx)))
-            .child(popover::search_input_frame(
+            .child(popover::search_line(
                 theme,
                 self.query.clone().into_any_element(),
             ))
@@ -190,7 +200,7 @@ impl Combobox {
                 div()
                     .px(px(10.0))
                     .py(px(8.0))
-                    .text_size(px(13.0))
+                    .text_style(TextStyle::Body)
                     .text_color(theme.text_muted)
                     .child("No matches")
                     .into_any_element()
@@ -253,7 +263,7 @@ impl Render for Combobox {
                         cx.listener(|combobox, _, _, _| combobox.menu.note_trigger_press()),
                     )
                     .on_click(cx.listener(|combobox, _, window, cx| combobox.toggle(window, cx)))
-                    .child(theme.select_trigger(label, open)),
+                    .child(theme.select_trigger(label)),
             )
             .when_some(card, |trigger, card| {
                 trigger.child(popover::anchored_menu_below(

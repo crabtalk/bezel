@@ -90,6 +90,7 @@ impl Editor {
             TextField::new(cx)
                 .with_placeholder("Paste an image URL")
                 .with_key_context(PROMPT_CONTEXT)
+                .with_frame(false)
         });
         window.focus(&field.focus_handle(cx), cx);
         self.slash = None;
@@ -448,10 +449,15 @@ impl Editor {
                 .on_mouse_down_out(
                     cx.listener(|this, _, window, cx| this.cancel_url(&CancelUrl, window, cx)),
                 )
-                .child(popover::search_input_frame(
-                    theme,
-                    prompt.field.clone().into_any_element(),
-                ))
+                // The card is this field's frame; a box on the field would be a
+                // second one. Padded like a menu row so the text lands where a
+                // row's would.
+                .child(
+                    div()
+                        .px(px(8.0))
+                        .py(px(6.0))
+                        .child(prompt.field.clone().into_any_element()),
+                )
                 .into_any_element(),
             None,
         ))

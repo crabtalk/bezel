@@ -20,6 +20,9 @@ default = ["geist-sans", "geist-mono", "geist-weights"]
 geist-sans = ["ui/geist-sans"]
 geist-mono = ["ui/geist-mono"]
 geist-weights = ["ui/geist-weights"]
+# The platform backend, off by default: a wasm consumer picks the browser's
+# for itself, and a library consumer opens no window at all.
+platform = ["dep:gpui_platform"]
 
 [dependencies]
 agent.workspace = true
@@ -30,3 +33,4 @@ theme.workspace = true
 # would make every other member ask for the fonts back.
 ui = { package = "bezel-ui", path = "../ui", version = "0.1.0", default-features = false }
 gpui.workspace = true
+gpui_platform = { workspace = true, optional = true }

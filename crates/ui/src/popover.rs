@@ -11,11 +11,12 @@
 //! classification) lives in free functions with unit tests; the elements only
 //! feed them measurements/events.
 
+use crate::icons;
 use gpui::{
     Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
 };
 use motion::{self as motion, AnimationExt as _, Fade, PULSE, Painter};
-use theme::{Theme, hairline, ink};
+use theme::{TextStyle, Theme, Typeset, hairline, ink};
 
 // ---------------------------------------------------------------------------
 // Loadable — async slot state shared by pickers/settings pages
@@ -320,6 +321,15 @@ impl Filter {
         self.active = menu_step(self.active, self.filtered.len(), delta);
     }
 
+    /// Put the cursor on a position in the FILTERED view — what the mouse
+    /// calls as it crosses a row, so a menu never shows a mouse cursor and a
+    /// keyboard cursor at once.
+    pub fn set_active(&mut self, position: usize) {
+        if position < self.filtered.len() {
+            self.active = Some(position);
+        }
+    }
+
     /// The item confirming right now would pick — an index into
     /// [`Self::items`], never into the filtered view. Confusing the two is the
     /// defining bug of a filtered list: it only appears once a query narrows
@@ -381,7 +391,7 @@ pub fn popover_card(theme: &Theme) -> gpui::Div {
         .rounded(px(Theme::surface_radius()))
         .p(px(MENU_PAD))
         .overflow_hidden()
-        .text_size(px(13.0))
+        .text_style(TextStyle::Body)
         .text_color(theme.text);
     // Contents only. Fill, boundary and shadow are the surface's — every look
     // paints its own, so nothing here has to know which one is under it. An
@@ -840,13 +850,19 @@ pub fn sheet(
     .into_any_element()
 }
 
-/// One menu row (the reference `menuItem`): `gap-2.5 rounded-lg px-2 py-1.5
-/// text-[13px]`, active = `bg-white/10 text-foreground`, hover wash
-/// `white/[0.08]` fading over `transition-colors` (floating-styles.ts) via the
-/// per-[`Fade`] [`motion::hover_blend`]. The caller adds the id/click listener
-/// — the fade's key must be stable across frames (the id string is a good
-/// choice).
-pub fn menu_row(theme: &Theme, active: bool, fade: Fade) -> gpui::Div {
+/// One menu row (the reference `menuItem`): `gap-2.5 rounded-lg px-2 py-1.5`,
+/// active = `bg-white/10 text-foreground`. The caller adds the id/click
+/// listener.
+///
+/// `active` is the row the cursor is on, and a menu has exactly one cursor.
+/// `Some(fade)` lets the mouse light a row by itself, animated over
+/// `transition-colors` (floating-styles.ts), for a menu holding no cursor of
+/// its own; its key must be stable across frames (the id string is a good
+/// choice). `None` is for a menu that owns an active index and moves it from
+/// `on_mouse_move` — move, not hover: gpui settles hover at paint time, so a
+/// list that re-filters or scrolls under a still mouse would drag the cursor
+/// to wherever the pointer sits.
+pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
     let row = div()
         .flex()
         .flex_row()
@@ -858,54 +874,42 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Fade) -> gpui::Div {
         // 12 − 4 = 8, which is where the crate's most-repeated corner value
         // came from all along.
         .rounded(px(Theme::inset_radius(Theme::surface_radius(), MENU_PAD)))
-        .text_size(px(13.0))
+        .text_style(TextStyle::Body)
         .cursor_pointer();
-    if active {
-        row.bg(theme::card_selected_bg()).text_color(theme.text)
-    } else {
-        let mut row = row
-            .text_color(motion::hover_blend(
-                &fade,
-                theme.text.opacity(0.9),
-                theme.text,
-            ))
-            .bg(motion::hover_blend(
-                &fade,
-                theme::wash(0.0),
-                theme::card_selected_bg(),
-            ));
-        // Imperative form — the caller's `.id(...)` makes the element stateful
-        // (hover listeners need element state, `.on_hover` needs `Stateful`).
-        row.interactivity().on_hover(motion::hover_listener(fade));
-        row
-    }
-}
-
-/// [`menu_row`] with a distinct keyboard-navigation highlight: a selected row
-/// carries the full `bg-white/10` wash, the keyboard cursor the lighter
-/// `bg-white/[0.08]` (the reference's `data-[highlighted]` styling) — two selected-
-/// looking rows never appear at once.
-pub fn menu_row_nav(theme: &Theme, selected: bool, highlighted: bool, fade: Fade) -> gpui::Div {
-    let row = menu_row(theme, selected, fade);
-    if !selected && highlighted {
-        row.bg(theme::card_selected_bg()).text_color(theme.text)
-    } else {
-        row
+    match (active, fade) {
+        (true, _) => row.bg(theme::card_selected_bg()).text_color(theme.text),
+        (false, None) => row.text_color(theme.text.opacity(0.9)),
+        (false, Some(fade)) => {
+            let mut row = row
+                .text_color(motion::hover_blend(
+                    &fade,
+                    theme.text.opacity(0.9),
+                    theme.text,
+                ))
+                .bg(motion::hover_blend(
+                    &fade,
+                    theme::wash(0.0),
+                    theme::card_selected_bg(),
+                ));
+            // Imperative form — the caller's `.id(...)` makes the element stateful
+            // (hover listeners need element state, `.on_hover` needs `Stateful`).
+            row.interactivity().on_hover(motion::hover_listener(fade));
+            row
+        }
     }
 }
 
 /// Small uppercase section heading inside a floating menu (the reference
-/// `MenuHeading`): `px-2 pb-1 pt-1.5 text-[10px] font-medium uppercase
-/// tracking-[0.1em] text-muted-foreground/60`. gpui has no letter-spacing at
-/// the pinned rev; the tracking is approximated with hair spaces.
+/// `MenuHeading`): `px-2 pb-1 pt-1.5 uppercase tracking-[0.1em]
+/// text-muted-foreground/60`. gpui has no letter-spacing at the pinned rev;
+/// the tracking is approximated with hair spaces.
 pub fn menu_heading(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
     let label = label.into();
     div()
         .px(px(8.0))
         .pb(px(4.0))
         .pt(px(6.0))
-        .text_size(px(10.0))
-        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_style(TextStyle::Caption2)
         .text_color(theme.text_muted.opacity(0.6))
         .child(tracked_upper(&label))
 }
@@ -963,7 +967,7 @@ pub fn key_cap(_theme: &Theme) -> gpui::Div {
 /// The tiny verb after a key-cap.
 fn key_hint_label(theme: &Theme, label: &'static str) -> gpui::Div {
     div()
-        .text_size(px(10.5))
+        .text_style(TextStyle::Caption)
         .text_color(theme.text_muted.opacity(0.45))
         .child(SharedString::from(label))
 }
@@ -996,7 +1000,7 @@ pub fn key_hint_text(theme: &Theme, cap: &'static str, label: &'static str) -> g
         .gap(px(5.0))
         .child(
             key_cap(theme)
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_muted.opacity(0.7))
                 .child(SharedString::from(cap)),
@@ -1042,27 +1046,38 @@ pub fn kbd_hint(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
         .py(px(1.0))
         .rounded(px(5.0))
         .bg(ink(0.05))
-        .text_size(px(10.0))
+        .text_style(TextStyle::Caption)
         .font_family(theme.font_mono.clone())
         .text_color(theme.text_muted.opacity(0.6))
         .child(label.into())
 }
 
-/// The search/text input frame at the top of a picker popover (the reference
-/// `searchInput`: `w-full rounded-lg bg-white/[0.04] px-2.5 py-1.5
-/// text-[13px]` + `mb-1`, borderless — full width inside the card's own
-/// p-1, only a 4px bottom margin).
-pub fn search_input_frame(_theme: &Theme, input: AnyElement) -> gpui::Div {
+/// The query line at the top of a picker popover: a magnifier, the field, and
+/// a hairline under it.
+///
+/// The field belongs in `with_frame(false)` — a box here would be a second
+/// frame inside the card's. Full-bleed like [`divider`], and the glyph sits on
+/// the row labels' own inset so the line reads as the head of the list rather
+/// than a control dropped on top of it.
+pub fn search_line(theme: &Theme, input: AnyElement) -> gpui::Div {
     div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.0))
+        .mx(px(-MENU_PAD))
+        .px(px(MENU_PAD + 8.0))
+        .py(px(7.0))
         .mb(px(MENU_PAD))
-        .px(px(10.0))
-        .py(px(6.0))
-        // Concentric with the card, like [`menu_row`] — this frame sits on the
-        // same inset, and its own doc already said so.
-        .rounded(px(Theme::inset_radius(Theme::surface_radius(), MENU_PAD)))
-        .bg(ink(0.04))
-        .text_size(px(13.0))
-        .child(input)
+        .border_b_1()
+        .border_color(hairline(0.07))
+        .text_style(TextStyle::Body)
+        .child(
+            icons::icon(icons::MAGNIFER)
+                .size(px(13.0))
+                .text_color(theme.text_faint),
+        )
+        .child(div().flex_1().child(input))
 }
 
 /// A bordered trailing menu section (the reference picker action groups /
@@ -1100,26 +1115,25 @@ pub fn dialog_card(theme: &Theme) -> gpui::Div {
         .text_color(theme.text)
 }
 
-/// Dialog title: `text-[15px] font-semibold tracking-tight`.
+/// Dialog title.
 pub fn dialog_title(theme: &Theme, title: impl Into<SharedString>) -> gpui::Div {
     div()
-        .text_size(px(15.0))
-        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_style(TextStyle::Headline)
         .text_color(theme.text)
         .child(title.into())
 }
 
-/// Dialog body copy: `text-[13px] leading-relaxed text-muted-foreground`.
+/// Dialog body copy: `leading-relaxed text-muted-foreground`.
 pub fn dialog_body(theme: &Theme, copy: impl Into<SharedString>) -> gpui::Div {
     div()
-        .text_size(px(13.0))
+        .text_style(TextStyle::Body)
         .line_height(px(19.0))
         .text_color(theme.text_muted)
         .child(copy.into())
 }
 
 /// Dialog text-field frame: `rounded-lg border border-white/[0.08]
-/// bg-white/[0.04] px-3 py-2 text-[14px]`.
+/// bg-white/[0.04] px-3 py-2`.
 pub fn dialog_field(input: AnyElement) -> gpui::Div {
     div()
         .w_full()
@@ -1129,7 +1143,7 @@ pub fn dialog_field(input: AnyElement) -> gpui::Div {
         .border_1()
         .border_color(hairline(0.08))
         .bg(ink(0.04))
-        .text_size(px(14.0))
+        .text_style(TextStyle::Body)
         .child(input)
 }
 
@@ -1168,7 +1182,7 @@ pub fn error_row(theme: &Theme, message: impl Into<SharedString>) -> gpui::Div {
         .flex_col()
         .gap(px(6.0))
         .p(px(Theme::SPACE_SM))
-        .text_size(px(12.0))
+        .text_style(TextStyle::Callout)
         .text_color(theme.danger)
         .child(message.into())
 }

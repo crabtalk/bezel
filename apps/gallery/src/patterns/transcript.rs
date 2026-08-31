@@ -23,7 +23,7 @@
 
 use gpui::{AnyElement, Context, Render, SharedString, Window, div, prelude::*, px};
 use motion::Painter;
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 use ui::{
     icons, popover,
     scroll::{self, FollowState, ScrollbarState},
@@ -206,7 +206,7 @@ impl Transcript {
             .py(px(9.0))
             .rounded(px(Theme::surface_radius()))
             .bg(theme.surface_raised)
-            .text_size(px(13.5))
+            .text_style(TextStyle::Body)
             .text_color(theme.text)
             .child(text)
     }
@@ -243,7 +243,7 @@ impl Transcript {
             .child(theme.disclosure(open))
             .child(
                 div()
-                    .text_size(px(12.5))
+                    .text_style(TextStyle::Callout)
                     .text_color(theme.text_muted)
                     .child(SharedString::from(format!("Worked · {steps} steps"))),
             )
@@ -324,7 +324,7 @@ impl Transcript {
                             .flex_row()
                             .items_center()
                             .gap(px(6.0))
-                            .text_size(px(12.5))
+                            .text_style(TextStyle::Callout)
                             .text_color(theme.text_muted.opacity(0.7))
                             .child(
                                 icons::icon(icons::CPU)
@@ -334,7 +334,7 @@ impl Transcript {
                             .child(*text)
                             .into_any_element(),
                         Beat::Text(text) => div()
-                            .text_size(px(12.5))
+                            .text_style(TextStyle::Callout)
                             .text_color(theme.text_muted)
                             .child(*text)
                             .into_any_element(),
@@ -368,7 +368,7 @@ impl Render for Transcript {
                 rows.push(
                     div()
                         .py(px(8.0))
-                        .text_size(px(11.0))
+                        .text_style(TextStyle::Subheadline)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text_faint)
                         .child(SharedString::from(popover::tracked_upper(on)))

@@ -6,7 +6,7 @@
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`.
 
 use gpui::{App, Axis, Div, DragMoveEvent, ElementId, SharedString, div, prelude::*, px};
-use theme::{Theme, ThemeExt, ink};
+use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
 
 /// The drag payload of a [`Controls::slider`], carrying the id of the slider
 /// the gesture started on.
@@ -186,16 +186,17 @@ pub trait Controls: ThemeExt {
             )
     }
 
-    /// The closed face of a select: current value plus a chevron, shaped and
-    /// toned like [`crate::input::TextField`] so a form of fields and selects
-    /// reads as one system.
+    /// The face of a select: current value plus a chevron, shaped and toned like
+    /// [`crate::input::TextField`] so a form of fields and selects reads as one
+    /// system. One look, open or shut — the menu hanging under it is what says
+    /// which it is.
     ///
     /// There is no `Select` component, deliberately — a select IS this trigger
     /// plus [`crate::popover::anchored_menu_below`] over
     /// [`crate::popover::menu_row`]s, and the caller already owns the open
     /// state and the selection. Wrapping that in a struct would buy an
     /// abstraction and cost the caller its control over both.
-    fn select_trigger(&self, label: impl Into<SharedString>, open: bool) -> Div {
+    fn select_trigger(&self, label: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         div()
             .flex()
@@ -208,8 +209,8 @@ pub trait Controls: ThemeExt {
             .rounded(px(Theme::button_radius()))
             .bg(theme.input_bg)
             .border_1()
-            .border_color(if open { theme.ring } else { theme.border })
-            .text_size(px(13.0))
+            .border_color(theme.border)
+            .text_style(TextStyle::Body)
             .text_color(theme.text)
             .cursor_pointer()
             .child(div().min_w_0().truncate().child(label.into()))
@@ -255,7 +256,7 @@ pub trait Controls: ThemeExt {
             )))
             .border_1()
             .border_color(crate::widgets::RING_SLOT)
-            .text_size(px(12.5))
+            .text_style(TextStyle::Callout)
             .cursor_pointer()
             .child(label.into());
         item = if selected {

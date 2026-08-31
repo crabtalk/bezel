@@ -17,7 +17,7 @@
 //! produced them is the app's business, the same line `tree` holds.
 
 use gpui::{Context, Render, SharedString, Window, div, prelude::*, px};
-use theme::{Theme, ink};
+use theme::{TextStyle, Theme, Typeset, ink};
 use ui::{icons, widgets::Scaffolding};
 
 /// What happened to a line. `Skip` is the gap between hunks — the lines nobody
@@ -122,7 +122,7 @@ impl Diff {
             .py(px(1.0))
             .bg(wash)
             .font_family(theme.font_mono.clone())
-            .text_size(px(12.0))
+            .text_style(TextStyle::Callout)
             .line_height(px(18.0));
 
         if change == Change::Skip {
@@ -163,7 +163,7 @@ impl Diff {
         let tally = |value: usize, sign: &'static str, color: gpui::Hsla| {
             div()
                 .font_family(theme.font_mono.clone())
-                .text_size(px(11.5))
+                .text_style(TextStyle::Subheadline)
                 .text_color(color)
                 .child(SharedString::from(format!("{sign}{value}")))
         };
@@ -187,7 +187,7 @@ impl Diff {
                     .min_w_0()
                     .truncate()
                     .font_family(theme.font_mono.clone())
-                    .text_size(px(12.0))
+                    .text_style(TextStyle::Callout)
                     .text_color(theme.text)
                     .child(FILE),
             )

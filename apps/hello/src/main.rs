@@ -7,7 +7,7 @@ use bezel::gpui::{
     WindowOptions, actions, div, prelude::*, px, size,
 };
 use bezel::theme::{
-    self, Appearance, Theme,
+    self, Appearance, TextStyle, Theme, Typeset,
     appearance::{self, AppearanceMode},
 };
 use bezel::ui::{
@@ -91,7 +91,7 @@ impl Render for Hello {
                 .gap(px(16.0))
                 .bg(theme.bg)
                 .text_color(theme.text)
-                .child(div().text_size(px(20.0)).child("hello, bezel"))
+                .child(div().text_style(TextStyle::Title).child("hello, bezel"))
                 .child(
                     theme
                         .button("Click me", ButtonStyle::Prominent, None)
@@ -103,7 +103,7 @@ impl Render for Hello {
                 )
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_style(TextStyle::Body)
                         .text_color(theme.text_muted)
                         .child(format!("clicked {} times", self.clicks)),
                 )
