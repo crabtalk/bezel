@@ -14,7 +14,7 @@ use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
-    Theme,
+    Frost, Glass, SurfaceSpec, SurfaceStyle, Theme,
     appearance::{self, AppearanceMode},
 };
 use ui::{
@@ -27,13 +27,13 @@ use ui::{
     icons,
     input::{self, Shape, TextField},
     list, loaders,
-    material::Glass as _,
     menubar::{self, Item, Menu, Menubar, MenubarEvent},
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
     popover,
     scroll::{self, ScrollbarState, TransientState},
     stats::{self, Stats},
+    surface::Surfaced as _,
     table::{self, Column, Sort, Width},
     titlebar,
     tooltip::Tooltip,
@@ -116,6 +116,10 @@ pub const COMMANDS: [&str; 8] = [
 
 const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 
+/// What the Materials probe's rim slider spans, in points. Wide enough to reach
+/// the dome the lens used to paint over the whole shape.
+const RIM_RANGE: f32 = 32.0;
+
 /// The rail's padding — the grid its rows, its footer and the traffic lights
 /// all sit on.
 pub(crate) const RAIL_PAD: f32 = 20.0;
@@ -126,6 +130,19 @@ pub(crate) const RAIL_PAD: f32 = 20.0;
 /// trailing edge.
 pub(crate) const RAIL_WIDTH: f32 = 200.0;
 const CARD_PAD: f32 = 24.0;
+
+/// The pane's own padding around the column, and the width that column is.
+const PANE_PAD: f32 = 32.0;
+const COLUMN_WIDTH: f32 = 420.0;
+
+/// Below this the two-column form does not fit — the rail plus the padded
+/// column every component page is designed for. Derived rather than chosen, so
+/// moving either width moves the breakpoint with it.
+const COMPACT_BELOW: f32 = RAIL_WIDTH + PANE_PAD * 2.0 + COLUMN_WIDTH;
+
+/// The floor under a pattern's canvas once it is being panned rather than
+/// fitted: the narrowest pane the two-column layout ever hands one.
+const CANVAS_MIN: f32 = COMPACT_BELOW - RAIL_WIDTH;
 
 /// Padding inside one nav tab, subtracted back out of the strip so the tabs'
 /// text starts on the card's grid rather than their hit boxes.
@@ -143,10 +160,68 @@ const TRAFFIC_LIGHT_SIZE: f32 = 14.0;
 pub const TRAFFIC_LIGHT_X: f32 = RAIL_PAD;
 pub const TRAFFIC_LIGHT_Y: f32 = (Theme::HEADER_HEIGHT - TRAFFIC_LIGHT_SIZE) / 2.0;
 
+/// Centre-to-centre spacing of the three buttons — measured 2026-08-30 on macOS
+/// 26, off a live window's `AXButton` frames. Same reason as the diameter above:
+/// AppKit owns the cluster and gpui reports no frame for it.
+const TRAFFIC_LIGHT_PITCH: f32 = 23.0;
+
+/// What the nav owes the leading edge once the rail is a drawer. The wide
+/// layout clears the cluster by accident — the rail is wider than it — so this
+/// is the only place the cluster's own extent has to be named. A browser tab
+/// has no titlebar to clear, and on a phone that inset is a fifth of the width.
+const COMPACT_NAV_PAD: f32 = if cfg!(target_os = "macos") {
+    TRAFFIC_LIGHT_X + TRAFFIC_LIGHT_PITCH * 2.0 + TRAFFIC_LIGHT_SIZE + RAIL_PAD
+} else {
+    RAIL_PAD
+};
+
 /// What one press of ← or → moves the slider. The step is never the library's:
 /// bezel dispatches [`focus::Decrement`]/[`focus::Increment`] and the page that
 /// owns the value decides what they are worth.
 const SLIDER_STEP: f32 = 0.05;
+
+/// What the rest of the probe's knobs span. One range has to hold both shipped
+/// looks, which is why `clear` sits high in the gain track and `regular` low.
+const GAIN_RANGE: f32 = 1.5;
+/// Every surface the probe can paint: the frost scale, then the two glasses.
+const PROBE_STYLES: [SurfaceStyle; 7] = [
+    SurfaceStyle::Frost(Frost::UltraThin),
+    SurfaceStyle::Frost(Frost::Thin),
+    SurfaceStyle::Frost(Frost::Regular),
+    SurfaceStyle::Frost(Frost::Thick),
+    SurfaceStyle::Frost(Frost::UltraThick),
+    SurfaceStyle::Glass(Glass::Regular),
+    SurfaceStyle::Glass(Glass::Clear),
+];
+
+/// Its chip label, which is also its element id.
+fn probe_style_name(style: SurfaceStyle) -> &'static str {
+    match style {
+        SurfaceStyle::Frost(Frost::UltraThin) => "ultraThin",
+        SurfaceStyle::Frost(Frost::Thin) => "thin",
+        SurfaceStyle::Frost(Frost::Regular) => "frost",
+        SurfaceStyle::Frost(Frost::Thick) => "thick",
+        SurfaceStyle::Frost(Frost::UltraThick) => "ultraThick",
+        SurfaceStyle::Glass(Glass::Regular) => "regular",
+        SurfaceStyle::Glass(Glass::Clear) => "clear",
+    }
+}
+
+/// Saturation spans grey through the pass-through `clear` measures to well
+/// past any boost `regular` could plausibly want.
+const SAT_RANGE: f32 = 3.0;
+const LIFT_RANGE: f32 = 1.0;
+const EDGE_RANGE: f32 = 0.6;
+const EDGE_W_RANGE: f32 = 4.0;
+const DISPERSION_RANGE: f32 = 0.05;
+
+/// What the probe's blur knob spans, in points. One track for every look, so
+/// it has to hold `clear`'s 1.2 and frost's 44 at once.
+const BLUR_RANGE: f32 = 60.0;
+
+/// One arrow press on a probe knob: mag by 0.1, width by 1.5pt, rim by 0.1pt —
+/// the resolution those are measured at, which is finer than a control needs.
+const PROBE_STEP: f32 = 1.0 / 320.0;
 
 /// Pages in the pagination page's imaginary result set — the shape of thing
 /// that arrives one page at a time and cannot be held whole.
@@ -484,11 +559,6 @@ pub const PATTERNS: &[Group] = &[
                 "Blob avatars",
                 "apps/gallery/src/patterns/avatar.rs",
             ),
-            section(
-                "agent-mascot",
-                "Pixel mascots",
-                "apps/gallery/src/patterns/mascot.rs",
-            ),
         ],
     },
     Group {
@@ -516,7 +586,7 @@ pub const FOUNDATIONS: &[Group] = &[
             section("color", "Color", "crates/theme/src/lib.rs"),
             section("typography", "Typography", "crates/theme/src/lib.rs"),
             section("layout", "Layout", "crates/theme/src/lib.rs"),
-            section("material", "Materials", "crates/ui/src/material.rs"),
+            section("material", "Materials", "crates/ui/src/surface.rs"),
         ],
     },
     Group {
@@ -707,6 +777,8 @@ pub struct Gallery {
     /// action, not a value — so the host is where the answer lands.
     last_menu_item: Option<SharedString>,
     sheet: popover::Popup<()>,
+    /// The rail, when the window is too narrow to carry it beside the pane.
+    drawer: popover::Popup<()>,
     /// Where the split's divider sits, as a fraction of the container.
     split: f32,
     split_dragging: bool,
@@ -724,6 +796,7 @@ pub struct Gallery {
     slider: gpui::FocusHandle,
     /// The composer's knobs, and which of its three files is showing. What they
     /// are *set to* is the brand global — the page keeps no palette.
+    probe_knobs: [gpui::FocusHandle; 13],
     brand_knobs: [gpui::FocusHandle; create::KNOB_COUNT],
     create_file: usize,
     tab_strip: [gpui::FocusHandle; 3],
@@ -792,7 +865,6 @@ pub struct Gallery {
     orbs: Entity<patterns::orbs::Orbs>,
     syntax: Entity<patterns::syntax::Syntax>,
     avatar: Entity<patterns::avatar::Avatars>,
-    mascot: Entity<patterns::mascot::Mascots>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -819,11 +891,15 @@ pub struct Gallery {
     probe_h: f32,
     probe_r: f32,
     probe_bg: usize,
-    probe_glass: bool,
-    probe_bevel: f32,
+    /// Which look the probe paints — one three-way, since frost is a look.
+    probe_style: SurfaceStyle,
+    /// The look under the knobs, in the units it ships in — a spec rather than
+    /// six fractions, so seating it on a shipped look is an assignment and the
+    /// labels are the numbers to write back into the palette.
+    probe_spec: SurfaceSpec,
     probe_tint: bool,
     probe_magnify: f32,
-    probe_blur: f32,
+    probe_disp: f32,
     probe_fill: f32,
     /// Renders one section alone, without the nav, rail or header around it.
     /// The website embeds a page per component this way, so a doc page shows
@@ -837,6 +913,9 @@ impl Gallery {
         let rail = cx.new(|cx| Rail::new(2, TABS[2].home, cx));
         cx.subscribe(&rail, |view, _, selected: &Selected, cx| {
             view.open(view.tab, selected.0, cx);
+            // A drawer that stays up over the page it just opened is a drawer
+            // you have to dismiss to see what you picked.
+            view.close_drawer(cx);
         })
         .detach();
         // The bar reports a place in the menus it was given; the host is what
@@ -895,6 +974,7 @@ impl Gallery {
             details: widgets::Takeover::default(),
             context_menu: popover::Popup::default(),
             sheet: popover::Popup::default(),
+            drawer: popover::Popup::default(),
             split: 0.4,
             split_dragging: false,
             focus_handle: cx.focus_handle(),
@@ -905,6 +985,7 @@ impl Gallery {
             segments: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             slider: cx.focus_handle(),
             brand_knobs: std::array::from_fn(|_| cx.focus_handle()),
+            probe_knobs: std::array::from_fn(|_| cx.focus_handle()),
             create_file: 0,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             rail,
@@ -959,7 +1040,6 @@ impl Gallery {
             orbs: cx.new(patterns::orbs::Orbs::new),
             syntax: cx.new(patterns::syntax::Syntax::new),
             avatar: cx.new(patterns::avatar::Avatars::new),
-            mascot: cx.new(|_| patterns::mascot::Mascots::default()),
             stats: cx.new(Stats::new),
             stats_shown: false,
             stats_at: Floating::new(Painter::of(cx)),
@@ -971,11 +1051,13 @@ impl Gallery {
             probe_h: (168.0 - 30.0) / 220.0,
             probe_r: 34.0 / 84.0,
             probe_bg: 5,
-            probe_glass: true,
-            probe_bevel: 0.225,
+            probe_style: SurfaceStyle::Glass(Glass::Clear),
+            // The knobs open on the shipped look rather than on copies of its
+            // numbers: a theme change moves the probe with it.
+            probe_spec: Theme::of(cx).glass_clear,
             probe_tint: false,
-            probe_magnify: 0.585,
-            probe_blur: 0.0,
+            probe_magnify: (Theme::of(cx).glass_magnify + 16.0) / 32.0,
+            probe_disp: Theme::of(cx).glass_dispersion,
             probe_fill: 0.34,
             embedded: false,
         }
@@ -1177,6 +1259,32 @@ impl Gallery {
 
     /// The slider by keyboard. Clamped here rather than in the widget: the
     /// paint clamps what it draws, but the value is this view's to keep sane.
+    /// The shipped look the probe's variant chip is pointing at.
+    fn probe_look(&self, cx: &App) -> SurfaceSpec {
+        let theme = Theme::of(cx);
+        self.probe_style.spec(theme)
+    }
+
+    /// The probe knob a slider id drives. Drag writes its value, the arrows add
+    /// a step; both go through here so the two cannot disagree.
+    fn probe_knob(&mut self, id: &str) -> &mut f32 {
+        match id {
+            "probe-w" => &mut self.probe_w,
+            "probe-h" => &mut self.probe_h,
+            "probe-b" => &mut self.probe_spec.rim,
+            "probe-m" => &mut self.probe_magnify,
+            "probe-dim" => &mut self.probe_spec.gain,
+            "probe-sat" => &mut self.probe_spec.saturation,
+            "probe-blur" => &mut self.probe_spec.blur,
+            "probe-lift" => &mut self.probe_spec.tint.a,
+            "probe-edge" => &mut self.probe_spec.edge,
+            "probe-edgew" => &mut self.probe_spec.edge_width,
+            "probe-disp" => &mut self.probe_disp,
+            "probe-fill" => &mut self.probe_fill,
+            _ => &mut self.probe_r,
+        }
+    }
+
     fn nudge(&mut self, delta: f32, cx: &mut Context<Self>) {
         self.level = (self.level + delta).clamp(0.0, 1.0);
         cx.notify();
@@ -1206,12 +1314,25 @@ impl Gallery {
     fn close_overlay(&mut self, _: &CloseOverlay, _: &mut Window, cx: &mut Context<Self>) {
         self.close_dialog(cx);
         self.close_sheet(cx);
+        self.close_drawer(cx);
         self.close_context_menu(cx);
     }
 
     fn close_sheet(&mut self, cx: &mut Context<Self>) {
         if self.sheet.begin_close() {
             popover::reap_popup(cx, |view: &mut Self| &mut view.sheet);
+        }
+        cx.notify();
+    }
+
+    fn open_drawer(&mut self, cx: &mut Context<Self>) {
+        self.drawer.open(());
+        cx.notify();
+    }
+
+    fn close_drawer(&mut self, cx: &mut Context<Self>) {
+        if self.drawer.begin_close() {
+            popover::reap_popup(cx, |view: &mut Self| &mut view.drawer);
         }
         cx.notify();
     }
@@ -1230,100 +1351,128 @@ impl Gallery {
     /// The top nav: the kind of thing you are browsing, and the appearance
     /// switch. Everything here is global — per-page detail belongs in
     /// [`Self::header`].
-    fn nav(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+    fn nav(&self, theme: &Theme, compact: bool, cx: &mut Context<Self>) -> AnyElement {
         let current = self.tab;
         let dark = matches!(theme.appearance, theme::Appearance::Dark);
         div()
             .flex_none()
             .h(px(Theme::HEADER_HEIGHT))
-            .pl(px(RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD))
+            .pl(px(if compact {
+                COMPACT_NAV_PAD - NAV_ITEM_PAD
+            } else {
+                RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD
+            }))
             .pr(px(CARD_PAD))
             .flex()
             .flex_row()
             .items_center()
             .gap(px(18.0))
-            .children(TABS.iter().enumerate().map(|(index, tab)| {
-                let selected = index == current;
-                let mut item = div()
-                    .id(SharedString::from(format!("nav-{}", tab.title)))
-                    .p(px(NAV_ITEM_PAD))
-                    .text_size(px(13.0))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |view, _, _, cx| {
-                        view.open(index, view.selected[index], cx);
-                    }))
-                    .child(SharedString::from(tab.title));
-                item = if selected {
-                    item.font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(theme.text)
-                } else {
-                    item.text_color(theme.text_muted)
-                };
-                item.into_any_element()
-            }))
-            // Pushes the trailing controls to the far edge.
-            .child(div().flex_1())
-            // The frame meter, on any page rather than only the one that
-            // documents it: what a window costs is a property of what you are
-            // looking at, so it has to follow you around to be worth reading.
+            .when(compact, |strip| {
+                strip.child(
+                    div()
+                        .id("drawer-toggle")
+                        .p(px(NAV_ITEM_PAD))
+                        .cursor_pointer()
+                        .on_click(cx.listener(|view, _, _, cx| view.open_drawer(cx)))
+                        .child(
+                            icons::icon(icons::SIDEBAR_MINIMALISTIC_LEFT)
+                                .size(px(15.0))
+                                .text_color(theme.text_muted),
+                        ),
+                )
+            })
+            // Takes the free space, which is what pushes the trailing controls
+            // to the far edge — and once there is none left the tabs scroll
+            // under them rather than shoving them off the window.
             .child(
                 div()
-                    .id("stats-toggle")
-                    .p(px(4.0))
-                    .cursor_pointer()
-                    .on_click(cx.listener(|view, _, _, cx| {
-                        view.show_stats(!view.stats_shown, cx);
-                    }))
-                    .child(icons::icon(icons::CPU).size(px(15.0)).text_color(
-                        if self.stats_shown {
-                            theme.text
-                        } else {
-                            theme.text_faint
-                        },
-                    )),
-            )
-            // A switch, not three segments. It reads the *resolved* appearance
-            // rather than the mode, so it shows what you are actually looking
-            // at while the app is still following the OS — and the first flip
-            // is what pins it. Returning to `System` is `set_mode`, which is a
-            // settings-level action rather than a nav-level one.
-            .child(
-                div()
+                    .id("nav-tabs")
+                    .flex_1()
+                    .min_w_0()
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap(px(8.0))
-                    .child(icons::icon(icons::SUN).size(px(14.0)).text_color(if dark {
-                        theme.text_faint
-                    } else {
-                        theme.text
-                    }))
-                    // id + click on the switch itself, not on a wrapper around
-                    // it: a `div().id(..)` wrapped around a control takes
-                    // clicks over a box narrower than what it paints, which is
-                    // the open hit-testing bug in this tree.
-                    .child(
-                        theme
-                            .toggle(dark)
-                            .id("appearance")
+                    .gap(px(18.0))
+                    .when(compact, |strip| strip.overflow_x_scroll())
+                    .children(TABS.iter().enumerate().map(|(index, tab)| {
+                        let selected = index == current;
+                        let mut item = div()
+                            .id(SharedString::from(format!("nav-{}", tab.title)))
+                            .flex_none()
+                            .p(px(NAV_ITEM_PAD))
+                            .text_size(px(13.0))
                             .cursor_pointer()
-                            .on_click(cx.listener(move |_, _, _, cx| {
-                                appearance::set_mode(
-                                    if dark {
-                                        AppearanceMode::Light
-                                    } else {
-                                        AppearanceMode::Dark
-                                    },
-                                    cx,
-                                );
-                                cx.notify();
-                            })),
-                    )
-                    .child(icons::icon(icons::MOON).size(px(14.0)).text_color(if dark {
-                        theme.text
-                    } else {
-                        theme.text_faint
+                            .on_click(cx.listener(move |view, _, _, cx| {
+                                view.open(index, view.selected[index], cx);
+                            }))
+                            .child(SharedString::from(tab.title));
+                        item = if selected {
+                            item.font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(theme.text)
+                        } else {
+                            item.text_color(theme.text_muted)
+                        };
+                        item.into_any_element()
                     })),
+            )
+            // The frame meter, on any page rather than only the one that
+            // documents it: what a window costs is a property of what you are
+            // looking at, so it has to follow you around to be worth reading.
+            // Except where it cannot be read — the panel it opens is dragged,
+            // and a drag on a touch screen is a pan.
+            .when(!compact, |strip| {
+                strip.child(
+                    div()
+                        .id("stats-toggle")
+                        .p(px(4.0))
+                        .cursor_pointer()
+                        .on_click(cx.listener(|view, _, _, cx| {
+                            view.show_stats(!view.stats_shown, cx);
+                        }))
+                        .child(icons::icon(icons::CPU).size(px(15.0)).text_color(
+                            if self.stats_shown {
+                                theme.text
+                            } else {
+                                theme.text_faint
+                            },
+                        )),
+                )
+            })
+            // One button carrying the appearance it is already in, not three
+            // segments and not a switch: the glyph says which of two you are
+            // looking at, so a track and a second icon only say it again.
+            //
+            // It reads the *resolved* appearance rather than the mode, so it
+            // shows what is actually on screen while the app is still following
+            // the OS — and the first press is what pins it. Returning to
+            // `System` is `set_mode`, a settings-level action rather than a
+            // nav-level one.
+            .child(
+                div()
+                    .id("appearance")
+                    .p(px(NAV_ITEM_PAD))
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |view, _, _, cx| {
+                        appearance::set_mode(
+                            if dark {
+                                AppearanceMode::Light
+                            } else {
+                                AppearanceMode::Dark
+                            },
+                            cx,
+                        );
+                        // The probe's knobs are a look's numbers, and the two
+                        // appearances do not share them: carrying dark's over
+                        // paints light with dark's material and reads as the
+                        // theme being broken.
+                        view.probe_spec = view.probe_look(cx);
+                        cx.notify();
+                    }))
+                    .child(
+                        icons::icon(if dark { icons::MOON } else { icons::SUN })
+                            .size(px(15.0))
+                            .text_color(theme.text_muted),
+                    ),
             )
             .into_any_element()
     }
@@ -1391,8 +1540,8 @@ impl Gallery {
             "color" => section
                 .child(hint(
                     &theme,
-                    "Tokens read at paint time from the theme global — the switch \
-                     above swaps every one of them.",
+                    "Tokens read at paint time from the theme global — the appearance \
+                     button above swaps every one of them.",
                 ))
                 .children(color_groups(&theme).into_iter().map(|(title, tokens)| {
                     stack()
@@ -1675,7 +1824,8 @@ impl Gallery {
                 ))
                 .child(
                     div()
-                        .w(px(320.0))
+                        .w_full()
+                        .max_w(px(320.0))
                         .flex()
                         .flex_col()
                         .gap(px(10.0))
@@ -1927,7 +2077,8 @@ impl Gallery {
                 section
                     .child(
                         div()
-                            .w(px(320.0))
+                            .w_full()
+                            .max_w(px(320.0))
                             .child(
                                 div()
                                     .id("collapse")
@@ -1998,7 +2149,8 @@ impl Gallery {
                     )
                     .child(
                         div()
-                            .w(px(320.0))
+                            .w_full()
+                            .max_w(px(320.0))
                             .child(
                                 div()
                                     .id("takeover-head")
@@ -2294,7 +2446,8 @@ impl Gallery {
                     .child(
                         div()
                             .id("split")
-                            .w(px(420.0))
+                            .w_full()
+                            .max_w(px(420.0))
                             .h(px(140.0))
                             .rounded(px(Theme::panel_radius()))
                             .border_1()
@@ -2443,23 +2596,77 @@ impl Gallery {
                     .into_any_element()
             }
 
-            "menu" => section
-                .child(
+            "menu" => {
+                // The card reads `menu_style` to know whether it owes a fill, a
+                // hairline and a shadow — so demoing a look the app has not
+                // chosen means handing it a theme that has, the same rule the
+                // probe tunes glass by.
+                let card = |style: SurfaceStyle, tag: &'static str| {
+                    let theme = Theme {
+                        popover_surface: style,
+                        ..theme.clone()
+                    };
                     popover::popover_card(&theme).w(px(240.0)).children([
                         popover::menu_heading(&theme, "Section").into_any_element(),
-                        popover::menu_row(&theme, false, Fade::new(view, "m-one"))
+                        popover::menu_row(&theme, false, Fade::new(view, tag))
                             .child("First item")
                             .into_any_element(),
-                        popover::menu_row(&theme, true, Fade::new(view, "m-two"))
+                        popover::menu_row(&theme, true, Fade::new(view, "m-active"))
                             .child("Active item")
                             .into_any_element(),
                         popover::divider().into_any_element(),
-                        popover::menu_row(&theme, false, Fade::new(view, "m-three"))
+                        popover::menu_row(&theme, false, Fade::new(view, "m-third"))
                             .child("Third item")
                             .into_any_element(),
-                    ]),
-                )
-                .into_any_element(),
+                    ])
+                };
+                // Over content, not the page: a menu on a flat backdrop cannot
+                // tell the two looks apart, because the one thing separating
+                // them is what they do to what is behind.
+                let band =
+                    |style: SurfaceStyle, tag: &'static str| {
+                        div()
+                            .relative()
+                            .h(px(280.0))
+                            .rounded(px(Theme::panel_radius()))
+                            .overflow_hidden()
+                            .child(div().absolute().inset_0().flex().flex_row().children(
+                                (0..14).map(|i| {
+                                    div().flex_1().h_full().bg(if i % 2 == 0 {
+                                        theme.accent
+                                    } else {
+                                        theme.warning
+                                    })
+                                }),
+                            ))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .inset_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(ui::surface::of(
+                                        Theme::surface_radius(),
+                                        style,
+                                        card(style, tag),
+                                    )),
+                            )
+                    };
+                section
+                    .child(hint(
+                        &theme,
+                        "The same menu on both looks. Frost washes what it \
+                         covers; glass dims it and bends it at the rim. \
+                         `Theme::menu_style` picks which one every menu, dialog \
+                         and sheet in the app mounts on.",
+                    ))
+                    .child(theme.field_label("Frost — Regular"))
+                    .child(band(SurfaceStyle::Frost(Frost::Regular), "m-frosted"))
+                    .child(theme.field_label("Glass — Regular"))
+                    .child(band(SurfaceStyle::Glass(Glass::Regular), "m-regular"))
+                    .into_any_element()
+            }
 
             "group-box" => section
                 .child(
@@ -2578,8 +2785,10 @@ impl Gallery {
                     .child(hint(
                         &theme,
                         "CPU is the whole process — user plus system, every thread — \
-                         as a percentage of one core, the figure Activity Monitor \
-                         prints. The web build has no such call and reads —.",
+                         as a percentage of one core, and MEM is that same \
+                         process's resident memory: the two figures Activity \
+                         Monitor prints. A browser tab can see neither of its own \
+                         process, so both read — on the web build.",
                     ))
                     .child(hint(
                         &theme,
@@ -2618,7 +2827,8 @@ impl Gallery {
                             gpui::point(px(40.0), px(40.0)),
                             popover::popover_card(&theme)
                                 .w(px(180.0))
-                                .child(popover::menu_heading(&theme, "Drag me")),
+                                .child(popover::menu_heading(&theme, "Drag me"))
+                                .surface(&theme, theme.popover_surface),
                         )),
                 )
                 .into_any_element(),
@@ -2705,73 +2915,117 @@ impl Gallery {
                 // The probe: drag the glass over a backdrop, resize it live.
                 // Mirrors the SwiftUI reference harness so the two can be put
                 // side by side on identical content.
-                let bg_names = ["flat", "bars", "h-ruler", "v-ruler", "gradient", "text"];
-                let probe_bg = |i: usize| {
-                    let base = div().absolute().inset_0().overflow_hidden();
-                    match i {
-                        0 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)),
-                        1 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).child(
-                            div().absolute().inset_0().flex().flex_row().children(
-                                (0..6).map(|j| {
-                                    div().flex_1().h_full().bg(match j {
-                                        0 => theme.text_muted,
-                                        1 => theme.warning,
-                                        2 => theme.danger,
-                                        3 => theme.success,
-                                        4 => theme.accent,
-                                        _ => theme.warning_muted,
-                                    })
-                                }),
-                            ),
-                        ),
-                        2 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).children((0..30).map(|k| {
-                            div()
-                                .absolute()
-                                .top(px(k as f32 * 12.0))
-                                .left_0()
-                                .right_0()
-                                .h(px(2.0))
-                                .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
-                        })),
-                        3 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).children((0..70).map(|k| {
-                            div()
-                                .absolute()
-                                .left(px(k as f32 * 12.0))
-                                .top_0()
-                                .bottom_0()
-                                .w(px(2.0))
-                                .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
-                        })),
-                        4 => base.bg(theme.accent).child(
-                            div().absolute().inset_0().flex().flex_row().children(
-                                (0..40).map(|k| {
-                                    div().flex_1().h_full().bg(theme.warning.opacity(
-                                        k as f32 / 39.0,
-                                    ))
-                                }),
-                            ),
-                        ),
-                        // What glass actually sits on in an app. Letterforms
-                        // are the honest probe: a displacement shows up as
-                        // text you can no longer read straight.
-                        _ => base.bg(theme.bg).children((0..16).map(|k| {
-                            div()
-                                .absolute()
-                                .top(px(8.0 + k as f32 * 21.0))
-                                .left(px(12.0))
-                                .right(px(12.0))
-                                .text_size(px(15.0))
-                                .text_color(theme.text)
-                                .whitespace_nowrap()
-                                .overflow_hidden()
-                                .child(
-                                    "the quick brown fox jumps over the lazy dog \
-                                     and back again",
+                let bg_names = [
+                    "flat", "bars", "h-ruler", "v-ruler", "gradient", "text", "coded",
+                ];
+                let probe_bg =
+                    |i: usize| {
+                        let base = div().absolute().inset_0().overflow_hidden();
+                        match i {
+                            0 => base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)),
+                            1 => {
+                                base.bg(gpui::hsla(0.0, 0.0, 0.5, 1.0)).child(
+                                    div().absolute().inset_0().flex().flex_row().children(
+                                        (0..6).map(|j| {
+                                            div().flex_1().h_full().bg(match j {
+                                                0 => theme.text_muted,
+                                                1 => theme.warning,
+                                                2 => theme.danger,
+                                                3 => theme.success,
+                                                4 => theme.accent,
+                                                _ => theme.warning_muted,
+                                            })
+                                        }),
+                                    ),
                                 )
-                        })),
-                    }
+                            }
+                            2 => base
+                                .bg(gpui::hsla(0.0, 0.0, 0.5, 1.0))
+                                .children((0..30).map(|k| {
+                                    div()
+                                        .absolute()
+                                        .top(px(k as f32 * 12.0))
+                                        .left_0()
+                                        .right_0()
+                                        .h(px(2.0))
+                                        .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
+                                })),
+                            3 => base
+                                .bg(gpui::hsla(0.0, 0.0, 0.5, 1.0))
+                                .children((0..70).map(|k| {
+                                    div()
+                                        .absolute()
+                                        .left(px(k as f32 * 12.0))
+                                        .top_0()
+                                        .bottom_0()
+                                        .w(px(2.0))
+                                        .bg(gpui::hsla(0.0, 0.0, 0.0, 0.85))
+                                })),
+                            4 => {
+                                base.bg(theme.accent).child(
+                                    div().absolute().inset_0().flex().flex_row().children(
+                                        (0..40).map(|k| {
+                                            div()
+                                                .flex_1()
+                                                .h_full()
+                                                .bg(theme.warning.opacity(k as f32 / 39.0))
+                                        }),
+                                    ),
+                                )
+                            }
+                            // A position code: green ramps once across the
+                            // probe, red sawtooths every 32pt. A pixel under the
+                            // glass names the backdrop position it came from, so
+                            // the displacement is read rather than inferred.
+                            6 => base.children((0..420).map(|k| {
+                                let x = k as f32 + 0.5;
+                                let chan = |v: f32| (20.0 + 180.0 * v) / 255.0;
+                                div()
+                                    .absolute()
+                                    .left(px(k as f32))
+                                    .top_0()
+                                    .bottom_0()
+                                    .w(px(1.0))
+                                    .bg(gpui::Rgba {
+                                        r: chan((x % 32.0) / 32.0),
+                                        g: chan(x / 420.0),
+                                        b: 0.0,
+                                        a: 1.0,
+                                    })
+                            })),
+                            // What glass actually sits on in an app. Letterforms
+                            // are the honest probe: a displacement shows up as
+                            // text you can no longer read straight.
+                            _ => base.bg(theme.bg).children((0..16).map(|k| {
+                                div()
+                                    .absolute()
+                                    .top(px(8.0 + k as f32 * 21.0))
+                                    .left(px(12.0))
+                                    .right(px(12.0))
+                                    .text_size(px(15.0))
+                                    .text_color(theme.text)
+                                    .whitespace_nowrap()
+                                    .overflow_hidden()
+                                    .child(
+                                        "the quick brown fox jumps over the lazy dog \
+                                     and back again",
+                                    )
+                            })),
+                        }
+                    };
+                // The sliders tune a *theme*, not the card. Glass numbers flow
+                // from the environment, so the honest way to demonstrate them
+                // is to hand this one card a different environment — which is
+                // exactly what branding the lens would do.
+                // The chips load a look's numbers and the knobs move them from
+                // there, so what the probe paints is always `probe_spec` — one
+                // conduit, whichever style named the numbers in it.
+                let probe_theme = Theme {
+                    glass_regular: self.probe_spec,
+                    glass_magnify: self.probe_magnify * 32.0 - 16.0,
+                    glass_dispersion: self.probe_disp,
+                    ..theme.clone()
                 };
-                let sigma = self.probe_blur * 60.0;
                 let pw = 120.0 + self.probe_w * 480.0;
                 let ph = 30.0 + self.probe_h * 220.0;
                 let pr = self.probe_r * (pw.min(ph) / 2.0);
@@ -2791,23 +3045,33 @@ impl Gallery {
                             cx.notify();
                         }))
                 };
-                let knob = |id: &'static str, value: f32, label: SharedString| {
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            div()
-                                .w(px(56.0))
-                                .text_size(px(11.0))
-                                .text_color(theme.text_muted)
-                                .child(label),
-                        )
-                        .child(
-                            div()
-                                .w(px(130.0))
-                                .child(theme.slider(value))
+                // `value` and `range` are the knob's own units — points, a
+                // gain, an alpha — so a label is the number to write back into
+                // the palette, and only the slider sees a fraction.
+                let knob =
+                    |id: &'static str, slot: usize, value: f32, range: f32, label: SharedString| {
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w(px(56.0))
+                                    .text_size(px(11.0))
+                                    .text_color(theme.text_muted)
+                                    .child(label),
+                            )
+                            .child(
+                                // Tab reaches it and the arrows step it, which is
+                                // the only way to set a number a drag cannot hit.
+                                // `probe-m` spans -16..+16, so the sweep passes
+                                // through zero and the lens inverts halfway.
+                                focus::focusable(
+                                    &theme,
+                                    &self.probe_knobs[slot],
+                                    div().w(px(130.0)).child(theme.slider(value / range)),
+                                )
                                 .id(id)
                                 .on_drag(SliderDrag(id.into()), |_, _, _, cx| cx.new(|_| Empty))
                                 .on_drag_move(cx.listener(
@@ -2816,29 +3080,24 @@ impl Gallery {
                                         else {
                                             return;
                                         };
-                                        match id {
-                                            "probe-w" => view.probe_w = f,
-                                            "probe-h" => view.probe_h = f,
-                                            "probe-b" => {
-                                                view.probe_bevel = f;
-                                                theme::set_glass_bevel(f);
-                                            }
-                                            // 0..1 spans -2..+2, so the sweep
-                                            // passes through zero and the lens
-                                            // inverts halfway.
-                                            "probe-m" => {
-                                                view.probe_magnify = f;
-                                                theme::set_glass_magnify(f * 4.0 - 2.0);
-                                            }
-                                            "probe-blur" => view.probe_blur = f,
-                                            "probe-fill" => view.probe_fill = f,
-                                            _ => view.probe_r = f,
-                                        }
+                                        *view.probe_knob(id) = f * range;
+                                        cx.notify();
+                                    },
+                                ))
+                                .on_action(cx.listener(move |view, _: &focus::Decrement, _, cx| {
+                                    let knob = view.probe_knob(id);
+                                    *knob = (*knob - PROBE_STEP * range).clamp(0.0, range);
+                                    cx.notify();
+                                }))
+                                .on_action(cx.listener(
+                                    move |view, _: &focus::Increment, _, cx| {
+                                        let knob = view.probe_knob(id);
+                                        *knob = (*knob + PROBE_STEP * range).clamp(0.0, range);
                                         cx.notify();
                                     },
                                 )),
-                        )
-                };
+                            )
+                    };
                 let probe = div()
                     .flex()
                     .flex_col()
@@ -2855,12 +3114,12 @@ impl Gallery {
                                 "glass-probe",
                                 &self.probe_at,
                                 point(px(120.0), px(120.0)),
-                                if self.probe_glass {
-                                    let mut glass =
-                                        div().w(px(pw)).h(px(ph)).rounded(px(pr)).glass_effect();
-                                    if sigma > 0.0 {
-                                        glass = glass.blurred(sigma);
-                                    }
+                                {
+                                    let glass = div()
+                                        .w(px(pw))
+                                        .h(px(ph))
+                                        .rounded(px(pr))
+                                        .surface(&probe_theme, SurfaceStyle::Glass(Glass::Regular));
                                     if self.probe_tint {
                                         glass
                                             .tint(
@@ -2871,16 +3130,19 @@ impl Gallery {
                                     } else {
                                         glass.into_any_element()
                                     }
-                                } else {
-                                    div()
-                                        .w(px(pw))
-                                        .h(px(ph))
-                                        .rounded(px(pr))
-                                        .bg(theme.glass_overlay().opacity(self.probe_fill))
-                                        .material(sigma)
-                                        .into_any_element()
                                 },
                             )),
+                    )
+                    // What is behind the glass, on its own row: mixed in with
+                    // the mode chips a seventh backdrop wraps and reads as one.
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_3()
+                            .flex_wrap()
+                            .children((0..7).map(|i| chip(i, self.probe_bg == i))),
                     )
                     .child(
                         div()
@@ -2889,29 +3151,27 @@ impl Gallery {
                             .items_center()
                             .gap_3()
                             .flex_wrap()
-                            .children((0..6).map(|i| chip(i, self.probe_bg == i)))
-                            .child(
+                            .children(PROBE_STYLES.map(|style| {
+                                let on = self.probe_style == style;
                                 div()
-                                    .id("probe-surface")
+                                    .id(probe_style_name(style))
                                     .px(px(10.0))
                                     .py(px(4.0))
                                     .rounded(px(Theme::control_radius()))
                                     .text_size(px(12.0))
-                                    .text_color(theme.text)
-                                    .bg(theme.glass_hover())
+                                    .text_color(if on { theme.text } else { theme.text_muted })
+                                    .bg(if on { theme.glass_hover() } else { theme.bg })
                                     .cursor_pointer()
-                                    .child(if self.probe_glass { "glass" } else { "frosted" })
-                                    .on_click(cx.listener(|view, _, _, cx| {
-                                        view.probe_glass = !view.probe_glass;
-                                        // Frost with no blur is a sharp pane, so arriving
-                                        // there lands on a readable one. Glass keeps 0,
-                                        // which is what clear means.
-                                        if !view.probe_glass && view.probe_blur == 0.0 {
-                                            view.probe_blur = 8.0 / 60.0;
-                                        }
+                                    .child(probe_style_name(style))
+                                    // Land on the look's shipped numbers, so
+                                    // the sliders explore from the truth
+                                    // rather than overriding it silently.
+                                    .on_click(cx.listener(move |view, _, _, cx| {
+                                        view.probe_style = style;
+                                        view.probe_spec = view.probe_look(cx);
                                         cx.notify();
-                                    })),
-                            )
+                                    }))
+                            }))
                             .child(
                                 div()
                                     .id("probe-tint")
@@ -2936,29 +3196,125 @@ impl Gallery {
                                         cx.notify();
                                     })),
                             )
-                            .child(knob("probe-w", self.probe_w, format!("w {}", pw as i32).into()))
-                            .child(knob("probe-h", self.probe_h, format!("h {}", ph as i32).into()))
-                            .child(knob("probe-r", self.probe_r, format!("r {}", pr as i32).into()))
+                            // The corner is the one place a second window can be
+                            // put in exactly, which is what makes two probes
+                            // comparable without dragging either.
+                            .child(
+                                div()
+                                    .id("probe-reset")
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded(px(Theme::control_radius()))
+                                    .text_size(px(12.0))
+                                    .text_color(theme.text_muted)
+                                    .bg(theme.bg)
+                                    .cursor_pointer()
+                                    .child("reset")
+                                    .on_click(cx.listener(|view, _, _, cx| {
+                                        view.probe_at.move_to(point(px(0.0), px(0.0)));
+                                        cx.notify();
+                                    })),
+                            )
                             .child(knob(
-                                "probe-b",
-                                self.probe_bevel,
-                                format!("bevel {:.2}", self.probe_bevel).into(),
+                                "probe-w",
+                                0,
+                                self.probe_w,
+                                1.0,
+                                format!("w {}", pw as i32).into(),
                             ))
                             .child(knob(
-                                "probe-m",
-                                self.probe_magnify,
-                                format!("mag {:+.2}", self.probe_magnify * 4.0 - 2.0).into(),
+                                "probe-h",
+                                1,
+                                self.probe_h,
+                                1.0,
+                                format!("h {}", ph as i32).into(),
+                            ))
+                            .child(knob(
+                                "probe-r",
+                                2,
+                                self.probe_r,
+                                1.0,
+                                format!("r {}", pr as i32).into(),
                             ))
                             .child(knob(
                                 "probe-blur",
-                                self.probe_blur,
-                                format!("blur {}", sigma as i32).into(),
+                                6,
+                                self.probe_spec.blur,
+                                BLUR_RANGE,
+                                format!("blur {:.1}pt", self.probe_spec.blur).into(),
                             ))
                             .child(knob(
-                                "probe-fill",
-                                self.probe_fill,
-                                format!("fill {:.2}", self.probe_fill).into(),
-                            )),
+                                "probe-b",
+                                3,
+                                self.probe_spec.rim,
+                                RIM_RANGE,
+                                format!("rim {:.1}pt", self.probe_spec.rim).into(),
+                            ))
+                            // The one knob still a fraction: it spans -16..+16,
+                            // so the sweep passes through zero and inverts.
+                            .child(knob(
+                                "probe-m",
+                                4,
+                                self.probe_magnify,
+                                1.0,
+                                format!("mag {:+.1}", self.probe_magnify * 32.0 - 16.0).into(),
+                            ))
+                            .child(knob(
+                                "probe-dim",
+                                5,
+                                self.probe_spec.gain,
+                                GAIN_RANGE,
+                                format!("gain {:.3}", self.probe_spec.gain).into(),
+                            ))
+                            // A gain alone moves level and colour
+                            // together; this is what takes the level down
+                            // and leaves the colours where they were.
+                            .child(knob(
+                                "probe-sat",
+                                12,
+                                self.probe_spec.saturation,
+                                SAT_RANGE,
+                                format!("sat {:.2}", self.probe_spec.saturation).into(),
+                            ))
+                            .child(knob(
+                                "probe-lift",
+                                8,
+                                self.probe_spec.tint.a,
+                                LIFT_RANGE,
+                                format!("lift {:.0}/255", self.probe_spec.tint.a * 255.0).into(),
+                            ))
+                            .child(knob(
+                                "probe-edge",
+                                9,
+                                self.probe_spec.edge,
+                                EDGE_RANGE,
+                                format!("edge {:.2}", self.probe_spec.edge).into(),
+                            ))
+                            .child(knob(
+                                "probe-edgew",
+                                10,
+                                self.probe_spec.edge_width,
+                                EDGE_W_RANGE,
+                                format!("edge w {:.1}pt", self.probe_spec.edge_width).into(),
+                            ))
+                            .child(knob(
+                                "probe-disp",
+                                11,
+                                self.probe_disp,
+                                DISPERSION_RANGE,
+                                format!("disp {:.3}", self.probe_disp).into(),
+                            ))
+                            // Only a tinted surface reads this: everywhere else
+                            // the look's own tint is the fill.
+                            .when(self.probe_tint, |row| {
+                                row.child(knob(
+                                    "probe-fill",
+                                    7,
+                                    self.probe_fill,
+                                    1.0,
+                                    format!("fill {:.2}", self.probe_fill).into(),
+                                ))
+                            }),
                     );
 
                 section
@@ -2969,7 +3325,7 @@ impl Gallery {
                          at the rim. Both read very differently depending on the \
                          backdrop, which is what the switcher is for.",
                     ))
-                    .when(!ui::material::lensed(&theme), |el| {
+                    .when(!ui::surface::lensed(&theme), |el| {
                         el.child(theme.warning_strip(
                             "Liquid glass is macOS only — the lens is a Metal \
                              primitive. Here it falls back to the backdrop tint: \
@@ -3034,7 +3390,8 @@ impl Gallery {
                     .child(
                         // Standalone: one step in its own box.
                         div()
-                            .w(px(420.0))
+                            .w_full()
+                            .max_w(px(420.0))
                             .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
@@ -3048,7 +3405,8 @@ impl Gallery {
                     ))
                     .child(
                         div()
-                            .w(px(420.0))
+                            .w_full()
+                            .max_w(px(420.0))
                             .rounded(px(Theme::panel_radius()))
                             .border_1()
                             .border_color(theme.border)
@@ -3566,7 +3924,6 @@ impl Gallery {
             "agent-orbs" => self.orbs.clone().into_any_element(),
             "syntax" => self.syntax.clone().into_any_element(),
             "agent-avatar" => self.avatar.clone().into_any_element(),
-            "agent-mascot" => self.mascot.clone().into_any_element(),
 
             _ => div().into_any_element(),
         }
@@ -3929,7 +4286,12 @@ fn row() -> gpui::Div {
 }
 
 fn column() -> gpui::Div {
-    div().w(px(420.0)).flex().flex_col().gap(px(28.0))
+    div()
+        .w_full()
+        .max_w(px(COLUMN_WIDTH))
+        .flex()
+        .flex_col()
+        .gap(px(28.0))
 }
 
 impl Render for Gallery {
@@ -3937,6 +4299,15 @@ impl Render for Gallery {
         let view = Painter::of(cx);
         let theme = Theme::of(cx).clone();
         let reduce_motion = cx.reduce_motion();
+        // gpui has no media query: every responsive decision in this file is
+        // this one read, and it is the window rather than the element — the
+        // same thing a CSS breakpoint measures.
+        let compact = window.viewport_size().width < px(COMPACT_BELOW);
+        // A rail that is showing beside the pane must not also be in the
+        // drawer: one entity, two mounts. Widening the window is the case.
+        if !compact {
+            self.drawer.close();
+        }
 
         // Rail on the left, one component in the pane — the set is long enough
         // that a single scroll of everything reads as a wall.
@@ -3948,7 +4319,23 @@ impl Render for Gallery {
                 // A pattern is a screen: it takes the pane whole and
                 // scrolls its own parts, so neither the fixed column nor
                 // the pane's own scrollbar applies to it.
-                pane.child(div().size_full().p(px(24.0)).child(body))
+                //
+                // Narrower than a screen it stays one anyway, and you pan
+                // across it — a pattern is a file you copy into a desktop app,
+                // and thirteen phone layouts of one document nothing.
+                pane.child(
+                    div()
+                        .id("gallery-canvas")
+                        .size_full()
+                        .when(compact, |canvas| canvas.overflow_scroll())
+                        .child(
+                            div()
+                                .size_full()
+                                .when(compact, |screen| screen.min_w(px(CANVAS_MIN)))
+                                .p(px(24.0))
+                                .child(body),
+                        ),
+                )
             } else {
                 pane.child(
                     div()
@@ -3959,7 +4346,13 @@ impl Render for Gallery {
                         // The column width components are designed for;
                         // several are `w_full` and would otherwise stretch
                         // to the whole pane.
-                        .child(div().p(px(32.0)).child(column().child(body))),
+                        .child(
+                            div()
+                                // Compact drops to the header's padding, so the
+                                // body and the section title share one grid.
+                                .p(px(if compact { CARD_PAD } else { PANE_PAD }))
+                                .child(column().child(body)),
+                        ),
                 )
                 .child(scroll::transient(
                     "pane-bar",
@@ -3978,14 +4371,16 @@ impl Render for Gallery {
                 .flex()
                 .flex_col()
                 .size_full()
-                .child(self.nav(&theme, cx))
+                .child(self.nav(&theme, compact, cx))
                 .child(
                     div()
                         .flex_1()
                         .min_h_0()
                         .flex()
                         .flex_row()
-                        .child(self.rail.clone().cached(rail::style()))
+                        .when(!compact, |row| {
+                            row.child(self.rail.clone().cached(rail::style()))
+                        })
                         .child(
                             div()
                                 .flex_1()
@@ -3993,15 +4388,19 @@ impl Render for Gallery {
                                 .h_full()
                                 .flex()
                                 .flex_col()
+                                .bg(theme.surface)
+                                .overflow_hidden()
                                 // Runs off the window's right and bottom edges,
                                 // so the only corner that floats is the one
-                                // that gets rounded.
-                                .rounded_tl(px(Theme::panel_radius()))
-                                .bg(theme.surface)
-                                .border_t_1()
-                                .border_l_1()
-                                .border_color(theme.border)
-                                .overflow_hidden()
+                                // that gets rounded. The seam it rounds against
+                                // is the rail, so a drawer leaves it nothing to
+                                // round and the pane meets the window edge.
+                                .when(!compact, |card| {
+                                    card.rounded_tl(px(Theme::panel_radius()))
+                                        .border_t_1()
+                                        .border_l_1()
+                                        .border_color(theme.border)
+                                })
                                 .child(self.header(section, &theme))
                                 .child(pane),
                         ),
@@ -4032,23 +4431,47 @@ impl Render for Gallery {
             .text_color(theme.text)
             .text_size(px(14.0))
             .child(content)
-            // Not on the page that documents it: that page mounts the meter in
-            // its own column, and the entity can only be in one place.
-            .when(self.stats_shown && section.key != "stats", |root| {
-                // Home is read off the viewport rather than stored, so the
-                // corner it opens in is the corner of *this* window.
-                let viewport = window.viewport_size();
-                let home = gpui::point(
-                    viewport.width - px(stats::WIDTH + CARD_PAD),
-                    px(Theme::HEADER_HEIGHT + CARD_PAD),
-                );
-                root.child(floating::panel(
-                    "meter",
-                    &self.stats_at,
-                    home,
-                    self.stats.clone(),
+            // The rail, once it no longer fits beside the pane. Same width, so
+            // the cached layout `rail::style` reports still describes it.
+            .when(self.drawer.get().is_some(), |root| {
+                root.child(popover::sheet(
+                    "gallery-drawer",
+                    window.viewport_size(),
+                    popover::Side::Left,
+                    px(RAIL_WIDTH),
+                    popover::sheet_panel(&theme, popover::Side::Left)
+                        // Starts where the rail starts in the wide layout —
+                        // below the nav strip. The scrim dims that strip but
+                        // cannot dim the traffic lights over it, which AppKit
+                        // paints above the canvas.
+                        .pt(px(Theme::HEADER_HEIGHT))
+                        .child(self.rail.clone().cached(rail::style()))
+                        .into_any_element(),
+                    self.drawer.closing_since(),
+                    cx.listener(|view, _, _, cx| view.close_drawer(cx)),
                 ))
             })
+            // Not on the page that documents it: that page mounts the meter in
+            // its own column, and the entity can only be in one place. Nor on a
+            // narrow window, where its home corner is most of the width.
+            .when(
+                self.stats_shown && !compact && section.key != "stats",
+                |root| {
+                    // Home is read off the viewport rather than stored, so the
+                    // corner it opens in is the corner of *this* window.
+                    let viewport = window.viewport_size();
+                    let home = gpui::point(
+                        viewport.width - px(stats::WIDTH + CARD_PAD),
+                        px(Theme::HEADER_HEIGHT + CARD_PAD),
+                    );
+                    root.child(floating::panel(
+                        "meter",
+                        &self.stats_at,
+                        home,
+                        self.stats.clone(),
+                    ))
+                },
+            )
             .when_some(
                 self.context_menu
                     .get()

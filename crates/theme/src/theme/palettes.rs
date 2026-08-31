@@ -4,7 +4,7 @@ use gpui::hsla;
 
 use crate::{
     Appearance, color, paint,
-    theme::{Theme, syntax::SyntaxPalette},
+    theme::{FrostSpec, Glass, SurfaceSpec, SurfaceStyle, Theme, syntax::SyntaxPalette},
 };
 
 impl Theme {
@@ -58,6 +58,71 @@ impl Theme {
             diff_add: color::oklch(0.765, 0.177, 163.223), // emerald-400
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
+            // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
+            // one tone across all five thicknesses (49.8 down to 45.3), and the
+            // sigma does not move with them. The rim is bezel's, not Apple's —
+            // SwiftUI's material has no lit edge at all, and the popover card
+            // used to draw this hairline itself.
+            frost: FrostSpec {
+                tone: color::grey(47),
+                saturation: 2.1,
+                blur: 21.0,
+                edge: 0.10,
+                edge_width: 1.0,
+                edge_aa: 0.5,
+            },
+            // Measured 2026-08-31 off a real NSGlassEffectView, one
+            // whole-canvas tone at a time: a fill the size of the probe cannot
+            // be contaminated by a 10pt blur, which is what every earlier
+            // reading of this look got wrong. Six greys give the line at rms
+            // 0.9 levels, four saturated tones agree on the saturation to 0.1,
+            // and the sigma is the gaussian that best fits a 70pt bar edge at
+            // the centre of a 320pt glass, rms 0.4 levels. Over a backdrop that
+            // is NOT locally flat the real material saturates less than these
+            // numbers reproduce, so its saturation is not the per-pixel one
+            // this models. Rim and lit edge are `Clear`'s.
+            glass_regular: SurfaceSpec {
+                gain: 0.311,
+                saturation: 2.55,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 11.0 / 255.0),
+                blur: 10.8,
+                rim: 18.75,
+                // Measured 2026-08-31 over a black canvas, where the coverage
+                // blend can only pull down, so anything above the interior is
+                // rim light: +25 levels at the boundary and gone by 1pt, the
+                // same in both appearances. Clear's 0.26 was read over a bright
+                // backdrop, where the blend toward a brighter outside inflates
+                // it — at that value the rim reads as a drawn border. It scales
+                // with what is behind it (+25 over black, +36 over mid grey)
+                // where this is a constant, so it is one point on their curve.
+                edge: 0.10,
+                edge_width: 1.0,
+                edge_aa: 0.5,
+                shadow: false,
+            },
+            // `Clear` refit 2026-08-30 over the gallery's own backdrops, rms
+            // 0.4 levels on backdrop 0..212. A window that is not key carries a
+            // different material, and this is the key one. The sigma is off a
+            // 2pt rule, which a 48pt band is too wide to resolve. The rim is
+            // off the position-coded backdrop, pooled over four shapes from
+            // 96pt to 320pt and r24 to r84: one curve, rms 1.8pt.
+            glass_clear: SurfaceSpec {
+                gain: 1.029,
+                saturation: 1.0,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 16.0 / 255.0),
+                blur: 1.2,
+                rim: 18.75,
+                edge: 0.26,
+                edge_width: 1.4,
+                edge_aa: 0.5,
+                shadow: false,
+            },
+            // Matched on screen against a real NSGlassEffectView, which is a
+            // higher bar than the dome's algebra: fitting the formula to their
+            // measured curve lands ~15% short of what the shader then renders.
+            popover_surface: SurfaceStyle::Glass(Glass::Regular),
+            glass_magnify: 1.1,
+            glass_dispersion: 0.005,
             font_sans: "Geist".into(),
             font_mono: "Geist Mono".into(),
             font_sans_fallback: system_sans().into(),
@@ -139,6 +204,59 @@ impl Theme {
             diff_add: color::oklch(0.596, 0.145, 163.225), // emerald-600
             diff_del: color::oklch(0.577, 0.245, 27.325),  // red-600
             diff_hunk_bg: hsla(0.6, 0.35, 0.35, 0.07),
+            // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The
+            // material is not a tone-flip of dark: `regular` keeps its opacity
+            // (86%) and swaps a 19% grey base for a 97% white one, which is why
+            // it reads as ordinary frost here. `clear` stops compressing
+            // altogether — it is very nearly a pure lift.
+            // Frost: the menu surface before glass, kept as a look of its own
+            // because it stays readable over content a lens would only bend.
+            // Light's own tone, same instrument: gain 0.378 at `Regular`, so
+            // opacity 0.622 against dark's 0.638 — the scale is shared and only
+            // the tone moves. The sigma is dark's; it is a SwiftUI constant,
+            // not an appearance choice.
+            frost: FrostSpec {
+                tone: color::grey(235),
+                saturation: 2.1,
+                blur: 21.0,
+                edge: 0.10,
+                edge_width: 1.0,
+                edge_aa: 0.5,
+            },
+            // Measured 2026-08-31, same instrument as dark. Light `regular`
+            // is very nearly a white sheet — 84% of the output is tint — so
+            // the little backdrop that survives is pushed much harder to keep
+            // its colour: saturation 4.27 against dark's 2.55, each within 0.1
+            // over four hues. Rim and lit edge are dark's, unmeasured here.
+            glass_regular: SurfaceSpec {
+                gain: 0.139,
+                saturation: 4.27,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 214.0 / 255.0),
+                blur: 8.9,
+                rim: 18.75,
+                edge: 0.10,
+                edge_width: 1.0,
+                edge_aa: 0.5,
+                shadow: false,
+            },
+            // Carries dark's rim, sigma and edge: light has not been
+            // re-measured since the instrument learned to hold the window key.
+            glass_clear: SurfaceSpec {
+                gain: 1.041,
+                saturation: 1.0,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 18.8 / 255.0),
+                blur: 1.2,
+                rim: 18.75,
+                edge: 0.26,
+                edge_width: 1.4,
+                edge_aa: 0.5,
+                shadow: false,
+            },
+            // At 1-3pt inside the rim the real material drags the backdrop 26pt
+            // or more, and lets go by 5.5pt; on the shader's profile that is 8.
+            popover_surface: SurfaceStyle::Glass(Glass::Regular),
+            glass_magnify: 1.1,
+            glass_dispersion: 0.005,
             font_sans: "Geist".into(),
             font_mono: "Geist Mono".into(),
             font_sans_fallback: system_sans().into(),

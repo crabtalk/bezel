@@ -47,6 +47,9 @@ const FASTEST: f32 = 4.0;
 /// One press of ← or → on the focused slider.
 const NUDGE: f32 = 0.05;
 
+/// What the grid glyph is actually for: the size a rail row draws it.
+const ROW: f32 = 13.0;
+
 /// What a chat client might actually hand this thing. A seed is bytes, so the
 /// row is half names and half everything else a caller calls an identity —
 /// and it ends on one person spelled two ways, which is the canonical key
@@ -168,10 +171,12 @@ impl Avatars {
     }
 }
 
-/// A face under its own name, with the line that draws it on hover.
+/// A face under its own name, with the line that draws it on hover. The glyph
+/// is the caller's, because one identity has two painters — the spline and the
+/// grid — and neither takes the other's argument.
 fn cell(
     id: impl Into<gpui::ElementId>,
-    pose: Pose,
+    glyph: AnyElement,
     size: f32,
     label: impl Into<SharedString>,
     code: SharedString,
@@ -185,7 +190,7 @@ fn cell(
         .items_center()
         .gap(px(8.0))
         .w(px(size + 44.0))
-        .child(div().w(px(size)).h(px(size)).child(agent::avatar(pose)))
+        .child(div().w(px(size)).h(px(size)).child(glyph))
         .child(
             div()
                 .text_size(px(10.0))
@@ -368,7 +373,7 @@ impl Render for Avatars {
                                     cycling(set, lane, lanes[lane].at(cycle), t, motion, &ink);
                                 cell(
                                     ("lane", lane),
-                                    pose,
+                                    agent::avatar(pose),
                                     96.0,
                                     format!("0x{:08x}", seed >> 32),
                                     format!("Face::from(0x{seed:016x})").into(),
@@ -389,7 +394,7 @@ impl Render for Avatars {
                                     let face = Face::new(*shape).color(tint(i));
                                     cell(
                                         ("preset", i),
-                                        pose(face),
+                                        agent::avatar(pose(face)),
                                         64.0,
                                         *name,
                                         format!("Shape::{}", name.to_uppercase()).into(),
@@ -406,7 +411,7 @@ impl Render for Avatars {
                                         Face::new(Shape::BLOB).eyes(*eyes).color(tint(i + 2));
                                     cell(
                                         ("eyes", i),
-                                        pose(face),
+                                        agent::avatar(pose(face)),
                                         64.0,
                                         *name,
                                         format!("Eyes::{}", name.to_uppercase()).into(),
@@ -425,7 +430,7 @@ impl Render for Avatars {
                                     .color(tint((seed(name) >> 33) as usize));
                                 cell(
                                     ("name", i),
-                                    pose(face),
+                                    agent::avatar(pose(face)),
                                     64.0,
                                     *name,
                                     format!("Face::from({name:?})").into(),
@@ -433,7 +438,51 @@ impl Render for Avatars {
                                     &theme,
                                 )
                                 .into_any_element()
-                            }))),
+                            })))
+                            .child(heading(&theme, "Pixel"))
+                            .child(hint(
+                                &theme,
+                                "The row above on an eight-cell grid: one silhouette sampled \
+                                 per cell, eyes punched through rather than painted so a row \
+                                 dims whole rather than the eyes fighting the body on the way \
+                                 down. Same seeds, same order — nothing here is a second \
+                                 roster.",
+                            ))
+                            .child(Self::row(NAMES.iter().enumerate().map(|(i, name)| {
+                                let face = Face::from(*name)
+                                    .motion(motion)
+                                    .color(tint((seed(name) >> 33) as usize));
+                                cell(
+                                    ("pixel", i),
+                                    agent::mascot(&face, t),
+                                    64.0,
+                                    *name,
+                                    format!("agent::mascot(&Face::from({name:?}), t)").into(),
+                                    false,
+                                    &theme,
+                                )
+                                .into_any_element()
+                            })))
+                            .child(hint(
+                                &theme,
+                                "And at the size a rail actually draws one, which is what the \
+                                 grid is for — the spline painter insets its body inside the \
+                                 box, and at thirteen pixels an inset is most of the glyph.",
+                            ))
+                            .child(
+                                div().flex().flex_row().flex_wrap().gap(px(8.0)).children(
+                                    NAMES.iter().map(|name| {
+                                        let face = Face::from(*name)
+                                            .motion(motion)
+                                            .color(tint((seed(name) >> 33) as usize));
+                                        div()
+                                            .w(px(ROW))
+                                            .h(px(ROW))
+                                            .child(agent::mascot(&face, t))
+                                            .into_any_element()
+                                    }),
+                                ),
+                            ),
                     ),
             )
             .child(scroll::transient(

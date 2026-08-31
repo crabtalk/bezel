@@ -9,7 +9,6 @@ pub mod avatar;
 pub mod diff;
 pub mod document;
 pub mod editor;
-pub mod mascot;
 pub mod orbs;
 pub mod samples;
 pub mod syntax;

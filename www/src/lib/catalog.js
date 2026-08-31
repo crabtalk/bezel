@@ -85,5 +85,5 @@ export const sourceUrl = (section) => `${repo}/blob/main/${section.source}`;
 /** The library in one line — search results, share cards, and the agent surface. */
 export const tagline = 'Design tokens, motion, and materials for native Rust apps, built on gpui.';
 
-/** Canonical URL, used for share links. Swap to bezel.gallery once its DNS is on. */
-export const site = 'https://bezel.pages.dev';
+/** Canonical URL, used for share links. */
+export const site = 'https://bezel.gallery';

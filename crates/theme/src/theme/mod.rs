@@ -11,8 +11,141 @@ mod palettes;
 mod syntax;
 
 pub use install::set_palette;
-pub use layout::{set_glass_bevel, set_glass_magnify};
 pub use syntax::{HighlightKind, SyntaxPalette};
+
+/// The two shipped glasses — SwiftUI's `Glass.regular` and `Glass.clear`. A
+/// closed variant rather than knobs: Apple exposes no numbers on glass either,
+/// only the variant and a tint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Glass {
+    /// The everyday material: it blurs what it covers and dims it hard.
+    Regular,
+    /// Near-transparent — the backdrop reads through, bent only at the rim.
+    Clear,
+}
+
+/// SwiftUI's frost scale. Measured 2026-08-31: the five thicknesses are ONE
+/// material at five opacities — the tone implied by `tint / (1 - gain)` holds
+/// to within 9% across the scale, and the sigma does not move at all
+/// (23.1/20.2/21.0pt). So this is a knob, not five looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Frost {
+    UltraThin,
+    Thin,
+    Regular,
+    Thick,
+    UltraThick,
+}
+
+impl Frost {
+    /// How much of the backdrop the material covers. Measured off SwiftUI in
+    /// dark; the steps come out even to within a point.
+    pub fn opacity(self) -> f32 {
+        match self {
+            Frost::UltraThin => 0.440,
+            Frost::Thin => 0.543,
+            Frost::Regular => 0.638,
+            Frost::Thick => 0.737,
+            Frost::UltraThick => 0.825,
+        }
+    }
+}
+
+/// Which surface a caller names. Frost and glass are different things with
+/// different vocabularies — a material has thickness, a glass has a variant —
+/// and they meet only at the numbers they resolve to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceStyle {
+    Frost(Frost),
+    Glass(Glass),
+}
+
+/// The frost material, before a thickness picks its opacity.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrostSpec {
+    /// The material's own tone, at full coverage.
+    pub tone: Hsla,
+    /// Its chroma push, as [`SurfaceSpec::saturation`].
+    pub saturation: f32,
+    /// Its sigma, which does not move with thickness.
+    pub blur: f32,
+    /// SwiftUI's frost has no lit rim at all — measured +0 at the boundary.
+    /// What is here is bezel's own hairline, the one the popover card used to
+    /// draw, moved to the surface that owes it.
+    pub edge: f32,
+    pub edge_width: f32,
+    pub edge_aa: f32,
+}
+
+impl FrostSpec {
+    /// This material at one thickness.
+    pub fn at(&self, thickness: Frost) -> SurfaceSpec {
+        let opacity = thickness.opacity();
+        SurfaceSpec {
+            gain: 1.0 - opacity,
+            saturation: self.saturation,
+            tint: self.tone.opacity(opacity),
+            blur: self.blur,
+            rim: 0.0,
+            edge: self.edge,
+            edge_width: self.edge_width,
+            edge_aa: self.edge_aa,
+            // A wash has nothing to bend, so it needs one to lift off the page.
+            shadow: true,
+        }
+    }
+}
+
+/// One surface's numbers. `out = gain * saturated(backdrop) + tint`, over a
+/// backdrop blurred at `blur`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfaceSpec {
+    /// Slope of the transfer line. Below 1 compresses contrast toward
+    /// `tint`; above 1 it brightens and slightly expands, which is what light
+    /// `Clear` measures. Named for what it is, not for one of its directions.
+    pub gain: f32,
+    /// How far the backdrop's chroma is pushed from its own grey, before the
+    /// gain drops the level. A gain alone moves level and colour together, so
+    /// this is the only way a surface goes dark and keeps its colours. 1 is
+    /// the pass-through `Clear` measures.
+    pub saturation: f32,
+    /// Its offset — the look's own tone.
+    pub tint: Hsla,
+    /// Gaussian sigma under the lens, in logical pixels. It stands in for the
+    /// average attenuation of fine detail, which the real material gets from
+    /// snapshotting its backdrop coarsely.
+    pub blur: f32,
+    /// How far in from the rim the lens bends the backdrop, in logical pixels.
+    /// A length rather than a share of the box: the displacement curve measured
+    /// 2026-08-30 is one curve, the same from a 96pt box to a 320pt one and
+    /// from r24 to r84. Past it the backdrop is untouched.
+    pub rim: f32,
+    /// How much white the lit rim adds at the edge itself, 0..1.
+    pub edge: f32,
+    /// How far in that light falls off to nothing, in logical pixels. Even the
+    /// whole way round: measured 2026-08-30, the real rim reads the same on all
+    /// four sides.
+    pub edge_width: f32,
+    /// The coverage ramp at the shape's own boundary, in logical pixels. 0.5
+    /// is one device pixel at 2x — the plain rasteriser's answer; 0 is the hard
+    /// edge it replaced.
+    pub edge_aa: f32,
+    /// Whether the surface casts a shadow. A lens separates itself from the
+    /// page by bending it, and reads as a slab under one; a wash has nothing
+    /// to bend and needs it.
+    pub shadow: bool,
+}
+
+impl SurfaceStyle {
+    /// The numbers this style resolves to against a theme.
+    pub fn spec(self, theme: &Theme) -> SurfaceSpec {
+        match self {
+            SurfaceStyle::Frost(thickness) => theme.frost.at(thickness),
+            SurfaceStyle::Glass(Glass::Regular) => theme.glass_regular,
+            SurfaceStyle::Glass(Glass::Clear) => theme.glass_clear,
+        }
+    }
+}
 
 /// The app theme. Two concrete instances — [`Theme::dark`] and [`Theme::light`].
 #[derive(Debug, Clone)]
@@ -167,6 +300,26 @@ pub struct Theme {
     pub diff_del: Hsla,
     /// Diff: hunk-header wash (bluish grey).
     pub diff_hunk_bg: Hsla,
+
+    // ---- glass ----
+    //
+    // Numbers, so they flow with the appearance the way every other token
+    // does. `Glass::glass_effect` reads them off the theme it is handed;
+    // nothing here is a parameter on a component.
+    /// The surfaces this theme can paint. Blur belongs to the look, not to
+    /// the caller: Apple exposes no blur parameter on either family, only the
+    /// thickness or the variant.
+    pub frost: FrostSpec,
+    pub glass_regular: SurfaceSpec,
+    pub glass_clear: SurfaceSpec,
+    /// What the popover surfaces — menus, dialogs, sheets, tooltips — mount
+    /// on. They take no theme of their own, so this is where the choice
+    /// lives; a component that owns its surface names its own style instead.
+    pub popover_surface: SurfaceStyle,
+    /// Lens displacement amplitude, signed; negative inverts it.
+    pub glass_magnify: f32,
+    /// Per-channel spread of that displacement — the chromatic fringe.
+    pub glass_dispersion: f32,
 
     // ---- fonts ----
     /// UI font family — the name the text system resolves, not the bytes. Point

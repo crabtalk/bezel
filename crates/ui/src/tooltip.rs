@@ -17,7 +17,7 @@ use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelud
 
 use theme::Theme;
 
-use crate::popover;
+use crate::{popover, surface::Surfaced as _};
 
 pub struct Tooltip {
     text: SharedString,
@@ -76,5 +76,6 @@ impl Render for Tooltip {
                         .child(keystroke),
                 )
             })
+            .surface(&theme, theme.popover_surface)
     }
 }

@@ -6,10 +6,10 @@ description: Two backdrop surfaces — a frosted card that blurs what it covers,
 Both surfaces come off the `Glass` trait, so any element carrying a corner radius has them. The radius is read from the element's own style, so the blur and the lens are cut to the corners the caller just asked for:
 
 ```rust
-use ui::material::{self, Glass as _};
+use ui::material::{self, Glass as _, GlassStyle};
 
 card.rounded(px(Theme::surface_radius())).material(material::MENU_BLUR)
-card.rounded(px(Theme::surface_radius())).glass_effect()
+card.rounded(px(Theme::surface_radius())).glass_effect(&theme, GlassStyle::Regular)
 ```
 
 `material::material(radius, blur, child)` is the free-function form, for a child that is not itself `Styled`.
@@ -28,27 +28,35 @@ material::layered(close_button)
 
 > **macOS only.** The lens is a Metal primitive from bezel's gpui fork. Everywhere else — web, Linux, Windows — `glass_effect` falls back to the backdrop tint: the card and its shape, without the refraction at the rim. `material::lensed(&theme)` answers it at runtime.
 
-`glass_effect` paints the card as a refracting surface: a bevel at the rim that displaces what is behind it, a per-channel fringe across that displacement, and an additive lift over an interior that passes the backdrop straight through.
+`glass_effect` paints the card as a refracting surface: a bevel at the rim that displaces what is behind it, a per-channel fringe across that displacement, and a transfer line applied to the interior.
 
-The profile is measured off SwiftUI's `.glassEffect(.clear)` (2026-08). On a 460x120 capsule the ruler behind it is displaced over the outer 27pt and is exactly unperturbed below that — a bezel with a flat interior, which is the 0.225 share of the shape's smaller side that `Theme::glass_bevel` returns. The interior measures `1.042 * backdrop + 19/255` across five luminances, so `Theme::glass_clear` composites additively and brightens whatever sits behind it at every level.
+It takes the theme and a **closed variant** — the two shipped looks, named for SwiftUI's own:
+
+```rust
+card.glass_effect(&theme, GlassStyle::Regular)
+card.glass_effect(&theme, GlassStyle::Clear).tint(theme.accent.opacity(0.3))
+```
+
+There is no blur parameter, and no gain, bevel or magnify parameter. Apple exposes none either — `Glass` is `.regular`, `.clear`, `.identity`, plus `.tint` and `.interactive` — so blur belongs to the look rather than to the caller. `tint` stands in for the look's own tone instead of adding to it, so a heavy alpha reads as paint and a light one as glass.
+
+The numbers live on `Theme` as `glass_regular` and `glass_clear`, both `GlassSpec { gain, tint, blur, rim }`, alongside the shared `glass_magnify` and `glass_dispersion`. A caller who wants different glass hands over a different theme; nothing is a knob on the component.
+
+Measured 2026-08-30 on macOS 26.3 off a real `NSGlassEffectView` — a nine-step grey staircase read through the flat interior for the line, 48pt bands for the sigma:
+
+| appearance | look | interior | blur |
+| --- | --- | --- | --- |
+| dark | `Clear` | `0.712 * backdrop + 25/255` | none |
+| dark | `Regular` | `0.139 * backdrop + 41/255` | 3.5pt |
+| light | `Clear` | `1.041 * backdrop + 19/255` | none |
+| light | `Regular` | `0.142 * backdrop + 212/255` | 6.0pt |
+
+The transfer line is fit in **sRGB**, not linear light: refitting in linear space is 30x worse on residual (rms 3–9 levels against 0.14–0.34), so the material composites in gamma space. Note light `Clear`'s slope is above 1, which no alpha composite can produce — it brightens and slightly expands contrast rather than dimming, which is why the field is `gain` and not `dim`.
+
+The material is not a tone-flip of itself. `Regular` keeps its opacity across both — 86% — and swaps a 19% grey base for a 97% white one, which is why in light it reads as ordinary frost: a near-white panel over a blur is what frost is. `Clear` changes character instead: in dark it compresses toward its tint, lifting black to 25 and dropping white to 207 with a crossover at backdrop 87; in light it stops compressing and is very nearly a pure lift.
+
+The rim is measured off a real `NSGlassEffectView` over a position-coded backdrop — green ramping once across it, red sawtoothing every 32pt — so a pixel under the glass names the backdrop position it came from and the displacement is read rather than inferred. It falls from ~47pt at the outermost pixel to nothing by 19pt, and it is the same curve on a 96pt box and a 320pt one, at r24 and at r84 — so `GlassSpec::rim` is a length, not a share of the box. Blur is uniform across the surface in both looks; neither sharpens toward the rim.
 
 `glass_effect` clears the card's own `bg`, because the lens paints the fill. Painting both buries the lens, and a caller who has to remember that is a caller who will forget.
-
-Glass is clear by default, and two builders move it:
-
-```rust
-card.glass_effect().tint(theme.accent.opacity(0.3))
-card.glass_effect().blurred(material::MENU_BLUR)
-```
-
-`tint` stands in for `glass_clear`'s neutral lift instead of adding to it, so a heavy alpha reads as paint and a light one as glass. `blurred` frosts the backdrop under the lens, for a surface that has to carry dense content.
-
-The rim width and the displacement amplitude are process-wide, for the same reason the base radius is — the element builders that paint a lens have no `cx` in scope:
-
-```rust
-theme::set_glass_bevel(0.225); // share of the shape's smaller side
-theme::set_glass_magnify(0.34); // signed: negative inverts the lens
-```
 
 ## Where it runs
 

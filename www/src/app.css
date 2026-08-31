@@ -115,6 +115,29 @@ pre {
 	color: var(--text);
 }
 
+/* A gpui canvas claims every touch that lands on it — `touch-action: none` plus
+   a `preventDefault` on each pointer event — so a swipe over an inline embed
+   scrolls the gallery and never the page under it. On touch the embed is a
+   preview and interaction moves to the expanded dialog, where the gallery has
+   the screen and there is nothing behind it to scroll. A `button`, so a swipe
+   across it still scrolls the page and a tap still expands. */
+.cover {
+	display: none;
+}
+
+@media (hover: none) {
+	.cover {
+		display: block;
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		border: 0;
+		padding: 0;
+		background: none;
+		cursor: pointer;
+	}
+}
+
 /* One box, not two. `pre` already draws the outline and the padding; the
    highlight theme's own surface would sit inside it as a second, lighter
    rectangle. Its token colours are all we take. */

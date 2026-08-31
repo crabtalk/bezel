@@ -1,0 +1,71 @@
+name: ci
+
+# Branches reach `main` through a pull request, so `pull_request` covers them —
+# pushing to a branch that has one open would otherwise run everything twice.
+# `push` is left for `main` itself, which is merged into rather than pushed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch cancels the first: only the tip matters.
+# Keyed on the source branch, since a pull request's own ref is not it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Formatting and lints need one platform, not three — they read the same
+  # source everywhere. Linux is the cheapest runner.
+  check:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo .github/scripts/linux-deps
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets
+
+  # macOS is where the glass actually runs; Linux is the platform that has no
+  # lens and must still build and pass, which is the case that broke.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - if: runner.os == 'Linux'
+        run: sudo .github/scripts/linux-deps
+      - run: cargo build --workspace --all-targets
+      # No fail-fast: one platform-specific test hiding the other 297 is not
+      # a report anyone can act on.
+      - run: cargo nextest run --workspace --no-fail-fast
+
+  # The gallery ships to the browser, and wasm fails in ways no native build
+  # sees — `std::time::Instant` panics there, and a missing renderer feature
+  # only shows up at this step.
+  wasm:
+    name: wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo .github/scripts/linux-deps
+      - run: cargo build -p web --lib --target wasm32-unknown-unknown

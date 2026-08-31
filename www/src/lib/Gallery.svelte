@@ -82,6 +82,14 @@
 		border-color: var(--text);
 	}
 
+	/* On touch this button is the only way out — there is no Esc key, and the
+	   page behind is inert — so it gets a thumb-sized target. */
+	@media (hover: none) {
+		.close {
+			padding: 9px 14px;
+		}
+	}
+
 	iframe {
 		flex: 1;
 		display: block;

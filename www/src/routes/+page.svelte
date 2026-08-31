@@ -108,6 +108,8 @@
 			<span class="title">bezel</span>
 		</div>
 		<iframe title="The bezel gallery, running" src="{base}/gallery/"></iframe>
+		<button class="cover" onclick={() => (expanded = true)} aria-label="Open the gallery"
+		></button>
 	</div>
 	<!-- The frame above is the claim, and it is wasm in an iframe — better to say
 	     so here than to let a visitor judge gpui by it. -->
@@ -263,6 +265,7 @@
 	}
 
 	.window {
+		position: relative;
 		border: 1px solid var(--line);
 		border-radius: 12px;
 		overflow: hidden;

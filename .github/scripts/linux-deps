@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# What gpui links against on Linux and the runner image does not carry: fonts,
+# and both display servers, since `gpui_linux` defaults to wayland + x11. The
+# generic toolchain — build-essential, pkg-config, libssl-dev — is already
+# there. Trimmed from zed's `script/linux`, which also installs what the editor
+# needs and bezel does not; zed runs it on every ubuntu job for the same reason.
+#
+# No vulkan driver: this builds and runs headless tests, and nothing here asks
+# a GPU for a frame. Add `mesa-vulkan-drivers` if that ever changes.
+set -euo pipefail
+apt-get update
+apt-get install -y --no-install-recommends \
+    libfontconfig-dev \
+    libwayland-dev \
+    libx11-xcb-dev \
+    libxkbcommon-x11-dev

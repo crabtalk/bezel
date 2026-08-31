@@ -193,6 +193,14 @@ fn escape_closes_the_menu_and_gives_enter_back(cx: &mut TestAppContext) {
     );
 }
 
+/// The primary modifier, which `editor::keys` splits the keymap on: cmd on
+/// macOS, ctrl everywhere else. A test that names one chord outright passes on
+/// one platform and silently does nothing on the other.
+#[cfg(target_os = "macos")]
+const PRIMARY: &str = "cmd";
+#[cfg(not(target_os = "macos"))]
+const PRIMARY: &str = "ctrl";
+
 #[gpui::test]
 fn a_selection_survives_a_mark_and_round_trips(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open(cx);
@@ -201,7 +209,7 @@ fn a_selection_survives_a_mark_and_round_trips(cx: &mut TestAppContext) {
         !cx.update(|_, cx| editor.read(cx).selection().is_collapsed()),
         "shift+arrow extends"
     );
-    cx.simulate_keystrokes("cmd-b");
+    cx.simulate_keystrokes(&format!("{PRIMARY}-b"));
     assert!(
         source(&editor, &mut cx).starts_with("# **Tit**le"),
         "cmd-B marks the selection: {:?}",
@@ -215,7 +223,7 @@ fn undo_gives_back_a_run_of_typing_at_once(cx: &mut TestAppContext) {
     let before = source(&editor, &mut cx);
     cx.simulate_input("hello");
     assert_ne!(source(&editor, &mut cx), before);
-    cx.simulate_keystrokes("cmd-z");
+    cx.simulate_keystrokes(&format!("{PRIMARY}-z"));
     assert_eq!(
         source(&editor, &mut cx),
         before,

@@ -9,8 +9,8 @@
 //! Two things it exists to get right.
 //!
 //! **The blur corners follow the border.** [`Shape`] rounds the bar, and
-//! [`crate::material::Glass::material`] cuts the backdrop blur to the rounding it finds — a
-//! blur squarer than its border frosts the corners outside it.
+//! [`crate::surface::Surfaced::surface`] cuts the surface to the rounding it
+//! finds — a blur squarer than its border frosts the corners outside it.
 //!
 //! **The centre is centred on the bar, not on what the clusters leave.** The
 //! two rails are equal-flex and the centre is not: clusters of five controls
@@ -44,7 +44,7 @@
 use gpui::{AnyElement, IntoElement, ParentElement as _, Styled as _, div, px};
 use theme::{Theme, hairline};
 
-use crate::material::{self, Glass as _};
+use crate::surface::Surfaced as _;
 
 /// Height of the bar, and so half the radius of a [`Shape::Pill`]. One number
 /// rather than a parameter: a stadium's radius has to be derived from it for
@@ -114,7 +114,7 @@ pub fn control_bar(
         .children(centre.map(|centre| div().flex_none().px(px(BAR_GAP)).child(centre)))
         .child(rail().flex_1().justify_end().children(trailing));
 
-    bar.material(material::MENU_BLUR).into_any_element()
+    bar.surface(theme, theme.popover_surface).into_any_element()
 }
 
 /// A circular control inside a bar: the ring, and its glyph at half the

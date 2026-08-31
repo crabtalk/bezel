@@ -23,12 +23,16 @@
 	<!-- The component itself, not the whole browser: one shared wasm app, told
 	     which section to render. `loading="lazy"` keeps 17MB off the page until
 	     the reader scrolls to it. -->
-	<iframe
-		class:tall={data.section.fullBleed}
-		title="{data.section.title}, running"
-		{src}
-		loading="lazy"
-	></iframe>
+	<div class="embed">
+		<iframe
+			class:tall={data.section.fullBleed}
+			title="{data.section.title}, running"
+			{src}
+			loading="lazy"
+		></iframe>
+		<button class="cover" onclick={() => (expanded = true)} aria-label="Expand {data.section.title}"
+		></button>
+	</div>
 
 	<p class="actions">
 		<button class="button" onclick={() => (expanded = true)}>Expand</button>
@@ -59,6 +63,11 @@
 		font-size: 32px;
 	}
 
+	.embed {
+		position: relative;
+		margin: 0 0 14px;
+	}
+
 	iframe {
 		display: block;
 		width: 100%;
@@ -66,7 +75,6 @@
 		border: 1px solid var(--line);
 		border-radius: 10px;
 		background: var(--panel);
-		margin: 0 0 14px;
 	}
 
 	/* A pattern is a whole screen. At 460px the music player's transport and its

@@ -1,5 +1,5 @@
 //! [`Stats`] — the meter: how many frames this window is drawing, and what the
-//! process and the GPU cost, while you watch it.
+//! process, the GPU and memory cost, while you watch it.
 //!
 //! A window at rest reads `0`. The count comes from this view's own renders,
 //! which is the same number: gpui re-renders every uncached view once per
@@ -25,13 +25,10 @@ use gpui::{
     Context, IntoElement, ParentElement as _, Render, SharedString, Styled as _, Window, div, px,
 };
 use motion::Painter;
-use theme::Theme;
+use theme::{Glass, SurfaceStyle, Theme};
 use web_time::Instant;
 
-use crate::{
-    material::{self, Glass as _},
-    popover,
-};
+use crate::{popover, surface::Surfaced as _};
 
 /// How often the meter refreshes once nothing else is drawing, and so the span
 /// each reading is measured over.
@@ -71,6 +68,10 @@ struct Reading {
     /// Percent of wall time the GPU was busy on this window's frames. `None`
     /// off Metal, where nothing measures it.
     gpu: Option<f32>,
+    /// This process's resident bytes — a level rather than a rate, so it is
+    /// sampled at the tick instead of differenced across one. `None` where the
+    /// platform hands out no process figure, a browser tab included.
+    mem: Option<u64>,
 }
 
 impl Stats {
@@ -103,6 +104,7 @@ impl Render for Stats {
                 fps: self.frames as f32 / elapsed.as_secs_f32(),
                 cpu: self.cpu_since.zip(cpu).map(|(then, cpu)| share(then, cpu)),
                 gpu: self.gpu_since.zip(gpu).map(|(then, gpu)| share(then, gpu)),
+                mem: memory(),
             };
             self.frames = 0;
             self.since = now;
@@ -112,7 +114,13 @@ impl Render for Stats {
 
         self.painter.lease(1.0 / TICK.as_secs_f32(), LEASE, cx);
 
-        let theme = Theme::of(cx).clone();
+        // Regular whatever the app mounts its menus on, and the card is handed
+        // the same choice — a card that thinks it is frost paints a fill, and a
+        // fill over a lens buries it.
+        let theme = Theme {
+            popover_surface: SurfaceStyle::Glass(Glass::Regular),
+            ..Theme::of(cx).clone()
+        };
         let reading = self.reading;
         let card = popover::popover_card(&theme)
             .w(px(WIDTH))
@@ -134,9 +142,24 @@ impl Render for Stats {
                 reading
                     .gpu
                     .map_or_else(|| "—".to_string(), |gpu| format!("{gpu:.1}%")),
+            ))
+            .child(row(
+                &theme,
+                "MEM",
+                reading.mem.map_or_else(
+                    || "—".to_string(),
+                    // Whole megabytes: a fourth digit and a decimal together
+                    // outgrow the value column, and this number moves in
+                    // megabytes anyway.
+                    |mem| format!("{:.0} MB", mem as f32 / 1e6),
+                ),
             ));
 
-        card.material(material::PANEL_BLUR)
+        // Regular, not clear: a meter floats over the thing it is measuring,
+        // and the everyday material is the one that both refracts and carries
+        // dense content. Its blur and its dimming come with the look — Apple
+        // exposes no way to ask for either, and neither does this.
+        card.surface(&theme, theme.popover_surface)
     }
 }
 
@@ -184,5 +207,36 @@ fn cpu_time() -> Option<Duration> {
 
 #[cfg(not(unix))]
 fn cpu_time() -> Option<Duration> {
+    None
+}
+
+/// Resident bytes — the figure Activity Monitor prints in its Memory column.
+///
+/// libc deprecated its Mach bindings in favour of the `mach2` crate; the symbol
+/// is a stable part of the platform ABI, and a whole dependency on a published
+/// crate is a lot to carry for one port name.
+#[cfg(target_os = "macos")]
+#[allow(deprecated)]
+fn memory() -> Option<u64> {
+    let mut info = std::mem::MaybeUninit::<libc::mach_task_basic_info>::uninit();
+    let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
+    // SAFETY: task_info fills the struct it is handed, and only on success.
+    let info = unsafe {
+        if libc::task_info(
+            libc::mach_task_self(),
+            libc::MACH_TASK_BASIC_INFO,
+            info.as_mut_ptr().cast(),
+            &mut count,
+        ) != libc::KERN_SUCCESS
+        {
+            return None;
+        }
+        info.assume_init()
+    };
+    Some(info.resident_size)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn memory() -> Option<u64> {
     None
 }
