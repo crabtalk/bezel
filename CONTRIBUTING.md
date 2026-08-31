@@ -12,7 +12,8 @@ crates/theme     tokens + appearance      (the @Environment layer)
 crates/motion    animation vocabulary     (the Animation/transition layer)
 crates/ui        components               (the View layer)
 crates/markdown  block document model     (markdown in, markdown out; painted)
-crates/editor    the editing surface      (keys, IME, undo, menus)
+crates/blocks    painted fenced blocks    (one feature per block)
+crates/editor    the editing surface      (keys, IME, undo, anchors, menus)
 apps/gallery     the documentation — a rail of every component, live
 ```
 
@@ -28,15 +29,18 @@ window that paints shapes but no text, one text system holding the fonts while
 the other draws the frame. A test there type-annotates values from every layer
 as `bezel::gpui` types, so a split graph stops compiling.
 
-It carries only the layers every app paints with. `markdown`, `syntax` and
-`terminal` are peers a consumer names itself: re-exporting `syntax` made every
-consumer compile seven C grammars to get a button and broke
+It carries only the layers every app paints with. `markdown`, `syntax`,
+`blocks` and `terminal` are peers a consumer names itself: re-exporting `syntax`
+made every consumer compile seven C grammars to get a button and broke
 `wasm32-unknown-unknown` outright, where that C has no libc. Highlighting is a
 seam (`markdown::set_highlighter`), so tree-sitter is one answer to it rather
-than the answer. `gpui_platform` is carried under a `platform` feature, off by
-default — a wasm consumer reaching for the browser backend and a library opening
-no window both turn it off. The `geist-*` features are one per bundled face, on
-by default and forwarded to `ui`.
+than the answer; painting a fence is the same shape
+(`markdown::set_block_renderer`, answered by `blocks`). Neither is a feature on
+the seam crate, because cargo unions features across a graph: one a dependency
+turns on is one no consumer can turn off. `gpui_platform` is carried under a
+`platform` feature, off by default — a wasm consumer reaching for the browser
+backend and a library opening no window both turn it off. The `geist-*` features
+are one per bundled face, on by default and forwarded to `ui`.
 
 ## Laws
 
@@ -102,7 +106,9 @@ the menus — *which key does it* against `markdown`'s *what an edit does*. Its
 chords are `ui::TextField`'s, and so are its rules: vertical motion is geometry
 through the painted layouts rather than arithmetic on line numbers, and undo
 coalesces by adjacency rather than by a pause, so there is no timing threshold
-to invent. `history` holds whole-document snapshots.
+to invent. `history` holds whole-document snapshots, which is why comment
+anchors sit beside them: an undo restores a whole document, leaving no delta an
+app could map its own copy of a range through.
 
 ## Dependencies
 

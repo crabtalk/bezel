@@ -1,21 +1,23 @@
-//! The gallery's fenced-block renderer, which `markdown` asks for every fence.
+//! ` ```chart ` — one `label: number` per line, painted as bars.
 //!
-//! ```` ```chart ```` holds one `label: number` per line and paints as bars.
-//! It is here to show the seam, not to be a chart library: a fence already
-//! round trips and already holds a caret, so a block of an app's own is a
-//! renderer rather than a new [`markdown::BlockKind`].
-//!
-//! Install with `markdown::set_block_renderer(cx, chart::render)`.
+//! Deliberately the smallest block worth shipping: no axes, no scales, no
+//! legend. What it demonstrates is the shape of a block, and a chart library
+//! behind a fence tag is a different crate's job.
 
 use gpui::{AnyElement, App, Window, div, prelude::*, px, relative};
 use theme::{TextStyle, Theme, Typeset};
 
 pub const LANGUAGE: &str = "chart";
 
-pub fn render(language: &str, code: &str, _: &mut Window, cx: &mut App) -> Option<AnyElement> {
-    if language != LANGUAGE {
-        return None;
-    }
+/// The label column. Wide enough for a word, narrow enough that the bars still
+/// carry the row.
+const LABEL_WIDTH: f32 = 72.0;
+const BAR_HEIGHT: f32 = 10.0;
+const BAR_RADIUS: f32 = 3.0;
+const ROW_GAP: f32 = 4.0;
+const PADDING: f32 = 12.0;
+
+pub fn render(code: &str, _: &mut Window, cx: &mut App) -> Option<AnyElement> {
     let rows: Vec<(&str, f32)> = code
         .lines()
         .filter_map(|line| {
@@ -35,20 +37,20 @@ pub fn render(language: &str, code: &str, _: &mut Window, cx: &mut App) -> Optio
         div()
             .flex()
             .flex_col()
-            .gap(px(6.0))
-            .p(px(12.0))
-            .rounded(px(8.0))
+            .gap(px(ROW_GAP))
+            .p(px(PADDING))
+            .rounded(px(Theme::BASE_RADIUS))
             .bg(theme.ink(0.02))
             .children(rows.into_iter().map(|(label, value)| {
                 div()
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap(px(8.0))
+                    .gap(px(Theme::SPACE))
                     .child(
                         div()
                             .flex_none()
-                            .w(px(72.0))
+                            .w(px(LABEL_WIDTH))
                             .text_style(TextStyle::Caption)
                             .text_color(theme.text_muted)
                             .child(label.to_string()),
@@ -56,9 +58,9 @@ pub fn render(language: &str, code: &str, _: &mut Window, cx: &mut App) -> Optio
                     .child(
                         div().flex_1().child(
                             div()
-                                .h(px(10.0))
+                                .h(px(BAR_HEIGHT))
                                 .w(relative(value / peak))
-                                .rounded(px(3.0))
+                                .rounded(px(BAR_RADIUS))
                                 .bg(theme.accent),
                         ),
                     )
