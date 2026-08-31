@@ -65,6 +65,7 @@ actions!(
 pub fn init(cx: &mut App) {
     markdown::set_highlighter(cx, highlight::spans, highlight::languages());
     markdown::set_link_preview(cx, preview::of);
+    markdown::set_block_renderer(cx, chart::render);
     editor::set_image_store(cx, store::of);
     input::init(cx);
     editor::init(cx);
@@ -87,6 +88,7 @@ pub fn init(cx: &mut App) {
 pub mod highlight;
 
 pub mod brand;
+pub mod chart;
 pub mod patterns;
 pub mod preview;
 mod rail;

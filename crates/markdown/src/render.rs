@@ -18,6 +18,7 @@ use gpui::{
 use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
+    block,
     doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, Text},
     preview,
     select::{Cursor, Selection},
@@ -648,15 +649,36 @@ fn block_element(
                 theme,
             ))
             .into_any_element(),
-        BlockKind::Code { language, code } => code_block(
-            language.as_deref(),
-            &code.text,
-            overlay.at(Part::Code),
-            typography,
-            theme,
-            window,
-            cx,
-        ),
+        BlockKind::Code { language, code } => {
+            let overlay = overlay.at(Part::Code);
+            // The caret in the fence gives the source back. A painted block is
+            // still an editable one, and typing into it otherwise edits what
+            // the reader cannot see.
+            let painted = overlay
+                .caret()
+                .is_none()
+                .then(|| block::render(language.as_deref(), &code.text, window, cx))
+                .flatten();
+            match painted {
+                // Painted, there is no text under the selection to carry it —
+                // the wash an opaque block gets at the container comes here.
+                Some(element) => div()
+                    .when(overlay.covers_block(), |el| {
+                        el.rounded(px(4.0)).bg(theme.selection)
+                    })
+                    .child(element)
+                    .into_any_element(),
+                None => code_block(
+                    language.as_deref(),
+                    &code.text,
+                    overlay,
+                    typography,
+                    theme,
+                    window,
+                    cx,
+                ),
+            }
+        }
         BlockKind::Image { url, alt, width } => image(url, alt, *width, overlay, typography, theme),
         BlockKind::Bookmark { url, form } => {
             bookmark(overlay.block, url, *form, typography, theme, cx)
