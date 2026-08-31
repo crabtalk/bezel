@@ -14,7 +14,7 @@ use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
-    Frost, Glass, SurfaceSpec, SurfaceStyle, Theme,
+    Frost, Glass, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset,
     appearance::{self, AppearanceMode},
 };
 use ui::{
@@ -584,7 +584,11 @@ pub const FOUNDATIONS: &[Group] = &[
         sections: &[
             section("create", "Create", "apps/gallery/src/create.rs"),
             section("color", "Color", "crates/theme/src/lib.rs"),
-            section("typography", "Typography", "crates/theme/src/lib.rs"),
+            section(
+                "typography",
+                "Typography",
+                "crates/theme/src/theme/typography.rs",
+            ),
             section("layout", "Layout", "crates/theme/src/lib.rs"),
             section("material", "Materials", "crates/ui/src/surface.rs"),
         ],
@@ -798,6 +802,8 @@ pub struct Gallery {
     /// are *set to* is the brand global — the page keeps no palette.
     probe_knobs: [gpui::FocusHandle; 13],
     brand_knobs: [gpui::FocusHandle; create::KNOB_COUNT],
+    /// The type-scale probe on the Typography page.
+    type_probe: gpui::FocusHandle,
     create_file: usize,
     tab_strip: [gpui::FocusHandle; 3],
     /// Which button was last pressed, and by what — the only way to see that a
@@ -986,6 +992,7 @@ impl Gallery {
             slider: cx.focus_handle(),
             brand_knobs: std::array::from_fn(|_| cx.focus_handle()),
             probe_knobs: std::array::from_fn(|_| cx.focus_handle()),
+            type_probe: cx.focus_handle(),
             create_file: 0,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             rail,
@@ -1400,7 +1407,7 @@ impl Gallery {
                             .id(SharedString::from(format!("nav-{}", tab.title)))
                             .flex_none()
                             .p(px(NAV_ITEM_PAD))
-                            .text_size(px(13.0))
+                            .text_style(TextStyle::Body)
                             .cursor_pointer()
                             .on_click(cx.listener(move |view, _, _, cx| {
                                 view.open(index, view.selected[index], cx);
@@ -1499,8 +1506,7 @@ impl Gallery {
                     .min_w_0()
                     .child(
                         div()
-                            .text_size(px(15.0))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_style(TextStyle::Title3)
                             .child(SharedString::from(section.title)),
                     )
                     // Customisation is editing the source, so say which file —
@@ -1514,7 +1520,7 @@ impl Gallery {
                                 .child(SharedString::from(path)),
                             None => div().child("not built yet"),
                         }
-                        .text_size(px(11.5))
+                        .text_style(TextStyle::Subheadline)
                         .text_color(theme.text_faint),
                     ),
             )
@@ -1558,8 +1564,10 @@ impl Gallery {
             "typography" => section
                 .child(hint(
                     &theme,
-                    "Geist and Geist Mono ship with the crate; the sizes below are \
-                     the ones the library actually paints.",
+                    "Geist and Geist Mono ship with the crate. Every size below is \
+                     a role on the system ladder, measured off \
+                     NSFont.preferredFont(forTextStyle:) — components name the \
+                     role, never a number.",
                 ))
                 .child(popover::menu_heading(&theme, "Families"))
                 .child(
@@ -1579,15 +1587,82 @@ impl Gallery {
                         .into_iter()
                         .map(|(weight, label)| {
                             div()
-                                .text_size(px(15.0))
+                                .text_style(TextStyle::Title3)
                                 .font_weight(weight)
                                 .child(SharedString::from(label))
                                 .into_any_element()
                         }),
                     ),
                 )
-                .child(popover::menu_heading(&theme, "Sizes in use"))
-                .child(stack().children(TYPE_SCALE.iter().map(|size| {
+                .child(popover::menu_heading(&theme, "Scale"))
+                .child({
+                    let (floor, ceiling) = BASE_TEXT_RANGE;
+                    let span = ceiling - floor;
+                    let base = theme::base_text_size();
+                    let nudge = move |cx: &mut Context<Self>, by: f32| {
+                        let next = (theme::base_text_size() + by).clamp(floor, ceiling);
+                        theme::set_base_text_size(next, cx);
+                        cx.notify();
+                    };
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(12.0))
+                        .child(
+                            div()
+                                .w(px(88.0))
+                                .flex_none()
+                                .text_style(TextStyle::Subheadline)
+                                .text_color(theme.text_muted)
+                                .child("Body"),
+                        )
+                        .child(
+                            div().w(px(240.0)).flex_none().child(
+                                focus::focusable(
+                                    &theme,
+                                    &self.type_probe,
+                                    theme.slider((base - floor) / span),
+                                )
+                                .id("type-probe")
+                                .on_drag(SliderDrag("type-probe".into()), |_, _, _, cx| {
+                                    cx.new(|_| Empty)
+                                })
+                                .on_drag_move(cx.listener(
+                                    move |_, event: &DragMoveEvent<SliderDrag>, _, cx| {
+                                        let Some(fraction) =
+                                            widgets::slider_fraction(event, "type-probe", cx)
+                                        else {
+                                            return;
+                                        };
+                                        // Whole points: every stop is a size
+                                        // you could write into the ladder.
+                                        let points = (floor + fraction * span).round();
+                                        theme::set_base_text_size(points, cx);
+                                        cx.notify();
+                                    },
+                                ))
+                                .on_action(cx.listener(move |_, _: &focus::Decrement, _, cx| {
+                                    nudge(cx, -1.0)
+                                }))
+                                .on_action(
+                                    cx.listener(move |_, _: &focus::Increment, _, cx| {
+                                        nudge(cx, 1.0)
+                                    }),
+                                ),
+                            ),
+                        )
+                        .child(
+                            div()
+                                .w(px(56.0))
+                                .flex_none()
+                                .text_style(TextStyle::Subheadline)
+                                .font_family(theme.font_mono.clone())
+                                .text_color(theme.text_faint)
+                                .child(SharedString::from(format!("{base:.0}"))),
+                        )
+                })
+                .child(stack().children(TYPE_SCALE.iter().map(|style| {
                     div()
                         .flex()
                         .flex_row()
@@ -1595,18 +1670,27 @@ impl Gallery {
                         .gap(px(12.0))
                         .child(
                             div()
-                                .w(px(40.0))
+                                .w(px(88.0))
                                 .flex_none()
-                                .text_size(px(11.0))
+                                .text_style(TextStyle::Subheadline)
                                 .font_family(theme.font_mono.clone())
-                                .text_color(theme.text_faint)
-                                .child(SharedString::from(format!("{size}"))),
+                                .text_color(theme.text_muted)
+                                .child(SharedString::from(format!("{style:?}"))),
                         )
                         .child(
                             div()
-                                .text_size(px(*size))
-                                .child("The quick brown fox jumps"),
+                                .w(px(56.0))
+                                .flex_none()
+                                .text_style(TextStyle::Subheadline)
+                                .font_family(theme.font_mono.clone())
+                                .text_color(theme.text_faint)
+                                .child(SharedString::from(format!(
+                                    "{} · {}",
+                                    style.size() * theme::base_text_size() / TextStyle::Body.size(),
+                                    style.weight().0
+                                ))),
                         )
+                        .child(div().text_style(*style).child("The quick brown fox jumps"))
                         .into_any_element()
                 })))
                 .into_any_element(),
@@ -1652,7 +1736,7 @@ impl Gallery {
                                 )
                                 .child(
                                     div()
-                                        .text_size(px(11.0))
+                                        .text_style(TextStyle::Subheadline)
                                         .font_family(theme.font_mono.clone())
                                         .text_color(theme.text_faint)
                                         .child(SharedString::from(format!("{name} {value}"))),
@@ -1715,7 +1799,7 @@ impl Gallery {
                             div()
                                 .w(px(150.0))
                                 .flex_none()
-                                .text_size(px(12.5))
+                                .text_style(TextStyle::Callout)
                                 .font_family(theme.font_mono.clone())
                                 .child(SharedString::from(*name)),
                         )
@@ -1723,7 +1807,7 @@ impl Gallery {
                             div()
                                 .w(px(70.0))
                                 .flex_none()
-                                .text_size(px(11.5))
+                                .text_style(TextStyle::Subheadline)
                                 .text_color(theme.text_faint)
                                 .child(SharedString::from(if spec.delay_ms > 0 {
                                     format!("{}+{}ms", spec.delay_ms, spec.duration_ms)
@@ -1763,7 +1847,7 @@ impl Gallery {
                                 div()
                                     .w_full()
                                     .truncate()
-                                    .text_size(px(9.5))
+                                    .text_style(TextStyle::Caption)
                                     .text_align(gpui::TextAlign::Center)
                                     .font_family(theme.font_mono.clone())
                                     .text_color(theme.text_faint)
@@ -1829,7 +1913,7 @@ impl Gallery {
                                     .px(px(8.0))
                                     .py(px(4.0))
                                     .gap(px(6.0))
-                                    .text_size(px(12.5))
+                                    .text_style(TextStyle::Callout)
                                     .text_color(theme.text_muted)
                                     .child(
                                         icons::icon(icons::PLUS)
@@ -1843,7 +1927,7 @@ impl Gallery {
                     .when_some(self.last_pressed.clone(), |page, label| {
                         page.child(
                             div()
-                                .text_size(px(12.5))
+                                .text_style(TextStyle::Callout)
                                 .text_color(theme.text_muted)
                                 .child(SharedString::from(format!("pressed: {label}"))),
                         )
@@ -1970,7 +2054,7 @@ impl Gallery {
                 .child(div().w(px(220.0)).child(self.language.clone()))
                 .child(
                     div()
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
                         .child(SharedString::from(
                             match self.language.read(cx).selection() {
@@ -2074,7 +2158,7 @@ impl Gallery {
                 )
                 .child(
                     div()
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::Callout)
                         .font_family(theme.font_mono.clone())
                         .text_color(theme.text_muted)
                         .child(SharedString::from(format!("{:.0}%", self.level * 100.0))),
@@ -2136,7 +2220,7 @@ impl Gallery {
                                     div()
                                         .pl(px(24.0))
                                         .pt(px(4.0))
-                                        .text_size(px(12.5))
+                                        .text_style(TextStyle::Callout)
                                         .text_color(theme.text_muted)
                                         .child("Body shown while expanded."),
                                 )
@@ -2173,7 +2257,7 @@ impl Gallery {
                             // behaviour you can only infer is one nobody checks.
                             .child(
                                 div()
-                                    .text_size(px(12.0))
+                                    .text_style(TextStyle::Callout)
                                     .font_family(theme.font_mono.clone())
                                     .text_color(theme.text_faint)
                                     .child(SharedString::from(format!(
@@ -2214,7 +2298,7 @@ impl Gallery {
                                         .pl(px(12.0))
                                         .border_l_1()
                                         .border_color(theme.border)
-                                        .text_size(px(12.5))
+                                        .text_style(TextStyle::Callout)
                                         .text_color(theme.text_muted)
                                         .child(if self.running {
                                             "Reading crates/ui/src/widgets.rs…"
@@ -2368,7 +2452,7 @@ impl Gallery {
                                                 .flex()
                                                 .items_center()
                                                 .gap(px(4.0))
-                                                .text_size(px(11.5))
+                                                .text_style(TextStyle::Subheadline)
                                                 .text_color(theme.text_faint)
                                                 .child("10")
                                                 .child(
@@ -2412,7 +2496,7 @@ impl Gallery {
                 let caption = |copy: &'static str| {
                     div()
                         .flex_1()
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
                         .child(copy)
                 };
@@ -2461,7 +2545,7 @@ impl Gallery {
                     .when_some(self.last_pressed.clone(), |page, label| {
                         page.child(
                             div()
-                                .text_size(px(12.5))
+                                .text_style(TextStyle::Callout)
                                 .text_color(theme.text_muted)
                                 .child(SharedString::from(format!("pressed: {label}"))),
                         )
@@ -2476,7 +2560,7 @@ impl Gallery {
                     div()
                         .h_full()
                         .p(px(12.0))
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::Callout)
                         .text_color(muted)
                         .child(label)
                 };
@@ -2550,7 +2634,7 @@ impl Gallery {
                 };
                 let label = |copy: &'static str| {
                     div()
-                        .text_size(px(12.0))
+                        .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
                         .child(copy)
                 };
@@ -2759,7 +2843,7 @@ impl Gallery {
                                 .child(loaders::orb(shape, label, 44.0, &theme, view, cx))
                                 .child(
                                     div()
-                                        .text_size(px(10.5))
+                                        .text_style(TextStyle::Caption)
                                         .font_family(theme.font_mono.clone())
                                         .text_color(theme.text_faint)
                                         .child(label),
@@ -2879,7 +2963,7 @@ impl Gallery {
                         .when_some(self.last_command.clone(), |r, cmd| {
                             r.child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .text_style(TextStyle::Body)
                                     .text_color(theme.text_muted)
                                     .child(SharedString::from(format!("ran: {cmd}"))),
                             )
@@ -2921,7 +3005,7 @@ impl Gallery {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::Callout)
                         .text_color(theme.text_faint)
                         .child("right-click"),
                 )
@@ -3041,7 +3125,7 @@ impl Gallery {
                                     .top(px(8.0 + k as f32 * 21.0))
                                     .left(px(12.0))
                                     .right(px(12.0))
-                                    .text_size(px(15.0))
+                                    .text_style(TextStyle::Title3)
                                     .text_color(theme.text)
                                     .whitespace_nowrap()
                                     .overflow_hidden()
@@ -3074,7 +3158,7 @@ impl Gallery {
                         .px(px(10.0))
                         .py(px(4.0))
                         .rounded(px(Theme::control_radius()))
-                        .text_size(px(12.0))
+                        .text_style(TextStyle::Callout)
                         .text_color(if on { theme.text } else { theme.text_muted })
                         .bg(if on { theme.glass_hover() } else { theme.bg })
                         .cursor_pointer()
@@ -3097,7 +3181,7 @@ impl Gallery {
                             .child(
                                 div()
                                     .w(px(56.0))
-                                    .text_size(px(11.0))
+                                    .text_style(TextStyle::Subheadline)
                                     .text_color(theme.text_muted)
                                     .child(label),
                             )
@@ -3197,7 +3281,7 @@ impl Gallery {
                                     .px(px(10.0))
                                     .py(px(4.0))
                                     .rounded(px(Theme::control_radius()))
-                                    .text_size(px(12.0))
+                                    .text_style(TextStyle::Callout)
                                     .text_color(if on { theme.text } else { theme.text_muted })
                                     .bg(if on { theme.glass_hover() } else { theme.bg })
                                     .cursor_pointer()
@@ -3217,7 +3301,7 @@ impl Gallery {
                                     .px(px(10.0))
                                     .py(px(4.0))
                                     .rounded(px(Theme::control_radius()))
-                                    .text_size(px(12.0))
+                                    .text_style(TextStyle::Callout)
                                     .text_color(if self.probe_tint {
                                         theme.text
                                     } else {
@@ -3244,7 +3328,7 @@ impl Gallery {
                                     .px(px(10.0))
                                     .py(px(4.0))
                                     .rounded(px(Theme::control_radius()))
-                                    .text_size(px(12.0))
+                                    .text_style(TextStyle::Callout)
                                     .text_color(theme.text_muted)
                                     .bg(theme.bg)
                                     .cursor_pointer()
@@ -3493,7 +3577,7 @@ impl Gallery {
                 .child(div().w(px(220.0)).child(self.date.clone()))
                 .child(
                     div()
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
                         .child(SharedString::from(match self.date.read(cx).selection() {
                             Some(date) => format!("chosen: {date}"),
@@ -3513,7 +3597,7 @@ impl Gallery {
                 .child(self.menubar.clone())
                 .child(
                     div()
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
                         .child(SharedString::from(match &self.last_menu_item {
                             Some(label) => format!("chose: {label}"),
@@ -3578,7 +3662,7 @@ impl Gallery {
                     )
                     .child(
                         div()
-                            .text_size(px(12.5))
+                            .text_style(TextStyle::Callout)
                             .text_color(theme.text_muted)
                             .child(SharedString::from(format!(
                                 "page {} of {RESULT_PAGES}",
@@ -3613,7 +3697,7 @@ impl Gallery {
                                 .child(div().p(px(14.0)).flex().flex_col().gap(px(8.0)).children(
                                     (1..=30).map(|line| {
                                         div()
-                                            .text_size(px(12.5))
+                                            .text_style(TextStyle::Callout)
                                             .text_color(theme.text_muted)
                                             .child(SharedString::from(format!("Line {line}")))
                                     }),
@@ -3668,7 +3752,7 @@ impl Gallery {
                         // infer is a behaviour nobody can check.
                         .child(
                             div()
-                                .text_size(px(12.0))
+                                .text_style(TextStyle::Callout)
                                 .font_family(theme.font_mono.clone())
                                 .text_color(if self.log_follow.following() {
                                     theme.success
@@ -3699,7 +3783,7 @@ impl Gallery {
                                 .child(div().p(px(14.0)).flex().flex_col().gap(px(6.0)).children(
                                     (1..=self.log_lines).map(|line| {
                                         div()
-                                            .text_size(px(12.0))
+                                            .text_style(TextStyle::Callout)
                                             .font_family(theme.font_mono.clone())
                                             .text_color(theme.text_muted)
                                             .child(SharedString::from(format!(
@@ -3872,7 +3956,7 @@ impl Gallery {
                     .when_some(self.tree_selected.clone(), |page, path| {
                         page.child(
                             div()
-                                .text_size(px(12.5))
+                                .text_style(TextStyle::Callout)
                                 .text_color(theme.text_muted)
                                 .child(SharedString::from(format!("chosen: {path}"))),
                         )
@@ -3915,7 +3999,7 @@ impl Gallery {
                                                 .items_center()
                                                 .gap(px(10.0))
                                                 .px(px(12.0))
-                                                .text_size(px(12.5))
+                                                .text_style(TextStyle::Callout)
                                                 .child(
                                                     div()
                                                         .w(px(56.0))
@@ -3939,7 +4023,7 @@ impl Gallery {
                     )
                     .child(
                         div()
-                            .text_size(px(12.5))
+                            .text_style(TextStyle::Callout)
                             .font_family(theme.font_mono.clone())
                             .text_color(theme.text_muted)
                             .child(SharedString::from(format!(
@@ -3974,11 +4058,28 @@ pub(crate) fn stack() -> gpui::Div {
     div().flex().flex_col().gap(px(12.0))
 }
 
-/// The text sizes the library actually paints, gathered from the source rather
-/// than invented as a scale — bezel has no formal type ramp, and pretending it
-/// does would document a thing that is not there.
-const TYPE_SCALE: &[f32] = &[
-    10.0, 10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 15.0, 16.0,
+/// How far the body size runs: macOS's smallest UI size (`labelFontSize 10`,
+/// which is the ladder's own floor) up to where `STATUS_STRIP_HEIGHT` is exactly
+/// the [`TextStyle::Callout`] it holds and the tightest chrome in the library
+/// has definitively failed.
+const BASE_TEXT_RANGE: (f32, f32) = (
+    TextStyle::Caption2.size(),
+    Theme::STATUS_STRIP_HEIGHT * TextStyle::Body.size() / TextStyle::Callout.size(),
+);
+
+/// Every role on the ladder, largest first.
+const TYPE_SCALE: &[TextStyle] = &[
+    TextStyle::LargeTitle,
+    TextStyle::Title,
+    TextStyle::Title2,
+    TextStyle::Title3,
+    TextStyle::Headline,
+    TextStyle::Body,
+    TextStyle::Callout,
+    TextStyle::Subheadline,
+    TextStyle::Footnote,
+    TextStyle::Caption,
+    TextStyle::Caption2,
 ];
 
 /// Every named spec in `motion`.
@@ -4088,14 +4189,14 @@ fn swatch(theme: &Theme, name: &'static str, color: gpui::Hsla) -> gpui::Div {
         )
         .child(
             div()
-                .text_size(px(10.5))
+                .text_style(TextStyle::Caption)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_muted)
                 .child(SharedString::from(name)),
         )
         .child(
             div()
-                .text_size(px(10.0))
+                .text_style(TextStyle::Caption)
                 .text_color(theme.text_faint)
                 .child(SharedString::from(format!(
                     "{:.1}:1",
@@ -4115,7 +4216,7 @@ fn measure(theme: &Theme, name: &'static str, value: f32) -> gpui::Div {
             div()
                 .w(px(170.0))
                 .flex_none()
-                .text_size(px(11.5))
+                .text_style(TextStyle::Subheadline)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_muted)
                 .child(SharedString::from(name)),
@@ -4129,7 +4230,7 @@ fn measure(theme: &Theme, name: &'static str, value: f32) -> gpui::Div {
         )
         .child(
             div()
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .text_color(theme.text_faint)
                 .child(SharedString::from(format!("{value}"))),
         )
@@ -4160,7 +4261,7 @@ fn curve_plot(theme: &Theme, name: &str, at: impl Fn(f32) -> f32) -> gpui::Div {
     } else {
         div().flex().flex_col().gap(px(6.0)).child(plot).child(
             div()
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_faint)
                 .child(SharedString::from(name.to_string())),
@@ -4179,14 +4280,14 @@ fn type_row(theme: &Theme, family: SharedString, name: &'static str) -> gpui::Di
             div()
                 .w(px(90.0))
                 .flex_none()
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_faint)
                 .child(SharedString::from(name)),
         )
         .child(
             div()
-                .text_size(px(15.0))
+                .text_style(TextStyle::Title3)
                 .font_family(family.clone())
                 .child(family),
         )
@@ -4196,7 +4297,7 @@ fn type_row(theme: &Theme, family: SharedString, name: &'static str) -> gpui::Di
 /// an interaction — the page would otherwise look like a dead button.
 pub(crate) fn hint(theme: &Theme, copy: &str) -> gpui::Div {
     div()
-        .text_size(px(12.5))
+        .text_style(TextStyle::Callout)
         .text_color(theme.text_muted)
         .child(SharedString::from(copy.to_string()))
 }
@@ -4208,7 +4309,7 @@ fn shape_demo(theme: &Theme, shape: &'static str, field: Entity<TextField>) -> g
         .gap(px(6.0))
         .child(
             div()
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_faint)
                 .child(SharedString::from(shape)),
@@ -4238,14 +4339,13 @@ fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> An
                 .border_1()
                 .border_color(amber.opacity(0.2))
                 .bg(amber.opacity(0.06))
-                .text_size(px(10.0))
-                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_style(TextStyle::Caption2)
                 .text_color(theme.warning_muted.opacity(0.9))
                 .child(SharedString::from(popover::tracked_upper(status))),
         )
         .child(
             div()
-                .text_size(px(13.0))
+                .text_style(TextStyle::Body)
                 .text_color(theme.text_muted)
                 .child(SharedString::from(summary.to_string())),
         )
@@ -4262,14 +4362,14 @@ fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> An
                                 div()
                                     .flex_none()
                                     .w(px(12.0))
-                                    .text_size(px(12.0))
+                                    .text_style(TextStyle::Callout)
                                     .font_family(theme.font_mono.clone())
                                     .text_color(theme.text_faint)
                                     .child(SharedString::from(format!("{}", index + 1))),
                             )
                             .child(
                                 div()
-                                    .text_size(px(12.5))
+                                    .text_style(TextStyle::Callout)
                                     .text_color(theme.text_muted)
                                     .child(SharedString::from(*step)),
                             )
@@ -4468,7 +4568,7 @@ impl Render for Gallery {
             .bg(theme.window_bg())
             .font_family(theme.font_sans.clone())
             .text_color(theme.text)
-            .text_size(px(14.0))
+            .text_style(TextStyle::Body)
             .child(content)
             // The rail, once it no longer fits beside the pane. Same width, so
             // the cached layout `rail::style` reports still describes it.

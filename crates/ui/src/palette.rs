@@ -23,7 +23,7 @@ use gpui::{
     actions, div, prelude::*, px,
 };
 
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
     input::{self, TextField},
@@ -174,7 +174,7 @@ impl Render for CommandPalette {
                 div()
                     .px(px(10.0))
                     .py(px(8.0))
-                    .text_size(px(13.0))
+                    .text_style(TextStyle::Body)
                     .text_color(theme.text_muted)
                     .child("No matches")
                     .into_any_element()

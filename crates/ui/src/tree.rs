@@ -29,7 +29,7 @@
 
 use gpui::{App, KeyBinding, actions, div, prelude::*, px};
 
-use theme::{Theme, hairline};
+use theme::{TextStyle, Theme, Typeset, hairline};
 
 use crate::widgets::Layout;
 
@@ -158,7 +158,7 @@ pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui:
         .w_full()
         .py(px(3.0))
         .pr(px(8.0))
-        .text_size(px(12.5))
+        .text_style(TextStyle::Callout)
         .cursor_pointer();
     frame = if selected {
         frame.bg(theme::card_selected_bg()).text_color(theme.text)

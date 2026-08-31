@@ -16,7 +16,7 @@
 use gpui::{App, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use motion::{self, GRADIENT_SPIN, ORB, PULSE, PULSE_STAGGER, Painter};
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 pub use motion::phase::{GSPIN_DIM, GSPIN_ROW_TINTS, MATRIX_SIDE, PULSE_CELLS};
 
@@ -278,12 +278,12 @@ pub fn orb(
     div().relative().size(px(size_px)).children(cells)
 }
 
-/// "L O A D I N G" — `text-[11px] uppercase tracking-[0.32em]`; tracking
+/// "L O A D I N G" — `uppercase tracking-[0.32em]`; tracking
 /// approximated with thin spaces (gpui has no letter-spacing at the pinned
 /// rev).
 pub fn loading_word(theme: &Theme) -> impl IntoElement {
     div()
-        .text_size(px(11.0))
+        .text_style(TextStyle::Subheadline)
         .text_color(theme.text_muted.opacity(0.7))
         .child(SharedString::from(
             "L\u{2009}O\u{2009}A\u{2009}D\u{2009}I\u{2009}N\u{2009}G",

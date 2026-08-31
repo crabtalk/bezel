@@ -6,7 +6,7 @@
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`.
 
 use gpui::{App, Axis, Div, DragMoveEvent, ElementId, SharedString, div, prelude::*, px};
-use theme::{Theme, ThemeExt, ink};
+use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
 
 /// The drag payload of a [`Controls::slider`], carrying the id of the slider
 /// the gesture started on.
@@ -210,7 +210,7 @@ pub trait Controls: ThemeExt {
             .bg(theme.input_bg)
             .border_1()
             .border_color(theme.border)
-            .text_size(px(13.0))
+            .text_style(TextStyle::Body)
             .text_color(theme.text)
             .cursor_pointer()
             .child(div().min_w_0().truncate().child(label.into()))
@@ -256,7 +256,7 @@ pub trait Controls: ThemeExt {
             )))
             .border_1()
             .border_color(crate::widgets::RING_SLOT)
-            .text_size(px(12.5))
+            .text_style(TextStyle::Callout)
             .cursor_pointer()
             .child(label.into());
         item = if selected {

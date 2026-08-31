@@ -8,7 +8,7 @@
 
 use gpui::{Div, ElementId, SharedString, Stateful, div, prelude::*, px};
 use motion::{self, Fade};
-use theme::{Theme, ThemeExt, ink, wash};
+use theme::{TextStyle, Theme, ThemeExt, Typeset, ink, wash};
 
 /// The shipped looks (the reference `btnGhost` / `btnPrimary` /
 /// `btnDestructive`).
@@ -28,7 +28,7 @@ fn frame(mut el: Div) -> Div {
         .px(px(12.0))
         .py(px(6.0))
         .rounded(px(Theme::button_radius()))
-        .text_size(px(13.0))
+        .text_style(TextStyle::Body)
         .cursor_pointer();
     el
 }

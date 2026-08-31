@@ -28,7 +28,7 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 actions!(
     bezel_text_field,
@@ -1384,7 +1384,7 @@ impl Render for TextField {
                         theme.border
                     })
             })
-            .text_size(px(13.0))
+            .text_style(TextStyle::Body)
             .line_height(px(18.0))
             .text_color(theme.text)
             .child(TextFieldElement { field: cx.entity() })

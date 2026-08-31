@@ -16,7 +16,7 @@ use gpui::{
     prelude::FluentBuilder as _, px,
 };
 use motion::{Fade, Painter};
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 use ui::{
     popover,
     scroll::{self, TransientState},
@@ -145,15 +145,10 @@ fn wordmark(theme: &Theme) -> impl IntoElement {
         // padding plus `menu_row`'s own.
         .px(px(RAIL_PAD + 8.0))
         .py(px(10.0))
+        .child(div().text_style(TextStyle::Headline).child("bezel"))
         .child(
             div()
-                .text_size(px(13.0))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .child("bezel"),
-        )
-        .child(
-            div()
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_faint)
                 .child(env!("CARGO_PKG_VERSION")),

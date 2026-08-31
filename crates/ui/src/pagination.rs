@@ -22,7 +22,7 @@
 
 use gpui::{SharedString, div, prelude::*, px};
 
-use theme::{Theme, ink};
+use theme::{TextStyle, Theme, Typeset, ink};
 
 use crate::{icons, widgets};
 
@@ -106,7 +106,7 @@ pub fn page_button(theme: &Theme, page: usize, current: bool) -> gpui::Div {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(12.5))
+        .text_style(TextStyle::Callout)
         // The ring slot, like every other control: focus has somewhere to land
         // and nothing moves when it does.
         .border_1()
@@ -134,7 +134,7 @@ pub fn ellipsis(theme: &Theme) -> gpui::Div {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(12.5))
+        .text_style(TextStyle::Callout)
         .text_color(theme.text_faint)
         .child(SharedString::from("…"))
 }

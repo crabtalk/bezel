@@ -7,7 +7,7 @@
 use gpui::{AnyElement, Context, CursorStyle, MouseButton, SharedString, div, prelude::*, px};
 use markdown::BlockKind;
 use motion::{Fade, Painter};
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::editor::{Editor, HANDLE_GUTTER, HANDLE_SIZE};
 
@@ -47,7 +47,7 @@ impl Editor {
                 .justify_center()
                 .rounded(px(4.0))
                 .cursor(CursorStyle::OpenHand)
-                .text_size(px(12.0))
+                .text_style(TextStyle::Callout)
                 .text_color(theme.text_faint)
                 .hover(|el| el.bg(theme.ink(0.08)).text_color(theme.text_muted))
                 .child("⠿")

@@ -39,7 +39,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use theme::{Theme, ink};
+use theme::{TextStyle, Theme, Typeset, ink};
 
 use crate::popover;
 
@@ -346,7 +346,7 @@ pub fn menubar_title(theme: &Theme, label: impl Into<SharedString>, open: bool) 
         .px(px(8.0))
         .py(px(3.0))
         .rounded(px(Theme::control_radius()))
-        .text_size(px(13.0))
+        .text_style(TextStyle::Body)
         .cursor_pointer()
         .child(label.into());
     if open {
@@ -384,7 +384,7 @@ fn disabled_row(theme: &Theme, label: SharedString, keystroke: Option<SharedStri
             Theme::surface_radius(),
             popover::MENU_PAD,
         )))
-        .text_size(px(13.0))
+        .text_style(TextStyle::Body)
         .text_color(theme.text_faint)
         .child(label)
         .when_some(keystroke, |row, keystroke| {

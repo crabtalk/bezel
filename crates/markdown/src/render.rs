@@ -15,7 +15,7 @@ use gpui::{
     StyledText, TextLayout, TextRun, UnderlineStyle, Window, canvas, div, font, img, point,
     prelude::*, px, quad, size,
 };
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
     doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, Text},
@@ -652,7 +652,7 @@ fn checkbox(checked: bool, theme: &Theme) -> AnyElement {
     box_ = if checked {
         box_.bg(theme.solid)
             .border_color(theme.solid)
-            .text_size(px(9.0))
+            .text_style(TextStyle::Caption)
             .text_color(theme.on_solid)
             .child("✓")
     } else {
@@ -1120,7 +1120,7 @@ fn code_block(
                 .border_b_1()
                 .border_color(theme.border)
                 .bg(theme.ink(0.02))
-                .text_size(px(11.0))
+                .text_style(TextStyle::Subheadline)
                 .text_color(match language {
                     Some(_) => theme.text_muted,
                     None => theme.text_faint,
@@ -1194,7 +1194,7 @@ fn copy_button(
         .flex()
         .items_center()
         .cursor_pointer()
-        .text_size(px(10.5))
+        .text_style(TextStyle::Caption)
         .text_color(theme.text_muted)
         .hover(|el| el.bg(theme.ink(0.08)))
         .child(if showing { "Copied" } else { "Copy" })
