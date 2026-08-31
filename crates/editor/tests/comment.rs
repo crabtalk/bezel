@@ -16,6 +16,14 @@ const SOURCE: &str = "alpha one\n\nbravo two\n\ncharlie three";
 
 const ID: CommentId = CommentId(1);
 
+/// The primary modifier, which `editor::keys` splits the keymap on: cmd on
+/// macOS, ctrl everywhere else. A test that names one chord outright passes on
+/// one platform and silently does nothing on the other.
+#[cfg(target_os = "macos")]
+const PRIMARY: &str = "cmd";
+#[cfg(not(target_os = "macos"))]
+const PRIMARY: &str = "ctrl";
+
 fn open(cx: &mut TestAppContext) -> (Entity<Editor>, VisualTestContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
@@ -206,14 +214,14 @@ fn undo_and_redo_restore_the_anchor_with_the_document(cx: &mut TestAppContext) {
     cx.simulate_input("XX");
     assert_eq!(anchored(&editor, &mut cx), (0, 8, 11));
 
-    cx.simulate_keystrokes("cmd-z");
+    cx.simulate_keystrokes(&format!("{PRIMARY}-z"));
     assert_eq!(
         anchored(&editor, &mut cx),
         ONE,
         "the anchor of that moment came back with the document"
     );
 
-    cx.simulate_keystrokes("cmd-shift-z");
+    cx.simulate_keystrokes(&format!("{PRIMARY}-shift-z"));
     assert_eq!(
         anchored(&editor, &mut cx),
         (0, 8, 11),
