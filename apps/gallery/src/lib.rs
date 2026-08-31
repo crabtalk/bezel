@@ -1912,12 +1912,7 @@ impl Gallery {
                                     }),
                                 )
                                 .on_click(cx.listener(|view, _, _, cx| view.toggle_theme_menu(cx)))
-                                .child(
-                                    theme.select_trigger(
-                                        SELECT_CHOICES[self.theme_choice],
-                                        menu_open,
-                                    ),
-                                )
+                                .child(theme.select_trigger(SELECT_CHOICES[self.theme_choice]))
                                 .when(menu_open, |trigger| {
                                     trigger.child(popover::anchored_menu_below(
                                         "theme-select-menu",

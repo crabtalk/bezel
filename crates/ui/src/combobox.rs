@@ -263,7 +263,7 @@ impl Render for Combobox {
                         cx.listener(|combobox, _, _, _| combobox.menu.note_trigger_press()),
                     )
                     .on_click(cx.listener(|combobox, _, window, cx| combobox.toggle(window, cx)))
-                    .child(theme.select_trigger(label, open)),
+                    .child(theme.select_trigger(label)),
             )
             .when_some(card, |trigger, card| {
                 trigger.child(popover::anchored_menu_below(
