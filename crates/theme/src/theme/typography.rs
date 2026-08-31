@@ -1,6 +1,8 @@
 //! The system type ladder: eleven roles, each carrying a size and a weight.
 //!
-//! Measured on macOS 26, 2026-08-31, through `NSFont.preferredFont(forTextStyle:)`.
+//! Sizes measured on macOS 26, 2026-08-31, through
+//! `NSFont.preferredFont(forTextStyle:)`; line heights 2026-09-01, through
+//! `NSLayoutManager.defaultLineHeight(for:)` on the same fonts.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -67,6 +69,30 @@ impl TextStyle {
         self.size() * base_text_size() / Self::Body.size()
     }
 
+    /// The role's measured line height in points, at its measured [`Self::size`].
+    ///
+    /// A table beside `size`, because the ratio is not one number: it runs 1.18
+    /// at `Title` up to 1.33 at `Title3`, and does not move monotonically with
+    /// the size. Left unset, gpui leads every line at phi — 21pt on a 13pt body
+    /// against the platform's 16.
+    pub const fn line_height(self) -> f32 {
+        match self {
+            Self::LargeTitle => 32.0,
+            Self::Title => 26.0,
+            Self::Title2 => 22.0,
+            Self::Title3 => 20.0,
+            Self::Headline | Self::Body => 16.0,
+            Self::Callout => 15.0,
+            Self::Subheadline => 14.0,
+            Self::Footnote | Self::Caption | Self::Caption2 => 13.0,
+        }
+    }
+
+    /// The line box this role paints in, which [`set_base_text_size`] moves.
+    pub fn painted_line_height(self) -> f32 {
+        self.line_height() * base_text_size() / Self::Body.size()
+    }
+
     /// The role's weight. Three roles share 13pt and three share 10pt, so this
     /// is what separates them.
     pub const fn weight(self) -> FontWeight {
@@ -114,6 +140,7 @@ pub trait Typeset: Styled + Sized {
     /// Size and weight together, from [`TextStyle`].
     fn text_style(self, style: TextStyle) -> Self {
         self.text_size(px(style.painted()))
+            .line_height(px(style.painted_line_height()))
             .font_weight(style.weight())
     }
 }

@@ -27,9 +27,6 @@ const ROW_INSET: f32 = 16.0;
 const ROW_TILE: f32 = 16.0;
 /// Between a row's leading symbol and its text.
 const ROW_GAP: f32 = Theme::SPACE;
-/// The leading a row's two lines are set on, as a multiple of the painted size
-/// — `input.rs`'s `FIELD_METRICS`, against gpui's phi default.
-const ROW_LEADING: f32 = 18.0 / 13.0;
 /// A card row's vertical padding. Measured 2026-09-01 off the macOS General
 /// pane: a ~40pt row over `TextStyle::Body`'s 21pt line box.
 const ROW_PAD_Y: f32 = 10.0;
@@ -227,7 +224,6 @@ pub trait Scaffolding: ThemeExt {
             .overflow_hidden()
             .whitespace_nowrap()
             .text_style(TextStyle::Body)
-            .line_height(px(TextStyle::Body.painted() * ROW_LEADING))
             .text_color(theme.text)
             .child(title.into())
     }
@@ -245,7 +241,6 @@ pub trait Scaffolding: ThemeExt {
             .gap_x(px(Theme::SPACE))
             .gap_y(px(2.0))
             .text_style(TextStyle::Subheadline)
-            .line_height(px(TextStyle::Subheadline.painted() * ROW_LEADING))
             .text_color(theme.text_muted.opacity(0.65));
         let mut first = true;
         for fragment in fragments {
