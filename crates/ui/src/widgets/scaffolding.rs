@@ -210,12 +210,15 @@ pub trait Scaffolding: ThemeExt {
             )
     }
 
-    /// Row title.
+    /// Row title. Clipped rather than ellipsised: an ellipsis sets
+    /// `text_overflow`, which opts the label out of gpui's measure cache, and a
+    /// list of them re-measures every row on every frame it scrolls.
     fn row_title(&self, title: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         div()
             .min_w_0()
-            .truncate()
+            .overflow_hidden()
+            .whitespace_nowrap()
             .text_style(TextStyle::Headline)
             .text_color(theme.text)
             .child(title.into())
