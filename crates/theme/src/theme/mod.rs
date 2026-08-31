@@ -276,12 +276,13 @@ pub struct Theme {
     pub selection: Hsla,
     /// Terminal block cursor.
     pub cursor: Hsla,
-    /// Text caret.
+    /// Text caret — [`Self::accent`]'s lightness.
     ///
-    /// The body text colour, because that is what a caret is: the next glyph,
-    /// before you type it. It was a sampled blue once — carried over from the
-    /// app this library was extracted from, derived from nothing here — which
-    /// is why a caret in a plain paragraph arrived tinted.
+    /// Measured macOS 26, 2026-08-31: `NSColor.textInsertionPointColor` is the
+    /// accent in both appearances, where `NSColor.textColor` is white and
+    /// black. So a caret is not the next glyph before you type it, which is
+    /// what this used to carry; the platform gives it its own role, and a brand
+    /// tints it here the way the system accent tints it there.
     pub caret: Hsla,
     /// Keyboard focus ring — a hairline, so it marks the control without
     /// restating the label inside it.

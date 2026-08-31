@@ -12,14 +12,14 @@
 
 use gpui::{
     App, Context, CursorStyle, ElementInputHandler, EventEmitter, FocusHandle, Focusable,
-    MouseButton, Render, Styled as _, Window, canvas, div, prelude::*,
+    MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
 };
 use markdown::{
     Annotation, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Splice,
     Text, edit, edit::shortcut,
 };
 use motion::Painter;
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 use theme::Theme;
 
 use crate::{
@@ -62,6 +62,10 @@ pub enum EditorEvent {
 /// Shown on the focused block while it is empty — the only discoverable place
 /// to say that `/` does anything.
 const PLACEHOLDER: &str = "Type / for commands";
+
+/// Half the caret's blink period — `ui::TextField`'s, which is the 500ms on,
+/// 500ms off macOS itself uses.
+const BLINK: Duration = Duration::from_millis(500);
 
 /// The handle's box. Wide enough to be hit without crowding the margin; how
 /// far left of the text it sits is [`Layout::text_inset`](crate::Layout).
@@ -123,6 +127,10 @@ pub struct Editor {
     /// caret. Only paint knows this, so the renderer fills it.
     layouts: BlockLayouts,
     history: History,
+    /// Which half of the blink the caret is in. Flipped by [`Self::start_blink`].
+    caret_on: bool,
+    /// The blink, alive only while the document holds focus.
+    blink: Option<Task<()>>,
     /// Comment ranges, mapped through every edit and snapshotted with the
     /// document. Here rather than in the app because an undo restores a whole
     /// document and leaves no delta an app could map its own copy through.
@@ -198,6 +206,8 @@ impl Editor {
             marked: None,
             layouts: BlockLayouts::default(),
             history: History::default(),
+            caret_on: true,
+            blink: None,
             anchors: Vec::new(),
             stored: Vec::new(),
             slash: None,
@@ -295,6 +305,7 @@ impl Editor {
         self.selection = selection.clamp(&self.doc);
         self.history.interrupt();
         self.reveal = true;
+        self.caret_moved();
         cx.notify();
     }
 
@@ -366,6 +377,30 @@ impl Editor {
             .filter(|anchor| !anchor.detached())
             .map(|anchor| (anchor.range.clamp(&self.doc), anchor.state))
             .collect()
+    }
+
+    /// The caret moved: drop the blink so the next render starts a fresh one.
+    /// Without the reset it would blink through your own typing, which reads as
+    /// a dropped keystroke.
+    fn caret_moved(&mut self) {
+        self.blink = None;
+    }
+
+    /// Blink the caret for as long as the document holds focus.
+    fn start_blink(&mut self, cx: &mut Context<Self>) {
+        self.caret_on = true;
+        self.blink = Some(cx.spawn(async move |editor, cx| {
+            loop {
+                cx.background_executor().timer(BLINK).await;
+                let flipped = editor.update(cx, |editor, cx| {
+                    editor.caret_on = !editor.caret_on;
+                    cx.notify();
+                });
+                if flipped.is_err() {
+                    break;
+                }
+            }
+        }));
     }
 
     /// Where typing would land — the moving end of the selection.
@@ -446,6 +481,7 @@ impl Editor {
         self.stored.clear();
         self.pasted = None;
         self.reveal = true;
+        self.caret_moved();
     }
 
     /// Every mutation goes through here, so none of them can forget to record
@@ -477,6 +513,7 @@ impl Editor {
         // Typing moves the caret as surely as an arrow key does, and a split
         // moves it onto a block that does not exist until this frame paints.
         self.reveal = true;
+        self.caret_moved();
         cx.emit(EditorEvent::Changed);
         cx.notify();
     }
@@ -1244,6 +1281,15 @@ impl Render for Editor {
         let theme = Theme::of(cx).clone();
         let layout = Layout::of(cx);
         let focused = self.focus_handle.is_focused(window);
+        // The only place the blink starts: `caret_moved` drops the task, so the
+        // next render brings it back in phase, lit beat first.
+        if focused {
+            if self.blink.is_none() {
+                self.start_blink(cx);
+            }
+        } else {
+            self.blink = None;
+        }
         let selection = focused.then_some(self.selection);
 
         // Typed text and IME reach an entity only through an input handler
@@ -1278,6 +1324,10 @@ impl Render for Editor {
         let handle = self.focus_handle.clone().tab_stop(true);
 
         div()
+            // Stateful only so the pointer leaving can be heard: `on_hover` is
+            // what tells the gutter handle to stop pointing at a block the
+            // pointer left behind.
+            .id("bezel-editor")
             .key_context(CONTEXT)
             .track_focus(&handle)
             // Tracking focus does not take it. Without this, clicking into the
@@ -1313,6 +1363,7 @@ impl Render for Editor {
                     .clamp(&this.doc);
                     this.dragging = event.click_count == 1 && !event.modifiers.shift;
                     this.history.interrupt();
+                    this.caret_moved();
                     // Only the editor sees the press, so only the editor can
                     // say which thread it landed on.
                     if let Some(id) = this.comment_at(event.position) {
@@ -1324,6 +1375,11 @@ impl Render for Editor {
             // The drag has to be tracked from the container rather than from a
             // payload: a text selection has nothing to carry, and gpui's drag
             // payload is for things being dropped somewhere.
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                if !*hovered && this.hovered.take().is_some() {
+                    cx.notify();
+                }
+            }))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                 // Ahead of every drag branch below, because the pointer's shape
                 // is about where it *is* rather than about what it is doing.
@@ -1537,21 +1593,27 @@ impl Render for Editor {
             // any scrolling ancestor, and a drag through it never reaches
             // `on_mouse_move`, which fires only while this element is the one
             // under the pointer.
-            .child(div().w_full().pl(gpui::px(layout.text_inset)).child(
-                markdown::render_with_selection(
-                    &self.doc,
-                    selection,
-                    Some(&self.layouts),
-                    &self.annotations(),
-                    focused.then(|| PLACEHOLDER.into()),
-                    // A caret goes into the caption here, so it is always
-                    // painted — an editor that could hide it would be hiding
-                    // a place you can already be typing.
-                    markdown::Caption::Shown,
-                    window,
-                    cx,
-                ),
-            ))
+            .child(
+                div()
+                    .w_full()
+                    .pl(gpui::px(layout.text_inset))
+                    .child(markdown::render_with(
+                        &self.doc,
+                        markdown::Editing {
+                            selection,
+                            caret_on: self.caret_on,
+                            layouts: Some(&self.layouts),
+                            annotations: &self.annotations(),
+                            placeholder: focused.then(|| PLACEHOLDER.into()),
+                            // A caret goes into the caption here, so it is always
+                            // painted — an editor that could hide it would be
+                            // hiding a place you can already be typing.
+                            caption: markdown::Caption::Shown,
+                        },
+                        window,
+                        cx,
+                    )),
+            )
             // Last, so the layouts it reads are this frame's rather than the
             // one before — children paint in order.
             .child(
@@ -1569,7 +1631,7 @@ impl Render for Editor {
             .children(self.url_prompt(&theme, cx))
             .children(self.image_target(cx))
             .children(self.resize_preview())
-            .children(self.handle(&theme, cx))
+            .children(self.handle(focused, &theme, cx))
             .children(self.resize_handle(&theme, cx))
             .children(self.drop_indicator(&theme))
             .children(self.language_chip(&theme, cx))

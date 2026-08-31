@@ -1629,7 +1629,12 @@ impl Element for TextFieldElement {
             (
                 Vec::new(),
                 Some(fill(
-                    Bounds::new(origin + at, gpui::size(CARET_WIDTH, line_height)),
+                    // The font's size rather than the line's: leading is not
+                    // the caret's to fill.
+                    Bounds::new(
+                        origin + at + gpui::point(px(0.), (line_height - font_size) / 2.),
+                        gpui::size(CARET_WIDTH, font_size),
+                    ),
                     theme.caret,
                 )),
             )

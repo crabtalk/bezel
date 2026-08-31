@@ -39,6 +39,9 @@ const CODE_PADDING_Y: f32 = 10.0;
 /// What a fence with no info string calls itself, in its header and in a
 /// picker — one spelling, so the label and the menu row cannot disagree.
 pub const PLAIN_LANGUAGE: &str = "Plain";
+/// Width of the caret. Wider than a hairline, because it has to read at a
+/// glance against the text it sits in.
+const CARET_WIDTH: f32 = 1.5;
 /// Inline code's wash is a rounded quad painted under the glyphs: a run's
 /// `background_color` can only ever be a square box.
 const INLINE_CODE_RADIUS: f32 = 4.5;
@@ -121,6 +124,43 @@ impl Annotation {
             Self::Open => theme.warning.opacity(0.20),
             Self::Resolved => theme.warning.opacity(0.08),
             Self::Active => theme.warning.opacity(0.38),
+        }
+    }
+}
+
+/// What an editor paints over a document.
+///
+/// One value rather than six parameters, and the reason it is public: the
+/// caret, the selection, the comment washes and the layout sink all arrive
+/// together or not at all, and a read-only [`render`] sets none of them.
+#[derive(Clone)]
+pub struct Editing<'a> {
+    /// The caret and what it has selected. `None` paints neither — a document
+    /// nobody is editing.
+    pub selection: Option<Selection>,
+    /// The blink's lit half. A caret painted on every frame reads as frozen,
+    /// and the phase belongs to whoever owns the focus.
+    pub caret_on: bool,
+    /// Filled as the document paints, for a caller resolving clicks against it.
+    pub layouts: Option<&'a BlockLayouts>,
+    /// Ranges washed under the text, in the order given.
+    pub annotations: &'a [(Selection, Annotation)],
+    /// Shown on the caret's block while it holds nothing.
+    pub placeholder: Option<SharedString>,
+    pub caption: Caption,
+}
+
+impl Default for Editing<'_> {
+    fn default() -> Self {
+        Self {
+            selection: None,
+            // Lit, so that a caller setting a selection and nothing else gets a
+            // caret rather than a mystery.
+            caret_on: true,
+            layouts: None,
+            annotations: &[],
+            placeholder: None,
+            caption: Caption::default(),
         }
     }
 }
@@ -395,6 +435,7 @@ struct Overlay<'a> {
     block: usize,
     part: Part,
     selection: Option<Selection>,
+    caret_on: bool,
     layouts: Option<&'a BlockLayouts>,
     /// Ranges washed under the text, in the order the caller gave them.
     annotations: &'a [(Selection, Annotation)],
@@ -411,6 +452,15 @@ impl<'a> Overlay<'a> {
 
     fn here(&self) -> Cursor {
         Cursor::new(self.block, self.part, 0)
+    }
+
+    /// The caret to paint: where it is, and only on the blink's lit half.
+    ///
+    /// Separate from [`Self::caret`] because the blink must not reach anything
+    /// but the quad — a block whose paint depends on holding the caret would
+    /// otherwise swap itself out twice a second.
+    fn caret_painted(&self) -> Option<usize> {
+        self.caret_on.then(|| self.caret()).flatten()
     }
 
     /// The caret's byte offset, if the head is in *this* text.
@@ -477,7 +527,15 @@ pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
 
 /// Render a document.
 pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) -> AnyElement {
-    render_with_selection(doc, None, None, &[], None, caption, window, cx)
+    render_with(
+        doc,
+        Editing {
+            caption,
+            ..Editing::default()
+        },
+        window,
+        cx,
+    )
 }
 
 /// Render a document with a caret and a selection in it.
@@ -487,19 +545,15 @@ pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) ->
 /// so nothing about layout depends on where the caret sits. An editor supplies
 /// the selection and owns the focus and the keys; painting a caret and a few
 /// quads is not worth a second renderer.
-// Six of these plus gpui's own two. Bundling them would put a public struct in
-// front of the one function an editor calls, for no reader's benefit.
-#[allow(clippy::too_many_arguments)]
-pub fn render_with_selection(
-    doc: &Doc,
-    selection: Option<Selection>,
-    layouts: Option<&BlockLayouts>,
-    annotations: &[(Selection, Annotation)],
-    placeholder: Option<SharedString>,
-    caption: Caption,
-    window: &mut Window,
-    cx: &mut App,
-) -> AnyElement {
+pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut App) -> AnyElement {
+    let Editing {
+        selection,
+        caret_on,
+        layouts,
+        annotations,
+        placeholder,
+        caption,
+    } = editing;
     // Refilled every frame, in paint order — and emptied in *prepaint*, not
     // here. An editor reads last frame's positions while building this frame's
     // tree (a menu anchored at the caret, a handle beside a block), and
@@ -527,6 +581,7 @@ pub fn render_with_selection(
             block: ix,
             part: Part::Body,
             selection,
+            caret_on,
             layouts,
             annotations,
             placeholder: placeholder.as_ref(),
@@ -913,13 +968,15 @@ fn painted_text(
     theme: &Theme,
 ) -> AnyElement {
     let (ix, part) = (overlay.block, overlay.part);
-    let (caret, selected) = (overlay.caret(), overlay.selected(len));
+    let (caret, selected) = (overlay.caret_painted(), overlay.selected(len));
     let span = 0..len;
     // Only where the caret already is, and only while there is nothing to
     // read: a hint on every empty block would be a page of grey.
     let hint = overlay
         .placeholder
-        .filter(|_| len == 0 && caret.is_some())
+        // The caret's own presence, not the blink's phase — a hint that came
+        // and went twice a second would be unreadable.
+        .filter(|_| len == 0 && overlay.caret().is_some())
         .map(|hint| {
             div()
                 .absolute()
@@ -993,7 +1050,7 @@ fn painted_text(
                 && let Some(head) = layout.position_for_index(offset)
             {
                 window.paint_quad(quad(
-                    Bounds::new(head, gpui::size(px(1.5), layout.line_height())),
+                    caret_quad(head, size, layout.line_height()),
                     px(0.0),
                     caret_color,
                     px(0.0),
@@ -1040,6 +1097,19 @@ fn painted_text(
         .children(hint)
         .child(painted)
         .into_any_element()
+}
+
+/// The caret's quad: the text's own size, centred in the line box.
+///
+/// The leading is not the caret's to take. A document is set with air around
+/// its lines, and a caret filling all of it reads as a second, larger font
+/// standing where the text should be.
+fn caret_quad(head: Point<Pixels>, size: f32, line_height: Pixels) -> Bounds<Pixels> {
+    let inset = (line_height - px(size)) / 2.0;
+    Bounds::new(
+        head + point(px(0.0), inset),
+        gpui::size(px(CARET_WIDTH), px(size)),
+    )
 }
 
 /// The rectangles a byte range occupies, one per visual row.
@@ -1150,9 +1220,10 @@ fn code_block(
         })
         .collect();
 
-    let caret = overlay.caret();
+    let caret = overlay.caret_painted();
     let selected = overlay.selected(code.len());
     let sink = overlay.layouts.cloned();
+    let code_size = typography.code.size();
     let annotated = overlay.annotated(code.len(), theme);
     let (caret_color, selection_color) = (theme.caret, theme.selection);
     let underlay = canvas(
@@ -1200,7 +1271,7 @@ fn code_block(
                     && let Some(head) = layout.position_for_index(offset - span.start)
                 {
                     window.paint_quad(quad(
-                        Bounds::new(head, size(px(1.5), layout.line_height())),
+                        caret_quad(head, code_size, layout.line_height()),
                         px(0.0),
                         caret_color,
                         px(0.0),

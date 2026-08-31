@@ -20,15 +20,29 @@ const CHIP_PAD_Y: f32 = 3.0;
 
 /// Selector the interaction tests look the painted menu up by.
 pub const SLASH_MENU: &str = "slash-menu";
+/// The gutter handle's, for the same reason.
+pub const BLOCK_HANDLE: &str = "block-handle";
 
 impl Editor {
-    /// The gutter handle, on the block under the pointer.
+    /// The gutter handle, on the block being dragged, else the one under the
+    /// pointer, else the one the caret is in.
     ///
-    /// One handle rather than one per block: only the hovered block shows it,
-    /// so a single element placed from the recorded frames does the whole job
-    /// and the renderer stays clear of editor concerns.
-    pub(super) fn handle(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let ix = self.lifted.map(|(from, _)| from).or(self.hovered)?;
+    /// One handle rather than one per block: a single element placed from the
+    /// recorded frames does the whole job and the renderer stays clear of
+    /// editor concerns. The caret comes last because a pointer in the document
+    /// is the more immediate intent — and it comes at all because reaching a
+    /// block by keyboard should not mean reaching for the mouse to act on it.
+    pub(super) fn handle(
+        &self,
+        focused: bool,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let ix = self
+            .lifted
+            .map(|(from, _)| from)
+            .or(self.hovered)
+            .or_else(|| focused.then(|| self.cursor().block))?;
         let bounds = self.layouts.block_bounds(ix)?;
         // Centred on the block's first row, not dropped at the top of its box.
         // A block with nothing painted in it has no row to centre on and keeps
@@ -39,7 +53,8 @@ impl Editor {
         };
         Some(
             div()
-                .id("block-handle")
+                .id(BLOCK_HANDLE)
+                .debug_selector(|| BLOCK_HANDLE.to_string())
                 .absolute()
                 .left(bounds.origin.x - self.origin.x - px(Layout::of(cx).text_inset))
                 .top(top - self.origin.y)

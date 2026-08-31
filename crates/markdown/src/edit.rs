@@ -441,6 +441,14 @@ impl Doc {
                 let end = self.blocks[previous]
                     .text_at(part)
                     .map_or(0, |text| text.text.len());
+                // Stepping into a fence, a caption or a cell leaves this block
+                // where it is, which is right while it still holds something
+                // and a trap once it does not: nothing above it merges, so a
+                // block left empty here is one backspace can never reach again.
+                if tail.is_empty() {
+                    self.blocks.remove(at.block);
+                    self.repair();
+                }
                 Some(Cursor::new(previous, part, end))
             }
             None => {
