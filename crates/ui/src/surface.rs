@@ -177,14 +177,16 @@ impl Surface {
         self
     }
 
-    /// The card's rounding in pixels, which only a rem size resolves.
-    fn corners(&self, rem: Pixels) -> Corners<Pixels> {
+    /// The card's rounding in pixels, which only a rem size resolves — clamped
+    /// to the box, since gpui reads a radius past half of it as a sharp corner.
+    fn corners(&self, bounds: Bounds<Pixels>, rem: Pixels) -> Corners<Pixels> {
         Corners {
             top_left: self.corners.top_left.to_pixels(rem),
             top_right: self.corners.top_right.to_pixels(rem),
             bottom_right: self.corners.bottom_right.to_pixels(rem),
             bottom_left: self.corners.bottom_left.to_pixels(rem),
         }
+        .clamp_radii_for_quad_size(bounds.size)
     }
 }
 
@@ -234,12 +236,12 @@ impl Element for Surface {
     ) {
         let theme = Theme::of(cx);
         let glass = self.glass.tokens(theme);
+        let corners = self.corners(bounds, window.rem_size());
         // The backdrop-blur primitive is macOS Metal's and wgpu's alone. The
         // surface's fill lives inside it, so anywhere it will not run the fill
         // is painted here — the look's own tint, so the card degrades to a
         // surface with the page showing through rather than to an opaque slab.
         if !lensed(theme) {
-            let corners = self.corners(window.rem_size());
             let tint = self.tint.unwrap_or(glass.spec.tint);
             window.paint_quad(fill(bounds, tint).corner_radii(corners));
         }
@@ -263,7 +265,6 @@ impl Element for Surface {
                 edge_width: px(glass.spec.edge_width),
                 edge_aa: px(glass.spec.edge_aa),
             };
-            let corners = self.corners(window.rem_size());
             window.paint_layer(bounds, |window| {
                 window.paint_backdrop_blur(bounds, corners, effect);
                 // After the blur, never before: the blur samples what is

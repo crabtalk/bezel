@@ -1906,6 +1906,21 @@ impl Gallery {
                                 .on_click(cx.listener(move |view, _, _, cx| view.press(label, cx)))
                                 .into_any_element()
                         }));
+                let capsule = theme.control_group().rounded_full().children(
+                    [
+                        (icons::ALT_ARROW_LEFT, "back"),
+                        (icons::ALT_ARROW_RIGHT, "forward"),
+                    ]
+                    .into_iter()
+                    .map(|(glyph, name)| {
+                        theme
+                            .icon_button(glyph, ButtonStyle::Ghost, Some(Fade::new(view, name)))
+                            .rounded_full()
+                            .id(name)
+                            .on_click(cx.listener(move |view, _, _, cx| view.press(name, cx)))
+                            .into_any_element()
+                    }),
+                );
                 let lensed = row().children(toolbar.into_iter().map(|(glyph, name)| {
                     theme
                         .icon_button(
@@ -1984,6 +1999,14 @@ impl Gallery {
                     ))
                     .child(row().child(cluster).child(split))
                     .child(row().child(texts))
+                    .child(hint(
+                        &theme,
+                        "cut both the track and its items round and the group is the \
+                         capsule a macOS 26 toolbar carries its back and forward pair \
+                         in. nothing has a radius to pick: a round track and a round \
+                         item are concentric wherever the inset lands.",
+                    ))
+                    .child(row().child(capsule))
                     .child(hint(
                         &theme,
                         "cut the same button to a circle, hand it the surface the \
