@@ -284,6 +284,23 @@ impl BlockLayouts {
             .map(|(ix, _)| *ix)
     }
 
+    /// Where a block's first painted row sits, and how tall that row is — what
+    /// a mark in the gutter has to line up with.
+    ///
+    /// [`Self::block_bounds`] is not that: it spans every row the block holds,
+    /// and a heading's single row is taller than a paragraph's, so anything
+    /// placed from the top of the box rides above the text it points at.
+    /// `None` for a block that paints no text at all, a rule being the one
+    /// that does.
+    pub fn first_row(&self, ix: usize) -> Option<(Pixels, Pixels)> {
+        let texts = &self.0.borrow().texts;
+        let painted = texts.iter().find(|painted| painted.block == ix)?;
+        Some((
+            painted.layout.bounds().origin.y,
+            painted.layout.line_height(),
+        ))
+    }
+
     /// Where a block painted last frame, in window coordinates.
     pub fn block_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
         self.0

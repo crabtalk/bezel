@@ -27,12 +27,19 @@ impl Editor {
     pub(super) fn handle(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         let ix = self.lifted.map(|(from, _)| from).or(self.hovered)?;
         let bounds = self.layouts.block_bounds(ix)?;
+        // Centred on the block's first row, not dropped at the top of its box.
+        // A block with nothing painted in it has no row to centre on and keeps
+        // the box's top.
+        let top = match self.layouts.first_row(ix) {
+            Some((row, line)) => row + (line - px(HANDLE_SIZE)) / 2.0,
+            None => bounds.origin.y,
+        };
         Some(
             div()
                 .id("block-handle")
                 .absolute()
                 .left(bounds.origin.x - self.origin.x - px(HANDLE_GUTTER))
-                .top(bounds.origin.y - self.origin.y)
+                .top(top - self.origin.y)
                 .w(px(HANDLE_SIZE))
                 .h(px(HANDLE_SIZE))
                 .flex()
