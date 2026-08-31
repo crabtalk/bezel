@@ -280,7 +280,7 @@ impl Transcript {
                         *failed,
                         output.map(|_| open),
                     )
-                    .hover(widgets::step_row_hover)
+                    .hover(|s| s.bg(theme.element_hover))
                     .id(SharedString::from(format!("beat-{index}")))
                     .on_click(cx.listener(move |view: &mut Self, _, _, cx| {
                         if !view.open_output.insert(index) {

@@ -129,7 +129,7 @@ pub fn control_bar(
 ///
 /// Caller adds id, click and its own `.hover(..)`: gpui panics on a second
 /// hover call, and the wash differs by state (a lit toggle is not a resting
-/// one). [`Theme::glass_hover`] is the wash to reach for.
+/// one). [`Theme::element_hover`] is the wash to reach for.
 pub fn bar_button(icon: &'static str, diameter: f32, tint: gpui::Hsla) -> gpui::Div {
     div()
         .flex_none()

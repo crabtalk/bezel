@@ -20,8 +20,10 @@ impl Theme {
             surface_card: color::grey(0x0e),
             surface_dialog: color::grey(0x10),
             surface_overlay: color::grey(0x16),
-            element_hover: hsla(0.0, 0.0, 0.92, 0.11),
-            element_active: hsla(0.0, 0.0, 0.92, 0.16),
+            // `../desktop`'s `--color-hover`, pure ink: white at 8%.
+            element_hover: hsla(0.0, 0.0, 1.0, 0.08),
+            // `--color-active`, a rung above the hover: white at 12%.
+            element_active: hsla(0.0, 0.0, 1.0, 0.12),
             border: hsla(0.0, 0.0, 1.0, 0.08),
             border_strong: hsla(0.0, 0.0, 1.0, 0.14),
             text: color::neutral(0.922),       // ~neutral-200
@@ -155,8 +157,10 @@ impl Theme {
             surface_card: color::grey(0xff),
             surface_dialog: color::grey(0xff),
             surface_overlay: color::grey(0xff),
-            element_hover: hsla(0.0, 0.0, 0.10, 0.06),
-            element_active: hsla(0.0, 0.0, 0.10, 0.10),
+            // The same token in light: black at 4%.
+            element_hover: hsla(0.0, 0.0, 0.0, 0.04),
+            // The same rung in light: black at 6%.
+            element_active: hsla(0.0, 0.0, 0.0, 0.06),
             border: hsla(0.0, 0.0, 0.0, 0.10),
             border_strong: hsla(0.0, 0.0, 0.0, 0.17),
             // ~neutral-850. Pure neutral-900 measures 17.9:1 on white — *more*

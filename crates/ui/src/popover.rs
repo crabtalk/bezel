@@ -888,8 +888,8 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
                 ))
                 .bg(motion::hover_blend(
                     &fade,
-                    theme::wash(0.0),
-                    theme::card_selected_bg(),
+                    theme::ink(0.0),
+                    theme.element_hover,
                 ));
             // Imperative form — the caller's `.id(...)` makes the element stateful
             // (hover listeners need element state, `.on_hover` needs `Stateful`).

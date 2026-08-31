@@ -2339,7 +2339,7 @@ impl Gallery {
                                     .child(
                                         theme
                                             .collapsible_header("Advanced", self.expanded)
-                                            .hover(widgets::collapsible_header_hover),
+                                            .hover(|s| s.bg(theme.element_hover)),
                                     ),
                             )
                             .when(self.expanded, |el| {
@@ -2415,7 +2415,7 @@ impl Gallery {
                                                 if self.running { "Working" } else { "Details" },
                                                 open,
                                             )
-                                            .hover(widgets::collapsible_header_hover),
+                                            .hover(|s| s.bg(theme.element_hover)),
                                     ),
                             )
                             .when(open, |el| {
@@ -2647,7 +2647,7 @@ impl Gallery {
                             .child(caption("Traffic lights cleared"))
                             .child(pressable(
                                 {
-                                    let hover = theme.glass_hover();
+                                    let hover = theme.element_hover;
                                     control_bar::bar_button(icons::MAGNIFER, 24.0, theme.text_muted)
                                         .hover(move |s| s.bg(hover))
                                 },
@@ -2754,7 +2754,7 @@ impl Gallery {
 
             "control-bar" => {
                 let glyph = |path: &'static str| {
-                    let hover = theme.glass_hover();
+                    let hover = theme.element_hover;
                     ui::control_bar::bar_button(path, 30.0, theme.text_muted)
                         .id(path)
                         .hover(move |s| s.bg(hover))
@@ -2925,14 +2925,14 @@ impl Gallery {
                         .child(
                             theme
                                 .card_row(true)
-                                .hover(widgets::card_row_hover)
+                                .hover(|s| s.bg(theme.element_hover))
                                 .child(theme.row_tile(icons::MONITOR))
                                 .child(theme.row_title("First row")),
                         )
                         .child(
                             theme
                                 .card_row(false)
-                                .hover(widgets::card_row_hover)
+                                .hover(|s| s.bg(theme.element_hover))
                                 .child(theme.row_tile(icons::FOLDER))
                                 .child(theme.row_title("Second row")),
                         ),
@@ -3287,7 +3287,7 @@ impl Gallery {
                         .rounded(px(Theme::control_radius()))
                         .text_style(TextStyle::Callout)
                         .text_color(if on { theme.text } else { theme.text_muted })
-                        .bg(if on { theme.glass_hover() } else { theme.bg })
+                        .bg(if on { theme.element_hover } else { theme.bg })
                         .cursor_pointer()
                         .child(bg_names[i])
                         .on_click(cx.listener(move |view, _, _, cx| {
@@ -3410,7 +3410,7 @@ impl Gallery {
                                     .rounded(px(Theme::control_radius()))
                                     .text_style(TextStyle::Callout)
                                     .text_color(if on { theme.text } else { theme.text_muted })
-                                    .bg(if on { theme.glass_hover() } else { theme.bg })
+                                    .bg(if on { theme.element_hover } else { theme.bg })
                                     .cursor_pointer()
                                     .child(probe_style_name(style))
                                     // Land on the look's shipped numbers, so
@@ -3435,7 +3435,7 @@ impl Gallery {
                                         theme.text_muted
                                     })
                                     .bg(if self.probe_tint {
-                                        theme.glass_hover()
+                                        theme.element_hover
                                     } else {
                                         theme.bg
                                     })
@@ -3615,7 +3615,7 @@ impl Gallery {
                                     failed,
                                     output.map(|_| open),
                                 )
-                                .hover(widgets::step_row_hover)
+                                .hover(|s| s.bg(theme.element_hover))
                                 .id(SharedString::from(format!("step-{index}")))
                                 .on_click(cx.listener(move |view, _, _, cx| {
                                     view.step_open[index] = !view.step_open[index];
@@ -4487,7 +4487,7 @@ fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> An
                     .children(work.iter().enumerate().map(|(index, step)| {
                         theme
                             .card_row(index == 0)
-                            .hover(widgets::card_row_hover)
+                            .hover(|s| s.bg(theme.element_hover))
                             .items_start()
                             .child(
                                 div()
@@ -4867,14 +4867,14 @@ impl Render for Gallery {
                                 .child(
                                     theme
                                         .card_row(true)
-                                        .hover(widgets::card_row_hover)
+                                        .hover(|s| s.bg(theme.element_hover))
                                         .child(theme.row_tile(icons::MONITOR))
                                         .child(theme.row_title("Appearance")),
                                 )
                                 .child(
                                     theme
                                         .card_row(false)
-                                        .hover(widgets::card_row_hover)
+                                        .hover(|s| s.bg(theme.element_hover))
                                         .child(theme.row_tile(icons::FOLDER))
                                         .child(theme.row_title("Storage")),
                                 ),

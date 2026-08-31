@@ -47,24 +47,6 @@ impl Theme {
         self.glass().a < 1.0
     }
 
-    /// Hover wash for chrome that sits ON GLASS (sidebar rows, tabs, titlebar
-    /// buttons). One recipe, both appearances: the 11% [`wash`](crate::paint::wash),
-    /// tone-flipped by the palette convention (soft-white on dark, soft-black
-    /// on light).
-    ///
-    /// Hover and selection share the SAME fill (selection adds only the ring).
-    /// Light previously ran heavy white washes here (hover 0.55, selection
-    /// 0.92) after a black-hover-next-to-white-selection mismatch report; now
-    /// hover and selection are *both* the tone-flipped wash, so they lift the
-    /// same way again. Light's alpha sits under dark's: dark's 11% at the
-    /// light tone read too dark over the bright frost (user report).
-    pub fn glass_hover(&self) -> Hsla {
-        match self.appearance {
-            Appearance::Dark => paint::wash_for(Appearance::Dark, 0.11),
-            Appearance::Light => paint::wash_for(Appearance::Light, 0.06),
-        }
-    }
-
     /// The translucent tint floating cards paint over their backdrop blur
     /// (see `bezel::material`). Dark: the reference
     /// `.glass-surface` menu tint verbatim — `oklch(0.33 0 0 / 34%)`. The

@@ -39,7 +39,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use theme::{TextStyle, Theme, Typeset, ink};
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::popover;
 
@@ -350,14 +350,14 @@ pub fn menubar_title(theme: &Theme, label: impl Into<SharedString>, open: bool) 
         .cursor_pointer()
         .child(label.into());
     if open {
-        title.bg(ink(0.08)).text_color(theme.text)
+        title.bg(theme.element_active).text_color(theme.text)
     } else {
         // A plain hover style, not a `motion::hover_blend` fade key: the fade
         // installs an `on_hover` *listener*, and gpui allows only one per
         // element — the switch below needs it.
         title
             .text_color(theme.text_muted)
-            .hover(|s| s.bg(ink(0.05)).text_color(theme.text))
+            .hover(|s| s.bg(theme.element_hover).text_color(theme.text))
     }
 }
 

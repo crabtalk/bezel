@@ -176,7 +176,7 @@ pub trait Scaffolding: ThemeExt {
 
     /// One card row: `border-t border-border px-5 py-3.5 first:border-t-0`.
     /// Hover is caller-owned — gpui panics on a second hover, so the default
-    /// wash is [`super::card_row_hover`] for the caller to chain.
+    /// wash is [`Theme::element_hover`] for the caller to chain.
     fn card_row(&self, first: bool) -> Div {
         let theme = self.theme();
         div()

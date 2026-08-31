@@ -199,7 +199,7 @@ pub fn row(
     } else {
         // The same wash `card_row` uses, so a table and a card list read as one
         // system rather than two.
-        row.hover(|s| s.bg(ink(0.015)))
+        row.hover(|s| s.bg(theme.element_hover))
     };
     row.children(
         columns

@@ -186,9 +186,10 @@ pub struct Theme {
     pub surface_dialog: Hsla,
     /// Popover, menu and command-palette surface — the highest plane.
     pub surface_overlay: Hsla,
-    /// Hover wash for interactive rows/buttons.
+    /// Hover wash for interactive rows and buttons, on glass and off it alike:
+    /// `../desktop`'s `--color-hover`.
     pub element_hover: Hsla,
-    /// Active/selected wash.
+    /// Active/selected wash, one rung over the hover — `--color-active`.
     pub element_active: Hsla,
     /// Hairline border.
     pub border: Hsla,

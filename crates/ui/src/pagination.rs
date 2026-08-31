@@ -22,7 +22,7 @@
 
 use gpui::{SharedString, div, prelude::*, px};
 
-use theme::{TextStyle, Theme, Typeset, ink};
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{icons, widgets};
 
@@ -121,7 +121,7 @@ pub fn page_button(theme: &Theme, page: usize, current: bool) -> gpui::Div {
     } else {
         button
             .text_color(theme.text_muted)
-            .hover(|s| s.bg(ink(0.06)).text_color(theme.text))
+            .hover(|s| s.bg(theme.element_hover).text_color(theme.text))
     }
 }
 
@@ -155,7 +155,7 @@ pub fn step(theme: &Theme, icon: &'static str, enabled: bool) -> gpui::Div {
         .border_color(widgets::RING_SLOT);
     if enabled {
         step.cursor_pointer()
-            .hover(|s| s.bg(ink(0.06)))
+            .hover(|s| s.bg(theme.element_hover))
             .child(icons::icon(icon).size(px(14.0)).text_color(theme.text))
     } else {
         step.child(
