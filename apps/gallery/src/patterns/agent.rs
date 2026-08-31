@@ -27,7 +27,7 @@ use motion::{Fade, Painter};
 use theme::Theme;
 use ui::{
     icons,
-    input::{Shape, TextField},
+    input::{FieldEvent, Shape, TextField},
     loaders, popover,
     scroll::{self, FollowState, ScrollbarState},
     widgets,
@@ -684,8 +684,12 @@ impl Composer {
                 .with_key_context(COMPOSER_CONTEXT)
                 .with_placeholder("Ask anything, or # to attach a file")
         });
-        cx.observe(&field, |composer: &mut Self, _, cx| composer.reread(cx))
-            .detach();
+        // Both variants: the mention behind the caret changes when the text does
+        // and when the caret alone moves.
+        cx.subscribe(&field, |composer: &mut Self, _, _: &FieldEvent, cx| {
+            composer.reread(cx)
+        })
+        .detach();
         Self {
             field,
             mention: None,

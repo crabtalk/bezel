@@ -17,14 +17,14 @@
 //! // …then render it: .child(field.clone())
 //! ```
 
-use std::ops::Range;
+use std::{ops::Range, time::Duration};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, FocusHandle, Focusable, GlobalElementId, KeyBinding, LayoutId, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, SharedString, Style,
-    TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill, prelude::*,
-    px, relative,
+    EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, KeyBinding,
+    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
+    SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine,
+    actions, div, fill, prelude::*, px, relative,
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
@@ -74,6 +74,24 @@ actions!(
 /// field accumulating snapshots forever. Override per field with
 /// [`TextField::with_undo_limit`].
 pub const DEFAULT_UNDO_LIMIT: usize = 10;
+
+/// What a field reports, one per user action.
+///
+/// [`gpui::Context::observe`] fires on every `notify`, which includes repaints
+/// nothing asked for — the caret's own blink among them. A picker refiltering
+/// on those throws its cursor back to the first row twice a second. Subscribe
+/// to this instead, and take only the half you need: a picker filters on
+/// [`Self::Changed`], a composer reading the word behind the caret wants both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldEvent {
+    /// The text is different.
+    Changed,
+    /// The text is the same and the caret is somewhere else.
+    Moved,
+}
+
+/// Half the caret's blink period — the 500ms on, 500ms off macOS itself uses.
+const BLINK: Duration = Duration::from_millis(500);
 
 /// Width of the caret. Named because horizontal scrolling has to keep the caret
 /// itself on screen, not merely the character before it.
@@ -291,6 +309,10 @@ pub struct TextField {
     /// stands in for text already in place — a rename in a list row, where the
     /// box would be a second frame inside the row's own.
     frame: bool,
+    /// Which half of the blink the caret is in. Flipped by [`Self::start_blink`].
+    caret_on: bool,
+    /// The blink, alive only while the field holds focus.
+    blink: Option<Task<()>>,
     /// Set by anything that moves the caret, cleared once a frame has scrolled
     /// it back into view.
     ///
@@ -299,6 +321,8 @@ pub struct TextField {
     /// so scrolling away to read would be impossible.
     follow_caret: bool,
 }
+
+impl EventEmitter<FieldEvent> for TextField {}
 
 impl TextField {
     pub fn new(cx: &mut Context<Self>) -> Self {
@@ -323,6 +347,8 @@ impl TextField {
             undo_limit: DEFAULT_UNDO_LIMIT,
             last_edit: None,
             key_context: None,
+            caret_on: true,
+            blink: None,
             follow_caret: false,
         }
     }
@@ -402,6 +428,7 @@ impl TextField {
         let end = self.content.len();
         self.selected_range = end..end;
         self.marked_range = None;
+        cx.emit(FieldEvent::Changed);
         cx.notify();
     }
 
@@ -419,6 +446,31 @@ impl TextField {
     ) {
         self.placeholder = placeholder.into();
         cx.notify();
+    }
+
+    /// The caret moved: bring it back into view, and drop the blink so the next
+    /// render starts a fresh one. Without the reset the caret would blink
+    /// through your own typing, which reads as a dropped keystroke.
+    fn caret_moved(&mut self) {
+        self.follow_caret = true;
+        self.blink = None;
+    }
+
+    /// Blink the caret for as long as the field holds focus.
+    fn start_blink(&mut self, cx: &mut Context<Self>) {
+        self.caret_on = true;
+        self.blink = Some(cx.spawn(async move |field, cx| {
+            loop {
+                cx.background_executor().timer(BLINK).await;
+                let flipped = field.update(cx, |field, cx| {
+                    field.caret_on = !field.caret_on;
+                    cx.notify();
+                });
+                if flipped.is_err() {
+                    break;
+                }
+            }
+        }));
     }
 
     /// Where the caret is, as a byte offset into [`Self::content`].
@@ -760,7 +812,8 @@ impl TextField {
         self.marked_range = None;
         // The next edit must not join whatever group was open before.
         self.last_edit = None;
-        self.follow_caret = true;
+        self.caret_moved();
+        cx.emit(FieldEvent::Changed);
         cx.notify();
     }
 
@@ -798,7 +851,8 @@ impl TextField {
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
         self.goal_x = None;
-        self.follow_caret = true;
+        self.caret_moved();
+        cx.emit(FieldEvent::Moved);
         cx.notify()
     }
 
@@ -828,7 +882,7 @@ impl TextField {
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.goal_x = None;
-        self.follow_caret = true;
+        self.caret_moved();
         if self.selection_reversed {
             self.selected_range.start = offset
         } else {
@@ -838,6 +892,7 @@ impl TextField {
             self.selection_reversed = !self.selection_reversed;
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
+        cx.emit(FieldEvent::Moved);
         cx.notify()
     }
 
@@ -1187,7 +1242,8 @@ impl EntityInputHandler for TextField {
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
         self.last_edit = Some((kind, self.selected_range.end));
-        self.follow_caret = true;
+        self.caret_moved();
+        cx.emit(FieldEvent::Changed);
         cx.notify();
     }
 
@@ -1216,6 +1272,8 @@ impl EntityInputHandler for TextField {
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
 
+        self.caret_moved();
+        cx.emit(FieldEvent::Changed);
         cx.notify();
     }
 
@@ -1255,6 +1313,15 @@ impl Focusable for TextField {
 
 impl Render for TextField {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The only place the blink starts: `caret_moved` drops the task, so the
+        // next render brings it back in phase, solid beat first.
+        if self.focus_handle.is_focused(_window) {
+            if self.blink.is_none() {
+                self.start_blink(cx);
+            }
+        } else {
+            self.blink = None;
+        }
         let theme = Theme::of(cx);
         let mut key_context = gpui::KeyContext::default();
         key_context.add(KEY_CONTEXT);
@@ -1583,6 +1650,7 @@ impl Element for TextFieldElement {
         cx: &mut App,
     ) {
         let focus_handle = self.field.read(cx).focus_handle.clone();
+        let caret_on = self.field.read(cx).caret_on;
         window.handle_input(
             &focus_handle,
             ElementInputHandler::new(bounds, self.field.clone()),
@@ -1611,6 +1679,7 @@ impl Element for TextFieldElement {
             // The caret only exists while focused — an unfocused field showing
             // one reads as two cursors on screen.
             if focus_handle.is_focused(window)
+                && caret_on
                 && let Some(cursor) = cursor
             {
                 window.paint_quad(cursor);

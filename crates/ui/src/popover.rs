@@ -11,6 +11,7 @@
 //! classification) lives in free functions with unit tests; the elements only
 //! feed them measurements/events.
 
+use crate::icons;
 use gpui::{
     Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
 };
@@ -1052,21 +1053,32 @@ pub fn kbd_hint(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
         .child(label.into())
 }
 
-/// The search/text input frame at the top of a picker popover (the reference
-/// `searchInput`: `w-full rounded-lg bg-white/[0.04] px-2.5 py-1.5
-/// text-[13px]` + `mb-1`, borderless — full width inside the card's own
-/// p-1, only a 4px bottom margin).
-pub fn search_input_frame(_theme: &Theme, input: AnyElement) -> gpui::Div {
+/// The query line at the top of a picker popover: a magnifier, the field, and
+/// a hairline under it.
+///
+/// The field belongs in `with_frame(false)` — a box here would be a second
+/// frame inside the card's. Full-bleed like [`divider`], and the glyph sits on
+/// the row labels' own inset so the line reads as the head of the list rather
+/// than a control dropped on top of it.
+pub fn search_line(theme: &Theme, input: AnyElement) -> gpui::Div {
     div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.0))
+        .mx(px(-MENU_PAD))
+        .px(px(MENU_PAD + 8.0))
+        .py(px(7.0))
         .mb(px(MENU_PAD))
-        .px(px(10.0))
-        .py(px(6.0))
-        // Concentric with the card, like [`menu_row`] — this frame sits on the
-        // same inset, and its own doc already said so.
-        .rounded(px(Theme::inset_radius(Theme::surface_radius(), MENU_PAD)))
-        .bg(ink(0.04))
+        .border_b_1()
+        .border_color(hairline(0.07))
         .text_size(px(13.0))
-        .child(input)
+        .child(
+            icons::icon(icons::MAGNIFER)
+                .size(px(13.0))
+                .text_color(theme.text_faint),
+        )
+        .child(div().flex_1().child(input))
 }
 
 /// A bordered trailing menu section (the reference picker action groups /

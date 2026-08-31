@@ -78,9 +78,13 @@ impl Combobox {
         placeholder: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let query = cx.new(|cx| TextField::new(cx).with_placeholder("Search…"));
-        cx.observe(&query, |combobox, _, cx| {
-            let query = combobox.query.read(cx).content().clone();
+        let query = cx.new(|cx| {
+            TextField::new(cx)
+                .with_placeholder("Search…")
+                .with_frame(false)
+        });
+        cx.subscribe(&query, |combobox, query, _: &input::FieldEvent, cx| {
+            let query = query.read(cx).content().clone();
             combobox.filter.refilter(&query);
             cx.notify();
         })
@@ -188,7 +192,7 @@ impl Combobox {
         popover::popover_card(theme)
             .w(self.trigger_width.unwrap_or(px(200.0)))
             .on_mouse_down_out(cx.listener(|combobox, _, _, cx| combobox.close(cx)))
-            .child(popover::search_input_frame(
+            .child(popover::search_line(
                 theme,
                 self.query.clone().into_any_element(),
             ))

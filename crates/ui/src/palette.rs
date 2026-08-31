@@ -74,9 +74,12 @@ impl EventEmitter<PaletteEvent> for CommandPalette {}
 
 impl CommandPalette {
     pub fn new(items: Vec<SharedString>, cx: &mut Context<Self>) -> Self {
-        let query = cx.new(|cx| TextField::new(cx).with_placeholder("Type a command…"));
-        // Re-filter whenever the field's content changes.
-        cx.observe(&query, |palette, _, cx| {
+        let query = cx.new(|cx| {
+            TextField::new(cx)
+                .with_placeholder("Type a command…")
+                .with_frame(false)
+        });
+        cx.subscribe(&query, |palette, _, _: &input::FieldEvent, cx| {
             palette.refilter(cx);
         })
         .detach();
@@ -163,7 +166,7 @@ impl Render for CommandPalette {
 
         let card = popover::popover_card(&theme)
             .w(px(420.0))
-            .child(popover::search_input_frame(
+            .child(popover::search_line(
                 &theme,
                 self.query.clone().into_any_element(),
             ))
