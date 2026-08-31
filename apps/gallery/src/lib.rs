@@ -2927,14 +2927,14 @@ impl Gallery {
                             theme
                                 .card_row(true)
                                 .hover(|s| s.bg(theme.element_hover))
-                                .child(theme.row_tile(icons::MONITOR))
+                                .child(theme.row_icon(icons::MONITOR))
                                 .child(theme.row_title("First row")),
                         )
                         .child(
                             theme
                                 .card_row(false)
                                 .hover(|s| s.bg(theme.element_hover))
-                                .child(theme.row_tile(icons::FOLDER))
+                                .child(theme.row_icon(icons::FOLDER))
                                 .child(theme.row_title("Second row")),
                         ),
                 )
@@ -4869,14 +4869,14 @@ impl Render for Gallery {
                                     theme
                                         .card_row(true)
                                         .hover(|s| s.bg(theme.element_hover))
-                                        .child(theme.row_tile(icons::MONITOR))
+                                        .child(theme.row_icon(icons::MONITOR))
                                         .child(theme.row_title("Appearance")),
                                 )
                                 .child(
                                     theme
                                         .card_row(false)
                                         .hover(|s| s.bg(theme.element_hover))
-                                        .child(theme.row_tile(icons::FOLDER))
+                                        .child(theme.row_icon(icons::FOLDER))
                                         .child(theme.row_title("Storage")),
                                 ),
                         )

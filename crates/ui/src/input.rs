@@ -21,10 +21,10 @@ use std::{ops::Range, time::Duration};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, EventEmitter, FocusHandle, Focusable, FontWeight, GlobalElementId,
-    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window,
-    WrappedLine, actions, div, fill, prelude::*, px, relative,
+    EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, KeyBinding,
+    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
+    SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine,
+    actions, div, fill, prelude::*, px, relative,
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
@@ -96,10 +96,6 @@ const BLINK: Duration = Duration::from_millis(500);
 /// Width of the caret. Named because horizontal scrolling has to keep the caret
 /// itself on screen, not merely the character before it.
 const CARET_WIDTH: Pixels = px(2.);
-
-/// What a field is set in unless told otherwise — the 18px it was tuned at over
-/// the body size it was tuned against, so the line box grows with the type.
-const FIELD_METRICS: Metrics = Metrics::new(TextStyle::Body, 18.0 / 13.0, FontWeight::NORMAL);
 
 /// The key context the field claims; bindings from [`init`] are scoped to it.
 pub const KEY_CONTEXT: &str = "TextField";
@@ -354,7 +350,7 @@ impl TextField {
             undo_limit: DEFAULT_UNDO_LIMIT,
             last_edit: None,
             key_context: None,
-            metrics: FIELD_METRICS,
+            metrics: TextStyle::Body.into(),
             caret_on: true,
             blink: None,
             follow_caret: false,

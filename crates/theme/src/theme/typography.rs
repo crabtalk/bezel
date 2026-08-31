@@ -135,6 +135,14 @@ impl Metrics {
     }
 }
 
+impl From<TextStyle> for Metrics {
+    /// The ladder's own setting for a role: its measured leading and weight.
+    /// A set that wants prose leading names its own through [`Metrics::new`].
+    fn from(role: TextStyle) -> Self {
+        Self::new(role, role.line_height() / role.size(), role.weight())
+    }
+}
+
 /// The ladder, on anything styled.
 pub trait Typeset: Styled + Sized {
     /// Size and weight together, from [`TextStyle`].

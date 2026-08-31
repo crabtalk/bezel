@@ -29,7 +29,8 @@ impl ControlSize {
         }
     }
 
-    /// Height: the role's line box plus [`Self::pad_y`] twice.
+    /// Height: the measured platform control, which [`Self::pad_y`] is then the
+    /// remainder of.
     pub const fn height(self) -> f32 {
         match self {
             ControlSize::Small => Theme::CONTROL_HEIGHT_SMALL,
@@ -44,11 +45,11 @@ impl ControlSize {
         }
     }
 
+    /// What the height has left over its role's line box, halved. Derived
+    /// rather than stored: the pair drifted once already, when the line box
+    /// moved off gpui's phi and the two heights stayed where phi had put them.
     pub const fn pad_y(self) -> f32 {
-        match self {
-            ControlSize::Small => 3.0,
-            ControlSize::Regular => 6.0,
-        }
+        (self.height() - self.text().line_height()) / 2.0
     }
 
     pub fn radius(self) -> f32 {
@@ -137,12 +138,12 @@ impl Theme {
     /// hover-revealed timestamp) never sits inside the fade when scrolled
     /// to the bottom.
     pub const TRANSCRIPT_FADE_BAND: f32 = 24.0;
-    /// Button height — `TextStyle::Body`'s line box (13pt on gpui's `phi()`,
-    /// rounded to 21) plus the 6px the button pads above and below it.
-    pub const BUTTON_HEIGHT: f32 = 33.0;
-    /// The same sum a size down: `Callout`'s line box (12pt, rounded to 19)
-    /// plus 3px above and below.
-    pub const CONTROL_HEIGHT_SMALL: f32 = 25.0;
+    /// Button, text field and select-trigger height. Measured 2026-09-01:
+    /// `NSButton`, `NSTextField` and `NSPopUpButton` all report 24 at
+    /// `.regular` — `Body`'s 16pt line box with 4 above and below.
+    pub const BUTTON_HEIGHT: f32 = 24.0;
+    /// The same controls at `.small`.
+    pub const CONTROL_HEIGHT_SMALL: f32 = 20.0;
     /// Button, text field and select-trigger radius — the crate's most-used
     /// corner after the derived ones, and unnamed until the concentric pass
     /// separated the eight sites that *chose* 8.0 from the ones that only

@@ -24,7 +24,7 @@ pub const OPTION_CARD_RADIUS: f32 = 10.0;
 /// A card row's horizontal padding — `../desktop`'s `Row`: `px-4`.
 const ROW_INSET: f32 = 16.0;
 /// The leading symbol's size.
-const ROW_TILE: f32 = 16.0;
+const ROW_ICON: f32 = 16.0;
 /// Between a row's leading symbol and its text.
 const ROW_GAP: f32 = Theme::SPACE;
 /// A card row's vertical padding. Measured 2026-09-01 off the macOS General
@@ -199,17 +199,17 @@ pub trait Scaffolding: ThemeExt {
 
     /// The leading symbol on a row: a bare glyph, sized to the text beside it,
     /// the way the macOS General pane carries one.
-    fn row_tile(&self, icon_path: &'static str) -> Div {
+    fn row_icon(&self, icon_path: &'static str) -> Div {
         let theme = self.theme();
         div()
             .flex_none()
-            .size(px(ROW_TILE))
+            .size(px(ROW_ICON))
             .flex()
             .items_center()
             .justify_center()
             .child(
                 crate::icons::icon(icon_path)
-                    .size(px(ROW_TILE))
+                    .size(px(ROW_ICON))
                     .text_color(theme.text_muted),
             )
     }
