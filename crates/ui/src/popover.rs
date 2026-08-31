@@ -320,6 +320,15 @@ impl Filter {
         self.active = menu_step(self.active, self.filtered.len(), delta);
     }
 
+    /// Put the cursor on a position in the FILTERED view — what the mouse
+    /// calls as it crosses a row, so a menu never shows a mouse cursor and a
+    /// keyboard cursor at once.
+    pub fn set_active(&mut self, position: usize) {
+        if position < self.filtered.len() {
+            self.active = Some(position);
+        }
+    }
+
     /// The item confirming right now would pick — an index into
     /// [`Self::items`], never into the filtered view. Confusing the two is the
     /// defining bug of a filtered list: it only appears once a query narrows
@@ -841,12 +850,18 @@ pub fn sheet(
 }
 
 /// One menu row (the reference `menuItem`): `gap-2.5 rounded-lg px-2 py-1.5
-/// text-[13px]`, active = `bg-white/10 text-foreground`, hover wash
-/// `white/[0.08]` fading over `transition-colors` (floating-styles.ts) via the
-/// per-[`Fade`] [`motion::hover_blend`]. The caller adds the id/click listener
-/// — the fade's key must be stable across frames (the id string is a good
-/// choice).
-pub fn menu_row(theme: &Theme, active: bool, fade: Fade) -> gpui::Div {
+/// text-[13px]`, active = `bg-white/10 text-foreground`. The caller adds the
+/// id/click listener.
+///
+/// `active` is the row the cursor is on, and a menu has exactly one cursor.
+/// `Some(fade)` lets the mouse light a row by itself, animated over
+/// `transition-colors` (floating-styles.ts), for a menu holding no cursor of
+/// its own; its key must be stable across frames (the id string is a good
+/// choice). `None` is for a menu that owns an active index and moves it from
+/// `on_mouse_move` — move, not hover: gpui settles hover at paint time, so a
+/// list that re-filters or scrolls under a still mouse would drag the cursor
+/// to wherever the pointer sits.
+pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
     let row = div()
         .flex()
         .flex_row()
@@ -860,37 +875,26 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Fade) -> gpui::Div {
         .rounded(px(Theme::inset_radius(Theme::surface_radius(), MENU_PAD)))
         .text_size(px(13.0))
         .cursor_pointer();
-    if active {
-        row.bg(theme::card_selected_bg()).text_color(theme.text)
-    } else {
-        let mut row = row
-            .text_color(motion::hover_blend(
-                &fade,
-                theme.text.opacity(0.9),
-                theme.text,
-            ))
-            .bg(motion::hover_blend(
-                &fade,
-                theme::wash(0.0),
-                theme::card_selected_bg(),
-            ));
-        // Imperative form — the caller's `.id(...)` makes the element stateful
-        // (hover listeners need element state, `.on_hover` needs `Stateful`).
-        row.interactivity().on_hover(motion::hover_listener(fade));
-        row
-    }
-}
-
-/// [`menu_row`] with a distinct keyboard-navigation highlight: a selected row
-/// carries the full `bg-white/10` wash, the keyboard cursor the lighter
-/// `bg-white/[0.08]` (the reference's `data-[highlighted]` styling) — two selected-
-/// looking rows never appear at once.
-pub fn menu_row_nav(theme: &Theme, selected: bool, highlighted: bool, fade: Fade) -> gpui::Div {
-    let row = menu_row(theme, selected, fade);
-    if !selected && highlighted {
-        row.bg(theme::card_selected_bg()).text_color(theme.text)
-    } else {
-        row
+    match (active, fade) {
+        (true, _) => row.bg(theme::card_selected_bg()).text_color(theme.text),
+        (false, None) => row.text_color(theme.text.opacity(0.9)),
+        (false, Some(fade)) => {
+            let mut row = row
+                .text_color(motion::hover_blend(
+                    &fade,
+                    theme.text.opacity(0.9),
+                    theme.text,
+                ))
+                .bg(motion::hover_blend(
+                    &fade,
+                    theme::wash(0.0),
+                    theme::card_selected_bg(),
+                ));
+            // Imperative form — the caller's `.id(...)` makes the element stateful
+            // (hover listeners need element state, `.on_hover` needs `Stateful`).
+            row.interactivity().on_hover(motion::hover_listener(fade));
+            row
+        }
     }
 }
 

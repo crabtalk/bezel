@@ -23,7 +23,6 @@ use gpui::{
     actions, div, prelude::*, px,
 };
 
-use motion::{Fade, Painter};
 use theme::Theme;
 
 use crate::{
@@ -140,24 +139,25 @@ impl Focusable for CommandPalette {
 impl Render for CommandPalette {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
-        let view = Painter::of(cx);
         let rows: Vec<gpui::AnyElement> = self
             .filter
             .filtered()
             .iter()
             .enumerate()
             .map(|(position, &item)| {
-                popover::menu_row(
-                    &theme,
-                    Some(position) == self.filter.active(),
-                    Fade::new(view, format!("palette-row-{item}")),
-                )
-                .id(SharedString::from(format!("palette-{item}")))
-                .on_click(cx.listener(move |_, _, _, cx| {
-                    cx.emit(PaletteEvent::Selected(item));
-                }))
-                .child(self.filter.items()[item].clone())
-                .into_any_element()
+                popover::menu_row(&theme, Some(position) == self.filter.active(), None)
+                    .id(SharedString::from(format!("palette-{item}")))
+                    .on_mouse_move(cx.listener(move |palette: &mut Self, _, _, cx| {
+                        if palette.filter.active() != Some(position) {
+                            palette.filter.set_active(position);
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |_, _, _, cx| {
+                        cx.emit(PaletteEvent::Selected(item));
+                    }))
+                    .child(self.filter.items()[item].clone())
+                    .into_any_element()
             })
             .collect();
 

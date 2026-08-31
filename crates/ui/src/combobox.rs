@@ -16,6 +16,7 @@
 //! ```
 
 use crate::{
+    icons,
     input::{self, TextField},
     popover,
     widgets::Controls,
@@ -24,7 +25,6 @@ use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, Pixels, SharedString,
     Window, actions, canvas, div, prelude::*, px,
 };
-use motion::{Fade, Painter};
 use theme::Theme;
 
 actions!(
@@ -157,25 +157,31 @@ impl Combobox {
     }
 
     fn menu_card(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
-        // Element ids are namespaced by the view; hover-fade keys are a global
-        // map, so those carry the entity id — a form can hold several of these.
-        let view = Painter::of(cx);
         let rows: Vec<gpui::AnyElement> = self
             .filter
             .filtered()
             .iter()
             .enumerate()
             .map(|(position, &item)| {
-                popover::menu_row_nav(
-                    theme,
-                    Some(item) == self.chosen,
-                    Some(position) == self.filter.active(),
-                    Fade::new(view, format!("combobox-row-{item}")),
-                )
-                .id(SharedString::from(format!("row-{item}")))
-                .on_click(cx.listener(move |combobox, _, _, cx| combobox.choose(item, cx)))
-                .child(self.filter.items()[item].clone())
-                .into_any_element()
+                popover::menu_row(theme, Some(position) == self.filter.active(), None)
+                    .justify_between()
+                    .id(SharedString::from(format!("row-{item}")))
+                    .on_mouse_move(cx.listener(move |combobox: &mut Self, _, _, cx| {
+                        if combobox.filter.active() != Some(position) {
+                            combobox.filter.set_active(position);
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |combobox, _, _, cx| combobox.choose(item, cx)))
+                    .child(self.filter.items()[item].clone())
+                    .when(Some(item) == self.chosen, |row| {
+                        row.child(
+                            icons::icon(icons::CHECK)
+                                .size(px(13.0))
+                                .text_color(theme.text),
+                        )
+                    })
+                    .into_any_element()
             })
             .collect();
 

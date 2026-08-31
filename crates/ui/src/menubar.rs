@@ -39,7 +39,6 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use motion::{Fade, Painter};
 use theme::{Theme, ink};
 
 use crate::popover;
@@ -301,9 +300,6 @@ impl Menubar {
     }
 
     fn card(&self, menu: usize, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
-        // Fade keys are a process-wide map, so they carry the entity id — an app
-        // may hold more than one bar.
-        let view = Painter::of(cx);
         popover::popover_card(theme)
             .min_w(px(180.0))
             .children(
@@ -322,20 +318,21 @@ impl Menubar {
                         }
                         Item::Action {
                             label, keystroke, ..
-                        } => popover::menu_row_nav(
-                            theme,
-                            false,
-                            self.highlighted == Some(index),
-                            Fade::new(view, format!("menubar-{menu}-{index}")),
-                        )
-                        .justify_between()
-                        .id(SharedString::from(format!("item-{menu}-{index}")))
-                        .on_click(cx.listener(move |bar, _, _, cx| bar.choose(menu, index, cx)))
-                        .child(label.clone())
-                        .when_some(keystroke.clone(), |row, keystroke| {
-                            row.child(popover::kbd_hint(theme, &keystroke))
-                        })
-                        .into_any_element(),
+                        } => popover::menu_row(theme, self.highlighted == Some(index), None)
+                            .justify_between()
+                            .id(SharedString::from(format!("item-{menu}-{index}")))
+                            .on_mouse_move(cx.listener(move |bar: &mut Self, _, _, cx| {
+                                if bar.highlighted != Some(index) {
+                                    bar.highlighted = Some(index);
+                                    cx.notify();
+                                }
+                            }))
+                            .on_click(cx.listener(move |bar, _, _, cx| bar.choose(menu, index, cx)))
+                            .child(label.clone())
+                            .when_some(keystroke.clone(), |row, keystroke| {
+                                row.child(popover::kbd_hint(theme, &keystroke))
+                            })
+                            .into_any_element(),
                     }),
             )
             .on_mouse_down_out(cx.listener(|bar, _, _, cx| bar.close(cx)))

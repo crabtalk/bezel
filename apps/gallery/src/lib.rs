@@ -1938,12 +1938,13 @@ impl Gallery {
                                                 |(index, label)| {
                                                     popover::menu_row(
                                                         &theme,
-                                                        index == self.theme_choice,
-                                                        Fade::new(
+                                                        false,
+                                                        Some(Fade::new(
                                                             view,
                                                             format!("theme-row-{index}"),
-                                                        ),
+                                                        )),
                                                     )
+                                                    .justify_between()
                                                     .id(SharedString::from(format!(
                                                         "theme-{index}"
                                                     )))
@@ -1951,6 +1952,13 @@ impl Gallery {
                                                         view.choose_theme(index, cx)
                                                     }))
                                                     .child(*label)
+                                                    .when(index == self.theme_choice, |row| {
+                                                        row.child(
+                                                            icons::icon(icons::CHECK)
+                                                                .size(px(13.0))
+                                                                .text_color(theme.text),
+                                                        )
+                                                    })
                                                     .into_any_element()
                                                 },
                                             ))
@@ -2644,14 +2652,14 @@ impl Gallery {
                     };
                     popover::popover_card(&theme).w(px(240.0)).children([
                         popover::menu_heading(&theme, "Section").into_any_element(),
-                        popover::menu_row(&theme, false, Fade::new(view, tag))
+                        popover::menu_row(&theme, false, Some(Fade::new(view, tag)))
                             .child("First item")
                             .into_any_element(),
-                        popover::menu_row(&theme, true, Fade::new(view, "m-active"))
+                        popover::menu_row(&theme, true, Some(Fade::new(view, "m-active")))
                             .child("Active item")
                             .into_any_element(),
                         popover::divider().into_any_element(),
-                        popover::menu_row(&theme, false, Fade::new(view, "m-third"))
+                        popover::menu_row(&theme, false, Some(Fade::new(view, "m-third")))
                             .child("Third item")
                             .into_any_element(),
                     ])
@@ -4524,7 +4532,7 @@ impl Render for Gallery {
                                     popover::menu_row(
                                         &theme,
                                         false,
-                                        Fade::new(view, format!("ctx-{index}")),
+                                        Some(Fade::new(view, format!("ctx-{index}"))),
                                     )
                                     .id(SharedString::from(format!("ctx-item-{index}")))
                                     .on_click(

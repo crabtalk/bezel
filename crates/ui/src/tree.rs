@@ -149,8 +149,7 @@ pub fn tree() -> gpui::Div {
 /// One row: its guides, its chevron, and then whatever the caller puts in it.
 ///
 /// `selected` is what the app considers chosen; `cursor` is where the keyboard
-/// is. Two tones, the same pair [`crate::popover::menu_row_nav`] uses, so a tree
-/// and a menu never look like two different products.
+/// is. Two tones, because a tree shows both at once.
 pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui::Div {
     let mut frame = div()
         .flex()

@@ -805,7 +805,6 @@ impl Composer {
     /// `TextField::offset_bounds` is the same measurement the IME candidate
     /// panel anchors to, so it follows the caret down as the box grows.
     fn picker(&self, theme: &Theme, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let view = Painter::of(cx);
         let hash = self.mention?;
         let anchor = self.field.read(cx).offset_bounds(hash, window)?;
         let rows: Vec<AnyElement> = self
@@ -814,15 +813,17 @@ impl Composer {
             .iter()
             .enumerate()
             .map(|(position, &item)| {
-                popover::menu_row(
-                    theme,
-                    Some(position) == self.filter.active(),
-                    Fade::new(view, format!("mention-{item}")),
-                )
-                .id(SharedString::from(format!("mention-{item}")))
-                .on_click(cx.listener(move |composer, _, _, cx| composer.accept(item, cx)))
-                .child(self.filter.items()[item].clone())
-                .into_any_element()
+                popover::menu_row(theme, Some(position) == self.filter.active(), None)
+                    .id(SharedString::from(format!("mention-{item}")))
+                    .on_mouse_move(cx.listener(move |composer: &mut Self, _, _, cx| {
+                        if composer.filter.active() != Some(position) {
+                            composer.filter.set_active(position);
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |composer, _, _, cx| composer.accept(item, cx)))
+                    .child(self.filter.items()[item].clone())
+                    .into_any_element()
             })
             .collect();
         if rows.is_empty() {

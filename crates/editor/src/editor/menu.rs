@@ -159,9 +159,17 @@ impl Editor {
         };
         let current = language.clone();
         let row = |label: SharedString, tag: Option<String>, lit: bool| {
-            ui::popover::menu_row(theme, lit, Fade::new(view, format!("lang-{label}")))
+            ui::popover::menu_row(theme, false, Some(Fade::new(view, format!("lang-{label}"))))
+                .justify_between()
                 .id(SharedString::from(format!("lang-row-{label}")))
                 .child(label.clone())
+                .when(lit, |row| {
+                    row.child(
+                        ui::icons::icon(ui::icons::CHECK)
+                            .size(px(13.0))
+                            .text_color(theme.text),
+                    )
+                })
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.language_menu = None;
                     this.set_language(ix, tag.clone(), cx);
@@ -208,7 +216,7 @@ impl Editor {
         let (ix, at) = self.block_menu?;
         let turns = crate::slash::items();
         let rows = turns.into_iter().map(|(label, kind)| {
-            ui::popover::menu_row(theme, false, Fade::new(view, format!("turn-{label}")))
+            ui::popover::menu_row(theme, false, Some(Fade::new(view, format!("turn-{label}"))))
                 .id(SharedString::from(format!("turn-row-{label}")))
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -217,13 +225,17 @@ impl Editor {
                 }))
         });
         let action = |label: &'static str, run: fn(&mut Self, usize, &mut Context<Self>)| {
-            ui::popover::menu_row(theme, false, Fade::new(view, format!("block-{label}")))
-                .id(SharedString::from(format!("block-row-{label}")))
-                .child(label)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.block_menu = None;
-                    run(this, ix, cx);
-                }))
+            ui::popover::menu_row(
+                theme,
+                false,
+                Some(Fade::new(view, format!("block-{label}"))),
+            )
+            .id(SharedString::from(format!("block-row-{label}")))
+            .child(label)
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.block_menu = None;
+                run(this, ix, cx);
+            }))
         };
         Some(ui::popover::menu_at(
             "block-menu",
@@ -258,14 +270,21 @@ impl Editor {
     /// past the end of a URL, which is as far right as a line goes, and a menu
     /// hanging off there points at nothing.
     pub(super) fn paste_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let view = Painter::of(cx);
         let pasted = self.pasted.as_ref()?;
         let (point, line_height) = self.layouts.position(pasted.at)?;
         let rows = pasted.rows.iter().enumerate().map(|(row, &choice)| {
             let label = choice.label();
-            ui::popover::menu_row(theme, row == pasted.active, Fade::new(view, label))
+            ui::popover::menu_row(theme, row == pasted.active, None)
                 .id(SharedString::from(format!("paste-row-{label}")))
                 .child(label)
+                .on_mouse_move(cx.listener(move |this: &mut Self, _, _, cx| {
+                    if let Some(pasted) = this.pasted.as_mut()
+                        && pasted.active != row
+                    {
+                        pasted.active = row;
+                        cx.notify();
+                    }
+                }))
                 .on_click(cx.listener(move |this, _, _, cx| this.confirm_paste(choice, cx)))
         });
         Some(ui::popover::menu_at(
@@ -290,14 +309,12 @@ impl Editor {
     /// The anchor comes from the same layout the caret paints against, so it
     /// costs nothing beyond a lookup and it cannot drift from the text.
     pub(super) fn slash_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let view = Painter::of(cx);
         let slash = self.slash.as_ref()?;
         let (point, line_height) = self.layouts.position(slash.at)?;
         let items = crate::slash::items();
         let reduce_motion = cx.reduce_motion();
-        // The `.id` is not optional: `menu_row` registers its hover fade
-        // imperatively and needs a stateful element to hang it on, so a row
-        // without one neither highlights nor clicks.
+        // The `.id` is not optional: a row without one neither takes the cursor
+        // on hover nor clicks.
         let rows = slash
             .filter
             .filtered()
@@ -305,16 +322,20 @@ impl Editor {
             .enumerate()
             .map(|(row, &ix)| {
                 let kind = items[ix].1.clone();
-                ui::popover::menu_row(
-                    theme,
-                    Some(row) == slash.filter.active(),
-                    Fade::new(view, format!("slash-{ix}")),
-                )
-                .id(SharedString::from(format!("slash-row-{ix}")))
-                .child(items[ix].0.clone())
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.confirm_slash(Some(kind.clone()), cx);
-                }))
+                ui::popover::menu_row(theme, Some(row) == slash.filter.active(), None)
+                    .id(SharedString::from(format!("slash-row-{ix}")))
+                    .child(items[ix].0.clone())
+                    .on_mouse_move(cx.listener(move |this: &mut Self, _, _, cx| {
+                        if let Some(slash) = this.slash.as_mut()
+                            && slash.filter.active() != Some(row)
+                        {
+                            slash.filter.set_active(row);
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.confirm_slash(Some(kind.clone()), cx);
+                    }))
             });
         Some(ui::popover::menu_at(
             "slash-menu",

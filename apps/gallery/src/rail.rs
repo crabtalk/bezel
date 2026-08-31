@@ -95,7 +95,10 @@ impl Render for Rail {
                                             popover::menu_row(
                                                 &theme,
                                                 section.key == selected,
-                                                Fade::new(view, format!("rail-{}", section.key)),
+                                                Some(Fade::new(
+                                                    view,
+                                                    format!("rail-{}", section.key),
+                                                )),
                                             )
                                             .id(SharedString::from(format!(
                                                 "rail-item-{}",

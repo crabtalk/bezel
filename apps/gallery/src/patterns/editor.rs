@@ -98,7 +98,7 @@ impl EditorDemo {
 
         let buttons = MARKS.map(|(glyph, mark)| {
             let lit = doc.covered_by(selection, &mark);
-            ui::popover::menu_row(theme, lit, Fade::new(view, format!("bubble-{glyph}")))
+            ui::popover::menu_row(theme, lit, Some(Fade::new(view, format!("bubble-{glyph}"))))
                 .id(ElementId::Name(format!("bubble-{glyph}").into()))
                 .px(px(7.0))
                 .child(glyph)
