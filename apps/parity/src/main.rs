@@ -25,7 +25,7 @@ const CARD: f32 = 168.0;
 const CARD_RADIUS: f32 = 34.0;
 const WELL: (f32, f32) = (400.0, 360.0);
 const PAD: f32 = 20.0;
-const FOOT: f32 = 86.0;
+const FOOT: f32 = 116.0;
 /// Room for the titlebar the content runs under, as in the Swift probe.
 const TOP: f32 = 36.0;
 
@@ -85,6 +85,15 @@ impl Vibrancy {
     fn home() -> Point<gpui::Pixels> {
         point(px((WELL.0 - CARD) / 2.0), px((WELL.1 - CARD) / 2.0))
     }
+
+    /// The window alone. `glass_chrome` stays on either way — it gates whether
+    /// the card is lensed at all, and switching it here would answer "does the
+    /// lens survive an opaque backdrop" by never running the lens.
+    fn set_frosted(on: bool, cx: &mut App) {
+        let mut brand = theme::brand(cx);
+        brand.glass = if on { Theme::GLASS_ALPHA } else { 1.0 };
+        theme::set_brand(brand, cx);
+    }
 }
 
 impl Render for Vibrancy {
@@ -92,6 +101,7 @@ impl Render for Vibrancy {
         let theme = Theme::of(cx);
         let dark = matches!(theme.appearance, Appearance::Dark);
         let clear = matches!(self.style, SurfaceStyle::Glass(Glass::Clear));
+        let frosted = theme.glass_window();
 
         let at = self.at.at().unwrap_or_else(Self::home);
         let origin = window.bounds().origin;
@@ -180,7 +190,25 @@ impl Render for Vibrancy {
                             .child(pick("light", !dark).on_click(cx.listener(|_, _, _, cx| {
                                 appearance::set_mode(AppearanceMode::Light, cx);
                                 cx.notify();
-                            })))
+                            }))),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(8.0))
+                            .child(pick("frosted", frosted).on_click(cx.listener(
+                                |_, _, _, cx| {
+                                    Self::set_frosted(true, cx);
+                                    cx.notify();
+                                },
+                            )))
+                            .child(pick("opaque", !frosted).on_click(cx.listener(
+                                |_, _, _, cx| {
+                                    Self::set_frosted(false, cx);
+                                    cx.notify();
+                                },
+                            )))
                             .child(div().w(px(12.0)))
                             .child(
                                 theme

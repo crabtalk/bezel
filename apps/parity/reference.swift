@@ -16,7 +16,7 @@ let CARD: CGFloat = 168
 let CARD_RADIUS: CGFloat = 34
 let WELL = NSSize(width: 400, height: 360)
 let PAD: CGFloat = 20
-let FOOT: CGFloat = 86
+let FOOT: CGFloat = 116
 /// Room for the titlebar the content view runs under.
 let TOP: CGFloat = 36
 
@@ -33,16 +33,20 @@ func frost(dark: Bool) -> NSColor {
     (dark ? grey(8) : grey(235)).withAlphaComponent(0.80)
 }
 
+/// bezel's `Theme::bg` — what `window_bg()` paints once the frost goes opaque.
+func page(dark: Bool) -> NSColor { grey(dark ? 6 : 255) }
+
 /// The app content the glass floats over: the frost tint over the whole window,
 /// as bezel paints `window_bg()`, and the text block inside `rect`.
 final class Well: NSView {
     var dark = true
+    var solid = false
     var rect = NSRect.zero
 
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        frost(dark: dark).setFill()
+        (solid ? page(dark: dark) : frost(dark: dark)).setFill()
         bounds.fill()
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: rect).setClip()
@@ -84,6 +88,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
     var dark = !CommandLine.arguments.contains("light")
     var style = CommandLine.arguments.contains("clear") ? 1 : 0
+    var frosted = !CommandLine.arguments.contains("opaque")
     var mounted: [NSView] = []
     var readout: NSTextField!
 
@@ -121,18 +126,24 @@ final class Delegate: NSObject, NSApplicationDelegate {
         let material = NSSegmentedControl(labels: ["regular", "clear"], trackingMode: .selectOne,
                                           target: self, action: #selector(pickStyle(_:)))
         material.selectedSegment = style
-        material.frame = NSRect(x: PAD, y: 44, width: 160, height: 24)
+        material.frame = NSRect(x: PAD, y: 74, width: 160, height: 24)
         root.addSubview(material)
 
         let look = NSSegmentedControl(labels: ["dark", "light"], trackingMode: .selectOne,
                                       target: self, action: #selector(pickAppearance(_:)))
         look.selectedSegment = dark ? 0 : 1
-        look.frame = NSRect(x: PAD + 172, y: 44, width: 120, height: 24)
+        look.frame = NSRect(x: PAD + 172, y: 74, width: 120, height: 24)
         root.addSubview(look)
+
+        let backdrop = NSSegmentedControl(labels: ["frosted", "opaque"], trackingMode: .selectOne,
+                                          target: self, action: #selector(pickBackdrop(_:)))
+        backdrop.selectedSegment = frosted ? 0 : 1
+        backdrop.frame = NSRect(x: PAD, y: 44, width: 160, height: 24)
+        root.addSubview(backdrop)
 
         let reset = NSButton(title: "reset", target: self, action: #selector(resetCard))
         reset.bezelStyle = .rounded
-        reset.frame = NSRect(x: PAD + 304, y: 42, width: 72, height: 26)
+        reset.frame = NSRect(x: PAD + 172, y: 42, width: 72, height: 26)
         root.addSubview(reset)
 
         let screen = NSScreen.screens[0]
@@ -156,18 +167,29 @@ final class Delegate: NSObject, NSApplicationDelegate {
 
         // The vibrancy IS the window, as it is in bezel: one blurred background
         // under everything, never an inset panel with the desktop around it.
-        let blur = NSVisualEffectView(frame: root.bounds)
-        blur.material = .underWindowBackground
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.autoresizingMask = [.width, .height]
+        // Opaque takes it out of the hierarchy, which is what bezel's own
+        // `window_background_appearance()` does at the same threshold.
         let content = Well(frame: root.bounds)
         content.dark = dark
+        content.solid = !frosted
         content.rect = NSRect(x: PAD, y: TOP, width: WELL.width, height: WELL.height)
         content.autoresizingMask = [.width, .height]
-        blur.addSubview(content)
-        root.addSubview(blur, positioned: .below, relativeTo: nil)
-        mounted.append(blur)
+        window.isOpaque = !frosted
+        window.backgroundColor = frosted ? .clear : page(dark: dark)
+        let backdrop: NSView
+        if frosted {
+            let blur = NSVisualEffectView(frame: root.bounds)
+            blur.material = .underWindowBackground
+            blur.blendingMode = .behindWindow
+            blur.state = .active
+            blur.autoresizingMask = [.width, .height]
+            blur.addSubview(content)
+            backdrop = blur
+        } else {
+            backdrop = content
+        }
+        root.addSubview(backdrop, positioned: .below, relativeTo: nil)
+        mounted.append(backdrop)
 
         let box = NSRect(x: PAD, y: FOOT, width: WELL.width, height: WELL.height)
         let at = NSRect(x: box.minX + (WELL.width - CARD) / 2,
@@ -195,6 +217,11 @@ final class Delegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func resetCard() { build(into: window.contentView!) }
+
+    @objc func pickBackdrop(_ sender: NSSegmentedControl) {
+        frosted = sender.selectedSegment == 0
+        build(into: window.contentView!)
+    }
 
     @objc func pickStyle(_ sender: NSSegmentedControl) {
         style = sender.selectedSegment
