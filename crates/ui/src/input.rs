@@ -21,7 +21,7 @@ use std::{ops::Range, time::Duration};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, KeyBinding,
+    EntityInputHandler, EventEmitter, FocusHandle, Focusable, Global, GlobalElementId, KeyBinding,
     LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
     SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine,
     actions, div, fill, prelude::*, px, relative,
@@ -92,6 +92,25 @@ pub enum FieldEvent {
 
 /// Half the caret's blink period — the 500ms on, 500ms off macOS itself uses.
 const BLINK: Duration = Duration::from_millis(500);
+
+/// Whether carets blink. Absent means they do — a global nobody installed is
+/// the default, not the opposite of it.
+struct CaretBlink(bool);
+
+impl Global for CaretBlink {}
+
+/// Whether a caret blinks or is held solid. Read where a blink would start:
+/// [`TextField`] here, and the editor's own caret.
+pub fn caret_blink(cx: &App) -> bool {
+    cx.try_global::<CaretBlink>().is_none_or(|blink| blink.0)
+}
+
+/// A caret held solid is still a caret — turning the blink off stops the task
+/// and leaves the caret lit, never caught on the half of the beat that hides it.
+pub fn set_caret_blink(blink: bool, cx: &mut App) {
+    cx.set_global(CaretBlink(blink));
+    cx.refresh_windows();
+}
 
 /// Width of the caret. Named because horizontal scrolling has to keep the caret
 /// itself on screen, not merely the character before it.
@@ -1327,12 +1346,13 @@ impl Render for TextField {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The only place the blink starts: `caret_moved` drops the task, so the
         // next render brings it back in phase, solid beat first.
-        if self.focus_handle.is_focused(_window) {
+        if self.focus_handle.is_focused(_window) && caret_blink(cx) {
             if self.blink.is_none() {
                 self.start_blink(cx);
             }
         } else {
             self.blink = None;
+            self.caret_on = true;
         }
         let theme = Theme::of(cx);
         let mut key_context = gpui::KeyContext::default();
