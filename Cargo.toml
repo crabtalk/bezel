@@ -14,6 +14,7 @@ members = [
     "apps/gallery",
     "apps/web",
     "apps/hello",
+    "apps/parity",
 ]
 
 [workspace.package]

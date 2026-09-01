@@ -4172,6 +4172,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "parity"
+version = "0.1.4"
+dependencies = [
+ "bezel-gpui",
+ "bezel-gpui-platform",
+ "bezel-motion",
+ "bezel-theme",
+ "bezel-ui",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
