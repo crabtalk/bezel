@@ -26,18 +26,11 @@ impl Theme {
     /// [`Self::bg`](Self#structfield.bg), so a window that opens blurred is not
     /// then covered over by the paint that made the blur pointless.
     pub fn window_bg(&self) -> Hsla {
-        if self.glass_window() {
+        if self.vibrancy {
             self.glass()
         } else {
             self.bg
         }
-    }
-
-    /// Whether the window composites translucent. The window's own fill and
-    /// compositing mode gate on this; what is painted inside it gates on
-    /// [`Self::glass_chrome`](crate::Theme#structfield.glass_chrome).
-    pub fn glass_window(&self) -> bool {
-        self.glass().a < 1.0
     }
 
     /// The translucent tint floating cards paint over their backdrop blur
@@ -94,10 +87,7 @@ impl Theme {
         paint::scrim_for(self.appearance, paint::SCRIM_ALPHA_DARK)
     }
 
-    /// How the platform should composite the window behind our paint. The mode
-    /// falls out of the alpha: frost under 1.0 wants the blurred desktop,
-    /// opaque wants opaque compositing (subpixel-friendly, no vibrancy cost for
-    /// a blur nothing shows).
+    /// How the platform should composite the window behind our paint.
     ///
     /// This is a method rather than a constant because it has to be *re-applied* after
     /// every theme swap: gpui's macOS backend tears the `NSVisualEffectView`
@@ -106,7 +96,7 @@ impl Theme {
     /// user switches back to dark. See zed's `crates/zed/src/main.rs`, which
     /// runs the same loop on every settings change.
     pub fn window_background_appearance(&self) -> WindowBackgroundAppearance {
-        if self.glass_window() {
+        if self.vibrancy {
             WindowBackgroundAppearance::Blurred
         } else {
             WindowBackgroundAppearance::Opaque

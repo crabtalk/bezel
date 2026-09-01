@@ -61,6 +61,7 @@ impl Theme {
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
             glass_alpha: Self::GLASS_ALPHA,
+            vibrancy: Self::GLASS_ALPHA < 1.0,
             glass_chrome: Self::GLASS_ALPHA < 1.0,
             // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
             // one tone across all five thicknesses (49.8 down to 45.3), and the
@@ -211,6 +212,7 @@ impl Theme {
             diff_del: color::oklch(0.577, 0.245, 27.325),  // red-600
             diff_hunk_bg: hsla(0.6, 0.35, 0.35, 0.07),
             glass_alpha: Self::GLASS_ALPHA,
+            vibrancy: Self::GLASS_ALPHA < 1.0,
             glass_chrome: Self::GLASS_ALPHA < 1.0,
             // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The
             // material is not a tone-flip of dark: `regular` keeps its opacity

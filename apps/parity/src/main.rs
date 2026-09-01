@@ -19,7 +19,7 @@ use ui::{
     widgets::{ButtonStyle, Buttons as _},
 };
 
-actions!(vibrancy, [Quit]);
+actions!(parity, [Quit]);
 
 const CARD: f32 = 168.0;
 const CARD_RADIUS: f32 = 34.0;
@@ -41,7 +41,7 @@ fn main() {
         ui::focus::init(cx);
         cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
         cx.set_menus(vec![
-            Menu::new("vibrancy").items([MenuItem::action("Quit", Quit)]),
+            Menu::new("parity").items([MenuItem::action("Quit", Quit)]),
         ]);
         let bounds = Bounds::centered(
             None,
@@ -86,12 +86,12 @@ impl Vibrancy {
         point(px((WELL.0 - CARD) / 2.0), px((WELL.1 - CARD) / 2.0))
     }
 
-    /// The window alone. `glass_chrome` stays on either way — it gates whether
-    /// the card is lensed at all, and switching it here would answer "does the
-    /// lens survive an opaque backdrop" by never running the lens.
+    /// The window mode alone: the frost's coverage and the chrome's glass both
+    /// stay where they are, so the card is the one thing that has not changed
+    /// between the two shots.
     fn set_frosted(on: bool, cx: &mut App) {
         let mut brand = theme::brand(cx);
-        brand.glass = if on { Theme::GLASS_ALPHA } else { 1.0 };
+        brand.vibrancy = on;
         theme::set_brand(brand, cx);
     }
 }
@@ -101,7 +101,7 @@ impl Render for Vibrancy {
         let theme = Theme::of(cx);
         let dark = matches!(theme.appearance, Appearance::Dark);
         let clear = matches!(self.style, SurfaceStyle::Glass(Glass::Clear));
-        let frosted = theme.glass_window();
+        let frosted = theme.vibrancy;
 
         let at = self.at.at().unwrap_or_else(Self::home);
         let origin = window.bounds().origin;

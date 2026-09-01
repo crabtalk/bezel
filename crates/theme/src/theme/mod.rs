@@ -311,9 +311,11 @@ pub struct Theme {
     // Numbers, so they flow with the appearance the way every other token
     // does. `Glass::glass_effect` reads them off the theme it is handed;
     // nothing here is a parameter on a component.
-    /// How opaque the frost over the blurred window is; `1.0` composites the
-    /// window opaque.
+    /// How opaque the frost over the blurred window is.
     pub glass_alpha: f32,
+    /// Whether the window composites translucent, so the desktop reaches what
+    /// is painted over it — AppKit's vibrancy.
+    pub vibrancy: bool,
     /// Whether chrome paints the glass recipes — translucent popovers and
     /// cards, and the lens. An opaque window can still carry layered chrome.
     pub glass_chrome: bool,
