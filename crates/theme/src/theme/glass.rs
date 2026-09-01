@@ -7,17 +7,17 @@ use crate::{Appearance, color, paint, theme::Theme};
 
 impl Theme {
     /// The frost tint painted over the blurred window background (macOS glass),
-    /// at [`Brand::glass`](crate::Brand::glass)'s alpha. Dark: darker than
+    /// at [`Brand::vibrancy_alpha`](crate::Brand::vibrancy_alpha). Dark: darker than
     /// `surface`, matched to the reference vibrancy scrim `hsl(0 0% 3%)`.
     /// Light: the material's own measured tone. Opaque, this IS the surface tone.
-    pub fn glass(&self) -> Hsla {
-        let alpha = self.glass_alpha;
+    pub fn vibrancy_tint(&self) -> Hsla {
+        let alpha = self.vibrancy_alpha;
         if alpha >= 1.0 {
             return self.surface;
         }
         match self.appearance {
             Appearance::Dark => color::grey(8).opacity(alpha),
-            Appearance::Light => self.frost.tone.opacity(alpha),
+            Appearance::Light => self.material.tone.opacity(alpha),
         }
     }
 
@@ -27,7 +27,7 @@ impl Theme {
     /// then covered over by the paint that made the blur pointless.
     pub fn window_bg(&self) -> Hsla {
         if self.vibrancy {
-            self.glass()
+            self.vibrancy_tint()
         } else {
             self.bg
         }
@@ -58,7 +58,7 @@ impl Theme {
     /// over the 0.80 frost — lowered on user request). Dark's 3% white wash
     /// is already glass-native.
     pub fn input_glass_bg(&self) -> Hsla {
-        if self.glass_chrome && matches!(self.appearance, Appearance::Light) {
+        if self.glass && matches!(self.appearance, Appearance::Light) {
             self.input_bg.opacity(0.30)
         } else {
             self.input_bg
@@ -73,7 +73,7 @@ impl Theme {
     /// already needs to keep rows on a known background. An opaque platform has
     /// no frost beneath the card, so it takes the grey below its white page.
     pub fn card_glass_bg(&self) -> Hsla {
-        if !self.glass_chrome {
+        if !self.glass {
             return self.surface;
         }
         match self.appearance {

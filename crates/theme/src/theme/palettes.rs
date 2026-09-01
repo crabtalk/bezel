@@ -4,7 +4,7 @@ use gpui::hsla;
 
 use crate::{
     Appearance, color, paint,
-    theme::{FrostSpec, Glass, SurfaceSpec, SurfaceStyle, Theme, syntax::SyntaxPalette},
+    theme::{Glass, MaterialSpec, SurfaceSpec, SurfaceStyle, Theme, syntax::SyntaxPalette},
 };
 
 impl Theme {
@@ -60,15 +60,15 @@ impl Theme {
             diff_add: color::oklch(0.765, 0.177, 163.223), // emerald-400
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
-            glass_alpha: Self::GLASS_ALPHA,
-            vibrancy: Self::GLASS_ALPHA < 1.0,
-            glass_chrome: Self::GLASS_ALPHA < 1.0,
+            vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            vibrancy: Self::VIBRANCY_ALPHA < 1.0,
+            glass: Self::VIBRANCY_ALPHA < 1.0,
             // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
             // one tone across all five thicknesses (49.8 down to 45.3), and the
             // sigma does not move with them. The rim is bezel's, not Apple's —
             // SwiftUI's material has no lit edge at all, and the popover card
             // used to draw this hairline itself.
-            frost: FrostSpec {
+            material: MaterialSpec {
                 tone: color::grey(47),
                 saturation: 2.1,
                 blur: 21.0,
@@ -90,7 +90,10 @@ impl Theme {
                 gain: 0.311,
                 saturation: 2.55,
                 tint: gpui::hsla(0.0, 0.0, 1.0, 11.0 / 255.0),
-                blur: 10.8,
+                // An on-screen choice, 2026-09-01. The measurement above reads
+                // 10.8, at which the interior is a flat wash and every seam in
+                // the lens shows as a step in it.
+                blur: 4.0,
                 rim: 18.75,
                 // Measured 2026-08-31 over a black canvas, where the coverage
                 // blend can only pull down, so anything above the interior is
@@ -211,21 +214,21 @@ impl Theme {
             diff_add: color::oklch(0.596, 0.145, 163.225), // emerald-600
             diff_del: color::oklch(0.577, 0.245, 27.325),  // red-600
             diff_hunk_bg: hsla(0.6, 0.35, 0.35, 0.07),
-            glass_alpha: Self::GLASS_ALPHA,
-            vibrancy: Self::GLASS_ALPHA < 1.0,
-            glass_chrome: Self::GLASS_ALPHA < 1.0,
+            vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            vibrancy: Self::VIBRANCY_ALPHA < 1.0,
+            glass: Self::VIBRANCY_ALPHA < 1.0,
             // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The
             // material is not a tone-flip of dark: `regular` keeps its opacity
             // (86%) and swaps a 19% grey base for a 97% white one, which is why
             // it reads as ordinary frost here. `clear` stops compressing
             // altogether — it is very nearly a pure lift.
-            // Frost: the menu surface before glass, kept as a look of its own
+            // Material: the menu surface before glass, kept as a look of its own
             // because it stays readable over content a lens would only bend.
             // Light's own tone, same instrument: gain 0.378 at `Regular`, so
             // opacity 0.622 against dark's 0.638 — the scale is shared and only
             // the tone moves. The sigma is dark's; it is a SwiftUI constant,
             // not an appearance choice.
-            frost: FrostSpec {
+            material: MaterialSpec {
                 tone: color::grey(235),
                 saturation: 2.1,
                 blur: 21.0,

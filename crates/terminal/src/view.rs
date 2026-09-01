@@ -66,7 +66,7 @@ pub fn terminal_bg() -> Hsla {
 /// the true tone. Explicit cell backgrounds (vim colorschemes etc.) still paint
 /// their own opaque quads on top.
 pub fn terminal_panel_bg(theme: &Theme) -> Hsla {
-    if theme.glass_chrome {
+    if theme.glass {
         terminal_bg_for(theme.appearance).opacity(0.4)
     } else {
         terminal_bg_for(theme.appearance)

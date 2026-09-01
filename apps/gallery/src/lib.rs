@@ -14,7 +14,7 @@ use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
-    ControlSize, Frost, Glass, Sizing, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset,
+    ControlSize, Glass, Material, Sizing, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset,
     appearance::{self, AppearanceMode},
 };
 use ui::{
@@ -187,11 +187,11 @@ const SLIDER_STEP: f32 = 0.05;
 const GAIN_RANGE: f32 = 1.5;
 /// Every surface the probe can paint: the frost scale, then the two glasses.
 const PROBE_STYLES: [SurfaceStyle; 7] = [
-    SurfaceStyle::Frost(Frost::UltraThin),
-    SurfaceStyle::Frost(Frost::Thin),
-    SurfaceStyle::Frost(Frost::Regular),
-    SurfaceStyle::Frost(Frost::Thick),
-    SurfaceStyle::Frost(Frost::UltraThick),
+    SurfaceStyle::Material(Material::UltraThin),
+    SurfaceStyle::Material(Material::Thin),
+    SurfaceStyle::Material(Material::Regular),
+    SurfaceStyle::Material(Material::Thick),
+    SurfaceStyle::Material(Material::UltraThick),
     SurfaceStyle::Glass(Glass::Regular),
     SurfaceStyle::Glass(Glass::Clear),
 ];
@@ -199,11 +199,11 @@ const PROBE_STYLES: [SurfaceStyle; 7] = [
 /// Its chip label, which is also its element id.
 fn probe_style_name(style: SurfaceStyle) -> &'static str {
     match style {
-        SurfaceStyle::Frost(Frost::UltraThin) => "ultraThin",
-        SurfaceStyle::Frost(Frost::Thin) => "thin",
-        SurfaceStyle::Frost(Frost::Regular) => "frost",
-        SurfaceStyle::Frost(Frost::Thick) => "thick",
-        SurfaceStyle::Frost(Frost::UltraThick) => "ultraThick",
+        SurfaceStyle::Material(Material::UltraThin) => "ultraThin",
+        SurfaceStyle::Material(Material::Thin) => "thin",
+        SurfaceStyle::Material(Material::Regular) => "frost",
+        SurfaceStyle::Material(Material::Thick) => "thick",
+        SurfaceStyle::Material(Material::UltraThick) => "ultraThick",
         SurfaceStyle::Glass(Glass::Regular) => "regular",
         SurfaceStyle::Glass(Glass::Clear) => "clear",
     }
@@ -2907,13 +2907,13 @@ impl Gallery {
                 section
                     .child(hint(
                         &theme,
-                        "The same menu on both looks. Frost washes what it \
+                        "The same menu on both looks. Material washes what it \
                          covers; glass dims it and bends it at the rim. \
                          `Theme::menu_style` picks which one every menu, dialog \
                          and sheet in the app mounts on.",
                     ))
-                    .child(theme.field_label("Frost — Regular"))
-                    .child(band(SurfaceStyle::Frost(Frost::Regular), "m-frosted"))
+                    .child(theme.field_label("Material — Regular"))
+                    .child(band(SurfaceStyle::Material(Material::Regular), "m-frosted"))
                     .child(theme.field_label("Glass — Regular"))
                     .child(band(SurfaceStyle::Glass(Glass::Regular), "m-regular"))
                     .into_any_element()
@@ -3572,7 +3572,7 @@ impl Gallery {
                     .child(hint(
                         &theme,
                         "Drag the glass, resize it, switch what is behind it. \
-                         Frosted blurs what it covers; glass lifts it and lenses \
+                         Materialed blurs what it covers; glass lifts it and lenses \
                          at the rim. Both read very differently depending on the \
                          backdrop, which is what the switcher is for.",
                     ))

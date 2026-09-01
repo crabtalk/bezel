@@ -12,7 +12,7 @@
 //! elsewhere the primitive is ignored and the glass reads as the theme's
 //! translucent tint over the OS window blur.
 //!
-//! Frost and glass are different things — a material has thickness, a glass
+//! Material and glass are different things — a material has thickness, a glass
 //! has a variant — and they meet only at the numbers they resolve to, which is
 //! why one element paints both and [`theme::SurfaceStyle`] names which.
 
@@ -158,10 +158,10 @@ pub struct Surface {
 const LENSED: bool = cfg!(any(target_os = "macos", target_family = "wasm"));
 
 /// Whether [`Glass::glass_effect`] will actually refract here, or fall back to
-/// the flat backdrop tint. The primitive is macOS Metal's and wgpu's, and
-/// chrome with the recipes off paints no lens.
+/// the flat backdrop tint. Capability and choice both: the primitive is macOS
+/// Metal's and wgpu's, and components with glass off paint no lens.
 pub fn lensed(theme: &Theme) -> bool {
-    LENSED && theme.glass_chrome
+    LENSED && theme.glass
 }
 
 impl Surface {
@@ -245,7 +245,7 @@ impl Element for Surface {
             let tint = self.tint.unwrap_or(glass.spec.tint);
             window.paint_quad(fill(bounds, tint).corner_radii(corners));
         }
-        if theme.glass_chrome {
+        if theme.glass {
             let extent = f32::from(bounds.size.width.min(bounds.size.height));
             let effect = gpui::GlassEffect {
                 blur_radius: px(glass.spec.blur),

@@ -431,13 +431,19 @@ fn faintest_fills_survive_in_both_appearances() {
 /// known-enough background — assert both relationships so the frost and
 /// the overlay can't drift apart.
 #[test]
-fn both_appearances_stay_frosted_and_light_runs_heavier() {
-    if Theme::GLASS_ALPHA < 1.0 {
+fn both_appearances_stay_vibrant_and_light_runs_heavier() {
+    if Theme::VIBRANCY_ALPHA < 1.0 {
         let (dark, light) = (Theme::dark(), Theme::light());
-        assert!(dark.glass().a < 1.0, "dark keeps its translucent frost");
-        assert!(light.glass().a < 1.0, "light is glass-forward like dark");
         assert!(
-            light.glass().a > dark.glass().a - f32::EPSILON,
+            dark.vibrancy_tint().a < 1.0,
+            "dark keeps its translucent frost"
+        );
+        assert!(
+            light.vibrancy_tint().a < 1.0,
+            "light is glass-forward like dark"
+        );
+        assert!(
+            light.vibrancy_tint().a > dark.vibrancy_tint().a - f32::EPSILON,
             "a light tint dominates the blur less, so it must not run looser than dark"
         );
         assert!(
@@ -445,8 +451,8 @@ fn both_appearances_stay_frosted_and_light_runs_heavier() {
             "light floating cards need more coverage over blur for legible rows"
         );
     } else {
-        assert_eq!(Theme::light().glass().a, 1.0);
-        assert_eq!(Theme::dark().glass().a, 1.0);
+        assert_eq!(Theme::light().vibrancy_tint().a, 1.0);
+        assert_eq!(Theme::dark().vibrancy_tint().a, 1.0);
     }
 }
 

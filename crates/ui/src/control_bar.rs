@@ -105,7 +105,7 @@ pub fn control_bar(
         .items_center()
         .text_style(TextStyle::Body)
         .text_color(theme.text)
-        .bg(if theme.glass_chrome {
+        .bg(if theme.glass {
             theme.glass_overlay()
         } else {
             theme.surface_overlay

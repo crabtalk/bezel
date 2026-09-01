@@ -88,7 +88,7 @@ pub(crate) fn set_base_radius(radius: f32) {
 
 impl Theme {
     // ---- numbers drive layout (px) ----
-    /// The frost alpha [`Brand::glass`](crate::Brand::glass) starts from.
+    /// The alpha [`Brand::vibrancy_alpha`](crate::Brand::vibrancy_alpha) starts from.
     /// Matched by eye to a reference Electron app's dark glass: its scrim is
     /// 0.76 over `hsl(0 0% 3%)`, but sits on the `under-window` vibrancy
     /// MATERIAL, which pre-darkens the blur; a bare backdrop blur has no such
@@ -97,7 +97,7 @@ impl Theme {
     /// Opaque off macOS: Linux and Windows get no compositor-blur guarantee,
     /// and a merely transparent window would show raw desktop through the
     /// sidebar. An app that knows its compositor sets the brand field anyway.
-    pub const GLASS_ALPHA: f32 = if cfg!(any(target_os = "macos", target_family = "wasm")) {
+    pub const VIBRANCY_ALPHA: f32 = if cfg!(any(target_os = "macos", target_family = "wasm")) {
         0.80
     } else {
         1.0

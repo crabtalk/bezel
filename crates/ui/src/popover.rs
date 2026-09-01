@@ -396,7 +396,7 @@ pub fn popover_card(theme: &Theme) -> gpui::Div {
     // Contents only. Fill, boundary and shadow are the surface's — every look
     // paints its own, so nothing here has to know which one is under it. An
     // card with the recipes off has no surface at all, and keeps the fill.
-    if theme.glass_chrome {
+    if theme.glass {
         card
     } else {
         card.bg(theme.surface_overlay)
@@ -770,7 +770,7 @@ pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
             .border_l_1()
             .border_color(hairline(0.10)),
     };
-    if theme.glass_chrome {
+    if theme.glass {
         card.bg(theme.glass_overlay())
     } else {
         card.bg(theme.surface_overlay)
