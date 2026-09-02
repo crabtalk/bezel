@@ -217,15 +217,21 @@ pub fn card<V: 'static>(
             } else {
                 disabled_row(theme).id(SharedString::from(format!("{id}-{index}")))
             };
-            row.when(gutter, |row| row.child(glyph_slot(theme, icon.clone(), *enabled)))
-                .child(div().flex_1().min_w_0().child(label.clone()))
-                .when(*checked, |row| {
-                    row.child(icons::icon(icons::CHECK).size(px(GLYPH)).text_color(theme.text))
-                })
-                .when_some(keystroke.clone(), |row, keystroke| {
-                    row.child(popover::kbd_hint(theme, &keystroke))
-                })
-                .into_any_element()
+            row.when(gutter, |row| {
+                row.child(glyph_slot(theme, icon.clone(), *enabled))
+            })
+            .child(div().flex_1().min_w_0().child(label.clone()))
+            .when(*checked, |row| {
+                row.child(
+                    icons::icon(icons::CHECK)
+                        .size(px(GLYPH))
+                        .text_color(theme.text),
+                )
+            })
+            .when_some(keystroke.clone(), |row, keystroke| {
+                row.child(popover::kbd_hint(theme, &keystroke))
+            })
+            .into_any_element()
         }))
 }
 
@@ -239,11 +245,14 @@ fn glyph_slot(theme: &Theme, icon: Option<SharedString>, enabled: bool) -> gpui:
         .items_center()
         .justify_center()
         .children(icon.map(|path| {
-            gpui::svg().path(path).size(px(GLYPH)).text_color(if enabled {
-                theme.text_faint
-            } else {
-                theme.text_faint.opacity(0.5)
-            })
+            gpui::svg()
+                .path(path)
+                .size(px(GLYPH))
+                .text_color(if enabled {
+                    theme.text_faint
+                } else {
+                    theme.text_faint.opacity(0.5)
+                })
         }))
 }
 
