@@ -90,6 +90,7 @@ impl MaterialSpec {
             tint: self.tone.opacity(opacity),
             blur: self.blur,
             rim: 0.0,
+            reach: 0.0,
             edge: self.edge,
             edge_width: self.edge_width,
             edge_aa: self.edge_aa,
@@ -123,6 +124,9 @@ pub struct SurfaceSpec {
     /// 2026-08-30 is one curve, the same from a 96pt box to a 320pt one and
     /// from r24 to r84. Past it the backdrop is untouched.
     pub rim: f32,
+    /// How far the outermost pixel drags what it samples, in logical pixels —
+    /// the far end of that same curve, measured at ~47pt.
+    pub reach: f32,
     /// How much white the lit rim adds at the edge itself, 0..1.
     pub edge: f32,
     /// How far in that light falls off to nothing, in logical pixels. Even the

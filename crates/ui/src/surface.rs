@@ -252,10 +252,10 @@ impl Element for Surface {
                 // A length, not a share of the box — but two rims cannot meet
                 // in the middle of a small one.
                 lens: px(glass.spec.rim.min(extent / 2.0)),
-                // At the rim the lens reaches the shape's own centre: a 92pt
-                // box shows its middle in the outer pixel, and a 192pt one
-                // does the same.
-                reach: px(extent / 2.0),
+                // A length, like the lens: the measured drag is one curve of
+                // distance from the rim, the same on a 96pt box and a 320pt
+                // one. Held under half the box, where two reaches would cross.
+                reach: px(glass.spec.reach.min(extent / 2.0)),
                 gain: glass.spec.gain,
                 saturation: glass.spec.saturation,
                 magnify: glass.magnify,

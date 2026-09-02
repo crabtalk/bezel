@@ -95,6 +95,7 @@ impl Theme {
                 // the lens shows as a step in it.
                 blur: 4.0,
                 rim: 18.75,
+                reach: 47.0,
                 // Measured 2026-08-31 over a black canvas, where the coverage
                 // blend can only pull down, so anything above the interior is
                 // rim light: +25 levels at the boundary and gone by 1pt, the
@@ -120,6 +121,7 @@ impl Theme {
                 tint: gpui::hsla(0.0, 0.0, 1.0, 16.0 / 255.0),
                 blur: 1.2,
                 rim: 18.75,
+                reach: 47.0,
                 edge: 0.26,
                 edge_width: 1.4,
                 edge_aa: 0.5,
@@ -247,6 +249,7 @@ impl Theme {
                 tint: gpui::hsla(0.0, 0.0, 1.0, 214.0 / 255.0),
                 blur: 8.9,
                 rim: 18.75,
+                reach: 47.0,
                 edge: 0.10,
                 edge_width: 1.0,
                 edge_aa: 0.5,
@@ -260,6 +263,7 @@ impl Theme {
                 tint: gpui::hsla(0.0, 0.0, 1.0, 18.8 / 255.0),
                 blur: 1.2,
                 rim: 18.75,
+                reach: 47.0,
                 edge: 0.26,
                 edge_width: 1.4,
                 edge_aa: 0.5,
