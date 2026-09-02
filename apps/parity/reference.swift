@@ -24,6 +24,14 @@ let SPECIMEN = "the quick brown fox jumps over the lazy dog and back again"
 let TEXT_SIZE: CGFloat = 15
 let LINE_H: CGFloat = 24
 
+/// The position code: green ramps once across the block, red sawtooths every
+/// CODE_PERIOD, so a pixel under the glass names the position it came from and
+/// a displacement is read rather than inferred. Both ramps are linear, which a
+/// blur leaves alone, and both stay inside 20..200 so no channel clips.
+let CODE_PERIOD: CGFloat = 32
+let CODE_LO: CGFloat = 20
+let CODE_HI: CGFloat = 200
+
 func grey(_ v: CGFloat) -> NSColor {
     NSColor(srgbRed: v / 255, green: v / 255, blue: v / 255, alpha: 1)
 }
@@ -41,6 +49,7 @@ func page(dark: Bool) -> NSColor { grey(dark ? 6 : 255) }
 final class Well: NSView {
     var dark = true
     var solid = false
+    var coded = false
     var rect = NSRect.zero
 
     override var isFlipped: Bool { true }
@@ -50,6 +59,18 @@ final class Well: NSView {
         bounds.fill()
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: rect).setClip()
+        if coded {
+            for i in 0..<Int(rect.width) {
+                let x = CGFloat(i)
+                let coarse = CODE_LO + (CODE_HI - CODE_LO) * (x + 0.5) / rect.width
+                let fine = CODE_LO + (CODE_HI - CODE_LO)
+                    * (x + 0.5).truncatingRemainder(dividingBy: CODE_PERIOD) / CODE_PERIOD
+                NSColor(srgbRed: fine / 255, green: coarse / 255, blue: 0, alpha: 1).setFill()
+                NSRect(x: rect.minX + x, y: rect.minY, width: 1, height: rect.height).fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            return
+        }
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: TEXT_SIZE),
             .foregroundColor: dark ? grey(235) : grey(20),
@@ -89,6 +110,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     var dark = !CommandLine.arguments.contains("light")
     var style = CommandLine.arguments.contains("clear") ? 1 : 0
     var frosted = !CommandLine.arguments.contains("opaque")
+    var coded = CommandLine.arguments.contains("coded")
     var mounted: [NSView] = []
     var readout: NSTextField!
 
@@ -135,16 +157,22 @@ final class Delegate: NSObject, NSApplicationDelegate {
         look.frame = NSRect(x: PAD + 172, y: 74, width: 120, height: 24)
         root.addSubview(look)
 
+        let reset = NSButton(title: "reset", target: self, action: #selector(resetCard))
+        reset.bezelStyle = .rounded
+        reset.frame = NSRect(x: PAD + 300, y: 72, width: 72, height: 26)
+        root.addSubview(reset)
+
         let backdrop = NSSegmentedControl(labels: ["frosted", "opaque"], trackingMode: .selectOne,
                                           target: self, action: #selector(pickBackdrop(_:)))
         backdrop.selectedSegment = frosted ? 0 : 1
         backdrop.frame = NSRect(x: PAD, y: 44, width: 160, height: 24)
         root.addSubview(backdrop)
 
-        let reset = NSButton(title: "reset", target: self, action: #selector(resetCard))
-        reset.bezelStyle = .rounded
-        reset.frame = NSRect(x: PAD + 172, y: 42, width: 72, height: 26)
-        root.addSubview(reset)
+        let block = NSSegmentedControl(labels: ["text", "coded"], trackingMode: .selectOne,
+                                       target: self, action: #selector(pickBlock(_:)))
+        block.selectedSegment = coded ? 1 : 0
+        block.frame = NSRect(x: PAD + 172, y: 44, width: 160, height: 24)
+        root.addSubview(block)
 
         let screen = NSScreen.screens[0]
         window.setFrameTopLeftPoint(NSPoint(x: screen.frame.minX + 60, y: screen.frame.maxY - 60))
@@ -172,6 +200,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
         let content = Well(frame: root.bounds)
         content.dark = dark
         content.solid = !frosted
+        content.coded = coded
         content.rect = NSRect(x: PAD, y: TOP, width: WELL.width, height: WELL.height)
         content.autoresizingMask = [.width, .height]
         window.isOpaque = !frosted
@@ -220,6 +249,11 @@ final class Delegate: NSObject, NSApplicationDelegate {
 
     @objc func pickBackdrop(_ sender: NSSegmentedControl) {
         frosted = sender.selectedSegment == 0
+        build(into: window.contentView!)
+    }
+
+    @objc func pickBlock(_ sender: NSSegmentedControl) {
+        coded = sender.selectedSegment == 1
         build(into: window.contentView!)
     }
 
