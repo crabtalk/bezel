@@ -14,7 +14,7 @@ use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
-    ControlSize, Frost, Glass, Sizing, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset,
+    ControlSize, Glass, Material, Sizing, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset,
     appearance::{self, AppearanceMode},
 };
 use ui::{
@@ -27,7 +27,8 @@ use ui::{
     icons,
     input::{self, Shape, TextField},
     list, loaders,
-    menubar::{self, Item, Menu, Menubar, MenubarEvent},
+    menu::Item,
+    menubar::{self, Menu, Menubar, MenubarEvent},
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
     popover,
@@ -186,11 +187,11 @@ const SLIDER_STEP: f32 = 0.05;
 const GAIN_RANGE: f32 = 1.5;
 /// Every surface the probe can paint: the frost scale, then the two glasses.
 const PROBE_STYLES: [SurfaceStyle; 7] = [
-    SurfaceStyle::Frost(Frost::UltraThin),
-    SurfaceStyle::Frost(Frost::Thin),
-    SurfaceStyle::Frost(Frost::Regular),
-    SurfaceStyle::Frost(Frost::Thick),
-    SurfaceStyle::Frost(Frost::UltraThick),
+    SurfaceStyle::Material(Material::UltraThin),
+    SurfaceStyle::Material(Material::Thin),
+    SurfaceStyle::Material(Material::Regular),
+    SurfaceStyle::Material(Material::Thick),
+    SurfaceStyle::Material(Material::UltraThick),
     SurfaceStyle::Glass(Glass::Regular),
     SurfaceStyle::Glass(Glass::Clear),
 ];
@@ -198,11 +199,11 @@ const PROBE_STYLES: [SurfaceStyle; 7] = [
 /// Its chip label, which is also its element id.
 fn probe_style_name(style: SurfaceStyle) -> &'static str {
     match style {
-        SurfaceStyle::Frost(Frost::UltraThin) => "ultraThin",
-        SurfaceStyle::Frost(Frost::Thin) => "thin",
-        SurfaceStyle::Frost(Frost::Regular) => "frost",
-        SurfaceStyle::Frost(Frost::Thick) => "thick",
-        SurfaceStyle::Frost(Frost::UltraThick) => "ultraThick",
+        SurfaceStyle::Material(Material::UltraThin) => "ultraThin",
+        SurfaceStyle::Material(Material::Thin) => "thin",
+        SurfaceStyle::Material(Material::Regular) => "frost",
+        SurfaceStyle::Material(Material::Thick) => "thick",
+        SurfaceStyle::Material(Material::UltraThick) => "ultraThick",
         SurfaceStyle::Glass(Glass::Regular) => "regular",
         SurfaceStyle::Glass(Glass::Clear) => "clear",
     }
@@ -1906,6 +1907,21 @@ impl Gallery {
                                 .on_click(cx.listener(move |view, _, _, cx| view.press(label, cx)))
                                 .into_any_element()
                         }));
+                let capsule = theme.control_group().rounded_full().children(
+                    [
+                        (icons::ALT_ARROW_LEFT, "back"),
+                        (icons::ALT_ARROW_RIGHT, "forward"),
+                    ]
+                    .into_iter()
+                    .map(|(glyph, name)| {
+                        theme
+                            .icon_button(glyph, ButtonStyle::Ghost, Some(Fade::new(view, name)))
+                            .rounded_full()
+                            .id(name)
+                            .on_click(cx.listener(move |view, _, _, cx| view.press(name, cx)))
+                            .into_any_element()
+                    }),
+                );
                 let lensed = row().children(toolbar.into_iter().map(|(glyph, name)| {
                     theme
                         .icon_button(
@@ -1984,6 +2000,14 @@ impl Gallery {
                     ))
                     .child(row().child(cluster).child(split))
                     .child(row().child(texts))
+                    .child(hint(
+                        &theme,
+                        "cut both the track and its items round and the group is the \
+                         capsule a macOS 26 toolbar carries its back and forward pair \
+                         in. nothing has a radius to pick: a round track and a round \
+                         item are concentric wherever the inset lands.",
+                    ))
+                    .child(row().child(capsule))
                     .child(hint(
                         &theme,
                         "cut the same button to a circle, hand it the surface the \
@@ -2316,7 +2340,7 @@ impl Gallery {
                                     .child(
                                         theme
                                             .collapsible_header("Advanced", self.expanded)
-                                            .hover(widgets::collapsible_header_hover),
+                                            .hover(|s| s.bg(theme.element_hover)),
                                     ),
                             )
                             .when(self.expanded, |el| {
@@ -2392,7 +2416,7 @@ impl Gallery {
                                                 if self.running { "Working" } else { "Details" },
                                                 open,
                                             )
-                                            .hover(widgets::collapsible_header_hover),
+                                            .hover(|s| s.bg(theme.element_hover)),
                                     ),
                             )
                             .when(open, |el| {
@@ -2624,7 +2648,7 @@ impl Gallery {
                             .child(caption("Traffic lights cleared"))
                             .child(pressable(
                                 {
-                                    let hover = theme.glass_hover();
+                                    let hover = theme.element_hover;
                                     control_bar::bar_button(icons::MAGNIFER, 24.0, theme.text_muted)
                                         .hover(move |s| s.bg(hover))
                                 },
@@ -2731,7 +2755,7 @@ impl Gallery {
 
             "control-bar" => {
                 let glyph = |path: &'static str| {
-                    let hover = theme.glass_hover();
+                    let hover = theme.element_hover;
                     ui::control_bar::bar_button(path, 30.0, theme.text_muted)
                         .id(path)
                         .hover(move |s| s.bg(hover))
@@ -2883,13 +2907,13 @@ impl Gallery {
                 section
                     .child(hint(
                         &theme,
-                        "The same menu on both looks. Frost washes what it \
+                        "The same menu on both looks. Material washes what it \
                          covers; glass dims it and bends it at the rim. \
                          `Theme::menu_style` picks which one every menu, dialog \
                          and sheet in the app mounts on.",
                     ))
-                    .child(theme.field_label("Frost — Regular"))
-                    .child(band(SurfaceStyle::Frost(Frost::Regular), "m-frosted"))
+                    .child(theme.field_label("Material — Regular"))
+                    .child(band(SurfaceStyle::Material(Material::Regular), "m-frosted"))
                     .child(theme.field_label("Glass — Regular"))
                     .child(band(SurfaceStyle::Glass(Glass::Regular), "m-regular"))
                     .into_any_element()
@@ -2902,15 +2926,15 @@ impl Gallery {
                         .child(
                             theme
                                 .card_row(true)
-                                .hover(widgets::card_row_hover)
-                                .child(theme.row_tile(icons::MONITOR))
+                                .hover(|s| s.bg(theme.element_hover))
+                                .child(theme.row_icon(icons::MONITOR))
                                 .child(theme.row_title("First row")),
                         )
                         .child(
                             theme
                                 .card_row(false)
-                                .hover(widgets::card_row_hover)
-                                .child(theme.row_tile(icons::FOLDER))
+                                .hover(|s| s.bg(theme.element_hover))
+                                .child(theme.row_icon(icons::FOLDER))
                                 .child(theme.row_title("Second row")),
                         ),
                 )
@@ -3264,7 +3288,7 @@ impl Gallery {
                         .rounded(px(Theme::control_radius()))
                         .text_style(TextStyle::Callout)
                         .text_color(if on { theme.text } else { theme.text_muted })
-                        .bg(if on { theme.glass_hover() } else { theme.bg })
+                        .bg(if on { theme.element_hover } else { theme.bg })
                         .cursor_pointer()
                         .child(bg_names[i])
                         .on_click(cx.listener(move |view, _, _, cx| {
@@ -3387,7 +3411,7 @@ impl Gallery {
                                     .rounded(px(Theme::control_radius()))
                                     .text_style(TextStyle::Callout)
                                     .text_color(if on { theme.text } else { theme.text_muted })
-                                    .bg(if on { theme.glass_hover() } else { theme.bg })
+                                    .bg(if on { theme.element_hover } else { theme.bg })
                                     .cursor_pointer()
                                     .child(probe_style_name(style))
                                     // Land on the look's shipped numbers, so
@@ -3412,7 +3436,7 @@ impl Gallery {
                                         theme.text_muted
                                     })
                                     .bg(if self.probe_tint {
-                                        theme.glass_hover()
+                                        theme.element_hover
                                     } else {
                                         theme.bg
                                     })
@@ -3548,7 +3572,7 @@ impl Gallery {
                     .child(hint(
                         &theme,
                         "Drag the glass, resize it, switch what is behind it. \
-                         Frosted blurs what it covers; glass lifts it and lenses \
+                         Materialed blurs what it covers; glass lifts it and lenses \
                          at the rim. Both read very differently depending on the \
                          backdrop, which is what the switcher is for.",
                     ))
@@ -3592,7 +3616,7 @@ impl Gallery {
                                     failed,
                                     output.map(|_| open),
                                 )
-                                .hover(widgets::step_row_hover)
+                                .hover(|s| s.bg(theme.element_hover))
                                 .id(SharedString::from(format!("step-{index}")))
                                 .on_click(cx.listener(move |view, _, _, cx| {
                                     view.step_open[index] = !view.step_open[index];
@@ -4464,7 +4488,7 @@ fn todo(theme: &Theme, status: &str, summary: &str, work: &[&'static str]) -> An
                     .children(work.iter().enumerate().map(|(index, step)| {
                         theme
                             .card_row(index == 0)
-                            .hover(widgets::card_row_hover)
+                            .hover(|s| s.bg(theme.element_hover))
                             .items_start()
                             .child(
                                 div()
@@ -4844,15 +4868,15 @@ impl Render for Gallery {
                                 .child(
                                     theme
                                         .card_row(true)
-                                        .hover(widgets::card_row_hover)
-                                        .child(theme.row_tile(icons::MONITOR))
+                                        .hover(|s| s.bg(theme.element_hover))
+                                        .child(theme.row_icon(icons::MONITOR))
                                         .child(theme.row_title("Appearance")),
                                 )
                                 .child(
                                     theme
                                         .card_row(false)
-                                        .hover(widgets::card_row_hover)
-                                        .child(theme.row_tile(icons::FOLDER))
+                                        .hover(|s| s.bg(theme.element_hover))
+                                        .child(theme.row_icon(icons::FOLDER))
                                         .child(theme.row_title("Storage")),
                                 ),
                         )

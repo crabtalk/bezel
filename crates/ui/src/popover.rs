@@ -395,8 +395,8 @@ pub fn popover_card(theme: &Theme) -> gpui::Div {
         .text_color(theme.text);
     // Contents only. Fill, boundary and shadow are the surface's — every look
     // paints its own, so nothing here has to know which one is under it. An
-    // opaque appearance has no surface at all, and keeps the card that was.
-    if theme.is_glass() {
+    // card with the recipes off has no surface at all, and keeps the fill.
+    if theme.glass {
         card
     } else {
         card.bg(theme.surface_overlay)
@@ -770,7 +770,7 @@ pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
             .border_l_1()
             .border_color(hairline(0.10)),
     };
-    if theme.is_glass() {
+    if theme.glass {
         card.bg(theme.glass_overlay())
     } else {
         card.bg(theme.surface_overlay)
@@ -888,8 +888,8 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
                 ))
                 .bg(motion::hover_blend(
                     &fade,
-                    theme::wash(0.0),
-                    theme::card_selected_bg(),
+                    theme::ink(0.0),
+                    theme.element_hover,
                 ));
             // Imperative form — the caller's `.id(...)` makes the element stateful
             // (hover listeners need element state, `.on_hover` needs `Stateful`).

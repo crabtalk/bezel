@@ -21,10 +21,10 @@ use std::{ops::Range, time::Duration};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, EventEmitter, FocusHandle, Focusable, FontWeight, GlobalElementId,
-    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window,
-    WrappedLine, actions, div, fill, prelude::*, px, relative,
+    EntityInputHandler, EventEmitter, FocusHandle, Focusable, Global, GlobalElementId, KeyBinding,
+    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
+    SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine,
+    actions, div, fill, prelude::*, px, relative,
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
@@ -93,13 +93,28 @@ pub enum FieldEvent {
 /// Half the caret's blink period — the 500ms on, 500ms off macOS itself uses.
 const BLINK: Duration = Duration::from_millis(500);
 
+/// Whether carets blink. Absent means they do — a global nobody installed is
+/// the default, not the opposite of it.
+struct CaretBlink(bool);
+
+impl Global for CaretBlink {}
+
+/// Whether a caret blinks or is held solid. Read where a blink would start:
+/// [`TextField`] here, and the editor's own caret.
+pub fn caret_blink(cx: &App) -> bool {
+    cx.try_global::<CaretBlink>().is_none_or(|blink| blink.0)
+}
+
+/// A caret held solid is still a caret — turning the blink off stops the task
+/// and leaves the caret lit, never caught on the half of the beat that hides it.
+pub fn set_caret_blink(blink: bool, cx: &mut App) {
+    cx.set_global(CaretBlink(blink));
+    cx.refresh_windows();
+}
+
 /// Width of the caret. Named because horizontal scrolling has to keep the caret
 /// itself on screen, not merely the character before it.
 const CARET_WIDTH: Pixels = px(2.);
-
-/// What a field is set in unless told otherwise — the 18px it was tuned at over
-/// the body size it was tuned against, so the line box grows with the type.
-const FIELD_METRICS: Metrics = Metrics::new(TextStyle::Body, 18.0 / 13.0, FontWeight::NORMAL);
 
 /// The key context the field claims; bindings from [`init`] are scoped to it.
 pub const KEY_CONTEXT: &str = "TextField";
@@ -354,7 +369,7 @@ impl TextField {
             undo_limit: DEFAULT_UNDO_LIMIT,
             last_edit: None,
             key_context: None,
-            metrics: FIELD_METRICS,
+            metrics: TextStyle::Body.into(),
             caret_on: true,
             blink: None,
             follow_caret: false,
@@ -1331,12 +1346,13 @@ impl Render for TextField {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The only place the blink starts: `caret_moved` drops the task, so the
         // next render brings it back in phase, solid beat first.
-        if self.focus_handle.is_focused(_window) {
+        if self.focus_handle.is_focused(_window) && caret_blink(cx) {
             if self.blink.is_none() {
                 self.start_blink(cx);
             }
         } else {
             self.blink = None;
+            self.caret_on = true;
         }
         let theme = Theme::of(cx);
         let mut key_context = gpui::KeyContext::default();

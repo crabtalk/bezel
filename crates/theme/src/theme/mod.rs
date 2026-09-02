@@ -32,7 +32,7 @@ pub enum Glass {
 /// to within 9% across the scale, and the sigma does not move at all
 /// (23.1/20.2/21.0pt). So this is a knob, not five looks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Frost {
+pub enum Material {
     UltraThin,
     Thin,
     Regular,
@@ -40,32 +40,32 @@ pub enum Frost {
     UltraThick,
 }
 
-impl Frost {
+impl Material {
     /// How much of the backdrop the material covers. Measured off SwiftUI in
     /// dark; the steps come out even to within a point.
     pub fn opacity(self) -> f32 {
         match self {
-            Frost::UltraThin => 0.440,
-            Frost::Thin => 0.543,
-            Frost::Regular => 0.638,
-            Frost::Thick => 0.737,
-            Frost::UltraThick => 0.825,
+            Material::UltraThin => 0.440,
+            Material::Thin => 0.543,
+            Material::Regular => 0.638,
+            Material::Thick => 0.737,
+            Material::UltraThick => 0.825,
         }
     }
 }
 
-/// Which surface a caller names. Frost and glass are different things with
+/// Which surface a caller names. Material and glass are different things with
 /// different vocabularies — a material has thickness, a glass has a variant —
 /// and they meet only at the numbers they resolve to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurfaceStyle {
-    Frost(Frost),
+    Material(Material),
     Glass(Glass),
 }
 
 /// The frost material, before a thickness picks its opacity.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FrostSpec {
+pub struct MaterialSpec {
     /// The material's own tone, at full coverage.
     pub tone: Hsla,
     /// Its chroma push, as [`SurfaceSpec::saturation`].
@@ -80,9 +80,9 @@ pub struct FrostSpec {
     pub edge_aa: f32,
 }
 
-impl FrostSpec {
+impl MaterialSpec {
     /// This material at one thickness.
-    pub fn at(&self, thickness: Frost) -> SurfaceSpec {
+    pub fn at(&self, thickness: Material) -> SurfaceSpec {
         let opacity = thickness.opacity();
         SurfaceSpec {
             gain: 1.0 - opacity,
@@ -90,6 +90,7 @@ impl FrostSpec {
             tint: self.tone.opacity(opacity),
             blur: self.blur,
             rim: 0.0,
+            reach: 0.0,
             edge: self.edge,
             edge_width: self.edge_width,
             edge_aa: self.edge_aa,
@@ -123,6 +124,9 @@ pub struct SurfaceSpec {
     /// 2026-08-30 is one curve, the same from a 96pt box to a 320pt one and
     /// from r24 to r84. Past it the backdrop is untouched.
     pub rim: f32,
+    /// How far the outermost pixel drags what it samples, in logical pixels —
+    /// the far end of that same curve, measured at ~47pt.
+    pub reach: f32,
     /// How much white the lit rim adds at the edge itself, 0..1.
     pub edge: f32,
     /// How far in that light falls off to nothing, in logical pixels. Even the
@@ -143,7 +147,7 @@ impl SurfaceStyle {
     /// The numbers this style resolves to against a theme.
     pub fn spec(self, theme: &Theme) -> SurfaceSpec {
         match self {
-            SurfaceStyle::Frost(thickness) => theme.frost.at(thickness),
+            SurfaceStyle::Material(thickness) => theme.material.at(thickness),
             SurfaceStyle::Glass(Glass::Regular) => theme.glass_regular,
             SurfaceStyle::Glass(Glass::Clear) => theme.glass_clear,
         }
@@ -186,9 +190,10 @@ pub struct Theme {
     pub surface_dialog: Hsla,
     /// Popover, menu and command-palette surface — the highest plane.
     pub surface_overlay: Hsla,
-    /// Hover wash for interactive rows/buttons.
+    /// Hover wash for interactive rows and buttons, on glass and off it alike:
+    /// `../desktop`'s `--color-hover`.
     pub element_hover: Hsla,
-    /// Active/selected wash.
+    /// Active/selected wash, one rung over the hover — `--color-active`.
     pub element_active: Hsla,
     /// Hairline border.
     pub border: Hsla,
@@ -310,10 +315,18 @@ pub struct Theme {
     // Numbers, so they flow with the appearance the way every other token
     // does. `Glass::glass_effect` reads them off the theme it is handed;
     // nothing here is a parameter on a component.
+    /// How opaque the tint over the blurred window is.
+    pub vibrancy_alpha: f32,
+    /// Whether the window composites translucent, so the desktop reaches what
+    /// is painted over it — AppKit's vibrancy.
+    pub vibrancy: bool,
+    /// Whether components paint glass — translucent popovers and cards, and
+    /// the lens. An opaque window can still carry it.
+    pub glass: bool,
     /// The surfaces this theme can paint. Blur belongs to the look, not to
     /// the caller: Apple exposes no blur parameter on either family, only the
     /// thickness or the variant.
-    pub frost: FrostSpec,
+    pub material: MaterialSpec,
     pub glass_regular: SurfaceSpec,
     pub glass_clear: SurfaceSpec,
     /// What the popover surfaces — menus, dialogs, sheets, tooltips — mount

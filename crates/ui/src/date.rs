@@ -30,7 +30,7 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use theme::{TextStyle, Theme, Typeset, ink};
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{icons, popover, widgets, widgets::Controls};
 
@@ -480,7 +480,7 @@ fn month_step(theme: &Theme, icon: &'static str) -> gpui::Div {
         .items_center()
         .justify_center()
         .cursor_pointer()
-        .hover(|s| s.bg(ink(0.06)))
+        .hover(|s| s.bg(theme.element_hover))
         .child(
             icons::icon(icon)
                 .size(px(14.0))
@@ -526,7 +526,13 @@ fn day_cell(
             widgets::RING_SLOT
         })
         .cursor_pointer()
-        .hover(|s| s.bg(if selected { theme.accent } else { ink(0.06) }))
+        .hover(|s| {
+            s.bg(if selected {
+                theme.accent
+            } else {
+                theme.element_hover
+            })
+        })
         .child(SharedString::from(day.day().to_string()))
 }
 

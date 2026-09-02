@@ -1382,7 +1382,7 @@ fn copy_button(
         .cursor_pointer()
         .text_style(TextStyle::Caption)
         .text_color(theme.text_muted)
-        .hover(|el| el.bg(theme.ink(0.08)))
+        .hover(|el| el.bg(theme.element_hover))
         .child(if showing { "Copied" } else { "Copy" })
         .on_click({
             let copied = copied.clone();

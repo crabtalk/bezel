@@ -39,9 +39,12 @@ use gpui::{
     div, prelude::*, px,
 };
 
-use theme::{TextStyle, Theme, Typeset, ink};
+use theme::{TextStyle, Theme, Typeset};
 
-use crate::popover;
+use crate::{
+    menu::{self, Item},
+    popover,
+};
 
 /// One menu on the bar.
 #[derive(Clone, Debug)]
@@ -57,94 +60,6 @@ impl Menu {
             items,
         }
     }
-}
-
-/// A row in a menu.
-///
-/// Deliberately not a struct with an `is_separator` flag: a separator has no
-/// label, no accelerator and nothing to enable, and every one of those fields
-/// would have to be answered anyway.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Item {
-    Action {
-        label: SharedString,
-        /// The accelerator to *print* — the binding itself is the app's, and
-        /// bezel never dispatches it. A menu that showed a keystroke it did not
-        /// own would be documenting a lie.
-        keystroke: Option<SharedString>,
-        enabled: bool,
-    },
-    Separator,
-}
-
-impl Item {
-    pub fn action(label: impl Into<SharedString>) -> Self {
-        Item::Action {
-            label: label.into(),
-            keystroke: None,
-            enabled: true,
-        }
-    }
-
-    /// No-ops on a separator, which has nothing to hang a keystroke on.
-    pub fn with_keystroke(self, keystroke: impl Into<SharedString>) -> Self {
-        match self {
-            Item::Action { label, enabled, .. } => Item::Action {
-                label,
-                keystroke: Some(keystroke.into()),
-                enabled,
-            },
-            Item::Separator => Item::Separator,
-        }
-    }
-
-    pub fn disabled(self) -> Self {
-        match self {
-            Item::Action {
-                label, keystroke, ..
-            } => Item::Action {
-                label,
-                keystroke,
-                enabled: false,
-            },
-            Item::Separator => Item::Separator,
-        }
-    }
-
-    /// Whether the keyboard and the pointer can land here at all.
-    pub fn selectable(&self) -> bool {
-        matches!(self, Item::Action { enabled: true, .. })
-    }
-}
-
-/// The next row the keyboard can land on, `delta` deciding the direction:
-/// separators and disabled rows are stepped straight over, and both ends wrap.
-/// `from` of `None` enters the menu at the edge the direction comes from.
-///
-/// [`popover::menu_step`] cannot do this — it counts rows and knows nothing
-/// about which of them can be landed on. `None` back means *nothing* in the menu
-/// is selectable, which is the one shape that would otherwise spin forever.
-pub fn next_selectable(items: &[Item], from: Option<usize>, delta: isize) -> Option<usize> {
-    let count = items.len();
-    if count == 0 {
-        return None;
-    }
-    let step = if delta >= 0 { 1 } else { -1 };
-    let wrap = |at: usize| (at as isize + step).rem_euclid(count as isize) as usize;
-    // Entering, the first candidate is the edge itself; moving, it is the row
-    // after the one you are on.
-    let mut at = match from {
-        None if step > 0 => 0,
-        None => count - 1,
-        Some(at) => wrap(at.min(count - 1)),
-    };
-    for _ in 0..count {
-        if items[at].selectable() {
-            return Some(at);
-        }
-        at = wrap(at);
-    }
-    None
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +183,7 @@ impl Menubar {
 
     fn step_item(&mut self, delta: isize, cx: &mut Context<Self>) {
         let Some(menu) = self.open_menu() else { return };
-        self.highlighted = next_selectable(&self.menus[menu].items, self.highlighted, delta);
+        self.highlighted = menu::next_selectable(&self.menus[menu].items, self.highlighted, delta);
         cx.notify();
     }
 
@@ -300,43 +215,16 @@ impl Menubar {
     }
 
     fn card(&self, menu: usize, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
-        popover::popover_card(theme)
-            .min_w(px(180.0))
-            .children(
-                self.menus[menu]
-                    .items
-                    .iter()
-                    .enumerate()
-                    .map(|(index, item)| match item {
-                        Item::Separator => popover::divider().into_any_element(),
-                        Item::Action {
-                            label,
-                            keystroke,
-                            enabled: false,
-                        } => {
-                            disabled_row(theme, label.clone(), keystroke.clone()).into_any_element()
-                        }
-                        Item::Action {
-                            label, keystroke, ..
-                        } => popover::menu_row(theme, self.highlighted == Some(index), None)
-                            .justify_between()
-                            .id(SharedString::from(format!("item-{menu}-{index}")))
-                            .on_mouse_move(cx.listener(move |bar: &mut Self, _, _, cx| {
-                                if bar.highlighted != Some(index) {
-                                    bar.highlighted = Some(index);
-                                    cx.notify();
-                                }
-                            }))
-                            .on_click(cx.listener(move |bar, _, _, cx| bar.choose(menu, index, cx)))
-                            .child(label.clone())
-                            .when_some(keystroke.clone(), |row, keystroke| {
-                                row.child(popover::kbd_hint(theme, &keystroke))
-                            })
-                            .into_any_element(),
-                    }),
-            )
-            .on_mouse_down_out(cx.listener(|bar, _, _, cx| bar.close(cx)))
-            .into_any_element()
+        menu::card(
+            theme,
+            SharedString::from(format!("menu-{menu}")),
+            &self.menus[menu].items,
+            self.highlighted,
+            cx,
+            move |bar, item, _, cx| bar.choose(menu, item, cx),
+        )
+        .on_mouse_down_out(cx.listener(|bar, _, _, cx| bar.close(cx)))
+        .into_any_element()
     }
 }
 
@@ -350,46 +238,20 @@ pub fn menubar_title(theme: &Theme, label: impl Into<SharedString>, open: bool) 
         .cursor_pointer()
         .child(label.into());
     if open {
-        title.bg(ink(0.08)).text_color(theme.text)
+        title.bg(theme.element_active).text_color(theme.text)
     } else {
         // A plain hover style, not a `motion::hover_blend` fade key: the fade
         // installs an `on_hover` *listener*, and gpui allows only one per
         // element — the switch below needs it.
         title
             .text_color(theme.text_muted)
-            .hover(|s| s.bg(ink(0.05)).text_color(theme.text))
+            .hover(|s| s.bg(theme.element_hover).text_color(theme.text))
     }
 }
 
 /// The strip the titles sit on.
 pub fn menubar() -> gpui::Div {
     div().flex().flex_row().items_center().gap(px(2.0))
-}
-
-/// A row that cannot be chosen: [`popover::menu_row`]'s metrics without its
-/// hover fade or its click, because a disabled row that lit under the pointer
-/// would be inviting a press that does nothing.
-fn disabled_row(theme: &Theme, label: SharedString, keystroke: Option<SharedString>) -> gpui::Div {
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .justify_between()
-        .gap(px(10.0))
-        .px(px(8.0))
-        .py(px(6.0))
-        // The disabled twin of `popover::menu_row`, in the same card — so it
-        // takes its corners from the same rule rather than a matching literal.
-        .rounded(px(Theme::inset_radius(
-            Theme::surface_radius(),
-            popover::MENU_PAD,
-        )))
-        .text_style(TextStyle::Body)
-        .text_color(theme.text_faint)
-        .child(label)
-        .when_some(keystroke, |row, keystroke| {
-            row.child(popover::kbd_hint(theme, &keystroke))
-        })
 }
 
 impl Focusable for Menubar {

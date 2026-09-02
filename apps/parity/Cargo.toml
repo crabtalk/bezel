@@ -1,0 +1,18 @@
+[package]
+name = "parity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+motion.workspace = true
+theme.workspace = true
+ui.workspace = true
+gpui.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+gpui_platform.workspace = true

@@ -85,16 +85,16 @@ const KNOBS: [Knob; 6] = [
         read: |b| b.radius,
         write: |b, v| b.radius = v,
     },
-    // Left is more desktop. At 1.00 glass is off and the window composites
-    // opaque again, which is what every platform but macOS starts at.
+    // Left is more desktop. At 1.00 the vibrancy is off and the window
+    // composites opaque again, which is what every platform but macOS starts at.
     Knob {
-        label: "Frost",
-        id: "glass",
+        label: "Vibrancy",
+        id: "vibrancy",
         max: 1.0,
         step: 0.05,
         decimals: 2,
-        read: |b| b.glass,
-        write: |b, v| b.glass = v,
+        read: |b| b.vibrancy_alpha,
+        write: |b, v| b.vibrancy_alpha = v,
     },
 ];
 
@@ -379,7 +379,7 @@ fn call(brand: &Brand) -> String {
         brand.accent.hue,
         brand.accent.chroma,
         brand.radius,
-        brand.glass,
+        brand.vibrancy_alpha,
     )
 }
 

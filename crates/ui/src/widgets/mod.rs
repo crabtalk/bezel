@@ -2,12 +2,10 @@
 //! the component: `use ui::widgets::{Content, Controls, Layout,
 //! Scaffolding, Status};` → `theme.group_box()`, `theme.tab(..)`.
 //!
-//! What stays here is deliberately trait-shaped: state flags, pure math, and
-//! the hover refinements, none of which reads the theme as a receiver.
+//! What stays here is deliberately trait-shaped: state flags and pure math,
+//! neither of which reads the theme as a receiver.
 
 use gpui::{div, prelude::*, px};
-
-use theme::ink;
 
 mod buttons;
 mod content;
@@ -94,19 +92,4 @@ pub fn axis_fraction(
 /// tone from the caller so the meaning stays with the caller's domain.
 pub fn status_dot(tone: gpui::Hsla) -> gpui::Div {
     div().flex_none().size(px(6.0)).rounded_full().bg(tone)
-}
-
-/// The default card-row hover wash (`hover:bg-white/[0.015]`).
-pub fn card_row_hover(s: gpui::StyleRefinement) -> gpui::StyleRefinement {
-    s.bg(ink(0.015))
-}
-
-/// The default step-row hover wash (`hover:bg-white/[0.03]`).
-pub fn step_row_hover(s: gpui::StyleRefinement) -> gpui::StyleRefinement {
-    s.bg(ink(0.03))
-}
-
-/// The default collapsible-header hover wash (`hover:bg-white/[0.03]`).
-pub fn collapsible_header_hover(s: gpui::StyleRefinement) -> gpui::StyleRefinement {
-    s.bg(ink(0.03))
 }

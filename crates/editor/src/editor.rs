@@ -1283,12 +1283,13 @@ impl Render for Editor {
         let focused = self.focus_handle.is_focused(window);
         // The only place the blink starts: `caret_moved` drops the task, so the
         // next render brings it back in phase, lit beat first.
-        if focused {
+        if focused && ui::input::caret_blink(cx) {
             if self.blink.is_none() {
                 self.start_blink(cx);
             }
         } else {
             self.blink = None;
+            self.caret_on = true;
         }
         let selection = focused.then_some(self.selection);
 

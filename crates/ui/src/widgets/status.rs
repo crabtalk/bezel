@@ -34,7 +34,7 @@ pub trait Status: ThemeExt {
     /// `.id(..)` and `.on_click(..)` **to this row**, never to a wrapper around
     /// it, or the hitbox ends up narrower than what it paints. Hover is
     /// caller-owned (gpui panics on a second hover); the default wash is
-    /// [`step_row_hover`](crate::widgets::step_row_hover).
+    /// [`Theme::element_hover`].
     fn step_row(
         &self,
         icon: &'static str,

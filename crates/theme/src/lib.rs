@@ -54,7 +54,7 @@ pub use paint::{
     user_bubble_bg, wash,
 };
 pub use theme::{
-    ControlSize, Frost, FrostSpec, Glass, HighlightKind, Metrics, Sizing, SurfaceSpec,
+    ControlSize, Glass, HighlightKind, Material, MaterialSpec, Metrics, Sizing, SurfaceSpec,
     SurfaceStyle, SyntaxPalette, TextStyle, Theme, Typeset, base_text_size, set_base_text_size,
     set_palette,
 };

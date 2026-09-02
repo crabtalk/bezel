@@ -12,7 +12,7 @@
 //! elsewhere the primitive is ignored and the glass reads as the theme's
 //! translucent tint over the OS window blur.
 //!
-//! Frost and glass are different things — a material has thickness, a glass
+//! Material and glass are different things — a material has thickness, a glass
 //! has a variant — and they meet only at the numbers they resolve to, which is
 //! why one element paints both and [`theme::SurfaceStyle`] names which.
 
@@ -157,11 +157,11 @@ pub struct Surface {
 /// which is why this tracks the gpui in use rather than the platform alone.
 const LENSED: bool = cfg!(any(target_os = "macos", target_family = "wasm"));
 
-/// Whether [`Glass::glass_effect`] will actually refract here, rather than
-/// falling back to the flat backdrop tint. The primitive is macOS Metal's, and
-/// an opaque appearance has nothing behind it to lens.
+/// Whether [`Glass::glass_effect`] will actually refract here, or fall back to
+/// the flat backdrop tint. Capability and choice both: the primitive is macOS
+/// Metal's and wgpu's, and components with glass off paint no lens.
 pub fn lensed(theme: &Theme) -> bool {
-    LENSED && theme.is_glass()
+    LENSED && theme.glass
 }
 
 impl Surface {
@@ -177,14 +177,16 @@ impl Surface {
         self
     }
 
-    /// The card's rounding in pixels, which only a rem size resolves.
-    fn corners(&self, rem: Pixels) -> Corners<Pixels> {
+    /// The card's rounding in pixels, which only a rem size resolves — clamped
+    /// to the box, since gpui reads a radius past half of it as a sharp corner.
+    fn corners(&self, bounds: Bounds<Pixels>, rem: Pixels) -> Corners<Pixels> {
         Corners {
             top_left: self.corners.top_left.to_pixels(rem),
             top_right: self.corners.top_right.to_pixels(rem),
             bottom_right: self.corners.bottom_right.to_pixels(rem),
             bottom_left: self.corners.bottom_left.to_pixels(rem),
         }
+        .clamp_radii_for_quad_size(bounds.size)
     }
 }
 
@@ -234,26 +236,26 @@ impl Element for Surface {
     ) {
         let theme = Theme::of(cx);
         let glass = self.glass.tokens(theme);
+        let corners = self.corners(bounds, window.rem_size());
         // The backdrop-blur primitive is macOS Metal's and wgpu's alone. The
         // surface's fill lives inside it, so anywhere it will not run the fill
         // is painted here — the look's own tint, so the card degrades to a
         // surface with the page showing through rather than to an opaque slab.
         if !lensed(theme) {
-            let corners = self.corners(window.rem_size());
             let tint = self.tint.unwrap_or(glass.spec.tint);
             window.paint_quad(fill(bounds, tint).corner_radii(corners));
         }
-        if theme.is_glass() {
+        if theme.glass {
             let extent = f32::from(bounds.size.width.min(bounds.size.height));
             let effect = gpui::GlassEffect {
                 blur_radius: px(glass.spec.blur),
                 // A length, not a share of the box — but two rims cannot meet
                 // in the middle of a small one.
                 lens: px(glass.spec.rim.min(extent / 2.0)),
-                // At the rim the lens reaches the shape's own centre: a 92pt
-                // box shows its middle in the outer pixel, and a 192pt one
-                // does the same.
-                reach: px(extent / 2.0),
+                // A length, like the lens: the measured drag is one curve of
+                // distance from the rim, the same on a 96pt box and a 320pt
+                // one. Held under half the box, where two reaches would cross.
+                reach: px(glass.spec.reach.min(extent / 2.0)),
                 gain: glass.spec.gain,
                 saturation: glass.spec.saturation,
                 magnify: glass.magnify,
@@ -263,7 +265,6 @@ impl Element for Surface {
                 edge_width: px(glass.spec.edge_width),
                 edge_aa: px(glass.spec.edge_aa),
             };
-            let corners = self.corners(window.rem_size());
             window.paint_layer(bounds, |window| {
                 window.paint_backdrop_blur(bounds, corners, effect);
                 // After the blur, never before: the blur samples what is

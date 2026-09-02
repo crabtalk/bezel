@@ -67,7 +67,7 @@ impl Editor {
                 .cursor(CursorStyle::OpenHand)
                 .text_style(TextStyle::Callout)
                 .text_color(theme.text_faint)
-                .hover(|el| el.bg(theme.ink(0.08)).text_color(theme.text_muted))
+                .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
                 .child("⠿")
                 .on_mouse_down(
                     MouseButton::Left,
@@ -154,7 +154,7 @@ impl Editor {
                 .h(bounds.size.height + px(2.0 * CHIP_PAD_Y))
                 .rounded(px(4.0))
                 .cursor(CursorStyle::PointingHand)
-                .hover(|el| el.bg(theme.ink(0.06)))
+                .hover(|el| el.bg(theme.element_hover))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.language_menu = Some((ix, anchor));
                     cx.notify();

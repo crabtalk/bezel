@@ -10,7 +10,7 @@
 
 use gpui::{Div, ElementId, SharedString, Stateful, div, prelude::*, px};
 use motion::{self, Fade};
-use theme::{ControlSize, Sizing, Theme, ThemeExt, wash};
+use theme::{ControlSize, Sizing, Theme, ThemeExt, ink};
 
 /// The shipped looks (the reference `btnGhost` / `btnPrimary` /
 /// `btnDestructive`).
@@ -59,7 +59,7 @@ pub trait Buttons: ThemeExt {
                 Some(fade) => {
                     let mut btn = frame()
                         .text_color(motion::hover_blend(&fade, theme.text_muted, theme.text))
-                        .bg(motion::hover_blend(&fade, wash(0.0), theme.element_hover))
+                        .bg(motion::hover_blend(&fade, ink(0.0), theme.element_hover))
                         .child(label);
                     btn.interactivity().on_hover(motion::hover_listener(fade));
                     btn
@@ -102,7 +102,7 @@ pub trait Buttons: ThemeExt {
             ButtonStyle::Ghost => match fade {
                 Some(fade) => {
                     let mut btn = square
-                        .bg(motion::hover_blend(&fade, wash(0.0), theme.element_hover))
+                        .bg(motion::hover_blend(&fade, ink(0.0), theme.element_hover))
                         .child(glyph(motion::hover_blend(
                             &fade,
                             theme.text_muted,
@@ -158,7 +158,7 @@ pub trait Buttons: ThemeExt {
     /// carries its own click and tooltip; padding and children are the
     /// caller's, which is what lets a glyph sit before the text.
     fn ghost(&self, id: impl Into<ElementId>) -> Stateful<Div> {
-        let tint = self.theme().glass_hover();
+        let tint = self.theme().element_hover;
         div()
             .id(id)
             .flex()

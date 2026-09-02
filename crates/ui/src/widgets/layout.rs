@@ -7,7 +7,7 @@
 use crate::stack;
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
 use motion::{self, Fade};
-use theme::{TextStyle, Theme, ThemeExt, Typeset, card_selected_bg, wash};
+use theme::{TextStyle, Theme, ThemeExt, Typeset, card_selected_bg, ink};
 
 /// The drag payload of a [`Layout::split_handle`]. Shipped from here so every
 /// split speaks the same type: `on_drag_move::<SplitDrag>` on one container
@@ -50,7 +50,7 @@ pub trait Layout: ThemeExt {
     /// `expanded` and renders the body itself — a container that swallowed its
     /// children would have to re-implement layout for them. Hover is
     /// caller-owned (gpui panics on a second hover); the default wash is
-    /// [`collapsible_header_hover`](crate::widgets::collapsible_header_hover).
+    /// [`Theme::element_hover`].
     fn collapsible_header(&self, label: impl Into<SharedString>, expanded: bool) -> Div {
         let theme = self.theme();
         div()
@@ -114,7 +114,7 @@ pub trait Layout: ThemeExt {
         if selected {
             row = row.bg(card_selected_bg());
         } else {
-            row = row.bg(motion::hover_blend(&fade, wash(0.0), card_selected_bg()));
+            row = row.bg(motion::hover_blend(&fade, ink(0.0), theme.element_hover));
             row.interactivity().on_hover(motion::hover_listener(fade));
         }
         row.when_some(icon, |row, path| {

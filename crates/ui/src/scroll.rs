@@ -47,6 +47,16 @@ pub const MIN_THUMB: Pixels = px(25.0);
 const TRACK: f32 = 10.0;
 /// Width of the thumb itself, centred in the track.
 const THUMB: f32 = 6.0;
+/// Length of one [`rail`] mark, and its thickness.
+const MARK: f32 = 16.0;
+const MARK_THICK: f32 = 2.0;
+/// Between two marks. The track's width, so a rail and a bar on the same pane
+/// are cut to one rhythm.
+const MARK_GAP: f32 = TRACK;
+/// How far the rail stands off the edge it is pinned to.
+const RAIL_INSET: f32 = 12.0;
+/// What a rail needs beside the content before it will paint at all.
+pub const RAIL_ROOM: f32 = RAIL_INSET + MARK;
 
 /// Where the thumb sits in a track of `viewport` length, as a range from the
 /// track's start — or `None` when there is nothing to scroll.
@@ -236,6 +246,61 @@ pub fn scrollbar(
             .absolute()
             .size_full(),
         )
+        .into_any_element()
+}
+
+/// A mark per item, the one at the top of the viewport lit — for a pane whose
+/// content comes in countable pieces (a transcript's turns) rather than as one
+/// continuous document, where how far down you are matters less than which
+/// piece you are on. A press jumps to that piece.
+///
+/// `count` addresses the **direct children** of the `track_scroll` element,
+/// which is what gpui indexes: a pane whose pieces sit nested inside a wrapper
+/// reports one child, and every mark would scroll to the same place.
+///
+/// Absolute, so the caller's container holds the position: pin it with
+/// `.relative()` on whichever box the rail belongs to the edge of.
+///
+/// `room` is the clear space beside the content, which only the caller can
+/// measure — the rail paints nothing under [`RAIL_ROOM`], because marks over
+/// the text would be worse than no marks at all.
+pub fn rail(
+    id: impl Into<SharedString>,
+    handle: &ScrollHandle,
+    count: usize,
+    room: Pixels,
+) -> gpui::AnyElement {
+    if count == 0 || room < px(RAIL_ROOM) {
+        return Empty.into_any_element();
+    }
+    let id = id.into();
+    let at = handle.top_item();
+    div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .left(px(RAIL_INSET))
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(MARK_GAP))
+        .overflow_hidden()
+        .children((0..count).map(|ix| {
+            let handle = handle.clone();
+            div()
+                .id(SharedString::from(format!("{id}-{ix}")))
+                .w(px(MARK))
+                .h(px(MARK_THICK))
+                .rounded_full()
+                .bg(if ix == at { ink(0.6) } else { ink(0.2) })
+                .cursor_pointer()
+                .hover(|mark| mark.bg(ink(0.32)))
+                .on_click(move |_, window, _| {
+                    handle.scroll_to_item(ix);
+                    window.refresh();
+                })
+        }))
         .into_any_element()
 }
 

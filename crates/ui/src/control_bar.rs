@@ -105,7 +105,7 @@ pub fn control_bar(
         .items_center()
         .text_style(TextStyle::Body)
         .text_color(theme.text)
-        .bg(if theme.is_glass() {
+        .bg(if theme.glass {
             theme.glass_overlay()
         } else {
             theme.surface_overlay
@@ -122,14 +122,14 @@ pub fn control_bar(
 /// deliberately bigger than its neighbours — that size difference is what makes
 /// the cluster readable at a glance.
 ///
-/// It builds the icon rather than taking one, the way [`row_tile`](crate::widgets::Scaffolding::row_tile)
+/// It builds the icon rather than taking one, the way [`row_icon`](crate::widgets::Scaffolding::row_icon)
 /// does, because `tint` is not optional in the way it looks: gpui reads an
 /// svg's colour off that element's own style and paints **nothing** when it is
 /// unset, so a colour set on this button would silently not reach the glyph.
 ///
 /// Caller adds id, click and its own `.hover(..)`: gpui panics on a second
 /// hover call, and the wash differs by state (a lit toggle is not a resting
-/// one). [`Theme::glass_hover`] is the wash to reach for.
+/// one). [`Theme::element_hover`] is the wash to reach for.
 pub fn bar_button(icon: &'static str, diameter: f32, tint: gpui::Hsla) -> gpui::Div {
     div()
         .flex_none()

@@ -10,7 +10,7 @@
 
 use crate::stack;
 use gpui::{AnyElement, Div, SharedString, div, prelude::*, px};
-use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
+use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 /// Default height of an [`Scaffolding::option_card`] preview frame.
 pub const OPTION_CARD_HEIGHT: f32 = 148.0;
@@ -21,6 +21,15 @@ pub const OPTION_CARD_HEIGHT: f32 = 148.0;
 /// bounding box and not to its corner radius — a preview that paints its own
 /// background will square off the corners and cover the frame's border with it.
 pub const OPTION_CARD_RADIUS: f32 = 10.0;
+/// A card row's horizontal padding — `../desktop`'s `Row`: `px-4`.
+const ROW_INSET: f32 = 16.0;
+/// The leading symbol's size.
+const ROW_ICON: f32 = 16.0;
+/// Between a row's leading symbol and its text.
+const ROW_GAP: f32 = Theme::SPACE;
+/// A card row's vertical padding. Measured 2026-09-01 off the macOS General
+/// pane: a ~40pt row over `TextStyle::Body`'s 21pt line box.
+const ROW_PAD_Y: f32 = 10.0;
 /// Clear space between the frame and the selection ring.
 const RING_GAP: f32 = 2.0;
 /// Thickness of the selection ring.
@@ -158,9 +167,8 @@ pub trait Scaffolding: ThemeExt {
             )
     }
 
-    /// Section card: `mt-6 overflow-hidden rounded-xl border border-border bg-card`
-    /// — the card tone, thinned to a translucent tint over glass so the card
-    /// reads as frost instead of a solid slab ([`Theme::card_glass_bg`]).
+    /// Section card: a rounded plate at [`Theme::card_glass_bg`], its own tone
+    /// carrying the edge the way a SwiftUI grouped `Form` section does.
     fn group_box(&self) -> Div {
         let theme = self.theme();
         div()
@@ -174,49 +182,48 @@ pub trait Scaffolding: ThemeExt {
             .flex_col()
     }
 
-    /// One card row: `border-t border-border px-5 py-3.5 first:border-t-0`.
-    /// Hover is caller-owned — gpui panics on a second hover, so the default
-    /// wash is [`super::card_row_hover`] for the caller to chain.
+    /// One card row, split from the row above by a full-width hairline. Hover is
+    /// caller-owned — gpui panics on a second hover, so the wash to chain is
+    /// [`Theme::element_hover`].
     fn card_row(&self, first: bool) -> Div {
         let theme = self.theme();
         div()
-            .px(px(20.0))
-            .py(px(14.0))
+            .px(px(ROW_INSET))
+            .py(px(ROW_PAD_Y))
             .when(!first, |el| el.border_t_1().border_color(theme.border))
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(14.0))
+            .gap(px(ROW_GAP))
     }
 
-    /// The identity tile on a row: `size-9 rounded-[10px] border bg-white/[0.03]`
-    /// around a 16px icon.
-    fn row_tile(&self, icon_path: &'static str) -> Div {
+    /// The leading symbol on a row: a bare glyph, sized to the text beside it,
+    /// the way the macOS General pane carries one.
+    fn row_icon(&self, icon_path: &'static str) -> Div {
         let theme = self.theme();
         div()
             .flex_none()
-            .size(px(36.0))
-            .rounded(px(Theme::panel_radius()))
-            .border_1()
-            .border_color(theme.border)
-            .bg(ink(0.03))
+            .size(px(ROW_ICON))
             .flex()
             .items_center()
             .justify_center()
             .child(
                 crate::icons::icon(icon_path)
-                    .size(px(16.0))
+                    .size(px(ROW_ICON))
                     .text_color(theme.text_muted),
             )
     }
 
-    /// Row title.
+    /// Row title. Clipped rather than ellipsised: an ellipsis sets
+    /// `text_overflow`, which opts the label out of gpui's measure cache, and a
+    /// list of them re-measures every row on every frame it scrolls.
     fn row_title(&self, title: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         div()
             .min_w_0()
-            .truncate()
-            .text_style(TextStyle::Headline)
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_style(TextStyle::Body)
             .text_color(theme.text)
             .child(title.into())
     }

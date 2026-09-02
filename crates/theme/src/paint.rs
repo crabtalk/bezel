@@ -191,25 +191,25 @@ pub(crate) fn band_for(appearance: Appearance) -> Hsla {
     }
 }
 
-/// Selected-state glass treatment (tabs, session rows, space rows): a
-/// TRANSLUCENT wash the vibrancy reads through — heavier flat washes blocked
-/// the glass (user request). Dark: the 11% [`wash`]. Light: the tone-flipped
-/// wash at 6% — 11% black read too dark over the bright frost (user report;
-/// light also previously ran a near-opaque white chip, rejected the same
-/// way). Same fill as [`Theme::glass_hover`](crate::theme::Theme::glass_hover) —
-/// the ring in [`glass_selected_shadows`] is what distinguishes selection.
-/// Selection *inside floating cards* is different — see [`card_selected_bg`].
+/// Selected-state glass treatment (tabs, session rows, space rows):
+/// `../desktop`'s `--color-active` — white at 12% on dark, black at 6% on
+/// light, translucent enough for the vibrancy to read through (heavier flat
+/// washes blocked the glass, user request).
+///
+/// One rung over [`Theme::element_hover`](crate::theme::Theme::element_hover),
+/// carrying the ring in [`glass_selected_shadows`] on top. Selection *inside
+/// floating cards* is [`card_selected_bg`].
 pub fn glass_selected_bg() -> Hsla {
     match current_appearance() {
-        Appearance::Dark => wash(0.11),
-        Appearance::Light => wash(0.06),
+        Appearance::Dark => ink(0.12),
+        Appearance::Light => ink(0.06),
     }
 }
 
-/// The user message bubble's plate: the same translucent wash family as
-/// [`glass_selected_bg`], one step softer — at the selection weight the
-/// bubble read too strong for settled content (user report), and an opaque
-/// plate before that read as a solid slab over glass.
+/// The user message bubble's plate: the softened [`wash`] at 8% dark, 4%
+/// light. At the selection weight the bubble read too strong for settled
+/// content (user report), and an opaque plate before that read as a solid slab
+/// over glass.
 pub fn user_bubble_bg() -> Hsla {
     match current_appearance() {
         Appearance::Dark => wash(0.08),
@@ -218,14 +218,13 @@ pub fn user_bubble_bg() -> Hsla {
 }
 
 /// Selected/keyboard-active treatment for rows and chips INSIDE a floating
-/// card (menu rows, the picker rail, segmented chips). The card is already the
-/// bright plane in light mode, so a white lift can't read there — selection is
-/// the tone-flipped grey wash, at 6% (dark's 11% read too dark on the bright
-/// plane, user report).
+/// card (menu rows, the picker rail, segmented chips): `--color-active` again,
+/// tone-flipped by the palette convention so a card that is already the bright
+/// plane lifts with black at 6% rather than white.
 pub fn card_selected_bg() -> Hsla {
     match current_appearance() {
-        Appearance::Dark => wash(0.11),
-        Appearance::Light => wash(0.06),
+        Appearance::Dark => ink(0.12),
+        Appearance::Light => ink(0.06),
     }
 }
 

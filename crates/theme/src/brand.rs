@@ -60,10 +60,16 @@ pub struct Brand {
     /// The base corner radius; every other corner is a ratio of it. See
     /// [`Theme::BASE_RADIUS`].
     pub radius: f32,
-    /// How opaque the frost over the blurred window is — `1.0` is opaque, and
-    /// turns glass off entirely. See [`Theme::GLASS_ALPHA`], which is where it
-    /// starts, and [`Theme::glass`].
-    pub glass: f32,
+    /// How opaque the tint over the blurred window is. See
+    /// [`Theme::VIBRANCY_ALPHA`], where it starts, and [`Theme::vibrancy_tint`].
+    pub vibrancy_alpha: f32,
+    /// Whether the window composites translucent — AppKit's vibrancy.
+    pub vibrancy: bool,
+    /// Whether components paint glass. Separate from [`Self::vibrancy`]:
+    /// SwiftUI's material blends within the window, so an opaque window can
+    /// still carry glass — which is what a Reduce-transparency setting asks
+    /// for and the system's own does not do.
+    pub glass: bool,
 }
 
 impl Global for Brand {}
@@ -74,7 +80,9 @@ impl Default for Brand {
             tint: Tint::NONE,
             accent: Tint::NONE,
             radius: Theme::BASE_RADIUS,
-            glass: Theme::GLASS_ALPHA,
+            vibrancy_alpha: Theme::VIBRANCY_ALPHA,
+            vibrancy: Theme::VIBRANCY_ALPHA < 1.0,
+            glass: Theme::VIBRANCY_ALPHA < 1.0,
         }
     }
 }
@@ -103,6 +111,9 @@ impl Theme {
 impl Brand {
     /// Rotate a palette onto this brand's hues.
     pub fn apply(&self, theme: &mut Theme) {
+        theme.vibrancy_alpha = self.vibrancy_alpha;
+        theme.vibrancy = self.vibrancy;
+        theme.glass = self.glass;
         // Every colour token, with the rule doing the choosing: a token that is
         // already grey takes the tint, and one that already carries a hue —
         // danger, warning, success — is semantic and keeps it. Translucent ink

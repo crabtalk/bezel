@@ -9,7 +9,7 @@ never through parameters, and its numbers are measured rather than chosen — th
 type ladder is `NSFont.preferredFont(forTextStyle:)`, the gap between siblings
 is `NSStackView().spacing`. [CONTRIBUTING.md](CONTRIBUTING.md) has the laws.
 
-https://github.com/user-attachments/assets/ba8a8946-edd9-4bc9-9fd2-a39fa249f495
+https://github.com/user-attachments/assets/34861f29-004f-47f0-89e6-42cc8772749f
 
 ```rust
 use bezel::ui::widgets::{ButtonStyle, Buttons};
