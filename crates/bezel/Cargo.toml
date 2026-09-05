@@ -16,7 +16,7 @@ rust-version.workspace = true
 workspace = true
 
 [features]
-default = ["geist-sans", "geist-mono", "geist-weights"]
+default = []
 geist-sans = ["ui/geist-sans"]
 geist-mono = ["ui/geist-mono"]
 geist-weights = ["ui/geist-weights"]

@@ -133,10 +133,8 @@ impl Theme {
             popover_surface: SurfaceStyle::Glass(Glass::Regular),
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
-            font_sans: "Geist".into(),
-            font_mono: "Geist Mono".into(),
-            font_sans_fallback: system_sans().into(),
-            font_mono_fallback: system_mono().into(),
+            font_sans: SYSTEM_SANS.into(),
+            font_mono: system_mono().into(),
         }
     }
 
@@ -274,10 +272,8 @@ impl Theme {
             popover_surface: SurfaceStyle::Glass(Glass::Regular),
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
-            font_sans: "Geist".into(),
-            font_mono: "Geist Mono".into(),
-            font_sans_fallback: system_sans().into(),
-            font_mono_fallback: system_mono().into(),
+            font_sans: SYSTEM_SANS.into(),
+            font_mono: system_mono().into(),
         }
     }
 
@@ -290,19 +286,18 @@ impl Theme {
     }
 }
 
-fn system_sans() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Helvetica"
-    } else if cfg!(target_os = "windows") {
-        "Segoe UI"
-    } else {
-        "DejaVu Sans"
-    }
-}
+/// gpui's alias for whatever the platform calls its UI font, resolved per
+/// backend by `font_name_with_fallbacks`.
+const SYSTEM_SANS: &str = ".SystemUIFont";
 
+/// The mono face has no alias of its own, so each backend is named here.
+/// macOS wants the dot-name — "SF Mono" does not resolve. wasm has only what
+/// gpui-web bundles, which `.ZedMono` names.
 fn system_mono() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Menlo"
+    if cfg!(target_family = "wasm") {
+        ".ZedMono"
+    } else if cfg!(target_os = "macos") {
+        ".AppleSystemUIFontMonospaced"
     } else if cfg!(target_os = "windows") {
         "Consolas"
     } else {

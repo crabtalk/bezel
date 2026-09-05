@@ -19,10 +19,11 @@ name = "ui"
 workspace = true
 
 [features]
-default = ["geist-sans", "geist-mono", "geist-weights"]
-# Geist (variable), 165 KB. Off, `Theme::font_sans_fallback` is what paints.
+default = []
+# Geist (variable), 165 KB. Registering it does not select it — set
+# `Theme::font_sans` to "Geist" too, or the platform's own face keeps painting.
 geist-sans = []
-# Geist Mono (variable), 168 KB. Off, `Theme::font_mono_fallback` is what paints.
+# Geist Mono (variable), 168 KB. Paired with `Theme::font_mono`.
 geist-mono = []
 # The static 500/600/700 Geist faces, 375 KB — sans only, there are no mono
 # statics. Only the cosmic-text path needs them; a macOS build can drop it.
