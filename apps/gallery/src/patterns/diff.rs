@@ -211,20 +211,16 @@ impl Render for Diff {
                     .px(px(24.0))
                     .py(px(32.0))
                     .child(
-                        theme
-                            .group_box()
-                            .mt(px(0.0))
-                            .child(Self::header(&theme))
-                            .child(
-                                div()
-                                    .id("diff-rows")
-                                    .overflow_x_scroll()
-                                    .restrict_scroll_to_axis()
-                                    .py(px(4.0))
-                                    .flex()
-                                    .flex_col()
-                                    .children(ROWS.iter().map(|row| Self::row(&theme, *row))),
-                            ),
+                        theme.group_box().child(Self::header(&theme)).child(
+                            div()
+                                .id("diff-rows")
+                                .overflow_x_scroll()
+                                .restrict_scroll_to_axis()
+                                .py(px(4.0))
+                                .flex()
+                                .flex_col()
+                                .children(ROWS.iter().map(|row| Self::row(&theme, *row))),
+                        ),
                     ),
             )
     }
