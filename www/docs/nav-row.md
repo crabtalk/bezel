@@ -7,7 +7,7 @@ description: The sidebar row — a leading icon, a truncating label, and trailin
 use ui::{icons, widgets::Layout};
 
 theme
-    .nav_row(Some(icons::WIDGET), "Home", self.route == Route::Home, "nav-home")
+    .nav_row(Some(icons::system::WIDGET), "Home", self.route == Route::Home, "nav-home")
     .id("nav-home")
     .on_click(cx.listener(|view, _, _, cx| view.go(Route::Home, cx)))
 ```

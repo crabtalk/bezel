@@ -1069,7 +1069,7 @@ pub fn search_line(theme: &Theme, input: AnyElement) -> gpui::Div {
         .border_color(hairline(0.07))
         .text_style(TextStyle::Body)
         .child(
-            icons::icon(icons::MAGNIFER)
+            icons::icon(icons::system::MAGNIFER)
                 .size(px(13.0))
                 .text_color(theme.text_faint),
         )

@@ -576,6 +576,7 @@ dependencies = [
  "bezel-agent",
  "bezel-gpui",
  "bezel-gpui-platform",
+ "bezel-icons",
  "bezel-motion",
  "bezel-theme",
  "bezel-ui",
@@ -911,6 +912,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bezel-icons"
+version = "0.1.5"
+dependencies = [
+ "bezel-gpui",
+ "icondata_core",
+ "icondata_lu",
+ "usvg",
+]
+
+[[package]]
 name = "bezel-markdown"
 version = "0.1.5"
 dependencies = [
@@ -970,6 +981,7 @@ name = "bezel-ui"
 version = "0.1.5"
 dependencies = [
  "bezel-gpui",
+ "bezel-icons",
  "bezel-motion",
  "bezel-theme",
  "libc",
@@ -2510,6 +2522,7 @@ dependencies = [
  "bezel-editor",
  "bezel-gpui",
  "bezel-gpui-platform",
+ "bezel-icons",
  "bezel-markdown",
  "bezel-motion",
  "bezel-syntax",
@@ -2942,6 +2955,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "icondata_core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c97be924215abd5e630d84e95a47c710138a6559b4c55039f4f33aa897fa859"
+
+[[package]]
+name = "icondata_lu"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f25663a6cc5371e9e33c98bab870f4aa2fd68c88853f1467c8fccfaf112782b1"
+dependencies = [
+ "icondata_core",
 ]
 
 [[package]]

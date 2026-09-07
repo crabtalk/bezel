@@ -80,7 +80,7 @@ pub trait Controls: ThemeExt {
         };
         if checked {
             box_.child(
-                crate::icons::icon(crate::icons::CHECK)
+                crate::icons::icon(crate::icons::status::CHECK)
                     .size(px(11.0))
                     .text_color(theme.on_solid),
             )
@@ -212,7 +212,7 @@ pub trait Controls: ThemeExt {
             .cursor_pointer()
             .child(div().min_w_0().truncate().child(label.into()))
             .child(
-                crate::icons::icon(crate::icons::ALT_ARROW_DOWN)
+                crate::icons::icon(crate::icons::arrows::ALT_ARROW_DOWN)
                     .size(px(14.0))
                     .text_color(theme.text_muted),
             )

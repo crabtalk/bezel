@@ -223,7 +223,7 @@ pub fn card<V: 'static>(
             .child(div().flex_1().min_w_0().child(label.clone()))
             .when(*checked, |row| {
                 row.child(
-                    icons::icon(icons::CHECK)
+                    icons::icon(icons::status::CHECK)
                         .size(px(GLYPH))
                         .text_color(theme.text),
                 )

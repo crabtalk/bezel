@@ -38,9 +38,9 @@ pub trait Layout: ThemeExt {
     fn disclosure(&self, expanded: bool) -> Svg {
         let theme = self.theme();
         crate::icons::icon(if expanded {
-            crate::icons::ALT_ARROW_DOWN
+            crate::icons::arrows::ALT_ARROW_DOWN
         } else {
-            crate::icons::ALT_ARROW_RIGHT
+            crate::icons::arrows::ALT_ARROW_RIGHT
         })
         .size(px(14.0))
         .text_color(theme.text_muted)

@@ -9,12 +9,12 @@ use ui::{icons, widgets};
 widgets::group_box(&theme)
     .child(
         widgets::card_row(&theme, true)
-            .child(widgets::row_tile(&theme, icons::MONITOR))
+            .child(widgets::row_tile(&theme, icons::devices::MONITOR))
             .child(widgets::row_title(&theme, "Appearance")),
     )
     .child(
         widgets::card_row(&theme, false)
-            .child(widgets::row_tile(&theme, icons::FOLDER))
+            .child(widgets::row_tile(&theme, icons::files::FOLDER))
             .child(widgets::row_title(&theme, "Storage")),
     )
 ```

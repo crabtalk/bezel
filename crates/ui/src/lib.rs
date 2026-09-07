@@ -9,13 +9,18 @@ use std::borrow::Cow;
 
 use gpui::App;
 
+/// The icon set, re-exported so the paths read the same either way
+/// (`ui::icons::system::MAGNIFER`). It is a crate of its own because it is
+/// declared from an upstream set rather than drawn, and is useful to anyone
+/// painting gpui, component library or not.
+pub use icons;
+
 pub mod combobox;
 pub mod control_bar;
 pub mod date;
 pub mod floating;
 pub mod focus;
 pub mod hover_card;
-pub mod icons;
 pub mod input;
 pub mod list;
 pub mod loaders;

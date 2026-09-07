@@ -1,0 +1,49 @@
+[package]
+name = "bezel-icons"
+description = "The bezel icon set — categorized SVGs generated into typed paths and a gpui AssetSource"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "icons"
+
+[lints]
+workspace = true
+
+# One feature per category, all on by default. `icon_set!` gates each module on
+# its own feature, so an app that paints no transport controls never compiles
+# the sixteen media glyphs.
+#
+# Cargo unions features across a graph, so a category a dependency turns on is
+# one no consumer can turn off — `ui` needs four of these to compile, and those
+# four are the floor for anyone depending on it. The gate is there to keep the
+# set growable, not to take icons away from a consumer who already has them.
+[features]
+default = ["arrows", "devices", "editing", "files", "media", "status", "system"]
+arrows = []
+devices = []
+editing = []
+files = []
+media = []
+status = []
+system = []
+
+[dependencies]
+gpui.workspace = true
+# The glyphs. We name 84 of Lucide's 1599 statics and the linker drops the rest,
+# so the categories an app turns off cost it nothing in the binary.
+icondata_core.workspace = true
+icondata_lu.workspace = true
+
+# The parser gpui paints SVGs with: the tests prove a document renders rather
+# than merely looking like markup.
+[dev-dependencies]
+usvg.workspace = true
