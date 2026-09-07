@@ -12,7 +12,7 @@
 
 use gpui::{
     App, Context, CursorStyle, ElementInputHandler, EventEmitter, FocusHandle, Focusable,
-    MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
+    KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
 };
 use markdown::{
     Annotation, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Splice,
@@ -45,6 +45,15 @@ use keys::{
 };
 
 const CONTEXT: &str = "BezelEditor";
+
+/// [`CONTEXT`], which every binding in [`keys`] is scoped to, plus the mark
+/// that keeps `tab` for [`Editor::indent`].
+fn key_context() -> KeyContext {
+    let mut context = KeyContext::default();
+    context.add(CONTEXT);
+    context.add(ui::focus::CLAIMS_TAB);
+    context
+}
 
 /// What the editor tells its host about.
 ///
@@ -1329,7 +1338,9 @@ impl Render for Editor {
             // what tells the gutter handle to stop pointing at a block the
             // pointer left behind.
             .id("bezel-editor")
-            .key_context(CONTEXT)
+            // The mark is what keeps `tab`: without it traversal answers the
+            // key first and the caret never sees it.
+            .key_context(key_context())
             .track_focus(&handle)
             // Tracking focus does not take it. Without this, clicking into the
             // document blurs the editor instead of putting a caret in it, and

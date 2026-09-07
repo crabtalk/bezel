@@ -256,6 +256,59 @@ fn tab_indents_a_list_item_and_shift_tab_puts_it_back(cx: &mut TestAppContext) {
     );
 }
 
+/// The bug (#14): `tab` is bound twice — `Indent` here, `FocusNext` in
+/// [`ui::focus`] with no context and so at the same depth — and the tie went to
+/// whichever crate was initialised last. In the gallery that was `focus`, so
+/// `tab` moved focus and a list could not be nested at all.
+#[gpui::test]
+fn tab_indents_with_focus_traversal_installed(cx: &mut TestAppContext) {
+    use gpui::{Context, IntoElement, Render, Window, div, prelude::*};
+
+    /// A host that traverses on `tab`, as an app's root view does.
+    struct Host(Entity<Editor>);
+
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            ui::focus::traversal(div())
+                .size_full()
+                .child(self.0.clone())
+        }
+    }
+
+    cx.update(|cx| {
+        theme::Theme::install(theme::Appearance::Dark, cx);
+        editor::init(cx);
+        // The order `apps/gallery` installs them in: `focus` binds `tab` last.
+        ui::focus::init(cx);
+    });
+    let window = cx.add_window(|_, cx| Host(cx.new(|cx| Editor::new(SOURCE, cx))));
+    let editor = cx.update(|cx| window.root(cx).unwrap().read(cx).0.clone());
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(size(px(360.0), px(600.0)));
+    cx.update(|window, cx| {
+        let handle = editor.read(cx).focus_handle(cx);
+        window.focus(&handle, cx);
+    });
+    cx.run_until_parked();
+
+    go_to_block(&editor, &mut cx, 3);
+    cx.simulate_keystrokes("tab");
+    assert!(
+        source(&editor, &mut cx).contains("- first\n    - second"),
+        "tab nests the item rather than moving focus: {:?}",
+        source(&editor, &mut cx)
+    );
+    cx.simulate_keystrokes("shift-tab");
+    assert!(
+        source(&editor, &mut cx).contains("- first\n- second"),
+        "and shift-tab lifts it back rather than stepping the other way"
+    );
+    assert!(
+        cx.update(|window, cx| editor.read(cx).focus_handle(cx).is_focused(window)),
+        "the document still holds focus"
+    );
+}
+
 /// The handle used to follow the pointer and nothing else, so a document being
 /// worked in by keyboard had no handle at all until you reached for the mouse.
 #[gpui::test]
