@@ -28,6 +28,7 @@ use crate::{
     layout::Layout,
     link::{self, Choice},
     slash::Slash,
+    text_size::{self, TextSize},
 };
 
 pub(crate) mod image;
@@ -37,11 +38,12 @@ pub(crate) mod menu;
 
 pub use keys::init;
 use keys::{
-    Backspace, Copy, Cut, Delete, DeleteToHome, DeleteWordLeft, DeleteWordRight, Dismiss, Down,
-    DuplicateBlock, End, Home, Indent, KillLine, Left, MoveBlockDown, MoveBlockUp, Outdent, Paste,
-    Redo, RemoveBlock, Right, SelectAll, SelectDown, SelectEnd, SelectHome, SelectLeft,
-    SelectRight, SelectUp, SelectWordLeft, SelectWordRight, SplitBlock, ToggleBold, ToggleCode,
-    ToggleItalic, ToggleStrike, Undo, Up, WordLeft, WordRight,
+    Backspace, Copy, Cut, DecreaseTextSize, Delete, DeleteToHome, DeleteWordLeft, DeleteWordRight,
+    Dismiss, Down, DuplicateBlock, End, Home, IncreaseTextSize, Indent, KillLine, Left,
+    MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock, ResetTextSize, Right, SelectAll,
+    SelectDown, SelectEnd, SelectHome, SelectLeft, SelectRight, SelectUp, SelectWordLeft,
+    SelectWordRight, SplitBlock, ToggleBold, ToggleCode, ToggleItalic, ToggleStrike, Undo, Up,
+    WordLeft, WordRight,
 };
 
 const CONTEXT: &str = "BezelEditor";
@@ -60,7 +62,7 @@ fn key_context() -> KeyContext {
 /// An app holding comment threads has to hear that the document moved, or its
 /// side of the pairing goes stale against anchors that did not. Split the way
 /// [`ui::input::FieldEvent`] is, so a listener takes only the half it needs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EditorEvent {
     /// The document is different, and the anchors have been mapped through it.
     Changed,
@@ -199,6 +201,13 @@ pub struct Editor {
     /// wrap belongs to two rows and answers with the first, so a caret that
     /// derived its own row would step down into the same one forever.
     goal: Option<gpui::Point<gpui::Pixels>>,
+    /// The size the app set this document in, in points, or `None` to follow
+    /// the app's own text size. Absolute rather than a factor over the ladder,
+    /// so moving the interface size leaves a document set to 16pt at 16pt.
+    ///
+    /// What the chords move is the shared adjustment on top of this; the base
+    /// itself is the app's alone.
+    text_size: Option<f32>,
 }
 
 impl Editor {
@@ -236,6 +245,7 @@ impl Editor {
             scroll: None,
             reveal: false,
             goal: None,
+            text_size: None,
         }
     }
 
@@ -246,6 +256,23 @@ impl Editor {
     pub fn with_undo_limit(mut self, limit: usize) -> Self {
         self.history = History::with_limit(limit);
         self
+    }
+
+    /// Open the document at a size of its own, in points — the app's settings
+    /// field for prose. Unset, it is set at the app's own text size.
+    ///
+    /// The base, not the current size: `cmd-+` moves a shared adjustment over
+    /// this, and `cmd-0` clears that adjustment to come back here.
+    pub fn with_text_size(mut self, points: f32) -> Self {
+        self.text_size = Some(points);
+        self
+    }
+
+    /// The base the app set, if any. Add
+    /// [`text_size_adjustment`](crate::text_size_adjustment) for what is on
+    /// screen.
+    pub fn text_size(&self) -> Option<f32> {
+        self.text_size
     }
 
     /// The box the document scrolls in, so typing off the bottom follows the
@@ -956,6 +983,30 @@ impl Editor {
         });
     }
 
+    fn increase_text_size(&mut self, _: &IncreaseTextSize, _: &mut Window, cx: &mut Context<Self>) {
+        self.step_text_size(TextSize::of(cx).step, cx);
+    }
+
+    fn decrease_text_size(&mut self, _: &DecreaseTextSize, _: &mut Window, cx: &mut Context<Self>) {
+        self.step_text_size(-TextSize::of(cx).step, cx);
+    }
+
+    fn reset_text_size(&mut self, _: &ResetTextSize, _: &mut Window, cx: &mut Context<Self>) {
+        text_size::reset_text_size(cx);
+    }
+
+    /// Sizing is not an edit: it changes nothing about the document, so it
+    /// leaves no undo step and no anchor moves.
+    ///
+    /// The step is taken against *this* document's size and stored back as the
+    /// shared adjustment, so a press at the end of the range banks up nothing
+    /// to work back through on the way down.
+    fn step_text_size(&mut self, by: f32, cx: &mut Context<Self>) {
+        let base = self.text_size.unwrap_or_else(theme::base_text_size);
+        let next = TextSize::of(cx).clamp(text_size::resolve(self.text_size, cx) + by);
+        text_size::set_adjustment(next - base, cx);
+    }
+
     /// Escape closes an open menu, and otherwise collapses a selection — the
     /// things there are to back out of, innermost first.
     fn dismiss(&mut self, _: &Dismiss, _: &mut Window, cx: &mut Context<Self>) {
@@ -1503,6 +1554,9 @@ impl Render for Editor {
             }))
             .on_action(cx.listener(Self::split_block))
             .on_action(cx.listener(Self::indent))
+            .on_action(cx.listener(Self::increase_text_size))
+            .on_action(cx.listener(Self::decrease_text_size))
+            .on_action(cx.listener(Self::reset_text_size))
             .on_action(cx.listener(Self::outdent))
             .on_action(cx.listener(Self::dismiss))
             .on_action(cx.listener(Self::select_all))
@@ -1621,6 +1675,12 @@ impl Render for Editor {
                             // painted — an editor that could hide it would be
                             // hiding a place you can already be typing.
                             caption: markdown::Caption::Shown,
+                            // The size is absolute, so the factor the ladder
+                            // is already scaled by comes back out of it —
+                            // otherwise the app's size and this one multiply.
+                            typography: Some(markdown::Typography::of(cx).scaled(
+                                text_size::resolve(self.text_size, cx) / theme::base_text_size(),
+                            )),
                         },
                         window,
                         cx,

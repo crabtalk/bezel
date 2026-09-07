@@ -148,6 +148,10 @@ pub struct Editing<'a> {
     /// Shown on the caret's block while it holds nothing.
     pub placeholder: Option<SharedString>,
     pub caption: Caption,
+    /// What to set the document in. `None` takes the installed
+    /// [`Typography`] — a caller sizing one document apart from the rest
+    /// passes [`Typography::scaled`].
+    pub typography: Option<Typography>,
 }
 
 impl Default for Editing<'_> {
@@ -161,6 +165,7 @@ impl Default for Editing<'_> {
             annotations: &[],
             placeholder: None,
             caption: Caption::default(),
+            typography: None,
         }
     }
 }
@@ -553,6 +558,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         annotations,
         placeholder,
         caption,
+        typography,
     } = editing;
     // Refilled every frame, in paint order — and emptied in *prepaint*, not
     // here. An editor reads last frame's positions while building this frame's
@@ -568,7 +574,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
-    let typography = Typography::of(cx);
+    let typography = typography.unwrap_or_else(|| Typography::of(cx));
     let mut column = div().flex().flex_col().children(reset);
 
     for (ix, block) in doc.blocks.iter().enumerate() {

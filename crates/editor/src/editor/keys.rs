@@ -52,6 +52,9 @@ actions!(
         RemoveBlock,
         ConfirmUrl,
         CancelUrl,
+        IncreaseTextSize,
+        DecreaseTextSize,
+        ResetTextSize,
     ]
 );
 
@@ -115,6 +118,14 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-i", ToggleItalic, ctx),
         KeyBinding::new("cmd-e", ToggleCode, ctx),
         KeyBinding::new("cmd-shift-x", ToggleStrike, ctx),
+        // Three chords for one key: `cmd-+` is `cmd-shift-=` on the keyboards
+        // that have no `+` of their own, and which of the two a platform
+        // reports is not ours to guess.
+        KeyBinding::new("cmd-=", IncreaseTextSize, ctx),
+        KeyBinding::new("cmd-+", IncreaseTextSize, ctx),
+        KeyBinding::new("cmd-shift-=", IncreaseTextSize, ctx),
+        KeyBinding::new("cmd--", DecreaseTextSize, ctx),
+        KeyBinding::new("cmd-0", ResetTextSize, ctx),
         // cmd = line, option = word: the macOS convention.
         KeyBinding::new("cmd-left", Home, ctx),
         KeyBinding::new("cmd-right", End, ctx),
@@ -153,6 +164,11 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-i", ToggleItalic, ctx),
         KeyBinding::new("ctrl-e", ToggleCode, ctx),
         KeyBinding::new("ctrl-shift-x", ToggleStrike, ctx),
+        KeyBinding::new("ctrl-=", IncreaseTextSize, ctx),
+        KeyBinding::new("ctrl-+", IncreaseTextSize, ctx),
+        KeyBinding::new("ctrl-shift-=", IncreaseTextSize, ctx),
+        KeyBinding::new("ctrl--", DecreaseTextSize, ctx),
+        KeyBinding::new("ctrl-0", ResetTextSize, ctx),
         // ctrl = word on Windows/Linux, where there is no line modifier.
         KeyBinding::new("ctrl-left", WordLeft, ctx),
         KeyBinding::new("ctrl-right", WordRight, ctx),

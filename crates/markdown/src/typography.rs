@@ -32,6 +32,21 @@ impl Typography {
             .map_or_else(Self::default, |installed| installed.0)
     }
 
+    /// The same set at `scale` times the ladder — what a zoomed document is
+    /// painted with. Every role moves together, so the ratios hold.
+    pub fn scaled(self, scale: f32) -> Self {
+        Self {
+            body: self.body.scaled(scale),
+            h1: self.h1.scaled(scale),
+            h2: self.h2.scaled(scale),
+            h3: self.h3.scaled(scale),
+            h4: self.h4.scaled(scale),
+            code: self.code.scaled(scale),
+            card: self.card.scaled(scale),
+            caption: self.caption.scaled(scale),
+        }
+    }
+
     pub fn heading(&self, level: u8) -> Metrics {
         match level {
             1 => self.h1,
