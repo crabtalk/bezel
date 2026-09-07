@@ -8,7 +8,7 @@ use ui::{icons, widgets};
 
 widgets::empty_state(
     &theme,
-    icons::FOLDER,
+    icons::files::FOLDER,
     "No repositories",
     "Open a folder to get started.",
 )

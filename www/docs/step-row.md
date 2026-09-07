@@ -10,7 +10,7 @@ use ui::widgets;
 
 widgets::step_row(
     &theme,
-    icons::TERMINAL,
+    icons::devices::TERMINAL,
     "Bash",
     Some("cargo test -p ui".into()),  // truncating middle
     Some("1.4s".into()),                     // right-aligned, never truncates

@@ -183,7 +183,7 @@ impl Editor {
                 .child(label.clone())
                 .when(lit, |row| {
                     row.child(
-                        ui::icons::icon(ui::icons::CHECK)
+                        ui::icons::icon(ui::icons::status::CHECK)
                             .size(px(13.0))
                             .text_color(theme.text),
                     )

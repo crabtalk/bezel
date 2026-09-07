@@ -339,7 +339,7 @@ struct Call {
 /// `Read`s are the case the grouping exists for.
 const CALLS: [Call; 12] = [
     Call {
-        icon: icons::COMPASS,
+        icon: icons::system::COMPASS,
         verb: "Discover",
         detail: "sources for \"bezel-agent\"",
         ms: 40,
@@ -347,7 +347,7 @@ const CALLS: [Call; 12] = [
         output: Some("ARCHITECTURE.md\nTODO.md\ntodos/agent.md"),
     },
     Call {
-        icon: icons::MAGNIFER,
+        icon: icons::system::MAGNIFER,
         verb: "Search",
         detail: "fn at_bottom",
         ms: 12,
@@ -355,7 +355,7 @@ const CALLS: [Call; 12] = [
         output: Some("crates/ui/src/scroll.rs:236\ncrates/ui/src/scroll.rs:411"),
     },
     Call {
-        icon: icons::BOOK,
+        icon: icons::files::BOOK,
         verb: "Read",
         detail: "crates/ui/src/scroll.rs",
         ms: 3,
@@ -363,7 +363,7 @@ const CALLS: [Call; 12] = [
         output: None,
     },
     Call {
-        icon: icons::BOOK,
+        icon: icons::files::BOOK,
         verb: "Read",
         detail: "crates/ui/src/widgets.rs",
         ms: 2,
@@ -371,7 +371,7 @@ const CALLS: [Call; 12] = [
         output: None,
     },
     Call {
-        icon: icons::BOOK,
+        icon: icons::files::BOOK,
         verb: "Read",
         detail: "ARCHITECTURE.md",
         ms: 2,
@@ -379,7 +379,7 @@ const CALLS: [Call; 12] = [
         output: Some("extracted from working application code, never invented ahead of need"),
     },
     Call {
-        icon: icons::TERMINAL,
+        icon: icons::devices::TERMINAL,
         verb: "Run",
         detail: "cargo test -p ui",
         ms: 1_412,
@@ -387,7 +387,7 @@ const CALLS: [Call; 12] = [
         output: Some("running 87 tests\n\ntest result: ok. 87 passed; 0 failed"),
     },
     Call {
-        icon: icons::CPU,
+        icon: icons::devices::CPU,
         verb: "Recall",
         detail: "what bezel-agent was for",
         ms: 18,
@@ -395,7 +395,7 @@ const CALLS: [Call; 12] = [
         output: Some("a crate agreed in principle and deliberately not created"),
     },
     Call {
-        icon: icons::DOWNLOAD,
+        icon: icons::files::DOWNLOAD,
         verb: "Fetch",
         detail: "aicss.dev",
         ms: 210,
@@ -403,7 +403,7 @@ const CALLS: [Call; 12] = [
         output: Some("14 blocks, none of them measured against a running app"),
     },
     Call {
-        icon: icons::LINK,
+        icon: icons::files::LINK,
         verb: "Link",
         detail: "todos/agent.md → TODO.md",
         ms: 5,
@@ -411,7 +411,7 @@ const CALLS: [Call; 12] = [
         output: None,
     },
     Call {
-        icon: icons::GIT_BRANCH,
+        icon: icons::editing::GIT_BRANCH,
         verb: "Diff",
         detail: "crates/ui",
         ms: 31,
@@ -419,7 +419,7 @@ const CALLS: [Call; 12] = [
         output: None,
     },
     Call {
-        icon: icons::BOOK,
+        icon: icons::files::BOOK,
         verb: "Read",
         detail: "crates/agent/src/lib.rs",
         ms: 1,
@@ -427,7 +427,7 @@ const CALLS: [Call; 12] = [
         output: Some("error: no such file or directory (os error 2)"),
     },
     Call {
-        icon: icons::PEN,
+        icon: icons::editing::PEN,
         verb: "Edit",
         detail: "todos/agent.md",
         ms: 7,
@@ -788,13 +788,13 @@ impl Composer {
                 .cursor_pointer()
                 .hover(|s| s.opacity(0.9))
                 .child(
-                    icons::icon(icons::ARROW_UP)
+                    icons::icon(icons::arrows::ARROW_UP)
                         .size(px(14.0))
                         .text_color(theme.on_solid),
                 )
         } else {
             disc.bg(theme::ink(0.06)).child(
-                icons::icon(icons::ARROW_UP)
+                icons::icon(icons::arrows::ARROW_UP)
                     .size(px(14.0))
                     .text_color(theme.text_faint),
             )

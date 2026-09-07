@@ -118,7 +118,7 @@ fn main() {
 | Blob avatars           | [blobatar]                         | MIT         |
 | Syntax highlighting    | tree-sitter core and grammars      | MIT         |
 | TypeScript/TSX queries | [nvim-treesitter]                  | Apache-2.0  |
-| Icons                  | Solar Icons by 480 Design          | CC BY 4.0   |
+| Icons                  | [Lucide], via `icondata_lu`        | ISC         |
 | Fonts                  | Geist and Geist Mono © Vercel Inc. | SIL OFL 1.1 |
 
 [gpui]: https://github.com/zed-industries/gpui
@@ -126,3 +126,4 @@ fn main() {
 [gpui-thinking-orbs]: https://github.com/FrancoEscob/gpui-thinking-orbs
 [blobatar]: https://github.com/Alain00/blobatar
 [nvim-treesitter]: https://github.com/nvim-treesitter/nvim-treesitter
+[lucide]: https://lucide.dev

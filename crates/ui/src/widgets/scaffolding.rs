@@ -172,7 +172,6 @@ pub trait Scaffolding: ThemeExt {
     fn group_box(&self) -> Div {
         let theme = self.theme();
         div()
-            .mt(px(24.0))
             .rounded(px(Theme::surface_radius()))
             .border_1()
             .border_color(theme.border)

@@ -16,7 +16,7 @@ rust-version.workspace = true
 workspace = true
 
 [features]
-default = ["geist-sans", "geist-mono", "geist-weights"]
+default = []
 geist-sans = ["ui/geist-sans"]
 geist-mono = ["ui/geist-mono"]
 geist-weights = ["ui/geist-weights"]
@@ -26,6 +26,10 @@ platform = ["dep:gpui_platform"]
 
 [dependencies]
 agent.workspace = true
+# Every category, because this is the batteries-included path. An app paying
+# for only the icons it paints depends on `bezel-icons` directly, the way it
+# would depend on `theme` alone for tokens.
+icons.workspace = true
 motion.workspace = true
 theme.workspace = true
 # Spelled out rather than inherited: cargo rejects `default-features = false` on

@@ -139,7 +139,7 @@ pub fn ellipsis(theme: &Theme) -> gpui::Div {
         .child(SharedString::from("…"))
 }
 
-/// Previous or next, with [`icons::ALT_ARROW_LEFT`]/[`icons::ALT_ARROW_RIGHT`]
+/// Previous or next, with [`icons::arrows::ALT_ARROW_LEFT`]/[`icons::arrows::ALT_ARROW_RIGHT`]
 /// — the pair the calendar's month header already uses.
 ///
 /// A disabled step stays in place rather than disappearing at the ends, so the

@@ -27,6 +27,11 @@
 //! unbuildable for `wasm32-unknown-unknown`, where that C has no libc — the very
 //! failure `markdown` names no highlighter to avoid.
 //!
+//! `icons` carries all seven of its categories here, since a facade exists to
+//! be the one dependency that works. An app counting bytes depends on
+//! `bezel-icons` directly with `default-features = false` and names the
+//! categories it paints.
+//!
 //! Font gates are wired: `geist-sans`, `geist-mono` and `geist-weights`, all on
 //! by default, forwarded to `ui` so an app shipping its own type stops paying
 //! for the families it does not paint.
@@ -36,6 +41,7 @@
 //! is not going away.
 
 pub use agent;
+pub use icons;
 pub use motion;
 pub use theme;
 pub use ui;

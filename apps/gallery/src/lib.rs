@@ -364,7 +364,7 @@ struct Step {
 
 const STEPS: [Step; 3] = [
     Step {
-        icon: icons::TERMINAL,
+        icon: icons::devices::TERMINAL,
         title: "cargo test",
         detail: "-p ui",
         meta: "1.4s",
@@ -378,7 +378,7 @@ const STEPS: [Step; 3] = [
         ),
     },
     Step {
-        icon: icons::MAGNIFER,
+        icon: icons::system::MAGNIFER,
         title: "Search",
         detail: "fn at_bottom",
         meta: "12ms",
@@ -386,7 +386,7 @@ const STEPS: [Step; 3] = [
         output: None,
     },
     Step {
-        icon: icons::DOCUMENT,
+        icon: icons::files::DOCUMENT,
         title: "Read",
         detail: "crates/ui/src/missing.rs",
         meta: "3ms",
@@ -604,7 +604,7 @@ pub const FOUNDATIONS: &[Group] = &[
     },
     Group {
         title: "Assets",
-        sections: &[section("icons", "Icons", "crates/ui/src/icons.rs")],
+        sections: &[section("icons", "Icons", "crates/icons/src/lib.rs")],
     },
 ];
 
@@ -1386,7 +1386,7 @@ impl Gallery {
                         .cursor_pointer()
                         .on_click(cx.listener(|view, _, _, cx| view.open_drawer(cx)))
                         .child(
-                            icons::icon(icons::SIDEBAR_MINIMALISTIC_LEFT)
+                            icons::icon(icons::system::SIDEBAR_MINIMALISTIC_LEFT)
                                 .size(px(15.0))
                                 .text_color(theme.text_muted),
                         ),
@@ -1440,7 +1440,7 @@ impl Gallery {
                         .on_click(cx.listener(|view, _, _, cx| {
                             view.show_stats(!view.stats_shown, cx);
                         }))
-                        .child(icons::icon(icons::CPU).size(px(15.0)).text_color(
+                        .child(icons::icon(icons::devices::CPU).size(px(15.0)).text_color(
                             if self.stats_shown {
                                 theme.text
                             } else {
@@ -1480,9 +1480,13 @@ impl Gallery {
                         cx.notify();
                     }))
                     .child(
-                        icons::icon(if dark { icons::MOON } else { icons::SUN })
-                            .size(px(15.0))
-                            .text_color(theme.text_muted),
+                        icons::icon(if dark {
+                            icons::system::MOON
+                        } else {
+                            icons::system::SUN
+                        })
+                        .size(px(15.0))
+                        .text_color(theme.text_muted),
                     ),
             )
             .into_any_element()
@@ -1825,39 +1829,55 @@ impl Gallery {
             "icons" => section
                 .child(hint(
                     &theme,
-                    "Solar Icons (Linear) by 480 Design, CC BY 4.0, plus a few drawn \
-                     to match. Every one is embedded in the crate.",
+                    "Lucide, ISC-licensed, declared a line per icon in the crate itself — \
+                     no SVG is checked into the repository. One module and one cargo \
+                     feature per category, so an app compiles only what it paints.",
                 ))
-                .child(div().flex().flex_row().flex_wrap().gap(px(8.0)).children(
-                    icons::ALL.iter().map(|(name, path)| {
-                        div()
-                            .w(px(96.0))
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap(px(6.0))
-                            .py(px(10.0))
-                            .rounded(px(Theme::control_radius()))
-                            .border_1()
-                            .border_color(theme.border)
-                            .child(
-                                icons::icon(path)
-                                    .size(px(18.0))
-                                    .text_color(theme.text_muted),
-                            )
-                            .child(
+                .children(icons::CATEGORIES.iter().map(|(category, contents)| {
+                    stack()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .text_style(TextStyle::Subheadline)
+                                .text_color(theme.text_faint)
+                                .font_family(theme.font_mono.clone())
+                                .child(SharedString::from(format!(
+                                    "{category} · {}",
+                                    contents.len()
+                                ))),
+                        )
+                        .child(div().flex().flex_row().flex_wrap().gap(px(8.0)).children(
+                            contents.iter().map(|(name, path)| {
                                 div()
-                                    .w_full()
-                                    .truncate()
-                                    .text_style(TextStyle::Caption)
-                                    .text_align(gpui::TextAlign::Center)
-                                    .font_family(theme.font_mono.clone())
-                                    .text_color(theme.text_faint)
-                                    .child(SharedString::from(*name)),
-                            )
-                            .into_any_element()
-                    }),
-                ))
+                                    .w(px(96.0))
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .py(px(10.0))
+                                    .rounded(px(Theme::control_radius()))
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .child(
+                                        icons::icon(path)
+                                            .size(px(18.0))
+                                            .text_color(theme.text_muted),
+                                    )
+                                    .child(
+                                        div()
+                                            .w_full()
+                                            .truncate()
+                                            .text_style(TextStyle::Caption)
+                                            .text_align(gpui::TextAlign::Center)
+                                            .font_family(theme.font_mono.clone())
+                                            .text_color(theme.text_faint)
+                                            .child(SharedString::from(*name)),
+                                    )
+                                    .into_any_element()
+                            }),
+                        ))
+                        .into_any_element()
+                }))
                 .into_any_element(),
 
             // ---- Components --------------------------------------------------
@@ -1873,18 +1893,18 @@ impl Gallery {
                     theme.button(labels[2], ButtonStyle::Destructive, None),
                 ];
                 let glyphs = [
-                    (icons::PEN, ButtonStyle::Ghost, "pen"),
-                    (icons::PLUS, ButtonStyle::Prominent, "plus"),
+                    (icons::editing::PEN, ButtonStyle::Ghost, "pen"),
+                    (icons::system::PLUS, ButtonStyle::Prominent, "plus"),
                     (
-                        icons::TRASH_BIN_MINIMALISTIC,
+                        icons::files::TRASH_BIN_MINIMALISTIC,
                         ButtonStyle::Destructive,
                         "trash",
                     ),
                 ];
                 let toolbar = [
-                    (icons::SIDEBAR_MINIMALISTIC_LEFT, "sidebar"),
-                    (icons::MAGNIFER, "search"),
-                    (icons::SETTINGS_MINIMALISTIC, "settings"),
+                    (icons::system::SIDEBAR_MINIMALISTIC_LEFT, "sidebar"),
+                    (icons::system::MAGNIFER, "search"),
+                    (icons::system::SETTINGS_MINIMALISTIC, "settings"),
                 ];
                 let cluster =
                     theme
@@ -1909,8 +1929,8 @@ impl Gallery {
                         }));
                 let capsule = theme.control_group().rounded_full().children(
                     [
-                        (icons::ALT_ARROW_LEFT, "back"),
-                        (icons::ALT_ARROW_RIGHT, "forward"),
+                        (icons::arrows::ALT_ARROW_LEFT, "back"),
+                        (icons::arrows::ALT_ARROW_RIGHT, "forward"),
                     ]
                     .into_iter()
                     .map(|(glyph, name)| {
@@ -1946,7 +1966,7 @@ impl Gallery {
                     .child(
                         theme
                             .icon_button(
-                                icons::ALT_ARROW_DOWN,
+                                icons::arrows::ALT_ARROW_DOWN,
                                 ButtonStyle::Ghost,
                                 Some(Fade::new(view, "group-more")),
                             )
@@ -2029,7 +2049,7 @@ impl Gallery {
                                     .ghost("ghost-menu")
                                     .p(px(5.0))
                                     .child(
-                                        icons::icon(icons::MENU_DOTS)
+                                        icons::icon(icons::system::MENU_DOTS)
                                             .size(px(14.0))
                                             .text_color(theme.text_faint),
                                     )
@@ -2044,7 +2064,7 @@ impl Gallery {
                                     .text_style(TextStyle::Callout)
                                     .text_color(theme.text_muted)
                                     .child(
-                                        icons::icon(icons::PLUS)
+                                        icons::icon(icons::system::PLUS)
                                             .size(px(13.0))
                                             .text_color(theme.text_faint),
                                     )
@@ -2161,7 +2181,7 @@ impl Gallery {
                                                     .child(*label)
                                                     .when(index == self.theme_choice, |row| {
                                                         row.child(
-                                                            icons::icon(icons::CHECK)
+                                                            icons::icon(icons::status::CHECK)
                                                                 .size(px(13.0))
                                                                 .text_color(theme.text),
                                                         )
@@ -2539,11 +2559,11 @@ impl Gallery {
 
             "nav-row" => {
                 const ROWS: [(&str, &str); 5] = [
-                    (icons::WIDGET, "Home"),
-                    (icons::GLOBAL, "Browser"),
-                    (icons::BOOK, "Articles"),
-                    (icons::ARCHIVE_MINIMALISTIC, "Archived"),
-                    (icons::DOCUMENT, "Untitled"),
+                    (icons::system::WIDGET, "Home"),
+                    (icons::devices::GLOBAL, "Browser"),
+                    (icons::files::BOOK, "Articles"),
+                    (icons::files::ARCHIVE_MINIMALISTIC, "Archived"),
+                    (icons::files::DOCUMENT, "Untitled"),
                 ];
                 section
                     .child(hint(
@@ -2584,7 +2604,7 @@ impl Gallery {
                                                 .text_color(theme.text_faint)
                                                 .child("10")
                                                 .child(
-                                                    icons::icon(icons::ALT_ARROW_RIGHT)
+                                                    icons::icon(icons::arrows::ALT_ARROW_RIGHT)
                                                         .size(px(14.0))
                                                         .text_color(theme.text_faint),
                                                 ),
@@ -2592,7 +2612,7 @@ impl Gallery {
                                     })
                                     .when(*label == "Untitled", |row| {
                                         row.child(
-                                            icons::icon(icons::TRASH_BIN_MINIMALISTIC)
+                                            icons::icon(icons::files::TRASH_BIN_MINIMALISTIC)
                                                 .size(px(14.0))
                                                 .flex_none()
                                                 .text_color(motion::hover_blend(
@@ -2649,8 +2669,12 @@ impl Gallery {
                             .child(pressable(
                                 {
                                     let hover = theme.element_hover;
-                                    control_bar::bar_button(icons::MAGNIFER, 24.0, theme.text_muted)
-                                        .hover(move |s| s.bg(hover))
+                                    control_bar::bar_button(
+                                        icons::system::MAGNIFER,
+                                        24.0,
+                                        theme.text_muted,
+                                    )
+                                    .hover(move |s| s.bg(hover))
                                 },
                                 "titlebar-search",
                                 cx,
@@ -2779,14 +2803,14 @@ impl Gallery {
                         &theme,
                         ControlBarShape::Pill,
                         vec![
-                            glyph(icons::SHUFFLE).into_any_element(),
-                            glyph(icons::SKIP_PREVIOUS).into_any_element(),
-                            glyph(icons::PLAY_BOLD).into_any_element(),
-                            glyph(icons::SKIP_NEXT).into_any_element(),
-                            glyph(icons::REPEAT).into_any_element(),
+                            glyph(icons::media::SHUFFLE).into_any_element(),
+                            glyph(icons::media::SKIP_PREVIOUS).into_any_element(),
+                            glyph(icons::media::PLAY_BOLD).into_any_element(),
+                            glyph(icons::media::SKIP_NEXT).into_any_element(),
+                            glyph(icons::media::REPEAT).into_any_element(),
                         ],
                         Some(label("Grain").into_any_element()),
-                        vec![glyph(icons::VOLUME_LOUD).into_any_element()],
+                        vec![glyph(icons::media::VOLUME_LOUD).into_any_element()],
                     ))
                     // Rounded, not a stadium: a composer is not a media control,
                     // and the stadium reads as one.
@@ -2794,11 +2818,11 @@ impl Gallery {
                     .child(ui::control_bar::control_bar(
                         &theme,
                         ControlBarShape::Rounded,
-                        vec![glyph(icons::PLUS).into_any_element()],
+                        vec![glyph(icons::system::PLUS).into_any_element()],
                         Some(label("Ask anything…").into_any_element()),
                         vec![
-                            glyph(icons::MICROPHONE).into_any_element(),
-                            glyph(icons::ARROW_UP).into_any_element(),
+                            glyph(icons::media::MICROPHONE).into_any_element(),
+                            glyph(icons::arrows::ARROW_UP).into_any_element(),
                         ],
                     ))
                     .child(theme.field_label("Floating over content"))
@@ -2832,14 +2856,15 @@ impl Gallery {
                                         &theme,
                                         ControlBarShape::Pill,
                                         vec![
-                                            glyph(icons::SIDEBAR_MINIMALISTIC_LEFT)
+                                            glyph(icons::system::SIDEBAR_MINIMALISTIC_LEFT)
                                                 .into_any_element(),
-                                            glyph(icons::MAGNIFER).into_any_element(),
+                                            glyph(icons::system::MAGNIFER).into_any_element(),
                                         ],
                                         None,
                                         vec![
-                                            glyph(icons::TUNING).into_any_element(),
-                                            glyph(icons::SETTINGS_MINIMALISTIC).into_any_element(),
+                                            glyph(icons::system::TUNING).into_any_element(),
+                                            glyph(icons::system::SETTINGS_MINIMALISTIC)
+                                                .into_any_element(),
                                         ],
                                     )),
                             ),
@@ -2927,14 +2952,14 @@ impl Gallery {
                             theme
                                 .card_row(true)
                                 .hover(|s| s.bg(theme.element_hover))
-                                .child(theme.row_icon(icons::MONITOR))
+                                .child(theme.row_icon(icons::devices::MONITOR))
                                 .child(theme.row_title("First row")),
                         )
                         .child(
                             theme
                                 .card_row(false)
                                 .hover(|s| s.bg(theme.element_hover))
-                                .child(theme.row_icon(icons::FOLDER))
+                                .child(theme.row_icon(icons::files::FOLDER))
                                 .child(theme.row_title("Second row")),
                         ),
                 )
@@ -2942,7 +2967,7 @@ impl Gallery {
 
             "empty-state" => section
                 .child(theme.group_box().child(theme.empty_state(
-                    icons::FOLDER,
+                    icons::files::FOLDER,
                     "No repositories",
                     "Open a folder to get started.",
                 )))
@@ -3753,7 +3778,7 @@ impl Gallery {
                                     }))
                                     .child(pagination::step(
                                         &theme,
-                                        icons::ALT_ARROW_LEFT,
+                                        icons::arrows::ALT_ARROW_LEFT,
                                         self.page > 1,
                                     )),
                             )
@@ -3783,7 +3808,7 @@ impl Gallery {
                                     }))
                                     .child(pagination::step(
                                         &theme,
-                                        icons::ALT_ARROW_RIGHT,
+                                        icons::arrows::ALT_ARROW_RIGHT,
                                         self.page < RESULT_PAGES,
                                     )),
                             ),
@@ -4869,14 +4894,14 @@ impl Render for Gallery {
                                     theme
                                         .card_row(true)
                                         .hover(|s| s.bg(theme.element_hover))
-                                        .child(theme.row_icon(icons::MONITOR))
+                                        .child(theme.row_icon(icons::devices::MONITOR))
                                         .child(theme.row_title("Appearance")),
                                 )
                                 .child(
                                     theme
                                         .card_row(false)
                                         .hover(|s| s.bg(theme.element_hover))
-                                        .child(theme.row_icon(icons::FOLDER))
+                                        .child(theme.row_icon(icons::files::FOLDER))
                                         .child(theme.row_title("Storage")),
                                 ),
                         )

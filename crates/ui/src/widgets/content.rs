@@ -78,7 +78,7 @@ pub trait Content: ThemeExt {
             .text_color(theme.text)
             .child(label.into())
             .child(
-                crate::icons::icon(crate::icons::CLOSE)
+                crate::icons::icon(crate::icons::system::CLOSE)
                     .size(px(10.0))
                     .text_color(theme.text_faint),
             )
@@ -115,7 +115,7 @@ pub trait Content: ThemeExt {
     /// The chevron between crumbs.
     fn breadcrumb_separator(&self) -> Svg {
         let theme = self.theme();
-        crate::icons::icon(crate::icons::ALT_ARROW_RIGHT)
+        crate::icons::icon(crate::icons::arrows::ALT_ARROW_RIGHT)
             .size(px(12.0))
             .text_color(theme.text_faint)
     }

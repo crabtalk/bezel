@@ -339,15 +339,12 @@ pub struct Theme {
     pub glass_dispersion: f32,
 
     // ---- fonts ----
-    /// UI font family — the name the text system resolves, not the bytes. Point
-    /// it at your own family once you have registered that font with the text
-    /// system; a family nothing registered falls through to the fallback below.
+    /// UI font family — the name the text system resolves, not the bytes.
+    /// Defaults to the platform's own UI face; point it at your own family
+    /// once you have registered that font with the text system.
     pub font_sans: SharedString,
     /// Monospace family for code/terminal.
     pub font_mono: SharedString,
-    /// Explicit system fallbacks, for callers that want to skip the lookup.
-    pub font_sans_fallback: SharedString,
-    pub font_mono_fallback: SharedString,
 }
 
 impl Theme {

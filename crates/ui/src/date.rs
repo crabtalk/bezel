@@ -415,7 +415,7 @@ impl Calendar {
                     .items_center()
                     .justify_between()
                     .child(
-                        month_step(theme, icons::ALT_ARROW_LEFT)
+                        month_step(theme, icons::arrows::ALT_ARROW_LEFT)
                             .id("calendar-prev")
                             .on_click(cx.listener(|calendar, _, _, cx| calendar.page(-1, cx))),
                     )
@@ -428,7 +428,7 @@ impl Calendar {
                             .child(SharedString::from(heading)),
                     )
                     .child(
-                        month_step(theme, icons::ALT_ARROW_RIGHT)
+                        month_step(theme, icons::arrows::ALT_ARROW_RIGHT)
                             .id("calendar-next")
                             .on_click(cx.listener(|calendar, _, _, cx| calendar.page(1, cx))),
                     ),

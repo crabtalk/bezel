@@ -571,11 +571,12 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bezel"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-agent",
  "bezel-gpui",
  "bezel-gpui-platform",
+ "bezel-icons",
  "bezel-motion",
  "bezel-theme",
  "bezel-ui",
@@ -583,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-agent"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -592,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-blocks"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -600,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-editor"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
  "bezel-markdown",
@@ -911,8 +912,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bezel-icons"
+version = "0.1.6"
+dependencies = [
+ "bezel-gpui",
+ "icondata_core",
+ "icondata_lu",
+ "usvg",
+]
+
+[[package]]
 name = "bezel-markdown"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -921,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-motion"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -930,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-syntax"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-theme",
  "tree-sitter",
@@ -947,7 +958,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-terminal"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "alacritty_terminal",
  "bezel-gpui",
@@ -956,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-theme"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
  "objc",
@@ -967,9 +978,10 @@ dependencies = [
 
 [[package]]
 name = "bezel-ui"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
+ "bezel-icons",
  "bezel-motion",
  "bezel-theme",
  "libc",
@@ -2503,13 +2515,14 @@ dependencies = [
 
 [[package]]
 name = "gallery"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-agent",
  "bezel-blocks",
  "bezel-editor",
  "bezel-gpui",
  "bezel-gpui-platform",
+ "bezel-icons",
  "bezel-markdown",
  "bezel-motion",
  "bezel-syntax",
@@ -2772,7 +2785,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hello"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel",
  "bezel-gpui",
@@ -2942,6 +2955,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "icondata_core"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c97be924215abd5e630d84e95a47c710138a6559b4c55039f4f33aa897fa859"
+
+[[package]]
+name = "icondata_lu"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f25663a6cc5371e9e33c98bab870f4aa2fd68c88853f1467c8fccfaf112782b1"
+dependencies = [
+ "icondata_core",
 ]
 
 [[package]]
@@ -4173,7 +4201,7 @@ dependencies = [
 
 [[package]]
 name = "parity"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-platform",
@@ -6860,7 +6888,7 @@ dependencies = [
 
 [[package]]
 name = "web"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-web",
