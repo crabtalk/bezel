@@ -48,6 +48,22 @@ actions!(
 /// so it wins `enter` while focused and gives it straight back afterwards.
 pub const CONTROL_KEY_CONTEXT: &str = "Control";
 
+/// Added to a surface's key context when `tab` is its own key — a document
+/// nests a list with it. [`traversal`] stands down while that surface holds
+/// focus.
+///
+/// A mark, not a predicate on the binding: any predicate fails against an empty
+/// context stack, which is what an element with no key context dispatches
+/// against.
+///
+/// ```ignore
+/// let mut context = KeyContext::default();
+/// context.add(MY_CONTEXT);
+/// context.add(focus::CLAIMS_TAB);
+/// div().key_context(context).track_focus(&self.focus_handle)
+/// ```
+pub const CLAIMS_TAB: &str = "ClaimsTab";
+
 /// Bind `tab` and `shift-tab`. Call once at startup.
 ///
 /// Optional, like [`crate::input::init`] — the actions are public, so an app
@@ -57,7 +73,8 @@ pub const CONTROL_KEY_CONTEXT: &str = "Control";
 ///
 /// Nothing in this crate claims `tab` for itself, deliberately. A multi-line
 /// field could reasonably insert one, but trapping `tab` inside a text box is
-/// the classic way to make a form impossible to leave by keyboard.
+/// the classic way to make a form impossible to leave by keyboard. A surface
+/// where the key is structural says so with [`CLAIMS_TAB`] instead.
 ///
 /// [`Decrement`]/[`Increment`] on `left`/`right` are for a control that holds a
 /// *value* rather than a press — [`slider`](crate::widgets::Controls::slider)
@@ -82,9 +99,32 @@ pub fn init(cx: &mut App) {
 ///
 /// It has to live on an element rather than on the app because moving focus
 /// needs a [`Window`], and an app-level action handler only gets an [`App`].
+///
+/// Where the focused surface [claims the key](CLAIMS_TAB), both handlers
+/// propagate instead: an action handler stops propagation by default, and
+/// continuing it is what sends gpui on to the next binding the chord matched.
 pub fn traversal(el: Div) -> Div {
-    el.on_action(|_: &FocusNext, window: &mut Window, cx: &mut App| window.focus_next(cx))
-        .on_action(|_: &FocusPrev, window: &mut Window, cx: &mut App| window.focus_prev(cx))
+    el.on_action(|_: &FocusNext, window: &mut Window, cx: &mut App| {
+        if claims_tab(window) {
+            return cx.propagate();
+        }
+        window.focus_next(cx);
+    })
+    .on_action(|_: &FocusPrev, window: &mut Window, cx: &mut App| {
+        if claims_tab(window) {
+            return cx.propagate();
+        }
+        window.focus_prev(cx);
+    })
+}
+
+/// The innermost context alone, not any in the path: a field *inside* a
+/// claiming surface still means "next control" by `tab`.
+fn claims_tab(window: &Window) -> bool {
+    window
+        .context_stack()
+        .last()
+        .is_some_and(|context| context.contains(CLAIMS_TAB))
 }
 
 /// Put a stateless control into the tab order, show when it holds focus, and

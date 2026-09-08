@@ -1,5 +1,5 @@
 ---
-title: Create
+title: Theme
 description: Pick a hue, a chroma and a radius, watch every component repaint, and copy the code that reproduces it.
 ---
 

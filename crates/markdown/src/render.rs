@@ -148,6 +148,10 @@ pub struct Editing<'a> {
     /// Shown on the caret's block while it holds nothing.
     pub placeholder: Option<SharedString>,
     pub caption: Caption,
+    /// What to set the document in. `None` takes the installed
+    /// [`Typography`] — a caller sizing one document apart from the rest
+    /// passes [`Typography::scaled`].
+    pub typography: Option<Typography>,
 }
 
 impl Default for Editing<'_> {
@@ -161,6 +165,7 @@ impl Default for Editing<'_> {
             annotations: &[],
             placeholder: None,
             caption: Caption::default(),
+            typography: None,
         }
     }
 }
@@ -553,6 +558,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         annotations,
         placeholder,
         caption,
+        typography,
     } = editing;
     // Refilled every frame, in paint order — and emptied in *prepaint*, not
     // here. An editor reads last frame's positions while building this frame's
@@ -568,7 +574,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
-    let typography = Typography::of(cx);
+    let typography = typography.unwrap_or_else(|| Typography::of(cx));
     let mut column = div().flex().flex_col().children(reset);
 
     for (ix, block) in doc.blocks.iter().enumerate() {
@@ -599,25 +605,35 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
             .size_full()
         });
         column = column.child(
+            // The indent sits on the outside and the recorder on the inside,
+            // so what is recorded is the box the block's text actually
+            // occupies. Recorded outside the padding, every level answered
+            // with the same left edge, and a gutter handle placed from it
+            // stayed at the margin while the block it belongs to moved right.
             div()
                 .mt(px(gap))
                 .pl(px(block.indent as f32 * INDENT_WIDTH))
-                .relative()
-                .children(frame)
-                // What a caret cannot enter still has to show it is inside the
-                // selection, or a rule between two paragraphs looks untouched
-                // right up until it disappears.
-                .when(overlay.covers_block() && block.opaque(), |el| {
-                    el.rounded(px(4.0)).bg(theme.selection)
-                })
-                .child(block_element(
-                    block,
-                    overlay,
-                    &typography,
-                    &theme,
-                    window,
-                    cx,
-                )),
+                .child(
+                    div()
+                        .w_full()
+                        .relative()
+                        .children(frame)
+                        // What a caret cannot enter still has to show it is
+                        // inside the selection, or a rule between two
+                        // paragraphs looks untouched right up until it
+                        // disappears.
+                        .when(overlay.covers_block() && block.opaque(), |el| {
+                            el.rounded(px(4.0)).bg(theme.selection)
+                        })
+                        .child(block_element(
+                            block,
+                            overlay,
+                            &typography,
+                            &theme,
+                            window,
+                            cx,
+                        )),
+                ),
         );
     }
 

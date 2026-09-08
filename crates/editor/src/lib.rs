@@ -15,6 +15,7 @@ mod history;
 mod layout;
 mod link;
 mod slash;
+mod text_size;
 
 pub use comment::{Anchor, CommentId};
 #[doc(hidden)]
@@ -26,3 +27,6 @@ pub use editor::{
 };
 pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};
 pub use layout::{Layout, set_layout};
+pub use text_size::{
+    TextSize, adjust_text_size, reset_text_size, set_text_size, text_size_adjustment,
+};

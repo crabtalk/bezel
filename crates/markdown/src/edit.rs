@@ -1034,8 +1034,30 @@ impl Doc {
             return false;
         }
         self.shift_subtree(ix, 1);
+        // A run that has just been nested has nothing above it to carry on
+        // from, so it starts over. `renumber` cannot decide this on its own: a
+        // list written `5.` keeps its 5, and from the numbers alone the two
+        // cases look the same.
+        if self.begins_run(ix)
+            && let BlockKind::Ordered { number, .. } = &mut self.blocks[ix].kind
+        {
+            *number = 1;
+        }
         self.repair();
         true
+    }
+
+    /// Whether the block at `ix` starts a run of ordered items rather than
+    /// carrying one on: the nearest block at its own indent, before the list
+    /// it sits in ends, is not an ordered item.
+    fn begins_run(&self, ix: usize) -> bool {
+        let indent = self.blocks[ix].indent;
+        self.blocks[..ix]
+            .iter()
+            .rev()
+            .take_while(|block| block.indent >= indent)
+            .find(|block| block.indent == indent)
+            .is_none_or(|block| !matches!(block.kind, BlockKind::Ordered { .. }))
     }
 
     /// How deep block `ix` is allowed to sit.

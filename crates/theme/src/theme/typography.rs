@@ -115,6 +115,9 @@ pub struct Metrics {
     /// The ladder carries one bold cell, so a set needing several heading
     /// weights names its own here rather than reading it off the role.
     pub weight: FontWeight,
+    /// A factor over the painted ladder, for one surface sized apart from the
+    /// rest — a document the reader has zoomed. 1.0 is the ladder itself.
+    pub scale: f32,
 }
 
 impl Metrics {
@@ -123,11 +126,18 @@ impl Metrics {
             role,
             leading,
             weight,
+            scale: 1.0,
         }
     }
 
+    /// The same metrics at `scale` times the ladder. Replaces rather than
+    /// compounds, so a slider handing over an absolute factor cannot drift.
+    pub const fn scaled(self, scale: f32) -> Self {
+        Self { scale, ..self }
+    }
+
     pub fn size(self) -> f32 {
-        self.role.painted()
+        self.role.painted() * self.scale
     }
 
     pub fn line_height(self) -> f32 {
