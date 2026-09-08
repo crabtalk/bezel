@@ -192,6 +192,9 @@ pub struct Editor {
     /// owes it a reveal.
     scroll: Option<gpui::ScrollHandle>,
     reveal: bool,
+    /// Where the gutter handle was placed this frame, so the frame after can
+    /// tell whether the block moved out from under it.
+    handle_at: Option<gpui::Point<gpui::Pixels>>,
     /// The point vertical motion is trying to keep. Held across a run of
     /// up/down so walking through a short line and out the other side returns
     /// to the column you started in, and dropped by anything horizontal —
@@ -245,6 +248,7 @@ impl Editor {
             scroll: None,
             reveal: false,
             goal: None,
+            handle_at: None,
             text_size: None,
         }
     }
@@ -292,6 +296,28 @@ impl Editor {
     /// Read *after* paint, because a block that has only just appeared — the
     /// one Enter made — has no position recorded until it has painted once,
     /// which is exactly the case worth scrolling for.
+    /// Ask for another frame when the block the handle sits on has moved.
+    ///
+    /// The handle is built from the records of the frame *before* this one —
+    /// the document fills them as it paints, which is after the editor has
+    /// finished building its tree — so a block that has just been indented, or
+    /// grown a line, leaves the handle behind. Reading the records back here,
+    /// once the document has painted, is what turns that into one late frame
+    /// instead of a handle stranded until the caret blink happens to draw
+    /// again.
+    fn settle_handle(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let focused = self.focus_handle.is_focused(window);
+        let now = self
+            .handle_block(focused)
+            .and_then(|ix| self.handle_origin(ix, cx));
+        if now != self.handle_at {
+            // Not `notify`: this runs *during* the draw, and the dirty flag it
+            // sets is cleared when that draw finishes. Asking for the next
+            // frame is what survives it.
+            window.request_animation_frame();
+        }
+    }
+
     fn reveal_caret(&mut self, cx: &mut Context<Self>) {
         if !self.reveal {
             return;
@@ -1691,8 +1717,11 @@ impl Render for Editor {
             .child(
                 canvas(|_, _, _| (), {
                     let entity = cx.entity();
-                    move |_, _, _, cx| {
-                        entity.update(cx, |this, cx| this.reveal_caret(cx));
+                    move |_, _, window, cx| {
+                        entity.update(cx, |this, cx| {
+                            this.reveal_caret(cx);
+                            this.settle_handle(window, cx);
+                        });
                     }
                 })
                 .absolute()

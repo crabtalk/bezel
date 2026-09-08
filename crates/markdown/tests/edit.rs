@@ -125,6 +125,38 @@ fn indenting_carries_the_children() {
     assert_eq!(doc.blocks[2].indent, 2, "the child came along");
 }
 
+/// The bug: a nested run carried on from the number the item had at the level
+/// it left, so tabbing the second item of a list gave a sub-list starting at 2.
+#[test]
+fn a_nested_run_starts_over() {
+    let mut doc = parse("1. a\n2. b\n3. c");
+    assert!(doc.indent(1));
+    assert_eq!(
+        serialize(&doc),
+        "1. a\n    1. b\n2. c",
+        "the sub-list starts at 1, and the outer list closes up behind it"
+    );
+    assert!(doc.indent(2));
+    assert_eq!(
+        serialize(&doc),
+        "1. a\n    1. b\n    2. c",
+        "the next item into the same sub-list carries it on"
+    );
+}
+
+/// Starting over is the *edit's* doing, not the numbering's: markdown honours
+/// the first number of a list, so a document written from 5 is still read from
+/// 5. Nesting one is what makes a new list, and a new list starts at 1.
+#[test]
+fn parsing_leaves_a_run_that_names_its_own_start() {
+    assert_eq!(serialize(&parse("5. a\n6. b")), "5. a\n6. b");
+    let mut doc = parse("- x\n5. a\n6. b");
+    assert!(doc.indent(1));
+    // `b` is left starting the outer run, and a run keeps the number it
+    // names — the same rule, now applying to it.
+    assert_eq!(serialize(&doc), "- x\n    1. a\n6. b");
+}
+
 #[test]
 fn a_block_cannot_indent_more_than_one_past_the_one_above() {
     let mut doc = parse("- a\n- b");

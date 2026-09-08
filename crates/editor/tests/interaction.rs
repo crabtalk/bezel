@@ -329,6 +329,40 @@ fn the_handle_follows_the_caret(cx: &mut TestAppContext) {
     );
 }
 
+/// The bug (#14): the block's box was recorded outside its indent padding, so
+/// every level answered with the same left edge and the handle stayed at the
+/// margin while the block it belongs to moved right. And because the handle is
+/// built from the frame before's records, the frame that would put it right
+/// was only ever the *next* one somebody else asked for — the caret blink,
+/// half a second later.
+#[gpui::test]
+fn the_handle_moves_in_with_an_indented_block(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("- first\n- second", &mut *cx);
+    go_to_block(&editor, &mut cx, 1);
+    cx.run_until_parked();
+    let before = cx
+        .debug_bounds(editor::BLOCK_HANDLE)
+        .expect("a handle")
+        .origin;
+
+    cx.simulate_keystrokes("tab");
+    // The frame the editor asks for once it sees the block has moved out from
+    // under the handle. A running app draws it; a test has to say so.
+    cx.update(|window, cx| window.simulate_next_frame(cx));
+    cx.run_until_parked();
+
+    let after = cx
+        .debug_bounds(editor::BLOCK_HANDLE)
+        .expect("still a handle")
+        .origin;
+    assert_eq!(
+        after.x - before.x,
+        px(22.0),
+        "the handle followed the block in by one indent"
+    );
+    assert_eq!(after.y, before.y, "and stayed on the same row");
+}
+
 /// The bug: backspace at the start of an empty block steps the caret into the
 /// previous block's last part — right while the block still holds text, and a
 /// trap once it does not. Nothing above an atomic block merges, so the empty

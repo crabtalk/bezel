@@ -4,7 +4,10 @@
 //! All four are placed from positions `markdown::BlockLayouts` recorded as it
 //! painted, so none of them can drift from the text it points at.
 
-use gpui::{AnyElement, Context, CursorStyle, MouseButton, SharedString, div, prelude::*, px};
+use gpui::{
+    AnyElement, App, Context, CursorStyle, MouseButton, Pixels, Point, SharedString, div,
+    prelude::*, px,
+};
 use markdown::BlockKind;
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
@@ -24,6 +27,32 @@ pub const SLASH_MENU: &str = "slash-menu";
 pub const BLOCK_HANDLE: &str = "block-handle";
 
 impl Editor {
+    /// The block the handle belongs on: the one being dragged, else the one
+    /// under the pointer, else the one the caret is in.
+    pub(super) fn handle_block(&self, focused: bool) -> Option<usize> {
+        self.lifted
+            .map(|(from, _)| from)
+            .or(self.hovered)
+            .or_else(|| focused.then(|| self.cursor().block))
+    }
+
+    /// Where the handle sits for that block, in this editor's own space.
+    ///
+    /// Centred on the block's first row, not dropped at the top of its box. A
+    /// block with nothing painted in it has no row to centre on and keeps the
+    /// box's top.
+    pub(super) fn handle_origin(&self, ix: usize, cx: &App) -> Option<Point<Pixels>> {
+        let bounds = self.layouts.block_bounds(ix)?;
+        let top = match self.layouts.first_row(ix) {
+            Some((row, line)) => row + (line - px(HANDLE_SIZE)) / 2.0,
+            None => bounds.origin.y,
+        };
+        Some(gpui::point(
+            bounds.origin.x - self.origin.x - px(Layout::of(cx).text_inset),
+            top - self.origin.y,
+        ))
+    }
+
     /// The gutter handle, on the block being dragged, else the one under the
     /// pointer, else the one the caret is in.
     ///
@@ -33,31 +62,26 @@ impl Editor {
     /// is the more immediate intent — and it comes at all because reaching a
     /// block by keyboard should not mean reaching for the mouse to act on it.
     pub(super) fn handle(
-        &self,
+        &mut self,
         focused: bool,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let ix = self
-            .lifted
-            .map(|(from, _)| from)
-            .or(self.hovered)
-            .or_else(|| focused.then(|| self.cursor().block))?;
-        let bounds = self.layouts.block_bounds(ix)?;
-        // Centred on the block's first row, not dropped at the top of its box.
-        // A block with nothing painted in it has no row to centre on and keeps
-        // the box's top.
-        let top = match self.layouts.first_row(ix) {
-            Some((row, line)) => row + (line - px(HANDLE_SIZE)) / 2.0,
-            None => bounds.origin.y,
-        };
+        let placed = self
+            .handle_block(focused)
+            .and_then(|ix| Some((ix, self.handle_origin(ix, cx)?)));
+        // Kept even when there is none, so [`Self::settle_handle`] compares
+        // like with like and does not ask for a frame over a handle that is
+        // not there.
+        self.handle_at = placed.map(|(_, at)| at);
+        let (ix, at) = placed?;
         Some(
             div()
                 .id(BLOCK_HANDLE)
                 .debug_selector(|| BLOCK_HANDLE.to_string())
                 .absolute()
-                .left(bounds.origin.x - self.origin.x - px(Layout::of(cx).text_inset))
-                .top(top - self.origin.y)
+                .left(at.x)
+                .top(at.y)
                 .w(px(HANDLE_SIZE))
                 .h(px(HANDLE_SIZE))
                 .flex()

@@ -605,25 +605,35 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
             .size_full()
         });
         column = column.child(
+            // The indent sits on the outside and the recorder on the inside,
+            // so what is recorded is the box the block's text actually
+            // occupies. Recorded outside the padding, every level answered
+            // with the same left edge, and a gutter handle placed from it
+            // stayed at the margin while the block it belongs to moved right.
             div()
                 .mt(px(gap))
                 .pl(px(block.indent as f32 * INDENT_WIDTH))
-                .relative()
-                .children(frame)
-                // What a caret cannot enter still has to show it is inside the
-                // selection, or a rule between two paragraphs looks untouched
-                // right up until it disappears.
-                .when(overlay.covers_block() && block.opaque(), |el| {
-                    el.rounded(px(4.0)).bg(theme.selection)
-                })
-                .child(block_element(
-                    block,
-                    overlay,
-                    &typography,
-                    &theme,
-                    window,
-                    cx,
-                )),
+                .child(
+                    div()
+                        .w_full()
+                        .relative()
+                        .children(frame)
+                        // What a caret cannot enter still has to show it is
+                        // inside the selection, or a rule between two
+                        // paragraphs looks untouched right up until it
+                        // disappears.
+                        .when(overlay.covers_block() && block.opaque(), |el| {
+                            el.rounded(px(4.0)).bg(theme.selection)
+                        })
+                        .child(block_element(
+                            block,
+                            overlay,
+                            &typography,
+                            &theme,
+                            window,
+                            cx,
+                        )),
+                ),
         );
     }
 
