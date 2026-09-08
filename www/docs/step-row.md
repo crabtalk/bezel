@@ -6,16 +6,15 @@ description: One operation as a row — icon, what it was, how it went — with 
 A tool call in a transcript, a step in a CI run, a file in a migration: the shape is the same everywhere, which is why this takes strings rather than a type that knows what any of them mean.
 
 ```rust
-use ui::widgets;
+use ui::{icons, widgets::Status};
 
-widgets::step_row(
-    &theme,
+theme.step_row(
     icons::devices::TERMINAL,
     "Bash",
     Some("cargo test -p ui".into()),  // truncating middle
-    Some("1.4s".into()),                     // right-aligned, never truncates
-    false,                                   // failed
-    Some(open),                              // has an output to disclose
+    Some("1.4s".into()),              // right-aligned, never truncates
+    false,                            // failed
+    Some(open),                       // has an output to disclose
 )
 .id("step-3")
 .on_click(cx.listener(..))
@@ -30,7 +29,7 @@ Add `.id(..)` and `.on_click(..)` **to the row itself**, never to a wrapper arou
 What it opens onto is `step_output`:
 
 ```rust
-widgets::step_output(&theme, "step-3-out", stdout)
+theme.step_output("step-3-out", stdout)
 ```
 
 Monospaced and capped in height, because the thing being shown is a program's stdout and the row it hangs off is one line tall — a 900-line stack trace pushing the next step off screen is the failure the cap exists for. Past the cap it scrolls, which is why it takes an id. No scrollbar: the wheel reaches it anyway, and a bar would demand a `ScrollHandle` and a `ScrollbarState` from every caller for a box that is usually four lines long.

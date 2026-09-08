@@ -4,9 +4,9 @@ description: An 18×32 switch whose knob slides and whose track fills with the t
 ---
 
 ```rust
-use ui::widgets;
+use ui::widgets::Controls;
 
-widgets::toggle(&theme, self.enabled)
+theme.toggle(self.enabled)
 ```
 
 Display-only, like the rest of `widgets`: the caller adds `.id(..)` and `.on_click(..)`, and holds the bool.
@@ -14,5 +14,5 @@ Display-only, like the rest of `widgets`: the caller adds `.id(..)` and `.on_cli
 Tab focus and `space`/`enter` come from the same wrapper every stateless control uses:
 
 ```rust
-focus::focusable(&theme, &self.switch, widgets::toggle(&theme, self.enabled))
+focus::focusable(&theme, &self.switch, theme.toggle(self.enabled))
 ```

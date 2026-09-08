@@ -4,7 +4,7 @@ description: A disclosure header — chevron plus title — with the body render
 ---
 
 ```rust
-use ui::widgets;
+use ui::widgets::Layout;
 
 div()
     .child(
@@ -14,14 +14,14 @@ div()
                 view.expanded = !view.expanded;
                 cx.notify();
             }))
-            .child(widgets::collapsible_header(&theme, "Advanced", self.expanded)),
+            .child(theme.collapsible_header("Advanced", self.expanded)),
     )
     .when(self.expanded, |el| el.child(body))
 ```
 
 The header is a row, not a container. Swallowing the children would mean re-implementing layout for them, and the body of a collapsible is usually the most layout-specific thing on the page.
 
-`widgets::disclosure(&theme, expanded)` is the chevron on its own — two assets rather than one rotated, because gpui has no transform for `div`s at the pinned rev.
+`theme.disclosure(expanded)` is the chevron on its own — two assets rather than one rotated, because gpui has no transform for `div`s at the pinned rev.
 
 When the section should open itself while something runs and close when it stops, `Takeover` is the flag:
 

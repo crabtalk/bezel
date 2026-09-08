@@ -4,10 +4,10 @@ description: A hairline-underlined strip whose active tab is marked by an underl
 ---
 
 ```rust
-use ui::widgets;
+use ui::widgets::Layout;
 
-widgets::tab_bar(&theme).children(TABS.iter().enumerate().map(|(index, label)| {
-    widgets::tab(&theme, *label, index == self.tab)
+theme.tab_bar().children(TABS.iter().enumerate().map(|(index, label)| {
+    theme.tab(*label, index == self.tab)
         .id(SharedString::from(format!("tab-{index}")))
         .on_click(cx.listener(move |view, _, _, cx| view.select(index, cx)))
 }))

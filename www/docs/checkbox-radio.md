@@ -3,13 +3,13 @@ title: Checkbox & radio
 description: Display-only checkbox and radio marks — the app owns which are on, and one call puts them in the tab order.
 ---
 
-Both are `fn(&Theme, bool) -> Div`. They paint the mark and nothing else; whether a box is checked lives in the app:
+Both take a bool and nothing else. They paint the mark; whether a box is checked lives in the app:
 
 ```rust
-use ui::{focus, widgets};
+use ui::{focus, widgets::Controls};
 
-widgets::checkbox(&theme, self.checked[index])
-widgets::radio_button(&theme, self.radio == index)
+theme.checkbox(self.checked[index])
+theme.radio_button(self.radio == index)
 ```
 
 Radios are a *set*, so the caller owns which index is on — passing `self.radio == index` is the whole of it. Nothing here groups them, because a group would need to own the answer.
@@ -17,7 +17,7 @@ Radios are a *set*, so the caller owns which index is on — passing `self.radio
 Keyboard support is one wrapper. `focus::focusable` puts the control in the tab order, paints the focus ring, and lets `enter`/`space` press it:
 
 ```rust
-focus::focusable(&theme, &self.checkboxes[index], widgets::checkbox(&theme, checked))
+focus::focusable(&theme, &self.checkboxes[index], theme.checkbox(checked))
     .id("checkbox-0")
     .on_click(cx.listener(..))
     .on_action(cx.listener(|view, _: &focus::Activate, _, cx| ..))

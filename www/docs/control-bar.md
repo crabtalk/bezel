@@ -17,7 +17,7 @@ div().relative().size_full()
     )
 ```
 
-Apple Music's transport, an agent app's composer, a floating toolbar — `Shape` is the only thing that differs between them. `Pill` is a stadium, its radius half the bar's height; `Rounded` is the rounded rectangle at `BUBBLE_RADIUS`, which is what most composers want.
+Apple Music's transport, an agent app's composer, a floating toolbar — `Shape` is the only thing that differs between them. `Pill` is a stadium, its radius half the bar's height; `Rounded` is the rounded rectangle at `Theme::bubble_radius()`, which is what most composers want.
 
 Two things it exists to get right.
 
@@ -27,4 +27,4 @@ Two things it exists to get right.
 
 That second rule is why the bar takes the width it is *given* rather than hugging its controls. Equal rails need free space to be equal about, and a shrink-to-fit bar has none. So width and placement are the caller's, and a `max_w` is how a wide window gets a floating bar instead of a docked one. This bar floats over content and must never reflow it — a bar that does reflow is a dock, which is a different thing with no blur and no float.
 
-`bar_button(icon, diameter, tint)` is the circular control inside it. The diameter is a parameter because a transport's primary action is deliberately bigger than its neighbours, and that difference is what makes the cluster readable at a glance. It builds the icon rather than taking one, because gpui reads an svg's color off that element's own style and paints nothing when it is unset — a tint set on the button would silently never reach the glyph. Add your own `.hover(..)`: gpui panics on a second hover call, and `Theme::glass_hover` is the wash to reach for.
+`bar_button(icon, diameter, tint)` is the circular control inside it. The diameter is a parameter because a transport's primary action is deliberately bigger than its neighbours, and that difference is what makes the cluster readable at a glance. It builds the icon rather than taking one, because gpui reads an svg's color off that element's own style and paints nothing when it is unset — a tint set on the button would silently never reach the glyph. Add your own `.hover(..)`: gpui panics on a second hover call, and `Theme::element_hover` is the wash to reach for.

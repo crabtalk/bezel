@@ -28,8 +28,10 @@ fn spans(language: &str, code: &str) -> Option<Vec<(Range<usize>, HighlightKind)
     syntax::highlight(code, language)
 }
 
-markdown::set_highlighter(cx, spans);
+markdown::set_highlighter(cx, spans, syntax::lang::LANGS.iter().map(|lang| lang.name));
 ```
+
+The names travel with the function because they are the same fact twice: a picker that offers a language nothing can colour is a promise the highlighter does not keep. `markdown::languages(cx)` is what reads them back.
 
 Note the argument order flips: `Highlighter` takes the language first, `syntax::highlight` takes the source first. Both are `&str`, so a swap compiles and silently colours nothing.
 

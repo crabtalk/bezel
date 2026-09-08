@@ -6,23 +6,32 @@ description: The floating card, its rows, headings and dividers — plus the anc
 A menu is a card and a list of rows, assembled by the caller:
 
 ```rust
+use motion::{Fade, Painter};
 use ui::popover;
+
+let view = Painter::of(cx);
 
 popover::popover_card(&theme).w(px(240.0)).children([
     popover::menu_heading(&theme, "Section").into_any_element(),
-    popover::menu_row(&theme, false, "m-one").child("First item").into_any_element(),
-    popover::menu_row(&theme, true, "m-two").child("Active item").into_any_element(),
+    popover::menu_row(&theme, false, Some(Fade::new(view, "m-one")))
+        .child("First item")
+        .into_any_element(),
+    popover::menu_row(&theme, true, None)
+        .child("Active item")
+        .into_any_element(),
     popover::divider().into_any_element(),
 ])
 ```
 
-`menu_row` takes a fade key — unique app-wide and stable across frames; the row's id string is a good choice — which is what the hover wash blends against. `menu_row_nav` distinguishes the keyboard cursor from the selection, so two rows never look selected at once.
+`active` is the row the cursor is on, and a menu has exactly one cursor. The fade is the other half: `Some(fade)` lets the mouse light a row by itself — the view that paints it plus a key unique app-wide and stable across frames, the row's id string being a good choice — and `None` is for a menu that owns an active index and moves it from `on_mouse_move` itself.
 
 To float it, hang an anchored layer off the trigger while open:
 
 ```rust
-trigger.child(popover::anchored_menu_below("theme-menu", card))
+trigger.child(popover::anchored_menu_below("theme-menu", card, self.menu.closing_since()))
 ```
+
+The third argument is the exit clock — `None` for a menu that simply disappears, and a `Popup`'s `closing_since()` when the close should animate.
 
 `anchored_menu` pins to the trigger's top-left, which reads right for a context-style menu and covers a button-shaped trigger — hence `anchored_menu_below` for dropdowns, `anchored_menu_above` for anything near the window's bottom edge, and `anchored_menu_above_end` when a right-side trigger would otherwise run off the window. gpui's `anchored` does not flip sides for you; the caller picks.
 
