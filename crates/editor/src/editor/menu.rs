@@ -25,6 +25,9 @@ const CHIP_PAD_Y: f32 = 3.0;
 pub const SLASH_MENU: &str = "slash-menu";
 /// The gutter handle's, for the same reason.
 pub const BLOCK_HANDLE: &str = "block-handle";
+/// The menu that handle opens, so a test can ask whether a second press on it
+/// left the menu shut rather than closed-and-reopened.
+pub const BLOCK_MENU: &str = "block-menu";
 
 impl Editor {
     /// The block the handle belongs on: the one being dragged, else the one
@@ -101,8 +104,12 @@ impl Editor {
                         // The menu belongs to the release. Opened here it would
                         // occlude the very moves a drag downwards is made of,
                         // and the drop target would never leave the block it
-                        // started on.
-                        this.block_menu = None;
+                        // started on. What the release needs to know is whether
+                        // this press found the menu up, since dismissing it is
+                        // also what this press does.
+                        this.block_menu
+                            .note_trigger_press_matching(|&(block, _)| block == ix);
+                        this.close_menu(|this| &mut this.block_menu, cx);
                         cx.notify();
                     }),
                 )
@@ -179,8 +186,18 @@ impl Editor {
                 .rounded(px(4.0))
                 .cursor(CursorStyle::PointingHand)
                 .hover(|el| el.bg(theme.element_hover))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _: &gpui::MouseDownEvent, _, _| {
+                        this.language_menu
+                            .note_trigger_press_matching(|&(block, _)| block == ix)
+                    }),
+                )
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.language_menu = Some((ix, anchor));
+                    // The card's own out-click already shut it on the press.
+                    if !this.language_menu.take_press_was_open() {
+                        this.language_menu.open((ix, anchor));
+                    }
                     cx.notify();
                 }))
                 .into_any_element(),
@@ -194,7 +211,7 @@ impl Editor {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let view = Painter::of(cx);
-        let (ix, at) = self.language_menu?;
+        let &(ix, at) = self.language_menu.get()?;
         let Some(BlockKind::Code { language, .. }) = self.doc.blocks.get(ix).map(|b| &b.kind)
         else {
             return None;
@@ -213,7 +230,7 @@ impl Editor {
                     )
                 })
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.language_menu = None;
+                    this.close_menu(|this| &mut this.language_menu, cx);
                     this.set_language(ix, tag.clone(), cx);
                 }))
         };
@@ -235,10 +252,11 @@ impl Editor {
             at,
             ui::popover::popover_card(theme)
                 .w(px(150.0))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.language_menu = None;
-                    cx.notify();
-                }))
+                .on_mouse_down_out(
+                    cx.listener(|this, _, _, cx| {
+                        this.close_menu(|this| &mut this.language_menu, cx)
+                    }),
+                )
                 .child(
                     div()
                         .id("language-menu-rows")
@@ -248,21 +266,21 @@ impl Editor {
                         .children(rows),
                 )
                 .into_any_element(),
-            None,
+            self.language_menu.closing_since(),
         ))
     }
 
     /// Turn into / Duplicate / Delete, at the handle that opened it.
     pub(super) fn block_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         let view = Painter::of(cx);
-        let (ix, at) = self.block_menu?;
+        let &(ix, at) = self.block_menu.get()?;
         let turns = crate::slash::items();
         let rows = turns.into_iter().map(|(label, kind)| {
             ui::popover::menu_row(theme, false, Some(Fade::new(view, format!("turn-{label}"))))
                 .id(SharedString::from(format!("turn-row-{label}")))
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.block_menu = None;
+                    this.close_menu(|this| &mut this.block_menu, cx);
                     this.set_block(ix, kind.clone(), cx);
                 }))
         });
@@ -275,19 +293,19 @@ impl Editor {
             .id(SharedString::from(format!("block-row-{label}")))
             .child(label)
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.block_menu = None;
+                this.close_menu(|this| &mut this.block_menu, cx);
                 run(this, ix, cx);
             }))
         };
         Some(ui::popover::menu_at(
-            "block-menu",
+            BLOCK_MENU,
             at,
             ui::popover::popover_card(theme)
+                .debug_selector(|| BLOCK_MENU.to_string())
                 .w(px(190.0))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.block_menu = None;
-                    cx.notify();
-                }))
+                .on_mouse_down_out(
+                    cx.listener(|this, _, _, cx| this.close_menu(|this| &mut this.block_menu, cx)),
+                )
                 .child(
                     div()
                         .id("block-menu-rows")
@@ -302,7 +320,7 @@ impl Editor {
                         .child(action("Delete", |this, ix, cx| this.remove_block(ix, cx))),
                 )
                 .into_any_element(),
-            None,
+            self.block_menu.closing_since(),
         ))
     }
 

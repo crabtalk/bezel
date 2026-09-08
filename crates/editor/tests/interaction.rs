@@ -390,3 +390,40 @@ fn an_empty_block_after_an_atomic_one_deletes(cx: &mut TestAppContext) {
         );
     }
 }
+
+/// The press that dismisses a menu is the same press that would reopen it: the
+/// card's `on_mouse_down_out` fires on mouse-DOWN, the handle's click on
+/// mouse-UP. Without the note taken on the way down, the second press closes
+/// and the release opens it straight back up (user report).
+#[gpui::test]
+fn a_second_press_on_the_handle_leaves_the_block_menu_shut(cx: &mut TestAppContext) {
+    let (_editor, _window, mut cx) = open(cx);
+    cx.run_until_parked();
+    let handle = cx
+        .debug_bounds(editor::BLOCK_HANDLE)
+        .expect("the focused caret's block paints a handle");
+
+    // Two different corners of the same 18px handle: the menu hangs its own
+    // top-left off wherever the press landed, so pressing the second time
+    // further up-left is what keeps the press on the handle and off the card.
+    let press = handle.origin + gpui::point(px(15.0), px(15.0));
+    let press_again = handle.origin + gpui::point(px(3.0), px(3.0));
+
+    cx.simulate_click(press, gpui::Modifiers::default());
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds(editor::BLOCK_MENU).is_some(),
+        "the first press opens it"
+    );
+
+    cx.simulate_click(press_again, gpui::Modifiers::default());
+    // Past the exit animation, so what is left is what stayed rather than what
+    // is still fading.
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds(editor::BLOCK_MENU).is_none(),
+        "the second press leaves it shut instead of closing and reopening"
+    );
+}
