@@ -1154,19 +1154,6 @@ impl Gallery {
         self.focus_handle.clone()
     }
 
-    fn toggle_theme_menu(&mut self, cx: &mut Context<Self>) {
-        // `note_trigger_press` was recorded on mouse-down; if the menu was
-        // already open then this click is a dismiss, not a re-open.
-        if self.theme_menu.take_press_was_open() {
-            if self.theme_menu.begin_close() {
-                popover::reap_popup(cx, |view: &mut Self| &mut view.theme_menu);
-            }
-        } else {
-            self.theme_menu.open(());
-        }
-        cx.notify();
-    }
-
     fn open_palette(&mut self, _: &OpenPalette, window: &mut Window, cx: &mut Context<Self>) {
         let palette = cx.new(|cx| {
             CommandPalette::new(
@@ -1383,9 +1370,7 @@ impl Gallery {
 
     fn choose_theme(&mut self, index: usize, cx: &mut Context<Self>) {
         self.theme_choice = index;
-        if self.theme_menu.begin_close() {
-            popover::reap_popup(cx, |view: &mut Self| &mut view.theme_menu);
-        }
+        popover::close_popup(self, cx, |view: &mut Self| &mut view.theme_menu);
         cx.notify();
     }
 
@@ -2168,64 +2153,51 @@ impl Gallery {
                 section
                     .child(
                         div().w(px(200.0)).relative().child(
-                            div()
-                                .id("theme-select")
-                                .on_mouse_down(
-                                    gpui::MouseButton::Left,
-                                    cx.listener(|view, _, _, _| {
-                                        view.theme_menu.note_trigger_press()
-                                    }),
-                                )
-                                .on_click(cx.listener(|view, _, _, cx| view.toggle_theme_menu(cx)))
-                                .child(theme.select_trigger(SELECT_CHOICES[self.theme_choice]))
-                                .when(menu_open, |trigger| {
-                                    trigger.child(popover::anchored_menu_below(
-                                        "theme-select-menu",
-                                        popover::popover_card(&theme)
-                                            .w(px(200.0))
-                                            // Dismissal is the caller's, and the
-                                            // caller is this view — without it,
-                                            // clicking away leaves it open.
-                                            .on_mouse_down_out(cx.listener(|view, _, _, cx| {
-                                                if view.theme_menu.begin_close() {
-                                                    popover::reap_popup(cx, |view: &mut Self| {
-                                                        &mut view.theme_menu
-                                                    });
-                                                }
-                                                cx.notify();
+                            popover::menu_trigger(
+                                div().id("theme-select"),
+                                |view: &mut Self| &mut view.theme_menu,
+                                |_| (),
+                                cx,
+                            )
+                            .child(theme.select_trigger(SELECT_CHOICES[self.theme_choice]))
+                            .when(menu_open, |trigger| {
+                                trigger.child(popover::anchored_menu_below(
+                                    "theme-select-menu",
+                                    // Dismissal is the caller's, and the
+                                    // caller is this view — without it,
+                                    // clicking away leaves it open.
+                                    popover::dismiss_on_out(
+                                        popover::popover_card(&theme).w(px(200.0)),
+                                        |view: &mut Self| &mut view.theme_menu,
+                                        cx,
+                                    )
+                                    .children(SELECT_CHOICES.iter().enumerate().map(
+                                        |(index, label)| {
+                                            popover::menu_row(
+                                                &theme,
+                                                false,
+                                                Some(Fade::new(view, format!("theme-row-{index}"))),
+                                            )
+                                            .justify_between()
+                                            .id(SharedString::from(format!("theme-{index}")))
+                                            .on_click(cx.listener(move |view, _, _, cx| {
+                                                view.choose_theme(index, cx)
                                             }))
-                                            .children(SELECT_CHOICES.iter().enumerate().map(
-                                                |(index, label)| {
-                                                    popover::menu_row(
-                                                        &theme,
-                                                        false,
-                                                        Some(Fade::new(
-                                                            view,
-                                                            format!("theme-row-{index}"),
-                                                        )),
-                                                    )
-                                                    .justify_between()
-                                                    .id(SharedString::from(format!(
-                                                        "theme-{index}"
-                                                    )))
-                                                    .on_click(cx.listener(move |view, _, _, cx| {
-                                                        view.choose_theme(index, cx)
-                                                    }))
-                                                    .child(*label)
-                                                    .when(index == self.theme_choice, |row| {
-                                                        row.child(
-                                                            icons::icon(icons::status::CHECK)
-                                                                .size(px(13.0))
-                                                                .text_color(theme.text),
-                                                        )
-                                                    })
-                                                    .into_any_element()
-                                                },
-                                            ))
-                                            .into_any_element(),
-                                        self.theme_menu.closing_since(),
+                                            .child(*label)
+                                            .when(index == self.theme_choice, |row| {
+                                                row.child(
+                                                    icons::icon(icons::status::CHECK)
+                                                        .size(px(13.0))
+                                                        .text_color(theme.text),
+                                                )
+                                            })
+                                            .into_any_element()
+                                        },
                                     ))
-                                }),
+                                    .into_any_element(),
+                                    self.theme_menu.closing_since(),
+                                ))
+                            }),
                         ),
                     )
                     .into_any_element()

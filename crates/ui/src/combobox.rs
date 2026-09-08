@@ -128,9 +128,7 @@ impl Combobox {
     }
 
     fn close(&mut self, cx: &mut Context<Self>) {
-        if self.menu.begin_close() {
-            popover::reap_popup(cx, |combobox: &mut Self| &mut combobox.menu);
-        }
+        popover::close_popup(self, cx, |combobox: &mut Self| &mut combobox.menu);
         cx.notify();
     }
 
@@ -255,16 +253,14 @@ impl Render for Combobox {
                 .absolute()
                 .size_full(),
             )
-            .child(
+            .child(popover::trigger_press(
                 div()
                     .id("combobox-trigger")
-                    .on_mouse_down(
-                        gpui::MouseButton::Left,
-                        cx.listener(|combobox, _, _, _| combobox.menu.note_trigger_press()),
-                    )
                     .on_click(cx.listener(|combobox, _, window, cx| combobox.toggle(window, cx)))
                     .child(theme.select_trigger(label)),
-            )
+                |combobox: &mut Self| &mut combobox.menu,
+                cx,
+            ))
             .when_some(card, |trigger, card| {
                 trigger.child(popover::anchored_menu_below(
                     "combobox-menu",

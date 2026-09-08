@@ -730,19 +730,6 @@ impl Editor {
     /// Take the highlighted block, replacing the `/query` that summoned it.
     /// Take `kind`, or the highlighted row when the caller names none — Enter
     /// and a click are the same operation with a different source.
-    /// Begin a floating menu's exit and schedule the drop. Both menus are the
-    /// same shape, so which one is the only thing that differs.
-    pub(crate) fn close_menu(
-        &mut self,
-        which: impl Fn(&mut Self) -> &mut MenuPopup + std::marker::Copy + 'static,
-        cx: &mut Context<Self>,
-    ) {
-        if which(self).begin_close() {
-            ui::popover::reap_popup(cx, which);
-            cx.notify();
-        }
-    }
-
     pub(super) fn confirm_slash(
         &mut self,
         kind: Option<BlockKind>,
@@ -1450,8 +1437,8 @@ impl Render for Editor {
                     if std::mem::take(&mut this.press_claimed) {
                         return;
                     }
-                    this.close_menu(|this| &mut this.block_menu, cx);
-                    this.close_menu(|this| &mut this.language_menu, cx);
+                    ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
+                    ui::popover::close_popup(this, cx, |this| &mut this.language_menu);
                     this.pasted = None;
                     this.focus_handle.clone().focus(window, cx);
                     if this.tail_click(event.position, cx) {
