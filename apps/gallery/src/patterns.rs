@@ -11,6 +11,7 @@ pub mod document;
 pub mod editor;
 pub mod orbs;
 pub mod samples;
+pub mod selectable;
 pub mod syntax;
 #[cfg(not(target_family = "wasm"))]
 pub mod terminal;
