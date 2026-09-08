@@ -49,6 +49,43 @@ fn one_selectable_row_is_its_own_neighbour() {
 }
 
 #[test]
+fn a_description_is_an_action_rows_second_line() {
+    let described = Item::action("Open…").with_description("Choose a file to edit");
+    assert!(
+        matches!(&described, Item::Action { description: Some(copy), .. } if copy == "Choose a file to edit")
+    );
+
+    // Nothing to put one under: a submenu's second line is the panel it opens.
+    assert_eq!(Item::Separator.with_description("x"), Item::Separator);
+    let submenu = Item::submenu("Open Recent", vec![Item::action("a")]);
+    assert_eq!(submenu.clone().with_description("x"), submenu);
+}
+
+#[test]
+fn the_builders_leave_each_others_fields_alone() {
+    // Every builder rewrites the row it is given, so one that reached for the
+    // wrong field would silently drop what an earlier call had put there.
+    let full = Item::action("Save")
+        .with_icon("icon.svg")
+        .with_keystroke("⌘S")
+        .with_description("Write the file to disk")
+        .checked(true)
+        .disabled();
+    assert!(matches!(
+        &full,
+        Item::Action {
+            icon: Some(_),
+            keystroke: Some(_),
+            description: Some(_),
+            checked: true,
+            enabled: false,
+            ..
+        }
+    ));
+    assert!(!full.selectable(), "and disabled still means disabled");
+}
+
+#[test]
 fn a_separator_carries_nothing() {
     assert_eq!(Item::Separator.with_keystroke("⌘K"), Item::Separator);
     assert_eq!(Item::Separator.disabled(), Item::Separator);

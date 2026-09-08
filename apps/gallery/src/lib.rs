@@ -407,7 +407,9 @@ fn demo_menus() -> Vec<Menu> {
             "File",
             vec![
                 Item::action("New Window").with_keystroke("⌘N"),
-                Item::action("Open…").with_keystroke("⌘O"),
+                Item::action("Open…")
+                    .with_keystroke("⌘O")
+                    .with_description("Choose a markdown file to edit"),
                 Item::submenu(
                     "Open Recent",
                     vec![

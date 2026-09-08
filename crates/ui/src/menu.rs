@@ -19,6 +19,14 @@ use theme::{TextStyle, Theme, Typeset};
 /// The leading glyph and the trailing check, at the size the rows are set in.
 const GLYPH: f32 = 13.0;
 
+/// How wide a panel sits.
+const PANEL_MIN: f32 = 180.0;
+/// How wide one holding a described row sits. A description is a sentence
+/// rather than a name, and at the narrow width it wraps to three lines and the
+/// menu reads as a paragraph with a title. One described row widens the panel,
+/// the way one icon opens the glyph gutter.
+const PANEL_MIN_DESCRIBED: f32 = 280.0;
+
 /// A row in a menu.
 ///
 /// Deliberately not a struct with an `is_separator` flag: a separator has no
@@ -28,6 +36,13 @@ const GLYPH: f32 = 13.0;
 pub enum Item {
     Action {
         label: SharedString,
+        /// A second line under the label, for a row whose name does not say
+        /// enough on its own — what a command will do, which file it will act
+        /// on. `None` keeps the row one line tall; nothing reserves space for
+        /// a description the way the glyph gutter reserves space for an icon,
+        /// because a row's two lines read as one block and a blank second line
+        /// would read as a gap.
+        description: Option<SharedString>,
         /// The leading glyph's asset path — [`crate::icons`]' consts, or a
         /// path the app resolved at runtime. A menu where no row has one keeps
         /// no room for it.
@@ -56,6 +71,7 @@ impl Item {
     pub fn action(label: impl Into<SharedString>) -> Self {
         Item::Action {
             label: label.into(),
+            description: None,
             icon: None,
             keystroke: None,
             checked: false,
@@ -73,104 +89,56 @@ impl Item {
     }
 
     /// No-ops on a separator, which has nothing to hang a glyph on.
-    pub fn with_icon(self, icon: impl Into<SharedString>) -> Self {
-        let icon = Some(icon.into());
-        match self {
-            Item::Action {
-                label,
-                keystroke,
-                checked,
-                enabled,
-                ..
-            } => Item::Action {
-                label,
-                icon,
-                keystroke,
-                checked,
-                enabled,
-            },
-            Item::Submenu {
-                label,
-                enabled,
-                items,
-                ..
-            } => Item::Submenu {
-                label,
-                icon,
-                enabled,
-                items,
-            },
-            Item::Separator => Item::Separator,
+    pub fn with_icon(mut self, icon: impl Into<SharedString>) -> Self {
+        match &mut self {
+            Item::Action { icon: slot, .. } | Item::Submenu { icon: slot, .. } => {
+                *slot = Some(icon.into())
+            }
+            Item::Separator => {}
         }
+        self
+    }
+
+    /// A second line under the label. No-ops on anything but an action row: a
+    /// submenu's second line is the panel it opens, and a separator has no
+    /// first line to put one under.
+    pub fn with_description(mut self, description: impl Into<SharedString>) -> Self {
+        if let Item::Action {
+            description: slot, ..
+        } = &mut self
+        {
+            *slot = Some(description.into());
+        }
+        self
     }
 
     /// No-ops on anything but an action row: a submenu's keystroke is the
     /// arrow that opens it, and a separator has nothing to hang one on.
-    pub fn with_keystroke(self, keystroke: impl Into<SharedString>) -> Self {
-        match self {
-            Item::Action {
-                label,
-                icon,
-                checked,
-                enabled,
-                ..
-            } => Item::Action {
-                label,
-                icon,
-                keystroke: Some(keystroke.into()),
-                checked,
-                enabled,
-            },
-            other => other,
+    pub fn with_keystroke(mut self, keystroke: impl Into<SharedString>) -> Self {
+        if let Item::Action {
+            keystroke: slot, ..
+        } = &mut self
+        {
+            *slot = Some(keystroke.into());
         }
+        self
     }
 
     /// Takes the flag, because what a menu is on is decided per render. No-ops
     /// on a submenu, which is not itself a choice.
-    pub fn checked(self, checked: bool) -> Self {
-        match self {
-            Item::Action {
-                label,
-                icon,
-                keystroke,
-                enabled,
-                ..
-            } => Item::Action {
-                label,
-                icon,
-                keystroke,
-                checked,
-                enabled,
-            },
-            other => other,
+    pub fn checked(mut self, checked: bool) -> Self {
+        if let Item::Action { checked: slot, .. } = &mut self {
+            *slot = checked;
         }
+        self
     }
 
-    pub fn disabled(self) -> Self {
-        match self {
-            Item::Action {
-                label,
-                icon,
-                keystroke,
-                checked,
-                ..
-            } => Item::Action {
-                label,
-                icon,
-                keystroke,
-                checked,
-                enabled: false,
-            },
-            Item::Submenu {
-                label, icon, items, ..
-            } => Item::Submenu {
-                label,
-                icon,
-                enabled: false,
-                items,
-            },
-            Item::Separator => Item::Separator,
+    pub fn disabled(mut self) -> Self {
+        match &mut self {
+            Item::Action { enabled, .. } | Item::Submenu { enabled, .. } => *enabled = false,
+            Item::Separator => {}
         }
+        self
     }
 
     /// Whether the keyboard and the pointer can land here at all. A submenu
@@ -182,6 +150,16 @@ impl Item {
             Item::Submenu { enabled, items, .. } => *enabled && items.iter().any(Item::selectable),
             Item::Separator => false,
         }
+    }
+
+    fn has_description(&self) -> bool {
+        matches!(
+            self,
+            Item::Action {
+                description: Some(_),
+                ..
+            }
+        )
     }
 
     fn has_icon(&self) -> bool {
@@ -458,8 +436,13 @@ impl<V: 'static> Tree<V> {
         // A menu where nothing carries a glyph keeps no room for one — a bar's
         // menus would otherwise open with an empty column down their left.
         let gutter = items.iter().any(Item::has_icon);
+        let described = items.iter().any(Item::has_description);
         popover::popover_card(theme)
-            .min_w(px(180.0))
+            .min_w(px(if described {
+                PANEL_MIN_DESCRIBED
+            } else {
+                PANEL_MIN
+            }))
             .on_mouse_down_out(self.dismissal(cx))
             .children(items.iter().enumerate().map(|(row, item)| {
                 if matches!(item, Item::Separator) {
@@ -482,6 +465,10 @@ impl<V: 'static> Tree<V> {
                     } => (label.clone(), icon.clone(), *enabled),
                     Item::Separator => unreachable!("separators returned above"),
                 };
+                let description = match item {
+                    Item::Action { description, .. } => description.clone(),
+                    _ => None,
+                };
                 let row = if enabled {
                     popover::menu_row(theme, lit == Some(row), None)
                         .id(id.clone())
@@ -499,7 +486,19 @@ impl<V: 'static> Tree<V> {
                     disabled_row(theme).id(id.clone())
                 };
                 row.when(gutter, |row| row.child(glyph_slot(theme, icon, enabled)))
-                    .child(div().flex_1().min_w_0().child(label))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(label)
+                            .children(
+                                description.map(|description| {
+                                    description_line(theme, description, enabled)
+                                }),
+                            ),
+                    )
                     .map(|row| match item {
                         Item::Action {
                             keystroke, checked, ..
@@ -597,6 +596,27 @@ fn glyph_slot(theme: &Theme, icon: Option<SharedString>, enabled: bool) -> gpui:
                     theme.text_faint.opacity(0.5)
                 })
         }))
+}
+
+/// The second line under a row's label: the same relationship a card row's
+/// meta line has to its title ([`crate::widgets::Scaffolding::meta_line`]),
+/// which is where the size and the tone come from.
+///
+/// It sets its own colour rather than inheriting the row's, because the row's
+/// is the *label's* — a lit row paints that at full contrast, and a
+/// description that followed it there would stop reading as the quieter half.
+fn description_line(theme: &Theme, description: SharedString, enabled: bool) -> gpui::Div {
+    div()
+        .mt(px(2.0))
+        .text_style(TextStyle::Subheadline)
+        .text_color(if enabled {
+            theme.text_muted
+        } else {
+            // The dimming `glyph_slot` gives a disabled glyph, so the whole
+            // row fades by one rule rather than two.
+            theme.text_faint.opacity(0.5)
+        })
+        .child(description)
 }
 
 /// A row that cannot be chosen: [`popover::menu_row`]'s metrics without its
