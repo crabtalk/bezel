@@ -125,6 +125,12 @@ fn ensure_block(doc: &mut Doc) -> bool {
     true
 }
 
+/// One of the two floating menus a block drops — the block it belongs to and
+/// where it hangs. A `Popup` rather than an `Option` for the exit phase, and
+/// for the press note: the card's `on_mouse_down_out` fires on the *press*, so
+/// without one a trigger's click on the *release* reopens what it just shut.
+pub(crate) type MenuPopup = ui::popover::Popup<(usize, gpui::Point<gpui::Pixels>)>;
+
 pub struct Editor {
     doc: Doc,
     /// Collapsed for an ordinary caret, so there is one position here rather
@@ -170,9 +176,9 @@ pub struct Editor {
     /// read back as no change at all.
     resizing: Option<(usize, Option<u32>)>,
     /// The block menu the handle opened, and where to anchor it.
-    block_menu: Option<(usize, gpui::Point<gpui::Pixels>)>,
+    block_menu: MenuPopup,
     /// The language menu a fence's header opened, and the block it belongs to.
-    language_menu: Option<(usize, gpui::Point<gpui::Pixels>)>,
+    language_menu: MenuPopup,
     /// Set by a floating layer's press — the gutter handle, the URL prompt —
     /// so the editor's own press does not undo what that press just did.
     press_claimed: bool,
@@ -238,8 +244,8 @@ impl Editor {
             hovered: None,
             lifted: None,
             resizing: None,
-            block_menu: None,
-            language_menu: None,
+            block_menu: MenuPopup::default(),
+            language_menu: MenuPopup::default(),
             press_claimed: false,
             origin: gpui::Point::default(),
             width: gpui::Pixels::ZERO,
@@ -1431,8 +1437,8 @@ impl Render for Editor {
                     if std::mem::take(&mut this.press_claimed) {
                         return;
                     }
-                    this.block_menu = None;
-                    this.language_menu = None;
+                    ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
+                    ui::popover::close_popup(this, cx, |this| &mut this.language_menu);
                     this.pasted = None;
                     this.focus_handle.clone().focus(window, cx);
                     if this.tail_click(event.position, cx) {
@@ -1530,8 +1536,12 @@ impl Render for Editor {
                     };
                     if from == to {
                         // A press that never moved is a click, and a click on
-                        // the handle is what opens the menu.
-                        this.block_menu = Some((from, event.position));
+                        // the handle is what opens the menu — unless that same
+                        // press is what dismissed it, which the note taken on
+                        // the way down is the only way to tell.
+                        if !this.block_menu.take_press_was_open() {
+                            this.block_menu.open((from, event.position));
+                        }
                         return cx.notify();
                     }
                     this.edit(EditKind::Structure, cx, |this| {

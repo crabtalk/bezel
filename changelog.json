@@ -1,0 +1,180 @@
+[
+  {
+    "version": "0.1.8",
+    "date": "2026-09-09",
+    "summary": "Menus nest the way SwiftUI's do, prose selects with no editor behind it, and a nested surface keeps its own press and wheel.",
+    "new": [
+      "A menu row can drop a menu of its own. `menu::Item::submenu` nests exactly as a SwiftUI `Menu` does, and `menu::card` paints the panels itself — a chevron marks the row, hover or `right` opens it, `left` and `escape` close one level at a time. A submenu with nothing selectable in it is a dead end, so the keyboard steps over it like any other dead row.",
+      "`markdown::selectable` gives prose a selection with no editor behind it. The renderer already painted a `Selection` and the layouts already turned a point back into a `Cursor`; what was missing was the gesture. `selectable::copied` returns what a reader dragged over as plain text — the words, not the markup under them.",
+      "`skills/bezel` and `skills/bezel-contributing` ship in the repo: what an agent needs to write a bezel call, and what a change to bezel has to land with.",
+      "`popover::menu_trigger` wires a trigger to the popup it toggles, so the press/release split cannot be got wrong. `on_mouse_down_out` fires on the press and `on_click` on the release, which no click handler can tell apart — the note has to be taken in the phase the dismissal cannot precede, and now the library takes it. `popover::dismiss_on_out` is the card half, `popover::trigger_press` the press half alone for a trigger whose open is more than `Popup::open`, and `popover::close_popup` the `begin_close` + `reap_popup` pair every dismissal owed.",
+      "`scroll::claim_wheel` lets a nested pane keep the wheel it can act on. gpui's scroll listener neither stops propagation nor asks whether an ancestor scrolls too, so an output box inside a transcript scrolled itself and dragged the transcript with it — every scrolling pane under the pointer moved at once. It asks whether the pane moved rather than whether it had room to, which is the same answer one notch too late: the notch that lands exactly on the end would finish the pane's travel and jump the page behind it. Chained at the ends, so a short inner list does not strand the wheel and make the pointer move, and a pane whose content fits never claims anything.",
+      "`menu::Item::with_description` gives an action row a second line — what a command will do, which file it will act on, for a row whose name does not say enough on its own. One described row widens the panel, the way one icon opens the glyph gutter, because a description is a sentence rather than a name."
+    ],
+    "changed": [
+      "A menu's pointer and keyboard share one cursor. Hovering a row moves the selection rather than lighting a row of its own, so an open submenu can only ever hang off the row that is live. Hovering now shows the selection tone rather than the softer wash it used to.",
+      "`menu::card` reports what the pointer did as a `Hit`, dismissal included. A card sees only its own bounds, so with a submenu open a click on one of its rows read as a click away; every panel now reports the press it did not contain, and the press none of them contained is the one that dismisses.",
+      "`MenubarEvent::Selected` carries a path rather than a row index — one index per level, outermost first, which `Menu::at` turns back into the item.",
+      "`Item`'s builders rewrite the row in place rather than taking it apart and putting it back together field by field. Threading a new field through five rebuilds is how a field gets dropped from one of them."
+    ],
+    "fixed": [
+      "The editor's block and language menus stay shut when their trigger is pressed a second time. A card's out-click fires on the press and a trigger's click on the release, so without a note taken on the way down the press closed the menu and the release opened it straight back up. Both menus also play their exit now instead of vanishing.",
+      "The combobox, the date picker and the gallery's select each carried their own copy of the press note; they share one now. It is taken in the capture phase rather than on bubble, so it no longer depends on a dismissal reaching for `Popup::begin_close` over `Popup::close`."
+    ]
+  },
+  {
+    "version": "0.1.7",
+    "date": "2026-09-08",
+    "summary": "The editor takes tab for itself, and the document is sized apart from the app around it.",
+    "new": [
+      "A document carries its own text size, with chords to adjust it — so the prose can be set larger without the chrome following it."
+    ],
+    "fixed": [
+      "Tab indents a list item in an editor that sits inside focus traversal, which had been taking the key to move focus instead.",
+      "The block handle moves in with an indented block, and a nested run restarts its numbering rather than continuing the run above it."
+    ]
+  },
+  {
+    "version": "0.1.6",
+    "date": "2026-09-07",
+    "summary": "The icon set moves into a crate of its own, declared from Lucide rather than checked in.",
+    "new": [
+      "`bezel-icons` is its own crate. The set is declared from Lucide and generated at build time, so no SVG is stored in git and a consumer picks the categories it paints with."
+    ],
+    "changed": [
+      "The default font is the system face the type ladder was measured on, rather than one the ladder never described."
+    ],
+    "fixed": [
+      "The container owns the gap above a group box, so two stacked boxes no longer carry a doubled one between them."
+    ]
+  },
+  {
+    "version": "0.1.5",
+    "date": "2026-09-03",
+    "summary": "Glass renders over a vibrant window, and the chrome's transparency stops being the window's.",
+    "new": [
+      "`menu::card` is shared: the panel the menubar drops is the same one any caller can paint a list of rows into.",
+      "A scroll pane can mark its items on a rail beside it — where you are in a long list, without a scrollbar's worth of chrome.",
+      "`apps/parity` draws one scene twice, in bezel and in AppKit side by side, which is how the measurements stay honest."
+    ],
+    "changed": [
+      "A window's transparency is split from its chrome's, so glass renders over a vibrant window instead of compositing against the wrong thing underneath.",
+      "Every hover and selection runs off one pair of tokens, rather than each component picking a tone that nearly matched."
+    ],
+    "fixed": [
+      "A surface clamps its corners to the box it actually paints, so a small element cannot round itself away.",
+      "A row title clips instead of ellipsising, the group box row matches macOS metrics, every type role gets its measured line height, and every control sizes off its measured line box."
+    ]
+  },
+  {
+    "version": "0.1.4",
+    "date": "2026-08-31",
+    "summary": "Every surface is measured frost or glass, every text size sits on a measured ladder, and an app can paint a fenced block itself.",
+    "new": [
+      "A type ladder behind every text size: each role is a measurement with a note saying where it was read, rather than a number somebody liked.",
+      "Comments anchor to ranges that survive editing, so an annotation stays on the words it was about after the text around it moves.",
+      "An app can paint a fenced block itself, and `bezel-blocks` ships the painted ones — one feature per block, so nothing you do not render is compiled.",
+      "Icon buttons and grouped buttons, a ghost control frame, and a memory row on the stats meter."
+    ],
+    "changed": [
+      "Glass is rebuilt from measurements of a real `NSGlassEffectView` rather than from an approximation of one.",
+      "The space ladder is replaced by the measured system gap — one number the platform names, instead of a scale invented around it.",
+      "A field's type and the editor's text inset are configurable, and the gallery lays out on narrow windows.",
+      "The architecture notes are folded into a compact `CONTRIBUTING`."
+    ],
+    "fixed": [
+      "A menu has one cursor and marks the chosen row, instead of lighting the hovered row and the selected row at once.",
+      "The caret, the gutter handle and block deletion in the editor; a block is kept in an empty document; the handle centres on its first row; an embed card hugs its text and rounds its cover."
+    ]
+  },
+  {
+    "version": "0.1.3",
+    "date": "2026-08-29",
+    "summary": "Meet the liquid glass — and a window that stops animating when nobody is looking at it.",
+    "new": [
+      "Liquid glass, and the lens brought to the web build alongside it."
+    ],
+    "changed": [
+      "Animation stops while the app is in the background. A spinner nobody can see still costs a frame at the display's rate, for as long as it stays mounted.",
+      "A split handle can skip its own divider, for a pane that draws one of its own."
+    ],
+    "fixed": [
+      "The focus ring has its own hairline token rather than borrowing a border's.",
+      "The stats meter shows on the page that documents it."
+    ]
+  },
+  {
+    "version": "0.1.2",
+    "date": "2026-08-27",
+    "summary": "One leased clock behind every animation, and a meter that shows what a still window costs.",
+    "new": [
+      "A floating frame with a CPU and GPU meter, and a draggable floating panel to hang either off.",
+      "gpui's frame overlay cycles behind a profiler flag, so the cost of a frame is visible without a second tool.",
+      "Pixel mascots for list rows."
+    ],
+    "changed": [
+      "Every animation drive is merged onto one leased clock, and every frame request routes through `Painter`. An element asking for frames used to ask on behalf of the whole window.",
+      "Components notify the view rather than refreshing the window, so a repaint costs the subtree that changed instead of all of it.",
+      "The gallery floats its content card over a bare rail."
+    ],
+    "fixed": [
+      "Checklists are no longer rewritten on save, which had been turning a document into a diff against itself."
+    ]
+  },
+  {
+    "version": "0.1.1",
+    "date": "2026-08-25",
+    "summary": "Brand — the palette an app builds its own theme from, made from the gallery's Create page.",
+    "new": [
+      "`Brand`, and the gallery's Create page that produces one: pick a palette and the snippet to paste comes out the other side.",
+      "Images resize in the block editor, and a width is spelled in the markdown itself as `![alt|480](url)`.",
+      "The navigation rail floats under the traffic lights instead of starting below them."
+    ],
+    "changed": [
+      "The frost alpha is a `Brand` knob rather than a constant every app inherits."
+    ],
+    "fixed": [
+      "A slider drag stays with the slider it started on, and the slider takes the pointer cursor.",
+      "A horizontal scroller locks to the gesture's axis instead of drifting on a diagonal."
+    ]
+  },
+  {
+    "version": "0.1.0",
+    "date": "2026-08-23",
+    "summary": "bezel 0.1.0 on crates.io — `bezel-*` packages with short lib names, and docs served as markdown for agents.",
+    "new": [
+      "Published to crates.io. The packages are `bezel-*` and the libs are short, so a consumer writes `ui::` and `theme::` rather than the package name twice.",
+      "Images in the block editor, the nav row, and the window titlebar strip.",
+      "The docs are served as markdown as well as HTML, which is what an agent reads."
+    ],
+    "fixed": [
+      "Mobile overflow on the site, and the keyboard opening on every preview tap."
+    ]
+  },
+  {
+    "version": "0.0.2",
+    "date": "2026-08-22",
+    "summary": "The library itself: the components, the gallery that documents them, the markdown model, the block editor, and the site they all ship to.",
+    "new": [
+      "The component set — real backdrop-blur glass, editable text fields that wrap and scroll, form controls, a command palette, combobox, hover card, sheet, resizable split, follow scroll and a step row.",
+      "The gallery: a docs browser with a top nav, a page per component, and an element inspector on `cmd-alt-i`.",
+      "`bezel`, the facade crate, and `apps/hello`, the worked example the README walks through.",
+      "A block document model that round-trips markdown to a fixed point, and a Notion-style block editor over it in a crate of its own.",
+      "tree-sitter syntax highlighting for fenced code, a terminal emulator and grid view, and the agent crate with thinking orbs and generated blob avatars.",
+      "The docs site, with the gallery compiled to wasm and running in the page."
+    ],
+    "changed": [
+      "Components are catalog traits on `Theme` via `ThemeExt`: stateless paint hangs off the environment, and a caller overrides by chaining gpui modifiers on what comes back.",
+      "One button with three shipped styles, rather than a button per style. A closed enum picks between them; radius, colour and padding never become parameters.",
+      "Hover is caller-owned, so a component cannot install a listener the caller then needs for something else."
+    ]
+  },
+  {
+    "version": "0.0.1",
+    "date": "2026-08-16",
+    "summary": "The bezel holds the glass.",
+    "new": [
+      "The first commit."
+    ]
+  }
+]

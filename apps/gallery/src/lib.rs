@@ -395,8 +395,9 @@ const STEPS: [Step; 3] = [
     },
 ];
 
-/// The menubar page's menus. Ordinary app chrome, with the two rows worth
-/// showing: a separator, and a disabled item the keyboard steps straight over.
+/// The menubar page's menus. Ordinary app chrome, with the rows worth showing:
+/// a separator, a disabled item the keyboard steps straight over, and two
+/// submenus — one of them nested a second level down.
 ///
 /// The accelerators are printed, not bound — `menubar` never dispatches, so
 /// these name shortcuts this app would wire itself.
@@ -406,7 +407,18 @@ fn demo_menus() -> Vec<Menu> {
             "File",
             vec![
                 Item::action("New Window").with_keystroke("⌘N"),
-                Item::action("Open…").with_keystroke("⌘O"),
+                Item::action("Open…")
+                    .with_keystroke("⌘O")
+                    .with_description("Choose a markdown file to edit"),
+                Item::submenu(
+                    "Open Recent",
+                    vec![
+                        Item::action("bezel.md"),
+                        Item::action("theme.rs"),
+                        Item::Separator,
+                        Item::action("Clear Menu"),
+                    ],
+                ),
                 Item::Separator,
                 Item::action("Save").with_keystroke("⌘S"),
                 Item::action("Save As…").with_keystroke("⇧⌘S").disabled(),
@@ -428,6 +440,20 @@ fn demo_menus() -> Vec<Menu> {
             vec![
                 Item::action("Toggle Sidebar").with_keystroke("⌘B"),
                 Item::action("Full Screen").with_keystroke("⌃⌘F"),
+                Item::Separator,
+                Item::submenu(
+                    "Appearance",
+                    vec![
+                        Item::action("Light"),
+                        Item::action("Dark").checked(true),
+                        Item::Separator,
+                        Item::submenu(
+                            "Accent",
+                            vec![Item::action("Blue").checked(true), Item::action("Graphite")],
+                        ),
+                    ],
+                ),
+                Item::submenu("Nothing Here", vec![]).disabled(),
             ],
         ),
     ]
@@ -570,6 +596,11 @@ pub const PATTERNS: &[Group] = &[
                 "document",
                 "Document",
                 "apps/gallery/src/patterns/document.rs",
+            ),
+            section(
+                "selectable-text",
+                "Selectable text",
+                "apps/gallery/src/patterns/selectable.rs",
             ),
             section("editor", "Editor", "apps/gallery/src/patterns/editor.rs"),
             section("syntax", "Syntax", "apps/gallery/src/patterns/syntax.rs"),
@@ -830,6 +861,10 @@ pub struct Gallery {
     pane_scroll: gpui::ScrollHandle,
     pane_bar: TransientState,
     demo_scroll: gpui::ScrollHandle,
+    /// A pane nested in `gallery-pane` keeps the wheel it can act on, so
+    /// scrolling it does not drag the page behind it. One per pane: the state
+    /// is where that pane stood before the wheel being dispatched.
+    demo_claim: scroll::ClaimState,
     demo_bar: ScrollbarState,
     /// The follow-scroll demo: a log that grows under a view pinned to its end.
     log_scroll: gpui::ScrollHandle,
@@ -837,8 +872,10 @@ pub struct Gallery {
     log_follow: scroll::FollowState,
     log_lines: usize,
     table_scroll: gpui::ScrollHandle,
+    table_claim: scroll::ClaimState,
     table_bar: ScrollbarState,
     tree_scroll: gpui::ScrollHandle,
+    tree_claim: scroll::ClaimState,
     tree_bar: ScrollbarState,
     rows_scroll: gpui::UniformListScrollHandle,
     rows_bar: ScrollbarState,
@@ -868,6 +905,9 @@ pub struct Gallery {
     transcript: Entity<patterns::transcript::Transcript>,
     diff: Entity<patterns::diff::Diff>,
     document: Entity<patterns::document::Document>,
+    /// Prose a reader can drag over, which owns the selection the way any host
+    /// of `markdown::selectable` has to.
+    selectable: Entity<patterns::selectable::Selectable>,
     editor: Entity<patterns::editor::EditorDemo>,
     #[cfg(not(target_family = "wasm"))]
     terminal: Entity<patterns::terminal::Terminal>,
@@ -931,8 +971,8 @@ impl Gallery {
         // turns that back into a name, and what decides it means anything.
         let menubar = cx.new(|cx| Menubar::new(demo_menus(), cx));
         cx.subscribe(&menubar, |view, bar, event, cx| {
-            let MenubarEvent::Selected { menu, item } = event;
-            if let Some(Item::Action { label, .. }) = bar.read(cx).menus()[*menu].items.get(*item) {
+            let MenubarEvent::Selected { menu, path } = event;
+            if let Some(Item::Action { label, .. }) = bar.read(cx).menus()[*menu].at(path) {
                 view.last_menu_item = Some(label.clone());
             }
             cx.notify();
@@ -1003,6 +1043,7 @@ impl Gallery {
             pane_scroll: gpui::ScrollHandle::new(),
             pane_bar: TransientState::new(Painter::of(cx)),
             demo_scroll: gpui::ScrollHandle::new(),
+            demo_claim: scroll::ClaimState::new(),
             demo_bar: ScrollbarState::new(Painter::of(cx)),
             log_scroll: gpui::ScrollHandle::new(),
             log_bar: ScrollbarState::new(Painter::of(cx)),
@@ -1011,10 +1052,12 @@ impl Gallery {
             // to hold onto before you press anything.
             log_lines: 24,
             table_scroll: gpui::ScrollHandle::new(),
+            table_claim: scroll::ClaimState::new(),
             table_bar: ScrollbarState::new(Painter::of(cx)),
             table_sort: None,
             page: 1,
             tree_scroll: gpui::ScrollHandle::new(),
+            tree_claim: scroll::ClaimState::new(),
             tree_bar: ScrollbarState::new(Painter::of(cx)),
             rows_scroll: gpui::UniformListScrollHandle::new(),
             rows_bar: ScrollbarState::new(Painter::of(cx)),
@@ -1045,6 +1088,7 @@ impl Gallery {
             transcript: cx.new(patterns::transcript::Transcript::new),
             diff: cx.new(|_| patterns::diff::Diff),
             document: cx.new(patterns::document::Document::new),
+            selectable: cx.new(patterns::selectable::Selectable::new),
             editor: cx.new(patterns::editor::EditorDemo::new),
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(patterns::terminal::Terminal::new),
@@ -1119,19 +1163,6 @@ impl Gallery {
     /// The gallery's own focus handle — what the window focuses on launch.
     pub fn focus_handle(&self) -> gpui::FocusHandle {
         self.focus_handle.clone()
-    }
-
-    fn toggle_theme_menu(&mut self, cx: &mut Context<Self>) {
-        // `note_trigger_press` was recorded on mouse-down; if the menu was
-        // already open then this click is a dismiss, not a re-open.
-        if self.theme_menu.take_press_was_open() {
-            if self.theme_menu.begin_close() {
-                popover::reap_popup(cx, |view: &mut Self| &mut view.theme_menu);
-            }
-        } else {
-            self.theme_menu.open(());
-        }
-        cx.notify();
     }
 
     fn open_palette(&mut self, _: &OpenPalette, window: &mut Window, cx: &mut Context<Self>) {
@@ -1350,9 +1381,7 @@ impl Gallery {
 
     fn choose_theme(&mut self, index: usize, cx: &mut Context<Self>) {
         self.theme_choice = index;
-        if self.theme_menu.begin_close() {
-            popover::reap_popup(cx, |view: &mut Self| &mut view.theme_menu);
-        }
+        popover::close_popup(self, cx, |view: &mut Self| &mut view.theme_menu);
         cx.notify();
     }
 
@@ -2135,64 +2164,51 @@ impl Gallery {
                 section
                     .child(
                         div().w(px(200.0)).relative().child(
-                            div()
-                                .id("theme-select")
-                                .on_mouse_down(
-                                    gpui::MouseButton::Left,
-                                    cx.listener(|view, _, _, _| {
-                                        view.theme_menu.note_trigger_press()
-                                    }),
-                                )
-                                .on_click(cx.listener(|view, _, _, cx| view.toggle_theme_menu(cx)))
-                                .child(theme.select_trigger(SELECT_CHOICES[self.theme_choice]))
-                                .when(menu_open, |trigger| {
-                                    trigger.child(popover::anchored_menu_below(
-                                        "theme-select-menu",
-                                        popover::popover_card(&theme)
-                                            .w(px(200.0))
-                                            // Dismissal is the caller's, and the
-                                            // caller is this view — without it,
-                                            // clicking away leaves it open.
-                                            .on_mouse_down_out(cx.listener(|view, _, _, cx| {
-                                                if view.theme_menu.begin_close() {
-                                                    popover::reap_popup(cx, |view: &mut Self| {
-                                                        &mut view.theme_menu
-                                                    });
-                                                }
-                                                cx.notify();
+                            popover::menu_trigger(
+                                div().id("theme-select"),
+                                |view: &mut Self| &mut view.theme_menu,
+                                |_| (),
+                                cx,
+                            )
+                            .child(theme.select_trigger(SELECT_CHOICES[self.theme_choice]))
+                            .when(menu_open, |trigger| {
+                                trigger.child(popover::anchored_menu_below(
+                                    "theme-select-menu",
+                                    // Dismissal is the caller's, and the
+                                    // caller is this view — without it,
+                                    // clicking away leaves it open.
+                                    popover::dismiss_on_out(
+                                        popover::popover_card(&theme).w(px(200.0)),
+                                        |view: &mut Self| &mut view.theme_menu,
+                                        cx,
+                                    )
+                                    .children(SELECT_CHOICES.iter().enumerate().map(
+                                        |(index, label)| {
+                                            popover::menu_row(
+                                                &theme,
+                                                false,
+                                                Some(Fade::new(view, format!("theme-row-{index}"))),
+                                            )
+                                            .justify_between()
+                                            .id(SharedString::from(format!("theme-{index}")))
+                                            .on_click(cx.listener(move |view, _, _, cx| {
+                                                view.choose_theme(index, cx)
                                             }))
-                                            .children(SELECT_CHOICES.iter().enumerate().map(
-                                                |(index, label)| {
-                                                    popover::menu_row(
-                                                        &theme,
-                                                        false,
-                                                        Some(Fade::new(
-                                                            view,
-                                                            format!("theme-row-{index}"),
-                                                        )),
-                                                    )
-                                                    .justify_between()
-                                                    .id(SharedString::from(format!(
-                                                        "theme-{index}"
-                                                    )))
-                                                    .on_click(cx.listener(move |view, _, _, cx| {
-                                                        view.choose_theme(index, cx)
-                                                    }))
-                                                    .child(*label)
-                                                    .when(index == self.theme_choice, |row| {
-                                                        row.child(
-                                                            icons::icon(icons::status::CHECK)
-                                                                .size(px(13.0))
-                                                                .text_color(theme.text),
-                                                        )
-                                                    })
-                                                    .into_any_element()
-                                                },
-                                            ))
-                                            .into_any_element(),
-                                        self.theme_menu.closing_since(),
+                                            .child(*label)
+                                            .when(index == self.theme_choice, |row| {
+                                                row.child(
+                                                    icons::icon(icons::status::CHECK)
+                                                        .size(px(13.0))
+                                                        .text_color(theme.text),
+                                                )
+                                            })
+                                            .into_any_element()
+                                        },
                                     ))
-                                }),
+                                    .into_any_element(),
+                                    self.theme_menu.closing_since(),
+                                ))
+                            }),
                         ),
                     )
                     .into_any_element()
@@ -3743,9 +3759,10 @@ impl Gallery {
                 .child(hint(
                     &theme,
                     "Open one, then slide across the others — a bar with a menu \
-                     down switches on hover, with no second click. The arrows \
-                     walk rows and cross between menus; the greyed rows cannot \
-                     be landed on at all.",
+                     down switches on hover, with no second click. A row with a \
+                     chevron drops a menu of its own, on hover or on `right`; \
+                     `left` and `escape` close one level at a time. The greyed \
+                     rows cannot be landed on at all.",
                 ))
                 .child(self.menubar.clone())
                 .child(
@@ -3841,7 +3858,7 @@ impl Gallery {
                         .border_1()
                         .border_color(theme.border)
                         .overflow_hidden()
-                        .child(
+                        .child(scroll::claim_wheel(
                             div()
                                 .id("scroll-demo")
                                 .size_full()
@@ -3855,7 +3872,10 @@ impl Gallery {
                                             .child(SharedString::from(format!("Line {line}")))
                                     }),
                                 )),
-                        )
+                            &self.demo_scroll,
+                            gpui::Axis::Vertical,
+                            &self.demo_claim,
+                        ))
                         .child(scroll::scrollbar(
                             "scroll-demo-bar",
                             &self.demo_scroll,
@@ -4002,7 +4022,7 @@ impl Gallery {
                                 div()
                                     .relative()
                                     .h(px(150.0))
-                                    .child(
+                                    .child(scroll::claim_wheel(
                                         div()
                                             .id("table-body")
                                             .size_full()
@@ -4035,7 +4055,10 @@ impl Gallery {
                                                     )
                                                 },
                                             )),
-                                    )
+                                        &self.table_scroll,
+                                        gpui::Axis::Vertical,
+                                        &self.table_claim,
+                                    ))
                                     .child(scroll::scrollbar(
                                         "table-bar",
                                         &self.table_scroll,
@@ -4078,7 +4101,7 @@ impl Gallery {
                             .border_1()
                             .border_color(theme.border)
                             .overflow_hidden()
-                            .child(
+                            .child(scroll::claim_wheel(
                                 div()
                                     .id("tree-body")
                                     .size_full()
@@ -4099,7 +4122,10 @@ impl Gallery {
                                             .child(SharedString::from(entry.label))
                                         }),
                                     )),
-                            )
+                                &self.tree_scroll,
+                                gpui::Axis::Vertical,
+                                &self.tree_claim,
+                            ))
                             .child(scroll::scrollbar(
                                 "tree-bar",
                                 &self.tree_scroll,
@@ -4194,6 +4220,17 @@ impl Gallery {
             "agent-transcript" => self.transcript.clone().into_any_element(),
             "agent-diff" => self.diff.clone().into_any_element(),
             "document" => self.document.clone().into_any_element(),
+            "selectable-text" => section
+                .child(hint(
+                    &theme,
+                    "Press in the prose and drag. The selection is painted by \
+                     the renderer the editor uses and resolves against the same \
+                     layouts — what the library adds is the gesture, and \
+                     nothing else. Which document holds the selection, and what \
+                     copying means, stay the screen's.",
+                ))
+                .child(self.selectable.clone())
+                .into_any_element(),
             "editor" => self.editor.clone().into_any_element(),
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),

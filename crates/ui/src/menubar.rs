@@ -24,12 +24,13 @@
 //! let bar = cx.new(|cx| Menubar::new(vec![
 //!     Menu::new("File", vec![
 //!         Item::action("New Window").with_keystroke("⌘N"),
+//!         Item::submenu("Open Recent", vec![Item::action("bezel.md")]),
 //!         Item::Separator,
 //!         Item::action("Close").with_keystroke("⌘W").disabled(),
 //!     ]),
 //! ], cx));
-//! cx.subscribe(&bar, |_, _, event, _| match event {
-//!     MenubarEvent::Selected { menu, item } => { /* dispatch */ }
+//! cx.subscribe(&bar, |_, bar, event, cx| match event {
+//!     MenubarEvent::Selected { menu, path } => { /* dispatch */ }
 //! })
 //! .detach();
 //! ```
@@ -60,6 +61,11 @@ impl Menu {
             items,
         }
     }
+
+    /// The item a [`MenubarEvent::Selected`] path names, submenus walked.
+    pub fn at(&self, path: &[usize]) -> Option<&Item> {
+        menu::at(&self.items, path)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -78,9 +84,11 @@ pub const KEY_CONTEXT: &str = "Menubar";
 /// Install the bar's bindings. Call once, alongside [`crate::input::init`].
 ///
 /// `left`/`right` cross between menus and `up`/`down` walk the rows, which is
-/// the one arrangement every platform's menubar agrees on. Nothing claims `alt`
-/// to focus the bar: that is a Windows convention, and a component library that
-/// binds a chord it is unsure of takes it away from every app downstream.
+/// the one arrangement every platform's menubar agrees on. With a submenu in
+/// reach they open and close it first, and only cross once there is no level
+/// left to move through. Nothing claims `alt` to focus the bar: that is a
+/// Windows convention, and a component library that binds a chord it is unsure
+/// of takes it away from every app downstream.
 pub fn init(cx: &mut App) {
     let ctx = Some(KEY_CONTEXT);
     cx.bind_keys([
@@ -94,9 +102,12 @@ pub fn init(cx: &mut App) {
 }
 
 /// What the bar reports: an item chosen, by its place in the menus it was given.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MenubarEvent {
-    Selected { menu: usize, item: usize },
+    /// `path` is a row index per level, outermost first — one entry for a
+    /// top-level row, two for a row in a submenu. [`Menu::at`] turns it back
+    /// into the item.
+    Selected { menu: usize, path: Vec<usize> },
 }
 
 pub struct Menubar {
@@ -105,10 +116,11 @@ pub struct Menubar {
     /// exactly one menu can be open, and saying so in the type is what makes
     /// switching between them a single assignment.
     open: popover::Popup<usize>,
-    /// Where the keyboard is inside the open menu. Cleared whenever the menu
-    /// changes, so a fresh menu opens with nothing highlighted rather than with
-    /// the last one's row number pointing at whatever now sits there.
-    highlighted: Option<usize>,
+    /// Where the keyboard and the pointer both are inside the open menu, and
+    /// which of its submenus are down. Cleared whenever the menu changes, so a
+    /// fresh menu opens with nothing highlighted rather than with the last
+    /// one's row number pointing at whatever now sits there.
+    cursor: menu::Cursor,
     focus_handle: FocusHandle,
 }
 
@@ -119,7 +131,7 @@ impl Menubar {
         Self {
             menus,
             open: popover::Popup::default(),
-            highlighted: None,
+            cursor: menu::Cursor::default(),
             // One stop for the whole bar: the menus are keyboard-driven from
             // here, so no row takes focus of its own.
             focus_handle: cx.focus_handle().tab_stop(true),
@@ -131,6 +143,12 @@ impl Menubar {
         self.open.as_open().copied()
     }
 
+    /// Where the pointer and the keyboard are in the open menu — which
+    /// submenus are down, and which row is live.
+    pub fn cursor(&self) -> &menu::Cursor {
+        &self.cursor
+    }
+
     /// The menus as given. [`MenubarEvent`] reports a place in this list, so
     /// this is how a host turns one back into the item it named — without
     /// keeping a second copy that could drift from the bar's.
@@ -140,7 +158,7 @@ impl Menubar {
 
     fn show(&mut self, menu: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.open.open(menu);
-        self.highlighted = None;
+        self.cursor.clear();
         window.focus(&self.focus_handle, cx);
         cx.notify();
     }
@@ -163,7 +181,7 @@ impl Menubar {
     fn hover_switch(&mut self, menu: usize, cx: &mut Context<Self>) {
         if self.open.is_open() && self.open_menu() != Some(menu) {
             self.open.open(menu);
-            self.highlighted = None;
+            self.cursor.clear();
             cx.notify();
         }
     }
@@ -172,18 +190,20 @@ impl Menubar {
         if self.open.begin_close() {
             popover::reap_popup(cx, |bar: &mut Self| &mut bar.open);
         }
-        self.highlighted = None;
+        // Before the exit plays, not after: a submenu paints on a layer of its
+        // own and would hang there, unfaded, over the menu dissolving under it.
+        self.cursor.clear();
         cx.notify();
     }
 
-    fn choose(&mut self, menu: usize, item: usize, cx: &mut Context<Self>) {
-        cx.emit(MenubarEvent::Selected { menu, item });
+    fn choose(&mut self, menu: usize, path: Vec<usize>, cx: &mut Context<Self>) {
+        cx.emit(MenubarEvent::Selected { menu, path });
         self.close(cx);
     }
 
     fn step_item(&mut self, delta: isize, cx: &mut Context<Self>) {
         let Some(menu) = self.open_menu() else { return };
-        self.highlighted = menu::next_selectable(&self.menus[menu].items, self.highlighted, delta);
+        self.cursor.step(&self.menus[menu].items, delta);
         cx.notify();
     }
 
@@ -195,13 +215,57 @@ impl Menubar {
         }
         self.open
             .open((menu as isize + delta).rem_euclid(count) as usize);
-        self.highlighted = None;
+        self.cursor.clear();
         cx.notify();
     }
 
+    /// `right`: into the submenu under the cursor if there is one, else across
+    /// to the next menu. A submenu row that swallowed `right` without opening
+    /// would be a dead key on the one row that has somewhere to go.
+    fn go_deeper(&mut self, cx: &mut Context<Self>) {
+        let Some(menu) = self.open_menu() else { return };
+        if self.cursor.descend(&self.menus[menu].items) {
+            cx.notify();
+        } else {
+            self.step_menu(1, cx);
+        }
+    }
+
+    /// `left`: out of the innermost submenu, else back to the previous menu.
+    fn go_shallower(&mut self, cx: &mut Context<Self>) {
+        if self.cursor.ascend() {
+            cx.notify();
+        } else {
+            self.step_menu(-1, cx);
+        }
+    }
+
+    /// What the pointer did to the open menu. Only a cursor that actually moved
+    /// is worth a frame — `on_mouse_move` reports every pixel.
+    fn hit(&mut self, hit: menu::Hit, cx: &mut Context<Self>) {
+        let Some(menu) = self.open_menu() else { return };
+        match hit {
+            menu::Hit::Point(path) => {
+                if self.cursor.point_at(&self.menus[menu].items, &path) {
+                    cx.notify();
+                }
+            }
+            menu::Hit::Choose(path) => self.choose(menu, path, cx),
+            menu::Hit::Dismiss => self.close(cx),
+        }
+    }
+
     fn confirm(&mut self, _: &Confirm, window: &mut Window, cx: &mut Context<Self>) {
-        match (self.open_menu(), self.highlighted) {
-            (Some(menu), Some(item)) => self.choose(menu, item, cx),
+        match (self.open_menu(), self.cursor.path()) {
+            // A submenu row's `enter` opens it, the way `right` does; only an
+            // action row is a choice.
+            (Some(menu), Some(path)) => {
+                if self.cursor.descend(&self.menus[menu].items) {
+                    cx.notify();
+                } else {
+                    self.choose(menu, path, cx);
+                }
+            }
             // Closed, `enter` drops the first menu — the same key means "act on
             // this control" either way, which is what makes the bar reachable
             // by keyboard at all.
@@ -210,8 +274,13 @@ impl Menubar {
         }
     }
 
+    /// `escape` closes one level at a time, the bar itself last.
     fn dismiss(&mut self, _: &Dismiss, _: &mut Window, cx: &mut Context<Self>) {
-        self.close(cx);
+        if self.cursor.ascend() {
+            cx.notify();
+        } else {
+            self.close(cx);
+        }
     }
 
     fn card(&self, menu: usize, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -219,11 +288,10 @@ impl Menubar {
             theme,
             SharedString::from(format!("menu-{menu}")),
             &self.menus[menu].items,
-            self.highlighted,
+            &self.cursor,
             cx,
-            move |bar, item, _, cx| bar.choose(menu, item, cx),
+            |bar, hit, _, cx| bar.hit(hit, cx),
         )
-        .on_mouse_down_out(cx.listener(|bar, _, _, cx| bar.close(cx)))
         .into_any_element()
     }
 }
@@ -270,8 +338,8 @@ impl Render for Menubar {
         menubar()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
-            .on_action(cx.listener(|bar, _: &PrevMenu, _, cx| bar.step_menu(-1, cx)))
-            .on_action(cx.listener(|bar, _: &NextMenu, _, cx| bar.step_menu(1, cx)))
+            .on_action(cx.listener(|bar, _: &PrevMenu, _, cx| bar.go_shallower(cx)))
+            .on_action(cx.listener(|bar, _: &NextMenu, _, cx| bar.go_deeper(cx)))
             .on_action(cx.listener(|bar, _: &PrevItem, _, cx| bar.step_item(-1, cx)))
             .on_action(cx.listener(|bar, _: &NextItem, _, cx| bar.step_item(1, cx)))
             .on_action(cx.listener(Self::confirm))

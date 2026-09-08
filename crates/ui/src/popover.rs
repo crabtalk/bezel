@@ -134,6 +134,11 @@ impl<T> Popup<T> {
     /// through [`Self::begin_close`] buys nothing and costs everything: it
     /// stays fully painted for the animation's span, and if the reap never
     /// lands it stays forever, because nothing retries.
+    ///
+    /// Not for a popup something toggles: unmounting on the press erases what
+    /// [`Self::note_trigger_press`] has to read, so the note comes back false
+    /// and the trigger reopens what it just shut. Those close through
+    /// [`close_popup`].
     pub fn close(&mut self) {
         self.inner = None;
     }
@@ -159,6 +164,10 @@ impl<T> Popup<T> {
     /// plain toggle closes-and-reopens (user report). Both handler orders
     /// work: open and mid-exit each count as mounted. Every trigger click
     /// is preceded by a trigger mouse-down, so the note is never stale.
+    ///
+    /// [`menu_trigger`] wires this and the matching click together. Reach for
+    /// it directly only when the open is not a click — a gutter handle whose
+    /// menu belongs to the release of a possible drag.
     pub fn note_trigger_press(&mut self) {
         self.note_trigger_press_matching(|_| true);
     }
@@ -217,6 +226,120 @@ pub fn reap_popup<V: 'static, T: 'static>(
         .ok();
     })
     .detach();
+}
+
+/// Begin a popup's exit phase and schedule its reap — [`Popup::begin_close`]
+/// and [`reap_popup`], which are only ever correct together. A popup already
+/// closing or closed is left alone.
+pub fn close_popup<V: 'static, T: 'static>(
+    view: &mut V,
+    cx: &mut gpui::Context<V>,
+    popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
+) {
+    if popup(view).begin_close() {
+        reap_popup(cx, popup);
+        cx.notify();
+    }
+}
+
+/// Dismiss `popup` on a press outside `el` — the card side of the pair
+/// [`menu_trigger`] completes.
+///
+/// It closes through [`close_popup`] rather than [`Popup::close`], and that is
+/// load-bearing rather than cosmetic: the exit phase is what keeps the popup
+/// reading as mounted while the trigger's own press handler runs, whichever of
+/// the two the frame happens to dispatch first.
+pub fn dismiss_on_out<V: 'static, T: 'static, E: gpui::InteractiveElement>(
+    el: E,
+    popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
+    cx: &gpui::Context<V>,
+) -> E {
+    el.on_mouse_down_out(
+        cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| close_popup(view, cx, popup)),
+    )
+}
+
+/// Wire a trigger to the popup it toggles: press note on the way down, open or
+/// close on the way up.
+///
+/// The press/release split is why this exists rather than a plain
+/// `on_click`. `on_mouse_down_out` fires on the **press** and `on_click` on the
+/// **release**, so one physical click on the trigger of an open menu runs the
+/// card's dismissal first and the trigger's toggle second — by which time the
+/// state a toggle would branch on is already gone, and the menu reopens on the
+/// click that shut it (user report). No click handler can tell the two apart;
+/// the note has to be taken in the phase the dismissal cannot precede.
+///
+/// `value` is what to open with, from the click that opened it — a point for a
+/// menu anchored where it was pressed, or `move |_| ..` for one that already
+/// knows.
+///
+/// This is a true toggle either way: a card that dismisses itself on the
+/// out-press is already closing by the release and the close here is a no-op,
+/// while a card that does not (one dismissed by Escape alone, or one the
+/// trigger sits inside) is closed by the release itself.
+pub fn menu_trigger<V: 'static, T: 'static, E: gpui::StatefulInteractiveElement>(
+    el: E,
+    popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
+    value: impl Fn(&gpui::ClickEvent) -> T + 'static,
+    cx: &gpui::Context<V>,
+) -> E {
+    menu_trigger_matching(el, popup, |_| true, value, cx)
+}
+
+/// [`menu_trigger`] for one popup shared by several triggers (a `Popup<Menu>`
+/// with a row's index inside it): `owns` says whether the open popup is *this*
+/// trigger's, so pressing another trigger switches menus instead of swallowing
+/// the press. See [`Popup::note_trigger_press_matching`].
+pub fn menu_trigger_matching<V: 'static, T: 'static, E: gpui::StatefulInteractiveElement>(
+    el: E,
+    popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
+    owns: impl Fn(&T) -> bool + 'static,
+    value: impl Fn(&gpui::ClickEvent) -> T + 'static,
+    cx: &gpui::Context<V>,
+) -> E {
+    trigger_press_matching(el, popup, owns, cx).on_click(cx.listener(
+        move |view, event: &gpui::ClickEvent, _, cx| {
+            if popup(view).take_press_was_open() {
+                close_popup(view, cx, popup);
+            } else {
+                popup(view).open(value(event));
+            }
+            cx.notify();
+        },
+    ))
+}
+
+/// The press half of [`menu_trigger`] on its own, for a trigger whose open is
+/// more than `Popup::open` — a combobox that clears its query and focuses it, a
+/// gutter handle whose menu belongs to the release of a possible drag. The
+/// click side is then the caller's, and reads the note with
+/// [`Popup::take_press_was_open`].
+pub fn trigger_press<V: 'static, T: 'static, E: gpui::InteractiveElement>(
+    el: E,
+    popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
+    cx: &gpui::Context<V>,
+) -> E {
+    trigger_press_matching(el, popup, |_| true, cx)
+}
+
+/// [`trigger_press`] for one popup shared by several triggers — see
+/// [`menu_trigger_matching`].
+pub fn trigger_press_matching<V: 'static, T: 'static, E: gpui::InteractiveElement>(
+    el: E,
+    popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
+    owns: impl Fn(&T) -> bool + 'static,
+    cx: &gpui::Context<V>,
+) -> E {
+    // Capture, not bubble: `on_mouse_down_out` is itself a capture-phase
+    // listener, so a bubble-phase note is dispatched after every dismissal in
+    // the frame and reads whatever they left behind. Survivable while every
+    // dismissal goes through [`close_popup`] — mid-exit still counts as
+    // mounted — and not survivable the moment one reaches for [`Popup::close`],
+    // which is a footgun to leave lying under a component's own trigger.
+    el.capture_any_mouse_down(cx.listener(move |view, _: &gpui::MouseDownEvent, _, _| {
+        popup(view).note_trigger_press_matching(&owns);
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +658,36 @@ pub fn anchored_menu_below_gap(
                         exit,
                         div().occlude().pt(px(gap)).child(content),
                     )),
+            )
+            .priority(1)
+            .into_any_element(),
+        )
+        .into_any_element()
+}
+
+/// The panel a [`crate::menu::Item::Submenu`] row drops: pinned to the row's
+/// top-right and pulled back by the card's own inset, so the child's first row
+/// lines up with the row that opened it and the two cards touch. No gap on
+/// purpose — a strip of nothing between them is a strip the pointer crosses on
+/// its way in, and it would land on a sibling row and close what it was
+/// reaching for. Near the right edge the layer snaps rather than flipping;
+/// gpui's `anchored` picks no sides.
+///
+/// No `closing`: a submenu is held open by the cursor, and the cursor is
+/// cleared before the menu it hangs in begins its own exit.
+pub fn anchored_submenu(id: impl Into<SharedString>, content: AnyElement) -> AnyElement {
+    let content = material_menu(content);
+    div()
+        .absolute()
+        .top(px(-MENU_PAD))
+        .right(px(-MENU_PAD))
+        .size_0()
+        .child(
+            gpui::deferred(
+                gpui::anchored()
+                    .anchor(Anchor::TopLeft)
+                    .snap_to_window_with_margin(px(8.0))
+                    .child(menu_motion(id.into(), None, div().occlude().child(content))),
             )
             .priority(1)
             .into_any_element(),

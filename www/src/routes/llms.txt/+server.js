@@ -1,4 +1,4 @@
-import { documented, documentedSections, prose, site, tagline } from '$lib/catalog.js';
+import { documented, documentedSections, prose, repo, site, tagline } from '$lib/catalog.js';
 
 // llmstxt.org: an H1, a blockquote, then H2 sections of links with notes. The
 // notes are the `description` each page already carries for search.
@@ -24,7 +24,8 @@ export function GET() {
 		[
 			`- [README](${site}/readme.md): the dependency line, the pinned gpui fork, and the bootstrap no snippet can skip`,
 			`- [Complete documentation](${site}/llms-full.txt): the README and all ${documentedSections.length} pages in one file`,
-			`- [Homepage](${site}/): what the library is, in its own terms`
+			`- [Homepage](${site}/): what the library is, in its own terms`,
+			`- [Agent skill](${repo}/blob/main/skills/bezel/SKILL.md): the bootstrap, the laws and the traps, as a SKILL.md to install`
 		].join('\n'),
 		...tabs
 	].join('\n\n');

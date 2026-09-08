@@ -353,9 +353,7 @@ impl Calendar {
     }
 
     fn close(&mut self, cx: &mut Context<Self>) {
-        if self.menu.begin_close() {
-            popover::reap_popup(cx, |calendar: &mut Self| &mut calendar.menu);
-        }
+        popover::close_popup(self, cx, |calendar: &mut Self| &mut calendar.menu);
         cx.notify();
     }
 
@@ -565,16 +563,14 @@ impl Render for Calendar {
             .on_action(cx.listener(Self::dismiss))
             .relative()
             .w_full()
-            .child(
+            .child(popover::trigger_press(
                 div()
                     .id("calendar-trigger")
-                    .on_mouse_down(
-                        gpui::MouseButton::Left,
-                        cx.listener(|calendar, _, _, _| calendar.menu.note_trigger_press()),
-                    )
                     .on_click(cx.listener(|calendar, _, window, cx| calendar.toggle(window, cx)))
                     .child(theme.select_trigger(label)),
-            )
+                |calendar: &mut Self| &mut calendar.menu,
+                cx,
+            ))
             .when_some(card, |trigger, card| {
                 trigger.child(popover::anchored_menu_below(
                     "calendar-menu",

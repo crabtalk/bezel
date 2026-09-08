@@ -25,6 +25,9 @@ const CHIP_PAD_Y: f32 = 3.0;
 pub const SLASH_MENU: &str = "slash-menu";
 /// The gutter handle's, for the same reason.
 pub const BLOCK_HANDLE: &str = "block-handle";
+/// The menu that handle opens, so a test can ask whether a second press on it
+/// left the menu shut rather than closed-and-reopened.
+pub const BLOCK_MENU: &str = "block-menu";
 
 impl Editor {
     /// The block the handle belongs on: the one being dragged, else the one
@@ -75,38 +78,46 @@ impl Editor {
         // not there.
         self.handle_at = placed.map(|(_, at)| at);
         let (ix, at) = placed?;
+        let handle = div()
+            .id(BLOCK_HANDLE)
+            .debug_selector(|| BLOCK_HANDLE.to_string())
+            .absolute()
+            .left(at.x)
+            .top(at.y)
+            .w(px(HANDLE_SIZE))
+            .h(px(HANDLE_SIZE))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(4.0))
+            .cursor(CursorStyle::OpenHand)
+            .text_style(TextStyle::Callout)
+            .text_color(theme.text_faint)
+            .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
+            .child("⠿")
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {
+                    this.press_claimed = true;
+                    this.lifted = Some((ix, ix));
+                    // The menu belongs to the release. Opened here it would
+                    // occlude the very moves a drag downwards is made of,
+                    // and the drop target would never leave the block it
+                    // started on — so the press only dismisses, and the note
+                    // `trigger_press_matching` took is what tells the
+                    // release apart from a fresh open.
+                    ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
+                    cx.notify();
+                }),
+            );
         Some(
-            div()
-                .id(BLOCK_HANDLE)
-                .debug_selector(|| BLOCK_HANDLE.to_string())
-                .absolute()
-                .left(at.x)
-                .top(at.y)
-                .w(px(HANDLE_SIZE))
-                .h(px(HANDLE_SIZE))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.0))
-                .cursor(CursorStyle::OpenHand)
-                .text_style(TextStyle::Callout)
-                .text_color(theme.text_faint)
-                .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
-                .child("⠿")
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {
-                        this.press_claimed = true;
-                        this.lifted = Some((ix, ix));
-                        // The menu belongs to the release. Opened here it would
-                        // occlude the very moves a drag downwards is made of,
-                        // and the drop target would never leave the block it
-                        // started on.
-                        this.block_menu = None;
-                        cx.notify();
-                    }),
-                )
-                .into_any_element(),
+            ui::popover::trigger_press_matching(
+                handle,
+                |this| &mut this.block_menu,
+                move |&(block, _)| block == ix,
+                cx,
+            )
+            .into_any_element(),
         )
     }
 
@@ -168,22 +179,25 @@ impl Editor {
             bounds.origin.x - px(CHIP_PAD_X),
             bounds.origin.y + bounds.size.height + px(CHIP_PAD_Y),
         );
+        let chip = div()
+            .id("language-chip")
+            .absolute()
+            .left(bounds.origin.x - self.origin.x - px(CHIP_PAD_X))
+            .top(bounds.origin.y - self.origin.y - px(CHIP_PAD_Y))
+            .w(bounds.size.width + px(2.0 * CHIP_PAD_X))
+            .h(bounds.size.height + px(2.0 * CHIP_PAD_Y))
+            .rounded(px(4.0))
+            .cursor(CursorStyle::PointingHand)
+            .hover(|el| el.bg(theme.element_hover));
         Some(
-            div()
-                .id("language-chip")
-                .absolute()
-                .left(bounds.origin.x - self.origin.x - px(CHIP_PAD_X))
-                .top(bounds.origin.y - self.origin.y - px(CHIP_PAD_Y))
-                .w(bounds.size.width + px(2.0 * CHIP_PAD_X))
-                .h(bounds.size.height + px(2.0 * CHIP_PAD_Y))
-                .rounded(px(4.0))
-                .cursor(CursorStyle::PointingHand)
-                .hover(|el| el.bg(theme.element_hover))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.language_menu = Some((ix, anchor));
-                    cx.notify();
-                }))
-                .into_any_element(),
+            ui::popover::menu_trigger_matching(
+                chip,
+                |this| &mut this.language_menu,
+                move |&(block, _)| block == ix,
+                move |_| (ix, anchor),
+                cx,
+            )
+            .into_any_element(),
         )
     }
 
@@ -194,7 +208,7 @@ impl Editor {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let view = Painter::of(cx);
-        let (ix, at) = self.language_menu?;
+        let &(ix, at) = self.language_menu.get()?;
         let Some(BlockKind::Code { language, .. }) = self.doc.blocks.get(ix).map(|b| &b.kind)
         else {
             return None;
@@ -213,7 +227,7 @@ impl Editor {
                     )
                 })
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.language_menu = None;
+                    ui::popover::close_popup(this, cx, |this| &mut this.language_menu);
                     this.set_language(ix, tag.clone(), cx);
                 }))
         };
@@ -233,36 +247,35 @@ impl Editor {
         Some(ui::popover::menu_at(
             "language-menu",
             at,
-            ui::popover::popover_card(theme)
-                .w(px(150.0))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.language_menu = None;
-                    cx.notify();
-                }))
-                .child(
-                    div()
-                        .id("language-menu-rows")
-                        .max_h(px(280.0))
-                        .overflow_y_scroll()
-                        .child(plain)
-                        .children(rows),
-                )
-                .into_any_element(),
-            None,
+            ui::popover::dismiss_on_out(
+                ui::popover::popover_card(theme).w(px(150.0)),
+                |this| &mut this.language_menu,
+                cx,
+            )
+            .child(
+                div()
+                    .id("language-menu-rows")
+                    .max_h(px(280.0))
+                    .overflow_y_scroll()
+                    .child(plain)
+                    .children(rows),
+            )
+            .into_any_element(),
+            self.language_menu.closing_since(),
         ))
     }
 
     /// Turn into / Duplicate / Delete, at the handle that opened it.
     pub(super) fn block_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
         let view = Painter::of(cx);
-        let (ix, at) = self.block_menu?;
+        let &(ix, at) = self.block_menu.get()?;
         let turns = crate::slash::items();
         let rows = turns.into_iter().map(|(label, kind)| {
             ui::popover::menu_row(theme, false, Some(Fade::new(view, format!("turn-{label}"))))
                 .id(SharedString::from(format!("turn-row-{label}")))
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.block_menu = None;
+                    ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
                     this.set_block(ix, kind.clone(), cx);
                 }))
         });
@@ -275,34 +288,35 @@ impl Editor {
             .id(SharedString::from(format!("block-row-{label}")))
             .child(label)
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.block_menu = None;
+                ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
                 run(this, ix, cx);
             }))
         };
         Some(ui::popover::menu_at(
-            "block-menu",
+            BLOCK_MENU,
             at,
-            ui::popover::popover_card(theme)
-                .w(px(190.0))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.block_menu = None;
-                    cx.notify();
-                }))
-                .child(
-                    div()
-                        .id("block-menu-rows")
-                        .max_h(px(320.0))
-                        .overflow_y_scroll()
-                        .child(ui::popover::menu_heading(theme, "Turn into"))
-                        .children(rows)
-                        .child(ui::popover::menu_heading(theme, "Block"))
-                        .child(action("Duplicate", |this, ix, cx| {
-                            this.duplicate_block(ix, cx)
-                        }))
-                        .child(action("Delete", |this, ix, cx| this.remove_block(ix, cx))),
-                )
-                .into_any_element(),
-            None,
+            ui::popover::dismiss_on_out(
+                ui::popover::popover_card(theme)
+                    .debug_selector(|| BLOCK_MENU.to_string())
+                    .w(px(190.0)),
+                |this| &mut this.block_menu,
+                cx,
+            )
+            .child(
+                div()
+                    .id("block-menu-rows")
+                    .max_h(px(320.0))
+                    .overflow_y_scroll()
+                    .child(ui::popover::menu_heading(theme, "Turn into"))
+                    .children(rows)
+                    .child(ui::popover::menu_heading(theme, "Block"))
+                    .child(action("Duplicate", |this, ix, cx| {
+                        this.duplicate_block(ix, cx)
+                    }))
+                    .child(action("Delete", |this, ix, cx| this.remove_block(ix, cx))),
+            )
+            .into_any_element(),
+            self.block_menu.closing_since(),
         ))
     }
 

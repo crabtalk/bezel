@@ -32,6 +32,7 @@ pub mod parse;
 pub mod preview;
 pub mod render;
 pub mod select;
+pub mod selectable;
 pub mod serialize;
 pub mod typography;
 
