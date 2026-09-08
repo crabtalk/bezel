@@ -395,8 +395,9 @@ const STEPS: [Step; 3] = [
     },
 ];
 
-/// The menubar page's menus. Ordinary app chrome, with the two rows worth
-/// showing: a separator, and a disabled item the keyboard steps straight over.
+/// The menubar page's menus. Ordinary app chrome, with the rows worth showing:
+/// a separator, a disabled item the keyboard steps straight over, and two
+/// submenus — one of them nested a second level down.
 ///
 /// The accelerators are printed, not bound — `menubar` never dispatches, so
 /// these name shortcuts this app would wire itself.
@@ -407,6 +408,15 @@ fn demo_menus() -> Vec<Menu> {
             vec![
                 Item::action("New Window").with_keystroke("⌘N"),
                 Item::action("Open…").with_keystroke("⌘O"),
+                Item::submenu(
+                    "Open Recent",
+                    vec![
+                        Item::action("bezel.md"),
+                        Item::action("theme.rs"),
+                        Item::Separator,
+                        Item::action("Clear Menu"),
+                    ],
+                ),
                 Item::Separator,
                 Item::action("Save").with_keystroke("⌘S"),
                 Item::action("Save As…").with_keystroke("⇧⌘S").disabled(),
@@ -428,6 +438,20 @@ fn demo_menus() -> Vec<Menu> {
             vec![
                 Item::action("Toggle Sidebar").with_keystroke("⌘B"),
                 Item::action("Full Screen").with_keystroke("⌃⌘F"),
+                Item::Separator,
+                Item::submenu(
+                    "Appearance",
+                    vec![
+                        Item::action("Light"),
+                        Item::action("Dark").checked(true),
+                        Item::Separator,
+                        Item::submenu(
+                            "Accent",
+                            vec![Item::action("Blue").checked(true), Item::action("Graphite")],
+                        ),
+                    ],
+                ),
+                Item::submenu("Nothing Here", vec![]).disabled(),
             ],
         ),
     ]
@@ -931,8 +955,8 @@ impl Gallery {
         // turns that back into a name, and what decides it means anything.
         let menubar = cx.new(|cx| Menubar::new(demo_menus(), cx));
         cx.subscribe(&menubar, |view, bar, event, cx| {
-            let MenubarEvent::Selected { menu, item } = event;
-            if let Some(Item::Action { label, .. }) = bar.read(cx).menus()[*menu].items.get(*item) {
+            let MenubarEvent::Selected { menu, path } = event;
+            if let Some(Item::Action { label, .. }) = bar.read(cx).menus()[*menu].at(path) {
                 view.last_menu_item = Some(label.clone());
             }
             cx.notify();
@@ -3743,9 +3767,10 @@ impl Gallery {
                 .child(hint(
                     &theme,
                     "Open one, then slide across the others — a bar with a menu \
-                     down switches on hover, with no second click. The arrows \
-                     walk rows and cross between menus; the greyed rows cannot \
-                     be landed on at all.",
+                     down switches on hover, with no second click. A row with a \
+                     chevron drops a menu of its own, on hover or on `right`; \
+                     `left` and `escape` close one level at a time. The greyed \
+                     rows cannot be landed on at all.",
                 ))
                 .child(self.menubar.clone())
                 .child(

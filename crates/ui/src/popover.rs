@@ -542,6 +542,36 @@ pub fn anchored_menu_below_gap(
         .into_any_element()
 }
 
+/// The panel a [`crate::menu::Item::Submenu`] row drops: pinned to the row's
+/// top-right and pulled back by the card's own inset, so the child's first row
+/// lines up with the row that opened it and the two cards touch. No gap on
+/// purpose — a strip of nothing between them is a strip the pointer crosses on
+/// its way in, and it would land on a sibling row and close what it was
+/// reaching for. Near the right edge the layer snaps rather than flipping;
+/// gpui's `anchored` picks no sides.
+///
+/// No `closing`: a submenu is held open by the cursor, and the cursor is
+/// cleared before the menu it hangs in begins its own exit.
+pub fn anchored_submenu(id: impl Into<SharedString>, content: AnyElement) -> AnyElement {
+    let content = material_menu(content);
+    div()
+        .absolute()
+        .top(px(-MENU_PAD))
+        .right(px(-MENU_PAD))
+        .size_0()
+        .child(
+            gpui::deferred(
+                gpui::anchored()
+                    .anchor(Anchor::TopLeft)
+                    .snap_to_window_with_margin(px(8.0))
+                    .child(menu_motion(id.into(), None, div().occlude().child(content))),
+            )
+            .priority(1)
+            .into_any_element(),
+        )
+        .into_any_element()
+}
+
 /// [`anchored_menu`] opening UPWARD from the trigger (composer pickers, the
 /// user menu — anything anchored near the window bottom; Radix flips these
 /// automatically, gpui's `anchored` needs the side picked).
