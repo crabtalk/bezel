@@ -2530,6 +2530,7 @@ dependencies = [
  "bezel-theme",
  "bezel-ui",
  "chrono",
+ "serde_json",
  "web-time",
 ]
 
