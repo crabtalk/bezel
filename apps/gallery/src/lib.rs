@@ -859,6 +859,10 @@ pub struct Gallery {
     pane_scroll: gpui::ScrollHandle,
     pane_bar: TransientState,
     demo_scroll: gpui::ScrollHandle,
+    /// A pane nested in `gallery-pane` keeps the wheel it can act on, so
+    /// scrolling it does not drag the page behind it. One per pane: the state
+    /// is where that pane stood before the wheel being dispatched.
+    demo_claim: scroll::ClaimState,
     demo_bar: ScrollbarState,
     /// The follow-scroll demo: a log that grows under a view pinned to its end.
     log_scroll: gpui::ScrollHandle,
@@ -866,8 +870,10 @@ pub struct Gallery {
     log_follow: scroll::FollowState,
     log_lines: usize,
     table_scroll: gpui::ScrollHandle,
+    table_claim: scroll::ClaimState,
     table_bar: ScrollbarState,
     tree_scroll: gpui::ScrollHandle,
+    tree_claim: scroll::ClaimState,
     tree_bar: ScrollbarState,
     rows_scroll: gpui::UniformListScrollHandle,
     rows_bar: ScrollbarState,
@@ -1035,6 +1041,7 @@ impl Gallery {
             pane_scroll: gpui::ScrollHandle::new(),
             pane_bar: TransientState::new(Painter::of(cx)),
             demo_scroll: gpui::ScrollHandle::new(),
+            demo_claim: scroll::ClaimState::new(),
             demo_bar: ScrollbarState::new(Painter::of(cx)),
             log_scroll: gpui::ScrollHandle::new(),
             log_bar: ScrollbarState::new(Painter::of(cx)),
@@ -1043,10 +1050,12 @@ impl Gallery {
             // to hold onto before you press anything.
             log_lines: 24,
             table_scroll: gpui::ScrollHandle::new(),
+            table_claim: scroll::ClaimState::new(),
             table_bar: ScrollbarState::new(Painter::of(cx)),
             table_sort: None,
             page: 1,
             tree_scroll: gpui::ScrollHandle::new(),
+            tree_claim: scroll::ClaimState::new(),
             tree_bar: ScrollbarState::new(Painter::of(cx)),
             rows_scroll: gpui::UniformListScrollHandle::new(),
             rows_bar: ScrollbarState::new(Painter::of(cx)),
@@ -3847,7 +3856,7 @@ impl Gallery {
                         .border_1()
                         .border_color(theme.border)
                         .overflow_hidden()
-                        .child(
+                        .child(scroll::claim_wheel(
                             div()
                                 .id("scroll-demo")
                                 .size_full()
@@ -3861,7 +3870,10 @@ impl Gallery {
                                             .child(SharedString::from(format!("Line {line}")))
                                     }),
                                 )),
-                        )
+                            &self.demo_scroll,
+                            gpui::Axis::Vertical,
+                            &self.demo_claim,
+                        ))
                         .child(scroll::scrollbar(
                             "scroll-demo-bar",
                             &self.demo_scroll,
@@ -4008,7 +4020,7 @@ impl Gallery {
                                 div()
                                     .relative()
                                     .h(px(150.0))
-                                    .child(
+                                    .child(scroll::claim_wheel(
                                         div()
                                             .id("table-body")
                                             .size_full()
@@ -4041,7 +4053,10 @@ impl Gallery {
                                                     )
                                                 },
                                             )),
-                                    )
+                                        &self.table_scroll,
+                                        gpui::Axis::Vertical,
+                                        &self.table_claim,
+                                    ))
                                     .child(scroll::scrollbar(
                                         "table-bar",
                                         &self.table_scroll,
@@ -4084,7 +4099,7 @@ impl Gallery {
                             .border_1()
                             .border_color(theme.border)
                             .overflow_hidden()
-                            .child(
+                            .child(scroll::claim_wheel(
                                 div()
                                     .id("tree-body")
                                     .size_full()
@@ -4105,7 +4120,10 @@ impl Gallery {
                                             .child(SharedString::from(entry.label))
                                         }),
                                     )),
-                            )
+                                &self.tree_scroll,
+                                gpui::Axis::Vertical,
+                                &self.tree_claim,
+                            ))
                             .child(scroll::scrollbar(
                                 "tree-bar",
                                 &self.tree_scroll,
