@@ -109,6 +109,17 @@ fn main() {
 `Theme::of(cx)` and builds elements through the `widgets` traits. Run
 `cargo run -p hello` and read `apps/hello/src/main.rs` for the rest.
 
+## Agents
+
+Every doc page is served as markdown — append `.md` to any docs URL, or take the
+whole corpus from [llms.txt](https://bezel.gallery/llms.txt) and
+[llms-full.txt](https://bezel.gallery/llms-full.txt).
+
+[`skills/`](skills) holds two agent skills, plain `SKILL.md` files any agent that
+reads the format can load. `skills/bezel` teaches an agent to *use* the library —
+the bootstrap, the laws, and the traps that only bite at runtime.
+`skills/bezel-contributing` is for working on it.
+
 ## Provenance
 
 | What                   | From                               | License     |

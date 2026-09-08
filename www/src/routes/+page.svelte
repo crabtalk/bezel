@@ -134,6 +134,7 @@
 	<nav class="left">
 		<a href="https://github.com/crabtalk">crabtalk</a>
 		{#if docsHome}<a href="{base}/docs/{docsHome}/">Docs</a>{/if}
+		<a href="{repo}/tree/main/skills">Skills</a>
 	</nav>
 	<nav class="right">
 		<a href={repo} aria-label="bezel on GitHub"><Brand icon={siGithub} size={15} /></a>
