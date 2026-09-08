@@ -2,7 +2,7 @@
   {
     "version": "0.1.8",
     "date": "2026-09-09",
-    "summary": "Menus nest the way SwiftUI's do, and prose can be selected and copied without an editor behind it.",
+    "summary": "Menus nest the way SwiftUI's do, prose selects with no editor behind it, and a nested surface keeps its own press and wheel.",
     "new": [
       "A menu row can drop a menu of its own. `menu::Item::submenu` nests exactly as a SwiftUI `Menu` does, and `menu::card` paints the panels itself — a chevron marks the row, hover or `right` opens it, `left` and `escape` close one level at a time. A submenu with nothing selectable in it is a dead end, so the keyboard steps over it like any other dead row.",
       "`markdown::selectable` gives prose a selection with no editor behind it. The renderer already painted a `Selection` and the layouts already turned a point back into a `Cursor`; what was missing was the gesture. `selectable::copied` returns what a reader dragged over as plain text — the words, not the markup under them.",
