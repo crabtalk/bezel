@@ -31,7 +31,14 @@
 //! Naming it is what pins the enabled set, so an app that only paints icons
 //! never mentions it and keeps the linker's dead-code pass.
 
-mod generated;
+// Lucide's names are PascalCase, which is not Rust's casing for a constant. The
+// allow sits here rather than in the generated file because an `include!` may
+// not carry an inner attribute, and the file is included rather than declared
+// so `cargo fmt` has no module to resolve before the build script has run.
+#[allow(non_upper_case_globals)]
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
 
 pub use generated::*;
 

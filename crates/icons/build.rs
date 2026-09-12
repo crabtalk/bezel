@@ -34,8 +34,12 @@ fn main() {
 
     // Always regenerated, never cached: it is derived from the index alone, so
     // editing this file is enough to change what the crate exposes.
-    fs::write(crate_dir.join("src/generated.rs"), source(&filed))
-        .expect("writing the generated module tree");
+    //
+    // OUT_DIR rather than `src`, because `cargo fmt` resolves the module tree
+    // statically and never runs a build script — a `mod` backed by a generated
+    // file fails to resolve on a fresh checkout, before anything is built.
+    let out = Path::new(&std::env::var("OUT_DIR").unwrap()).join("generated.rs");
+    fs::write(out, source(&filed)).expect("writing the generated module tree");
 }
 
 /// The index, if one was written by this same Lucide release.
@@ -252,7 +256,6 @@ fn source(filed: &BTreeMap<String, Vec<String>>) -> String {
          //\n\
          // Names are Lucide's, which is PascalCase rather than Rust's casing for\n\
          // a constant: a name copied off lucide.dev should compile here.\n\
-         #![allow(non_upper_case_globals)]\n\
          //\n\
          // Every glyph is defined once in `glyph`; a category re-exports the ones\n\
          // Lucide files under it, so a glyph in two categories stays one constant\n\
@@ -274,7 +277,7 @@ fn source(filed: &BTreeMap<String, Vec<String>>) -> String {
             ),
         };
         out.push_str(&format!(
-            "    #[doc = \"Lucide `{name}` — {}.\"]\n    #[cfg({gate})]\n    pub const {}: &[u8] = include_bytes!(\"../assets/{name}.svg\");\n",
+            "    #[doc = \"Lucide `{name}` — {}.\"]\n    #[cfg({gate})]\n    pub const {}: &[u8] =\n        include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/assets/{name}.svg\"));\n",
             of.join(", "),
             constant(name),
         ));
