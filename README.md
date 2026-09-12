@@ -129,7 +129,7 @@ the bootstrap, the laws, and the traps that only bite at runtime.
 | Blob avatars           | [blobatar]                         | MIT         |
 | Syntax highlighting    | tree-sitter core and grammars      | MIT         |
 | TypeScript/TSX queries | [nvim-treesitter]                  | Apache-2.0  |
-| Icons                  | [Lucide], via `icondata_lu`        | ISC         |
+| Icons                  | [Lucide], ported from a release    | ISC         |
 | Fonts                  | Geist and Geist Mono © Vercel Inc. | SIL OFL 1.1 |
 
 [gpui]: https://github.com/zed-industries/gpui

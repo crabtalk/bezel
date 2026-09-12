@@ -708,7 +708,7 @@ impl gpui::Element for TerminalElement {
             bounds.left() + px(TERM_PADDING),
             bounds.top() + px(TERM_PADDING),
         );
-        window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
+        window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
             for quad in prepaint.bg_quads.drain(..) {
                 window.paint_quad(quad);
             }
