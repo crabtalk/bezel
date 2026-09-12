@@ -406,8 +406,14 @@ fn demo_menus() -> Vec<Menu> {
         Menu::new(
             "File",
             vec![
-                Item::action("New Window").with_keystroke("⌘N"),
+                // The File menu is the one that carries glyphs: the gutter
+                // only appears where a row has one, so a demo without it would
+                // never show that column.
+                Item::action("New Window")
+                    .with_icon(icons::glyph::FilePlus)
+                    .with_keystroke("⌘N"),
                 Item::action("Open…")
+                    .with_icon(icons::glyph::FolderOpen)
                     .with_keystroke("⌘O")
                     .with_description("Choose a markdown file to edit"),
                 Item::submenu(
@@ -420,8 +426,13 @@ fn demo_menus() -> Vec<Menu> {
                     ],
                 ),
                 Item::Separator,
-                Item::action("Save").with_keystroke("⌘S"),
-                Item::action("Save As…").with_keystroke("⇧⌘S").disabled(),
+                Item::action("Save")
+                    .with_icon(icons::glyph::Save)
+                    .with_keystroke("⌘S"),
+                Item::action("Save As…")
+                    .with_icon(icons::glyph::Save)
+                    .with_keystroke("⇧⌘S")
+                    .disabled(),
             ],
         ),
         Menu::new(
