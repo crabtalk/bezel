@@ -51,7 +51,9 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - if: runner.os == 'Linux'
         run: sudo .github/scripts/linux-deps
-      - run: cargo build --workspace --all-targets
+      # nextest builds what it runs, so there is no separate build step; the
+      # one platform that lints `--all-targets` covers what a test run misses.
+      #
       # No fail-fast: one platform-specific test hiding the other 297 is not
       # a report anyone can act on.
       - run: cargo nextest run --workspace --no-fail-fast

@@ -59,7 +59,7 @@ tree-sitter-typescript = "0.23"
 tree-sitter-go = "0.25"
 tree-sitter-bash = "0.25"
 tree-sitter-toml-ng = "0.7"
-# Lucide. `bezel-icons` names 84 of its 1599 statics; the linker drops the rest.
+# Lucide. `bezel-icons` names 84 of its 1834 statics; the linker drops the rest.
 # The parser gpui paints SVGs with, used by the icon tests to prove a generated
 # document renders rather than merely looking like markup.
 usvg = "0.46"
