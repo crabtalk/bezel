@@ -15,7 +15,6 @@ use gpui::{
     size,
 };
 use theme::appearance::{self, AppearanceMode};
-use ui::icons;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 thread_local! {
