@@ -48,6 +48,11 @@ fn open(cx: &mut TestAppContext) -> (gpui::Entity<Menubar>, VisualTestContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
         menubar::init(cx);
+        // The panel enters on `motion::menu_in`, which holds it up to 2px above
+        // where it lands — one whole `SWEEP`. Snapped to its end state the
+        // sweeps below measure the panel rather than however far the entrance
+        // happened to have got by the time the harness looked.
+        motion::AppExt::set_reduced_motion(cx, true);
     });
     let window = cx.add_window(|_, cx| Menubar::new(menus(), cx));
     let bar = window.root(cx).unwrap();
