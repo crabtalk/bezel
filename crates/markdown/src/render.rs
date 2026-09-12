@@ -1351,13 +1351,27 @@ fn code_block(
                 // whichever axis a container can scroll.
                 .restrict_scroll_to_axis()
                 .relative()
-                .px(px(CODE_PADDING_X))
+                .flex()
+                .flex_row()
                 .py(px(CODE_PADDING_Y))
                 .text_size(px(typography.code.size()))
                 .line_height(px(typography.code.line_height()))
                 .whitespace_nowrap()
                 .child(underlay)
-                .children(lines),
+                .child(
+                    // The padding belongs to the lines, not to the scroller: a
+                    // scroll container's trailing padding is not part of what
+                    // it will scroll to, so the last characters of a long line
+                    // sit behind the right edge with nowhere left to go. As a
+                    // row's only item this column is sized by its widest line,
+                    // and the padding rides along inside that width.
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_start()
+                        .px(px(CODE_PADDING_X))
+                        .children(lines),
+                ),
         )
         .child(copy_button(code, ix, theme, window, cx))
         .into_any_element()
