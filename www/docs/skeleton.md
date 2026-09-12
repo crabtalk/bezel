@@ -4,12 +4,13 @@ description: Pulsing placeholder rows for a list that is still loading, staggere
 ---
 
 ```rust
+use motion::Painter;
 use ui::popover;
 
-popover::redacted_rows("recent-sessions", &theme, 3, cx.entity_id(), cx)
+popover::redacted_rows("recent-sessions", &theme, 3, Painter::of(cx), cx)
 ```
 
-It takes the calling view's `EntityId` because the pulse is driven by a shared 30fps clock rather than by a per-element animation: the id is what leases this view onto the tick list and what lets the clock park when the last skeleton unmounts. Every row across every view shares one epoch, so nothing beats out of phase with anything else.
+It takes the calling view's `Painter` because the pulse is driven by a shared 30fps clock rather than by a per-element animation: the painter is what leases this view onto the tick list and what lets the clock park when the last skeleton unmounts. Every row across every view shares one epoch, so nothing beats out of phase with anything else.
 
 Rows are staggered — each one enters the wave a little after the one above it — which is what makes a stack read as loading rather than as three boxes blinking together.
 

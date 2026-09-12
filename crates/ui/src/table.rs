@@ -156,9 +156,9 @@ pub fn header_cell(theme: &Theme, column: &Column, sorted: Option<bool>) -> gpui
         .when_some(sorted, |cell, ascending| {
             cell.child(
                 icons::icon(if ascending {
-                    icons::arrows::ARROW_UP
+                    icons::glyph::ArrowUp
                 } else {
-                    icons::arrows::ARROW_DOWN
+                    icons::glyph::ArrowDown
                 })
                 .size(px(11.0))
                 .text_color(theme.text_muted),

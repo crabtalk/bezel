@@ -1702,7 +1702,7 @@ impl Element for TextFieldElement {
 
         // Scrolled text runs past the box in both directions, so everything the
         // field draws is masked to it — text, selection and caret alike.
-        window.with_content_mask(Some(gpui::ContentMask { bounds }), |window| {
+        window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
             for selection in selection {
                 window.paint_quad(selection);
             }

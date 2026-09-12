@@ -1127,7 +1127,7 @@ fn key_hint_label(theme: &Theme, label: &'static str) -> gpui::Div {
 
 /// A footer legend: one icon key-cap + tiny verb (the add-space palette's
 /// footer voice, shared by the pickers).
-pub fn key_hint(theme: &Theme, icon_path: &'static str, label: &'static str) -> gpui::Div {
+pub fn key_hint(theme: &Theme, icon_path: &'static [u8], label: &'static str) -> gpui::Div {
     div()
         .flex()
         .flex_row()
@@ -1165,8 +1165,8 @@ pub fn key_hint_text(theme: &Theme, cap: &'static str, label: &'static str) -> g
 /// ("[ ↑ | ↓ ] Navigate") sharing one verb.
 pub fn key_hint_pair(
     theme: &Theme,
-    first: &'static str,
-    second: &'static str,
+    first: &'static [u8],
+    second: &'static [u8],
     label: &'static str,
 ) -> gpui::Div {
     div()
@@ -1222,7 +1222,7 @@ pub fn search_line(theme: &Theme, input: AnyElement) -> gpui::Div {
         .border_color(hairline(0.07))
         .text_style(TextStyle::Body)
         .child(
-            icons::icon(icons::system::MAGNIFER)
+            icons::icon(icons::glyph::Search)
                 .size(px(13.0))
                 .text_color(theme.text_faint),
         )

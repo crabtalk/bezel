@@ -4,10 +4,10 @@ description: A small right-anchored pill for a count or a state, in a quiet vari
 ---
 
 ```rust
-use ui::widgets;
+use ui::widgets::Content;
 
-widgets::badge(&theme, "badge")
-widgets::badge_active(&theme, "active")
+theme.badge("badge")
+theme.badge_active("active")
 ```
 
 The plain badge is a hairline pill in the muted text tone; `badge_active` is the emerald "connected / running / on" pill.

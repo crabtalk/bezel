@@ -1344,21 +1344,34 @@ fn code_block(
                 ),
         )
         .child(
-            div()
-                .id(ElementId::named_usize("md-code", ix))
+            contain_sideways(div().id(ElementId::named_usize("md-code", ix)))
                 .overflow_x_scroll()
                 // Without it a scroll down the page turns sideways the moment
                 // the pointer crosses a code block: gpui remaps input to
                 // whichever axis a container can scroll.
                 .restrict_scroll_to_axis()
                 .relative()
-                .px(px(CODE_PADDING_X))
+                .flex()
+                .flex_row()
                 .py(px(CODE_PADDING_Y))
                 .text_size(px(typography.code.size()))
                 .line_height(px(typography.code.line_height()))
                 .whitespace_nowrap()
                 .child(underlay)
-                .children(lines),
+                .child(
+                    // The padding belongs to the lines, not to the scroller: a
+                    // scroll container's trailing padding is not part of what
+                    // it will scroll to, so the last characters of a long line
+                    // sit behind the right edge with nowhere left to go. As a
+                    // row's only item this column is sized by its widest line,
+                    // and the padding rides along inside that width.
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_start()
+                        .px(px(CODE_PADDING_X))
+                        .children(lines),
+                ),
         )
         .child(copy_button(code, ix, theme, window, cx))
         .into_any_element()
@@ -1810,11 +1823,34 @@ fn table(
         inner = inner.child(row_el);
     }
 
-    div()
-        .id(ElementId::named_usize("md-table", ix))
+    contain_sideways(div().id(ElementId::named_usize("md-table", ix)))
         .w_full()
         .overflow_x_scroll()
         .restrict_scroll_to_axis()
         .child(inner)
         .into_any_element()
+}
+
+/// Keeps a sideways gesture inside the pane it started in.
+///
+/// gpui hands a vertical scroller the horizontal delta whenever its own axis
+/// reads zero, and its scroll handling never stops the event, so panning a
+/// fence or a wide table drives the page down behind it.
+/// `restrict_scroll_to_axis` is the half we can set on our own element; this is
+/// the other half, because the container a consumer wrapped the document in is
+/// not ours to configure.
+///
+/// Registered before the element's own handler and so run after it — gpui
+/// bubbles the list backwards — which is why the pane has already moved by the
+/// time the event stops here.
+fn contain_sideways<E: gpui::InteractiveElement>(el: E) -> E {
+    el.on_scroll_wheel(|event, window, cx| {
+        let delta = event.delta.pixel_delta(window.line_height());
+        // The dominant axis, not "any horizontal component": a trackpad puts a
+        // little of both into every gesture, and a mostly-vertical one still
+        // belongs to the page.
+        if delta.x.abs() > delta.y.abs() {
+            cx.stop_propagation();
+        }
+    })
 }

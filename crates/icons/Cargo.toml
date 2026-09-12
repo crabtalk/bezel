@@ -1,6 +1,6 @@
 [package]
 name = "bezel-icons"
-description = "The bezel icon set — categorized SVGs generated into typed paths and a gpui AssetSource"
+description = "The Lucide icon set, ported into typed gpui-ready SVG constants"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,6 +11,10 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+# `assets/` and `src/generated.rs` are gitignored, and cargo packages from the
+# VCS listing unless told otherwise. Naming them here is what puts the ported
+# glyphs inside the published crate, so a consumer never runs the download.
+include = ["src/**/*.rs", "assets/**", "build.rs", "tests/**/*.rs"]
 
 [lib]
 name = "icons"
@@ -18,30 +22,111 @@ name = "icons"
 [lints]
 workspace = true
 
-# One feature per category, all on by default. `icon_set!` gates each module on
-# its own feature, so an app that paints no transport controls never compiles
-# the sixteen media glyphs.
+# One feature per Lucide category, named exactly as Lucide names it. A glyph
+# compiles when any category filing it is on, and `full` is the whole set.
 #
 # Cargo unions features across a graph, so a category a dependency turns on is
-# one no consumer can turn off — `ui` needs four of these to compile, and those
-# four are the floor for anyone depending on it. The gate is there to keep the
-# set growable, not to take icons away from a consumer who already has them.
+# the floor for everyone below it — `ui` needs three, and those three are what
+# anything depending on it carries. Within an enabled category the linker still
+# drops a glyph the binary never names.
 [features]
-default = ["arrows", "devices", "editing", "files", "media", "status", "system"]
+default = []
+full = [
+    "accessibility",
+    "account",
+    "animals",
+    "arrows",
+    "buildings",
+    "charts",
+    "communication",
+    "connectivity",
+    "cursors",
+    "design",
+    "development",
+    "devices",
+    "emoji",
+    "files",
+    "finance",
+    "food-beverage",
+    "gaming",
+    "home",
+    "layout",
+    "mail",
+    "math",
+    "medical",
+    "multimedia",
+    "nature",
+    "navigation",
+    "notifications",
+    "people",
+    "photography",
+    "science",
+    "seasons",
+    "security",
+    "shapes",
+    "shopping",
+    "social",
+    "sports",
+    "sustainability",
+    "text",
+    "time",
+    "tools",
+    "transportation",
+    "travel",
+    "weather",
+]
+accessibility = []
+account = []
+animals = []
 arrows = []
+buildings = []
+charts = []
+communication = []
+connectivity = []
+cursors = []
+design = []
+development = []
 devices = []
-editing = []
+emoji = []
 files = []
-media = []
-status = []
-system = []
+finance = []
+food-beverage = []
+gaming = []
+home = []
+layout = []
+mail = []
+math = []
+medical = []
+multimedia = []
+nature = []
+navigation = []
+notifications = []
+people = []
+photography = []
+science = []
+seasons = []
+security = []
+shapes = []
+shopping = []
+social = []
+sports = []
+sustainability = []
+text = []
+time = []
+tools = []
+transportation = []
+travel = []
+weather = []
+
+# The tests name glyphs across the set, so they need it whole. Running them
+# alone is `cargo nextest run -p bezel-icons --features full`; the workspace run
+# already has it, since the gallery turns `full` on.
+[[test]]
+name = "icons"
+required-features = ["full"]
 
 [dependencies]
 gpui.workspace = true
-# The glyphs. We name 84 of Lucide's 1599 statics and the linker drops the rest,
-# so the categories an app turns off cost it nothing in the binary.
-icondata_core.workspace = true
-icondata_lu.workspace = true
 
 # The parser gpui paints SVGs with: the tests prove a document renders rather
 # than merely looking like markup.

@@ -36,6 +36,6 @@ match tree::step(&rows, self.cursor, tree::Direction::Right) {
 
 Neither end wraps. A menu wraps because it is a ring of choices; a tree is a document, and arriving back at the top because you pressed down once too often loses your place in it.
 
-`tree_row` takes two flags: `selected` is what the app considers chosen, `cursor` is where the keyboard is. They are the same pair `popover::menu_row_nav` uses, so a tree and a menu never look like two different products.
+`tree_row` takes two flags: `selected` is what the app considers chosen, `cursor` is where the keyboard is. They are the same pair a menu row draws with, so a tree and a menu never look like two different products.
 
 Scrolling is the caller's, through `scroll`. Expansion stays with the app because it *is* app data — a file tree's open folders often outlive the window.

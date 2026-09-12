@@ -4,14 +4,15 @@ description: A trail of crumbs and chevrons, assembled by the caller — the las
 ---
 
 ```rust
-use ui::widgets;
+use ui::widgets::Content;
 
-widgets::breadcrumb()
-    .child(widgets::breadcrumb_item(&theme, "crates", false))
-    .child(widgets::breadcrumb_separator(&theme))
-    .child(widgets::breadcrumb_item(&theme, "ui", false))
-    .child(widgets::breadcrumb_separator(&theme))
-    .child(widgets::breadcrumb_item(&theme, "widgets.rs", true))
+theme
+    .breadcrumb()
+    .child(theme.breadcrumb_item("crates", false))
+    .child(theme.breadcrumb_separator())
+    .child(theme.breadcrumb_item("ui", false))
+    .child(theme.breadcrumb_separator())
+    .child(theme.breadcrumb_item("widgets.rs", true))
 ```
 
 The separators are children rather than something the container inserts, because a trail that collapses in the middle — `crates / … / widgets.rs` — is the caller's decision about its own path, not a rule the container could apply.

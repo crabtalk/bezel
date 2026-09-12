@@ -37,7 +37,7 @@ pub trait Status: ThemeExt {
     /// [`Theme::element_hover`].
     fn step_row(
         &self,
-        icon: &'static str,
+        icon: &'static [u8],
         title: impl Into<SharedString>,
         detail: Option<SharedString>,
         meta: Option<SharedString>,
@@ -154,7 +154,7 @@ pub trait Status: ThemeExt {
             .gap(px(Theme::SPACE))
             .child(
                 div().flex_none().mt(px(2.0)).child(
-                    crate::icons::icon(crate::icons::status::DANGER_TRIANGLE)
+                    crate::icons::icon(crate::icons::glyph::TriangleAlert)
                         .size(px(16.0))
                         .text_color(red_text.opacity(0.9)),
                 ),
@@ -185,7 +185,7 @@ pub trait Status: ThemeExt {
             .gap(px(Theme::SPACE))
             .child(
                 div().flex_none().mt(px(2.0)).child(
-                    crate::icons::icon(crate::icons::status::DANGER_TRIANGLE)
+                    crate::icons::icon(crate::icons::glyph::TriangleAlert)
                         .size(px(14.0))
                         .text_color(amber_text.opacity(0.9)),
                 ),

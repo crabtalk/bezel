@@ -1,5 +1,25 @@
 [
   {
+    "version": "0.1.9",
+    "date": "2026-09-13",
+    "summary": "The icon set becomes the whole of Lucide, ported from a pinned release and named the way Lucide names it.",
+    "new": [
+      "Every Lucide icon is in the set — 1834 of them, ported by `crates/icons/build.rs` from a pinned release rather than picked by hand. Modules are Lucide's categories and constants are Lucide's names, so `arrows::ArrowBigDown` is what lucide.dev calls `arrow-big-down` and nothing has to be looked up twice. One cargo feature per category, none on by default, `full` for all 42 — and `ui` needs three, which are the floor for anything depending on it.",
+      "`icons::solid` paints a glyph filled, for the weight Lucide does not draw. Filled *and* stroked, so the outer edge lands exactly where `icons::icon` puts it and a control swapping between them does not jump."
+    ],
+    "changed": [
+      "An icon constant is the SVG itself rather than a path into an asset source. The linker drops whatever a binary never names, which is finer than any feature can be, and an app registers nothing: `icons::Assets` is gone and so is the `with_assets` call that carried it. `icons::icon` takes the constant.",
+      "Icon names are Lucide's, in Lucide's own casing: `system::MAGNIFER` is `glyph::Search`, and the `_BOLD` twins are `icons::solid(glyph::Play)`. The set no longer names a glyph twice, so there is no mapping left to drift.",
+      "The assets and the module tree are generated and gitignored, and bundled into the published crate. A consumer never runs the download, and the crate still builds offline, under `cargo vendor` and on docs.rs.",
+      "Moves to bezel-gpui 0.3.10. `ContentMask` carries `corner_radii` now; `ContentMask::new(bounds)` is the plain rectangle every mask was before it."
+    ],
+    "fixed": [
+      "22 of the 84 icons the set used to carry had drifted from Lucide — `play` was still the sharp triangle Lucide retired, and `trash-2` no longer exists upstream at all. The set was pinned to a snapshot of a re-encoding crate that stopped at 1599 glyphs and never moved; porting from a release is what keeps that from recurring, since bumping the pinned version shows every redrawn glyph as a diff.",
+      "A code block keeps a sideways scroll to itself. gpui hands a vertical scroller the horizontal delta whenever its own axis reads zero, and its scroll handling never stops the event, so panning a fence drove the page down behind it. Wide tables carried the same bug.",
+      "A code block scrolls to the end of its longest line. Its horizontal padding sat on the scroller rather than in the content, and a scroll container's trailing padding is not part of what it will scroll to, so the last characters of a long line stayed behind the right edge with nowhere left to go."
+    ]
+  },
+  {
     "version": "0.1.8",
     "date": "2026-09-09",
     "summary": "Menus nest the way SwiftUI's do, prose selects with no editor behind it, and a nested surface keeps its own press and wheel.",

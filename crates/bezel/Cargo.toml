@@ -27,9 +27,8 @@ platform = ["dep:gpui_platform"]
 [dependencies]
 agent.workspace = true
 # Every category, because this is the batteries-included path. An app paying
-# for only the icons it paints depends on `bezel-icons` directly, the way it
-# would depend on `theme` alone for tokens.
-icons.workspace = true
+# for only the icons it paints depends on `bezel-icons` directly and names them.
+icons = { workspace = true, features = ["full"] }
 motion.workspace = true
 theme.workspace = true
 # Spelled out rather than inherited: cargo rejects `default-features = false` on

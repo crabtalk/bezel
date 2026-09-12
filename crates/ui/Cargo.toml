@@ -31,15 +31,10 @@ geist-weights = ["geist-sans"]
 
 [dependencies]
 theme.workspace = true
-# Spelled out rather than inherited: cargo rejects `default-features = false` on
-# a workspace dependency, and the components paint four categories of the seven.
-# A consumer wanting the rest names them itself — cargo unions the features.
-icons = { package = "bezel-icons", path = "../icons", version = "0.1.5", default-features = false, features = [
-    "arrows",
-    "files",
-    "status",
-    "system",
-] }
+# Three categories cover every glyph the components paint — disclosure
+# chevrons and sort arrows, the check and alert marks, the search field. Cargo
+# unions features, so these three are the floor for anything depending on `ui`.
+icons = { workspace = true, features = ["arrows", "notifications", "text"] }
 motion.workspace = true
 gpui.workspace = true
 unicode-segmentation = "1"

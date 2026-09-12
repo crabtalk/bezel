@@ -4,9 +4,9 @@ description: A removable chip — a token in a filter bar or a recipient field, 
 ---
 
 ```rust
-use ui::widgets;
+use ui::widgets::Content;
 
-widgets::tag(&theme, "rust")
+theme.tag("rust")
 ```
 
 The chip paints its own ✕; the click handler for it is yours, because only the caller knows what removing a token means for the list behind it.

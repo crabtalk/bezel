@@ -29,7 +29,9 @@ ui.workspace = true
 # Named here rather than reached through `ui`, which asks for four of the seven
 # categories: the gallery paints every one, and cargo unions what it is asked
 # for across the graph rather than per edge.
-icons.workspace = true
+# The icon page browses the whole set, so the demo carries every category. An
+# app names the handful it paints instead.
+icons = { workspace = true, features = ["full"] }
 # Today's date, in the local timezone — the one thing `date::Calendar` asks its
 # host for, because bezel carries no clock. Deliberately a dependency of the
 # *app* and never of the library: taking chrono into `ui` would make it

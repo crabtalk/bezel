@@ -42,7 +42,7 @@ enum Beat {
     },
     Thinking(&'static str),
     Tool {
-        icon: &'static str,
+        icon: &'static [u8],
         verb: &'static str,
         detail: &'static str,
         ms: u32,
@@ -72,7 +72,7 @@ const BEATS: &[Beat] = &[
     },
     Beat::Thinking("The test is whether a non-agent app would want each piece."),
     Beat::Tool {
-        icon: icons::files::BOOK,
+        icon: icons::glyph::Book,
         verb: "Read",
         detail: "ARCHITECTURE.md",
         ms: 2,
@@ -80,21 +80,21 @@ const BEATS: &[Beat] = &[
     },
     Beat::Text("Checking what has actually been extracted so far."),
     Beat::Tool {
-        icon: icons::files::BOOK,
+        icon: icons::glyph::Book,
         verb: "Read",
         detail: "todos/agent.md",
         ms: 3,
         failed: false,
     },
     Beat::Tool {
-        icon: icons::files::BOOK,
+        icon: icons::glyph::Book,
         verb: "Read",
         detail: "crates/ui/src/widgets.rs",
         ms: 4,
         failed: false,
     },
     Beat::Tool {
-        icon: icons::devices::CPU,
+        icon: icons::glyph::Cpu,
         verb: "Recall",
         detail: "the control bar precedent",
         ms: 18,
@@ -114,21 +114,21 @@ const BEATS: &[Beat] = &[
         day: "Today",
     },
     Beat::Tool {
-        icon: icons::system::MAGNIFER,
+        icon: icons::glyph::Search,
         verb: "Search",
         detail: "chunk_by",
         ms: 9,
         failed: false,
     },
     Beat::Tool {
-        icon: icons::devices::TERMINAL,
+        icon: icons::glyph::Terminal,
         verb: "Run",
         detail: "cargo test -p ui",
         ms: 1_412,
         failed: false,
     },
     Beat::Tool {
-        icon: icons::files::BOOK,
+        icon: icons::glyph::Book,
         verb: "Read",
         detail: "crates/agent/src/lib.rs",
         ms: 1,
@@ -327,7 +327,7 @@ impl Transcript {
                             .text_style(TextStyle::Callout)
                             .text_color(theme.text_muted.opacity(0.7))
                             .child(
-                                icons::icon(icons::devices::CPU)
+                                icons::icon(icons::glyph::Cpu)
                                     .size(px(12.0))
                                     .text_color(theme.text_faint),
                             )

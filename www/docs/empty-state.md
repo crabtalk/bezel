@@ -4,11 +4,10 @@ description: The centred "nothing here yet" panel — icon, headline, one line o
 ---
 
 ```rust
-use ui::{icons, widgets};
+use ui::{icons, widgets::Content};
 
-widgets::empty_state(
-    &theme,
-    icons::files::FOLDER,
+theme.empty_state(
+    icons::glyph::Folder,
     "No repositories",
     "Open a folder to get started.",
 )

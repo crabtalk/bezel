@@ -4,9 +4,9 @@ description: A filled track and a knob at a fraction — the paint only; the cal
 ---
 
 ```rust
-use ui::widgets::{self, SliderDrag};
+use ui::widgets::{self, Controls, SliderDrag};
 
-focus::focusable(&theme, &self.slider, widgets::slider(&theme, self.level))
+focus::focusable(&theme, &self.slider, theme.slider(self.level))
     .id("slider")
     .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
     .on_drag_move(cx.listener(|view, event: &DragMoveEvent<SliderDrag>, _, cx| {

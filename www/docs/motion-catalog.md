@@ -18,23 +18,23 @@ The common entrances are already wrapped, so a caller names the element rather t
 Hover washes are colors computed at paint time, blended through a per-fade store:
 
 ```rust
-let fade = Fade::new(cx.entity_id(), "row-3");
+let fade = Fade::new(Painter::of(cx), "row-3");
 
 div()
     .on_hover(motion::hover_listener(fade.clone()))
     .bg(motion::hover_blend(&fade, theme.surface, theme.element_hover))
 ```
 
-A [`Fade`] is which view paints the wash and which element inside it — the view is half the identity, so two views using `"row-3"` never trade each other's fade.
+A [`Fade`] is which view paints the wash and which element inside it — the `Painter` is half the identity, so two views using `"row-3"` never trade each other's fade.
 
-The frames come from the same clock everything else in the library repeats on. `motion::lease(view, fps, until, cx)` claims a rate for one view: the app runs a single timer, wakes only when some view is owed a frame, notifies that view alone, and parks when the last claim lapses. A hover fade leases for its own 150ms and stops; a spinner renews its claim every render and drops off the moment it unmounts.
+The frames come from the same clock everything else in the library repeats on. `painter.lease(fps, until, cx)` claims a rate for one view: the app runs a single timer, wakes only when some view is owed a frame, notifies that view alone, and parks when the last claim lapses. A hover fade leases for its own 150ms and stops; a spinner renews its claim every render and drops off the moment it unmounts.
 
 That is the whole reason not to reach for `with_animation(…).repeat()`. Its request is the *window's*, at the display's rate, for as long as the element stays mounted — one spinner row measured 36% CPU at 120Hz, almost all of it the window rebuilding its element tree. Your own repeating animation belongs on the clock too: `MotionSpec::new` is `const` and its fields are public, so naming a spec is all it takes.
 
 ```rust
 const BREATHE: MotionSpec = MotionSpec::new(1800, motion::EASE_IN_OUT);
 
-let phase = motion::pulse_delta(&BREATHE, cx.entity_id(), cx);
+let phase = motion::pulse_delta(&BREATHE, Painter::of(cx), cx);
 ```
 
 `set_speed(10.0)` stretches every timeline in the catalog, which is how a screenshot burst samples a 200ms tween frame by frame.

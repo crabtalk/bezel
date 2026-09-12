@@ -177,7 +177,7 @@ impl Diff {
             .border_b_1()
             .border_color(theme.border)
             .child(
-                icons::icon(icons::files::DOCUMENT)
+                icons::icon(icons::glyph::FileText)
                     .size(px(14.0))
                     .text_color(theme.text_muted),
             )

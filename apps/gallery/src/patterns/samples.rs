@@ -111,3 +111,15 @@ published = 2026-08-19
 wasm = true"#,
     ),
 ];
+
+/// The icons page's cargo line. Named so `build.rs` and the page cannot drift:
+/// the web build looks a fence's colours up by its exact text, so the string
+/// highlighted ahead of time has to be the string rendered.
+pub const ICONS_CARGO: (&str, &str) = (
+    "toml",
+    r#"bezel-icons = { version = "0.1", features = ["arrows", "multimedia"] }"#,
+);
+
+/// Fences the gallery paints outside the Syntax page, pre-highlighted for the
+/// same reason the samples are — one the build script never saw paints plain.
+pub const SNIPPETS: &[(&str, &str)] = &[ICONS_CARGO];

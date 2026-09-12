@@ -91,7 +91,7 @@ pub trait Buttons: ThemeExt {
     ///
     /// An icon carries no accessible name — reach for
     /// [`crate::tooltip`] on the way past.
-    fn icon_button(&self, icon: &'static str, style: ButtonStyle, fade: Option<Fade>) -> Div {
+    fn icon_button(&self, icon: &'static [u8], style: ButtonStyle, fade: Option<Fade>) -> Div {
         let theme = self.theme();
         let square = frame()
             .px(px(0.0))

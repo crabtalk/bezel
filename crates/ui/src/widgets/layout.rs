@@ -38,9 +38,9 @@ pub trait Layout: ThemeExt {
     fn disclosure(&self, expanded: bool) -> Svg {
         let theme = self.theme();
         crate::icons::icon(if expanded {
-            crate::icons::arrows::ALT_ARROW_DOWN
+            crate::icons::glyph::ChevronDown
         } else {
-            crate::icons::arrows::ALT_ARROW_RIGHT
+            crate::icons::glyph::ChevronRight
         })
         .size(px(14.0))
         .text_color(theme.text_muted)
@@ -89,7 +89,7 @@ pub trait Layout: ThemeExt {
     /// has claimed it.
     fn nav_row(
         &self,
-        icon: Option<&'static str>,
+        icon: Option<&'static [u8]>,
         label: impl Into<SharedString>,
         selected: bool,
         fade: Fade,
