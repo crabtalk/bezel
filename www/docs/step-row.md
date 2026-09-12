@@ -9,7 +9,7 @@ A tool call in a transcript, a step in a CI run, a file in a migration: the shap
 use ui::{icons, widgets::Status};
 
 theme.step_row(
-    icons::devices::TERMINAL,
+    icons::glyph::Terminal,
     "Bash",
     Some("cargo test -p ui".into()),  // truncating middle
     Some("1.4s".into()),              // right-aligned, never truncates

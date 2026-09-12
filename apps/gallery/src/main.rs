@@ -13,70 +13,64 @@ use gpui::{
     WindowOptions, actions, point, px, size,
 };
 use theme::{Theme, appearance};
-use ui::icons;
 
 actions!(gallery_app, [Quit]);
 
 fn main() {
     let section = std::env::args().nth(1);
-    gpui_platform::application()
-        .with_assets(icons::Assets)
-        .run(move |cx: &mut App| {
-            if let Err(err) = ui::register_fonts(cx) {
-                eprintln!("FONT REGISTRATION FAILED: {err:?}");
-            }
-            appearance::init(appearance::AppearanceMode::System, cx);
-            gallery::init(cx);
-            cx.bind_keys([
-                // The chords zed's own keymap carries for these two.
-                KeyBinding::new("ctrl-alt-shift-p", ToggleFpsOverlay, None),
-                KeyBinding::new("ctrl-alt-shift-o", ResetFrameOverlayStats, None),
-                // Both of the macOS defaults. Bound before `set_menus` so the
-                // menu item can pick the keystroke up off the keymap.
-                KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
-                KeyBinding::new("fn-f", ToggleFullScreen, None),
-            ]);
-            set_menus(cx);
-            let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);
-            cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    // No strip of its own: the traffic lights sit in the
-                    // nav. `app_owns_titlebar_drag` stays false, so AppKit
-                    // still moves the window by the top edge and the app owes
-                    // no drag bar of its own.
-                    titlebar: Some(TitlebarOptions {
-                        appears_transparent: true,
-                        traffic_light_position: Some(point(
-                            px(TRAFFIC_LIGHT_X),
-                            px(TRAFFIC_LIGHT_Y),
-                        )),
-                        ..Default::default()
-                    }),
-                    // Glass needs a blurred window background to blur INTO;
-                    // without it `material` has nothing behind it.
-                    window_background: Theme::of(cx).window_background_appearance(),
+    gpui_platform::application().run(move |cx: &mut App| {
+        if let Err(err) = ui::register_fonts(cx) {
+            eprintln!("FONT REGISTRATION FAILED: {err:?}");
+        }
+        appearance::init(appearance::AppearanceMode::System, cx);
+        gallery::init(cx);
+        cx.bind_keys([
+            // The chords zed's own keymap carries for these two.
+            KeyBinding::new("ctrl-alt-shift-p", ToggleFpsOverlay, None),
+            KeyBinding::new("ctrl-alt-shift-o", ResetFrameOverlayStats, None),
+            // Both of the macOS defaults. Bound before `set_menus` so the
+            // menu item can pick the keystroke up off the keymap.
+            KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
+            KeyBinding::new("fn-f", ToggleFullScreen, None),
+        ]);
+        set_menus(cx);
+        let bounds = Bounds::centered(None, size(px(1000.0), px(700.0)), cx);
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                // No strip of its own: the traffic lights sit in the
+                // nav. `app_owns_titlebar_drag` stays false, so AppKit
+                // still moves the window by the top edge and the app owes
+                // no drag bar of its own.
+                titlebar: Some(TitlebarOptions {
+                    appears_transparent: true,
+                    traffic_light_position: Some(point(px(TRAFFIC_LIGHT_X), px(TRAFFIC_LIGHT_Y))),
                     ..Default::default()
-                },
-                |window, cx| {
-                    appearance::observe_window(window, cx).detach();
-                    // `gallery editor` opens on that page — the native half of
-                    // the website's `?s=`, and the shortest way to look at the
-                    // one screen you are working on.
-                    let gallery = cx.new(|cx| match section.as_deref() {
-                        Some(key) => Gallery::showing(key, cx),
-                        None => Gallery::new(cx),
-                    });
-                    // The gallery itself takes focus, so its key context is
-                    // live from the first frame whatever page is showing.
-                    let focus = gallery.read(cx).focus_handle();
-                    window.focus(&focus, cx);
-                    gallery
-                },
-            )
-            .unwrap();
-            cx.activate(true);
-        });
+                }),
+                // Glass needs a blurred window background to blur INTO;
+                // without it `material` has nothing behind it.
+                window_background: Theme::of(cx).window_background_appearance(),
+                ..Default::default()
+            },
+            |window, cx| {
+                appearance::observe_window(window, cx).detach();
+                // `gallery editor` opens on that page — the native half of
+                // the website's `?s=`, and the shortest way to look at the
+                // one screen you are working on.
+                let gallery = cx.new(|cx| match section.as_deref() {
+                    Some(key) => Gallery::showing(key, cx),
+                    None => Gallery::new(cx),
+                });
+                // The gallery itself takes focus, so its key context is
+                // live from the first frame whatever page is showing.
+                let focus = gallery.read(cx).focus_handle();
+                window.focus(&focus, cx);
+                gallery
+            },
+        )
+        .unwrap();
+        cx.activate(true);
+    });
 }
 
 /// Without a menu bar `cmd-q` does not quit — a gpui app gets no menu items for

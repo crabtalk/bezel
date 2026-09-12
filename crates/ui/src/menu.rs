@@ -505,7 +505,7 @@ impl<V: 'static> Tree<V> {
                         } => row
                             .when(*checked, |row| {
                                 row.child(
-                                    icons::icon(icons::status::CHECK)
+                                    icons::icon(icons::glyph::Check)
                                         .size(px(GLYPH))
                                         .text_color(theme.text),
                                 )
@@ -514,7 +514,7 @@ impl<V: 'static> Tree<V> {
                                 row.child(popover::kbd_hint(theme, &keystroke))
                             }),
                         _ => row.child(
-                            icons::icon(icons::arrows::ALT_ARROW_RIGHT)
+                            icons::icon(icons::glyph::ChevronRight)
                                 .size(px(GLYPH))
                                 .text_color(theme.text_faint),
                         ),

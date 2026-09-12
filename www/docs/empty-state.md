@@ -7,7 +7,7 @@ description: The centred "nothing here yet" panel — icon, headline, one line o
 use ui::{icons, widgets::Content};
 
 theme.empty_state(
-    icons::files::FOLDER,
+    icons::glyph::Folder,
     "No repositories",
     "Open a folder to get started.",
 )

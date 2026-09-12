@@ -11,13 +11,13 @@ theme
     .child(
         theme
             .card_row(true)
-            .child(theme.row_icon(icons::devices::MONITOR))
+            .child(theme.row_icon(icons::glyph::Monitor))
             .child(theme.row_title("Appearance")),
     )
     .child(
         theme
             .card_row(false)
-            .child(theme.row_icon(icons::files::FOLDER))
+            .child(theme.row_icon(icons::glyph::Folder))
             .child(theme.row_title("Storage")),
     )
 ```

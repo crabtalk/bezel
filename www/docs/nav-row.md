@@ -9,7 +9,7 @@ use ui::{icons, widgets::Layout};
 
 theme
     .nav_row(
-        Some(icons::system::WIDGET),
+        Some(icons::glyph::LayoutGrid),
         "Home",
         self.route == Route::Home,
         Fade::new(Painter::of(cx), "nav-home"),

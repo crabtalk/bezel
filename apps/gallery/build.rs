@@ -33,6 +33,17 @@ fn main() {
         }
         out.push_str("    ]),\n");
     }
+    for (tag, code) in SNIPPETS {
+        out.push_str(&format!("    ({tag:?}, {code:?}, &[\n"));
+        for (range, kind) in syntax::highlight(code, tag).unwrap_or_default() {
+            let Range { start, end } = range;
+            out.push_str(&format!(
+                "        ({start}..{end}, theme::HighlightKind::{}),\n",
+                name(kind)
+            ));
+        }
+        out.push_str("    ]),\n");
+    }
     out.push_str("];\n");
 
     // The picker's list. Generated for the same reason the spans are: the web

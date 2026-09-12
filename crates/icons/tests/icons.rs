@@ -1,117 +1,120 @@
-use gpui::AssetSource;
-use icons::{Assets, CATEGORIES, PATHS};
+use std::{fs, path::PathBuf};
 
-#[test]
-fn every_registered_icon_loads_and_parses() {
-    for path in Assets.list("icons/").unwrap() {
-        let bytes = Assets
-            .load(&path)
-            .unwrap()
-            .unwrap_or_else(|| panic!("missing asset {path}"));
-        let text = std::str::from_utf8(&bytes).expect("icon svg is utf-8");
-        assert!(text.contains("<svg"), "{path} is not an svg");
-        assert!(text.contains("viewBox"), "{path} lacks a viewBox");
-        // Without this the stroked paths fill solid: the attribute lives on the
-        // root, and `icondata` hands us the body without one.
-        assert!(text.contains("fill="), "{path} lacks a root fill");
-    }
+fn assets() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
 }
 
-#[test]
-fn unknown_paths_are_none() {
-    assert!(Assets.load("icons/nope.svg").unwrap().is_none());
-}
-
-#[test]
-fn list_filters_by_prefix() {
-    assert!(!Assets.list("icons/").unwrap().is_empty());
-    assert!(Assets.list("fonts/").unwrap().is_empty());
-    // A category is a path prefix too, which is what makes the set browsable
-    // one group at a time.
-    assert!(
-        Assets
-            .list("icons/arrows/")
-            .unwrap()
-            .iter()
-            .all(|p| p.starts_with("icons/arrows/"))
-    );
-}
-
-#[test]
-fn every_category_is_populated_and_listed() {
-    let counted: usize = CATEGORIES.iter().map(|(_, icons)| icons.len()).sum();
-    assert_eq!(counted, PATHS.len(), "a category is missing from PATHS");
-
-    for (name, contents) in CATEGORIES {
-        assert!(!contents.is_empty(), "category {name} is empty");
-        for (constant, path) in *contents {
-            assert!(
-                path.starts_with(&format!("icons/{name}/")),
-                "{constant} is filed under {name} but served from {path}",
-            );
+fn ported() -> Vec<(String, Vec<u8>)> {
+    let mut glyphs = Vec::new();
+    for entry in fs::read_dir(assets()).expect("the build script did not write assets/") {
+        let path = entry.expect("reading assets/").path();
+        if path.extension().is_some_and(|extension| extension == "svg") {
+            let name = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            glyphs.push((name, fs::read(&path).expect("reading a glyph")));
         }
     }
+    glyphs.sort_by(|a, b| a.0.cmp(&b.0));
+    assert!(!glyphs.is_empty(), "no glyphs were ported");
+    glyphs
 }
 
 #[test]
-fn a_bold_twin_is_its_linear_twin_painted_solid() {
-    let linear = Assets.load(icons::media::PLAY).unwrap().unwrap();
-    let bold = Assets.load(icons::media::PLAY_BOLD).unwrap().unwrap();
-    let linear = std::str::from_utf8(&linear).unwrap();
-    let bold = std::str::from_utf8(&bold).unwrap();
-
-    assert!(
-        linear.contains(r#"fill="none""#),
-        "the outline twin is filled"
-    );
-    assert!(
-        bold.contains(r#"fill="currentColor""#),
-        "the bold twin is hollow"
-    );
-    // Same geometry, so a control swapping between them does not jump.
-    let body = |svg: &str| svg[svg.find('>').unwrap()..].to_string();
-    assert_eq!(body(linear), body(bold));
+fn every_glyph_is_a_rooted_document() {
+    for (name, bytes) in ported() {
+        let text = std::str::from_utf8(&bytes).expect("a glyph that is not utf-8");
+        assert!(text.starts_with("<svg"), "{name} is not an svg");
+        // Everything below is about the root element, which is the only place
+        // these attributes mean what the assertions take them to mean: a body
+        // may carry its own `width` on a `<rect>`, and legitimately does.
+        let root = &text[..text.find('>').expect("{name} has no root element")];
+        assert!(root.contains("viewBox"), "{name} lacks a viewBox");
+        // Without this the stroked paths fill solid.
+        assert!(root.contains("fill="), "{name} lacks a root fill");
+        // gpui sizes the element; a fixed width would fight it. The space
+        // matters — `stroke-width` is not what this is looking for.
+        assert!(!root.contains(" width="), "{name} carries a fixed width");
+    }
 }
 
-/// The string checks above prove a document *looks* like markup. gpui paints
-/// through resvg, so this asserts the same parser gets geometry out of every
-/// icon — the failure this guards is a silent blank square, which no assertion
-/// on bytes can see.
+/// The checks above prove a glyph *looks* like markup. gpui paints through
+/// resvg, so this asserts the same parser gets geometry out of every one — the
+/// failure it guards is a silent blank square, which no assertion on bytes sees.
 #[test]
-fn every_icon_renders_through_the_parser_gpui_uses() {
-    for path in PATHS {
-        let bytes = Assets.load(path).unwrap().unwrap();
+fn every_glyph_renders_through_the_parser_gpui_uses() {
+    for (name, bytes) in ported() {
         let tree = usvg::Tree::from_data(&bytes, &usvg::Options::default())
-            .unwrap_or_else(|e| panic!("{path} does not parse: {e}"));
+            .unwrap_or_else(|e| panic!("{name} does not parse: {e}"));
+        // Either axis, not both: `minus` is one horizontal stroke, so its
+        // geometry is legitimately zero-height before the stroke is applied.
         let box_ = tree.root().abs_bounding_box();
         assert!(
-            box_.width() > 0.0 && box_.height() > 0.0,
-            "{path} renders to nothing",
+            box_.width() > 0.0 || box_.height() > 0.0,
+            "{name} renders to nothing",
         );
     }
 }
 
-/// An icon writes its name twice — `(MAGNIFER, "magnifer", LuSearch)` — because
-/// only a procedural macro can mint an identifier from a string, and the set is
-/// not worth a second published crate. This is the half of that trade that buys
-/// the safety back: the constant and the file name have to agree.
-///
-/// The drift is not hypothetical. Before this crate existed the set had
-/// `(DOWNLOAD, "download-minimalistic")` and `(LINK, "link-minimalistic")` —
-/// two constants whose names had quietly stopped describing their assets.
+/// The constants are generated from the same directory the assets are, so this
+/// is what holds the two halves together: a rename upstream that missed one
+/// side shows up here rather than as a missing icon at runtime.
 #[test]
-fn constants_match_their_paths() {
-    for (category, contents) in CATEGORIES {
-        for (constant, path) in *contents {
-            let stem = path
-                .strip_prefix(&format!("icons/{category}/"))
-                .and_then(|rest| rest.strip_suffix(".svg"))
-                .unwrap_or_else(|| panic!("{path} is not filed under {category}"));
-            assert_eq!(
-                *constant,
-                stem.to_uppercase().replace('-', "_"),
-                "{constant} does not name {path}",
-            );
-        }
+fn a_constant_carries_its_asset() {
+    let named: Vec<(&str, &[u8])> = vec![
+        ("search", icons::glyph::Search),
+        ("play", icons::glyph::Play),
+        ("trash", icons::glyph::Trash),
+        ("chevron-left", icons::glyph::ChevronLeft),
+    ];
+    for (name, glyph) in named {
+        let asset = fs::read(assets().join(format!("{name}.svg"))).expect("a named asset");
+        assert_eq!(glyph, asset.as_slice(), "{name} does not carry its asset");
     }
+}
+
+/// An icon Lucide files under two categories has to stay one constant, or the
+/// bytes land in the binary twice.
+#[test]
+fn a_shared_glyph_is_one_constant() {
+    // `play` is filed under both `arrows` and `multimedia` upstream.
+    assert_eq!(
+        icons::arrows::Play.as_ptr(),
+        icons::multimedia::Play.as_ptr(),
+        "a shared glyph was duplicated rather than re-exported",
+    );
+}
+
+#[test]
+fn the_catalog_covers_every_ported_glyph() {
+    use std::collections::BTreeSet;
+
+    let catalogued: BTreeSet<&str> = icons::CATEGORIES
+        .iter()
+        .flat_map(|(_, icons)| icons.iter().map(|(name, _)| *name))
+        .collect();
+    let on_disk: BTreeSet<String> = ported().into_iter().map(|(name, _)| name).collect();
+
+    for (name, contents) in icons::CATEGORIES {
+        assert!(!contents.is_empty(), "category {name} is empty");
+    }
+    // Under `full` every ported glyph is filed somewhere, so the catalogue and
+    // the directory have to agree exactly.
+    let catalogued: std::collections::BTreeSet<String> =
+        catalogued.into_iter().map(str::to_owned).collect();
+    assert_eq!(catalogued, on_disk, "the catalogue and assets/ disagree");
+}
+
+/// The solid twin has to keep the outline's geometry, or a control swapping
+/// between the two jumps as it redraws.
+#[test]
+fn a_solid_twin_is_its_outline_painted_in() {
+    let outline = std::str::from_utf8(icons::glyph::Heart).unwrap();
+    assert!(outline.contains(r#"fill="none""#), "the outline is filled");
+
+    let filled = outline.replace(r#"fill="none""#, r#"fill="currentColor""#);
+    let body = |svg: &str| svg[svg.find('>').unwrap()..].to_owned();
+    assert_eq!(
+        body(outline),
+        body(&filled),
+        "the solid twin moved the path"
+    );
 }

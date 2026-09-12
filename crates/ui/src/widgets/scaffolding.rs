@@ -198,7 +198,7 @@ pub trait Scaffolding: ThemeExt {
 
     /// The leading symbol on a row: a bare glyph, sized to the text beside it,
     /// the way the macOS General pane carries one.
-    fn row_icon(&self, icon_path: &'static str) -> Div {
+    fn row_icon(&self, icon_path: &'static [u8]) -> Div {
         let theme = self.theme();
         div()
             .flex_none()

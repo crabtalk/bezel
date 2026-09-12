@@ -178,7 +178,7 @@ impl Combobox {
                     .child(self.filter.items()[item].clone())
                     .when(Some(item) == self.chosen, |row| {
                         row.child(
-                            icons::icon(icons::status::CHECK)
+                            icons::icon(icons::glyph::Check)
                                 .size(px(13.0))
                                 .text_color(theme.text),
                         )

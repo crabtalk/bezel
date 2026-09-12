@@ -10,7 +10,7 @@ use std::borrow::Cow;
 use gpui::App;
 
 /// The icon set, re-exported so the paths read the same either way
-/// (`ui::icons::system::MAGNIFER`). It is a crate of its own because it is
+/// (`ui::icons::glyph::Search`). It is a crate of its own because it is
 /// declared from an upstream set rather than drawn, and is useful to anyone
 /// painting gpui, component library or not.
 pub use icons;

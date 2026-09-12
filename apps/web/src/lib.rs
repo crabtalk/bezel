@@ -49,7 +49,6 @@ pub fn start() {
     let http_client = Arc::new(platform.fetch_http_client());
     let handle = Application::with_platform(platform)
         .with_http_client(http_client)
-        .with_assets(icons::Assets)
         .run_embedded(|cx: &mut App| {
             if let Err(err) = ui::register_fonts(cx) {
                 log::error!("font registration failed: {err:?}");

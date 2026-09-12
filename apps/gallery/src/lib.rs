@@ -352,7 +352,7 @@ const TABLE_ROWS: [(&str, &str, u32); 7] = [
 /// the component is named for the shape, and the shape is "an operation with an
 /// outcome" wherever it turns up.
 struct Step {
-    icon: &'static str,
+    icon: &'static [u8],
     title: &'static str,
     detail: &'static str,
     meta: &'static str,
@@ -364,7 +364,7 @@ struct Step {
 
 const STEPS: [Step; 3] = [
     Step {
-        icon: icons::devices::TERMINAL,
+        icon: icons::glyph::Terminal,
         title: "cargo test",
         detail: "-p ui",
         meta: "1.4s",
@@ -378,7 +378,7 @@ const STEPS: [Step; 3] = [
         ),
     },
     Step {
-        icon: icons::system::MAGNIFER,
+        icon: icons::glyph::Search,
         title: "Search",
         detail: "fn at_bottom",
         meta: "12ms",
@@ -386,7 +386,7 @@ const STEPS: [Step; 3] = [
         output: None,
     },
     Step {
-        icon: icons::files::DOCUMENT,
+        icon: icons::glyph::FileText,
         title: "Read",
         detail: "crates/ui/src/missing.rs",
         meta: "3ms",
@@ -780,6 +780,9 @@ fn tab_of(key: &str) -> Option<usize> {
 }
 
 pub struct Gallery {
+    /// The icons page's cargo snippet, parsed once. `markdown::render` wants a
+    /// `Doc`, and re-parsing it every frame would sit in the scroll path.
+    icons_cargo: markdown::Doc,
     search: Entity<TextField>,
     filled: Entity<TextField>,
     /// The two multi-line shapes. Their row counts are this page's example, not
@@ -1094,6 +1097,10 @@ impl Gallery {
             terminal: cx.new(patterns::terminal::Terminal::new),
             orbs: cx.new(patterns::orbs::Orbs::new),
             syntax: cx.new(patterns::syntax::Syntax::new),
+            icons_cargo: {
+                let (tag, code) = patterns::samples::ICONS_CARGO;
+                markdown::parse(&format!("```{tag}\n{code}\n```"))
+            },
             avatar: cx.new(patterns::avatar::Avatars::new),
             stats: cx.new(Stats::new),
             stats_shown: false,
@@ -1415,7 +1422,7 @@ impl Gallery {
                         .cursor_pointer()
                         .on_click(cx.listener(|view, _, _, cx| view.open_drawer(cx)))
                         .child(
-                            icons::icon(icons::system::SIDEBAR_MINIMALISTIC_LEFT)
+                            icons::icon(icons::glyph::PanelLeft)
                                 .size(px(15.0))
                                 .text_color(theme.text_muted),
                         ),
@@ -1469,7 +1476,7 @@ impl Gallery {
                         .on_click(cx.listener(|view, _, _, cx| {
                             view.show_stats(!view.stats_shown, cx);
                         }))
-                        .child(icons::icon(icons::devices::CPU).size(px(15.0)).text_color(
+                        .child(icons::icon(icons::glyph::Cpu).size(px(15.0)).text_color(
                             if self.stats_shown {
                                 theme.text
                             } else {
@@ -1510,9 +1517,9 @@ impl Gallery {
                     }))
                     .child(
                         icons::icon(if dark {
-                            icons::system::MOON
+                            icons::glyph::Moon
                         } else {
-                            icons::system::SUN
+                            icons::glyph::Sun
                         })
                         .size(px(15.0))
                         .text_color(theme.text_muted),
@@ -1855,28 +1862,95 @@ impl Gallery {
                 })))
                 .into_any_element(),
 
-            "icons" => section
-                .child(hint(
-                    &theme,
-                    "Lucide, ISC-licensed, declared a line per icon in the crate itself — \
-                     no SVG is checked into the repository. One module and one cargo \
-                     feature per category, so an app compiles only what it paints.",
-                ))
-                .children(icons::CATEGORIES.iter().map(|(category, contents)| {
-                    stack()
+            "icons" => {
+                // A sample, not the set. All 1834 are there to name; painting
+                // every one of them here would say nothing the naming rule does
+                // not, and would pin the whole set into this binary.
+                const SAMPLE: [(&str, &[u8]); 24] = [
+                    ("search", icons::glyph::Search),
+                    ("house", icons::glyph::House),
+                    ("settings", icons::glyph::Settings),
+                    ("user", icons::glyph::User),
+                    ("bell", icons::glyph::Bell),
+                    ("calendar", icons::glyph::Calendar),
+                    ("folder", icons::glyph::Folder),
+                    ("file-text", icons::glyph::FileText),
+                    ("image", icons::glyph::Image),
+                    ("mail", icons::glyph::Mail),
+                    ("message-circle", icons::glyph::MessageCircle),
+                    ("heart", icons::glyph::Heart),
+                    ("star", icons::glyph::Star),
+                    ("play", icons::glyph::Play),
+                    ("volume-2", icons::glyph::Volume2),
+                    ("wifi", icons::glyph::Wifi),
+                    ("battery", icons::glyph::Battery),
+                    ("cpu", icons::glyph::Cpu),
+                    ("terminal", icons::glyph::Terminal),
+                    ("git-branch", icons::glyph::GitBranch),
+                    ("shopping-cart", icons::glyph::ShoppingCart),
+                    ("map-pin", icons::glyph::MapPin),
+                    ("sun", icons::glyph::Sun),
+                    ("moon", icons::glyph::Moon),
+                ];
+
+                let rule = |from: &'static str, to: &'static str| {
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
                         .gap(px(8.0))
-                        .child(
-                            div()
-                                .text_style(TextStyle::Subheadline)
-                                .text_color(theme.text_faint)
-                                .font_family(theme.font_mono.clone())
-                                .child(SharedString::from(format!(
-                                    "{category} · {}",
-                                    contents.len()
-                                ))),
-                        )
-                        .child(div().flex().flex_row().flex_wrap().gap(px(8.0)).children(
-                            contents.iter().map(|(name, path)| {
+                        .font_family(theme.font_mono.clone())
+                        .text_style(TextStyle::Caption)
+                        .child(div().text_color(theme.text_faint).child(from))
+                        .child(div().text_color(theme.text_faint).child("→"))
+                        .child(div().text_color(theme.text).child(to))
+                };
+
+                section
+                    .child(hint(
+                        &theme,
+                        "The whole Lucide set, ported from a pinned release into typed \
+                         constants. Browse the drawings at lucide.dev — the name there is \
+                         the name here, so nothing has to be looked up twice.",
+                    ))
+                    .child(theme.field_label("Naming"))
+                    .child(
+                        stack()
+                            .gap(px(6.0))
+                            .child(rule("arrow-big-down", "icons::arrows::ArrowBigDown"))
+                            .child(rule(
+                                "message-circle",
+                                "icons::communication::MessageCircle",
+                            ))
+                            .child(rule("volume-2", "icons::multimedia::Volume2")),
+                    )
+                    .child(hint(
+                        &theme,
+                        "The module is the category lucide.dev files it under, and a glyph \
+                         filed under two is reachable through either. `icons::glyph` holds \
+                         every one of them if the category is not worth remembering.",
+                    ))
+                    .child(theme.field_label("Cargo"))
+                    .child(markdown::render(
+                        &self.icons_cargo,
+                        markdown::Caption::Hidden,
+                        window,
+                        cx,
+                    ))
+                    .child(hint(
+                        &theme,
+                        "One feature per category, none on by default, `full` for all 42. \
+                         A constant is the SVG itself, so within an enabled category the \
+                         linker still drops whatever the binary never names.",
+                    ))
+                    .child(theme.field_label("A sample"))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .flex_wrap()
+                            .gap(px(8.0))
+                            .children(SAMPLE.map(|(name, glyph)| {
                                 div()
                                     .w(px(96.0))
                                     .flex()
@@ -1888,7 +1962,7 @@ impl Gallery {
                                     .border_1()
                                     .border_color(theme.border)
                                     .child(
-                                        icons::icon(path)
+                                        icons::icon(glyph)
                                             .size(px(18.0))
                                             .text_color(theme.text_muted),
                                     )
@@ -1900,14 +1974,12 @@ impl Gallery {
                                             .text_align(gpui::TextAlign::Center)
                                             .font_family(theme.font_mono.clone())
                                             .text_color(theme.text_faint)
-                                            .child(SharedString::from(*name)),
+                                            .child(name),
                                     )
-                                    .into_any_element()
-                            }),
-                        ))
-                        .into_any_element()
-                }))
-                .into_any_element(),
+                            })),
+                    )
+                    .into_any_element()
+            }
 
             // ---- Components --------------------------------------------------
             "buttons" => {
@@ -1922,18 +1994,14 @@ impl Gallery {
                     theme.button(labels[2], ButtonStyle::Destructive, None),
                 ];
                 let glyphs = [
-                    (icons::editing::PEN, ButtonStyle::Ghost, "pen"),
-                    (icons::system::PLUS, ButtonStyle::Prominent, "plus"),
-                    (
-                        icons::files::TRASH_BIN_MINIMALISTIC,
-                        ButtonStyle::Destructive,
-                        "trash",
-                    ),
+                    (icons::glyph::Pen, ButtonStyle::Ghost, "pen"),
+                    (icons::glyph::Plus, ButtonStyle::Prominent, "plus"),
+                    (icons::glyph::Trash, ButtonStyle::Destructive, "trash"),
                 ];
                 let toolbar = [
-                    (icons::system::SIDEBAR_MINIMALISTIC_LEFT, "sidebar"),
-                    (icons::system::MAGNIFER, "search"),
-                    (icons::system::SETTINGS_MINIMALISTIC, "settings"),
+                    (icons::glyph::PanelLeft, "sidebar"),
+                    (icons::glyph::Search, "search"),
+                    (icons::glyph::Settings, "settings"),
                 ];
                 let cluster =
                     theme
@@ -1958,8 +2026,8 @@ impl Gallery {
                         }));
                 let capsule = theme.control_group().rounded_full().children(
                     [
-                        (icons::arrows::ALT_ARROW_LEFT, "back"),
-                        (icons::arrows::ALT_ARROW_RIGHT, "forward"),
+                        (icons::glyph::ChevronLeft, "back"),
+                        (icons::glyph::ChevronRight, "forward"),
                     ]
                     .into_iter()
                     .map(|(glyph, name)| {
@@ -1995,7 +2063,7 @@ impl Gallery {
                     .child(
                         theme
                             .icon_button(
-                                icons::arrows::ALT_ARROW_DOWN,
+                                icons::glyph::ChevronDown,
                                 ButtonStyle::Ghost,
                                 Some(Fade::new(view, "group-more")),
                             )
@@ -2078,7 +2146,7 @@ impl Gallery {
                                     .ghost("ghost-menu")
                                     .p(px(5.0))
                                     .child(
-                                        icons::icon(icons::system::MENU_DOTS)
+                                        icons::icon(icons::glyph::Ellipsis)
                                             .size(px(14.0))
                                             .text_color(theme.text_faint),
                                     )
@@ -2093,7 +2161,7 @@ impl Gallery {
                                     .text_style(TextStyle::Callout)
                                     .text_color(theme.text_muted)
                                     .child(
-                                        icons::icon(icons::system::PLUS)
+                                        icons::icon(icons::glyph::Plus)
                                             .size(px(13.0))
                                             .text_color(theme.text_faint),
                                     )
@@ -2197,7 +2265,7 @@ impl Gallery {
                                             .child(*label)
                                             .when(index == self.theme_choice, |row| {
                                                 row.child(
-                                                    icons::icon(icons::status::CHECK)
+                                                    icons::icon(icons::glyph::Check)
                                                         .size(px(13.0))
                                                         .text_color(theme.text),
                                                 )
@@ -2574,12 +2642,12 @@ impl Gallery {
                 .into_any_element(),
 
             "nav-row" => {
-                const ROWS: [(&str, &str); 5] = [
-                    (icons::system::WIDGET, "Home"),
-                    (icons::devices::GLOBAL, "Browser"),
-                    (icons::files::BOOK, "Articles"),
-                    (icons::files::ARCHIVE_MINIMALISTIC, "Archived"),
-                    (icons::files::DOCUMENT, "Untitled"),
+                const ROWS: [(&[u8], &str); 5] = [
+                    (icons::glyph::LayoutGrid, "Home"),
+                    (icons::glyph::Globe, "Browser"),
+                    (icons::glyph::Book, "Articles"),
+                    (icons::glyph::Archive, "Archived"),
+                    (icons::glyph::FileText, "Untitled"),
                 ];
                 section
                     .child(hint(
@@ -2604,7 +2672,7 @@ impl Gallery {
                                 let key = Fade::new(view, format!("nav-row-{index}"));
                                 let row = theme
                                     .nav_row(
-                                        Some(icon),
+                                        Some(*icon),
                                         *label,
                                         self.nav_choice == index,
                                         key.clone(),
@@ -2620,7 +2688,7 @@ impl Gallery {
                                                 .text_color(theme.text_faint)
                                                 .child("10")
                                                 .child(
-                                                    icons::icon(icons::arrows::ALT_ARROW_RIGHT)
+                                                    icons::icon(icons::glyph::ChevronRight)
                                                         .size(px(14.0))
                                                         .text_color(theme.text_faint),
                                                 ),
@@ -2628,7 +2696,7 @@ impl Gallery {
                                     })
                                     .when(*label == "Untitled", |row| {
                                         row.child(
-                                            icons::icon(icons::files::TRASH_BIN_MINIMALISTIC)
+                                            icons::icon(icons::glyph::Trash)
                                                 .size(px(14.0))
                                                 .flex_none()
                                                 .text_color(motion::hover_blend(
@@ -2686,7 +2754,7 @@ impl Gallery {
                                 {
                                     let hover = theme.element_hover;
                                     control_bar::bar_button(
-                                        icons::system::MAGNIFER,
+                                        icons::glyph::Search,
                                         24.0,
                                         theme.text_muted,
                                     )
@@ -2794,10 +2862,10 @@ impl Gallery {
             }
 
             "control-bar" => {
-                let glyph = |path: &'static str| {
+                let glyph = |name: &'static str, icon: &'static [u8]| {
                     let hover = theme.element_hover;
-                    ui::control_bar::bar_button(path, 30.0, theme.text_muted)
-                        .id(path)
+                    ui::control_bar::bar_button(icon, 30.0, theme.text_muted)
+                        .id(name)
                         .hover(move |s| s.bg(hover))
                 };
                 let label = |copy: &'static str| {
@@ -2819,14 +2887,14 @@ impl Gallery {
                         &theme,
                         ControlBarShape::Pill,
                         vec![
-                            glyph(icons::media::SHUFFLE).into_any_element(),
-                            glyph(icons::media::SKIP_PREVIOUS).into_any_element(),
-                            glyph(icons::media::PLAY_BOLD).into_any_element(),
-                            glyph(icons::media::SKIP_NEXT).into_any_element(),
-                            glyph(icons::media::REPEAT).into_any_element(),
+                            glyph("shuffle", icons::glyph::Shuffle).into_any_element(),
+                            glyph("skip-back", icons::glyph::SkipBack).into_any_element(),
+                            glyph("play", icons::glyph::Play).into_any_element(),
+                            glyph("skip-forward", icons::glyph::SkipForward).into_any_element(),
+                            glyph("repeat", icons::glyph::Repeat).into_any_element(),
                         ],
                         Some(label("Grain").into_any_element()),
-                        vec![glyph(icons::media::VOLUME_LOUD).into_any_element()],
+                        vec![glyph("volume-2", icons::glyph::Volume2).into_any_element()],
                     ))
                     // Rounded, not a stadium: a composer is not a media control,
                     // and the stadium reads as one.
@@ -2834,11 +2902,11 @@ impl Gallery {
                     .child(ui::control_bar::control_bar(
                         &theme,
                         ControlBarShape::Rounded,
-                        vec![glyph(icons::system::PLUS).into_any_element()],
+                        vec![glyph("plus", icons::glyph::Plus).into_any_element()],
                         Some(label("Ask anything…").into_any_element()),
                         vec![
-                            glyph(icons::media::MICROPHONE).into_any_element(),
-                            glyph(icons::arrows::ARROW_UP).into_any_element(),
+                            glyph("mic", icons::glyph::Mic).into_any_element(),
+                            glyph("arrow-up", icons::glyph::ArrowUp).into_any_element(),
                         ],
                     ))
                     .child(theme.field_label("Floating over content"))
@@ -2872,14 +2940,19 @@ impl Gallery {
                                         &theme,
                                         ControlBarShape::Pill,
                                         vec![
-                                            glyph(icons::system::SIDEBAR_MINIMALISTIC_LEFT)
+                                            glyph("panel-left", icons::glyph::PanelLeft)
                                                 .into_any_element(),
-                                            glyph(icons::system::MAGNIFER).into_any_element(),
+                                            glyph("search", icons::glyph::Search)
+                                                .into_any_element(),
                                         ],
                                         None,
                                         vec![
-                                            glyph(icons::system::TUNING).into_any_element(),
-                                            glyph(icons::system::SETTINGS_MINIMALISTIC)
+                                            glyph(
+                                                "sliders-horizontal",
+                                                icons::glyph::SlidersHorizontal,
+                                            )
+                                            .into_any_element(),
+                                            glyph("settings", icons::glyph::Settings)
                                                 .into_any_element(),
                                         ],
                                     )),
@@ -2968,14 +3041,14 @@ impl Gallery {
                             theme
                                 .card_row(true)
                                 .hover(|s| s.bg(theme.element_hover))
-                                .child(theme.row_icon(icons::devices::MONITOR))
+                                .child(theme.row_icon(icons::glyph::Monitor))
                                 .child(theme.row_title("First row")),
                         )
                         .child(
                             theme
                                 .card_row(false)
                                 .hover(|s| s.bg(theme.element_hover))
-                                .child(theme.row_icon(icons::files::FOLDER))
+                                .child(theme.row_icon(icons::glyph::Folder))
                                 .child(theme.row_title("Second row")),
                         ),
                 )
@@ -2983,7 +3056,7 @@ impl Gallery {
 
             "empty-state" => section
                 .child(theme.group_box().child(theme.empty_state(
-                    icons::files::FOLDER,
+                    icons::glyph::Folder,
                     "No repositories",
                     "Open a folder to get started.",
                 )))
@@ -3795,7 +3868,7 @@ impl Gallery {
                                     }))
                                     .child(pagination::step(
                                         &theme,
-                                        icons::arrows::ALT_ARROW_LEFT,
+                                        icons::glyph::ChevronLeft,
                                         self.page > 1,
                                     )),
                             )
@@ -3825,7 +3898,7 @@ impl Gallery {
                                     }))
                                     .child(pagination::step(
                                         &theme,
-                                        icons::arrows::ALT_ARROW_RIGHT,
+                                        icons::glyph::ChevronRight,
                                         self.page < RESULT_PAGES,
                                     )),
                             ),
@@ -4931,14 +5004,14 @@ impl Render for Gallery {
                                     theme
                                         .card_row(true)
                                         .hover(|s| s.bg(theme.element_hover))
-                                        .child(theme.row_icon(icons::devices::MONITOR))
+                                        .child(theme.row_icon(icons::glyph::Monitor))
                                         .child(theme.row_title("Appearance")),
                                 )
                                 .child(
                                     theme
                                         .card_row(false)
                                         .hover(|s| s.bg(theme.element_hover))
-                                        .child(theme.row_icon(icons::files::FOLDER))
+                                        .child(theme.row_icon(icons::glyph::Folder))
                                         .child(theme.row_title("Storage")),
                                 ),
                         )
