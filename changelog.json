@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.1.10",
+    "date": "2026-09-13",
+    "summary": "A menu row's glyph paints again, and `bezel-icons` carries a README of its own.",
+    "changed": [
+      "`menu::Item::with_icon` takes an icon constant rather than an asset path, which is what every other component has taken since the set was ported. `Item`'s `icon` field is the glyph itself, so a row's icon is linked like any other.",
+      "`bezel-icons` publishes its own README rather than the workspace's — the features, the names and the pinned-release upgrade, where a consumer of the crate alone will look for them."
+    ],
+    "fixed": [
+      "A menu row's leading glyph painted nothing. `menu` was the one component the icon port left holding an asset path, and bezel registers no asset source, so the gutter opened and stayed empty. The demo menus carry glyphs now, which is what would have shown it."
+    ]
+  },
+  {
     "version": "0.1.9",
     "date": "2026-09-13",
     "summary": "The icon set becomes the whole of Lucide, ported from a pinned release and named the way Lucide names it.",
