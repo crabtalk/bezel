@@ -13,6 +13,7 @@
 
 use crate::{icons, popover};
 use gpui::{Context, MouseDownEvent, Pixels, Point, SharedString, Window, div, prelude::*, px};
+use icons::Icon;
 use std::{cell::Cell, rc::Rc};
 use theme::{TextStyle, Theme, Typeset};
 
@@ -43,9 +44,9 @@ pub enum Item {
         /// because a row's two lines read as one block and a blank second line
         /// would read as a gap.
         description: Option<SharedString>,
-        /// The leading glyph, a [`crate::icons`] const. A menu where no row
-        /// has one keeps no room for it.
-        icon: Option<&'static [u8]>,
+        /// The leading glyph. A menu where no row has one keeps no room
+        /// for it.
+        icon: Option<Icon>,
         /// The accelerator to *print* — the binding itself is the app's, and
         /// bezel never dispatches it. A menu that showed a keystroke it did not
         /// own would be documenting a lie.
@@ -59,7 +60,7 @@ pub enum Item {
     /// only thing choosing it does is open.
     Submenu {
         label: SharedString,
-        icon: Option<&'static [u8]>,
+        icon: Option<Icon>,
         enabled: bool,
         items: Vec<Item>,
     },
@@ -88,10 +89,10 @@ impl Item {
     }
 
     /// No-ops on a separator, which has nothing to hang a glyph on.
-    pub fn with_icon(mut self, icon: &'static [u8]) -> Self {
+    pub fn with_icon(mut self, icon: impl Into<Icon>) -> Self {
         match &mut self {
             Item::Action { icon: slot, .. } | Item::Submenu { icon: slot, .. } => {
-                *slot = Some(icon)
+                *slot = Some(icon.into())
             }
             Item::Separator => {}
         }
@@ -461,7 +462,7 @@ impl<V: 'static> Tree<V> {
                         icon,
                         enabled,
                         ..
-                    } => (label.clone(), *icon, *enabled),
+                    } => (label.clone(), icon.clone(), *enabled),
                     Item::Separator => unreachable!("separators returned above"),
                 };
                 let description = match item {
@@ -578,7 +579,7 @@ fn row_id(id: &SharedString, path: &[usize]) -> SharedString {
 
 /// The leading column: the row's glyph, or the room one would have taken, so a
 /// menu of mixed rows keeps its labels on one edge.
-fn glyph_slot(theme: &Theme, icon: Option<&'static [u8]>, enabled: bool) -> gpui::Div {
+fn glyph_slot(theme: &Theme, icon: Option<Icon>, enabled: bool) -> gpui::Div {
     div()
         .flex_none()
         .size(px(GLYPH))

@@ -42,6 +42,7 @@
 //! ```
 
 use gpui::{AnyElement, IntoElement, ParentElement as _, Styled as _, div, px};
+use icons::Icon;
 use theme::{TextStyle, Theme, Typeset, hairline};
 
 use crate::surface::Surfaced as _;
@@ -130,7 +131,7 @@ pub fn control_bar(
 /// Caller adds id, click and its own `.hover(..)`: gpui panics on a second
 /// hover call, and the wash differs by state (a lit toggle is not a resting
 /// one). [`Theme::element_hover`] is the wash to reach for.
-pub fn bar_button(icon: &'static [u8], diameter: f32, tint: gpui::Hsla) -> gpui::Div {
+pub fn bar_button(icon: impl Into<Icon>, diameter: f32, tint: gpui::Hsla) -> gpui::Div {
     div()
         .flex_none()
         .size(px(diameter))

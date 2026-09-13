@@ -6,6 +6,7 @@
 
 use crate::stack;
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
+use icons::Icon;
 use motion::{self, Fade};
 use theme::{TextStyle, Theme, ThemeExt, Typeset, card_selected_bg, ink};
 
@@ -89,7 +90,7 @@ pub trait Layout: ThemeExt {
     /// has claimed it.
     fn nav_row(
         &self,
-        icon: Option<&'static [u8]>,
+        icon: Option<Icon>,
         label: impl Into<SharedString>,
         selected: bool,
         fade: Fade,
@@ -117,11 +118,11 @@ pub trait Layout: ThemeExt {
             row = row.bg(motion::hover_blend(&fade, ink(0.0), theme.element_hover));
             row.interactivity().on_hover(motion::hover_listener(fade));
         }
-        row.when_some(icon, |row, path| {
+        row.when_some(icon, |row, icon| {
             // The tint is set on the svg itself: gpui reads an svg's colour off
             // that element's own style and paints nothing when it is unset.
             row.child(
-                crate::icons::icon(path)
+                crate::icons::icon(icon)
                     .size(px(16.0))
                     .flex_none()
                     .text_color(tint),

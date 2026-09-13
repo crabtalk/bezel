@@ -4,6 +4,7 @@
 //! `theme.step_row(..)`, `theme.step_output(..)`, `theme.error_strip(..)`.
 
 use gpui::{Div, SharedString, div, prelude::*, px};
+use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 use crate::{stack, widgets::Layout};
@@ -37,7 +38,7 @@ pub trait Status: ThemeExt {
     /// [`Theme::element_hover`].
     fn step_row(
         &self,
-        icon: &'static [u8],
+        icon: impl Into<Icon>,
         title: impl Into<SharedString>,
         detail: Option<SharedString>,
         meta: Option<SharedString>,

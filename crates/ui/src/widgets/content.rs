@@ -4,6 +4,7 @@
 //! `theme.badge(..)`, `theme.avatar(..)`, `theme.empty_state(..)`.
 
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
+use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
 
 pub trait Content: ThemeExt {
@@ -123,7 +124,7 @@ pub trait Content: ThemeExt {
     /// The centered "nothing here yet" panel: icon, headline, one line of hint.
     fn empty_state(
         &self,
-        icon_path: &'static [u8],
+        icon: impl Into<Icon>,
         title: impl Into<SharedString>,
         hint: impl Into<SharedString>,
     ) -> Div {
@@ -137,7 +138,7 @@ pub trait Content: ThemeExt {
             .gap(px(6.0))
             .py(px(40.0))
             .child(
-                crate::icons::icon(icon_path)
+                crate::icons::icon(icon)
                     .size(px(24.0))
                     .text_color(theme.text_faint),
             )

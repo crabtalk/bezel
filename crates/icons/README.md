@@ -13,14 +13,32 @@ icons = { package = "bezel-icons", version = "0.1", features = ["navigation"] }
 ```
 
 ```rust
-use icons::{icon, navigation::Compass};
+use icons::{Icon, navigation::Compass};
 
-icon(Compass).size(px(16.0)).text_color(theme.text_muted)
+theme.icon(Compass)                          // ladder step, palette tone
+theme.icon(Icon::glyph(Compass).solid())     // the filled variant
+icons::icon(Compass).size(px(16.0)).text_color(theme.text_muted)
 ```
 
 [`icon`] returns a gpui `Svg`, so it colors with `text_color` and sizes like any
-element. [`solid`] paints the same glyph filled, with the outer edge where
-[`icon`] puts it, so a control swapping between them does not jump.
+element — but gpui reads an svg's tone from that element's own style and never
+inherits one, so an icon with neither set paints nothing. `bezel-ui`'s
+`theme.icon(..)` is this same builder with both supplied, which is what app code
+should reach for; a component that has its own metric sets it on top.
+
+## What a component takes
+
+[`Icon`] is the value, and it erases where the drawing came from — a glyph
+compiled in, or `Icon::path("brand/mark.svg")` the app's own `AssetSource`
+resolves at runtime. Components take `impl Into<Icon>`, so a constant passes as
+itself and neither the signature nor the component learns which it got.
+SwiftUI's `Image` erases its sources the same way.
+
+An `Icon` carries no size and no color. Those belong to the environment, which
+here is the component: a menu row's glyph is the row's metric, not the caller's.
+`Icon::solid` is the one thing it does carry — SwiftUI's `.symbolVariant(.fill)`
+— and it fills the outline where [`icon`] draws it, so a control swapping
+between them does not jump.
 
 ## Paying for what you paint
 
@@ -57,3 +75,4 @@ Icons are Lucide, under the [ISC license](https://lucide.dev/license).
 [lucide]: https://lucide.dev
 [`icon`]: https://docs.rs/bezel-icons/latest/icons/fn.icon.html
 [`solid`]: https://docs.rs/bezel-icons/latest/icons/fn.solid.html
+[`Icon`]: https://docs.rs/bezel-icons/latest/icons/struct.Icon.html

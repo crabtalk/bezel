@@ -15,6 +15,7 @@ use crate::{icons, stack};
 use gpui::{
     Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
 };
+use icons::Icon;
 use motion::{self as motion, AnimationExt as _, Fade, PULSE, Painter};
 use theme::{TextStyle, Theme, Typeset, hairline, ink};
 
@@ -1127,7 +1128,7 @@ fn key_hint_label(theme: &Theme, label: &'static str) -> gpui::Div {
 
 /// A footer legend: one icon key-cap + tiny verb (the add-space palette's
 /// footer voice, shared by the pickers).
-pub fn key_hint(theme: &Theme, icon_path: &'static [u8], label: &'static str) -> gpui::Div {
+pub fn key_hint(theme: &Theme, icon: impl Into<Icon>, label: &'static str) -> gpui::Div {
     div()
         .flex()
         .flex_row()
@@ -1135,7 +1136,7 @@ pub fn key_hint(theme: &Theme, icon_path: &'static [u8], label: &'static str) ->
         .gap(px(5.0))
         .child(
             key_cap(theme).child(
-                crate::icons::icon(icon_path)
+                crate::icons::icon(icon)
                     .size(px(12.5))
                     .text_color(theme.text_muted.opacity(0.7)),
             ),
@@ -1165,8 +1166,8 @@ pub fn key_hint_text(theme: &Theme, cap: &'static str, label: &'static str) -> g
 /// ("[ ↑ | ↓ ] Navigate") sharing one verb.
 pub fn key_hint_pair(
     theme: &Theme,
-    first: &'static [u8],
-    second: &'static [u8],
+    first: impl Into<Icon>,
+    second: impl Into<Icon>,
     label: &'static str,
 ) -> gpui::Div {
     div()

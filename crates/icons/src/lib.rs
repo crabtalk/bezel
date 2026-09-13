@@ -7,7 +7,20 @@
 //! ```
 //!
 //! [`icon`] returns a gpui `Svg`, so it colors with `text_color` and sizes like
-//! any element.
+//! any element. `ui`'s `theme.icon(..)` is the same builder with both supplied
+//! from the ladder and the palette, which is what app code should reach for.
+//!
+//! # What a component takes
+//!
+//! [`Icon`] is the value, and it erases where the drawing came from — a glyph
+//! compiled in, or a path the app's own `AssetSource` resolves. Components take
+//! `impl Into<Icon>`, so `glyph::Search` passes as itself and an app's own art
+//! passes as [`Icon::path`], and neither the component nor its signature learns
+//! which it got. SwiftUI's `Image` erases its sources the same way.
+//!
+//! An `Icon` carries no size and no colour. Those are the environment's, which
+//! here is the component: a menu row's glyph is the row's metric, not the
+//! caller's.
 //!
 //! # The set
 //!
@@ -42,19 +55,92 @@ mod generated {
 
 pub use generated::*;
 
-use gpui::{Styled as _, Svg, svg};
+use std::borrow::Cow;
 
-/// An icon element for a glyph from the set. Size and color are the caller's
-/// (`.size(..)`, `.text_color(..)`), matching the `[&_svg]:size-4` idiom.
-pub fn icon(glyph: &'static [u8]) -> Svg {
-    svg().data(glyph).flex_none()
+use gpui::{SharedString, Styled as _, Svg, svg};
+
+/// What to paint: a drawing, and the variant of it. Every component that takes
+/// an icon takes this, so a glyph and an app's own file are one signature.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Icon {
+    source: Source,
+    fill: bool,
 }
 
-/// The same glyph painted solid. Lucide draws one weight, so this fills the
-/// outline rather than reaching for a second drawing: filling *and* stroking
-/// keeps the outer edge exactly where [`icon`] puts it, so a control swapping
-/// between them — favourited or not — does not jump.
-pub fn solid(glyph: &'static [u8]) -> Svg {
-    let filled = String::from_utf8_lossy(glyph).replace(r#"fill="none""#, r#"fill="currentColor""#);
-    svg().data(filled.as_bytes()).flex_none()
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Source {
+    /// A glyph from the set, or any SVG the binary compiled in.
+    Glyph(&'static [u8]),
+    /// A path the app's own `AssetSource` resolves at runtime.
+    Path(SharedString),
+}
+
+impl Icon {
+    /// A glyph from the set — `Icon::glyph(glyph::Search)`. `const`, so a
+    /// component can hold one as a default and the linker still drops the rest.
+    pub const fn glyph(svg: &'static [u8]) -> Self {
+        Self {
+            source: Source::Glyph(svg),
+            fill: false,
+        }
+    }
+
+    /// Art of the app's own, resolved by its `AssetSource` at paint time. The
+    /// set cannot cover a product's marks, and the alternative is an app that
+    /// cannot use its own.
+    pub fn path(path: impl Into<SharedString>) -> Self {
+        Self {
+            source: Source::Path(path.into()),
+            fill: false,
+        }
+    }
+
+    /// Filled rather than outlined — SwiftUI's `.symbolVariant(.fill)`. Lucide
+    /// draws one weight, so this fills the outline rather than reaching for a
+    /// second drawing: filling *and* stroking keeps the outer edge exactly
+    /// where the outline puts it, so a control swapping between them —
+    /// favourited or not — does not jump.
+    pub fn solid(mut self) -> Self {
+        self.fill = true;
+        self
+    }
+
+    /// The document to paint, for a glyph: the ported bytes, or the filled
+    /// rewrite of them. `None` for a path, which only the renderer resolves.
+    pub fn data(&self) -> Option<Cow<'static, [u8]>> {
+        let Source::Glyph(glyph) = self.source else {
+            return None;
+        };
+        Some(match self.fill {
+            false => Cow::Borrowed(glyph),
+            true => Cow::Owned(
+                String::from_utf8_lossy(glyph)
+                    .replace(r#"fill="none""#, r#"fill="currentColor""#)
+                    .into_bytes(),
+            ),
+        })
+    }
+}
+
+impl From<&'static [u8]> for Icon {
+    fn from(glyph: &'static [u8]) -> Self {
+        Self::glyph(glyph)
+    }
+}
+
+/// An icon element. Size and colour are the caller's (`.size(..)`,
+/// `.text_color(..)`) — an `Svg` with neither paints nothing, which is why
+/// `ui`'s `theme.icon(..)` supplies both and this is the floor under it.
+pub fn icon(icon: impl Into<Icon>) -> Svg {
+    let icon = icon.into();
+    match &icon.source {
+        Source::Glyph(_) => svg().data(&icon.data().expect("a glyph carries its own document")),
+        Source::Path(path) => svg().path(path.clone()),
+    }
+    .flex_none()
+}
+
+/// [`icon`], painted solid — `icons::solid(glyph::Play)`.
+pub fn solid(icon: impl Into<Icon>) -> Svg {
+    self::icon(icon.into().solid())
 }

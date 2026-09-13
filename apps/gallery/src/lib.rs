@@ -24,7 +24,7 @@ use ui::{
     floating::{self, Floating},
     focus,
     hover_card::HoverCard,
-    icons,
+    icons::{self, Icon},
     input::{self, Shape, TextField},
     list, loaders,
     menu::Item,
@@ -41,8 +41,8 @@ use ui::{
     tree::{self, Direction, Move},
     widgets,
     widgets::{
-        ButtonStyle, Buttons, Content, Controls, Layout, Scaffolding, SliderDrag, SplitDrag,
-        SplitStyle, Status,
+        ButtonStyle, Buttons, Content, Controls, Icons as _, Layout, Scaffolding, SliderDrag,
+        SplitDrag, SplitStyle, Status,
     },
 };
 
@@ -1941,6 +1941,26 @@ impl Gallery {
                          filed under two is reachable through either. `icons::glyph` holds \
                          every one of them if the category is not worth remembering.",
                     ))
+                    .child(theme.field_label("Painting one"))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap(px(14.0))
+                            .child(theme.icon(icons::glyph::Star))
+                            .child(theme.icon(Icon::glyph(icons::glyph::Star).solid()))
+                            .child(theme.icon_at(TextStyle::Title2, icons::glyph::Star))
+                            .child(theme.icon(icons::glyph::Star).text_color(theme.accent)),
+                    )
+                    .child(hint(
+                        &theme,
+                        "`theme.icon` takes its size from the type ladder and its tone from \
+                         the palette, so an icon set nowhere still paints — a `Styled` call \
+                         after it wins, which is how a component keeps its own metric. \
+                         `Icon::solid` is the filled variant, `theme.icon_at` another rung, \
+                         and `Icon::path` art the app resolves itself.",
+                    ))
                     .child(theme.field_label("Cargo"))
                     .child(markdown::render(
                         &self.icons_cargo,
@@ -2683,7 +2703,7 @@ impl Gallery {
                                 let key = Fade::new(view, format!("nav-row-{index}"));
                                 let row = theme
                                     .nav_row(
-                                        Some(*icon),
+                                        Some(Icon::glyph(icon)),
                                         *label,
                                         self.nav_choice == index,
                                         key.clone(),

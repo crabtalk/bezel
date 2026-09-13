@@ -1,5 +1,7 @@
 use std::{fs, path::PathBuf};
 
+use icons::Icon;
+
 fn assets() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
 }
@@ -110,11 +112,30 @@ fn a_solid_twin_is_its_outline_painted_in() {
     let outline = std::str::from_utf8(icons::glyph::Heart).unwrap();
     assert!(outline.contains(r#"fill="none""#), "the outline is filled");
 
-    let filled = outline.replace(r#"fill="none""#, r#"fill="currentColor""#);
-    let body = |svg: &str| svg[svg.find('>').unwrap()..].to_owned();
-    assert_eq!(
-        body(outline),
-        body(&filled),
-        "the solid twin moved the path"
+    let filled = Icon::glyph(icons::glyph::Heart)
+        .solid()
+        .data()
+        .expect("a glyph carries its own document");
+    let filled = std::str::from_utf8(&filled).unwrap();
+    assert!(
+        filled.contains(r#"fill="currentColor""#),
+        "the solid twin is not filled"
     );
+
+    let body = |svg: &str| svg[svg.find('>').unwrap()..].to_owned();
+    assert_eq!(body(outline), body(filled), "the solid twin moved the path");
+}
+
+/// A component takes an [`Icon`] and never learns which kind it was handed.
+/// Only the renderer asks, and this is what it asks.
+#[test]
+fn an_icon_erases_where_the_drawing_came_from() {
+    assert_eq!(
+        Icon::from(icons::glyph::Heart).data().as_deref(),
+        Some(icons::glyph::Heart),
+        "a glyph lost its document"
+    );
+    // Resolved by the app's own `AssetSource` at paint time, so there is
+    // nothing for this side to hand a parser.
+    assert_eq!(Icon::path("brand/mark.svg").data(), None);
 }

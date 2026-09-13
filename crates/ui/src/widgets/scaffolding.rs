@@ -10,6 +10,7 @@
 
 use crate::stack;
 use gpui::{AnyElement, Div, SharedString, div, prelude::*, px};
+use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 /// Default height of an [`Scaffolding::option_card`] preview frame.
@@ -198,7 +199,7 @@ pub trait Scaffolding: ThemeExt {
 
     /// The leading symbol on a row: a bare glyph, sized to the text beside it,
     /// the way the macOS General pane carries one.
-    fn row_icon(&self, icon_path: &'static [u8]) -> Div {
+    fn row_icon(&self, icon: impl Into<Icon>) -> Div {
         let theme = self.theme();
         div()
             .flex_none()
@@ -207,7 +208,7 @@ pub trait Scaffolding: ThemeExt {
             .items_center()
             .justify_center()
             .child(
-                crate::icons::icon(icon_path)
+                crate::icons::icon(icon)
                     .size(px(ROW_ICON))
                     .text_color(theme.text_muted),
             )
