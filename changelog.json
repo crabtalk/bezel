@@ -1,12 +1,12 @@
 [
   {
-    "version": "0.1.10",
+    "version": "0.1.11",
     "date": "2026-09-13",
     "summary": "An icon is a value now — `Icon` — and `theme.icon` paints one from the ladder and the palette.",
     "new": [
       "`icons::Icon` is what a component takes, and it erases where the drawing came from: a glyph compiled in, `Icon::asset(..)` out of the app's own `AssetSource`, or `Icon::file(..)` off disk. Every icon-taking signature moves to `impl Into<Icon>`, so a constant still passes as itself and an app can finally paint art the set does not carry. SwiftUI's `Image` erases its sources the same way.",
       "`theme.icon(..)` and `theme.icon_at(role, ..)` paint an icon at a rung of the type ladder in the palette's text tone. Both are defaults a `Styled` call after them overrides, which is how a component keeps its own metric — what they buy is the floor: gpui resolves an svg's tone from that element's own style and never inherits one, so an icon with nothing set paints *nothing*. It is a catalog trait like the rest, `use ui::widgets::Icons`.",
-      "`Icon::solid` is the filled variant as a property of the value rather than a second call — SwiftUI's `.symbolVariant(.fill)`. `icons::solid(..)` stays for the common case.",
+      "`Icon::solid` is the filled variant as a property of the value rather than a second call — SwiftUI's `.symbolVariant(.fill)`. `icons::solid(..)` stays for the common case, and the filled document is now rewritten once per glyph and kept rather than rebuilt on every frame a solid icon is on screen.",
       "`bezel-icons` publishes a README of its own: the features, the names, and how the pinned-release upgrade works."
     ],
     "fixed": [
