@@ -6,12 +6,33 @@ description: The Lucide set ported into typed SVG constants, one cargo feature p
 Name a glyph and paint it. There is no asset source to register:
 
 ```rust
-use ui::icons::{self, glyph};
+use ui::icons::{self, Icon, glyph};
+use ui::widgets::Icons;
 
+theme.icon(glyph::Search)                        // the ladder's body step, in the text tone
+theme.icon_at(TextStyle::Caption, glyph::Search) // another rung
 icons::icon(glyph::Search).size(px(16.0)).text_color(theme.text_muted)
 ```
 
-`icon` returns a gpui `Svg`, so it colors with `text_color` and sizes like any element.
+Both builders return a gpui `Svg`, so a `Styled` call after either one wins — what `theme.icon` supplies is a floor, not a decision, and a component that has its own metric sets it on top.
+
+That floor matters more than it looks. gpui resolves an svg's tone from that element's own style and never inherits one from an ancestor, so `icons::icon(..)` with no `text_color` anywhere paints **nothing** — no warning, no fallback, an empty box where the glyph should be. `theme.icon` is the same builder with the size and the tone already in it.
+
+## What a component takes
+
+`Icon` is the value, and it erases where the drawing came from:
+
+```rust
+theme.row_icon(glyph::Monitor)                 // a glyph compiled in
+theme.row_icon(Icon::asset("brand/mark.svg"))  // the app's own AssetSource
+theme.row_icon(Icon::file(picked))             // a file on disk
+```
+
+Every component that takes an icon takes `impl Into<Icon>`, so a constant passes as itself and neither the signature nor the component learns which kind it got. SwiftUI's `Image` erases its sources the same way, and for the same reason: the set cannot cover a product's own marks, and a library that only accepts its own set is one an app cannot use its logo with.
+
+`Icon::asset` is a key the app's registered `AssetSource` answers — bundled art, resolved the way gpui resolves any asset. `Icon::file` is a path on disk, for art that was not there at build time: one the user picked, one a fetch wrote down. gpui loads that off the paint thread and caches it, so the first frame or two paint nothing.
+
+An `Icon` carries no size and no colour. Those belong to the environment, which here is the component — a menu row's glyph is the row's metric, not the caller's.
 
 ## The set is Lucide's
 
@@ -39,4 +60,13 @@ bezel-icons = { version = "0.1", features = ["arrows", "navigation"] }
 
 ## Solid twins
 
-Lucide draws one weight. `icons::solid` fills the outline instead of reaching for a second drawing — filled *and* stroked, so the outer edge lands exactly where `icons::icon` puts it and a control swapping between them does not jump.
+Lucide draws one weight. `Icon::solid` fills the outline instead of reaching for a second drawing — filled *and* stroked, so the outer edge lands exactly where the outline puts it and a control swapping between them does not jump.
+
+```rust
+theme.icon(Icon::glyph(glyph::Star).solid())
+icons::solid(glyph::Star)                     // the same, for the common case
+```
+
+It is a property of the value rather than a second call, which is what lets a control hold one `Icon` and flip the variant — favourited or not — instead of branching between two functions. SwiftUI spells it `.symbolVariant(.fill)`.
+
+The filled document is a rewrite of the outline, made once per glyph and kept for the life of the process: the variant is a flag read at paint time, so without that it would be rebuilt on every frame a solid icon is on screen.

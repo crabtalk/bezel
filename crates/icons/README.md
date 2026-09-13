@@ -28,11 +28,17 @@ should reach for; a component that has its own metric sets it on top.
 
 ## What a component takes
 
-[`Icon`] is the value, and it erases where the drawing came from — a glyph
-compiled in, or `Icon::path("brand/mark.svg")` the app's own `AssetSource`
-resolves at runtime. Components take `impl Into<Icon>`, so a constant passes as
-itself and neither the signature nor the component learns which it got.
-SwiftUI's `Image` erases its sources the same way.
+[`Icon`] is the value, and it erases where the drawing came from:
+
+```rust
+theme.row_icon(glyph::Monitor)                  // a glyph compiled in
+theme.row_icon(Icon::asset("brand/mark.svg"))   // the app's own AssetSource
+theme.row_icon(Icon::file(picked))              // a file on disk
+```
+
+Components take `impl Into<Icon>`, so a constant passes as itself and neither
+the signature nor the component learns which it got. SwiftUI's `Image` erases
+its sources the same way.
 
 An `Icon` carries no size and no color. Those belong to the environment, which
 here is the component: a menu row's glyph is the row's metric, not the caller's.

@@ -116,7 +116,7 @@ fn a_solid_twin_is_its_outline_painted_in() {
         .solid()
         .data()
         .expect("a glyph carries its own document");
-    let filled = std::str::from_utf8(&filled).unwrap();
+    let filled = std::str::from_utf8(filled).unwrap();
     assert!(
         filled.contains(r#"fill="currentColor""#),
         "the solid twin is not filled"
@@ -131,11 +131,13 @@ fn a_solid_twin_is_its_outline_painted_in() {
 #[test]
 fn an_icon_erases_where_the_drawing_came_from() {
     assert_eq!(
-        Icon::from(icons::glyph::Heart).data().as_deref(),
+        Icon::from(icons::glyph::Heart).data(),
         Some(icons::glyph::Heart),
         "a glyph lost its document"
     );
-    // Resolved by the app's own `AssetSource` at paint time, so there is
-    // nothing for this side to hand a parser.
-    assert_eq!(Icon::path("brand/mark.svg").data(), None);
+    // Both kinds of art are resolved by the renderer at paint time — one
+    // through the app's `AssetSource`, one off disk — so there is nothing for
+    // this side to hand a parser.
+    assert_eq!(Icon::asset("brand/mark.svg").data(), None);
+    assert_eq!(Icon::file("/tmp/mark.svg").data(), None);
 }

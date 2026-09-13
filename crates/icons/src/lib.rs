@@ -13,10 +13,10 @@
 //! # What a component takes
 //!
 //! [`Icon`] is the value, and it erases where the drawing came from — a glyph
-//! compiled in, or a path the app's own `AssetSource` resolves. Components take
-//! `impl Into<Icon>`, so `glyph::Search` passes as itself and an app's own art
-//! passes as [`Icon::path`], and neither the component nor its signature learns
-//! which it got. SwiftUI's `Image` erases its sources the same way.
+//! compiled in, the app's [`Icon::asset`] source, or [`Icon::file`] off disk.
+//! Components take `impl Into<Icon>`, so `glyph::Search` passes as itself and
+//! neither the component nor its signature learns which it got. SwiftUI's
+//! `Image` erases its sources the same way.
 //!
 //! An `Icon` carries no size and no colour. Those are the environment's, which
 //! here is the component: a menu row's glyph is the row's metric, not the
@@ -55,7 +55,10 @@ mod generated {
 
 pub use generated::*;
 
-use std::borrow::Cow;
+use std::{
+    collections::HashMap,
+    sync::{OnceLock, PoisonError, RwLock},
+};
 
 use gpui::{SharedString, Styled as _, Svg, svg};
 
@@ -71,8 +74,10 @@ pub struct Icon {
 enum Source {
     /// A glyph from the set, or any SVG the binary compiled in.
     Glyph(&'static [u8]),
-    /// A path the app's own `AssetSource` resolves at runtime.
-    Path(SharedString),
+    /// A key the app's own `AssetSource` resolves.
+    Asset(SharedString),
+    /// A file read from disk at paint time.
+    File(SharedString),
 }
 
 impl Icon {
@@ -85,12 +90,22 @@ impl Icon {
         }
     }
 
-    /// Art of the app's own, resolved by its `AssetSource` at paint time. The
-    /// set cannot cover a product's marks, and the alternative is an app that
-    /// cannot use its own.
-    pub fn path(path: impl Into<SharedString>) -> Self {
+    /// Art of the app's own, out of the `AssetSource` it registered. The set
+    /// cannot cover a product's marks, and a library that took only its own
+    /// would be one an app cannot put its logo in.
+    pub fn asset(key: impl Into<SharedString>) -> Self {
         Self {
-            source: Source::Path(path.into()),
+            source: Source::Asset(key.into()),
+            fill: false,
+        }
+    }
+
+    /// A file on disk, for art that was not there at build time — one the user
+    /// picked, one a fetch wrote down. gpui loads it off the paint thread and
+    /// caches it, so the first frame or two paint nothing.
+    pub fn file(path: impl Into<SharedString>) -> Self {
+        Self {
+            source: Source::File(path.into()),
             fill: false,
         }
     }
@@ -106,20 +121,51 @@ impl Icon {
     }
 
     /// The document to paint, for a glyph: the ported bytes, or the filled
-    /// rewrite of them. `None` for a path, which only the renderer resolves.
-    pub fn data(&self) -> Option<Cow<'static, [u8]>> {
+    /// rewrite of them. `None` for art, which only the renderer resolves.
+    pub fn data(&self) -> Option<&'static [u8]> {
         let Source::Glyph(glyph) = self.source else {
             return None;
         };
         Some(match self.fill {
-            false => Cow::Borrowed(glyph),
-            true => Cow::Owned(
-                String::from_utf8_lossy(glyph)
-                    .replace(r#"fill="none""#, r#"fill="currentColor""#)
-                    .into_bytes(),
-            ),
+            false => glyph,
+            true => filled(glyph),
         })
     }
+}
+
+/// The filled rewrite of one glyph, made once and kept for the process.
+///
+/// [`Icon::solid`] is a flag read at paint time rather than a second constant,
+/// so without this the rewrite runs on every frame a solid icon is on screen.
+/// Keyed by the glyph's own address, which is stable and unique per constant —
+/// one filed under two categories is still one constant. Leaked rather than
+/// freed: an entry costs one glyph and is bounded by how many an app fills.
+fn filled(glyph: &'static [u8]) -> &'static [u8] {
+    static FILLED: OnceLock<RwLock<HashMap<usize, &'static [u8]>>> = OnceLock::new();
+
+    let cache = FILLED.get_or_init(RwLock::default);
+    let key = glyph.as_ptr() as usize;
+    // Read first: painting is the hot path, and after the first frame every
+    // glyph an app fills is already here.
+    if let Some(filled) = cache
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&key)
+    {
+        return filled;
+    }
+
+    let filled: &'static [u8] = Box::leak(
+        String::from_utf8_lossy(glyph)
+            .replace(r#"fill="none""#, r#"fill="currentColor""#)
+            .into_bytes()
+            .into_boxed_slice(),
+    );
+    cache
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(key, filled);
+    filled
 }
 
 impl From<&'static [u8]> for Icon {
@@ -134,8 +180,9 @@ impl From<&'static [u8]> for Icon {
 pub fn icon(icon: impl Into<Icon>) -> Svg {
     let icon = icon.into();
     match &icon.source {
-        Source::Glyph(_) => svg().data(&icon.data().expect("a glyph carries its own document")),
-        Source::Path(path) => svg().path(path.clone()),
+        Source::Glyph(_) => svg().data(icon.data().expect("a glyph carries its own document")),
+        Source::Asset(key) => svg().path(key.clone()),
+        Source::File(path) => svg().external_path(path.clone()),
     }
     .flex_none()
 }
