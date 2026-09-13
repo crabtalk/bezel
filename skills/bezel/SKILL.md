@@ -81,8 +81,9 @@ gpui_platform::application().run(|cx: &mut App| {
    color argument, you want a chain modifier instead.
 2. **Stateless paint is a catalog trait on `Theme`.** Import the group, reach the
    method: `use ui::widgets::{ButtonStyle, Buttons};` → `theme.button(…)`. The
-   groups are `Buttons`, `Controls`, `Scaffolding`, `Layout`, `Content`, `Status`.
-   Stateful things are entities you hold (`TextField`, `Table`, `Orb`, `Palette`).
+   groups are `Buttons`, `Controls`, `Icons`, `Scaffolding`, `Layout`, `Content`
+   and `Status`. Stateful things are entities you hold (`TextField`, `Table`,
+   `Orb`, `Palette`).
 3. **Interaction is yours.** A widget returns a `gpui::Div`; you attach `.id()`
    and `.on_click()`. bezel never owns your handlers.
 4. **Write no numbers.** `ui::stack::row()` already carries the system gap.
@@ -109,6 +110,8 @@ gpui_platform::application().run(|cx: &mut App| {
 - **No menu, no `cmd-q`.** A gpui app gets no menu bar for free.
 - **Icon color.** gpui reads an SVG's color off the element's own style and
   paints *nothing* when unset — set it on the glyph, not on the parent.
+  `theme.icon(glyph::Search)` carries a tone and a ladder step already;
+  `icons::icon(..)` is the bare builder and needs both.
 - **Fade keys must be unique.** Two elements sharing one trade hover animations.
 
 ## When bezel is the thing that is wrong

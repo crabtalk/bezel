@@ -29,6 +29,7 @@ use gpui::{
     App, Context, EventEmitter, FocusHandle, Focusable, KeyBinding, SharedString, Window, actions,
     div, prelude::*, px,
 };
+use icons::Icon;
 
 use theme::{TextStyle, Theme, Typeset};
 
@@ -470,7 +471,7 @@ impl Calendar {
 const CELL: f32 = 30.0;
 
 /// A month arrow in the card's header.
-fn month_step(theme: &Theme, icon: &'static [u8]) -> gpui::Div {
+fn month_step(theme: &Theme, icon: impl Into<Icon>) -> gpui::Div {
     div()
         .size(px(24.0))
         .rounded(px(Theme::control_radius()))

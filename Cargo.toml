@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.9"
+version = "0.1.11"
 edition = "2024"
 license = "MIT"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
@@ -33,17 +33,17 @@ rust-version = "1.85"
 [workspace.dependencies]
 # The short names are taken on crates.io, so packages publish as `bezel-*`; the
 # key here and each crate's `[lib] name` are what the source imports.
-bezel = { path = "crates/bezel", version = "0.1.9" }
-agent = { package = "bezel-agent", path = "crates/agent", version = "0.1.9" }
-theme = { package = "bezel-theme", path = "crates/theme", version = "0.1.9" }
-motion = { package = "bezel-motion", path = "crates/motion", version = "0.1.9" }
-ui = { package = "bezel-ui", path = "crates/ui", version = "0.1.9" }
-icons = { package = "bezel-icons", path = "crates/icons", version = "0.1.9" }
-markdown = { package = "bezel-markdown", path = "crates/markdown", version = "0.1.9" }
-blocks = { package = "bezel-blocks", path = "crates/blocks", version = "0.1.9" }
-editor = { package = "bezel-editor", path = "crates/editor", version = "0.1.9" }
-syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.1.9" }
-terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.1.9" }
+bezel = { path = "crates/bezel", version = "0.1.11" }
+agent = { package = "bezel-agent", path = "crates/agent", version = "0.1.11" }
+theme = { package = "bezel-theme", path = "crates/theme", version = "0.1.11" }
+motion = { package = "bezel-motion", path = "crates/motion", version = "0.1.11" }
+ui = { package = "bezel-ui", path = "crates/ui", version = "0.1.11" }
+icons = { package = "bezel-icons", path = "crates/icons", version = "0.1.11" }
+markdown = { package = "bezel-markdown", path = "crates/markdown", version = "0.1.11" }
+blocks = { package = "bezel-blocks", path = "crates/blocks", version = "0.1.11" }
+editor = { package = "bezel-editor", path = "crates/editor", version = "0.1.11" }
+syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.1.11" }
+terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.1.11" }
 
 # crates-io
 libc = "0.2"
@@ -59,7 +59,7 @@ tree-sitter-typescript = "0.23"
 tree-sitter-go = "0.25"
 tree-sitter-bash = "0.25"
 tree-sitter-toml-ng = "0.7"
-# Lucide. `bezel-icons` names 84 of its 1599 statics; the linker drops the rest.
+# Lucide. `bezel-icons` names 84 of its 1834 statics; the linker drops the rest.
 # The parser gpui paints SVGs with, used by the icon tests to prove a generated
 # document renders rather than merely looking like markup.
 usvg = "0.46"

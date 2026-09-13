@@ -269,7 +269,7 @@ impl Transcript {
             .child(
                 theme
                     .step_row(
-                        icon,
+                        *icon,
                         *verb,
                         Some(SharedString::from(*detail)),
                         Some(SharedString::from(if *ms < 1000 {

@@ -66,7 +66,7 @@ fn the_builders_leave_each_others_fields_alone() {
     // Every builder rewrites the row it is given, so one that reached for the
     // wrong field would silently drop what an earlier call had put there.
     let full = Item::action("Save")
-        .with_icon("icon.svg")
+        .with_icon(ui::icons::glyph::Bell)
         .with_keystroke("⌘S")
         .with_description("Write the file to disk")
         .checked(true)

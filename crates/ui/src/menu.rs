@@ -13,6 +13,7 @@
 
 use crate::{icons, popover};
 use gpui::{Context, MouseDownEvent, Pixels, Point, SharedString, Window, div, prelude::*, px};
+use icons::Icon;
 use std::{cell::Cell, rc::Rc};
 use theme::{TextStyle, Theme, Typeset};
 
@@ -43,10 +44,9 @@ pub enum Item {
         /// because a row's two lines read as one block and a blank second line
         /// would read as a gap.
         description: Option<SharedString>,
-        /// The leading glyph's asset path — [`crate::icons`]' consts, or a
-        /// path the app resolved at runtime. A menu where no row has one keeps
-        /// no room for it.
-        icon: Option<SharedString>,
+        /// The leading glyph. A menu where no row has one keeps no room
+        /// for it.
+        icon: Option<Icon>,
         /// The accelerator to *print* — the binding itself is the app's, and
         /// bezel never dispatches it. A menu that showed a keystroke it did not
         /// own would be documenting a lie.
@@ -60,7 +60,7 @@ pub enum Item {
     /// only thing choosing it does is open.
     Submenu {
         label: SharedString,
-        icon: Option<SharedString>,
+        icon: Option<Icon>,
         enabled: bool,
         items: Vec<Item>,
     },
@@ -89,7 +89,7 @@ impl Item {
     }
 
     /// No-ops on a separator, which has nothing to hang a glyph on.
-    pub fn with_icon(mut self, icon: impl Into<SharedString>) -> Self {
+    pub fn with_icon(mut self, icon: impl Into<Icon>) -> Self {
         match &mut self {
             Item::Action { icon: slot, .. } | Item::Submenu { icon: slot, .. } => {
                 *slot = Some(icon.into())
@@ -579,22 +579,19 @@ fn row_id(id: &SharedString, path: &[usize]) -> SharedString {
 
 /// The leading column: the row's glyph, or the room one would have taken, so a
 /// menu of mixed rows keeps its labels on one edge.
-fn glyph_slot(theme: &Theme, icon: Option<SharedString>, enabled: bool) -> gpui::Div {
+fn glyph_slot(theme: &Theme, icon: Option<Icon>, enabled: bool) -> gpui::Div {
     div()
         .flex_none()
         .size(px(GLYPH))
         .flex()
         .items_center()
         .justify_center()
-        .children(icon.map(|path| {
-            gpui::svg()
-                .path(path)
-                .size(px(GLYPH))
-                .text_color(if enabled {
-                    theme.text_faint
-                } else {
-                    theme.text_faint.opacity(0.5)
-                })
+        .children(icon.map(|glyph| {
+            icons::icon(glyph).size(px(GLYPH)).text_color(if enabled {
+                theme.text_faint
+            } else {
+                theme.text_faint.opacity(0.5)
+            })
         }))
 }
 

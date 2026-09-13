@@ -21,6 +21,7 @@
 //! caller's — as with [`crate::table`]'s sort, this module reports and paints.
 
 use gpui::{SharedString, div, prelude::*, px};
+use icons::Icon;
 
 use theme::{TextStyle, Theme, Typeset};
 
@@ -144,7 +145,7 @@ pub fn ellipsis(theme: &Theme) -> gpui::Div {
 ///
 /// A disabled step stays in place rather than disappearing at the ends, so the
 /// row does not shuffle sideways on the first and last pages.
-pub fn step(theme: &Theme, icon: &'static [u8], enabled: bool) -> gpui::Div {
+pub fn step(theme: &Theme, icon: impl Into<Icon>, enabled: bool) -> gpui::Div {
     let step = div()
         .size(px(BUTTON))
         .rounded(px(7.0))

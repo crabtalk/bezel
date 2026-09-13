@@ -1,6 +1,6 @@
 //! Widgets, grouped as catalog traits on `Theme` — import the group, reach
-//! the component: `use ui::widgets::{Content, Controls, Layout,
-//! Scaffolding, Status};` → `theme.group_box()`, `theme.tab(..)`.
+//! the component: `use ui::widgets::{Content, Controls, Icons,
+//! Layout, Scaffolding, Status};` → `theme.group_box()`, `theme.tab(..)`.
 //!
 //! What stays here is deliberately trait-shaped: state flags and pure math,
 //! neither of which reads the theme as a receiver.
@@ -10,6 +10,7 @@ use gpui::{div, prelude::*, px};
 mod buttons;
 mod content;
 mod controls;
+mod icon;
 mod layout;
 mod scaffolding;
 mod status;
@@ -17,6 +18,7 @@ mod status;
 pub use buttons::{ButtonStyle, Buttons};
 pub use content::Content;
 pub use controls::{Controls, SliderDrag, slider_fraction};
+pub use icon::Icons;
 pub use layout::{Layout, SPLIT_HANDLE_HIT, SplitDrag, SplitStyle};
 pub use scaffolding::{OPTION_CARD_HEIGHT, OPTION_CARD_RADIUS, Scaffolding};
 pub use status::Status;

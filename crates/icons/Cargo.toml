@@ -7,14 +7,16 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-readme.workspace = true
+# Not the workspace README: an inherited `readme` resolves against the workspace
+# root, and this crate has one of its own.
+readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
 # `assets/` and `src/generated.rs` are gitignored, and cargo packages from the
 # VCS listing unless told otherwise. Naming them here is what puts the ported
 # glyphs inside the published crate, so a consumer never runs the download.
-include = ["src/**/*.rs", "assets/**", "build.rs", "tests/**/*.rs"]
+include = ["src/**/*.rs", "assets/**", "build.rs", "tests/**/*.rs", "README.md"]
 
 [lib]
 name = "icons"
