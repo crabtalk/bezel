@@ -47,6 +47,19 @@ if self.menu.begin_close() {
 
 gpui unmounts an element the frame its state drops, so a closing animation needs the state held alive while `menu-out` plays. `Popup` is that hold: `is_open` for logic — a closing popup already reads as closed — and `get`/`is_closing` for rendering, with `reap_popup` scheduling the drop once the exit's span is up.
 
+## Described rows
+
+A row whose name does not say enough carries a second line, and hover text for the part of it that does not fit:
+
+```rust
+menu::Item::action("Open…")
+    .with_long_description("Choose a markdown file from this workspace to edit")
+```
+
+The description is one line, clipped. Rows of a menu are a column of equal things, and a sentence that wrapped would stand two or three times its neighbours' height — so one described row widens the panel to a width of its own (280px), the way one icon opens the glyph gutter, and the line ends in an ellipsis there. A caller cannot do that cutting from outside: it would be counting characters against a proportional font at a width only the panel knows.
+
+`with_long_description` is the description and the hover text from one string, since a sentence that needs clipping is one no caller should write twice. `with_tooltip` sets the hover text alone: it is where the rest of a sentence goes, and it is also how a disabled row says why it is disabled — a disabled row takes no click, but it still takes a tooltip. None of them touch anything but an action row: a submenu row is hovered to open it, so a tooltip there would fight the panel it drops.
+
 ## Submenus
 
 `menu::card` takes rows rather than elements, and a row can be a menu of its own — the shape a SwiftUI `Menu` nests in a `Menu`:

@@ -62,6 +62,32 @@ fn a_description_is_an_action_rows_second_line() {
 }
 
 #[test]
+fn a_tooltip_is_an_action_rows_hover_text() {
+    let hinted = Item::action("Open…").with_tooltip("Choose a file to edit");
+    assert!(
+        matches!(&hinted, Item::Action { tooltip: Some(hint), .. } if hint == "Choose a file to edit")
+    );
+
+    // A submenu row is hovered to open it, and a separator is not a row.
+    assert_eq!(Item::Separator.with_tooltip("x"), Item::Separator);
+    let submenu = Item::submenu("Open Recent", vec![Item::action("a")]);
+    assert_eq!(submenu.clone().with_tooltip("x"), submenu);
+}
+
+#[test]
+fn a_long_description_is_its_own_tooltip() {
+    // The row clips the sentence, so the pairing is what the caller wants —
+    // and one string means the two cannot drift apart.
+    let long = Item::action("Open…").with_long_description("Choose a file to edit");
+    assert_eq!(
+        long,
+        Item::action("Open…")
+            .with_description("Choose a file to edit")
+            .with_tooltip("Choose a file to edit")
+    );
+}
+
+#[test]
 fn the_builders_leave_each_others_fields_alone() {
     // Every builder rewrites the row it is given, so one that reached for the
     // wrong field would silently drop what an earlier call had put there.
@@ -69,6 +95,7 @@ fn the_builders_leave_each_others_fields_alone() {
         .with_icon(ui::icons::glyph::Bell)
         .with_keystroke("⌘S")
         .with_description("Write the file to disk")
+        .with_tooltip("Write the file to disk, overwriting what is there")
         .checked(true)
         .disabled();
     assert!(matches!(
@@ -77,6 +104,7 @@ fn the_builders_leave_each_others_fields_alone() {
             icon: Some(_),
             keystroke: Some(_),
             description: Some(_),
+            tooltip: Some(_),
             checked: true,
             enabled: false,
             ..

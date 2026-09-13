@@ -412,10 +412,13 @@ fn demo_menus() -> Vec<Menu> {
                 Item::action("New Window")
                     .with_icon(icons::glyph::FilePlus)
                     .with_keystroke("⌘N"),
+                // The described row, and the one that shows what a
+                // description too long for its line does: it clips, and the
+                // tooltip carries the whole of it.
                 Item::action("Open…")
                     .with_icon(icons::glyph::FolderOpen)
                     .with_keystroke("⌘O")
-                    .with_description("Choose a markdown file to edit"),
+                    .with_long_description("Choose a markdown file from this workspace to edit"),
                 Item::submenu(
                     "Open Recent",
                     vec![

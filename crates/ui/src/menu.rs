@@ -11,7 +11,7 @@
 //! can never disagree about which row an open submenu hangs off. What the
 //! pointer did comes back as a [`Hit`]; acting on it stays the caller's.
 
-use crate::{icons, popover};
+use crate::{icons, popover, tooltip::Tooltip};
 use gpui::{Context, MouseDownEvent, Pixels, Point, SharedString, Window, div, prelude::*, px};
 use icons::Icon;
 use std::{cell::Cell, rc::Rc};
@@ -22,11 +22,12 @@ const GLYPH: f32 = 13.0;
 
 /// How wide a panel sits.
 const PANEL_MIN: f32 = 180.0;
-/// How wide one holding a described row sits. A description is a sentence
-/// rather than a name, and at the narrow width it wraps to three lines and the
-/// menu reads as a paragraph with a title. One described row widens the panel,
-/// the way one icon opens the glyph gutter.
-const PANEL_MIN_DESCRIBED: f32 = 280.0;
+/// How wide one holding a described row sits — a width, not a floor. A
+/// description is a sentence rather than a name, so the panel widens the way
+/// one icon opens the glyph gutter; and because the sentence is kept to one
+/// line, the panel needs a ceiling to clip it against rather than growing to
+/// whatever the longest one measures.
+const PANEL_DESCRIBED: f32 = 280.0;
 
 /// A row in a menu.
 ///
@@ -44,6 +45,11 @@ pub enum Item {
         /// because a row's two lines read as one block and a blank second line
         /// would read as a gap.
         description: Option<SharedString>,
+        /// Hover text for the row, shown after gpui's tooltip delay. Where the
+        /// whole of a [`Item::with_description`] too long for its one line
+        /// goes, and where a disabled row says why — a disabled row takes no
+        /// click, but it still takes a tooltip.
+        tooltip: Option<SharedString>,
         /// The leading glyph. A menu where no row has one keeps no room
         /// for it.
         icon: Option<Icon>,
@@ -72,6 +78,7 @@ impl Item {
         Item::Action {
             label: label.into(),
             description: None,
+            tooltip: None,
             icon: None,
             keystroke: None,
             checked: false,
@@ -108,6 +115,26 @@ impl Item {
         } = &mut self
         {
             *slot = Some(description.into());
+        }
+        self
+    }
+
+    /// The description *and* the whole of it on hover, from one string. A
+    /// sentence long enough to need clipping is one no caller should have to
+    /// write twice — two copies of it drift.
+    pub fn with_long_description(self, description: impl Into<SharedString>) -> Self {
+        let description = description.into();
+        self.with_description(description.clone())
+            .with_tooltip(description)
+    }
+
+    /// Hover text for the row — the rest of a description the row had to clip,
+    /// or why a disabled row is disabled. No-ops on anything but an action
+    /// row: a submenu row is already hovered to open it, and a label the
+    /// pointer waits on top of would fight the panel it drops.
+    pub fn with_tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        if let Item::Action { tooltip: slot, .. } = &mut self {
+            *slot = Some(tooltip.into());
         }
         self
     }
@@ -438,11 +465,10 @@ impl<V: 'static> Tree<V> {
         let gutter = items.iter().any(Item::has_icon);
         let described = items.iter().any(Item::has_description);
         popover::popover_card(theme)
-            .min_w(px(if described {
-                PANEL_MIN_DESCRIBED
-            } else {
-                PANEL_MIN
-            }))
+            .map(|card| match described {
+                true => card.w(px(PANEL_DESCRIBED)),
+                false => card.min_w(px(PANEL_MIN)),
+            })
             .on_mouse_down_out(self.dismissal(cx))
             .children(items.iter().enumerate().map(|(row, item)| {
                 if matches!(item, Item::Separator) {
@@ -465,9 +491,13 @@ impl<V: 'static> Tree<V> {
                     } => (label.clone(), icon.clone(), *enabled),
                     Item::Separator => unreachable!("separators returned above"),
                 };
-                let description = match item {
-                    Item::Action { description, .. } => description.clone(),
-                    _ => None,
+                let (description, hint) = match item {
+                    Item::Action {
+                        description,
+                        tooltip,
+                        ..
+                    } => (description.clone(), tooltip.clone()),
+                    _ => (None, None),
                 };
                 let row = if enabled {
                     popover::menu_row(theme, lit == Some(row), None)
@@ -485,6 +515,9 @@ impl<V: 'static> Tree<V> {
                 } else {
                     disabled_row(theme).id(id.clone())
                 };
+                let row = row.when_some(hint, |row, hint| {
+                    row.tooltip(move |window, cx| Tooltip::text(hint.clone(), window, cx))
+                });
                 row.when(gutter, |row| row.child(glyph_slot(theme, icon, enabled)))
                     .child(
                         div()
@@ -599,12 +632,19 @@ fn glyph_slot(theme: &Theme, icon: Option<Icon>, enabled: bool) -> gpui::Div {
 /// meta line has to its title ([`crate::widgets::Scaffolding::meta_line`]),
 /// which is where the size and the tone come from.
 ///
+/// One line, clipped — rows of a menu are a column of equal things, and a
+/// sentence that wrapped would make its row two or three times its neighbours'
+/// height. What a caller cannot do from outside is guess where to cut: it
+/// would be counting characters against a proportional font at a width only
+/// the panel knows. [`Item::with_tooltip`] is where the rest of it goes.
+///
 /// It sets its own colour rather than inheriting the row's, because the row's
 /// is the *label's* — a lit row paints that at full contrast, and a
 /// description that followed it there would stop reading as the quieter half.
 fn description_line(theme: &Theme, description: SharedString, enabled: bool) -> gpui::Div {
     div()
         .mt(px(2.0))
+        .truncate()
         .text_style(TextStyle::Subheadline)
         .text_color(if enabled {
             theme.text_muted
