@@ -11,6 +11,7 @@
 //! is the case worth showing: gpui routes a URL-shaped string to
 //! `Resource::Uri`, and `with_fallback` covers the times it does not arrive.
 
+use gpui::App;
 use markdown::Preview;
 
 /// URL prefix, title, blurb, `og:image` — the rows a real cache would have
@@ -23,7 +24,9 @@ const KNOWN: &[(&str, &str, &str, &str)] = &[(
 )];
 
 /// Install with `markdown::set_link_preview(cx, preview::of)`.
-pub fn of(url: &str) -> Option<Preview> {
+///
+/// A const table rather than a cache, so there is nothing in the app to read.
+pub fn of(url: &str, _: &App) -> Option<Preview> {
     let after = url.split_once("://")?.1;
     let host = after.split(['/', '?', '#']).next()?;
     let host = host.strip_prefix("www.").unwrap_or(host);

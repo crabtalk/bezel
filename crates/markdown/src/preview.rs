@@ -26,7 +26,13 @@ pub struct Preview {
 
 /// `None` for a URL the caller has nothing for *yet*: the card paints its host
 /// and repaints when the answer arrives.
-pub type LinkPreview = fn(url: &str) -> Option<Preview>;
+///
+/// `cx` is how the answer is found: a cache lives in the app, so a bare call
+/// with only the URL would have to reach for a `static` to read its own.
+/// Shared rather than exclusive because this is asked at paint — the fetch it
+/// misses belongs to whatever notices the `None`, not to the paint that
+/// returned it.
+pub type LinkPreview = fn(url: &str, cx: &App) -> Option<Preview>;
 
 struct Installed(LinkPreview);
 
@@ -40,7 +46,10 @@ pub fn set_link_preview(cx: &mut App, preview: LinkPreview) {
 }
 
 pub(crate) fn of(cx: &App, url: &str) -> Option<Preview> {
-    (cx.try_global::<Installed>()?.0)(url)
+    // Copied out before the call: a preview reads its own globals off the same
+    // `cx` this borrows.
+    let preview = cx.try_global::<Installed>()?.0;
+    preview(url, cx)
 }
 
 /// The host, without its `www.` — all a card can say about a URL nobody has
