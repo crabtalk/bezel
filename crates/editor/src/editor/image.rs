@@ -7,7 +7,7 @@
 //! the app's decision and not this library's. Hence [`set_image_store`],
 //! installed once at boot like `markdown::set_link_preview`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gpui::{
     AnyElement, App, Axis, Context, CursorStyle, Entity, ExternalPaths, Focusable as _, Global,
@@ -45,10 +45,36 @@ pub enum Source<'a> {
     File(&'a Path),
 }
 
-/// The URL to write down for `source`, and `None` for one the app will not
-/// keep — a dropped file then stays where it already is, and a screenshot is
-/// let go.
-pub type ImageStore = fn(Source) -> Option<String>;
+/// Who owns the pictures a document points at.
+///
+/// Plain `fn` fields rather than a trait: a store needs *state* — which
+/// article is open, where the vault is — and in gpui that state lives in the
+/// app, not in a capture. So the store is handed `&App` and the editor doing
+/// the asking, and looks its answer up the same way everything else here does.
+/// Nothing to box, and [`Default`] means a field added later is not a break.
+#[derive(Clone, Copy)]
+pub struct ImageStore {
+    /// The URL to write down for `source`, and `None` for one the app will not
+    /// keep — a dropped file then stays where it already is, and a screenshot
+    /// is let go.
+    ///
+    /// `editor` is which document is asking, because an app with two windows
+    /// open has two answers and a bare call has no way to tell them apart.
+    pub keep: fn(source: Source, editor: &Entity<Editor>, cx: &App) -> Option<String>,
+    /// Whether a file is a picture at all. Defaults to [`markdown::is_image`],
+    /// which guesses from the extension — an app with its own decoder, or one
+    /// that wants a file the guess rejects, says so here.
+    pub accepts: fn(path: &Path) -> bool,
+}
+
+impl Default for ImageStore {
+    fn default() -> Self {
+        Self {
+            keep: |_, _, _| None,
+            accepts: |path| markdown::is_image(&path.to_string_lossy()),
+        }
+    }
+}
 
 struct Installed(ImageStore);
 
@@ -61,8 +87,30 @@ pub fn set_image_store(cx: &mut App, store: ImageStore) {
     cx.set_global(Installed(store));
 }
 
-fn stored(cx: &App, source: Source) -> Option<String> {
-    (cx.try_global::<Installed>()?.0)(source)
+/// The installed store, or the one that keeps nothing — which is what a build
+/// that installed none behaves as.
+fn store(cx: &App) -> ImageStore {
+    cx.try_global::<Installed>().map_or_else(
+        ImageStore::default,
+        // Copied out before the call: a store reads its own globals off the
+        // same `cx` this borrows.
+        |installed| installed.0,
+    )
+}
+
+/// What to write down for the pictures among `paths`. The store says where
+/// each one belongs, and a picture it does not want paints from where it
+/// already is.
+fn image_urls(cx: &App, paths: &[PathBuf], editor: &Entity<Editor>) -> Vec<String> {
+    let store = store(cx);
+    paths
+        .iter()
+        .filter(|path| (store.accepts)(path))
+        .map(|path| {
+            (store.keep)(Source::File(path), editor, cx)
+                .unwrap_or_else(|| path.to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 /// An open prompt: the image it will fill, the field being typed into, and
@@ -152,24 +200,30 @@ impl Editor {
     /// Files dragged in from outside. The store says where each one belongs,
     /// and a picture it does not want paints from where it already is.
     pub(super) fn drop_paths(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) {
-        let urls: Vec<String> = paths
-            .paths()
-            .iter()
-            .filter(|path| markdown::is_image(&path.to_string_lossy()))
-            .map(|path| {
-                stored(cx, Source::File(path))
-                    .unwrap_or_else(|| path.to_string_lossy().into_owned())
-            })
-            .collect();
+        let urls = image_urls(cx, paths.paths(), &cx.entity());
         let ix = self.dropping.take().unwrap_or(self.cursor().block);
         self.place_images(ix, urls, cx);
         cx.notify();
     }
 
+    /// Files copied in a file manager, which is a drop by another route — the
+    /// clipboard holds the same paths. `false` when none of them named a
+    /// picture, leaving the paste to the path text the platform put on
+    /// alongside them.
+    pub(super) fn paste_paths(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) -> bool {
+        let urls = image_urls(cx, paths.paths(), &cx.entity());
+        if urls.is_empty() {
+            return false;
+        }
+        self.place_images(self.cursor().block, urls, cx);
+        true
+    }
+
     /// Bytes off the clipboard. `false` when no store is installed, which
     /// leaves the paste to whatever else the clipboard was carrying.
     pub(super) fn paste_image(&mut self, image: &gpui::Image, cx: &mut Context<Self>) -> bool {
-        let Some(url) = stored(cx, Source::Bytes(image)) else {
+        let editor = cx.entity();
+        let Some(url) = (store(cx).keep)(Source::Bytes(image), &editor, cx) else {
             return false;
         };
         self.place_images(self.cursor().block, vec![url], cx);

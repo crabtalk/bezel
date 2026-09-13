@@ -34,6 +34,9 @@ const CANONICAL: &[&str] = &[
     "---",
     "![alt](media://x)",
     "![](media://x)",
+    "![alt](</My Notes/x.png>)",
+    "[link](<a b>)",
+    "[link](https://en.wikipedia.org/wiki/Rust_(programming_language))",
     "| a | b |\n| --- | ---: |\n| 1 | 2 |",
     "# Title\n\n- a\n- b\n\n> note\n\n```sh\nls\n```",
     "snake_case stays intact",
@@ -149,6 +152,38 @@ fn code_containing_a_fence_gets_a_longer_one() {
 }
 
 #[test]
+fn a_destination_with_a_space_keeps_its_angles() {
+    // A media path under a project whose name has a space in it. Written
+    // bare, the destination ends at the space and the whole block comes back
+    // as a line of text.
+    let doc = Doc {
+        blocks: vec![Block::new(BlockKind::Image {
+            url: "/My Notes/shot.png".to_string(),
+            alt: Text::plain("alt".to_string()),
+            width: None,
+        })],
+    };
+    assert_eq!(serialize(&doc), "![alt](</My Notes/shot.png>)");
+    assert_eq!(parse(&serialize(&doc)), doc);
+}
+
+#[test]
+fn a_destination_survives_whatever_it_holds() {
+    for url in ["a b", "a(b", "a)b", "a\\b", "<a>", "a b(c"] {
+        let doc = Doc {
+            blocks: vec![Block::new(BlockKind::Paragraph(Text::link(url)))],
+        };
+        assert_eq!(parse(&serialize(&doc)), doc, "{url:?} did not survive");
+    }
+    // The one thing neither spelling holds: raw, it would end the
+    // destination the same way a space does.
+    let doc = Doc {
+        blocks: vec![Block::new(BlockKind::Paragraph(Text::link("a\nb")))],
+    };
+    assert!(serialize(&doc).contains("<a%0Ab>"));
+}
+
+#[test]
 fn an_empty_document_serializes_to_nothing() {
     assert_eq!(serialize(&Doc::default()), "");
     assert_eq!(parse(""), Doc::default());
@@ -186,6 +221,9 @@ const FRAGMENTS: &[&str] = &[
     "[l](u) tail",
     "![](i)",
     "![alt](i)",
+    "[l](<a b>)",
+    "![](<a b.png>)",
+    "[l](a(b)c)",
     "a*b",
     "a_b_c",
     "#123",

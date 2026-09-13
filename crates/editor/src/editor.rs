@@ -1088,12 +1088,17 @@ impl Editor {
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };
-        // A screenshot before its text, because a clipboard carrying both is
-        // carrying a file name for the picture — which is not the picture.
+        // A picture before its text, because a clipboard carrying both is
+        // carrying a name for the picture — which is not the picture. A
+        // screenshot has a file name beside its bytes, and a file copied in a
+        // file manager has its path beside the path itself.
         for entry in item.entries() {
-            if let gpui::ClipboardEntry::Image(image) = entry
-                && self.paste_image(image, cx)
-            {
+            let placed = match entry {
+                gpui::ClipboardEntry::Image(image) => self.paste_image(image, cx),
+                gpui::ClipboardEntry::ExternalPaths(paths) => self.paste_paths(paths, cx),
+                gpui::ClipboardEntry::String(_) => false,
+            };
+            if placed {
                 return;
             }
         }

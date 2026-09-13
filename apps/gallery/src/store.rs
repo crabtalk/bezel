@@ -6,14 +6,26 @@
 //! saves nothing, so it writes beside the temporary files and hands back the
 //! path — enough to paint, and gone with the next reboot.
 //!
-//! Install with `editor::set_image_store(cx, store::of)`.
+//! Install with `editor::set_image_store(cx, store::of())`.
 
-use editor::Source;
+use editor::{Editor, ImageStore, Source};
+use gpui::{App, Entity};
+
+/// The gallery keeps what it is handed and guesses pictures the default way.
+pub fn of() -> ImageStore {
+    ImageStore {
+        keep,
+        ..ImageStore::default()
+    }
+}
 
 /// A dropped file stays where it is. Only the bytes need somewhere to go, and
 /// on the web there is nowhere at all — the browser build takes the paste and
 /// has nothing to answer with.
-pub fn of(source: Source) -> Option<String> {
+///
+/// One gallery and one store, so neither the editor asking nor the app it sits
+/// in changes the answer.
+fn keep(source: Source, _: &Entity<Editor>, _: &App) -> Option<String> {
     match source {
         Source::File(path) => Some(path.to_string_lossy().into_owned()),
         Source::Bytes(image) => write(image),

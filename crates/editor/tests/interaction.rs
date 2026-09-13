@@ -12,8 +12,13 @@
 //! all real. Column *values* here are therefore arbitrary; their relationships
 //! are not, and the relationships are what broke.
 
-use editor::Editor;
-use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, WindowHandle, px, size};
+use std::sync::Mutex;
+
+use editor::{Editor, ImageStore, Source};
+use gpui::{
+    App, ClipboardEntry, ClipboardItem, ClipboardString, Entity, EntityId, ExternalPaths,
+    Focusable, TestAppContext, VisualTestContext, WindowHandle, px, size,
+};
 
 const SOURCE: &str = "# Title\n\nA paragraph long enough that it has to wrap more than once inside the pane it is painted into, which is what makes it worth testing.\n\n- first\n- second\n\n> a quote";
 
@@ -426,4 +431,134 @@ fn a_second_press_on_the_handle_leaves_the_block_menu_shut(cx: &mut TestAppConte
         cx.debug_bounds(editor::BLOCK_MENU).is_none(),
         "the second press leaves it shut instead of closing and reopening"
     );
+}
+
+/// Copying a file in a file manager rather than dragging it. macOS puts the
+/// path on the clipboard as text beside the file itself, and the text is not
+/// the picture — which is the whole of the bug this answers.
+#[gpui::test]
+fn a_copied_image_file_pastes_as_the_picture(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    // A space in the path, because a project directory has one and the
+    // destination has to come back through the serializer intact.
+    let path = std::path::PathBuf::from("/My Notes/shot.png");
+    cx.update(|_, cx| {
+        cx.write_to_clipboard(ClipboardItem {
+            entries: vec![
+                ClipboardEntry::ExternalPaths(ExternalPaths(vec![path.clone()].into())),
+                ClipboardEntry::String(ClipboardString::new(path.display().to_string())),
+            ],
+        })
+    });
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+    assert_eq!(source(&editor, &mut cx), "![](</My Notes/shot.png>)");
+}
+
+/// And a file that is not a picture still pastes as its path, which is what
+/// the text beside it was for.
+#[gpui::test]
+fn a_copied_file_that_is_not_a_picture_pastes_its_path(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    let path = std::path::PathBuf::from("/tmp/notes.txt");
+    cx.update(|_, cx| {
+        cx.write_to_clipboard(ClipboardItem {
+            entries: vec![
+                ClipboardEntry::ExternalPaths(ExternalPaths(vec![path.clone()].into())),
+                ClipboardEntry::String(ClipboardString::new(path.display().to_string())),
+            ],
+        })
+    });
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+    assert_eq!(source(&editor, &mut cx), "/tmp/notes.txt");
+}
+
+/// Which editor the store was last asked on behalf of. A `fn` carries nothing,
+/// which is the whole point — everything it needs comes in as an argument, and
+/// a test is the one place with nowhere else to put the answer.
+static ASKED: Mutex<Option<EntityId>> = Mutex::new(None);
+
+fn keep(source: Source, editor: &Entity<Editor>, _: &App) -> Option<String> {
+    *ASKED.lock().unwrap() = Some(editor.entity_id());
+    match source {
+        Source::File(path) => Some(format!("media://{}", path.file_name()?.to_str()?)),
+        Source::Bytes(_) => None,
+    }
+}
+
+/// Put `path` on the clipboard the way a file manager does — the file itself,
+/// and its path as text beside it.
+fn copy_file(path: &str, cx: &mut VisualTestContext) {
+    let path = std::path::PathBuf::from(path);
+    cx.update(|_, cx| {
+        cx.write_to_clipboard(ClipboardItem {
+            entries: vec![
+                ClipboardEntry::ExternalPaths(ExternalPaths(vec![path.clone()].into())),
+                ClipboardEntry::String(ClipboardString::new(path.display().to_string())),
+            ],
+        })
+    });
+}
+
+/// The store is told which document is asking, so an app holding two of them
+/// answers for the right one. The bare `fn` it replaced could only be told by
+/// a global the app had to keep in step by hand.
+#[gpui::test]
+fn the_store_is_told_which_editor_is_asking(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    cx.update(|_, cx| {
+        editor::set_image_store(
+            cx,
+            ImageStore {
+                keep,
+                ..ImageStore::default()
+            },
+        )
+    });
+    copy_file("/My Notes/shot.png", &mut cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+
+    assert_eq!(source(&editor, &mut cx), "![](media://shot.png)");
+    assert_eq!(
+        *ASKED.lock().unwrap(),
+        Some(editor.entity_id()),
+        "the store was asked on behalf of the editor that pasted"
+    );
+}
+
+/// What counts as a picture is the app's to widen. The default guesses from
+/// the extension, and an app with its own decoder says so.
+#[gpui::test]
+fn a_store_decides_for_itself_what_a_picture_is(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    cx.update(|_, cx| {
+        editor::set_image_store(
+            cx,
+            ImageStore {
+                keep,
+                accepts: |path| path.extension().is_some_and(|ext| ext == "heic"),
+            },
+        )
+    });
+    copy_file("/My Notes/shot.heic", &mut cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+    assert_eq!(source(&editor, &mut cx), "![](media://shot.heic)");
+}
+
+/// And it narrows as well as widens: a `.png` the store does not claim stays
+/// the path it was, even though the default guess would have taken it.
+#[gpui::test]
+fn a_file_the_store_refuses_pastes_as_its_path(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    cx.update(|_, cx| {
+        editor::set_image_store(
+            cx,
+            ImageStore {
+                keep,
+                accepts: |path| path.extension().is_some_and(|ext| ext == "heic"),
+            },
+        )
+    });
+    copy_file("/My Notes/shot.png", &mut cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+    assert_eq!(source(&editor, &mut cx), "/My Notes/shot.png");
 }

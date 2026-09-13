@@ -67,7 +67,7 @@ pub fn init(cx: &mut App) {
     markdown::set_highlighter(cx, highlight::spans, highlight::languages());
     markdown::set_link_preview(cx, preview::of);
     markdown::set_block_renderer(cx, blocks::render);
-    editor::set_image_store(cx, store::of);
+    editor::set_image_store(cx, store::of());
     input::init(cx);
     editor::init(cx);
     palette::init(cx);

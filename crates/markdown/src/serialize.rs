@@ -169,7 +169,7 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
                 out.push_str(&width.to_string());
             }
             out.push_str("](");
-            out.push_str(url);
+            write_destination(out, url);
             out.push(')');
         }
         // The angles are what makes a line with a link on it into a card, and
@@ -187,7 +187,7 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
                     out.push('[');
                     out.push_str(url);
                     out.push_str("](");
-                    out.push_str(url);
+                    write_destination(out, url);
                     out.push_str(&format!(" \"{title}\")"));
                 }
             }
@@ -426,20 +426,67 @@ fn close_mark(out: &mut String, mark: &Mark, italic: char) {
         Mark::Strike => out.push_str("~~"),
         Mark::Link(url) | Mark::Image(url) => {
             out.push_str("](");
-            out.push_str(url);
+            write_destination(out, url);
             out.push(')');
         }
         // The title names the form. It is the only slot CommonMark leaves for
         // it, and the shorthand having been ruled out is what got us here.
         Mark::Mention { url, form } => {
             out.push_str("](");
-            out.push_str(url);
+            write_destination(out, url);
             out.push_str(" \"");
             out.push_str(form.title().unwrap_or("chip"));
             out.push_str("\")");
         }
         Mark::Code => {}
     }
+}
+
+/// A link destination, in whichever of CommonMark's two spellings reads back
+/// as the URL it was handed. Bare wherever that works, because every reader
+/// shows it and it is what a URL was written as; in angles for a destination
+/// bare would swallow or cut short — the space in `/My Notes/a.png` ends a
+/// bare destination, and the rest of it becomes text.
+fn write_destination(out: &mut String, url: &str) {
+    if bare_destination(url) {
+        return out.push_str(url);
+    }
+    out.push('<');
+    for c in url.chars() {
+        match c {
+            '<' | '>' | '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            // The one thing neither spelling can hold. Percent-encoding is
+            // what a URL says instead, and leaving it raw would end the
+            // destination the same way the space did.
+            c if c.is_ascii_control() => out.push_str(&format!("%{:02X}", c as u8)),
+            c => out.push(c),
+        }
+    }
+    out.push('>');
+}
+
+/// Whether `url` survives being written without its angles: no whitespace, no
+/// backslash to be read as an escape, and parentheses balanced — an unmatched
+/// `)` is where the destination ends.
+fn bare_destination(url: &str) -> bool {
+    if url.starts_with('<') {
+        return false;
+    }
+    let mut depth = 0i32;
+    for c in url.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' if depth == 0 => return false,
+            ')' => depth -= 1,
+            '\\' => return false,
+            c if c.is_whitespace() || c.is_ascii_control() => return false,
+            _ => {}
+        }
+    }
+    depth == 0
 }
 
 /// Escape only what would otherwise re-parse as syntax.
