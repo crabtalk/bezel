@@ -20,8 +20,9 @@
 //! already-laid-out elements to re-run their paint with the new palette.
 
 use crate::{Appearance, Theme};
-use gpui::{App, Global, Subscription, Window};
+use gpui::{App, Global, Subscription, Window, WindowId};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// The user's appearance preference. Serde-serializable so callers can persist
 /// it wherever their settings live; this crate never touches disk.
@@ -98,6 +99,18 @@ pub fn set_mode(mode: AppearanceMode, cx: &mut App) {
         return;
     }
     state.mode = mode;
+    // Coming back to `System`, ask the OS what it actually is before resolving.
+    // A pinned mode holds an `NSAppearance` over the app, and everything the
+    // platform reports while one is up is that override read back — so
+    // [`sync`] has been declining to record it and `system` is as stale as the
+    // moment the mode was pinned. Clearing it here is what makes the read
+    // honest; `apply` sets the same (cleared) override again a line later,
+    // which keeps `sync_ns_appearance` the one place that owns it.
+    if mode == AppearanceMode::System {
+        sync_ns_appearance(mode);
+        let system = Appearance::from_window(cx.window_appearance());
+        cx.global_mut::<AppearanceState>().system = system;
+    }
     apply(cx);
 }
 
@@ -122,13 +135,28 @@ pub fn observe_window(window: &mut Window, cx: &mut App) -> Subscription {
     })
 }
 
+/// Whether what a window reports is the OS's own answer.
+///
+/// A pinned mode holds an `NSAppearance` over the app — see
+/// [`sync_ns_appearance`] — and from then on every window reports that
+/// override back. Only under `System` is there none in the way.
+pub fn reports_the_os(mode: AppearanceMode) -> bool {
+    matches!(mode, AppearanceMode::System)
+}
+
 /// Record the OS appearance and re-apply if it moved.
+///
+/// Only what [`reports_the_os`] will vouch for: recording an override read
+/// back would overwrite what the OS said with what we asked for, and the first
+/// switch to `System` would resolve to the mode just left. Nothing is lost by
+/// skipping — a pinned mode ignores the OS anyway, and [`set_mode`] re-reads it
+/// on the way back.
 fn sync(system: Appearance, cx: &mut App) {
     if !cx.has_global::<AppearanceState>() {
         return;
     }
     let state = cx.global_mut::<AppearanceState>();
-    if state.system == system {
+    if !reports_the_os(state.mode) || state.system == system {
         return;
     }
     tracing::debug!(?system, "appearance: system changed");
@@ -201,7 +229,25 @@ fn sync_ns_appearance(mode: AppearanceMode) {
 #[cfg(not(target_os = "macos"))]
 fn sync_ns_appearance(_mode: AppearanceMode) {}
 
-/// Push the theme's window background appearance onto every open window.
+/// Windows that keep the background they opened with. See [`keep_background`].
+#[derive(Default)]
+struct KeepBackground(HashSet<WindowId>);
+
+impl Global for KeepBackground {}
+
+/// Leave this window's background where it is, whatever the palette says.
+///
+/// [`reapply_window_background`] reaches every open window, which is what keeps
+/// vibrancy alive across an appearance switch. A window that is opaque *on
+/// purpose* — a settings form the app behind it must not show through — says so
+/// here rather than being frosted by the next switch.
+pub fn keep_background(window: &Window, cx: &mut App) {
+    let id = window.window_handle().window_id();
+    cx.default_global::<KeepBackground>().0.insert(id);
+}
+
+/// Push the theme's window background appearance onto every open window, bar
+/// the ones that asked to keep their own.
 pub fn reapply_window_background(cx: &mut App) {
     let Some(wanted) = cx
         .try_global::<Theme>()
@@ -209,11 +255,40 @@ pub fn reapply_window_background(cx: &mut App) {
     else {
         return;
     };
-    for window in cx.windows() {
-        window
+    let windows = cx.windows();
+    let keep = if cx.has_global::<KeepBackground>() {
+        let keep = cx.global_mut::<KeepBackground>();
+        // The only place a closed window's id is dropped, which is enough:
+        // `windows` is a handful, and the set is read here and nowhere else.
+        keep.0
+            .retain(|id| windows.iter().any(|window| window.window_id() == *id));
+        keep.0.clone()
+    } else {
+        HashSet::new()
+    };
+    for window in windows {
+        if keep.contains(&window.window_id()) {
+            continue;
+        }
+        // A window cannot be updated from inside its own update — gpui takes
+        // it out of its slot for the duration — and the OS appearance
+        // notification arrives exactly that way, inside the observing window's
+        // update. Pushing straight through would skip the one window that just
+        // changed and leave it on the old background until something else set
+        // one. Deferring runs it as the update unwinds, still before the frame.
+        if window
             .update(cx, |_, window, _| {
                 window.set_background_appearance(wanted);
             })
-            .ok();
+            .is_err()
+        {
+            cx.defer(move |cx| {
+                window
+                    .update(cx, |_, window, _| {
+                        window.set_background_appearance(wanted);
+                    })
+                    .ok();
+            });
+        }
     }
 }

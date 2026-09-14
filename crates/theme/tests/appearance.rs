@@ -1,6 +1,6 @@
 use theme::{
     Appearance,
-    appearance::{AppearanceMode, resolve},
+    appearance::{AppearanceMode, reports_the_os, resolve},
 };
 
 #[test]
@@ -43,4 +43,17 @@ fn mode_serialises_stably() {
             "{json} should parse back"
         );
     }
+}
+
+/// What a window says about the appearance is only the OS's answer while
+/// nothing is pinned. A pinned mode sets `NSApplication.appearance`, and every
+/// window then reports that override straight back — take it for the system's
+/// own and the stored value becomes the mode itself, so the trip back to
+/// `System` resolves to the appearance just left and the window keeps the
+/// vibrancy that went with it.
+#[test]
+fn only_system_mode_hears_the_os() {
+    assert!(reports_the_os(AppearanceMode::System));
+    assert!(!reports_the_os(AppearanceMode::Light));
+    assert!(!reports_the_os(AppearanceMode::Dark));
 }
