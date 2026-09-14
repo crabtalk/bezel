@@ -41,7 +41,7 @@ mod color;
 mod paint;
 mod theme;
 
-pub use brand::{BASE_COLORS, Brand, Tint, brand, set_brand};
+pub use brand::{BASE_COLORS, Brand, Tint, Vibrancy, brand, set_brand};
 
 pub use color::{
     contrast_ratio, flatten, grey, hsl_to_rgb, lightness, mix, neutral, oklch, oklch_to_srgb,

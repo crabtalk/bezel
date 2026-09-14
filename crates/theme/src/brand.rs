@@ -45,6 +45,46 @@ pub const BASE_COLORS: [(&str, Tint); 5] = [
     ("Slate", Tint::new(257.417, 0.046)),
 ];
 
+/// Whether the window composites translucent — AppKit's vibrancy.
+///
+/// Three-valued rather than a bool because the honest answer depends on the
+/// appearance, and the appearance moves under the app: the OS switches at
+/// sunset. A bool would have to be rewritten by whoever noticed, and nothing
+/// outside this crate is told when a palette is installed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Vibrancy {
+    /// Frost where the palette is built for it, which is dark alone.
+    ///
+    /// Light's glass tokens sit near 85% opacity — see [`Theme::glass_overlay`],
+    /// [`Theme::card_glass_bg`] and [`Theme::input_glass_bg`], each tuned there
+    /// because a translucent white tint left text ghosting over whatever sat
+    /// behind it. Light pays for the blur and shows almost none of it, so it is
+    /// not asked for unless an app says so.
+    #[default]
+    Auto,
+    /// Frost in both appearances. What an app asks for when it has tuned its
+    /// own light palette to carry one.
+    On,
+    /// Opaque in both. What a Reduce-transparency switch sets.
+    Off,
+}
+
+impl Vibrancy {
+    /// Whether to composite translucent for `appearance`.
+    ///
+    /// The platform gate rides on [`Vibrancy::Auto`] rather than on the caller:
+    /// off macOS there is no compositor-blur guarantee, and a window that is
+    /// merely transparent shows raw desktop through the sidebar. An app that
+    /// knows its compositor says [`Vibrancy::On`] and gets it.
+    pub fn on(self, appearance: Appearance) -> bool {
+        match self {
+            Self::Auto => Theme::VIBRANCY_ALPHA < 1.0 && matches!(appearance, Appearance::Dark),
+            Self::On => true,
+            Self::Off => false,
+        }
+    }
+}
+
 /// What an app changes about the shipped palette without redesigning it.
 ///
 /// Installed as a gpui [`Global`]; [`Theme::install`] applies it to whatever
@@ -63,8 +103,9 @@ pub struct Brand {
     /// How opaque the tint over the blurred window is. See
     /// [`Theme::VIBRANCY_ALPHA`], where it starts, and [`Theme::vibrancy_tint`].
     pub vibrancy_alpha: f32,
-    /// Whether the window composites translucent — AppKit's vibrancy.
-    pub vibrancy: bool,
+    /// Whether the window composites translucent, which is a question about
+    /// the appearance as much as about the app — see [`Vibrancy`].
+    pub vibrancy: Vibrancy,
     /// Whether components paint glass. Separate from [`Self::vibrancy`]:
     /// SwiftUI's material blends within the window, so an opaque window can
     /// still carry glass — which is what a Reduce-transparency setting asks
@@ -81,7 +122,7 @@ impl Default for Brand {
             accent: Tint::NONE,
             radius: Theme::BASE_RADIUS,
             vibrancy_alpha: Theme::VIBRANCY_ALPHA,
-            vibrancy: Theme::VIBRANCY_ALPHA < 1.0,
+            vibrancy: Vibrancy::Auto,
             glass: Theme::VIBRANCY_ALPHA < 1.0,
         }
     }
@@ -111,8 +152,17 @@ impl Theme {
 impl Brand {
     /// Rotate a palette onto this brand's hues.
     pub fn apply(&self, theme: &mut Theme) {
+        // The one place the appearance and the brand are both in hand, and it
+        // already runs on every install — which is every light/dark switch,
+        // from the OS or from a person. Resolving here is what keeps vibrancy
+        // right across a sunset without anyone outside watching for one.
+        theme.vibrancy = self.vibrancy.on(theme.appearance);
+        // Left where the brand put it, even when the window is opaque: every
+        // reader of the tint is behind a `vibrancy` gate already
+        // ([`Theme::window_bg`]), and an app that turns the frost back on
+        // wants the coverage it tuned, not a value that was overwritten while
+        // nothing was looking at it.
         theme.vibrancy_alpha = self.vibrancy_alpha;
-        theme.vibrancy = self.vibrancy;
         theme.glass = self.glass;
         // Every colour token, with the rule doing the choosing: a token that is
         // already grey takes the tint, and one that already carries a hue —

@@ -425,13 +425,17 @@ fn faintest_fills_survive_in_both_appearances() {
     set_current_appearance(Appearance::Dark);
 }
 
-/// Both appearances are glass-forward on macOS. Light frost runs heavier
-/// than dark's (a light tint controls the blur less), and floating cards
-/// step their tint coverage up in light so menu text stays on a
-/// known-enough background — assert both relationships so the frost and
+/// Both palettes *define* a frost, which is not the same as painting one:
+/// [`Vibrancy::Auto`] asks for it in dark alone, and light's is what an app
+/// gets when it says [`Vibrancy::On`] — so the light values still have to be
+/// right, and they are what this holds.
+///
+/// Light frost runs heavier than dark's (a light tint controls the blur less),
+/// and floating cards step their tint coverage up in light so menu text stays
+/// on a known-enough background. Assert both relationships so the frost and
 /// the overlay can't drift apart.
 #[test]
-fn both_appearances_stay_vibrant_and_light_runs_heavier() {
+fn both_palettes_define_a_frost_and_lights_runs_heavier() {
     if Theme::VIBRANCY_ALPHA < 1.0 {
         let (dark, light) = (Theme::dark(), Theme::light());
         assert!(
@@ -440,7 +444,7 @@ fn both_appearances_stay_vibrant_and_light_runs_heavier() {
         );
         assert!(
             light.vibrancy_tint().a < 1.0,
-            "light is glass-forward like dark"
+            "light defines a frost for the app that asks for one"
         );
         assert!(
             light.vibrancy_tint().a > dark.vibrancy_tint().a - f32::EPSILON,
@@ -454,6 +458,39 @@ fn both_appearances_stay_vibrant_and_light_runs_heavier() {
         assert_eq!(Theme::light().vibrancy_tint().a, 1.0);
         assert_eq!(Theme::dark().vibrancy_tint().a, 1.0);
     }
+}
+
+/// Which appearances [`Vibrancy::Auto`] actually frosts, which is the whole of
+/// what the three-valued brand decides.
+///
+/// The platform gate rides on `Auto`: off macOS there is no compositor-blur
+/// guarantee, so `Auto` asks for none anywhere — while an app that knows its
+/// compositor still gets one from `On`.
+#[test]
+fn auto_frosts_dark_alone_and_the_named_answers_stand() {
+    let macos = Theme::VIBRANCY_ALPHA < 1.0;
+    assert_eq!(Vibrancy::Auto.on(Appearance::Dark), macos);
+    assert!(!Vibrancy::Auto.on(Appearance::Light));
+
+    for appearance in [Appearance::Dark, Appearance::Light] {
+        assert!(Vibrancy::On.on(appearance), "On is on wherever it is asked");
+        assert!(
+            !Vibrancy::Off.on(appearance),
+            "Off is off, appearance aside"
+        );
+    }
+}
+
+/// The default is the one every app gets without saying anything.
+#[test]
+fn a_brand_asks_for_the_frost_its_palette_was_built_for() {
+    assert_eq!(Brand::default().vibrancy, Vibrancy::Auto);
+
+    // And it reaches the installed palette: light opaque, dark frosted.
+    let light = Theme::branded(&Brand::default(), Appearance::Light);
+    assert!(!light.vibrancy, "light composites opaque");
+    let dark = Theme::branded(&Brand::default(), Appearance::Dark);
+    assert_eq!(dark.vibrancy, Theme::VIBRANCY_ALPHA < 1.0);
 }
 
 /// An input plate has to read as *lifted* in both appearances. Dark does that

@@ -15,7 +15,7 @@ use gpui::{
 };
 use motion::Painter;
 use theme::{
-    Appearance, Glass, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset as _,
+    Appearance, Glass, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset as _, Vibrancy,
     appearance::{self, AppearanceMode},
 };
 use ui::{
@@ -104,7 +104,7 @@ fn main() {
         );
         if opaque {
             let mut brand = theme::brand(cx);
-            brand.vibrancy = false;
+            brand.vibrancy = Vibrancy::Off;
             theme::set_brand(brand, cx);
         }
         focus::init(cx);
@@ -260,7 +260,10 @@ impl Parity {
     /// between the two shots.
     fn set_frosted(on: bool, cx: &mut App) {
         let mut brand = theme::brand(cx);
-        brand.vibrancy = on;
+        brand.vibrancy = match on {
+            true => Vibrancy::On,
+            false => Vibrancy::Off,
+        };
         theme::set_brand(brand, cx);
     }
 }
