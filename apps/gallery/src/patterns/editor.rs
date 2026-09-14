@@ -239,16 +239,17 @@ impl EditorDemo {
     fn toolbar(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let view = Painter::of(cx);
         let editor = self.editor.read(cx);
-        // Nothing to toggle in the source: `**bold**` is already spelled out
-        // there, and the editor refuses the call anyway.
-        if editor.mode() == Mode::Source {
+        // One read for the whole bar: which marks are lit, and whether there is
+        // anything to light at all. In the source `**bold**` is already spelled
+        // out, and the editor refuses the call anyway.
+        let formatting = editor.formatting();
+        if formatting.mode == Mode::Source {
             return None;
         }
         let bounds = editor.selection_bounds()?;
-        let (doc, selection) = (editor.doc().clone(), editor.selection());
 
         let buttons = MARKS.map(|(glyph, mark)| {
-            let lit = doc.covered_by(selection, &mark);
+            let lit = formatting.marks.contains(&mark);
             ui::popover::menu_row(theme, lit, Some(Fade::new(view, format!("bubble-{glyph}"))))
                 .id(ElementId::Name(format!("bubble-{glyph}").into()))
                 .px(px(7.0))

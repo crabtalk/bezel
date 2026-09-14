@@ -700,3 +700,47 @@ fn the_source_survives_being_emptied(cx: &mut TestAppContext) {
         "and typing carries back out"
     );
 }
+
+/// The one read a toolbar takes per frame, over the states it has to tell
+/// apart.
+#[gpui::test]
+fn formatting_answers_for_the_whole_bar(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("# Title\n\n**bold** tail", cx);
+    let formatting = |cx: &mut VisualTestContext| cx.update(|_, cx| editor.read(cx).formatting());
+
+    let at_title = formatting(&mut cx);
+    assert_eq!(at_title.block.as_deref(), Some("Heading 1"));
+    assert!(at_title.marks.is_empty(), "nothing marked at the start");
+    assert!(!at_title.fenceable, "and one line is not a fence");
+
+    // Into the paragraph, and through the bold run: the caret picks the mark up
+    // at the end of the run, which is where a typed character would join it.
+    go_to_block(&editor, &mut cx, 1);
+    cx.simulate_keystrokes("right right right right");
+    let in_bold = formatting(&mut cx);
+    assert_eq!(in_bold.block.as_deref(), Some("Text"));
+    assert_eq!(in_bold.marks, vec![markdown::Mark::Bold]);
+
+    // cmd-B at a collapsed caret outside the run is a stored mark, and the
+    // button that took it has to stay lit until something spends it.
+    cx.simulate_keystrokes("end cmd-b");
+    assert_eq!(formatting(&mut cx).marks, vec![markdown::Mark::Bold]);
+
+    // And in the source there is nothing to light.
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    let in_source = formatting(&mut cx);
+    assert_eq!(in_source.mode, editor::Mode::Source);
+    assert!(in_source.marks.is_empty() && !in_source.fenceable);
+}
+
+#[gpui::test]
+fn a_selection_over_two_blocks_reads_as_fenceable(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("one\n\ntwo", cx);
+    cx.simulate_keystrokes("shift-down shift-end");
+    let formatting = cx.update(|_, cx| editor.read(cx).formatting());
+    assert!(
+        formatting.fenceable,
+        "cmd-E over two blocks makes a fence, which only the editor can say"
+    );
+}

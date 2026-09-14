@@ -88,6 +88,26 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
     ]
 }
 
+/// What [`items`] calls this block, and `None` for one the menu does not offer
+/// — a bookmark, which needs a URL nobody can type into a menu row.
+///
+/// Matched on the kind alone: a row spells a heading's level and nothing else,
+/// so a numbered list at 7, a fence tagged `rs` and a table of any size are all
+/// the row they came from.
+pub fn label(kind: &BlockKind) -> Option<SharedString> {
+    items()
+        .into_iter()
+        .find(|(_, row)| same(row, kind))
+        .map(|(label, _)| label)
+}
+
+fn same(row: &BlockKind, kind: &BlockKind) -> bool {
+    match (row, kind) {
+        (BlockKind::Heading { level: a, .. }, BlockKind::Heading { level: b, .. }) => a == b,
+        (row, kind) => std::mem::discriminant(row) == std::mem::discriminant(kind),
+    }
+}
+
 /// An open menu: where the `/` sits, and the ranked list under it.
 pub struct Slash {
     /// The `/` itself. Everything between it and the caret is the query, and

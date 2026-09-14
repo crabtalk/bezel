@@ -88,6 +88,39 @@ pub enum Mode {
     Source,
 }
 
+/// What a toolbar reads to light itself, in one call.
+///
+/// Every field is a question a bar asks on every frame, and each was a separate
+/// reach into the document before: which marks are lit, what the block is
+/// called, whether cmd-E would fence, and whether any of it applies at all.
+/// Taken together so a bar cannot answer half of them from one frame and half
+/// from the next.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Formatting {
+    /// Which form the document is in. In [`Mode::Source`] the markup is already
+    /// spelled out, so [`Self::marks`] is empty and a bar has nothing to light.
+    pub mode: Mode,
+    /// The marks the selection carries throughout — and at a collapsed caret,
+    /// the ones the next character typed would carry, cmd-B before typing
+    /// included.
+    pub marks: Vec<Mark>,
+    /// What the caret's block is called in [`turns`], or `None` for a block the
+    /// menu does not offer.
+    pub block: Option<gpui::SharedString>,
+    /// Whether [`Mark::Code`] here makes a fence out of the selection rather
+    /// than an inline span — the one chord whose meaning changes with what is
+    /// selected, and the one a bar cannot work out for itself.
+    pub fenceable: bool,
+}
+
+/// Every block a block can be turned into, and what each is called — the
+/// vocabulary the slash menu and the block menu both offer, for an app building
+/// a menu of its own. Pair with [`Editor::set_block`], which is what both of
+/// bezel's own menus call.
+pub fn turns() -> Vec<(gpui::SharedString, BlockKind)> {
+    crate::slash::items()
+}
+
 /// Shown on the focused block while it is empty — the only discoverable place
 /// to say that `/` does anything.
 const PLACEHOLDER: &str = "Type / for commands";
@@ -711,6 +744,34 @@ impl Editor {
     /// Which form the document is being edited in.
     pub fn mode(&self) -> Mode {
         self.mode
+    }
+
+    /// What a toolbar needs to light itself. See [`Formatting`].
+    pub fn formatting(&self) -> Formatting {
+        let at = self.cursor();
+        let marks = if self.blocks() {
+            let mut marks = self.doc.marks(self.selection);
+            // A stored mark is one cmd-B has already taken and nothing has
+            // spent yet, so the button that took it stays lit.
+            for mark in &self.stored {
+                if !marks.contains(mark) {
+                    marks.push(mark.clone());
+                }
+            }
+            marks
+        } else {
+            Vec::new()
+        };
+        Formatting {
+            mode: self.mode,
+            marks,
+            block: self
+                .doc
+                .blocks
+                .get(at.block)
+                .and_then(|block| crate::slash::label(&block.kind)),
+            fenceable: self.blocks() && fenceable(&self.doc, self.selection),
+        }
     }
 
     /// Switch between the document and its markdown, carrying the caret across.

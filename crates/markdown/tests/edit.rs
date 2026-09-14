@@ -313,3 +313,29 @@ fn no_edit_sequence_escapes_the_round_trip() {
         }
     }
 }
+
+#[test]
+fn marks_over_a_selection_are_the_ones_it_carries_throughout() {
+    let doc = parse("**bold** and plain");
+    let all = Selection::new(
+        Cursor::new(0, Part::Body, 0),
+        Cursor::new(0, Part::Body, 18),
+    );
+    let inside = Selection::new(Cursor::new(0, Part::Body, 1), Cursor::new(0, Part::Body, 3));
+
+    assert_eq!(doc.marks(inside), vec![Mark::Bold], "all of it is bold");
+    assert!(
+        doc.marks(all).is_empty(),
+        "a selection reaching past the run carries nothing throughout"
+    );
+}
+
+#[test]
+fn marks_at_a_caret_are_the_ones_the_next_character_would_join() {
+    let doc = parse("**bold** tail");
+    let at = |offset| Selection::at(Cursor::new(0, Part::Body, offset));
+
+    assert_eq!(doc.marks(at(4)), vec![Mark::Bold], "the end of the run");
+    assert!(doc.marks(at(0)).is_empty(), "and never the start of one");
+    assert!(doc.marks(at(8)).is_empty(), "nor past it");
+}

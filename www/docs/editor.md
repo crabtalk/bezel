@@ -24,12 +24,28 @@ Typing notifies the editor, so anything a host reads off it needs that `observe`
 
 `editor.source()` is the document written back to markdown, normalized, on every keystroke — what a save would write, and what fills the right pane here.
 
-A toolbar is three calls: `selection_bounds()` for where to float it, `toggle_mark` for what a button does, and `covered_by` for whether it is lit. That is the same entry point cmd-B takes, so a button and a chord cannot disagree.
+A toolbar is two calls: `formatting()` for everything it paints, and `toggle_mark` for what a button does. That is the same entry point cmd-B takes, so a button and a chord cannot disagree.
 
 ```rust
-let lit = editor.doc().covered_by(editor.selection(), &mark);
+let formatting = editor.read(cx).formatting();
+
+let lit = formatting.marks.contains(&mark);          // and cmd-B before typing counts
+let label = formatting.block.clone();                // "Heading 2", for a dropdown
+let fence = formatting.fenceable;                    // cmd-E would make a fence, not a span
+let bar = formatting.mode == editor::Mode::Blocks;   // the source has nothing to light
 
 editor.update(cx, |editor, cx| editor.toggle_mark(mark, cx));
+```
+
+One read rather than four, because a bar that answered half its questions from this frame and half from the last would light the wrong button for a frame. `marks` is what the selection carries *throughout*, and at a collapsed caret it is what the next character typed would carry — the left-sticky rule, so the button stays lit between cmd-B and the letter.
+
+`editor::turns()` is the block vocabulary the slash menu and the block menu both offer — label and `BlockKind` per row, to pair with `set_block`. `formatting().block` is the label of the caret's own block, so a row lights by comparing the two, and a menu of your own cannot drift from the one bezel opens.
+
+```rust
+for (label, kind) in editor::turns() {
+    let lit = formatting.block.as_ref() == Some(&label);
+    // …and on click: editor.update(cx, |editor, cx| editor.set_block(ix, kind.clone(), cx));
+}
 ```
 
 `Mark::Code` over a selection spanning more than one line makes a fence instead of an inline span, and the same call takes it back out.

@@ -21,9 +21,9 @@ pub use comment::{Anchor, CommentId};
 #[doc(hidden)]
 pub use editor::menu::{BLOCK_HANDLE, BLOCK_MENU, SLASH_MENU};
 pub use editor::{
-    Editor, EditorEvent, Mode,
+    Editor, EditorEvent, Formatting, Mode,
     image::{ImageStore, Source, set_image_store},
-    init,
+    init, turns,
 };
 pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};
 pub use layout::{Layout, set_layout};
