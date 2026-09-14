@@ -1,7 +1,7 @@
 //! The block editor — the screen `editor` exists for.
 //!
 //! Nothing here is library code. It is two panes and a floating toolbar; the
-//! calls into the library are `Editor`, `editor.source()` and three public
+//! calls into the library are `Editor`, `editor.source()` and four public
 //! methods. Copy this file.
 //!
 //! Three things it is built to show.
@@ -17,11 +17,16 @@
 //! is lit comes from `Doc::covered_by`, which is the same question the toggle
 //! asks itself before deciding to add or remove.
 //!
+//! **The toggle is a call, not a mode of its own.** `set_mode` swaps the
+//! document for the markdown a save would write, in the same view and with the
+//! caret still in the same words. Where the control sits, what it is called and
+//! that the toolbar hides behind it are this file's decisions.
+//!
 //! **The rest needs no wiring at all.** The slash menu, the gutter handle,
 //! drag-to-reorder, undo and the clipboard are the editor's own; this file
 //! contains not one line for any of them.
 
-use editor::{Anchor, CommentId, Editor, EditorEvent};
+use editor::{Anchor, CommentId, Editor, EditorEvent, Mode};
 use gpui::{
     Context, ElementId, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
     prelude::*, px,
@@ -29,6 +34,7 @@ use gpui::{
 use markdown::{Annotation, Mark};
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
+use ui::widgets::Controls as _;
 
 /// Opens on something worth selecting: a heading, a list, and a sentence with
 /// marks already in it.
@@ -233,6 +239,11 @@ impl EditorDemo {
     fn toolbar(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let view = Painter::of(cx);
         let editor = self.editor.read(cx);
+        // Nothing to toggle in the source: `**bold**` is already spelled out
+        // there, and the editor refuses the call anyway.
+        if editor.mode() == Mode::Source {
+            return None;
+        }
         let bounds = editor.selection_bounds()?;
         let (doc, selection) = (editor.doc().clone(), editor.selection());
 
@@ -297,7 +308,7 @@ impl Render for EditorDemo {
         }
         let source = self.editor.read(cx).source();
 
-        let pane = |label: &'static str| {
+        let pane = |label: &'static str, trailing: Option<gpui::AnyElement>| {
             div()
                 .flex_1()
                 .min_w_0()
@@ -306,13 +317,36 @@ impl Render for EditorDemo {
                 .gap(px(8.0))
                 .child(
                     div()
-                        .text_style(TextStyle::Subheadline)
-                        .text_color(theme.text_faint)
-                        .child(label),
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .justify_between()
+                        .h(px(20.0))
+                        .child(
+                            div()
+                                .text_style(TextStyle::Subheadline)
+                                .text_color(theme.text_faint)
+                                .child(label),
+                        )
+                        .children(trailing),
                 )
         };
 
-        let document = pane("EDITOR").child(
+        // The whole of the switch: which mode it is in, and the call that
+        // changes it. Where the control sits and what it is called are this
+        // file's business and never the library's.
+        let mode = self.editor.read(cx).mode();
+        let segments = [("Blocks", Mode::Blocks), ("Markdown", Mode::Source)];
+        let toggle = theme.toggle_group().children(segments.map(|(label, to)| {
+            theme
+                .toggle_group_item(label, mode == to)
+                .id(ElementId::Name(label.into()))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.editor.update(cx, |editor, cx| editor.set_mode(to, cx));
+                }))
+        }));
+
+        let document = pane("EDITOR", Some(toggle.into_any_element())).child(
             div()
                 .id("editor-demo-body")
                 .flex_1()
@@ -325,7 +359,7 @@ impl Render for EditorDemo {
                 .child(self.editor.clone()),
         );
 
-        let written = pane("MARKDOWN").child(
+        let written = pane("MARKDOWN", None).child(
             div()
                 .id("editor-demo-source")
                 .flex_1()
@@ -342,7 +376,7 @@ impl Render for EditorDemo {
         );
 
         let threads = self.comments(&theme, cx).map(|rows| {
-            pane("COMMENTS").flex_none().max_h(px(160.0)).child(
+            pane("COMMENTS", None).flex_none().max_h(px(160.0)).child(
                 div()
                     .id("editor-demo-threads")
                     .overflow_y_scroll()

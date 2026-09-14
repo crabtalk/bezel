@@ -23,6 +23,10 @@ On a nested document tree the same list costs a recursive descent that has to re
 
 `parse` and `serialize` are inverses up to a fixed point: parse, serialize, parse again, and the document is unchanged. Byte-identical round tripping is deliberately not promised, because a flat model cannot represent arbitrarily nested CommonMark.
 
+**Markdown colours itself.** `markdown::source_spans` classifies markdown *source* — headings, emphasis, fences, link destinations — without a grammar and without tree-sitter, which is what lets a source view have colour in a browser build. A fence tagged `md` takes it automatically wherever the installed highlighter has no answer, so the editor's source mode is coloured with nothing installed at all.
+
+`serialize_at` and `parse_at` are the pair a caret crosses on: the document and a cursor in, the markdown and a byte offset out, and back again. Both work by putting a sentinel where the caret is and reading off where it came out, so neither can drift from the serializer or the parser it rides on.
+
 **A long line in a fence wraps.** Wrapping is the default because the caret is what reads a fence in the editor, and a sideways scroller can hold it off the right edge with nothing on the page to bring it back. An app that would rather have the scroller says so once at boot, the same way it installs its typography:
 
 ```rust

@@ -25,7 +25,10 @@
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 use std::ops::Range;
 
-use crate::doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Text};
+use crate::{
+    doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Text},
+    select::Cursor,
+};
 
 /// Parse a markdown document.
 pub fn parse(source: &str) -> Doc {
@@ -762,4 +765,54 @@ fn align_of(alignment: &Alignment) -> Align {
         Alignment::Right => Align::Right,
         Alignment::Left | Alignment::None => Align::Left,
     }
+}
+
+/// Parse markdown, and say where `offset` in it landed in the document.
+///
+/// The inverse of [`crate::serialize_at`] and the same trick: a sentinel goes
+/// into the source at the offset, the source is parsed, and the text holding
+/// the sentinel is the caret's. The document comes back without it.
+///
+/// The caret is the start of the document where the sentinel would have
+/// changed what the source *means* — between a `#` and its space, inside a
+/// fence's delimiter — because a caret in the right place is worth less than a
+/// document that is still the one you were editing.
+pub fn parse_at(source: &str, offset: usize) -> (Doc, Cursor) {
+    let plain = parse(source);
+    let start = || (plain.clone(), Cursor::default().clamp(&plain));
+    if source.contains(crate::serialize::SENTINEL) {
+        return start();
+    }
+    let mut marked = String::with_capacity(source.len() + 3);
+    let offset = offset.min(source.len());
+    if !source.is_char_boundary(offset) {
+        return start();
+    }
+    marked.push_str(&source[..offset]);
+    marked.push(crate::serialize::SENTINEL);
+    marked.push_str(&source[offset..]);
+
+    let mut doc = parse(&marked);
+    let Some(at) = find(&doc) else { return start() };
+    let Some(text) = doc
+        .blocks
+        .get_mut(at.block)
+        .and_then(|block| block.text_at_mut(at.part))
+    else {
+        return start();
+    };
+    text.remove(at.offset..at.offset + crate::serialize::SENTINEL.len_utf8());
+    // The sentinel is a character like any other to the parser, so a document
+    // it changed the shape of is not the one the caller handed in.
+    if doc != plain { start() } else { (doc, at) }
+}
+
+/// Where the sentinel sits, in document order.
+fn find(doc: &Doc) -> Option<Cursor> {
+    doc.blocks.iter().enumerate().find_map(|(ix, block)| {
+        block.parts().into_iter().find_map(|part| {
+            let at = block.text_at(part)?.text.find(crate::serialize::SENTINEL)?;
+            Some(Cursor::new(ix, part, at))
+        })
+    })
 }

@@ -562,3 +562,141 @@ fn a_file_the_store_refuses_pastes_as_its_path(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
     assert_eq!(source(&editor, &mut cx), "/My Notes/shot.png");
 }
+
+/// The caret's trip into the source and back, driven the way the app's own
+/// toggle drives it.
+#[gpui::test]
+fn the_source_keeps_the_caret_and_gives_it_back(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open(cx);
+    go_to_block(&editor, &mut cx, 2);
+    cx.simulate_keystrokes("right right right");
+    let before = head(&editor, &mut cx);
+    let document = source(&editor, &mut cx);
+
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| editor.read(cx).mode()),
+        editor::Mode::Source
+    );
+    assert_eq!(
+        source(&editor, &mut cx),
+        document,
+        "the source view holds exactly what a save would write"
+    );
+    let at = head(&editor, &mut cx);
+    assert_eq!(at.part, markdown::Part::Code, "one text, the fence's");
+    assert!(at.offset > 0, "and the caret came with it");
+
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    assert_eq!(head(&editor, &mut cx), before, "and goes back where it was");
+    assert_eq!(source(&editor, &mut cx), document, "with nothing moved");
+}
+
+#[gpui::test]
+fn typing_in_the_source_is_typing_in_the_document(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("# Title\n\nbody", cx);
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    // The caret lands where the *text* starts, past the heading's marker, so
+    // this walks back onto the markup itself before typing into it.
+    cx.simulate_keystrokes("home");
+    cx.simulate_input("#");
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+
+    assert_eq!(
+        cx.update(|_, cx| editor.read(cx).doc().blocks[0].kind.clone()),
+        markdown::BlockKind::Heading {
+            level: 2,
+            text: markdown::Text::plain("Title"),
+        },
+        "a `#` typed into the markup is a heading level when the document comes back"
+    );
+}
+
+#[gpui::test]
+fn enter_in_the_source_is_a_newline_and_undo_crosses_the_switch(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("# Title", cx);
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("end enter");
+    cx.simulate_input("body");
+    assert_eq!(
+        source(&editor, &mut cx),
+        "# Title\nbody",
+        "enter is a newline in the markup rather than a split"
+    );
+
+    cx.simulate_keystrokes("cmd-z cmd-z cmd-z");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| editor.read(cx).mode()),
+        editor::Mode::Blocks,
+        "stepping back over the switch comes back to the document"
+    );
+    assert_eq!(source(&editor, &mut cx), "# Title");
+}
+
+#[gpui::test]
+fn the_block_chrome_stays_out_of_the_source(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open(cx);
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+
+    // The gutter handle is the block chrome that follows the caret, so it is
+    // the one that would show up on a fence holding a whole document.
+    assert!(
+        !cx.debug_bounds(editor::BLOCK_HANDLE).is_some(),
+        "no handle: there are no blocks to drag"
+    );
+    // Turning "the block" into a heading would wrap the markup in one.
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_block(
+                0,
+                markdown::BlockKind::Heading {
+                    level: 1,
+                    text: markdown::Text::default(),
+                },
+                cx,
+            );
+        });
+    });
+    assert_eq!(
+        cx.update(|_, cx| editor.read(cx).mode()),
+        editor::Mode::Source
+    );
+    assert!(
+        source(&editor, &mut cx).starts_with("# Title"),
+        "and the source is untouched"
+    );
+}
+
+/// Emptying the source is the one edit that can take the fence holding it
+/// away, which would leave the caret in a block the source view never paints.
+#[gpui::test]
+fn the_source_survives_being_emptied(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("# Title\n\nbody", cx);
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+
+    cx.simulate_keystrokes("cmd-a backspace backspace backspace");
+    cx.run_until_parked();
+    assert_eq!(source(&editor, &mut cx), "", "the source is empty");
+    assert_eq!(
+        head(&editor, &mut cx).part,
+        markdown::Part::Code,
+        "and the caret is still in the text the source view paints"
+    );
+
+    cx.simulate_input("hi");
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    assert_eq!(
+        source(&editor, &mut cx),
+        "hi",
+        "and typing carries back out"
+    );
+}

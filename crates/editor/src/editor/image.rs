@@ -200,6 +200,10 @@ impl Editor {
     /// Files dragged in from outside. The store says where each one belongs,
     /// and a picture it does not want paints from where it already is.
     pub(super) fn drop_paths(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) {
+        // A picture is a block, and the source has none to give it to.
+        if !self.blocks() {
+            return;
+        }
         let urls = image_urls(cx, paths.paths(), &cx.entity());
         let ix = self.dropping.take().unwrap_or(self.cursor().block);
         self.place_images(ix, urls, cx);
@@ -211,6 +215,9 @@ impl Editor {
     /// picture, leaving the paste to the path text the platform put on
     /// alongside them.
     pub(super) fn paste_paths(&mut self, paths: &ExternalPaths, cx: &mut Context<Self>) -> bool {
+        if !self.blocks() {
+            return false;
+        }
         let urls = image_urls(cx, paths.paths(), &cx.entity());
         if urls.is_empty() {
             return false;
@@ -284,6 +291,9 @@ impl Editor {
     /// [`Editor::language_chip`]'s rule and for the same reason: one element
     /// placed from the recorded frames, rather than one per block.
     pub(super) fn image_target(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.blocks() {
+            return None;
+        }
         let blank = |ix: &usize| {
             matches!(
                 self.doc.blocks.get(*ix).map(|block| &block.kind),

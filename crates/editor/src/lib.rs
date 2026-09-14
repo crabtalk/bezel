@@ -21,7 +21,7 @@ pub use comment::{Anchor, CommentId};
 #[doc(hidden)]
 pub use editor::menu::{BLOCK_HANDLE, BLOCK_MENU, SLASH_MENU};
 pub use editor::{
-    Editor, EditorEvent,
+    Editor, EditorEvent, Mode,
     image::{ImageStore, Source, set_image_store},
     init,
 };

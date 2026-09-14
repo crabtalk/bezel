@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 
 use markdown::{Cursor, Doc, Selection};
 
-use crate::comment::Anchor;
+use crate::{comment::Anchor, editor::Mode};
 
 /// How many steps a document keeps.
 ///
@@ -38,6 +38,9 @@ pub enum EditKind {
 #[derive(Clone)]
 struct Snapshot {
     doc: Doc,
+    /// Which form the document was being edited in, so a step back across a
+    /// switch to the source lands in the form it was taken in.
+    mode: Mode,
     selection: Selection,
     /// Carried with the document because an undo replaces it wholesale: there
     /// is no delta to map an anchor through, so the anchors of that moment have
@@ -80,13 +83,21 @@ impl History {
     /// Record the state *before* an edit of `kind`; [`History::landed`] closes
     /// it afterwards. A run of insertions leaves one step, so undo gives back
     /// the word rather than the letter.
-    pub fn record(&mut self, kind: EditKind, doc: &Doc, selection: Selection, anchors: &[Anchor]) {
+    pub fn record(
+        &mut self,
+        kind: EditKind,
+        mode: Mode,
+        doc: &Doc,
+        selection: Selection,
+        anchors: &[Anchor],
+    ) {
         self.redo.clear();
         if self.joins(kind, selection) {
             return;
         }
         self.undo.push_back(Snapshot {
             doc: doc.clone(),
+            mode,
             selection,
             anchors: anchors.to_vec(),
         });
@@ -120,10 +131,17 @@ impl History {
 
     /// Step back, handing the caller the state to restore. Pushes what it was
     /// given onto the redo stack.
-    pub fn undo(&mut self, doc: &Doc, selection: Selection, anchors: &[Anchor]) -> Option<Step> {
+    pub fn undo(
+        &mut self,
+        mode: Mode,
+        doc: &Doc,
+        selection: Selection,
+        anchors: &[Anchor],
+    ) -> Option<Step> {
         let previous = self.undo.pop_back()?;
         self.redo.push(Snapshot {
             doc: doc.clone(),
+            mode,
             selection,
             anchors: anchors.to_vec(),
         });
@@ -131,10 +149,17 @@ impl History {
         Some(previous.into())
     }
 
-    pub fn redo(&mut self, doc: &Doc, selection: Selection, anchors: &[Anchor]) -> Option<Step> {
+    pub fn redo(
+        &mut self,
+        mode: Mode,
+        doc: &Doc,
+        selection: Selection,
+        anchors: &[Anchor],
+    ) -> Option<Step> {
         let next = self.redo.pop()?;
         self.undo.push_back(Snapshot {
             doc: doc.clone(),
+            mode,
             selection,
             anchors: anchors.to_vec(),
         });
@@ -146,6 +171,7 @@ impl History {
 /// The state a step restores, which is a whole moment rather than a diff.
 pub struct Step {
     pub doc: Doc,
+    pub mode: Mode,
     pub selection: Selection,
     pub anchors: Vec<Anchor>,
 }
@@ -154,6 +180,7 @@ impl From<Snapshot> for Step {
     fn from(snapshot: Snapshot) -> Self {
         Self {
             doc: snapshot.doc,
+            mode: snapshot.mode,
             selection: snapshot.selection,
             anchors: snapshot.anchors,
         }

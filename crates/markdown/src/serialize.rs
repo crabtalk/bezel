@@ -11,7 +11,10 @@
 //! So `#`, `>`, `-` and friends are escaped only at the start of a line, where
 //! they would actually mean something.
 
-use crate::doc::{Align, Block, BlockKind, Doc, Mark, Part, Text};
+use crate::{
+    doc::{Align, Block, BlockKind, Doc, Mark, Part, Text},
+    select::Cursor,
+};
 
 /// Four spaces per level: enough to sit inside any list marker's content
 /// column (`- ` is 2, `10. ` is 4), and never enough to become an indented
@@ -601,4 +604,44 @@ fn escape_span(out: &mut String, s: &str) {
             _ => out.push(c),
         }
     }
+}
+
+/// A mark nothing escapes, nothing renders and no document carries: the
+/// private-use codepoint both directions of the caret mapping ride on.
+pub(crate) const SENTINEL: char = '\u{E000}';
+
+/// The document as markdown, and where `at` landed in it.
+///
+/// Exact through markers, escapes and marks because it *is* the serializer: a
+/// sentinel goes in at the caret, the document is written, and where the
+/// sentinel came out is the answer. The string comes back without it.
+///
+/// The offset is the end of the output for a caret this cannot place — a
+/// document already carrying the sentinel, or a part that no longer exists.
+pub fn serialize_at(doc: &Doc, at: Cursor) -> (String, usize) {
+    let mut doc = doc.clone();
+    let placed = doc
+        .blocks
+        .get_mut(at.block)
+        .and_then(|block| block.text_at_mut(at.part))
+        .filter(|text| !text.text.contains(SENTINEL))
+        .map(|text| {
+            text.insert(
+                at.offset.min(text.text.len()),
+                SENTINEL.encode_utf8(&mut [0; 4]),
+            )
+        })
+        .is_some();
+    // Normalized *after* the sentinel goes in, so the string this returns is
+    // the one the offset indexes into — a trailing space is only trailing
+    // while nothing sits after it.
+    doc.normalize();
+    let mut source = serialize(&doc);
+    let Some(offset) = placed.then(|| source.find(SENTINEL)).flatten() else {
+        source = source.replace(SENTINEL, "");
+        let end = source.len();
+        return (source, end);
+    };
+    source.remove(offset);
+    (source, offset)
 }

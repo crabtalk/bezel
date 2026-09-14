@@ -34,6 +34,24 @@ editor.update(cx, |editor, cx| editor.toggle_mark(mark, cx));
 
 `Mark::Code` over a selection spanning more than one line makes a fence instead of an inline span, and the same call takes it back out.
 
+## Markdown in the same view
+
+`set_mode(Mode::Source, cx)` swaps the document for the markdown a save would write, in the same editor, with the same focus and the same undo history. `toggle_source` flips between the two and `mode()` reads which one is showing — the trigger is yours to place, name and bind:
+
+```rust
+editor.update(cx, |editor, cx| editor.toggle_source(cx));
+```
+
+The caret crosses with it. Going in, the offset is exact through markers, escapes and marks, because it is the serializer that places it; coming back it lands in the block and the word it was in. A caret between a heading's `#` and its space has no block to come back to, and the document opens at the start instead.
+
+The source is one editable text: Enter is a newline, tab is two spaces, and the block chrome — the gutter handle, the slash menu, the block and language menus, drag-to-reorder, a dropped picture — stays out of it, because every one of those would edit the markup rather than the document it spells. `source()` answers with the markdown in either mode, so a save needs no branch. `doc()` in source mode is the one fence the text is held in, not the document it spells.
+
+Undo crosses the switch and carries the mode with it: step back over a toggle and the document comes back in the form it was edited in. A comment anchor does not follow an edit made to the source — there are no blocks there to anchor to — and is clamped back onto the document on the way out.
+
+The source view is coloured by `markdown` itself rather than by `syntax`: markdown is the one language this crate already parses, and a browser build can run it, which tree-sitter cannot. An installed highlighter wins where it answers for a `md` fence, so an app with a grammar of its own keeps it.
+
+`EditorEvent::ModeChanged` is how a host's own toggle hears about a switch it did not make — an undo across one, for instance.
+
 The slash menu, the gutter handle, drag-to-reorder, the language picker on a fence, the menu that turns a pasted URL into a chip, a bookmark, an embed or a picture, undo and the clipboard need no wiring — the source behind this page contains not one line for any of them. Undo keeps 100 steps, coalesced so a run of typing comes back as a word rather than a character; `with_undo_limit` for more.
 
 An image arrives four ways: a pasted URL that names one, `/image` and the row it leaves asking for a URL, a file dragged in from the desktop, and a screenshot off the clipboard. Only the last needs wiring, because bytes have no address and a document holds one:

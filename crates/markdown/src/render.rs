@@ -1173,19 +1173,79 @@ fn range_rects(
     rects
 }
 
-fn code_block(
+/// Paint a document's own markdown source: a fence's caret, selection and hit
+/// testing, without a fence's box, band or copy button.
+///
+/// The caret is a [`Cursor`] at block 0 in [`Part::Code`] — what a document
+/// held as one fence answers to, which is how an editor holds its source.
+/// Wrapping is not optional here: a paragraph is one line of markdown, and a
+/// source view that scrolled sideways would hide most of it.
+pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
+    let Editing {
+        selection,
+        caret_on,
+        layouts,
+        annotations,
+        typography,
+        ..
+    } = editing;
+    // The same reset `render_with` opens with, and for the same reason: the
+    // positions this frame records are the ones the next click resolves
+    // against, and last frame's have to go first.
+    let reset = layouts.map(|layouts| {
+        let layouts = layouts.clone();
+        canvas(move |_, _, _| layouts.clear(), |_, _, _, _| ())
+            .absolute()
+            .size(px(0.0))
+    });
+    let theme = Theme::of(cx).clone();
+    let typography = typography.unwrap_or_else(|| Typography::of(cx));
+    let overlay = Overlay {
+        block: 0,
+        part: Part::Code,
+        selection,
+        caret_on,
+        layouts,
+        annotations,
+        placeholder: None,
+        caption: Caption::default(),
+    };
+    let (underlay, lines) = code_lines(
+        Some(crate::source::LANGUAGES[0]),
+        code,
+        overlay,
+        &typography,
+        &theme,
+        cx,
+    );
+    div()
+        .flex()
+        .flex_col()
+        .children(reset)
+        .child(code_body(0, underlay, lines, &typography, true))
+        .into_any_element()
+}
+
+/// The shaped lines of a fence, and the canvas that paints the caret, the
+/// selection and the annotations over them.
+fn code_lines(
     language: Option<&str>,
     code: &str,
     overlay: Overlay,
     typography: &Typography,
     theme: &Theme,
-    window: &mut Window,
-    cx: &mut App,
-) -> AnyElement {
+    cx: &App,
+) -> (AnyElement, Vec<AnyElement>) {
     let ix = overlay.block;
     // Highlighting recolors runs only — layout does not move, so a build with
     // no highlighter installed paints the same block in one plain run.
-    let spans = crate::highlight::spans(cx, language, code);
+    // Markdown is the one language this crate can colour on its own, which is
+    // what a source view is painted with where no highlighter reaches.
+    let spans = crate::highlight::spans(cx, language, code).or_else(|| {
+        language
+            .filter(|language| crate::source::is_markdown(language))
+            .map(|_| crate::source::spans(code))
+    });
     let mono = font(theme.font_mono.clone());
     let run = |len: usize, color: Hsla| TextRun {
         len,
@@ -1233,8 +1293,6 @@ fn code_block(
             styled.into_any_element()
         })
         .collect();
-
-    let wrap = Layout::of(cx).wrap_code;
 
     let caret = overlay.caret_painted();
     let selected = overlay.selected(code.len());
@@ -1301,40 +1359,21 @@ fn code_block(
     .absolute()
     .size_full();
 
-    let column = div()
-        .flex()
-        .flex_col()
-        .px(px(CODE_PADDING_X))
-        .children(lines);
-    let body = div()
-        .id(ElementId::named_usize("md-code", ix))
-        .relative()
-        .py(px(CODE_PADDING_Y))
-        .text_size(px(typography.code.size()))
-        .line_height(px(typography.code.line_height()))
-        .child(underlay);
-    let body = if wrap {
-        // The column is the block's width here rather than its widest line's,
-        // which is what gives the text something to wrap against.
-        body.child(column.w_full())
-    } else {
-        contain_sideways(body)
-            .overflow_x_scroll()
-            // Without it a scroll down the page turns sideways the moment
-            // the pointer crosses a code block: gpui remaps input to
-            // whichever axis a container can scroll.
-            .restrict_scroll_to_axis()
-            .flex()
-            .flex_row()
-            .whitespace_nowrap()
-            // The padding belongs to the lines, not to the scroller: a scroll
-            // container's trailing padding is not part of what it will scroll
-            // to, so the last characters of a long line sit behind the right
-            // edge with nowhere left to go. As a row's only item this column is
-            // sized by its widest line, and the padding rides along inside that
-            // width.
-            .child(column.items_start())
-    };
+    (underlay.into_any_element(), lines)
+}
+
+fn code_block(
+    language: Option<&str>,
+    code: &str,
+    overlay: Overlay,
+    typography: &Typography,
+    theme: &Theme,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    let ix = overlay.block;
+    let (underlay, lines) = code_lines(language, code, overlay, typography, theme, cx);
+    let body = code_body(ix, underlay, lines, typography, Layout::of(cx).wrap_code);
 
     div()
         .rounded(px(Theme::panel_radius()))
@@ -1385,6 +1424,50 @@ fn code_block(
         .child(body)
         .child(copy_button(code, ix, theme, window, cx))
         .into_any_element()
+}
+
+/// The lines of a fence, wrapped to the block or scrolling sideways under it.
+fn code_body(
+    ix: usize,
+    underlay: AnyElement,
+    lines: Vec<AnyElement>,
+    typography: &Typography,
+    wrap: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let column = div()
+        .flex()
+        .flex_col()
+        .px(px(CODE_PADDING_X))
+        .children(lines);
+    let body = div()
+        .id(ElementId::named_usize("md-code", ix))
+        .relative()
+        .py(px(CODE_PADDING_Y))
+        .text_size(px(typography.code.size()))
+        .line_height(px(typography.code.line_height()))
+        .child(underlay);
+    if wrap {
+        // The column is the block's width here rather than its widest line's,
+        // which is what gives the text something to wrap against.
+        body.child(column.w_full())
+    } else {
+        contain_sideways(body)
+            .overflow_x_scroll()
+            // Without it a scroll down the page turns sideways the moment the
+            // pointer crosses a code block: gpui remaps input to whichever axis
+            // a container can scroll.
+            .restrict_scroll_to_axis()
+            .flex()
+            .flex_row()
+            .whitespace_nowrap()
+            // The padding belongs to the lines, not to the scroller: a scroll
+            // container's trailing padding is not part of what it will scroll
+            // to, so the last characters of a long line sit behind the right
+            // edge with nowhere left to go. As a row's only item this column is
+            // sized by its widest line, and the padding rides along inside that
+            // width.
+            .child(column.items_start())
+    }
 }
 
 /// A copy button that owns its own feedback.

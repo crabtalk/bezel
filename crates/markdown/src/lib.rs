@@ -35,6 +35,7 @@ pub mod render;
 pub mod select;
 pub mod selectable;
 pub mod serialize;
+pub mod source;
 pub mod typography;
 
 pub use block::{BlockRenderer, set_block_renderer};
@@ -42,9 +43,12 @@ pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, Text};
 pub use edit::{Shortcut, Splice, shortcut};
 pub use highlight::{Highlighter, languages, set_highlighter};
 pub use layout::{Layout, set_layout};
-pub use parse::{is_image, is_url, parse};
+pub use parse::{is_image, is_url, parse, parse_at};
 pub use preview::{LinkPreview, Preview, set_link_preview};
-pub use render::{Annotation, BlockLayouts, Caption, Editing, markdown, render, render_with};
+pub use render::{
+    Annotation, BlockLayouts, Caption, Editing, markdown, render, render_source, render_with,
+};
 pub use select::{Cursor, Selection};
-pub use serialize::serialize;
+pub use serialize::{serialize, serialize_at};
+pub use source::spans as source_spans;
 pub use typography::{Typography, set_typography};
