@@ -629,7 +629,7 @@ fn enter_in_the_source_is_a_newline_and_undo_crosses_the_switch(cx: &mut TestApp
         "enter is a newline in the markup rather than a split"
     );
 
-    cx.simulate_keystrokes("cmd-z cmd-z cmd-z");
+    cx.simulate_keystrokes(&format!("{PRIMARY}-z {PRIMARY}-z {PRIMARY}-z"));
     cx.run_until_parked();
     assert_eq!(
         cx.update(|_, cx| editor.read(cx).mode()),
@@ -682,7 +682,7 @@ fn the_source_survives_being_emptied(cx: &mut TestAppContext) {
     cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
     cx.run_until_parked();
 
-    cx.simulate_keystrokes("cmd-a backspace backspace backspace");
+    cx.simulate_keystrokes(&format!("{PRIMARY}-a backspace backspace backspace"));
     cx.run_until_parked();
     assert_eq!(source(&editor, &mut cx), "", "the source is empty");
     assert_eq!(
@@ -723,7 +723,7 @@ fn formatting_answers_for_the_whole_bar(cx: &mut TestAppContext) {
 
     // cmd-B at a collapsed caret outside the run is a stored mark, and the
     // button that took it has to stay lit until something spends it.
-    cx.simulate_keystrokes("end cmd-b");
+    cx.simulate_keystrokes(&format!("end {PRIMARY}-b"));
     assert_eq!(formatting(&mut cx).marks, vec![markdown::Mark::Bold]);
 
     // And in the source there is nothing to light.
