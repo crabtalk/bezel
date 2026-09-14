@@ -22,10 +22,27 @@ Thin on purpose — gpui already does the hard part.
 
 ## API
 
-| | |
-| --- | --- |
-| `virtual_list(id, count, row_height, handle, render)` | `uniform_list` measures the *first* row and lays every other out at that height; hand it uneven rows and nothing errors, the content just overlaps. This applies the height to every row it returns. |
-| `list::scroll_handle(handle)` | The reach to the real `ScrollHandle` inside a `UniformListScrollHandle`, named so a consumer does not have to find it in gpui's source. The clone shares state. |
+```rust
+// ui::list
+
+/// `uniform_list` measures the *first* row and lays every other out at that
+/// height; hand it uneven rows and nothing errors, the content just overlaps.
+/// This applies `row_height` to every row it returns.
+pub fn virtual_list<R: IntoElement>(
+    id: impl Into<ElementId>,
+    count: usize,
+    row_height: Pixels,
+    handle: &UniformListScrollHandle,
+    render: impl 'static + Fn(Range<usize>, &mut Window, &mut App) -> Vec<R>,
+) -> UniformList;
+
+/// The reach to the real `ScrollHandle` inside a `UniformListScrollHandle`,
+/// named so a consumer does not have to find it in gpui's source. The clone
+/// shares state.
+pub fn scroll_handle(handle: &UniformListScrollHandle) -> ScrollHandle;
+
+// ...
+```
 
 The list fills its parent: one with no height of its own collapses to a single measured row and then nothing. Set your own size after the call — the later call wins.
 

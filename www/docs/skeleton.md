@@ -27,8 +27,22 @@ match &self.sessions {
 
 ## API
 
-| | |
-| --- | --- |
-| `redacted_rows(id, theme, count, painter, cx)` | `count` rows, each entering the wave after the one above it. |
-| `error_row(theme, message)` | A `Div`, so the retry control is a child you add. |
-| `Loadable<T>` | `Idle` → `Loading` → `Ready(T)` or `Error(String)`. |
+```rust
+// ui::popover
+
+/// `count` rows, each entering the wave after the one above it.
+pub fn redacted_rows(
+    id: &'static str,
+    theme: &Theme,
+    count: usize,
+    painter: Painter,
+    cx: &mut gpui::App,
+) -> AnyElement;
+
+/// A `Div`, so the retry control is a child you add.
+pub fn error_row(theme: &Theme, message: impl Into<SharedString>) -> gpui::Div;
+
+pub enum Loadable<T> { Idle, Loading, Ready(T), Error(String) }
+
+// ...
+```

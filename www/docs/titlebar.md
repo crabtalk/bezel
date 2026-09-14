@@ -20,8 +20,22 @@ Open the window with `appears_transparent: true` **and** `app_owns_titlebar_drag
 
 ## API
 
-| | |
-| --- | --- |
-| `titlebar(id, drag, traffic_lights, window)` | A double click runs the system's own titlebar gesture; a no-op off macOS. |
-| `DragState` | One field on the view, an `Rc<Cell<bool>>` like `scroll::FollowState` — no listeners to wire. |
-| `traffic_lights` | Reserves `Theme::TRAFFIC_LIGHT_INSET` on the leading strip, and stands down in full screen where AppKit takes the lights away. |
+```rust
+// ui::titlebar
+
+/// A double click runs the system's own titlebar gesture; a no-op off macOS.
+/// `traffic_lights` reserves `Theme::TRAFFIC_LIGHT_INSET` on the leading strip,
+/// and stands down in full screen where AppKit takes the lights away.
+pub fn titlebar(
+    id: impl Into<ElementId>,
+    drag: &DragState,
+    traffic_lights: bool,
+    window: &Window,
+) -> Stateful<Div>;
+
+/// One field on the view, an `Rc<Cell<bool>>` like `scroll::FollowState` — no
+/// listeners to wire.
+pub struct DragState(Rc<Cell<bool>>);
+
+// ...
+```

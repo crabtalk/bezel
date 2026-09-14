@@ -32,10 +32,30 @@ match tree::step(&rows, self.cursor, tree::Direction::Right) {
 
 ## API
 
-| | |
-| --- | --- |
-| `Row { depth, expanded }` | `expanded: None` is a leaf, which is a different thing from a closed branch — the difference is what stops `right` pretending a file can open. |
-| `step(rows, cursor, direction)` | Reports an intent rather than performing one: applying it means touching the expansion set the app owns. Neither end wraps. |
-| `tree_row(theme, row, selected, cursor)` | `selected` is what the app considers chosen, `cursor` is where the keyboard is — the same pair a menu row draws with. |
+```rust
+// ui::tree
+
+pub fn init(cx: &mut App);
+pub fn tree() -> gpui::Div;
+
+/// `selected` is what the app considers chosen, `cursor` is where the keyboard
+/// is — the same pair a menu row draws with.
+pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui::Div;
+
+/// `expanded: None` is a leaf, which is a different thing from a closed branch
+/// — the difference is what stops `right` pretending a file can open.
+pub struct Row {
+    pub depth: usize,
+    pub expanded: Option<bool>,
+}
+
+/// Reports an intent rather than performing one: applying it means touching
+/// the expansion set the app owns. Neither end wraps.
+pub fn step(rows: &[Row], cursor: usize, direction: Direction) -> Option<Move>;
+
+pub enum Move { To(usize), Expand(usize), Collapse(usize) }
+
+// ...
+```
 
 Scrolling is the caller's, through [`scroll`](/docs/scroll-area). Expansion stays with the app because it *is* app data: a file tree's open folders often outlive the window.

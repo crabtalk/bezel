@@ -23,10 +23,16 @@ focus::focusable(&theme, &self.checkboxes[index], theme.checkbox(checked))
 
 ## API
 
-| | |
-| --- | --- |
-| `checkbox(checked)` | The mark. |
-| `radio_button(selected)` | The mark. |
-| `focus::focusable(theme, handle, el)` | Tab order, focus ring, and `enter`/`space`. |
+```rust
+pub trait Controls: ThemeExt {
+    fn checkbox(&self, checked: bool) -> Div;
+    fn radio_button(&self, selected: bool) -> Div;
+
+    // ...
+}
+
+/// Tab order, focus ring, and `enter`/`space`.
+pub fn focusable(theme: &Theme, handle: &FocusHandle, el: Div) -> Div;
+```
 
 The click and the key press are wired separately on purpose: only the caller knows what the press means. Every control keeps a 1px border even where it paints nothing in it — gpui sizes border-box, so a border appearing only on focus would move the tick by a pixel as you tab onto it.

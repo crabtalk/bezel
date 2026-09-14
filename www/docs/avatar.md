@@ -14,6 +14,11 @@ No image variant: that is `div().rounded_full().overflow_hidden()` around a gpui
 
 ## API
 
-| | |
-| --- | --- |
-| `avatar(initials)` | One or two initials, 28px. |
+```rust
+pub trait Content: ThemeExt {
+    /// One or two initials, 28px.
+    fn avatar(&self, initials: impl Into<SharedString>) -> Div;
+
+    // ...
+}
+```

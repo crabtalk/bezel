@@ -33,10 +33,43 @@ Not the *native* bar — on macOS that is `cx.set_menus` and four lines in `main
 
 ## API
 
-| | |
-| --- | --- |
-| `Menubar::new(menus, cx)` | Sliding onto a sibling title switches to it with no click; `left`/`right` cross between menus. |
-| `MenubarEvent::Selected { menu, path }` | A path — one row index per level, outermost first. `Menu::at` turns it back into the item. |
-| `Item::action` / `submenu` / `Separator` | Shaped like gpui's own `Menu` and `MenuItem`, so an app drawing both bars writes them the same way. |
-| `with_keystroke(keys)` | The accelerator to **print**. The binding is the app's; bezel never dispatches it. |
-| `next_selectable(items, from, delta)` | Steps over separators and disabled rows, wraps at both ends, and answers `None` when nothing can be landed on. |
+```rust
+// ui::menubar
+
+pub fn init(cx: &mut App);
+
+impl Menubar {
+    /// Sliding onto a sibling title switches to it with no click; `left` and
+    /// `right` cross between menus.
+    pub fn new(menus: Vec<Menu>, cx: &mut Context<Self>) -> Self;
+
+    // ...
+}
+
+/// A path — one row index per level, outermost first. `Menu::at` turns it back
+/// into the item.
+pub enum MenubarEvent { Selected { menu: usize, path: Vec<usize> } }
+```
+
+```rust
+// ui::menu — shaped like gpui's own `Menu` and `MenuItem`, so an app drawing
+// both bars writes them the same way.
+
+impl Item {
+    pub fn action(label: impl Into<SharedString>) -> Self;
+    pub fn submenu(label: impl Into<SharedString>, items: Vec<Item>) -> Self;
+
+    /// The accelerator to **print**. The binding is the app's; bezel never
+    /// dispatches it.
+    pub fn with_keystroke(self, keystroke: impl Into<SharedString>) -> Self;
+
+    pub fn checked(self, checked: bool) -> Self;
+    pub fn disabled(self) -> Self;
+
+    // ...
+}
+
+/// Steps over separators and disabled rows, wraps at both ends, and answers
+/// `None` when nothing can be landed on.
+pub fn next_selectable(items: &[Item], from: Option<usize>, delta: isize) -> Option<usize>;
+```

@@ -27,9 +27,20 @@ popover::menu_at(
 
 ## API
 
-| | |
-| --- | --- |
-| `menu_at(id, position, card, closing)` | The card positioned by a point rather than by a trigger. |
-| `closing` | A `Popup`'s `closing_since()` plays `menu-out` on the way away; `None` disappears the frame the state drops. |
+```rust
+// ui::popover
+
+/// The card positioned by a point rather than by a trigger. `closing` is a
+/// `Popup`'s `closing_since()`, which plays `menu-out` on the way away;
+/// `None` disappears the frame the state drops.
+pub fn menu_at(
+    id: impl Into<SharedString>,
+    position: Point<Pixels>,
+    content: AnyElement,
+    closing: Option<web_time::Instant>,
+) -> AnyElement;
+
+// ...
+```
 
 Dismissal is the caller's `.on_mouse_down_out` — nothing here decides when your menu should go away.

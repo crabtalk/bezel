@@ -30,9 +30,18 @@ floating::panel("meter", &self.meter_at, home, self.meter.clone())
 
 ## API
 
-| | |
-| --- | --- |
-| `Stats::new(cx)` | One per window — two mounted meters each count the other's frames. |
-| `stats::WIDTH` | The box's width, for a host placing it by its trailing edge. |
+```rust
+// ui::stats
+
+/// The box's width, for a host placing the meter by its trailing edge.
+pub const WIDTH: f32;
+
+impl Stats {
+    /// One per window — two mounted meters each count the other's frames.
+    pub fn new(cx: &mut Context<Self>) -> Self;
+}
+
+// ...
+```
 
 Placement is the caller's. A [floating panel](/docs/floating) makes it draggable; a corner works just as well.

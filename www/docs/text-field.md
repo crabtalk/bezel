@@ -26,10 +26,32 @@ cx.bind_keys([KeyBinding::new("ctrl-a", Home, Some(KEY_CONTEXT))]);
 
 ## API
 
-| | |
-| --- | --- |
-| `content()` / `set_content()` / `clear()` / `cursor()` | `set_content` clears the undo history: a programmatic reset is not something the user did. |
-| `with_undo_limit(n)` | Default ten. Steps are runs, not keystrokes — a run ends when the caret moves or you switch between typing and deleting. |
-| `offset_bounds(offset, window)` | Where a byte offset sits on screen, for a mention picker under the `#` that opened it. `None` until the field has painted once. |
+```rust
+impl TextField {
+    pub fn new(cx: &mut Context<Self>) -> Self;
+    pub fn with_placeholder(self, placeholder: impl Into<SharedString>) -> Self;
+
+    /// Default ten. Steps are runs, not keystrokes — a run ends when the caret
+    /// moves or you switch between typing and deleting.
+    pub fn with_undo_limit(self, limit: usize) -> Self;
+
+    pub fn content(&self) -> &SharedString;
+
+    /// Clears the undo history: a programmatic reset is not something the user
+    /// did, so there is nothing to walk back past.
+    pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>);
+
+    pub fn clear(&mut self, cx: &mut Context<Self>);
+
+    /// The byte offset the caret sits at.
+    pub fn cursor(&self) -> usize;
+
+    /// Where a byte offset sits on screen — the anchor for a mention picker
+    /// under the `#` that opened it. `None` until the field has painted once.
+    pub fn offset_bounds(&self, offset: usize, window: &Window) -> Option<Bounds<Pixels>>;
+
+    // ...
+}
+```
 
 Motion follows the platform: on macOS `cmd` is line, `option` is word, plus the emacs chords every native field honours; elsewhere `ctrl` is word. Word bounds are UAX#29, and arrows step by grapheme so a flag emoji moves as a unit. Platform input ranges are UTF-16 and the field stores bytes.

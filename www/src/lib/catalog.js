@@ -82,6 +82,17 @@ export const repoApi = repo.replace('https://github.com/', 'https://api.github.c
 /** Where a section's implementation lives, for a reader who wants the real thing. */
 export const sourceUrl = (section) => `${repo}/blob/main/${section.source}`;
 
+/**
+ * Rustdoc for the crate a section is written in — the full surface, where the
+ * page carries only the part worth reading first. `crates/<lib>` publishes as
+ * `bezel-<lib>` and keeps `<lib>` as its lib name, which is the path docs.rs
+ * builds. A pattern lives under `apps/`, so it has no crate and gets no link.
+ */
+export const docsUrl = (section) => {
+	const crate = section.source?.match(/^crates\/([^/]+)\//)?.[1];
+	return crate && `https://docs.rs/bezel-${crate}/latest/${crate}/`;
+};
+
 /** The library in one line — search results, share cards, and the agent surface. */
 export const tagline = 'Design tokens, motion, and materials for native Rust apps, built on gpui.';
 

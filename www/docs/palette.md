@@ -21,12 +21,23 @@ Indices are into the **original** item list, never into the filtered view — ma
 
 ## API
 
-| | |
-| --- | --- |
-| `palette::init(cx)` | Once at startup, alongside `input::init`. |
-| `CommandPalette::new(items, cx)` | Owns a query, a filtered view and an active row. |
-| `PaletteEvent` | `Selected(index)` or `Dismissed` — the host decides what a selection means. |
-| keys | `up`/`down`, `ctrl-p`/`ctrl-n`, `enter`, `escape`, scoped to the palette's context, which wraps the query field's so typing still reaches it. |
-| `popover::Filter` | The ranking underneath, shared with `Combobox`: prefix matches first, then substring, stable within each rank. |
+```rust
+// ui::palette
+
+/// Once at startup, alongside `input::init`.
+pub fn init(cx: &mut App);
+
+impl CommandPalette {
+    /// Owns a query, a filtered view and an active row.
+    pub fn new(items: Vec<SharedString>, cx: &mut Context<Self>) -> Self;
+
+    // ...
+}
+
+/// The host decides what a selection means.
+pub enum PaletteEvent { Selected(usize), Dismissed }
+```
+
+Keys are `up`/`down`, `ctrl-p`/`ctrl-n`, `enter` and `escape`, scoped to the palette's context — which wraps the query field's, so typing still reaches it. `popover::Filter` is the ranking underneath, shared with `Combobox`: prefix matches first, then substring, stable within each rank.
 
 Mounting is the caller's — usually centred over a scrim, for which `popover::modal_glass` is the frame. Only text changes re-rank; moving the query caret preserves the highlighted command.

@@ -28,13 +28,35 @@ assert_eq!(markdown::serialize_with(&doc, &marks), "a ==lit== word");
 
 ## API
 
-| | |
-| --- | --- |
-| `parse_with` / `serialize_with` | Pure, so the registry is a parameter rather than a global. |
-| `set_marks` / `set_mark_paint` | The gpui-side half the editing surface reads. Paint only — colour, background, weight, italic, underline, strike. A name nothing paints round trips and reads as the text it wraps. |
-| `source_spans(..)` | Classifies markdown *source* without a grammar, which is what gives a source view colour in a browser build. |
-| `serialize_at` / `parse_at` | The pair a caret crosses on. Both put a sentinel where the caret is, so neither can drift from the serializer or parser it rides on. |
-| `set_layout(cx, Layout { wrap_code: false })` | A long fence line wraps by default, since the caret reads a fence in the editor and a sideways scroller can hold it off the right edge. |
+```rust
+// markdown — pure, so the registry is a parameter rather than a global.
+
+pub fn parse_with(source: &str, marks: &Marks) -> Doc;
+pub fn serialize_with(doc: &Doc, marks: &Marks) -> String;
+
+/// The pair a caret crosses on. Both put a sentinel where the caret is, so
+/// neither can drift from the serializer or parser it rides on.
+pub fn parse_at(source: &str, offset: usize, marks: &Marks) -> (Doc, Cursor);
+pub fn serialize_at(doc: &Doc, at: Cursor, marks: &Marks) -> (String, usize);
+
+// The gpui-side half the editing surface reads. `set_mark_paint` is paint only
+// — colour, background, weight, italic, underline, strike. A name nothing
+// paints round trips and reads as the text it wraps.
+pub fn set_marks(cx: &mut App, marks: Marks);
+pub fn set_mark_paint(cx: &mut App, paint: Painter);
+
+/// Classifies markdown *source* without a grammar, which is what gives a
+/// source view colour in a browser build.
+pub fn source_spans(source: &str) -> Vec<(Range<usize>, HighlightKind)>;
+
+/// A long fence line wraps by default, since the caret reads a fence in the
+/// editor and a sideways scroller can hold it off the right edge.
+pub fn set_layout(cx: &mut App, layout: Layout);
+
+// ...
+```
+
+A registered mark cannot reach across a line break, mean anything inside a fence, code span or link destination, or sit in a picture's caption. Its delimiters are lifted out before CommonMark sees the source, which is the only place `==` and `\=\=` still differ.
 
 A registered mark cannot reach across a line break, mean anything inside a fence, code span or link destination, or sit in a picture's caption. Its delimiters are lifted out before CommonMark sees the source, which is the only place `==` and `\=\=` still differ.
 

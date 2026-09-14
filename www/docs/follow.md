@@ -16,10 +16,25 @@ The overflow is what tells appended content from a user scroll: if it changed, t
 
 ## API
 
-| | |
-| --- | --- |
-| `follow(handle, state)` | Drop it in beside the scrollbar, over the same container. |
-| `FollowState` | Starts pinned — a transcript opens on its newest line. `state.follow()` re-pins from a "jump to bottom" button. |
-| `at_bottom(max_offset, offset, slack)` | The predicate, exposed because a jump-to-bottom pill needs the same answer. Content that fits is always at the bottom. |
+```rust
+// ui::scroll
+
+/// Drop it in beside the scrollbar, over the same container.
+pub fn follow(handle: &ScrollHandle, state: &FollowState) -> gpui::AnyElement;
+
+/// Starts pinned — a transcript opens on its newest line.
+pub struct FollowState(Rc<Cell<(bool, Pixels)>>);
+
+impl FollowState {
+    /// Re-pin, from a "jump to bottom" button.
+    pub fn follow(&self);
+
+    // ...
+}
+
+/// The predicate, exposed because a jump-to-bottom pill needs the same answer.
+/// Content that fits is always at the bottom.
+pub fn at_bottom(max_offset: Pixels, offset: Pixels, slack: Pixels) -> bool;
+```
 
 The slack matters: a wheel lands on fractional offsets, and without it a view would unpin itself over a rounding error. The correction lands a frame late and converges — once pinned and at the end, nothing is requested.

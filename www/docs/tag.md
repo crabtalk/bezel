@@ -13,6 +13,11 @@ The ✕ is painted, not wired: only the caller knows what removing a token means
 
 ## API
 
-| | |
-| --- | --- |
-| `tag(label)` | The chip. Sets `self_start`, so a column does not stretch it. |
+```rust
+pub trait Content: ThemeExt {
+    /// The chip. Sets `self_start`, so a column does not stretch it.
+    fn tag(&self, label: impl Into<SharedString>) -> Div;
+
+    // ...
+}
+```

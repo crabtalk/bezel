@@ -33,11 +33,28 @@ Give that one box a context of its own. Rebinding the shared multi-line context 
 
 ## API
 
-| | |
-| --- | --- |
-| `Shape::Line` | The default. A pasted newline becomes a space rather than truncating the paste. |
-| `Shape::Rows(n)` | Exactly `n` lines, scrolling past that. |
-| `Shape::Grow { min, max }` | The composer shape: grows with the content, scrolls at `max`. |
-| `MULTILINE_KEY_CONTEXT` | Where `enter`, `up`, `down` are bound — not on every field, since a single-line field nested in a palette or combobox would win those keys and break list navigation. |
+```rust
+impl TextField {
+    pub fn with_shape(self, shape: Shape) -> Self;
+
+    /// Give one box a context of its own; rebinding the shared multi-line one
+    /// would take the newline away from every other textarea in the app.
+    pub fn with_key_context(self, context: impl Into<SharedString>) -> Self;
+
+    // ...
+}
+
+pub enum Shape {
+    /// The default. A pasted newline becomes a space rather than truncating
+    /// the paste.
+    Line,
+    /// Exactly `n` lines, scrolling past that.
+    Rows(usize),
+    /// The composer shape: grows with the content, scrolls at `max`.
+    Grow { min: usize, max: usize },
+}
+```
+
+`MULTILINE_KEY_CONTEXT` is where `enter`, `up` and `down` are bound — not on every field, since a single-line field nested in a palette or combobox would win those keys and break list navigation.
 
 `home`/`ctrl-a` goes to the start of the logical line, not of the visual row a soft wrap put you on — emacs' `C-a`, and a deliberate divergence from `NSTextView`.

@@ -64,14 +64,67 @@ One cursor, both devices: the pointer moves the cursor rather than lighting a ro
 
 ## API
 
-| | |
-| --- | --- |
-| `popover_card(theme)` | The card. `menu_heading`, `menu_row(theme, active, fade)` and `divider()` go in it. |
-| `anchored_menu(id, card, closing)` | Pins to the trigger's top-left. `_below` for dropdowns, `_above` / `_above_end` near the window's bottom and right edges — gpui does not flip sides for you. |
-| `menu::card(theme, id, items, cursor, cx, on_hit)` | Paints every panel; the caller holds one `menu::Cursor`. |
-| `Hit` | Carries a path — one row index per level, outermost first. `menu::at(items, path)` turns it back into the `Item`. |
-| `Hit::Dismiss` | Comes back from the card rather than from `.on_mouse_down_out`: with a submenu open, a click on its rows lands outside the parent. |
-| `Cursor::step` / `descend` / `ascend` / `lit(depth)` | Keyboard travel, pure and tested on their own. |
-| `close_popup(view, cx, |v| &mut v.menu)` | Begin and schedule the close together. |
+```rust
+// ui::popover
+
+pub fn popover_card(theme: &Theme) -> gpui::Div;
+pub fn menu_heading(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div;
+pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div;
+pub fn divider() -> gpui::Div;
+
+/// Pins to the trigger's top-left. `_below` for dropdowns, `_above` and
+/// `_above_end` near the window's bottom and right edges — gpui does not flip
+/// sides for you.
+pub fn anchored_menu(
+    id: impl Into<SharedString>,
+    content: AnyElement,
+    closing: Option<web_time::Instant>,
+) -> AnyElement;
+
+/// Begin and schedule the close together.
+pub fn close_popup<V: 'static, T: 'static>(
+    view: &mut V,
+    cx: &mut gpui::Context<V>,
+    popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
+);
+
+// ...
+```
+
+```rust
+// ui::menu
+
+/// Paints every panel; the caller holds one `Cursor`.
+pub fn card<V: 'static>(
+    theme: &Theme,
+    id: impl Into<SharedString>,
+    items: &[Item],
+    cursor: &Cursor,
+    cx: &mut Context<V>,
+    on: impl Fn(&mut V, Hit, &mut Window, &mut Context<V>) + 'static,
+) -> gpui::Div;
+
+/// A hit carries a path — one row index per level, outermost first.
+/// `Dismiss` comes back from the card rather than from `.on_mouse_down_out`:
+/// with a submenu open, a click on its rows lands outside the parent.
+pub enum Hit { Point(Vec<usize>), Choose(Vec<usize>), Dismiss }
+
+pub fn at<'a>(items: &'a [Item], path: &[usize]) -> Option<&'a Item>;
+
+impl Cursor {
+    /// Keyboard travel, pure and tested on its own.
+    pub fn step(&mut self, root: &[Item], delta: isize);
+    pub fn descend(&mut self, root: &[Item]) -> bool;
+    pub fn ascend(&mut self) -> bool;
+
+    /// Which row each panel draws lit.
+    pub fn lit(&self, depth: usize) -> Option<usize>;
+
+    /// Hover, click and `right` all arrive here.
+    pub fn point_at(&mut self, root: &[Item], path: &[usize]) -> bool;
+
+    // ...
+}
+```
 
 Every layer occludes — hitboxes are paint-order only in gpui, so without it a click on a row would also fire whatever sits underneath.

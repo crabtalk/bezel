@@ -18,12 +18,35 @@ It does not go through gpui's `on_drag`, which refreshes the whole window on eve
 
 ## API
 
-| | |
-| --- | --- |
-| `panel(id, at, home, child)` | Lays a full-size layer over its container, because a pointer that outruns a frame is outside the box for most of the gesture. |
-| `home` | Where it opens, passed every render rather than stored, so a window that grows never strands it. |
-| `held` | The pointer pressed on it, travelling or not — the closed hand. |
-| `dragging` | Actually moving, past the two pixels that separate a drag from a click — the lift. |
-| `at()` / `move_to()` | For a host persisting a position across sessions. |
+```rust
+// ui::floating
+
+/// Lays a full-size layer over its container, because a pointer that outruns a
+/// frame is outside the box for most of the gesture. `home` is where it opens,
+/// passed every render rather than stored, so a window that grows never
+/// strands it.
+pub fn panel(
+    id: impl Into<SharedString>,
+    state: &Floating,
+    home: Point<Pixels>,
+    child: impl IntoElement,
+) -> impl IntoElement;
+
+impl Floating {
+    pub fn new(painter: Painter) -> Self;
+
+    /// The pointer pressed on it, travelling or not — the closed hand.
+    pub fn held(&self) -> bool;
+
+    /// Actually moving, past the two pixels that separate a drag from a click.
+    pub fn dragging(&self) -> bool;
+
+    // For a host persisting a position across sessions.
+    pub fn at(&self) -> Option<Point<Pixels>>;
+    pub fn move_to(&self, at: Point<Pixels>);
+
+    // ...
+}
+```
 
 It clamps nothing and snaps to nothing. A panel dragged half off the window stays there, with the point it was grabbed by under the pointer, so it can always be dragged back.

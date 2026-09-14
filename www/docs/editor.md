@@ -63,18 +63,64 @@ Only a screenshot needs this — bytes have no address and a document holds one.
 
 ## API
 
-| | |
-| --- | --- |
-| `source()` | The document written back to markdown, normalized, on every keystroke — in either mode, so a save needs no branch. |
-| `formatting()` | `marks` is what the selection carries throughout; at a collapsed caret it is what the next character would carry, so a button stays lit between cmd-B and the letter. |
-| `toggle_mark(mark, cx)` | The same entry point cmd-B takes, so a button and a chord cannot disagree. |
-| `editor::turns()` | The block vocabulary the slash and block menus offer, to pair with `set_block`. |
-| `set_mode` / `toggle_source` / `mode()` | The trigger is yours to place, name and bind. `EditorEvent::ModeChanged` hears about a switch you did not make. |
-| `with_chrome(Chrome { .. })` | Turns the library's own affordances off where an app puts its own in the same place. |
-| `with_marks(..)` | One editor's own dialect, rather than the one `markdown::set_marks` installed. |
-| `with_undo_limit(n)` | Default 100, coalesced so a run of typing comes back as a word. Undo crosses a mode switch and carries the mode with it. |
-| `layouts()` | `block_bounds`, `picture_bounds`, `language_bounds`, `hit`, and `rects(selection)` for the painted rows of a range. |
-| `editor::keys` | Moving, duplicating and deleting a block ship as actions with no chord. |
+```rust
+impl Editor {
+    pub fn new(source: &str, cx: &mut Context<Self>) -> Self;
+
+    /// The scroll handle of the pane the document sits in, not one of the
+    /// editor's own, or the caret cannot follow typing down the page.
+    pub fn with_scroll(self, handle: gpui::ScrollHandle) -> Self;
+
+    /// The document written back to markdown, normalized, on every keystroke —
+    /// in either mode, so a save needs no branch.
+    pub fn source(&self) -> String;
+
+    /// One read rather than four: a bar answering half its questions from this
+    /// frame and half from the last lights the wrong button for a frame.
+    pub fn formatting(&self) -> Formatting;
+
+    /// The same entry point cmd-B takes, so a button and a chord cannot
+    /// disagree.
+    pub fn toggle_mark(&mut self, mark: Mark, cx: &mut Context<Self>);
+
+    pub fn set_block(&mut self, ix: usize, kind: BlockKind, cx: &mut Context<Self>);
+
+    // The trigger is yours to place, name and bind. `EditorEvent::ModeChanged`
+    // hears about a switch you did not make.
+    pub fn mode(&self) -> Mode;
+    pub fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>);
+    pub fn toggle_source(&mut self, cx: &mut Context<Self>);
+
+    /// Turns the library's own affordances off where an app puts its own in
+    /// the same place.
+    pub fn with_chrome(self, chrome: Chrome) -> Self;
+
+    /// One editor's own dialect, rather than the one `markdown::set_marks`
+    /// installed.
+    pub fn with_marks(self, marks: markdown::Marks) -> Self;
+
+    /// Default 100, coalesced so a run of typing comes back as a word. Undo
+    /// crosses a mode switch and carries the mode with it.
+    pub fn with_undo_limit(self, limit: usize) -> Self;
+
+    /// Where everything landed last frame — `block_bounds`, `picture_bounds`,
+    /// `language_bounds`, `hit`, and `rects(selection)` for the painted rows
+    /// of a range.
+    pub fn layouts(&self) -> &BlockLayouts;
+
+    // ...
+}
+
+// editor
+
+/// The block vocabulary the slash and block menus offer, to pair with
+/// `set_block`.
+pub fn turns() -> Vec<(SharedString, BlockKind)>;
+
+pub fn set_image_store(cx: &mut App, store: ImageStore);
+```
+
+Moving, duplicating and deleting a block ship as actions with no chord — `editor::keys` is the whole set. The slash menu, gutter handle, drag-to-reorder, language picker, link menu, undo and the clipboard need no wiring. `Mark::Code` over more than one line makes a fence instead of an inline span, and the same call takes it back out.
 
 The slash menu, gutter handle, drag-to-reorder, language picker, link menu, undo and the clipboard need no wiring. `Mark::Code` over more than one line makes a fence instead of an inline span, and the same call takes it back out.
 

@@ -21,11 +21,31 @@ The bar takes the width it is *given* rather than hugging its controls: equal ra
 
 ## API
 
-| | |
-| --- | --- |
-| `control_bar(theme, shape, leading, centre, trailing)` | The two rails are equal-flex and the centre is not, so a cluster of five and one of three still keep the middle on axis. |
-| `Shape::Pill` | A stadium, radius half the bar's height. |
-| `Shape::Rounded` | `Theme::bubble_radius()` — what most composers want. |
-| `bar_button(icon, diameter, tint)` | The circular control inside it. Builds the icon rather than taking one, since gpui reads an svg's colour off that element's own style. |
+```rust
+// ui::control_bar
+
+/// The two rails are equal-flex and the centre is not, so a cluster of five
+/// and one of three still keep the middle on axis.
+pub fn control_bar(
+    theme: &Theme,
+    shape: Shape,
+    leading: Vec<AnyElement>,
+    centre: Option<AnyElement>,
+    trailing: Vec<AnyElement>,
+) -> AnyElement;
+
+pub enum Shape {
+    /// A stadium, radius half the bar's height.
+    Pill,
+    /// `Theme::bubble_radius()` — what most composers want.
+    Rounded,
+}
+
+/// The circular control inside it. Builds the icon rather than taking one,
+/// since gpui reads an svg's colour off that element's own style.
+pub fn bar_button(icon: impl Into<Icon>, diameter: f32, tint: gpui::Hsla) -> gpui::Div;
+
+// ...
+```
 
 One radius comes out of `Shape` and feeds both the border and the backdrop blur, so there is no second number to keep in step. Add your own `.hover(..)` — gpui panics on a second hover call, and `Theme::element_hover` is the wash.

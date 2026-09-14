@@ -17,6 +17,16 @@ No action slot: it returns a `Div`, so a button under the hint is a child you ad
 
 ## API
 
-| | |
-| --- | --- |
-| `empty_state(icon, title, hint)` | Fills its parent's width and centres in it — usually inside a `group_box`. |
+```rust
+pub trait Content: ThemeExt {
+    /// Fills its parent's width and centres in it — usually inside a `group_box`.
+    fn empty_state(
+        &self,
+        icon: impl Into<Icon>,
+        title: impl Into<SharedString>,
+        hint: impl Into<SharedString>,
+    ) -> Div;
+
+    // ...
+}
+```

@@ -24,11 +24,22 @@ Pages are 1-based. A gap that would hide exactly one page shows the page instead
 
 ## API
 
-| | |
-| --- | --- |
-| `window(current, total, around)` | The `Slot`s to paint; `current` out of range is clamped, not trusted. |
-| `Slot` | `Page(usize)` or `Gap`. |
-| `pagination()` | The row container. |
-| `page_button(theme, page, current)` | One page. |
-| `ellipsis(theme)` | The gap mark. |
-| `step(theme, icon, enabled)` | Previous / next. |
+```rust
+// ui::pagination
+
+/// A place in the row: a page you can go to, or the mark for pages skipped.
+pub enum Slot { Page(usize), Gap }
+
+/// The pages to show, keeping `around` either side. `current` out of range is
+/// clamped rather than trusted — a paint is no place to panic.
+pub fn window(current: usize, total: usize, around: usize) -> Vec<Slot>;
+
+pub fn pagination() -> gpui::Div;
+pub fn page_button(theme: &Theme, page: usize, current: bool) -> gpui::Div;
+pub fn ellipsis(theme: &Theme) -> gpui::Div;
+
+/// Previous / next.
+pub fn step(theme: &Theme, icon: impl Into<Icon>, enabled: bool) -> gpui::Div;
+
+// ...
+```

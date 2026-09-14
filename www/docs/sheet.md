@@ -25,10 +25,27 @@ The exit clock is not optional: `Popup::finish_close` reaps on `MENU_OUT`'s span
 
 ## API
 
-| | |
-| --- | --- |
-| `sheet(id, viewport, side, width, panel, closing_since, on_scrim)` | Slides in over `DIALOG_IN`, out over `MENU_OUT`. |
-| `sheet_panel(theme, side)` | Rounds and hairlines its *inner* edge only — the corners on the window edge are off screen. |
-| `Side` | Which edge it is pinned to. |
+```rust
+// ui::popover
+
+/// Slides in over `DIALOG_IN`, out over `MENU_OUT`.
+pub fn sheet(
+    id: impl Into<SharedString>,
+    viewport: gpui::Size<Pixels>,
+    side: Side,
+    width: Pixels,
+    content: AnyElement,
+    closing: Option<web_time::Instant>,
+    on_dismiss: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> AnyElement;
+
+/// Rounds and hairlines its *inner* edge only — the corners on the window edge
+/// are off screen.
+pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div;
+
+pub enum Side { Left, Right }
+
+// ...
+```
 
 As with `modal`, the scrim press is a parameter: the scrim is inside the deferred layer.

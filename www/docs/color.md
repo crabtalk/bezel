@@ -36,11 +36,33 @@ Register the builder rather than installing one theme: `appearance::apply` rebui
 
 ## API
 
-| | |
-| --- | --- |
-| `Theme::of(cx)` | The installed palette. |
-| `AppearanceMode` | `System`, `Light` or `Dark`, serde-serializable so you persist it wherever your settings live. |
-| `appearance::observe_window(window, cx)` | Subscribes to the OS notification. |
-| `appearance::set_mode(..)` | Changes the preference and repaints. |
+```rust
+impl Theme {
+    /// The installed palette.
+    pub fn of(cx: &App) -> &Theme;
+
+    pub fn for_appearance(appearance: Appearance) -> Self;
+
+    // ...
+}
+```
+
+```rust
+// theme::appearance
+
+/// Once at boot, before the first window opens.
+pub fn init(mode: AppearanceMode, cx: &mut App);
+
+/// Subscribes to the OS notification.
+pub fn observe_window(window: &mut Window, cx: &mut App) -> Subscription;
+
+/// Changes the preference and repaints.
+pub fn set_mode(mode: AppearanceMode, cx: &mut App);
+
+/// Serde-serializable, so you persist it wherever your settings live.
+pub enum AppearanceMode { System, Light, Dark }
+
+// ...
+```
 
 Light is designed, not inverted — mirroring lightness reverses surface order, elevation and accent contrast. Each light text token lands within ~0.5 of its dark counterpart's ratio, and a test asserts it. `accent` is neutral by default: a library that ships a hue puts that hue in every app that installs it.

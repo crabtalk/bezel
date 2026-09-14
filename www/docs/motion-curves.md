@@ -14,11 +14,31 @@ A CSS `cubic-bezier(x1, y1, x2, y2)` with the endpoints fixed, solved by Newton 
 
 ## API
 
-| | |
-| --- | --- |
-| `EASE` / `EASE_OUT` / `EASE_IN_OUT` | The CSS defaults. |
-| `EASE_OUT_EXPO` | The signature entrance, `cubic-bezier(0.16, 1, 0.3, 1)`. |
-| `EASE_RESORT` | List reordering. |
-| `EASE_TAILWIND` | `cubic-bezier(0.4, 0, 0.2, 1)` — every `transition-colors` hover wash. |
-| `.eval(t)` | Clamps hard: f32 rounding can push a sample past 1.0, and gpui's animation element asserts its delta is in `[0,1]` and aborts. |
-| `.easing()` | The gpui closure. |
+```rust
+// motion
+
+/// The CSS defaults.
+pub const EASE: CubicBezier;
+pub const EASE_OUT: CubicBezier;
+pub const EASE_IN_OUT: CubicBezier;
+
+/// The signature entrance, `cubic-bezier(0.16, 1, 0.3, 1)`.
+pub const EASE_OUT_EXPO: CubicBezier;
+
+/// List reordering.
+pub const EASE_RESORT: CubicBezier;
+
+/// `cubic-bezier(0.4, 0, 0.2, 1)` — every `transition-colors` hover wash.
+pub const EASE_TAILWIND: CubicBezier;
+
+impl CubicBezier {
+    /// Clamps hard: f32 rounding can push a sample past 1.0, and gpui's
+    /// animation element asserts its delta is in `[0,1]` and aborts.
+    pub fn eval(&self, x: f32) -> f32;
+
+    /// The gpui closure.
+    pub fn easing(self) -> impl Fn(f32) -> f32;
+
+    // ...
+}
+```

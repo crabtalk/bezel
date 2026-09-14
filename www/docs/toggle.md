@@ -19,6 +19,10 @@ focus::focusable(&theme, &self.switch, theme.toggle(self.enabled))
 
 ## API
 
-| | |
-| --- | --- |
-| `toggle(on)` | The switch. |
+```rust
+pub trait Controls: ThemeExt {
+    fn toggle(&self, on: bool) -> Div;
+
+    // ...
+}
+```

@@ -17,9 +17,17 @@ Reach for this over a [select](/docs/select) when there are few enough choices t
 
 ## API
 
-| | |
-| --- | --- |
-| `toggle_group()` | The track. Sets `self_start`, or flexbox's default `stretch` blows it out to a column's full width. |
-| `toggle_group_item(label, selected)` | Exactly one reads as pressed; the rest stay bare. |
+```rust
+pub trait Controls: ThemeExt {
+    /// The track. Sets `self_start`, or flexbox's default `stretch` blows it
+    /// out to a column's full width.
+    fn toggle_group(&self) -> Div;
+
+    /// Exactly one reads as pressed; the rest stay bare.
+    fn toggle_group_item(&self, label: impl Into<SharedString>, selected: bool) -> Div;
+
+    // ...
+}
+```
 
 Segment corners derive from the track's radius and its inset — both numbers are read at both ends, so a segment cannot stop being concentric with its track.

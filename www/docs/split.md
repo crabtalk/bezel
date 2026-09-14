@@ -28,10 +28,29 @@ The gesture stays with the caller because the fraction does.
 
 ## API
 
-| | |
-| --- | --- |
-| `split_handle(axis, style)` | The line centred in a grab strip; `SplitStyle::Line { dragging }` lights while held. |
-| `SplitStyle::Ghost` | Takes the drag, paints nothing — for a pane that already draws the edge. |
-| `SPLIT_HANDLE_HIT` | The strip's width: the line plus 4px of slack each side, since a 1px target is unhittable. |
-| `axis_fraction(pointer, bounds, axis, min)` | `min` is the dead zone — `0.15` clamps to `0.15..=0.85`, and a zero-extent container answers `min` rather than dividing by zero. |
-| `SplitDrag` | A distinct payload, so `on_drag_move::<SplitDrag>` never fires for an unrelated split. |
+```rust
+pub trait Layout: ThemeExt {
+    /// The line centred in a grab strip; `Line { dragging }` lights while held,
+    /// and `Ghost` takes the drag but paints nothing.
+    fn split_handle(&self, axis: gpui::Axis, style: SplitStyle) -> Div;
+
+    // ...
+}
+
+/// The strip's width: the line plus 4px of slack each side, since a 1px target
+/// is unhittable.
+pub const SPLIT_HANDLE_HIT: f32;
+
+/// A distinct payload, so `on_drag_move::<SplitDrag>` never fires for an
+/// unrelated split.
+pub struct SplitDrag;
+
+/// `min` is the dead zone — `0.15` clamps to `0.15..=0.85`. A zero-extent
+/// container answers `min` rather than dividing by zero.
+pub fn axis_fraction(
+    pointer: gpui::Point<gpui::Pixels>,
+    bounds: gpui::Bounds<gpui::Pixels>,
+    axis: gpui::Axis,
+    min: f32,
+) -> f32;
+```

@@ -22,9 +22,21 @@ Tooltip::with_keystroke("Copy path", "⌘C", window, cx)
 
 ## API
 
-| | |
-| --- | --- |
-| `Tooltip::text(text, window, cx)` | The label. |
-| `Tooltip::with_keystroke(text, keys, window, cx)` | Shortcut right-aligned in the same card. |
+```rust
+impl Tooltip {
+    /// The label.
+    pub fn text(text: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> AnyView;
+
+    /// Shortcut right-aligned in the same card.
+    pub fn with_keystroke(
+        text: impl Into<SharedString>,
+        keystroke: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyView;
+
+    // ...
+}
+```
 
 The delay is gpui's — `.tooltip_show_delay(..)` on the element changes it.

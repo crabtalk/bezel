@@ -35,8 +35,37 @@ self.details.toggle(self.running);         // …and the click wins from here
 
 ## API
 
-| | |
-| --- | --- |
-| `step_row(icon, title, detail, meta, failed, expanded)` | `expanded: None` drops the chevron — a disclosure onto nothing is worse than none. |
-| `step_output(id, text)` | Monospaced, height-capped, scrolls past the cap; hence the id. |
-| `Takeover` | `get(auto)` / `toggle(auto)` — an `Option<bool>`, so "untouched, and here is the manual value" cannot be written. |
+```rust
+pub trait Status: ThemeExt {
+    /// `expanded: None` drops the chevron — a disclosure onto nothing is worse
+    /// than none.
+    fn step_row(
+        &self,
+        icon: impl Into<Icon>,
+        title: impl Into<SharedString>,
+        detail: Option<SharedString>,
+        meta: Option<SharedString>,
+        failed: bool,
+        expanded: Option<bool>,
+    ) -> Div;
+
+    /// Monospaced, height-capped, scrolling past the cap — hence the id.
+    fn step_output(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        text: impl Into<SharedString>,
+    ) -> gpui::Stateful<Div>;
+
+    // ...
+}
+
+/// An `Option<bool>`, so "untouched, and here is the manual value" cannot be
+/// written.
+impl Takeover {
+    /// `auto` until the first toggle, the user's own choice from then on.
+    pub fn get(self, auto: bool) -> bool;
+
+    /// Flip what is on screen — which while nobody has touched it is `auto`.
+    pub fn toggle(&mut self, auto: bool);
+}
+```

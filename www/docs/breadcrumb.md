@@ -19,8 +19,17 @@ Separators are children rather than something the container inserts, so collapsi
 
 ## API
 
-| | |
-| --- | --- |
-| `breadcrumb()` | The row. `min_w_0`, so a long path shortens instead of widening it. |
-| `breadcrumb_item(label, current)` | One crumb; `current` takes the text tone and drops the pointer cursor. |
-| `breadcrumb_separator()` | The chevron between two. |
+```rust
+pub trait Content: ThemeExt {
+    /// The row. `min_w_0`, so a long path shortens instead of widening it.
+    fn breadcrumb(&self) -> Div;
+
+    /// One crumb; `current` takes the text tone and drops the pointer cursor.
+    fn breadcrumb_item(&self, label: impl Into<SharedString>, current: bool) -> Div;
+
+    /// The chevron between two.
+    fn breadcrumb_separator(&self) -> Svg;
+
+    // ...
+}
+```

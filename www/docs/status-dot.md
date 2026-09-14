@@ -15,7 +15,12 @@ widgets::status_dot(theme.danger)
 
 ## API
 
-| | |
-| --- | --- |
-| `status_dot(tone)` | A 6px bead. |
-| tones | `success`, `busy`, `warning`, `danger`, and `text_faint` for one that means nothing yet. |
+```rust
+// ui::widgets
+
+/// A 6px bead. The tones worth reaching for are `success`, `busy`, `warning`,
+/// `danger`, and `text_faint` for one that means nothing yet.
+pub fn status_dot(tone: gpui::Hsla) -> gpui::Div;
+
+// ...
+```

@@ -14,7 +14,14 @@ Two tones, not a level enum: a strip is either the thing that failed or the thin
 
 ## API
 
-| | |
-| --- | --- |
-| `error_strip(message)` | The `danger` family. |
-| `warning_strip(message)` | The `warning` family. |
+```rust
+pub trait Status: ThemeExt {
+    /// The `danger` family.
+    fn error_strip(&self, message: impl Into<SharedString>) -> Div;
+
+    /// The `warning` family.
+    fn warning_strip(&self, message: impl Into<SharedString>) -> Div;
+
+    // ...
+}
+```

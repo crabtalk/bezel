@@ -27,10 +27,28 @@ The scrim press is a parameter rather than the caller's `.on_mouse_down_out`, be
 
 ## API
 
-| | |
-| --- | --- |
-| `modal(id, viewport, card, on_scrim)` | `viewport_size` is required: an `anchored` layer sizes to its children, so the scrim needs explicit dimensions. |
-| `modal_glass(..)` | For glass-tinted cards. Lighter scrim — the standard dim buries the backdrop hue and the card comes out a flat grey slab. |
-| `dialog_card(theme)` / `dialog_title(theme, title)` / `dialog_body(theme, copy)` | The pieces to put in it. |
+```rust
+// ui::popover
+
+/// `viewport` is required: an `anchored` layer sizes to its children, so the
+/// scrim needs explicit dimensions.
+pub fn modal(
+    id: impl Into<ElementId>,
+    viewport: gpui::Size<Pixels>,
+    card: AnyElement,
+    on_dismiss: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> AnyElement;
+
+/// For glass-tinted cards. Lighter scrim — the standard dim buries the
+/// backdrop hue and the card comes out a flat grey slab.
+pub fn modal_glass(/* the same */) -> AnyElement;
+
+// The pieces to put in it.
+pub fn dialog_card(theme: &Theme) -> gpui::Div;
+pub fn dialog_title(theme: &Theme, title: impl Into<SharedString>) -> gpui::Div;
+pub fn dialog_body(theme: &Theme, copy: impl Into<SharedString>) -> gpui::Div;
+
+// ...
+```
 
 The card enters over `DIALOG_IN`. Which buttons, what they do and whether `esc` closes it are all the caller's.

@@ -8,11 +8,12 @@ use ui::widgets::{self, Controls, SliderDrag};
 
 focus::focusable(&theme, &self.slider, theme.slider(self.level))
     .id("slider")
-    .on_drag(SliderDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
+    .on_drag(SliderDrag("slider".into()), |_, _, _, cx| cx.new(|_| gpui::Empty))
     .on_drag_move(cx.listener(|view, event: &DragMoveEvent<SliderDrag>, _, cx| {
-        view.level = widgets::axis_fraction(
-            event.event.position, event.bounds, Axis::Horizontal, 0.0,
-        );
+        let Some(fraction) = widgets::slider_fraction(event, "slider", cx) else {
+            return;
+        };
+        view.level = fraction;
         cx.notify();
     }))
 ```
@@ -28,9 +29,24 @@ The element *is* the drag source, so the gesture is grab-anywhere-and-slide rath
 
 ## API
 
-| | |
-| --- | --- |
-| `slider(fraction)` | The track and knob. |
-| `axis_fraction(pointer, bounds, axis, min)` | A slider passes `0.0` — it has no dead zone. |
-| `SliderDrag` | A type of its own, so two sliders never answer each other's `on_drag_move`. |
-| `focus::Decrement` / `Increment` | `←`/`→`. They carry no step: only the caller knows the range. |
+```rust
+pub trait Controls: ThemeExt {
+    fn slider(&self, fraction: f32) -> Div;
+
+    // ...
+}
+
+/// Where the drag lands on the track it is asked about, or `None` when the
+/// gesture belongs to another slider.
+pub fn slider_fraction(
+    event: &DragMoveEvent<SliderDrag>,
+    id: impl Into<ElementId>,
+    cx: &App,
+) -> Option<f32>;
+
+/// A type of its own, so two sliders never answer each other's `on_drag_move`;
+/// the id inside it is which one the gesture started on.
+pub struct SliderDrag(pub ElementId);
+```
+
+`focus::Decrement` and `focus::Increment` are `←`/`→`. They carry no step: only the caller knows the range.

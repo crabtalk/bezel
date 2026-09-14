@@ -33,15 +33,56 @@ A surface is one scene layer, and equal draw orders render grouped by primitive 
 
 ## API
 
-| | |
-| --- | --- |
-| `Surfaced::surface(theme, style)` | On any element carrying a corner radius. Clears the card's own `bg`, since the surface paints the fill. |
-| `surface::of(radius, style, child)` | The free function, for a child that is not `Styled`. |
-| `surface::popover(radius, child)` | On `Theme::popover_surface` — the token menus, dialogs, sheets and tooltips mount on, so one field moves every one of them between frost and glass. |
-| `surface::layered(child)` | A nested layer, to restore stacking inside a card. |
-| `surface::lensed(theme)` | Whether the lens will actually refract here — capability and the theme's `glass` flag together. |
-| `Material` | SwiftUI's five thicknesses. Measured, they are one material at five opacities, so the theme carries one `MaterialSpec` and the thickness picks its coverage. |
-| `Glass::Regular` / `Clear` | A closed variant. The numbers are `theme.glass_regular` / `glass_clear`. |
+```rust
+pub trait Surfaced: Styled + IntoElement + Sized {
+    /// On any element carrying a corner radius. Clears the card's own `bg`,
+    /// since the surface paints the fill.
+    fn surface(self, theme: &Theme, style: SurfaceStyle) -> Surface;
+}
+
+impl Surface {
+    /// Stands in for the look's own tone rather than adding to it, so a heavy
+    /// alpha reads as paint and a light one as glass.
+    pub fn tint(self, color: gpui::Hsla) -> Self;
+
+    // ...
+}
+```
+
+```rust
+// ui::surface
+
+/// The free function, for a child that is not `Styled`.
+pub fn of(corner_radius: f32, style: SurfaceStyle, child: impl IntoElement) -> Surface;
+
+/// On `Theme::popover_surface` — the token menus, dialogs, sheets and tooltips
+/// mount on, so one field moves every one of them between frost and glass.
+pub fn popover(corner_radius: f32, child: impl IntoElement) -> Surface;
+
+/// A nested layer, to restore stacking inside a card.
+pub fn layered(child: impl IntoElement) -> Layered;
+
+/// Whether the lens will actually refract here — capability and the theme's
+/// `glass` flag together.
+pub fn lensed(theme: &Theme) -> bool;
+
+// ...
+```
+
+```rust
+// theme
+
+pub enum SurfaceStyle {
+    /// SwiftUI's five thicknesses. Measured, they are one material at five
+    /// opacities, so the theme carries one `MaterialSpec` and the thickness
+    /// picks its coverage.
+    Material(Material),
+    /// A closed variant. The numbers are `theme.glass_regular` / `glass_clear`.
+    Glass(Glass),
+}
+
+// ...
+```
 
 > **Where the primitive runs.** The lens needs `Window::paint_backdrop_blur` from bezel's gpui fork: Metal and wgpu, which covers the web build. Elsewhere the surface falls back to the flat backdrop tint — the card and its shape, without the refraction at the rim.
 

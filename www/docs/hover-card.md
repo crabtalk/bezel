@@ -24,7 +24,24 @@ HoverCard::person("CL", "clearloop", "Builds desktop software in Rust.", "Shangh
 
 ## API
 
-| | |
-| --- | --- |
-| `HoverCard::summary(title, body, window, cx)` | Heading and a line or two of prose. |
-| `HoverCard::person(initials, name, body, meta, window, cx)` | Adds avatar initials beside the name and a meta line under the body. |
+```rust
+impl HoverCard {
+    /// Heading and a line or two of prose.
+    pub fn summary(
+        title: impl Into<SharedString>,
+        body: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyView;
+
+    /// Adds avatar initials beside the name and a meta line under the body.
+    pub fn person(
+        initials: impl Into<SharedString>,
+        name: impl Into<SharedString>,
+        body: impl Into<SharedString>,
+        meta: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyView;
+}
+```

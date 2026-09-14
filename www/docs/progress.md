@@ -13,6 +13,12 @@ No indeterminate mode — that is what the [loaders](/docs/loaders) are for.
 
 ## API
 
-| | |
-| --- | --- |
-| `progress_bar(fraction)` | Clamped to `0..=1`; the track keeps its width, so a row never reflows as progress moves. |
+```rust
+pub trait Controls: ThemeExt {
+    /// Clamped to `0..=1`; the track keeps its width, so a row never reflows
+    /// as progress moves.
+    fn progress_bar(&self, fraction: f32) -> Div;
+
+    // ...
+}
+```

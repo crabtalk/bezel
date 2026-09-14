@@ -30,8 +30,21 @@ self.details.toggle(self.running);          // the click wins from here
 
 ## API
 
-| | |
-| --- | --- |
-| `collapsible_header(label, expanded)` | Chevron plus title. |
-| `disclosure(expanded)` | The chevron alone — two assets, since gpui has no `div` transform at the pinned rev. |
-| `Takeover` | `get(auto)` / `toggle(auto)`: auto-follow until the first press, the user's choice after. |
+```rust
+pub trait Layout: ThemeExt {
+    /// Chevron plus title.
+    fn collapsible_header(&self, label: impl Into<SharedString>, expanded: bool) -> Div;
+
+    /// The chevron alone — two assets, since gpui has no `div` transform at
+    /// the pinned rev.
+    fn disclosure(&self, expanded: bool) -> Svg;
+
+    // ...
+}
+
+impl Takeover {
+    /// Auto-follow until the first press, the user's choice after.
+    pub fn get(self, auto: bool) -> bool;
+    pub fn toggle(&mut self, auto: bool);
+}
+```

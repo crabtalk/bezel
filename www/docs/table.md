@@ -34,12 +34,43 @@ The sorted column reverses; any other starts ascending. Inheriting the previous 
 
 ## API
 
-| | |
-| --- | --- |
-| `row(theme, columns, first, selected, cells)` | Zips cells onto the same `Column` list the header used; a cell is never sized where it is written. Too few cells asserts in debug, truncates in release. |
-| `Width` | `Fixed(px)` or `Flex(share)` — a share of what the fixed columns leave. |
-| `Align` | `Start` or `End`. No `Center`: in a column of data it is almost always wrong. |
-| `Column::align_end()` | What a number wants, so digits line up by place value. |
-| `next_sort(sort, column)` | Says what a click means; the caller sorts its own rows and this paints the arrow. |
+```rust
+// ui::table
+
+pub fn table(theme: &Theme) -> gpui::Div;
+pub fn header(theme: &Theme) -> gpui::Div;
+pub fn header_cell(theme: &Theme, column: &Column, sorted: Option<bool>) -> gpui::Div;
+
+/// Zips cells onto the same `Column` list the header used, so a cell is never
+/// sized where it is written. Too few cells asserts in debug, truncates in
+/// release rather than panicking at a user.
+pub fn row(
+    theme: &Theme,
+    columns: &[Column],
+    first: bool,
+    selected: bool,
+    cells: Vec<AnyElement>,
+) -> gpui::Div;
+
+pub enum Width {
+    Fixed(f32),
+    /// A share of what the fixed columns leave.
+    Flex(f32),
+}
+
+/// No `Center`: in a column of data it is almost always wrong.
+pub enum Align { Start, End }
+
+impl Column {
+    /// What a number wants, so digits line up by place value.
+    pub fn align_end(self) -> Self;
+
+    // ...
+}
+
+/// Says what a click means; the caller sorts its own rows and this paints the
+/// arrow. The sorted column reverses, any other starts ascending.
+pub fn next_sort(current: Option<Sort>, column: usize) -> Sort;
+```
 
 Nothing here holds data, so nothing here can hold it out of date.

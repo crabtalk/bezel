@@ -34,10 +34,30 @@ Plain text, with a newline where each block ended. Not the editor's copy, which 
 
 ## API
 
-| | |
-| --- | --- |
-| `selectable::render(id, doc, layouts, selection, dragging, window, cx, on_pointer)` | The release is answered twice, on the text and off it — a drag ending past the edge of a paragraph is the ordinary way to select to the end of one. |
-| `copied(doc, selection)` | `Doc::spans` answers in parts, and joining them puts a multi-block selection back together. |
+```rust
+// markdown::selectable
+
+/// The release is answered twice, on the text and off it — a drag ending past
+/// the edge of a paragraph is the ordinary way to select to the end of one.
+pub fn render<V: 'static>(
+    id: impl Into<ElementId>,
+    doc: &Doc,
+    layouts: &BlockLayouts,
+    selection: Option<Selection>,
+    dragging: bool,
+    window: &mut Window,
+    cx: &mut Context<V>,
+    on_pointer: impl Fn(&mut V, Pointer, &mut Context<V>) + 'static,
+) -> AnyElement;
+
+pub enum Pointer { Down(Cursor), Move(Cursor), Up }
+
+/// Plain text, with a newline where each block ended. `Doc::spans` answers in
+/// parts, and joining them puts a multi-block selection back together.
+pub fn copied(doc: &Doc, selection: Selection) -> String;
+
+// ...
+```
 
 A screen with several documents on it keeps the selection keyed by item and hands each its own slice of the state — which item a press landed in is not something one block of text can know. `caret_on` is forced off, or a collapsed selection would blink an insertion point in text nobody can type into.
 

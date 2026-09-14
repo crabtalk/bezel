@@ -1,7 +1,7 @@
 <script>
 	import { base } from '$app/paths';
 	import Gallery from '$lib/Gallery.svelte';
-	import { sourceUrl } from '$lib/catalog.js';
+	import { docsUrl, sourceUrl } from '$lib/catalog.js';
 
 	let { data } = $props();
 
@@ -42,6 +42,12 @@
 			<a class="source" href={sourceUrl(data.section)}>
 				<code>{data.section.source}</code>
 			</a>
+		{/if}
+		<!-- The full surface. This page carries the part worth reading first;
+		     rustdoc has every method, in alphabetical order, with no view on
+		     which of them matter. -->
+		{#if docsUrl(data.section)}
+			<a class="markdown" href={docsUrl(data.section)}>docs.rs</a>
 		{/if}
 	</p>
 

@@ -28,8 +28,14 @@ There is no `Select` component: a select *is* a trigger plus an anchored menu, a
 
 ## API
 
-| | |
-| --- | --- |
-| `select_trigger(label)` | Shaped and toned like a `TextField`, so a form of fields and selects reads as one system. The chevron is part of the face. |
-| `menu_row(theme, active, None)` | `None` because this menu owns its active index; `Some(fade)` is for a menu with no cursor of its own. |
-| `popover::dismiss_on_out` | On the card — without it, clicking away leaves the menu open. |
+```rust
+pub trait Controls: ThemeExt {
+    /// Shaped and toned like a `TextField`, so a form of fields and selects
+    /// reads as one system. The chevron is part of the face.
+    fn select_trigger(&self, label: impl Into<SharedString>) -> Div;
+
+    // ...
+}
+```
+
+The menu rows take `None` for their fade because this menu owns its active index; `Some(fade)` is for a menu with no cursor of its own. `popover::dismiss_on_out` on the card is what closes it — without it, clicking away leaves the menu open.

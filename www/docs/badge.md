@@ -14,7 +14,14 @@ Both return a `Div`, so a badge with an icon in it is a child you add.
 
 ## API
 
-| | |
-| --- | --- |
-| `badge(label)` | Hairline pill in the muted text tone. |
-| `badge_active(label)` | The emerald "connected / running / on" pill. |
+```rust
+pub trait Content: ThemeExt {
+    /// Hairline pill in the muted text tone.
+    fn badge(&self, label: impl Into<SharedString>) -> Div;
+
+    /// The emerald "connected / running / on" pill.
+    fn badge_active(&self, label: impl Into<SharedString>) -> Div;
+
+    // ...
+}
+```
