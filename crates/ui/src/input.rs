@@ -20,11 +20,11 @@
 use std::{ops::Range, time::Duration};
 
 use gpui::{
-    App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, EventEmitter, FocusHandle, Focusable, Global, GlobalElementId, KeyBinding,
-    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
-    SharedString, Style, Task, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine,
-    actions, div, fill, prelude::*, px, relative,
+    App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Global,
+    GlobalElementId, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, Pixels, Point, SharedString, Style, Task, TextRun, UTF16Selection,
+    UnderlineStyle, Window, WrappedLine, actions, div, fill, prelude::*, px, relative,
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
@@ -770,14 +770,17 @@ impl TextField {
         cx.notify();
     }
 
-    fn on_mouse_move(
-        &mut self,
-        event: &MouseMoveEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.is_selecting {
-            let offset = self.index_for_mouse_position(event.position, window.line_height());
+    /// Carry the run to wherever the pointer went. Driven by the window rather
+    /// than by the box — see [`TextFieldElement::paint`] — so `line_height` is
+    /// passed in: the field's own is only current while the field is painting.
+    fn drag_to(&mut self, position: Point<Pixels>, line_height: Pixels, cx: &mut Context<Self>) {
+        if !self.is_selecting {
+            return;
+        }
+        let offset = self.index_for_mouse_position(position, line_height);
+        // A pointer crossing a character is the event worth having; the twenty
+        // samples it takes to cross one are not.
+        if offset != self.cursor_offset() {
             self.select_to(offset, cx);
         }
     }
@@ -1395,7 +1398,6 @@ impl Render for TextField {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
-            .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .w_full()
             .when(self.frame, |field| {
@@ -1690,6 +1692,28 @@ impl Element for TextFieldElement {
             cx,
         );
         let line_height = window.line_height();
+        // A drag that leaves the box is still a drag. `on_mouse_move` on the
+        // field's own div fires only while the box is the thing under the
+        // pointer, so a run dragged past the edge froze at the last character
+        // inside it — and the last line of a full box was unreachable, since
+        // reaching it means passing the edge. This is the window's own move,
+        // which arrives wherever the pointer went.
+        //
+        // Registered every frame because that is the contract: the listener is
+        // cleared with the frame that installed it.
+        let dragged = self.field.clone();
+        window.on_mouse_event(move |event: &MouseMoveEvent, phase, _window, cx| {
+            // The button being down is what makes this a drag. `is_selecting`
+            // is only cleared on the release, so a press whose release went
+            // somewhere we never heard about would otherwise leave a plain
+            // hover dragging the run around.
+            if phase != DispatchPhase::Bubble || !event.dragging() {
+                return;
+            }
+            dragged.update(cx, |field, cx| {
+                field.drag_to(event.position, line_height, cx);
+            });
+        });
         let lines = std::mem::take(&mut prepaint.lines);
         let selection = std::mem::take(&mut prepaint.selection);
         let cursor = prepaint.cursor.take();
