@@ -61,8 +61,9 @@ pub fn shortcut_in(action: &dyn Action, context: &str, window: &Window) -> Optio
 ///
 /// macOS gets the glyphs in the order Apple sets them — `⌃⌥⇧⌘`, modifiers
 /// before the key, nothing between — and every other platform gets
-/// `Ctrl+Shift+P`. A two-keystroke chord is the two spelled out with a space
-/// between, which is how both platforms print a sequence.
+/// `Ctrl+Shift+P`, with the platform key leading: `Win+Shift+S`. A
+/// two-keystroke chord is the two spelled out with a space between, which is
+/// how both platforms print a sequence.
 ///
 /// Written here rather than taken from gpui's `Display` because that one
 /// orders `⌘` before `⇧` and leaves `enter`, `delete` and `space` spelled as
@@ -101,6 +102,13 @@ fn modifiers(modifiers: &Modifiers, out: &mut String) {
 
 #[cfg(not(target_os = "macos"))]
 fn modifiers(modifiers: &Modifiers, out: &mut String) {
+    // The platform key leads here, where on macOS it trails: Windows prints
+    // its own chords `Win+Shift+S` and `Win+Ctrl+Shift+B`, and GNOME writes
+    // `Super+` first for the same reason. Apple's `⌘` last is Apple's order,
+    // and copying it here is how this printed a chord nobody else writes.
+    if modifiers.platform {
+        out.push_str(PLATFORM_MODIFIER);
+    }
     if modifiers.control {
         out.push_str("Ctrl+");
     }
@@ -109,9 +117,6 @@ fn modifiers(modifiers: &Modifiers, out: &mut String) {
     }
     if modifiers.shift {
         out.push_str("Shift+");
-    }
-    if modifiers.platform {
-        out.push_str(PLATFORM_MODIFIER);
     }
 }
 

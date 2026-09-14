@@ -74,7 +74,7 @@ fn modifiers_are_in_the_platform_order(cx: &mut TestAppContext) {
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⌃⌥⇧⌘B");
     #[cfg(not(target_os = "macos"))]
-    assert_eq!(label.as_ref(), "Ctrl+Alt+Shift+Super+B");
+    assert_eq!(label.as_ref(), "Super+Ctrl+Alt+Shift+B");
 }
 
 /// A named key is a glyph where the platform has one, and the modifiers run
