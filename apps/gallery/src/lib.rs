@@ -617,6 +617,11 @@ pub const PATTERNS: &[Group] = &[
                 "apps/gallery/src/patterns/selectable.rs",
             ),
             section("editor", "Editor", "apps/gallery/src/patterns/editor.rs"),
+            section(
+                "markdown",
+                "Markdown",
+                "apps/gallery/src/patterns/dialect.rs",
+            ),
             section("syntax", "Syntax", "apps/gallery/src/patterns/syntax.rs"),
         ],
     },
@@ -922,6 +927,7 @@ pub struct Gallery {
     transcript: Entity<patterns::transcript::Transcript>,
     diff: Entity<patterns::diff::Diff>,
     document: Entity<patterns::document::Document>,
+    dialect: Entity<patterns::dialect::Dialect>,
     /// Prose a reader can drag over, which owns the selection the way any host
     /// of `markdown::selectable` has to.
     selectable: Entity<patterns::selectable::Selectable>,
@@ -1105,6 +1111,7 @@ impl Gallery {
             transcript: cx.new(patterns::transcript::Transcript::new),
             diff: cx.new(|_| patterns::diff::Diff),
             document: cx.new(patterns::document::Document::new),
+            dialect: cx.new(patterns::dialect::Dialect::new),
             selectable: cx.new(patterns::selectable::Selectable::new),
             editor: cx.new(patterns::editor::EditorDemo::new),
             #[cfg(not(target_family = "wasm"))]
@@ -4342,6 +4349,7 @@ impl Gallery {
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),
             "agent-orbs" => self.orbs.clone().into_any_element(),
+            "markdown" => self.dialect.clone().into_any_element(),
             "syntax" => self.syntax.clone().into_any_element(),
             "agent-avatar" => self.avatar.clone().into_any_element(),
 
