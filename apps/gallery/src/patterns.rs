@@ -11,6 +11,7 @@ pub mod diff;
 pub mod document;
 pub mod editor;
 pub mod orbs;
+pub mod ribbon;
 pub mod samples;
 pub mod selectable;
 pub mod syntax;
