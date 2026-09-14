@@ -18,12 +18,15 @@ div().relative().h(px(240.0))
     ))
 ```
 
-Thin on purpose — gpui already does the hard part. The module exists for two things it can guarantee that a caller otherwise has to know.
+Thin on purpose — gpui already does the hard part.
 
-**The row height.** `uniform_list` measures the *first* row it renders and lays every other one out at that height. Hand it rows of different heights and nothing errors: the content simply overlaps at a size nobody chose. `virtual_list` takes the height and applies it to every row it hands back.
+## API
 
-**The scroll handle.** A `UniformListScrollHandle` wraps a real `ScrollHandle`, and the bar's geometry is all there — behind `handle.0.borrow().base_handle`, which is not something a consumer should have to find by reading gpui's source. `list::scroll_handle` is that reach, named. The clone shares state rather than copying it, so the bar reports on the list the list actually scrolls.
+| | |
+| --- | --- |
+| `virtual_list(id, count, row_height, handle, render)` | `uniform_list` measures the *first* row and lays every other out at that height; hand it uneven rows and nothing errors, the content just overlaps. This applies the height to every row it returns. |
+| `list::scroll_handle(handle)` | The reach to the real `ScrollHandle` inside a `UniformListScrollHandle`, named so a consumer does not have to find it in gpui's source. The clone shares state. |
 
-The list fills its parent. A virtualized list is bounded by definition, and one with no height of its own collapses — a collapsed list builds a single row to measure and then nothing, which looks like an empty box with no error and no clue. Set your own size after the call if you want otherwise; the later call wins.
+The list fills its parent: one with no height of its own collapses to a single measured row and then nothing. Set your own size after the call — the later call wins.
 
-gpui's other virtualizer, `list()`, handles rows of varying height and cannot carry a proportional scrollbar: `ListState` speaks in `ListOffset { item_ix, offset_in_item }` — logical position, not pixels — with no maximum offset and no viewport. A thumb's length is the visible share of a total height, and a variable-height list cannot know its total without measuring every row, which is the work virtualization exists to skip.
+gpui's other virtualizer, `list()`, takes rows of varying height and cannot carry a proportional scrollbar: a thumb's length is the visible share of a total height, and a variable-height list cannot know its total without measuring every row.

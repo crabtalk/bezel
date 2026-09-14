@@ -3,8 +3,6 @@ title: Menubar
 description: The in-window bar of titles that drop menus, where one menu being open changes what the others do.
 ---
 
-Not the *native* bar. On macOS that is `cx.set_menus` and four lines in `main`, which is where it belongs. This is the bar an app with a custom titlebar draws for itself, and the one every other platform expects to see inside the window.
-
 ```rust
 use ui::menu::Item;
 use ui::menubar::{self, Menu, Menubar, MenubarEvent};
@@ -31,14 +29,14 @@ cx.subscribe(&bar, |_, bar, event, cx| {
 .detach();
 ```
 
-What makes it a menubar rather than a row of dropdowns: sliding the pointer onto a sibling title switches to it with no click, and `left`/`right` cross between menus without leaving the keyboard.
+Not the *native* bar — on macOS that is `cx.set_menus` and four lines in `main`. This is the bar an app with a custom titlebar draws for itself.
 
-A row with a chevron drops a [menu of its own](/docs/menu#submenus), on hover or on `right`; `left` and `escape` close one level at a time, and only close the bar once there is no level left. `Selected` reports a **path** — one row index per level, outermost first — which `Menu::at` turns back into the item.
+## API
 
-The menus are data you hand over, shaped like gpui's own `Menu` and `MenuItem` so an app drawing both bars writes them the same way. It does not *take* those types — they carry a boxed action, and reporting an index leaves dispatch with the app.
-
-The keystroke on an item is the accelerator to **print**. The binding itself is the app's and bezel never dispatches it; a menu that showed a keystroke it did not own would be documenting a lie.
-
-`Item` is an enum rather than a struct with an `is_separator` flag: a separator has no label, no accelerator and nothing to enable, and every one of those fields would have to be answered anyway.
-
-`menu::next_selectable(items, from, delta)` is the row-stepping rule — separators and disabled rows are stepped straight over, both ends wrap, and `None` back means nothing in the menu can be landed on, which is the one shape that would otherwise spin forever.
+| | |
+| --- | --- |
+| `Menubar::new(menus, cx)` | Sliding onto a sibling title switches to it with no click; `left`/`right` cross between menus. |
+| `MenubarEvent::Selected { menu, path }` | A path — one row index per level, outermost first. `Menu::at` turns it back into the item. |
+| `Item::action` / `submenu` / `Separator` | Shaped like gpui's own `Menu` and `MenuItem`, so an app drawing both bars writes them the same way. |
+| `with_keystroke(keys)` | The accelerator to **print**. The binding is the app's; bezel never dispatches it. |
+| `next_selectable(items, from, delta)` | Steps over separators and disabled rows, wraps at both ends, and answers `None` when nothing can be landed on. |

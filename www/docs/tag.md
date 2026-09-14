@@ -9,6 +9,10 @@ use ui::widgets::Content;
 theme.tag("rust")
 ```
 
-The chip paints its own ✕; the click handler for it is yours, because only the caller knows what removing a token means for the list behind it.
+The ✕ is painted, not wired: only the caller knows what removing a token means for the list behind it.
 
-It sets `self_start`, so dropping one into a column does not stretch it to the column's width.
+## API
+
+| | |
+| --- | --- |
+| `tag(label)` | The chip. Sets `self_start`, so a column does not stretch it. |

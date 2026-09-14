@@ -10,8 +10,25 @@ use ui::popover;
 popover::redacted_rows("recent-sessions", &theme, 3, Painter::of(cx), cx)
 ```
 
-It takes the calling view's `Painter` because the pulse is driven by a shared 30fps clock rather than by a per-element animation: the painter is what leases this view onto the tick list and what lets the clock park when the last skeleton unmounts. Every row across every view shares one epoch, so nothing beats out of phase with anything else.
+The `Painter` leases this view onto the shared 30fps clock, so every skeleton in the window pulses in phase and the clock parks when the last one unmounts.
 
-Rows are staggered — each one enters the wave a little after the one above it — which is what makes a stack read as loading rather than as three boxes blinking together.
+## Loading state
 
-`popover::Loadable<T>` is the state this pairs with: `Idle` (never requested) → `Loading` (these rows) → `Ready(T)` or `Error(String)`, with `popover::error_row` painting the last one — a plain `Div`, so the retry control is a child you add and wire.
+```rust
+use ui::popover::{self, Loadable};
+
+match &self.sessions {
+    Loadable::Loading => popover::redacted_rows("sessions", &theme, 3, view, cx),
+    Loadable::Error(message) => popover::error_row(&theme, message.clone()).into_any_element(),
+    Loadable::Ready(sessions) => rows(sessions).into_any_element(),
+    Loadable::Idle => gpui::Empty.into_any_element(),
+}
+```
+
+## API
+
+| | |
+| --- | --- |
+| `redacted_rows(id, theme, count, painter, cx)` | `count` rows, each entering the wave after the one above it. |
+| `error_row(theme, message)` | A `Div`, so the retry control is a child you add. |
+| `Loadable<T>` | `Idle` → `Loading` → `Ready(T)` or `Error(String)`. |

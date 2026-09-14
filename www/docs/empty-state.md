@@ -13,6 +13,10 @@ theme.empty_state(
 )
 ```
 
-Three fixed slots: a 24px icon, a headline, and one line of hint saying what to do next. It fills its parent's width and centres in it, which is why it usually goes inside a `group_box`.
+No action slot: it returns a `Div`, so a button under the hint is a child you add.
 
-There is no action slot — it returns a plain `Div`, so a button under the hint is a child you add.
+## API
+
+| | |
+| --- | --- |
+| `empty_state(icon, title, hint)` | Fills its parent's width and centres in it — usually inside a `group_box`. |

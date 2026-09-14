@@ -16,17 +16,15 @@ cx.subscribe(&language, |_, _, event, _| match event {
 .detach();
 ```
 
-An entity for the same reason the command palette is one — it owns a query `TextField`. The two share `popover::Filter` and differ only in frame: the palette is a modal over every command, this hangs under a trigger and remembers what was chosen.
-
 The reported index is into the **original** item list, never into the filtered view.
 
-The menu matches the trigger's width, measured from the last frame's layout. An anchored layer sizes to its own content, so without measuring, a combobox's menu could not line up with its own face.
+## API
 
-Keys are the palette's set — `up`/`down`, `ctrl-p`/`ctrl-n`, `enter`, `escape` — scoped to a context that wraps the query field's, so typing reaches the field and navigation falls through.
+| | |
+| --- | --- |
+| `Combobox::new(items, placeholder, cx)` | An entity, because it owns a query `TextField`. |
+| `ComboboxEvent::Selected(index)` | Fires on commit. |
+| menu width | Matched to the trigger, measured off the last frame — an anchored layer sizes to its own content and would not otherwise line up with its face. |
+| keys | `up`/`down`, `ctrl-p`/`ctrl-n`, `enter`, `escape`. Enter or an arrow opens a focused closed box; escape closes without changing the value and returns focus to the trigger. |
 
-Enter or an arrow key opens a focused, closed combobox before selecting
-anything. While open, arrows navigate and Enter commits. Escape closes without
-changing the value, and keyboard dismissal returns focus to the trigger.
-Moving the query caret preserves the highlighted result; changing the query
-re-ranks it. The query/filter controller and result rows are shared with the
-command palette.
+It shares `popover::Filter` and its result rows with the [command palette](/docs/palette), and differs only in frame. Moving the query caret preserves the highlighted result; changing the query re-ranks.

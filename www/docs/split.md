@@ -24,10 +24,14 @@ div()
     .child(div().flex_1().child(right))
 ```
 
-The gesture stays with the caller because the fraction does. `split_handle` centres its line in a grab strip — the line plus 4px of slack each side, the same hitbox zed uses, because a 1px target is unhittable — and lights while `dragging`. The strip's width is `widgets::SPLIT_HANDLE_HIT`, for a caller laying out around it.
+The gesture stays with the caller because the fraction does.
 
-`SplitStyle::Ghost` takes the same drag and paints nothing, for a pane that already draws the edge itself. Two hairlines a pixel apart read as a seam rather than a divider.
+## API
 
-`axis_fraction`'s last argument is the dead zone: `0.15` here keeps either pane from being squeezed away, clamping the answer to `0.15..=0.85`. On a zero-extent container, the frame before layout has run, it returns the minimum rather than dividing by zero.
-
-`SplitDrag` is a distinct payload type so `on_drag_move::<SplitDrag>` on one container never fires for an unrelated split's gesture. `SliderDrag` exists for the same reason.
+| | |
+| --- | --- |
+| `split_handle(axis, style)` | The line centred in a grab strip; `SplitStyle::Line { dragging }` lights while held. |
+| `SplitStyle::Ghost` | Takes the drag, paints nothing — for a pane that already draws the edge. |
+| `SPLIT_HANDLE_HIT` | The strip's width: the line plus 4px of slack each side, since a 1px target is unhittable. |
+| `axis_fraction(pointer, bounds, axis, min)` | `min` is the dead zone — `0.15` clamps to `0.15..=0.85`, and a zero-extent container answers `min` rather than dividing by zero. |
+| `SplitDrag` | A distinct payload, so `on_drag_move::<SplitDrag>` never fires for an unrelated split. |

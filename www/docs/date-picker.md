@@ -16,20 +16,23 @@ cx.subscribe(&picker, |_, _, event, _| match event {
 .detach();
 ```
 
-`today` comes from the app. bezel carries no clock, and the only thing that knows which day it is where you are is the app that has a time source.
+`today` comes from the app: bezel carries no clock.
 
-`Date` is bezel's own, deliberately. chrono is already in the graph under gpui, so taking it would cost nothing to compile — and would make it a *public* dependency, so a consumer declaring its own chrono would end up with two incompatible ones. That is the split-graph failure `bezel::gpui` exists to prevent, and it buys nothing here: a picker needs no timezones, no parsing and no formatting. It needs the civil calendar, which is pure and testable without a window.
-
-`Date::new(year, month, day)` is checked and answers `None` unless the day exists, so 29 February depends on the year — which is the whole point of asking. Fields are private and ordering is chronological, so nothing downstream ever has to ask whether a date is real.
-
-A month is always drawn in six rows:
+## The grid
 
 ```rust
 date::month_grid(month, date::Weekday::Monday) // [Date; 42]
 ```
 
-Six even for a February that fits in four, so the card never changes height as you page — a popover that resizes under the pointer moves the day you were about to click. The leading and trailing cells are real dates from the neighbouring months rather than blanks, which makes `cell.month() != month.month()` the only test a cell needs and leaves clicking one meaningful.
+Always six rows, even for a February that fits in four — a popover that resizes under the pointer moves the day you were about to click.
 
-Arrows walk days and weeks because the grid is two-dimensional, `pageup`/`pagedown` page months — the chords a browser's own date input uses — and the cursor is a single `Date`, so walking off the end of a month and paging to the next are the same operation and cannot disagree about where you are.
+## API
 
-`CalendarEvent::Selected` fires on choosing a day, never on moving the cursor over one.
+| | |
+| --- | --- |
+| `Date::new(year, month, day)` | Checked; `None` unless the day exists, so 29 February depends on the year. Fields are private and ordering is chronological. |
+| `month_grid(month, first_weekday)` | Leading and trailing cells are real dates from the neighbouring months, so `cell.month() != month.month()` is the only test a cell needs. |
+| `CalendarEvent::Selected` | Fires on choosing a day, never on moving the cursor over one. |
+| keys | Arrows walk days and weeks, `pageup`/`pagedown` page months. The cursor is a single `Date`, so walking off the end and paging are the same operation. |
+
+`Date` is bezel's own deliberately: chrono is already under gpui, but taking it would make it a *public* dependency and a consumer with its own would end up with two.

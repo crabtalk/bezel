@@ -17,16 +17,16 @@ cx.subscribe(&palette, |_, _, event, _| match event {
 .detach();
 ```
 
-Stateful for the same reason a text field is: it owns a query, a filtered view and an active row. It reports outcomes as gpui events rather than taking a callback, so the host decides what a selection *means* and the palette never knows about the app's actions.
+Indices are into the **original** item list, never into the filtered view — match on a filtered index and the first query you type runs the wrong command.
 
-Indices are into the **original** item list, never into the filtered view. A caller matching on a filtered index would run the wrong command the moment a query is typed.
+## API
 
-Navigation is `up`/`down`, `ctrl-p`/`ctrl-n`, `enter` and `escape`, all scoped to the palette's key context. That context wraps the query field's own, so typing goes to the field while the navigation keys fall through — which is why `TextField` does not bind `up`/`down` itself.
+| | |
+| --- | --- |
+| `palette::init(cx)` | Once at startup, alongside `input::init`. |
+| `CommandPalette::new(items, cx)` | Owns a query, a filtered view and an active row. |
+| `PaletteEvent` | `Selected(index)` or `Dismissed` — the host decides what a selection means. |
+| keys | `up`/`down`, `ctrl-p`/`ctrl-n`, `enter`, `escape`, scoped to the palette's context, which wraps the query field's so typing still reaches it. |
+| `popover::Filter` | The ranking underneath, shared with `Combobox`: prefix matches first, then substring, stable within each rank. |
 
-Mounting is the caller's: the palette is an entity you render where you want it, usually centred over a scrim. `popover::modal_glass` is the frame for that.
-
-The filtering underneath is `popover::Filter`, shared with the combobox: prefix matches first, then substring matches, stable within each rank.
-
-The palette shares its query/filter controller and result rows with `Combobox`.
-Only text changes re-rank the results; moving the query caret preserves the
-highlighted command.
+Mounting is the caller's — usually centred over a scrim, for which `popover::modal_glass` is the frame. Only text changes re-rank; moving the query caret preserves the highlighted command.

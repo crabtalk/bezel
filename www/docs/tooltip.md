@@ -12,10 +12,19 @@ div()
     .child("⌘C")
 ```
 
-An entity rather than a plain function, because gpui's `.tooltip(..)` takes a builder returning an `AnyView` — the tooltip is mounted in its own layer after the hover delay, so it cannot be an inline element.
+An entity rather than a plain function: gpui's `.tooltip(..)` takes a builder returning an `AnyView`, since the tooltip is mounted in its own layer after the hover delay.
 
-`Tooltip::with_keystroke("Copy path", "⌘C", window, cx)` shows the shortcut right-aligned in the same card. That pairing is how a keyboard affordance stays discoverable without opening a menu.
+## With a shortcut
 
-The delay is gpui's, not bezel's — `.tooltip_show_delay(..)` on the element changes it.
+```rust
+Tooltip::with_keystroke("Copy path", "⌘C", window, cx)
+```
 
-The card is the popover surface with tighter padding and no menu rhythm: a tooltip holds a label, not rows.
+## API
+
+| | |
+| --- | --- |
+| `Tooltip::text(text, window, cx)` | The label. |
+| `Tooltip::with_keystroke(text, keys, window, cx)` | Shortcut right-aligned in the same card. |
+
+The delay is gpui's — `.tooltip_show_delay(..)` on the element changes it.

@@ -18,10 +18,12 @@ theme
     .on_click(cx.listener(|view, _, _, cx| view.go(Route::Home, cx)))
 ```
 
-The label is a parameter rather than a child because it carries the truncation. Hand it out and the first long project name pushes the count and the chevron off the row instead of shortening itself.
+The label is a parameter rather than a child because it carries the truncation — hand it out and the first long project name pushes the count and the chevron off the row.
 
-Trailing content is the caller's: a count, a chevron, a control that appears under the pointer. That last one shares the row's `Fade` — gpui allows one hover listener per element and the row has claimed it, so a trailing button paints its own tint with `motion::hover_blend` on that same fade instead of adding an `on_hover` of its own.
+## API
 
-Selection paints the wash `popover::menu_row` and `tree::tree_row` paint. A sidebar, a menu and a tree are three lists of the same kind, and they say "this one" the same way.
+| | |
+| --- | --- |
+| `nav_row(icon, label, selected, fade)` | Selected paints the wash `menu_row` and `tree_row` paint. |
 
-Two lines of text is a different row: `Scaffolding::row_title` over `meta_line`, inside a `card_row`.
+A trailing control that appears on hover shares the row's `Fade` through `motion::hover_blend`: gpui allows one hover listener per element, and the row has claimed it. Two lines of text is a different row — `row_title` over `meta_line`, inside a [`card_row`](/docs/group-box).

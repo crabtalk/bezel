@@ -22,10 +22,27 @@ theme
     )
 ```
 
-`card_row`'s `first` flag is what suppresses the top hairline on the row that opens the card — CSS would write that as `first:border-t-0`, and gpui has no sibling selectors, so the caller says which row is first.
+`first` suppresses the top hairline on the opening row — CSS writes that as `first:border-t-0`, and gpui has no sibling selectors.
 
-The card's fill comes from `Theme::card_glass_bg`: the opaque card tone on an opaque appearance, thinned to a translucent tint over glass, where the solid tone read as a slab floating on the frosted blur.
+## Page rhythm
 
-`row_icon` is the leading glyph, sized to the text beside it.
+```rust
+theme.page_column()
+    .child(theme.page_header("Devices", Some(3)))
+    .child(theme.page_subtitle("Signed in on three machines."))
+    .child(theme.field_label("Theme"))
+```
 
-Around it, the page rhythm is `page_column` (a centred reading column), `page_header` for the headline and its count sharing a baseline, `page_subtitle`, and `field_label` for the small caption over a control. All of them are `Scaffolding`, the same trait as the card.
+## API
+
+| | |
+| --- | --- |
+| `group_box()` | The plate. Fill is `Theme::card_glass_bg` — the opaque card tone, thinned to a tint over glass. |
+| `card_row(first)` | One row, split from the one above by a hairline. |
+| `row_icon(icon)` | The leading glyph, sized to the text beside it. |
+| `row_title(title)` | Clipped rather than ellipsised, which keeps it in gpui's measure cache. |
+| `meta_line(fragments)` | The quiet second line, joined by dots. |
+| `page_column()` / `page_header(title, count)` / `page_subtitle(copy)` / `field_label(label)` | The rhythm around the card. |
+| `option_card(label, selected, preview)` | A preview frame carrying the selection ring; the preview must round itself to `OPTION_CARD_RADIUS`. |
+
+Hover is caller-owned — gpui panics on a second hover, so the wash to chain is `Theme::element_hover`.

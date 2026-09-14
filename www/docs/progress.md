@@ -9,6 +9,10 @@ use ui::widgets::Controls;
 theme.progress_bar(0.35)
 ```
 
-The fraction is clamped to `0..=1`, and the track keeps its full width whatever the value, so a row never reflows as progress moves.
+No indeterminate mode — that is what the [loaders](/docs/loaders) are for.
 
-There is no indeterminate mode here — that is what the loaders are for.
+## API
+
+| | |
+| --- | --- |
+| `progress_bar(fraction)` | Clamped to `0..=1`; the track keeps its width, so a row never reflows as progress moves. |

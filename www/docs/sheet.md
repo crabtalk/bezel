@@ -21,10 +21,14 @@ popover::sheet(
 )
 ```
 
-`sheet_panel` rounds and hairlines its *inner* edge only — the two corners on the window edge are off screen — so the panel reads as pulled out of the side of the window rather than floating near it. It shares one rounding constant with `dialog_card`, because a sheet is the dialog card pinned to an edge, and that number is read three times over: the card, the panel, and the blur under each.
+The exit clock is not optional: `Popup::finish_close` reaps on `MENU_OUT`'s span, so a sheet ignoring `closing_since` is unmounted mid-slide.
 
-It slides in over `DIALOG_IN` and back out over `MENU_OUT`. The exit is not optional — `Popup::finish_close` reaps on that spec's span, so a sheet that ignored `closing_since` would be unmounted mid-slide.
+## API
 
-As with `modal`, the scrim press is a parameter. The scrim is inside the deferred layer, so `.on_mouse_down_out` from outside can never reach it.
+| | |
+| --- | --- |
+| `sheet(id, viewport, side, width, panel, closing_since, on_scrim)` | Slides in over `DIALOG_IN`, out over `MENU_OUT`. |
+| `sheet_panel(theme, side)` | Rounds and hairlines its *inner* edge only — the corners on the window edge are off screen. |
+| `Side` | Which edge it is pinned to. |
 
-The slide itself is written in the component rather than as a motion helper: only the *spec* is motion, and which inset carries it is layout that differs per side.
+As with `modal`, the scrim press is a parameter: the scrim is inside the deferred layer.

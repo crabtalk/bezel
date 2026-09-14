@@ -17,15 +17,20 @@ focus::focusable(&theme, &self.slider, theme.slider(self.level))
     }))
 ```
 
-The element *is* the drag source, so the gesture is grab-anywhere-and-slide rather than aim-at-the-knob. `axis_fraction` turns a pointer position into the value: where the pointer falls along an axis as a fraction of the bounds, clamped to `min..=1-min`. A slider passes `0.0` because it has no dead zone; a split passes one so neither pane can be squeezed away. On a zero-extent container — the frame before layout has run — it answers `min` instead of dividing by zero.
+The element *is* the drag source, so the gesture is grab-anywhere-and-slide rather than aim-at-the-knob.
 
-`SliderDrag` is a type of its own so two sliders in one window never answer each other's `on_drag_move`.
-
-Keyboard is `←`/`→`, which arrive as `focus::Decrement` and `focus::Increment`:
+## Keyboard
 
 ```rust
 .on_action(cx.listener(|view, _: &focus::Decrement, _, cx| view.nudge(-STEP, cx)))
 .on_action(cx.listener(|view, _: &focus::Increment, _, cx| view.nudge(STEP, cx)))
 ```
 
-The actions carry no step. Only the caller knows the range, and a library that picked one would be picking it for a percentage and a font size alike.
+## API
+
+| | |
+| --- | --- |
+| `slider(fraction)` | The track and knob. |
+| `axis_fraction(pointer, bounds, axis, min)` | A slider passes `0.0` — it has no dead zone. |
+| `SliderDrag` | A type of its own, so two sliders never answer each other's `on_drag_move`. |
+| `focus::Decrement` / `Increment` | `←`/`→`. They carry no step: only the caller knows the range. |

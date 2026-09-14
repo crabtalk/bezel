@@ -3,8 +3,6 @@ title: Select
 description: The closed face of a select — a trigger shaped like a text field, opened onto a menu the caller assembles.
 ---
 
-There is no `Select` component. A select *is* a trigger plus an anchored menu, and the caller already owns the open state and the selection:
-
 ```rust
 use ui::{popover, widgets::Controls};
 
@@ -26,10 +24,12 @@ div()
     })
 ```
 
-Wrapping that in a struct would buy an abstraction and cost the caller its control over both halves.
+There is no `Select` component: a select *is* a trigger plus an anchored menu, and the caller already owns the open state and the selection.
 
-`select_trigger` is shaped and toned like a `TextField`, so a form of fields and selects reads as one system. It takes the current label and nothing else: the chevron is part of the face, and which choice is showing is the caller's to say.
+## API
 
-The rows take `None` for their fade because this menu owns an active index and paints it — `Some(fade)` is for a menu with no cursor of its own, letting the mouse light a row by itself.
-
-Dismissal is the caller's. `popover::dismiss_on_out` on the card is what closes it; without it, clicking away leaves the menu open. `anchored_menu_below`'s last argument is the exit clock: `None` for a menu that simply disappears, and `self.menu.closing_since()` when a `popover::Popup` holds the state so the close can animate.
+| | |
+| --- | --- |
+| `select_trigger(label)` | Shaped and toned like a `TextField`, so a form of fields and selects reads as one system. The chevron is part of the face. |
+| `menu_row(theme, active, None)` | `None` because this menu owns its active index; `Some(fade)` is for a menu with no cursor of its own. |
+| `popover::dismiss_on_out` | On the card — without it, clicking away leaves the menu open. |
