@@ -357,6 +357,41 @@ const TABLE_ROWS: [(&str, &str, u32); 7] = [
     ("notes.md", "Document", 1_130),
 ];
 
+/// The drift demo's strip. Enough of them to run well past either end of the
+/// pane, because a board that fits on screen has nothing to demonstrate.
+const DRIFT_CHIPS: [&str; 16] = [
+    "Triage", "Backlog", "Spec", "Design", "Review", "Build", "Blocked", "Staging", "Verify",
+    "Docs", "Release", "Watch", "Regress", "Support", "Archive", "Icebox",
+];
+
+/// What a chip carries while it is being dragged. A payload type of its own —
+/// `on_drag_move` filters by type, and it is what keeps the strip from
+/// drifting under a drag that has nothing to do with it.
+#[derive(Clone)]
+pub struct ChipDrag(SharedString);
+
+/// The chip under the pointer while it is carried. gpui paints this at the
+/// window's top layer, which is the reason it is an entity and not a styled
+/// copy of the chip: the strip clips its own overflow, and a ghost inside it
+/// would be cut off at the edge the drag is heading for.
+pub struct HeldChip(SharedString);
+
+impl Render for HeldChip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::of(cx).clone();
+        div()
+            .px(px(12.0))
+            .py(px(8.0))
+            .rounded(px(Theme::control_radius()))
+            .border_1()
+            .border_color(theme.accent)
+            .bg(theme.surface_raised)
+            .text_style(TextStyle::Callout)
+            .text_color(theme.text)
+            .child(self.0.clone())
+    }
+}
+
 /// One row on the Step row page. A build rather than an agent turn, on purpose:
 /// the component is named for the shape, and the shape is "an operation with an
 /// outcome" wherever it turns up.
@@ -797,6 +832,7 @@ pub const COMPONENTS: &[Group] = &[
         sections: &[
             section("scroll-area", "Scroll area", "crates/ui/src/scroll.rs"),
             section("follow", "Follow scroll", "crates/ui/src/scroll.rs"),
+            section("drift", "Drag to scroll", "crates/ui/src/scroll.rs"),
             section("table", "Table", "crates/ui/src/table.rs"),
             section("tree", "Tree view", "crates/ui/src/tree.rs"),
             section("virtual-list", "Virtualized list", "crates/ui/src/list.rs"),
@@ -954,6 +990,11 @@ pub struct Gallery {
     log_bar: ScrollbarState,
     log_follow: scroll::FollowState,
     log_lines: usize,
+    /// The drift demo: a strip too wide for the pane, and chips to carry
+    /// across it.
+    drift_scroll: gpui::ScrollHandle,
+    drift: scroll::DriftState,
+    drift_chips: Vec<SharedString>,
     table_scroll: gpui::ScrollHandle,
     table_claim: scroll::ClaimState,
     table_bar: ScrollbarState,
@@ -1137,6 +1178,13 @@ impl Gallery {
             log_scroll: gpui::ScrollHandle::new(),
             log_bar: ScrollbarState::new(Painter::of(cx)),
             log_follow: scroll::FollowState::new(),
+            drift_scroll: gpui::ScrollHandle::new(),
+            drift: scroll::DriftState::new(),
+            drift_chips: DRIFT_CHIPS
+                .iter()
+                .copied()
+                .map(SharedString::from)
+                .collect(),
             // Enough to overflow the box on arrival, so the pin has something
             // to hold onto before you press anything.
             log_lines: 24,
@@ -1933,6 +1981,26 @@ impl Gallery {
                     .into_any_element()
             }))
             .into_any_element()
+    }
+
+    /// Put `held` in front of `before` — where the drift demo's drop lands.
+    /// The list is the app's, the way a board's cards are: bezel reports where
+    /// the pointer let go and arranges nothing itself.
+    fn move_chip(&mut self, held: &SharedString, before: &SharedString, cx: &mut Context<Self>) {
+        if held == before {
+            return;
+        }
+        let Some(from) = self.drift_chips.iter().position(|chip| chip == held) else {
+            return;
+        };
+        let chip = self.drift_chips.remove(from);
+        let at = self
+            .drift_chips
+            .iter()
+            .position(|chip| chip == before)
+            .unwrap_or(self.drift_chips.len());
+        self.drift_chips.insert(at, chip);
+        cx.notify();
     }
 
     /// One section by key. Unknown keys render nothing — [`SECTIONS`] is the
@@ -4247,6 +4315,83 @@ impl Gallery {
                         )),
                 )
                 .into_any_element(),
+
+            "drift" => {
+                let accent = theme.accent;
+                let chips: Vec<AnyElement> = self
+                    .drift_chips
+                    .iter()
+                    .map(|label| {
+                        let (held, before) = (label.clone(), label.clone());
+                        div()
+                            .id(SharedString::from(format!("drift-chip-{label}")))
+                            .flex_none()
+                            .px(px(12.0))
+                            .py(px(8.0))
+                            .rounded(px(Theme::control_radius()))
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.surface_raised)
+                            .text_style(TextStyle::Callout)
+                            .text_color(theme.text_muted)
+                            .child(label.clone())
+                            .on_drag(ChipDrag(held), |drag, _, _, cx| {
+                                let label = drag.0.clone();
+                                cx.new(|_| HeldChip(label))
+                            })
+                            // Where it would land, marked on the chip it would
+                            // land in front of.
+                            .drag_over::<ChipDrag>(move |style, _, _, _| style.border_color(accent))
+                            .on_drop(cx.listener(move |view, drag: &ChipDrag, _, cx| {
+                                view.move_chip(&drag.0, &before, cx);
+                            }))
+                            .into_any_element()
+                    })
+                    .collect();
+                section
+                    .child(hint(
+                        &theme,
+                        "Pick up a chip and carry it to either end of the strip: the strip \
+                         keeps coming for as long as you hold it there, faster the closer \
+                         to the edge, and past the edge is full speed. Let go over a chip \
+                         to drop in front of it. Without this a strip is only as wide as \
+                         the window — reaching the far end would mean letting go.",
+                    ))
+                    .child(
+                        div()
+                            .relative()
+                            .h(px(76.0))
+                            .w_full()
+                            .rounded(px(Theme::panel_radius()))
+                            .border_1()
+                            .border_color(theme.border)
+                            .overflow_hidden()
+                            .child(
+                                scroll::pane("drift-demo", Axes::Horizontal)
+                                    .size_full()
+                                    .p(px(14.0))
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .gap(px(8.0))
+                                    .track_scroll(&self.drift_scroll)
+                                    // Typed, so a drag of anything else leaves
+                                    // the strip where it is.
+                                    .on_drag_move(cx.listener(
+                                        |view, event: &DragMoveEvent<ChipDrag>, _, _| {
+                                            view.drift.aim(event.event.position);
+                                        },
+                                    ))
+                                    .children(chips),
+                            )
+                            .child(scroll::drift(
+                                &self.drift_scroll,
+                                &self.drift,
+                                Axes::Horizontal,
+                            )),
+                    )
+                    .into_any_element()
+            }
 
             "table" => {
                 let columns = table_columns();
