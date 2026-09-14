@@ -152,11 +152,8 @@ fn claims_tab(window: &Window) -> bool {
 /// every one of them a radius parameter, and would prise a focused tab off the
 /// hairline its underline has to overlap.
 ///
-/// Pressing dispatches [`Activate`], which the caller handles beside its
-/// `on_click`. Deliberately not folded into one callback: a control that is
-/// pressed by mouse and by key is doing the same thing, but only the caller
-/// knows what that is, and a keyboard-only affordance that silently diverges
-/// from the click is worse than none.
+/// Pressing dispatches [`Activate`]. Use [`pressable`] to route it and a click
+/// through one callback, or handle it separately for custom interaction.
 pub fn focusable(theme: &Theme, handle: &FocusHandle, el: Div) -> Div {
     // `tab_stop` writes through to the shared focus entry, so re-asserting it
     // every render is free and keeps the flag next to the element that wants
@@ -165,4 +162,30 @@ pub fn focusable(theme: &Theme, handle: &FocusHandle, el: Div) -> Div {
     el.key_context(CONTROL_KEY_CONTEXT)
         .track_focus(&handle)
         .focus_visible(|style| style.border_color(theme.ring))
+}
+
+/// One activation path for pointer and keyboard, with a shared enabled gate.
+/// The caller still owns the value changed by the callback.
+pub fn pressable(
+    theme: &Theme,
+    handle: &FocusHandle,
+    el: gpui::Stateful<Div>,
+    enabled: bool,
+    activate: impl Fn(&(), &mut Window, &mut App) + 'static,
+) -> gpui::Stateful<Div> {
+    let activate = std::rc::Rc::new(activate);
+    let click = activate.clone();
+    el.key_context(CONTROL_KEY_CONTEXT)
+        .track_focus(&handle.clone().tab_stop(enabled))
+        .focus_visible(|style| style.border_color(theme.ring))
+        .on_click(move |_, window, cx| {
+            if enabled {
+                click(&(), window, cx);
+            }
+        })
+        .on_action(move |_: &Activate, window, cx| {
+            if enabled {
+                activate(&(), window, cx);
+            }
+        })
 }

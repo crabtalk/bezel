@@ -26,3 +26,7 @@ Navigation is `up`/`down`, `ctrl-p`/`ctrl-n`, `enter` and `escape`, all scoped t
 Mounting is the caller's: the palette is an entity you render where you want it, usually centred over a scrim. `popover::modal_glass` is the frame for that.
 
 The filtering underneath is `popover::Filter`, shared with the combobox: prefix matches first, then substring matches, stable within each rank.
+
+The palette shares its query/filter controller and result rows with `Combobox`.
+Only text changes re-rank the results; moving the query caret preserves the
+highlighted command.

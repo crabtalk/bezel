@@ -72,6 +72,7 @@ pub struct Popup<T> {
     /// Whether the popup was still mounted when the current trigger press
     /// began — see [`Self::note_trigger_press`].
     pressed_while_open: bool,
+    generation: u64,
 }
 
 impl<T> Default for Popup<T> {
@@ -79,12 +80,14 @@ impl<T> Default for Popup<T> {
         Self {
             inner: None,
             pressed_while_open: false,
+            generation: 0,
         }
     }
 }
 
 impl<T> Popup<T> {
     pub fn open(&mut self, value: T) {
+        self.generation = self.generation.wrapping_add(1);
         self.inner = Some((value, None));
     }
 
@@ -150,6 +153,7 @@ impl<T> Popup<T> {
     pub fn begin_close(&mut self) -> bool {
         match &mut self.inner {
             Some((_, closing @ None)) => {
+                self.generation = self.generation.wrapping_add(1);
                 *closing = Some(web_time::Instant::now());
                 true
             }
@@ -208,9 +212,11 @@ impl<T> Popup<T> {
 /// span, drop the popup state and repaint. `popup` re-borrows the field from
 /// the view (the state can't be captured — the view owns it).
 pub fn reap_popup<V: 'static, T: 'static>(
+    view: &mut V,
     cx: &mut gpui::Context<V>,
     popup: impl Fn(&mut V) -> &mut Popup<T> + 'static,
 ) {
+    let generation = popup(view).generation;
     cx.spawn(async move |view, cx| {
         cx.background_executor()
             .timer(
@@ -221,8 +227,11 @@ pub fn reap_popup<V: 'static, T: 'static>(
             )
             .await;
         view.update(cx, |view, cx| {
-            popup(view).finish_close();
-            cx.notify();
+            let popup = popup(view);
+            if popup.generation == generation && popup.is_closing() {
+                popup.finish_close();
+                cx.notify();
+            }
         })
         .ok();
     })
@@ -238,7 +247,7 @@ pub fn close_popup<V: 'static, T: 'static>(
     popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
 ) {
     if popup(view).begin_close() {
-        reap_popup(cx, popup);
+        reap_popup(view, cx, popup);
         cx.notify();
     }
 }
@@ -591,6 +600,32 @@ fn menu_motion(id: SharedString, exit: Option<f32>, inner: gpui::Div) -> AnyElem
     }
 }
 
+/// The common floating layer. Trigger wrappers only choose the origin.
+fn menu_layer(
+    id: impl Into<SharedString>,
+    content: AnyElement,
+    closing: Option<web_time::Instant>,
+    anchor: Anchor,
+    position: Option<Point<Pixels>>,
+    gap: f32,
+) -> AnyElement {
+    let content = material_menu(content);
+    let inner = match anchor {
+        Anchor::BottomLeft | Anchor::BottomRight => div().occlude().pb(px(gap)),
+        _ => div().occlude().pt(px(gap)),
+    }
+    .child(content);
+    let mut layer = gpui::anchored()
+        .anchor(anchor)
+        .snap_to_window_with_margin(px(8.0));
+    if let Some(position) = position {
+        layer = layer.position(position);
+    }
+    gpui::deferred(layer.child(menu_motion(id.into(), closing.map(exit_progress), inner)))
+        .priority(1)
+        .into_any_element()
+}
+
 /// Wrap popover content in a floating anchored layer attached to the trigger:
 /// the caller `.child(anchored_menu(...))`s this from the trigger element while
 /// open. Plays `menu-in` (0.14s fade + 2px drop); `closing` (the [`Popup`]
@@ -603,22 +638,7 @@ pub fn anchored_menu(
     content: AnyElement,
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
-    let exit = closing.map(exit_progress);
-    let content = material_menu(content);
-    pinned_layer(
-        gpui::deferred(
-            gpui::anchored()
-                .anchor(Anchor::TopLeft)
-                .snap_to_window_with_margin(px(8.0))
-                .child(menu_motion(
-                    id.into(),
-                    exit,
-                    div().occlude().pt(px(6.0)).child(content),
-                )),
-        )
-        .priority(1)
-        .into_any_element(),
-    )
+    pinned_layer(menu_layer(id, content, closing, Anchor::TopLeft, None, 6.0))
 }
 
 /// [`anchored_menu`] opening DOWNWARD from the trigger's bottom edge — a
@@ -642,27 +662,12 @@ pub fn anchored_menu_below_gap(
     closing: Option<web_time::Instant>,
     gap: f32,
 ) -> AnyElement {
-    let exit = closing.map(exit_progress);
-    let content = material_menu(content);
     div()
         .absolute()
         .bottom_0()
         .left_0()
         .size_0()
-        .child(
-            gpui::deferred(
-                gpui::anchored()
-                    .anchor(Anchor::TopLeft)
-                    .snap_to_window_with_margin(px(8.0))
-                    .child(menu_motion(
-                        id.into(),
-                        exit,
-                        div().occlude().pt(px(gap)).child(content),
-                    )),
-            )
-            .priority(1)
-            .into_any_element(),
-        )
+        .child(menu_layer(id, content, closing, Anchor::TopLeft, None, gap))
         .into_any_element()
 }
 
@@ -677,22 +682,12 @@ pub fn anchored_menu_below_gap(
 /// No `closing`: a submenu is held open by the cursor, and the cursor is
 /// cleared before the menu it hangs in begins its own exit.
 pub fn anchored_submenu(id: impl Into<SharedString>, content: AnyElement) -> AnyElement {
-    let content = material_menu(content);
     div()
         .absolute()
         .top(px(-MENU_PAD))
         .right(px(-MENU_PAD))
         .size_0()
-        .child(
-            gpui::deferred(
-                gpui::anchored()
-                    .anchor(Anchor::TopLeft)
-                    .snap_to_window_with_margin(px(8.0))
-                    .child(menu_motion(id.into(), None, div().occlude().child(content))),
-            )
-            .priority(1)
-            .into_any_element(),
-        )
+        .child(menu_layer(id, content, None, Anchor::TopLeft, None, 0.0))
         .into_any_element()
 }
 
@@ -704,22 +699,14 @@ pub fn anchored_menu_above(
     content: AnyElement,
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
-    let exit = closing.map(exit_progress);
-    let content = material_menu(content);
-    pinned_layer(
-        gpui::deferred(
-            gpui::anchored()
-                .anchor(Anchor::BottomLeft)
-                .snap_to_window_with_margin(px(8.0))
-                .child(menu_motion(
-                    id.into(),
-                    exit,
-                    div().occlude().pb(px(6.0)).child(content),
-                )),
-        )
-        .priority(1)
-        .into_any_element(),
-    )
+    pinned_layer(menu_layer(
+        id,
+        content,
+        closing,
+        Anchor::BottomLeft,
+        None,
+        6.0,
+    ))
 }
 
 /// Open an upward menu at a point inside a relative trigger. Useful for text
@@ -748,27 +735,19 @@ pub fn anchored_menu_above_end(
     content: AnyElement,
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
-    let exit = closing.map(exit_progress);
-    let content = material_menu(content);
     div()
         .absolute()
         .top_0()
         .right_0()
         .size_0()
-        .child(
-            gpui::deferred(
-                gpui::anchored()
-                    .anchor(Anchor::BottomRight)
-                    .snap_to_window_with_margin(px(8.0))
-                    .child(menu_motion(
-                        id.into(),
-                        exit,
-                        div().occlude().pb(px(6.0)).child(content),
-                    )),
-            )
-            .priority(1)
-            .into_any_element(),
-        )
+        .child(menu_layer(
+            id,
+            content,
+            closing,
+            Anchor::BottomRight,
+            None,
+            6.0,
+        ))
         .into_any_element()
 }
 
@@ -780,17 +759,7 @@ pub fn menu_at(
     content: AnyElement,
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
-    let exit = closing.map(exit_progress);
-    let content = material_menu(content);
-    gpui::deferred(
-        gpui::anchored()
-            .position(position)
-            .anchor(Anchor::TopLeft)
-            .snap_to_window_with_margin(px(8.0))
-            .child(menu_motion(id.into(), exit, div().occlude().child(content))),
-    )
-    .priority(1)
-    .into_any_element()
+    menu_layer(id, content, closing, Anchor::TopLeft, Some(position), 0.0)
 }
 
 /// Modal/overlay scrim at the *current* appearance, quoted in dark-mode terms
@@ -1031,7 +1000,7 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
         .text_style(TextStyle::Body)
         .cursor_pointer();
     match (active, fade) {
-        (true, _) => row.bg(theme::card_selected_bg()).text_color(theme.text),
+        (true, _) => row.bg(theme.card_selected_bg()).text_color(theme.text),
         (false, None) => row.text_color(theme.text.opacity(0.9)),
         (false, Some(fade)) => {
             let mut row = row

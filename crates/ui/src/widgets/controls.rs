@@ -7,7 +7,7 @@
 
 use crate::stack;
 use gpui::{App, Axis, Div, DragMoveEvent, ElementId, SharedString, div, prelude::*, px};
-use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
+use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 /// The drag payload of a [`Controls::slider`], carrying the id of the slider
 /// the gesture started on.
@@ -41,7 +41,7 @@ pub trait Controls: ThemeExt {
             .w(px(32.0))
             .h(px(18.0))
             .rounded_full()
-            .bg(if on { theme.text } else { ink(0.15) })
+            .bg(if on { theme.text } else { theme.ink(0.15) })
             .border_1()
             .border_color(crate::widgets::RING_SLOT)
             .relative()
@@ -55,7 +55,7 @@ pub trait Controls: ThemeExt {
                     .left(px(if on { 15.0 } else { 1.0 }))
                     .size(px(14.0))
                     .rounded_full()
-                    .bg(if on { theme.on_solid } else { ink(0.7) }),
+                    .bg(if on { theme.on_solid } else { theme.ink(0.7) }),
             )
     }
 
@@ -76,7 +76,9 @@ pub trait Controls: ThemeExt {
                 .border_color(crate::widgets::RING_SLOT)
                 .bg(theme.text)
         } else {
-            box_.border_1().border_color(ink(0.25)).bg(ink(0.03))
+            box_.border_1()
+                .border_color(theme.ink(0.25))
+                .bg(theme.ink(0.03))
         };
         if checked {
             box_.child(
@@ -98,8 +100,12 @@ pub trait Controls: ThemeExt {
             .size(px(16.0))
             .rounded_full()
             .border_1()
-            .border_color(if selected { theme.text } else { ink(0.25) })
-            .bg(ink(0.03))
+            .border_color(if selected {
+                theme.text
+            } else {
+                theme.ink(0.25)
+            })
+            .bg(theme.ink(0.03))
             .flex()
             .items_center()
             .justify_center()
@@ -117,7 +123,7 @@ pub trait Controls: ThemeExt {
             .w_full()
             .h(px(4.0))
             .rounded_full()
-            .bg(ink(0.12))
+            .bg(theme.ink(0.12))
             .child(
                 div()
                     .h_full()
@@ -166,7 +172,7 @@ pub trait Controls: ThemeExt {
                     .w_full()
                     .h(px(4.0))
                     .rounded_full()
-                    .bg(ink(0.12))
+                    .bg(theme.ink(0.12))
                     .child(
                         div()
                             .h_full()
@@ -234,7 +240,7 @@ pub trait Controls: ThemeExt {
             .gap(px(TOGGLE_GROUP_PAD))
             .p(px(TOGGLE_GROUP_PAD))
             .rounded(px(TOGGLE_GROUP_RADIUS))
-            .bg(ink(0.06))
+            .bg(theme.ink(0.06))
             .border_1()
             .border_color(theme.border)
     }

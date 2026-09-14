@@ -4,7 +4,7 @@ use ui::input::*;
 /// `char` would land inside it and split the flag in half.
 #[test]
 fn boundaries_step_over_a_flag_emoji() {
-    let text = "a🇯🇵b";
+    let text = "a🇨🇳b";
     assert_eq!(next_boundary(text, 0), 1, "past 'a'");
     assert_eq!(next_boundary(text, 1), 9, "over the whole flag");
     assert_eq!(previous_boundary(text, 9), 1, "back to the flag's start");
@@ -33,7 +33,7 @@ fn boundaries_clamp_at_both_ends() {
 /// 3 bytes).
 #[test]
 fn utf16_offsets_round_trip() {
-    for text in ["ascii", "日本語", "a😀b", "🇯🇵x", "e\u{301}"] {
+    for text in ["ascii", "中文汉", "a😀b", "🇨🇳x", "e\u{301}"] {
         let mut byte = 0;
         for ch in text.chars() {
             let utf16 = offset_to_utf16(text, byte);
@@ -237,7 +237,7 @@ fn word_motion_clamps_and_survives_runs_of_separators() {
 /// Word motion must not split a grapheme or land mid-character.
 #[test]
 fn word_motion_lands_on_char_boundaries() {
-    for text in ["日本語 の テスト", "a😀b c", "🇯🇵 x"] {
+    for text in ["中文汉 の テスト", "a😀b c", "🇨🇳 x"] {
         for offset in 0..=text.len() {
             if !text.is_char_boundary(offset) {
                 continue;
@@ -258,6 +258,6 @@ fn utf16_offsets_count_surrogate_pairs_as_two() {
     assert_eq!(offset_to_utf16("😀", 4), 2);
     assert_eq!(offset_from_utf16("😀", 2), 4);
     // CJK: 3 bytes, one unit.
-    assert_eq!(offset_to_utf16("日", 3), 1);
-    assert_eq!(offset_from_utf16("日", 1), 3);
+    assert_eq!(offset_to_utf16("中", 3), 1);
+    assert_eq!(offset_from_utf16("中", 1), 3);
 }

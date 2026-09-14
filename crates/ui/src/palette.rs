@@ -1,4 +1,4 @@
-//! [`CommandPalette`] — a filtered command list over a [`TextField`].
+//! [`CommandPalette`] — a filtered command list over a [`input::TextField`].
 //!
 //! Stateful for the same reason the text field is: it owns a query, a filtered
 //! view of the items and an active row. It reports outcomes as gpui events
@@ -19,17 +19,13 @@
 //! ```
 
 use gpui::{
-    App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, SharedString, Window,
-    actions, div, prelude::*, px,
+    App, Context, EventEmitter, FocusHandle, Focusable, KeyBinding, SharedString, Window, actions,
+    div, prelude::*, px,
 };
 
-use theme::{TextStyle, Theme, Typeset};
+use theme::Theme;
 
-use crate::{
-    input::{self, TextField},
-    popover,
-    surface::Surfaced as _,
-};
+use crate::{input, popover, search::SearchList, surface::Surfaced as _};
 
 actions!(
     bezel_command_palette,
@@ -75,8 +71,7 @@ pub enum PaletteEvent {
 }
 
 pub struct CommandPalette {
-    query: Entity<TextField>,
-    filter: popover::Filter,
+    search: SearchList,
     focus_handle: FocusHandle,
 }
 
@@ -84,18 +79,13 @@ impl EventEmitter<PaletteEvent> for CommandPalette {}
 
 impl CommandPalette {
     pub fn new(items: Vec<SharedString>, cx: &mut Context<Self>) -> Self {
-        let query = cx.new(|cx| {
-            TextField::new(cx)
-                .with_placeholder("Type a command…")
-                .with_frame(false)
-        });
-        cx.subscribe(&query, |palette, _, _: &input::FieldEvent, cx| {
-            palette.refilter(cx);
-        })
-        .detach();
         Self {
-            query,
-            filter: popover::Filter::new(items),
+            search: SearchList::new(
+                items,
+                "Type a command…",
+                |view: &mut Self| &mut view.search,
+                cx,
+            ),
             focus_handle: cx.focus_handle(),
         }
     }
@@ -103,31 +93,29 @@ impl CommandPalette {
     /// Focus the query field — call after mounting, or the palette swallows
     /// keys without showing a caret.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
-        window.focus(&self.query.focus_handle(cx), cx);
+        window.focus(&self.search.query.focus_handle(cx), cx);
     }
 
     pub fn query_text(&self, cx: &App) -> SharedString {
-        self.query.read(cx).content().clone()
+        self.search.query.read(cx).content().clone()
     }
 
     /// The item the user would get by confirming right now.
     pub fn active_item(&self) -> Option<usize> {
-        self.filter.active_item()
+        self.search.filter.active_item()
     }
 
-    fn refilter(&mut self, cx: &mut Context<Self>) {
-        let query = self.query.read(cx).content().clone();
-        self.filter.refilter(&query);
-        cx.notify();
+    fn choose(&mut self, item: usize, _: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(PaletteEvent::Selected(item));
     }
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        self.filter.step(1);
+        self.search.filter.step(1);
         cx.notify();
     }
 
     fn select_previous(&mut self, _: &SelectPrevious, _: &mut Window, cx: &mut Context<Self>) {
-        self.filter.step(-1);
+        self.search.filter.step(-1);
         cx.notify();
     }
 
@@ -152,45 +140,12 @@ impl Focusable for CommandPalette {
 impl Render for CommandPalette {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
-        let rows: Vec<gpui::AnyElement> = self
-            .filter
-            .filtered()
-            .iter()
-            .enumerate()
-            .map(|(position, &item)| {
-                popover::menu_row(&theme, Some(position) == self.filter.active(), None)
-                    .id(SharedString::from(format!("palette-{item}")))
-                    .on_mouse_move(cx.listener(move |palette: &mut Self, _, _, cx| {
-                        if palette.filter.active() != Some(position) {
-                            palette.filter.set_active(position);
-                            cx.notify();
-                        }
-                    }))
-                    .on_click(cx.listener(move |_, _, _, cx| {
-                        cx.emit(PaletteEvent::Selected(item));
-                    }))
-                    .child(self.filter.items()[item].clone())
-                    .into_any_element()
-            })
-            .collect();
-
         let card = popover::popover_card(&theme)
             .w(px(420.0))
-            .child(popover::search_line(
-                &theme,
-                self.query.clone().into_any_element(),
-            ))
-            .child(if rows.is_empty() {
-                div()
-                    .px(px(10.0))
-                    .py(px(8.0))
-                    .text_style(TextStyle::Body)
-                    .text_color(theme.text_muted)
-                    .child("No matches")
-                    .into_any_element()
-            } else {
-                div().flex().flex_col().children(rows).into_any_element()
-            });
+            .child(
+                self.search
+                    .body(&theme, None, |view| &mut view.search, Self::choose, cx),
+            );
 
         // The actions live on a wrapper, not the card, because the card is
         // handed to `material` — which frosts the backdrop so the content

@@ -59,6 +59,8 @@ are one per bundled face, on by default and forwarded to `ui`.
    (`Table`, `TextField`, `Orb`), whose builders configure *content* — an orb's
    state, a table's columns. A closed enum (`ButtonStyle`) selects between
    shipped looks; free-form radius, color and padding never become parameters.
+   A control needing only stable focus can use `RenderOnce` with keyed gpui
+   state, as `Button` does; the caller still owns its value and action.
 3. **Motion is named.** Every animation comes from the `MotionSpec` catalog in
    `motion`; pure phase math lives in `motion::phase` and is unit-tested. No
    inline durations or curves.

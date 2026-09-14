@@ -11,7 +11,7 @@
 //! kind and picks up where that one left off. Anything else — a motion, a
 //! structural change, a click — starts a new group.
 
-use std::collections::VecDeque;
+use ui::history::SnapshotHistory;
 
 use markdown::{Cursor, Doc, Selection};
 
@@ -49,13 +49,7 @@ struct Snapshot {
 }
 
 pub struct History {
-    /// Points to return to, oldest first.
-    undo: VecDeque<Snapshot>,
-    /// Undone points, newest last. Cleared by any fresh edit — the usual model,
-    /// and the only one where redo cannot resurrect a branch the document has
-    /// already diverged from.
-    redo: Vec<Snapshot>,
-    limit: usize,
+    snapshots: SnapshotHistory<Snapshot>,
     /// The kind of the last edit and where it *left* the caret, which is what
     /// decides whether the next edit joins that group or starts a new one.
     last: Option<(EditKind, Cursor)>,
@@ -64,9 +58,7 @@ pub struct History {
 impl Default for History {
     fn default() -> Self {
         Self {
-            undo: VecDeque::new(),
-            redo: Vec::new(),
-            limit: DEFAULT_UNDO_LIMIT,
+            snapshots: SnapshotHistory::new(DEFAULT_UNDO_LIMIT),
             last: None,
         }
     }
@@ -75,8 +67,8 @@ impl Default for History {
 impl History {
     pub fn with_limit(limit: usize) -> Self {
         Self {
-            limit,
-            ..Self::default()
+            snapshots: SnapshotHistory::new(limit),
+            last: None,
         }
     }
 
@@ -91,20 +83,16 @@ impl History {
         selection: Selection,
         anchors: &[Anchor],
     ) {
-        self.redo.clear();
-        if self.joins(kind, selection) {
-            return;
-        }
-        self.undo.push_back(Snapshot {
+        let joins = self.joins(kind, selection);
+        self.snapshots.record((!joins).then(|| Snapshot {
             doc: doc.clone(),
             mode,
             selection,
             anchors: anchors.to_vec(),
-        });
-        while self.undo.len() > self.limit {
-            self.undo.pop_front();
+        }));
+        if !joins {
+            self.last = None;
         }
-        self.last = None;
     }
 
     /// Close the edit, noting where it left the caret. The next edit joins this
@@ -116,7 +104,7 @@ impl History {
     /// Whether this edit continues the group the last one opened — same kind,
     /// same text, and picking up exactly where that one stopped.
     fn joins(&self, kind: EditKind, selection: Selection) -> bool {
-        if kind == EditKind::Structure || self.undo.is_empty() {
+        if kind == EditKind::Structure || !self.snapshots.can_undo() {
             return false;
         }
         self.last == Some((kind, selection.head)) && selection.is_collapsed()
@@ -138,13 +126,12 @@ impl History {
         selection: Selection,
         anchors: &[Anchor],
     ) -> Option<Step> {
-        let previous = self.undo.pop_back()?;
-        self.redo.push(Snapshot {
+        let previous = self.snapshots.undo(|| Snapshot {
             doc: doc.clone(),
             mode,
             selection,
             anchors: anchors.to_vec(),
-        });
+        })?;
         self.last = None;
         Some(previous.into())
     }
@@ -156,13 +143,12 @@ impl History {
         selection: Selection,
         anchors: &[Anchor],
     ) -> Option<Step> {
-        let next = self.redo.pop()?;
-        self.undo.push_back(Snapshot {
+        let next = self.snapshots.redo(|| Snapshot {
             doc: doc.clone(),
             mode,
             selection,
             anchors: anchors.to_vec(),
-        });
+        })?;
         self.last = None;
         Some(next.into())
     }

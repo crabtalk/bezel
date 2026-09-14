@@ -5,7 +5,7 @@
 
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
 use icons::Icon;
-use theme::{TextStyle, Theme, ThemeExt, Typeset, ink};
+use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 pub trait Content: ThemeExt {
     /// Right-anchored badge pill: `rounded-full border px-2 py-0.5`.
@@ -48,7 +48,7 @@ pub trait Content: ThemeExt {
             .flex_none()
             .size(px(28.0))
             .rounded_full()
-            .bg(ink(0.12))
+            .bg(theme.ink(0.12))
             .flex()
             .items_center()
             .justify_center()
@@ -72,7 +72,7 @@ pub trait Content: ThemeExt {
             .pr(px(5.0))
             .py(px(3.0))
             .rounded(px(Theme::control_radius()))
-            .bg(ink(0.07))
+            .bg(theme.ink(0.07))
             .border_1()
             .border_color(theme.border)
             .text_style(TextStyle::Callout)

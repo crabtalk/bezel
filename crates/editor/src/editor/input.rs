@@ -4,6 +4,7 @@ use std::ops::Range;
 
 use gpui::{Context, EntityInputHandler, UTF16Selection, Window};
 use markdown::{Cursor, Selection};
+use ui::input::{composition_selection, offset_to_utf16, range_from_utf16, range_to_utf16};
 
 use crate::editor::Editor;
 
@@ -19,10 +20,8 @@ impl EntityInputHandler for Editor {
         _: &mut Context<Self>,
     ) -> Option<String> {
         let text = self.caret_text()?;
-        let range = range.start.min(text.text.len())..range.end.min(text.text.len());
-        if range.start != range.end {
-            *adjusted = Some(range.clone());
-        }
+        let range = range_from_utf16(&text.text, range);
+        *adjusted = Some(range_to_utf16(&text.text, range.clone()));
         Some(text.text.get(range)?.to_string())
     }
 
@@ -45,12 +44,15 @@ impl EntityInputHandler for Editor {
         };
         Some(UTF16Selection {
             reversed: spans_one && self.selection.head == start,
-            range,
+            range: range_to_utf16(&self.caret_text()?.text, range),
         })
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked.clone()
+        Some(range_to_utf16(
+            &self.caret_text()?.text,
+            self.marked.clone()?,
+        ))
     }
 
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
@@ -75,7 +77,13 @@ impl EntityInputHandler for Editor {
         }
         // The platform's range is within the caret's own text, so it becomes a
         // selection there and the insert path does the rest.
-        if let Some(range) = range.or_else(|| self.marked.clone()) {
+        if let Some(range) = range
+            .and_then(|range| {
+                self.caret_text()
+                    .map(|text| range_from_utf16(&text.text, range))
+            })
+            .or_else(|| self.marked.clone())
+        {
             let at = self.cursor();
             self.selection = Selection::new(
                 Cursor {
@@ -100,7 +108,13 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(range) = range.or_else(|| self.marked.clone()) {
+        if let Some(range) = range
+            .and_then(|range| {
+                self.caret_text()
+                    .map(|text| range_from_utf16(&text.text, range))
+            })
+            .or_else(|| self.marked.clone())
+        {
             let at = self.cursor();
             self.doc.edit_at(at, |body| body.remove(range.clone()));
             self.place(Cursor {
@@ -114,13 +128,20 @@ impl EntityInputHandler for Editor {
         let at = self.cursor();
         let start = at.offset;
         self.doc.edit_at(at, |body| body.insert(start, text));
-        self.marked = Some(start..start + text.len());
-        self.place(Cursor {
-            offset: marked
-                .map(|range| start + range.end.min(text.len()))
-                .unwrap_or(start + text.len()),
-            ..at
-        });
+        self.marked = (!text.is_empty()).then_some(start..start + text.len());
+        let selected = composition_selection(text, start, marked);
+        self.selection = Selection::new(
+            Cursor {
+                offset: selected.start,
+                ..at
+            },
+            Cursor {
+                offset: selected.end,
+                ..at
+            },
+        );
+        self.reveal = true;
+        self.caret_moved();
         cx.notify();
     }
 
@@ -133,6 +154,7 @@ impl EntityInputHandler for Editor {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<gpui::Bounds<gpui::Pixels>> {
+        let range = range_from_utf16(&self.caret_text()?.text, range);
         let at = self.cursor();
         let start = Cursor {
             offset: range.start,
@@ -159,6 +181,7 @@ impl EntityInputHandler for Editor {
     ) -> Option<usize> {
         let hit = self.layouts.hit(point)?;
         let at = self.cursor();
-        (hit.block == at.block && hit.part == at.part).then_some(hit.offset)
+        (hit.block == at.block && hit.part == at.part)
+            .then_some(offset_to_utf16(&self.caret_text()?.text, hit.offset))
     }
 }

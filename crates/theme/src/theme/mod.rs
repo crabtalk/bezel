@@ -348,6 +348,11 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// Selection wash resolved against this palette, including local previews.
+    pub fn card_selected_bg(&self) -> Hsla {
+        paint::card_selected_bg_for(self.appearance)
+    }
+
     /// Overlay ink at `alpha` — see [`ink`](crate::paint::ink).
     pub fn ink(&self, alpha: f32) -> Hsla {
         paint::ink_for(self.appearance, alpha)

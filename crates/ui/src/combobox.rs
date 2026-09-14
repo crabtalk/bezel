@@ -2,7 +2,7 @@
 //! an anchored menu whose rows narrow as you search.
 //!
 //! An entity for the same reason [`crate::palette::CommandPalette`] is one — it
-//! owns a query [`TextField`]. The two share [`popover::Filter`] and differ only
+//! owns a query [`input::TextField`]. The two share [`popover::Filter`] and differ only
 //! in frame: the palette is a modal over every command, this hangs under a
 //! trigger and remembers what was chosen.
 //!
@@ -15,17 +15,12 @@
 //! .detach();
 //! ```
 
-use crate::{
-    icons,
-    input::{self, TextField},
-    popover,
-    widgets::Controls,
-};
+use crate::{input, popover, search::SearchList, widgets::Controls};
 use gpui::{
-    App, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyBinding, Pixels, SharedString,
-    Window, actions, canvas, div, prelude::*, px,
+    App, Context, EventEmitter, FocusHandle, Focusable, KeyBinding, Pixels, SharedString, Window,
+    actions, canvas, div, prelude::*, px,
 };
-use theme::{TextStyle, Theme, Typeset};
+use theme::Theme;
 
 actions!(
     bezel_combobox,
@@ -68,8 +63,7 @@ pub enum ComboboxEvent {
 }
 
 pub struct Combobox {
-    query: Entity<TextField>,
-    filter: popover::Filter,
+    search: SearchList,
     menu: popover::Popup<()>,
     chosen: Option<usize>,
     placeholder: SharedString,
@@ -88,20 +82,8 @@ impl Combobox {
         placeholder: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let query = cx.new(|cx| {
-            TextField::new(cx)
-                .with_placeholder("Search…")
-                .with_frame(false)
-        });
-        cx.subscribe(&query, |combobox, query, _: &input::FieldEvent, cx| {
-            let query = query.read(cx).content().clone();
-            combobox.filter.refilter(&query);
-            cx.notify();
-        })
-        .detach();
         Self {
-            query,
-            filter: popover::Filter::new(items),
+            search: SearchList::new(items, "Search…", |view: &mut Self| &mut view.search, cx),
             menu: popover::Popup::default(),
             chosen: None,
             placeholder: placeholder.into(),
@@ -114,7 +96,7 @@ impl Combobox {
 
     /// Preselect an item — the value a form field starts with.
     pub fn with_selection(mut self, item: usize) -> Self {
-        self.chosen = (item < self.filter.items().len()).then_some(item);
+        self.chosen = (item < self.search.filter.items().len()).then_some(item);
         self
     }
 
@@ -122,99 +104,88 @@ impl Combobox {
         self.chosen
     }
 
-    fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // The press note was taken on mouse-down: if the menu was mounted
-        // then, this click is the dismissal, not a fresh open.
-        if self.menu.take_press_was_open() {
-            self.close(cx);
-        } else {
-            // A stale query would reopen the menu already narrowed.
-            self.query.update(cx, |query, cx| query.clear(cx));
-            self.filter.refilter("");
-            self.menu.open(());
-            window.focus(&self.query.focus_handle(cx), cx);
-            cx.notify();
+    fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search.clear(cx);
+        if let Some(chosen) = self.chosen {
+            self.search.filter.set_active(chosen);
         }
-    }
-
-    fn close(&mut self, cx: &mut Context<Self>) {
-        popover::close_popup(self, cx, |combobox: &mut Self| &mut combobox.menu);
+        self.menu.open(());
+        window.focus(&self.search.query.focus_handle(cx), cx);
         cx.notify();
     }
 
-    fn choose(&mut self, item: usize, cx: &mut Context<Self>) {
+    fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.menu.take_press_was_open() {
+            self.close(window, cx);
+        } else {
+            self.open(window, cx);
+        }
+    }
+
+    fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Restore only focus owned by the query: an outside click may already
+        // have focused another control.
+        if self.search.query.focus_handle(cx).is_focused(window) {
+            window.focus(&self.focus_handle, cx);
+        }
+        popover::close_popup(self, cx, |view| &mut view.menu);
+    }
+
+    fn choose(&mut self, item: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.menu.is_open() {
+            return;
+        }
         self.chosen = Some(item);
         cx.emit(ComboboxEvent::Selected(item));
-        self.close(cx);
+        self.close(window, cx);
     }
 
-    fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        self.filter.step(1);
-        cx.notify();
-    }
-
-    fn select_previous(&mut self, _: &SelectPrevious, _: &mut Window, cx: &mut Context<Self>) {
-        self.filter.step(-1);
-        cx.notify();
-    }
-
-    fn confirm(&mut self, _: &Confirm, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(item) = self.filter.active_item() {
-            self.choose(item, cx);
+    fn step(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.menu.is_open() {
+            self.search.filter.step(delta);
+            cx.notify();
+        } else if !self.menu.is_closing() {
+            self.open(window, cx);
         }
     }
 
-    fn dismiss(&mut self, _: &Dismiss, _: &mut Window, cx: &mut Context<Self>) {
-        self.close(cx);
+    fn select_next(&mut self, _: &SelectNext, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(1, window, cx);
+    }
+
+    fn select_previous(&mut self, _: &SelectPrevious, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(-1, window, cx);
+    }
+
+    fn confirm(&mut self, _: &Confirm, window: &mut Window, cx: &mut Context<Self>) {
+        if self.menu.is_open() {
+            if let Some(item) = self.search.filter.active_item() {
+                self.choose(item, window, cx);
+            }
+        } else if !self.menu.is_closing() {
+            self.open(window, cx);
+        }
+    }
+
+    fn dismiss(&mut self, _: &Dismiss, window: &mut Window, cx: &mut Context<Self>) {
+        if self.menu.is_open() {
+            self.close(window, cx);
+        } else {
+            cx.propagate();
+        }
     }
 
     fn menu_card(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let rows: Vec<gpui::AnyElement> = self
-            .filter
-            .filtered()
-            .iter()
-            .enumerate()
-            .map(|(position, &item)| {
-                popover::menu_row(theme, Some(position) == self.filter.active(), None)
-                    .justify_between()
-                    .id(SharedString::from(format!("row-{item}")))
-                    .on_mouse_move(cx.listener(move |combobox: &mut Self, _, _, cx| {
-                        if combobox.filter.active() != Some(position) {
-                            combobox.filter.set_active(position);
-                            cx.notify();
-                        }
-                    }))
-                    .on_click(cx.listener(move |combobox, _, _, cx| combobox.choose(item, cx)))
-                    .child(self.filter.items()[item].clone())
-                    .when(Some(item) == self.chosen, |row| {
-                        row.child(
-                            icons::icon(icons::glyph::Check)
-                                .size(px(13.0))
-                                .text_color(theme.text),
-                        )
-                    })
-                    .into_any_element()
-            })
-            .collect();
-
         popover::popover_card(theme)
             .w(self.trigger_width.unwrap_or(px(200.0)))
-            .on_mouse_down_out(cx.listener(|combobox, _, _, cx| combobox.close(cx)))
-            .child(popover::search_line(
+            .on_mouse_down_out(cx.listener(|view, _, window, cx| view.close(window, cx)))
+            .child(self.search.body(
                 theme,
-                self.query.clone().into_any_element(),
+                self.chosen,
+                |view| &mut view.search,
+                Self::choose,
+                cx,
             ))
-            .child(if rows.is_empty() {
-                div()
-                    .px(px(10.0))
-                    .py(px(8.0))
-                    .text_style(TextStyle::Body)
-                    .text_color(theme.text_muted)
-                    .child("No matches")
-                    .into_any_element()
-            } else {
-                div().flex().flex_col().children(rows).into_any_element()
-            })
             .into_any_element()
     }
 }
@@ -231,7 +202,7 @@ impl Render for Combobox {
         let theme = Theme::of(cx).clone();
         let open = self.menu.is_open() || self.menu.is_closing();
         let label = match self.chosen {
-            Some(item) => self.filter.items()[item].clone(),
+            Some(item) => self.search.filter.items()[item].clone(),
             None => self.placeholder.clone(),
         };
         let card = open.then(|| self.menu_card(&theme, cx));

@@ -7,6 +7,7 @@
 
 use gpui::{div, prelude::*, px};
 
+mod button;
 mod buttons;
 mod content;
 mod controls;
@@ -15,7 +16,8 @@ mod layout;
 mod scaffolding;
 mod status;
 
-pub use buttons::{ButtonStyle, Buttons};
+pub use button::Button;
+pub use buttons::{ButtonRole, ButtonStyle, Buttons};
 pub use content::Content;
 pub use controls::{Controls, SliderDrag, slider_fraction};
 pub use icon::Icons;

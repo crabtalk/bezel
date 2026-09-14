@@ -195,7 +195,7 @@ pub fn row(
         .text_style(TextStyle::Callout)
         .text_color(theme.text);
     row = if selected {
-        row.bg(theme::card_selected_bg())
+        row.bg(theme.card_selected_bg())
     } else {
         // The same wash `card_row` uses, so a table and a card list read as one
         // system rather than two.

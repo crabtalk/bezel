@@ -11,7 +11,7 @@
 use gpui::{Div, ElementId, SharedString, Stateful, div, prelude::*, px};
 use icons::Icon;
 use motion::{self, Fade};
-use theme::{ControlSize, Sizing, Theme, ThemeExt, ink};
+use theme::{ControlSize, Sizing, Theme, ThemeExt};
 
 /// The shipped looks (the reference `btnGhost` / `btnPrimary` /
 /// `btnDestructive`).
@@ -53,33 +53,8 @@ pub trait Buttons: ThemeExt {
         style: ButtonStyle,
         fade: Option<Fade>,
     ) -> Div {
-        let theme = self.theme();
-        let label = label.into();
-        match style {
-            ButtonStyle::Ghost => match fade {
-                Some(fade) => {
-                    let mut btn = frame()
-                        .text_color(motion::hover_blend(&fade, theme.text_muted, theme.text))
-                        .bg(motion::hover_blend(&fade, ink(0.0), theme.element_hover))
-                        .child(label);
-                    btn.interactivity().on_hover(motion::hover_listener(fade));
-                    btn
-                }
-                None => frame().text_color(theme.text_muted).child(label),
-            },
-            ButtonStyle::Prominent => frame()
-                .bg(theme.text)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(theme.on_solid)
-                .hover(|s| s.opacity(0.9))
-                .child(label),
-            ButtonStyle::Destructive => frame()
-                .bg(theme.danger_strong)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(gpui::white())
-                .hover(|s| s.opacity(0.9))
-                .child(label),
-        }
+        let (button, _) = appearance(self.theme(), frame(), style, None, fade, true);
+        button.child(label.into())
     }
 
     /// A button that is only a glyph — SwiftUI's toolbar `Button` over an icon
@@ -93,41 +68,12 @@ pub trait Buttons: ThemeExt {
     /// An icon carries no accessible name — reach for
     /// [`crate::tooltip`] on the way past.
     fn icon_button(&self, icon: impl Into<Icon>, style: ButtonStyle, fade: Option<Fade>) -> Div {
-        let theme = self.theme();
         let square = frame()
             .px(px(0.0))
             .w(px(Theme::BUTTON_HEIGHT))
             .justify_center();
-        let icon = icon.into();
-        let glyph = |tint| {
-            crate::icons::icon(icon.clone())
-                .size(px(GLYPH))
-                .text_color(tint)
-        };
-        match style {
-            ButtonStyle::Ghost => match fade {
-                Some(fade) => {
-                    let mut btn = square
-                        .bg(motion::hover_blend(&fade, ink(0.0), theme.element_hover))
-                        .child(glyph(motion::hover_blend(
-                            &fade,
-                            theme.text_muted,
-                            theme.text,
-                        )));
-                    btn.interactivity().on_hover(motion::hover_listener(fade));
-                    btn
-                }
-                None => square.child(glyph(theme.text_muted)),
-            },
-            ButtonStyle::Prominent => square
-                .bg(theme.text)
-                .hover(|s| s.opacity(0.9))
-                .child(glyph(theme.on_solid)),
-            ButtonStyle::Destructive => square
-                .bg(theme.danger_strong)
-                .hover(|s| s.opacity(0.9))
-                .child(glyph(gpui::white())),
-        }
+        let (button, tint) = appearance(self.theme(), square, style, None, fade, true);
+        button.child(crate::icons::icon(icon).size(px(GLYPH)).text_color(tint))
     }
 
     /// SwiftUI's `ControlGroup`, and what a toolbar paints behind the items it
@@ -177,3 +123,61 @@ pub trait Buttons: ThemeExt {
 }
 
 impl Buttons for Theme {}
+
+/// Purpose is independent of emphasis: a destructive action may be quiet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ButtonRole {
+    Cancel,
+    Destructive,
+}
+
+pub(super) fn appearance(
+    theme: &Theme,
+    frame: Div,
+    style: ButtonStyle,
+    role: Option<ButtonRole>,
+    fade: Option<Fade>,
+    interactive: bool,
+) -> (Div, gpui::Hsla) {
+    let destructive = role == Some(ButtonRole::Destructive) || style == ButtonStyle::Destructive;
+    if style == ButtonStyle::Ghost {
+        let rest = if destructive {
+            theme.danger_strong
+        } else {
+            theme.text_muted
+        };
+        let hot = if destructive {
+            theme.danger_strong
+        } else {
+            theme.text
+        };
+        if let Some(fade) = fade {
+            let tint = motion::hover_blend(&fade, rest, hot);
+            let mut button = frame.text_color(tint).bg(motion::hover_blend(
+                &fade,
+                theme.ink(0.0),
+                theme.element_hover,
+            ));
+            button
+                .interactivity()
+                .on_hover(motion::hover_listener(fade));
+            (button, tint)
+        } else {
+            (frame.text_color(rest), rest)
+        }
+    } else {
+        let (fill, tint) = if destructive {
+            (theme.danger_strong, gpui::white())
+        } else {
+            (theme.text, theme.on_solid)
+        };
+        (
+            frame
+                .bg(fill)
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(tint)
+                .when(interactive, |button| button.hover(|s| s.opacity(0.9))),
+            tint,
+        )
+    }
+}

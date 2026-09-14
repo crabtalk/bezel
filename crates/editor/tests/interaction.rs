@@ -851,3 +851,50 @@ fn an_app_mark_survives_the_editor(cx: &mut TestAppContext) {
         "and the same toggle takes it off again"
     );
 }
+
+#[gpui::test]
+fn platform_ranges_use_utf16_for_chinese_and_emoji(cx: &mut TestAppContext) {
+    use gpui::EntityInputHandler;
+    let (_, window, _) = open_with("中😀abc!", cx);
+    window
+        .update(cx, |editor, window, cx| {
+            editor.select(
+                markdown::Selection::at(markdown::Cursor {
+                    offset: 7,
+                    ..Default::default()
+                }),
+                cx,
+            );
+            assert_eq!(
+                editor.selected_text_range(false, window, cx).unwrap().range,
+                3..3
+            );
+            let mut adjusted = None;
+            assert_eq!(
+                editor
+                    .text_for_range(1..3, &mut adjusted, window, cx)
+                    .as_deref(),
+                Some("😀")
+            );
+            assert_eq!(adjusted, Some(1..3));
+            editor.replace_text_in_range(Some(1..3), "文", window, cx);
+            assert_eq!(editor.source().trim(), "中文abc!");
+            editor.replace_and_mark_text_in_range(Some(2..5), "😀文", Some(0..2), window, cx);
+            assert_eq!(editor.source().trim(), "中文😀文!");
+            assert_eq!(editor.marked_text_range(window, cx), Some(2..5));
+            assert_eq!(
+                editor.selected_text_range(false, window, cx).unwrap().range,
+                2..4
+            );
+            editor.replace_and_mark_text_in_range(None, "中文", Some(1..1), window, cx);
+            assert_eq!(editor.source().trim(), "中文中文!");
+            assert_eq!(
+                editor.selected_text_range(false, window, cx).unwrap().range,
+                3..3
+            );
+            editor.replace_text_in_range(None, "文", window, cx);
+            assert_eq!(editor.source().trim(), "中文文!");
+            assert_eq!(editor.marked_text_range(window, cx), None);
+        })
+        .unwrap();
+}

@@ -23,3 +23,10 @@ The reported index is into the **original** item list, never into the filtered v
 The menu matches the trigger's width, measured from the last frame's layout. An anchored layer sizes to its own content, so without measuring, a combobox's menu could not line up with its own face.
 
 Keys are the palette's set — `up`/`down`, `ctrl-p`/`ctrl-n`, `enter`, `escape` — scoped to a context that wraps the query field's, so typing reaches the field and navigation falls through.
+
+Enter or an arrow key opens a focused, closed combobox before selecting
+anything. While open, arrows navigate and Enter commits. Escape closes without
+changing the value, and keyboard dismissal returns focus to the trigger.
+Moving the query caret preserves the highlighted result; changing the query
+re-ranks it. The query/filter controller and result rows are shared with the
+command palette.

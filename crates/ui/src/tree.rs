@@ -172,7 +172,7 @@ pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui:
         .text_style(TextStyle::Callout)
         .cursor_pointer();
     frame = if selected {
-        frame.bg(theme::card_selected_bg()).text_color(theme.text)
+        frame.bg(theme.card_selected_bg()).text_color(theme.text)
     } else if cursor {
         frame.bg(theme::wash(0.05)).text_color(theme.text)
     } else {

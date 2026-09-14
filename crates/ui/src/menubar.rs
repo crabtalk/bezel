@@ -199,7 +199,7 @@ impl Menubar {
 
     fn close(&mut self, cx: &mut Context<Self>) {
         if self.open.begin_close() {
-            popover::reap_popup(cx, |bar: &mut Self| &mut bar.open);
+            popover::reap_popup(self, cx, |bar: &mut Self| &mut bar.open);
         }
         // Before the exit plays, not after: a submenu paints on a layer of its
         // own and would hang there, unfaded, over the menu dissolving under it.

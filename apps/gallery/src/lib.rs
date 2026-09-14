@@ -1374,7 +1374,7 @@ impl Gallery {
 
     fn close_context_menu(&mut self, cx: &mut Context<Self>) {
         if self.context_menu.begin_close() {
-            popover::reap_popup(cx, |view: &mut Self| &mut view.context_menu);
+            popover::reap_popup(self, cx, |view: &mut Self| &mut view.context_menu);
         }
         cx.notify();
     }
@@ -1402,7 +1402,7 @@ impl Gallery {
 
     fn close_sheet(&mut self, cx: &mut Context<Self>) {
         if self.sheet.begin_close() {
-            popover::reap_popup(cx, |view: &mut Self| &mut view.sheet);
+            popover::reap_popup(self, cx, |view: &mut Self| &mut view.sheet);
         }
         cx.notify();
     }
@@ -1414,7 +1414,7 @@ impl Gallery {
 
     fn close_drawer(&mut self, cx: &mut Context<Self>) {
         if self.drawer.begin_close() {
-            popover::reap_popup(cx, |view: &mut Self| &mut view.drawer);
+            popover::reap_popup(self, cx, |view: &mut Self| &mut view.drawer);
         }
         cx.notify();
     }
@@ -2124,6 +2124,29 @@ impl Gallery {
                             .on_click(cx.listener(|view, _, _, cx| view.press("more", cx))),
                     );
                 section
+                    .child(
+                        row()
+                            .child(
+                                ui::widgets::Button::new("semantic-save", "Save")
+                                    .button_style(ButtonStyle::Prominent)
+                                    .on_press(cx.listener(|view, _, _, cx| view.press("Save", cx))),
+                            )
+                            .child(
+                                ui::widgets::Button::new("semantic-delete", "Delete")
+                                    .role(ui::widgets::ButtonRole::Destructive)
+                                    .icon(icons::glyph::Trash)
+                                    .on_press(
+                                        cx.listener(|view, _, _, cx| view.press("Delete", cx)),
+                                    ),
+                            )
+                            .child(
+                                ui::widgets::Button::new("semantic-disabled", "Unavailable")
+                                    .enabled(false)
+                                    .on_press(
+                                        cx.listener(|view, _, _, cx| view.press("Unavailable", cx)),
+                                    ),
+                            ),
+                    )
                     .child(hint(
                         &theme,
                         "tab and shift-tab walk these, and every field and combobox \

@@ -31,3 +31,11 @@ Undo steps are runs, not keystrokes: a stretch of typing coalesces into one step
 Motion follows the platform. On macOS `cmd` is line, `option` is word, and the emacs chords every native field honours — `ctrl-a`, `ctrl-e`, `ctrl-k`, `ctrl-b`/`ctrl-f`/`ctrl-h`/`ctrl-d` — come along; elsewhere `ctrl` is word. Word bounds are Unicode UAX#29 segments, so `foo.bar` and `foo_bar` are one word while `path/to/file` breaks. Arrows and backspace step by grapheme, so a flag emoji moves as a unit instead of shattering.
 
 `offset_bounds(offset, window)` returns where a byte offset sits on screen. That is the anchor for anything hanging off a position in the *text* rather than off the field — a mention picker under the `#` that opened it, handed to `popover::menu_at`. It is `None` until the field has painted once, since there is no shaped layout before then.
+
+Platform input ranges use UTF-16; the field stores byte offsets. Shared range
+conversion also serves the document editor. For example, `中` occupies one
+UTF-16 code unit and three UTF-8 bytes, while `😀` occupies two and four. IME
+selection ranges are relative to the replacement text.
+
+Undo storage is `ui::history::SnapshotHistory`, shared with the editor; each
+surface keeps its own coalescing policy and snapshot contents.

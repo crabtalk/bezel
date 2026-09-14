@@ -131,3 +131,39 @@ fn a_card_that_does_not_dismiss_itself_still_toggles(cx: &mut TestAppContext) {
         "nothing closed it on the press, so the release has to"
     );
 }
+
+#[gpui::test]
+fn an_old_reaper_cannot_finish_a_new_close(cx: &mut TestAppContext) {
+    use std::time::Duration;
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let window = cx.add_window(|_, _| Toggling {
+        menu: Popup::default(),
+        dismisses: false,
+    });
+    let entity = window.root(cx).unwrap();
+    let mut visual = VisualTestContext::from_window(window.into(), cx);
+    let duration =
+        motion::MENU_OUT.total().mul_f32(motion::speed_scale()) + Duration::from_millis(20);
+    let half = duration / 2;
+    visual.update(|_, cx| {
+        entity.update(cx, |view, cx| {
+            view.menu.open(());
+            popover::close_popup(view, cx, |view| &mut view.menu);
+        })
+    });
+    visual.run_until_parked();
+    visual.executor().advance_clock(half);
+    visual.update(|_, cx| {
+        entity.update(cx, |view, cx| {
+            view.menu.open(());
+            popover::close_popup(view, cx, |view| &mut view.menu);
+        })
+    });
+    visual.run_until_parked();
+    visual.executor().advance_clock(duration - half);
+    visual.run_until_parked();
+    assert!(visual.update(|_, cx| entity.read(cx).menu.is_closing()));
+    visual.executor().advance_clock(half);
+    visual.run_until_parked();
+    assert!(visual.update(|_, cx| entity.read(cx).menu.get().is_none()));
+}

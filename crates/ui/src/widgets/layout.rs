@@ -8,7 +8,7 @@ use crate::stack;
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
 use icons::Icon;
 use motion::{self, Fade};
-use theme::{TextStyle, Theme, ThemeExt, Typeset, card_selected_bg, ink};
+use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 /// The drag payload of a [`Layout::split_handle`]. Shipped from here so every
 /// split speaks the same type: `on_drag_move::<SplitDrag>` on one container
@@ -113,9 +113,13 @@ pub trait Layout: ThemeExt {
             .text_color(tint)
             .cursor_pointer();
         if selected {
-            row = row.bg(card_selected_bg());
+            row = row.bg(theme.card_selected_bg());
         } else {
-            row = row.bg(motion::hover_blend(&fade, ink(0.0), theme.element_hover));
+            row = row.bg(motion::hover_blend(
+                &fade,
+                theme.ink(0.0),
+                theme.element_hover,
+            ));
             row.interactivity().on_hover(motion::hover_listener(fade));
         }
         row.when_some(icon, |row, icon| {

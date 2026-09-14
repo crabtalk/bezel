@@ -305,15 +305,7 @@ pub struct TextField {
     /// single-line field is exactly one row tall so it cannot overflow
     /// downwards. The clamp falls out of that and needs no test for shape.
     scroll: Point<Pixels>,
-    /// Points to return to, oldest first. Bounded by `undo_limit`: the field
-    /// outlives a lot of typing, and an unbounded history of a growing string
-    /// is a slow leak nothing ever reclaims.
-    undo: std::collections::VecDeque<Snapshot>,
-    /// Undone points, newest last. Cleared by any fresh edit — the usual
-    /// model, and the only one where redo cannot resurrect a branch the text
-    /// has already diverged from.
-    redo: Vec<Snapshot>,
-    undo_limit: usize,
+    history: crate::history::SnapshotHistory<Snapshot>,
     /// The kind of the last edit and the offset it left the caret at, which is
     /// what decides whether the next edit joins that group or starts a new one.
     /// Adjacency rather than a pause, so there is no timing threshold to invent.
@@ -361,9 +353,7 @@ impl TextField {
             is_selecting: false,
             goal_x: None,
             scroll: Point::default(),
-            undo: std::collections::VecDeque::new(),
-            redo: Vec::new(),
-            undo_limit: DEFAULT_UNDO_LIMIT,
+            history: crate::history::SnapshotHistory::new(DEFAULT_UNDO_LIMIT),
             last_edit: None,
             key_context: None,
             metrics: TextStyle::Body.into(),
@@ -378,7 +368,7 @@ impl TextField {
     /// theme is rebuilt on every light/dark switch, which would quietly reset
     /// anything behavioural parked in it.
     pub fn with_undo_limit(mut self, limit: usize) -> Self {
-        self.undo_limit = limit;
+        self.history.set_limit(limit);
         self
     }
 
@@ -450,8 +440,7 @@ impl TextField {
         self.content = normalize(&content.into(), self.shape).into();
         // A programmatic reset is not something the user did, so there is
         // nothing here for them to undo back past.
-        self.undo.clear();
-        self.redo.clear();
+        self.history.clear();
         self.last_edit = None;
         let end = self.content.len();
         self.selected_range = end..end;
@@ -851,29 +840,22 @@ impl TextField {
     /// the caret, or switch from typing to deleting, and the next one starts a
     /// group of its own.
     fn push_undo(&mut self, kind: EditKind, at: usize) {
-        if !joins_group(self.last_edit, kind, at) {
-            self.undo.push_back(self.snapshot());
-            while self.undo.len() > self.undo_limit {
-                self.undo.pop_front();
-            }
-        }
-        self.redo.clear();
+        let before = (!joins_group(self.last_edit, kind, at)).then(|| self.snapshot());
+        self.history.record(before);
     }
 
     fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(point) = self.undo.pop_back() else {
-            return;
-        };
-        self.redo.push(self.snapshot());
-        self.restore(point, cx);
+        let current = self.snapshot();
+        if let Some(point) = self.history.undo(|| current) {
+            self.restore(point, cx);
+        }
     }
 
     fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(point) = self.redo.pop() else {
-            return;
-        };
-        self.undo.push_back(self.snapshot());
-        self.restore(point, cx);
+        let current = self.snapshot();
+        if let Some(point) = self.history.redo(|| current) {
+            self.restore(point, cx);
+        }
     }
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -924,20 +906,16 @@ impl TextField {
         cx.notify()
     }
 
-    fn offset_from_utf16(&self, offset: usize) -> usize {
-        offset_from_utf16(&self.content, offset)
-    }
-
     fn offset_to_utf16(&self, offset: usize) -> usize {
         offset_to_utf16(&self.content, offset)
     }
 
     fn range_to_utf16(&self, range: &Range<usize>) -> Range<usize> {
-        self.offset_to_utf16(range.start)..self.offset_to_utf16(range.end)
+        range_to_utf16(&self.content, range.clone())
     }
 
     fn range_from_utf16(&self, range_utf16: &Range<usize>) -> Range<usize> {
-        self.offset_from_utf16(range_utf16.start)..self.offset_from_utf16(range_utf16.end)
+        range_from_utf16(&self.content, range_utf16.clone())
     }
 
     fn previous_boundary(&self, offset: usize) -> usize {
@@ -980,6 +958,28 @@ pub fn offset_to_utf16(text: &str, offset: usize) -> usize {
         utf16_offset += ch.len_utf16();
     }
     utf16_offset
+}
+
+/// Platform range → byte range, clamped to character boundaries in `text`.
+pub fn range_from_utf16(text: &str, range: Range<usize>) -> Range<usize> {
+    offset_from_utf16(text, range.start)..offset_from_utf16(text, range.end)
+}
+
+/// Byte range → platform range.
+pub fn range_to_utf16(text: &str, range: Range<usize>) -> Range<usize> {
+    offset_to_utf16(text, range.start)..offset_to_utf16(text, range.end)
+}
+
+/// An IME selection is relative to the replacement text, not the document.
+pub fn composition_selection(
+    text: &str,
+    start: usize,
+    selection: Option<Range<usize>>,
+) -> Range<usize> {
+    let range = selection
+        .map(|range| range_from_utf16(text, range))
+        .unwrap_or(text.len()..text.len());
+    start + range.start..start + range.end
 }
 
 /// Previous *grapheme* boundary, so arrow keys and backspace step over a flag
@@ -1247,7 +1247,7 @@ impl EntityInputHandler for TextField {
         // Every edit lands here — typing, deleting, cut, paste, and the IME
         // *committing*. Not `replace_and_mark_text_in_range`, which is the
         // composing path: provisional text must not become undo steps, or every
-        // keystroke of Japanese input would be one.
+        // keystroke of Chinese input would be one.
         let kind = if new_text.is_empty() {
             EditKind::Delete
         } else {
@@ -1294,11 +1294,9 @@ impl EntityInputHandler for TextField {
                 .into();
         self.marked_range =
             (!new_text.is_empty()).then(|| range.start..range.start + new_text.len());
-        self.selected_range = new_selected_range_utf16
-            .as_ref()
-            .map(|range_utf16| self.range_from_utf16(range_utf16))
-            .map(|new_range| new_range.start + range.start..new_range.end + range.end)
-            .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+        self.selected_range =
+            composition_selection(new_text, range.start, new_selected_range_utf16);
+        self.selection_reversed = false;
 
         self.caret_moved();
         cx.emit(FieldEvent::Changed);

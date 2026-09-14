@@ -2,18 +2,19 @@
 //! click counter, a switch that flips light/dark. Every gpui type path is
 //! `bezel::gpui`, exactly as an external app would consume the library.
 
-use bezel::gpui::{
-    App, AppContext as _, Bounds, Context, FocusHandle, Menu, MenuItem, Window, WindowBounds,
-    WindowOptions, actions, div, prelude::*, px, size,
-};
-use bezel::theme::{
-    self, Appearance, TextStyle, Theme, Typeset,
-    appearance::{self, AppearanceMode},
-};
-use bezel::ui::{
-    self,
-    focus::{self, Activate},
-    widgets::{ButtonStyle, Buttons, Controls},
+use bezel::{
+    gpui::{
+        App, AppContext as _, Bounds, Context, FocusHandle, Menu, MenuItem, Window, WindowBounds,
+        WindowOptions, actions, div, prelude::*, px, size,
+    },
+    theme::{
+        self, Appearance, TextStyle, Theme, Typeset,
+        appearance::{self, AppearanceMode},
+    },
+    ui::{
+        self, focus,
+        widgets::{Button, ButtonStyle, Controls},
+    },
 };
 
 actions!(hello, [Quit]);
@@ -93,10 +94,9 @@ impl Render for Hello {
                 .text_color(theme.text)
                 .child(div().text_style(TextStyle::Title).child("hello, bezel"))
                 .child(
-                    theme
-                        .button("Click me", ButtonStyle::Prominent, None)
-                        .id("click")
-                        .on_click(cx.listener(|view, _, _, cx| {
+                    Button::new("click", "Click me")
+                        .button_style(ButtonStyle::Prominent)
+                        .on_press(cx.listener(|view, _, _, cx| {
                             view.clicks += 1;
                             cx.notify();
                         })),
@@ -107,13 +107,13 @@ impl Render for Hello {
                         .text_color(theme.text_muted)
                         .child(format!("clicked {} times", self.clicks)),
                 )
-                .child(
-                    focus::focusable(theme, &self.toggle, theme.toggle(dark))
-                        .id("theme")
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |_, _, _, cx| flip(cx)))
-                        .on_action(cx.listener(move |_, _: &Activate, _, cx| flip(cx))),
-                ),
+                .child(focus::pressable(
+                    theme,
+                    &self.toggle,
+                    theme.toggle(dark).id("theme").cursor_pointer(),
+                    true,
+                    cx.listener(move |_, _, _, cx| flip(cx)),
+                )),
         )
     }
 }

@@ -41,7 +41,7 @@ Dismissal is the caller's `.on_mouse_down_out` on the card. To animate the close
 
 ```rust
 if self.menu.begin_close() {
-    popover::reap_popup(cx, |view: &mut Self| &mut view.menu);
+    popover::reap_popup(self, cx, |view: &mut Self| &mut view.menu);
 }
 ```
 
@@ -97,3 +97,8 @@ Dismissal comes back as `Hit::Dismiss` rather than being left to an `.on_mouse_d
 A submenu with nothing selectable in it is not selectable itself — opening it would drop a panel that is a dead end — so the keyboard steps over it like any other dead row.
 
 The pure parts are separate and tested on their own: `menu_step` wraps the active row at both ends, `filter_indices` ranks prefix matches ahead of substring matches, and `Filter` holds the items, the ranked view and the active row for every picker in the library.
+
+`reap_popup` takes the owning view before `cx` so it can capture the current
+close generation. An older timer cannot unmount a popup that reopened and
+started another close. Prefer `close_popup(self, cx, |view| &mut view.menu)`
+to begin and schedule the close together.

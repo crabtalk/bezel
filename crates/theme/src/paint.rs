@@ -200,10 +200,7 @@ pub(crate) fn band_for(appearance: Appearance) -> Hsla {
 /// carrying the ring in [`glass_selected_shadows`] on top. Selection *inside
 /// floating cards* is [`card_selected_bg`].
 pub fn glass_selected_bg() -> Hsla {
-    match current_appearance() {
-        Appearance::Dark => ink(0.12),
-        Appearance::Light => ink(0.06),
-    }
+    card_selected_bg()
 }
 
 /// The user message bubble's plate: the softened [`wash`] at 8% dark, 4%
@@ -222,10 +219,11 @@ pub fn user_bubble_bg() -> Hsla {
 /// tone-flipped by the palette convention so a card that is already the bright
 /// plane lifts with black at 6% rather than white.
 pub fn card_selected_bg() -> Hsla {
-    match current_appearance() {
-        Appearance::Dark => ink(0.12),
-        Appearance::Light => ink(0.06),
-    }
+    card_selected_bg_for(current_appearance())
+}
+
+pub(crate) fn card_selected_bg_for(appearance: Appearance) -> Hsla {
+    ink_for(appearance, if appearance.is_dark() { 0.12 } else { 0.06 })
 }
 
 /// The selected chip's bright outline, as an INSET shadow: gpui paints inset
