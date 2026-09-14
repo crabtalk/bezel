@@ -19,6 +19,15 @@ use ui::{keys, menu::Item};
 
 actions!(keys_test, [Bold, Italic, Unbound]);
 
+/// What `keys::format` spells the platform key as here. Windows writes `Win+`
+/// and everything else `Super+`, so an expectation that hardcodes one of them
+/// under `not(macos)` is a test that can only pass on half the platforms it
+/// runs on — which is exactly how it failed.
+#[cfg(target_os = "windows")]
+const SUPER: &str = "Win+";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const SUPER: &str = "Super+";
+
 /// The context the bindings under test are scoped to.
 const SURFACE: &str = "Surface";
 
@@ -74,7 +83,7 @@ fn modifiers_are_in_the_platform_order(cx: &mut TestAppContext) {
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⌃⌥⇧⌘B");
     #[cfg(not(target_os = "macos"))]
-    assert_eq!(label.as_ref(), "Super+Ctrl+Alt+Shift+B");
+    assert_eq!(label.as_ref(), format!("{SUPER}Ctrl+Alt+Shift+B"));
 }
 
 /// A named key is a glyph where the platform has one, and the modifiers run
@@ -101,7 +110,7 @@ fn named_keys_print_as_the_platform_writes_them(cx: &mut TestAppContext) {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        assert_eq!(bold.as_ref(), "Super+Backspace");
+        assert_eq!(bold.as_ref(), format!("{SUPER}Backspace"));
         assert_eq!(italic.as_ref(), "Shift+Enter");
     }
 }
@@ -146,7 +155,7 @@ fn a_global_binding_resolves_from_inside_a_context(cx: &mut TestAppContext) {
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⌘K");
     #[cfg(not(target_os = "macos"))]
-    assert_eq!(label.as_ref(), "Super+K");
+    assert_eq!(label.as_ref(), format!("{SUPER}K"));
 }
 
 /// The whole point: an app that binds its own chord over a default gets its
@@ -168,7 +177,7 @@ fn rebinding_moves_the_label(cx: &mut TestAppContext) {
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⇧⌘B");
     #[cfg(not(target_os = "macos"))]
-    assert_eq!(label.as_ref(), "Super+Shift+B");
+    assert_eq!(label.as_ref(), format!("{SUPER}Shift+B"));
 }
 
 /// The other half of customizing: `NoAction` over a chord takes it away, and
@@ -205,7 +214,7 @@ fn a_context_out_of_the_focus_path_needs_shortcut_in(cx: &mut TestAppContext) {
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⌘B");
     #[cfg(not(target_os = "macos"))]
-    assert_eq!(label.as_ref(), "Super+B");
+    assert_eq!(label.as_ref(), format!("{SUPER}B"));
 }
 
 /// The menu row reads the same answer, into the slot a hand-typed accelerator
