@@ -894,7 +894,9 @@ pub struct Gallery {
     /// What it last reported. The bar keeps no selection — a menu item is an
     /// action, not a value — so the host is where the answer lands.
     last_menu_item: Option<SharedString>,
-    sheet: popover::Popup<()>,
+    /// Which edge the open sheet is pinned to — the page offers both, and
+    /// the mount below reads it back rather than keeping a second flag.
+    sheet: popover::Popup<popover::Side>,
     /// The rail, when the window is too narrow to carry it beside the pane.
     drawer: popover::Popup<()>,
     /// Where the split's divider sits, as a fraction of the container.
@@ -3410,18 +3412,30 @@ impl Gallery {
                     "A dialog pinned to an edge; the scrim dismisses it.",
                 ))
                 .child(
-                    row().child(
-                        div()
-                            .id("open-sheet")
-                            .on_click(cx.listener(|view, _, _, cx| {
-                                view.sheet.open(());
-                                cx.notify();
-                            }))
-                            .child(theme.button(
-                                "Open sheet",
-                                ButtonStyle::Ghost,
-                                Some(Fade::new(view, "g-sheet")),
-                            )),
+                    row().children(
+                        [
+                            ("open-sheet", "From the side", popover::Side::Right),
+                            (
+                                "open-bottom-sheet",
+                                "From the bottom",
+                                popover::Side::Bottom,
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(id, label, side)| {
+                            div()
+                                .id(id)
+                                .on_click(cx.listener(move |view, _, _, cx| {
+                                    view.sheet.open(side);
+                                    cx.notify();
+                                }))
+                                .child(theme.button(
+                                    label,
+                                    ButtonStyle::Ghost,
+                                    Some(Fade::new(view, format!("g-{id}"))),
+                                ))
+                                .into_any_element()
+                        }),
                     ),
                 )
                 .into_any_element(),
@@ -5146,13 +5160,20 @@ impl Render for Gallery {
                     cx.listener(|view, _, _, cx| view.close_dialog(cx)),
                 ))
             })
-            .when(self.sheet.get().is_some(), |root| {
+            .when_some(self.sheet.get().copied(), |root, side| {
+                // A side sheet is as wide as a rail; a bottom one is as tall
+                // as a picker, which is a different number for the same reason
+                // — it is measured across the edge it hangs off.
+                let extent = match side {
+                    popover::Side::Bottom => px(300.0),
+                    _ => px(320.0),
+                };
                 root.child(popover::sheet(
                     "gallery-sheet",
                     window.viewport_size(),
-                    popover::Side::Right,
-                    px(320.0),
-                    popover::sheet_panel(&theme, popover::Side::Right)
+                    side,
+                    extent,
+                    popover::sheet_panel(&theme, side)
                         .p(px(20.0))
                         .gap(px(14.0))
                         .child(
@@ -5178,7 +5199,7 @@ impl Render for Gallery {
                         .child(popover::dialog_body(
                             &theme,
                             "A sheet is the dialog card pinned to an edge — same scrim, \
-                             same glass, full height.",
+                             same glass, spanning whichever edge it hangs off.",
                         ))
                         .child(
                             theme

@@ -864,6 +864,22 @@ fn modal_with(
 pub enum Side {
     Left,
     Right,
+    /// Up from the bottom edge, full width — the shape a phone puts a picker
+    /// or a share list in, and what a narrow window wants instead of a side
+    /// panel that leaves no room for the page behind it.
+    Bottom,
+}
+
+impl Side {
+    /// Which way the panel travels. The extent a [`sheet`] is given is read
+    /// along this axis: a width for the vertical edges, a height for the
+    /// horizontal one.
+    fn axis(self) -> gpui::Axis {
+        match self {
+            Side::Left | Side::Right => gpui::Axis::Horizontal,
+            Side::Bottom => gpui::Axis::Vertical,
+        }
+    }
 }
 
 /// Corner rounding of [`dialog_card`], and of a [`sheet_panel`]'s two inner
@@ -873,9 +889,9 @@ pub enum Side {
 /// the blur under each — which is exactly why it is not a literal.
 const DIALOG_RADIUS: f32 = 16.0;
 
-/// The full-height panel body of a [`sheet`]: glass card chrome rounded and
-/// hairlined on its *inner* edge only, so it reads as pulled out of the window
-/// side rather than floating near it.
+/// The panel body of a [`sheet`]: glass card chrome rounded and hairlined on
+/// its *inner* edge only — the corners against the window edge are off-screen
+/// — so it reads as pulled out of the window rather than floating near it.
 pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
     let card = div()
         .size_full()
@@ -892,6 +908,10 @@ pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
             .rounded_l(px(DIALOG_RADIUS))
             .border_l_1()
             .border_color(hairline(0.10)),
+        Side::Bottom => card
+            .rounded_t(px(DIALOG_RADIUS))
+            .border_t_1()
+            .border_color(hairline(0.10)),
     };
     if theme.glass {
         card.bg(theme.glass_overlay())
@@ -900,10 +920,14 @@ pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
     }
 }
 
-/// Full-height side panel over a dim scrim — [`modal`] pinned to an edge. It
-/// slides in over [`motion::DIALOG_IN`] and, once the caller's [`Popup`]
-/// enters its exit phase, back out over [`motion::MENU_OUT`] — which it must,
-/// because [`Popup::finish_close`] reaps on that spec's span.
+/// A panel over a dim scrim — [`modal`] pinned to an edge. It slides in over
+/// [`motion::DIALOG_IN`] and, once the caller's [`Popup`] enters its exit
+/// phase, back out over [`motion::MENU_OUT`] — which it must, because
+/// [`Popup::finish_close`] reaps on that spec's span.
+///
+/// `extent` is measured across the edge the sheet is pinned to: a width on
+/// [`Side::Left`] and [`Side::Right`], a height on [`Side::Bottom`]. The other
+/// axis always spans the viewport.
 ///
 /// `on_dismiss` is the scrim click. Unlike the anchored menus, dismissal
 /// cannot be the caller's `.on_mouse_down_out`: the scrim lives inside this
@@ -916,25 +940,29 @@ pub fn sheet(
     id: impl Into<SharedString>,
     viewport: gpui::Size<Pixels>,
     side: Side,
-    width: Pixels,
+    extent: Pixels,
     content: AnyElement,
     closing: Option<web_time::Instant>,
     on_dismiss: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
     let id = id.into();
     let exit = closing.map(exit_progress);
-    let panel = div()
-        .absolute()
-        .top_0()
-        .bottom_0()
-        .w(width)
-        .child(crate::surface::popover(DIALOG_RADIUS, content));
+    // The panel spans the edge it is pinned to and takes `extent` across it,
+    // which is why the argument is not called a width: on [`Side::Bottom`] it
+    // is the height.
+    let panel = div().absolute();
+    let panel = match side.axis() {
+        gpui::Axis::Horizontal => panel.top_0().bottom_0().w(extent),
+        gpui::Axis::Vertical => panel.left_0().right_0().h(extent),
+    };
+    let panel = panel.child(crate::surface::popover(DIALOG_RADIUS, content));
     // `t` runs 0 (fully off-screen) → 1 (seated against the edge).
     let seat = move |el: gpui::Div, t: f32| {
-        let inset = width * (t - 1.0);
+        let inset = extent * (t - 1.0);
         match side {
             Side::Left => el.left(inset),
             Side::Right => el.right(inset),
+            Side::Bottom => el.bottom(inset),
         }
     };
     let panel = if let Some(t) = exit {

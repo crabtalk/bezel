@@ -1,6 +1,6 @@
 ---
 title: Sheet
-description: The dialog card pinned to a window edge — full height, same scrim, sliding in and back out on the popup's exit phase.
+description: The dialog card pinned to a window edge — down the side or up from the bottom, same scrim, sliding in and back out on the popup's exit phase.
 ---
 
 ```rust
@@ -10,7 +10,7 @@ popover::sheet(
     "gallery-sheet",
     window.viewport_size(),
     Side::Right,
-    px(320.0),
+    px(320.0),   // a width here; a height on Side::Bottom
     popover::sheet_panel(&theme, Side::Right)
         .p(px(20.0))
         .child(popover::dialog_title(&theme, "Details"))
@@ -28,12 +28,14 @@ The exit clock is not optional: `Popup::finish_close` reaps on `MENU_OUT`'s span
 ```rust
 // ui::popover
 
-/// Slides in over `DIALOG_IN`, out over `MENU_OUT`.
+/// Slides in over `DIALOG_IN`, out over `MENU_OUT`. `extent` is measured
+/// across the edge it is pinned to — a width on `Left` and `Right`, a height
+/// on `Bottom` — and the other axis spans the viewport.
 pub fn sheet(
     id: impl Into<SharedString>,
     viewport: gpui::Size<Pixels>,
     side: Side,
-    width: Pixels,
+    extent: Pixels,
     content: AnyElement,
     closing: Option<web_time::Instant>,
     on_dismiss: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
@@ -43,7 +45,13 @@ pub fn sheet(
 /// are off screen.
 pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div;
 
-pub enum Side { Left, Right }
+pub enum Side {
+    Left,
+    Right,
+    /// Up from the bottom edge, full width — what a narrow window wants
+    /// instead of a side panel that leaves no room for the page behind it.
+    Bottom,
+}
 
 // ...
 ```
