@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.1.13",
+    "date": "2026-09-14",
+    "summary": "A sheet can come up from the bottom, a drag holds its run past the edge of the box, and a doc page is the component and its signatures.",
+    "new": [
+      "`popover::Side::Bottom` pins a sheet to the bottom edge — full width, up over `DIALOG_IN` and back down over `MENU_OUT`, on the same scrim and the same exit clock as the side panels. It is what a narrow window wants instead of a side panel that leaves the page behind it no room. The rounding and the hairline follow the edge, so the corners left square are the two against the window."
+    ],
+    "changed": [
+      "`popover::sheet` takes an `extent` where it took a `width`. The side decides which axis it is read along — a width on `Left` and `Right`, a height on `Bottom` — while the other always spans the viewport, so the old name would have been wrong exactly half the time.",
+      "Every page under `/docs` is the component, one usage block, and the API as real Rust: each signature inside the `trait` or `impl` that declares it, with `// ...` wherever the block is a selection rather than the whole item, and the crate's docs.rs beside the source link for the rest. The prose that used to argue for each design is gone — what a reader needed from it was the signature. 21,600 words to 5,000, and the pages that kept a table kept one because its rows are data rather than Rust: the markdown spellings, the glass measurements, the feature gates.",
+      "A gallery section is a list of named examples rather than one undivided page. `?s=<section>&e=<example>` embeds one, and a doc page moves a single embed between them as the reader scrolls — which is what keeps one 14MB wasm instance on a page rather than one per snippet. The catalog declares the keys and a test asserts the page paints exactly those, so an `example=` that points at nothing fails the build instead of showing the wrong demo."
+    ],
+    "fixed": [
+      "A drag that leaves a text field keeps carrying the run. `on_mouse_move` on the field's own box fires only while the box is the thing under the pointer, so a selection dragged past the edge froze at the last character inside it — and the last line of a full box was unreachable, since reaching it means passing the edge. The move comes off the window now, which arrives wherever the pointer went.",
+      "A field hit tests at its own line height rather than the window's. Outside the field's own paint there is no text style on the stack, so a click handler was told the window's default and walked the rows at the wrong stride: the caret landed a line or two above the pointer, further out the lower you clicked, until the last lines of a full box could not be reached at all. `TextField::offset_bounds` loses its `window` argument with it."
+    ]
+  },
+  {
     "version": "0.1.12",
     "date": "2026-09-14",
     "summary": "A document and the markdown it would save are the same view now, and an app spells marks CommonMark never named.",

@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.12"
+version = "0.1.13"
 edition = "2024"
 license = "MIT"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
