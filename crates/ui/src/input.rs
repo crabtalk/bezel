@@ -129,26 +129,21 @@ pub const KEY_CONTEXT: &str = "TextField";
 /// every `TextField` would win the dispatch and break list navigation in both.
 pub const MULTILINE_KEY_CONTEXT: &str = "TextArea";
 
-/// Install the default key bindings. Call once at startup.
+/// Install the bindings — [`bindings`], bound. Call once at startup.
+pub fn init(cx: &mut App) {
+    cx.bind_keys(bindings());
+}
+
+/// The field's keymap, as data, so an app can have it without having to
+/// take it — see [`crate::keys`] for layering over it or taking a chord
+/// away.
 ///
 /// Every binding is scoped to [`KEY_CONTEXT`], so they are inert outside a
 /// focused field and an app is free to bind the same chords elsewhere.
-///
-/// **Optional.** This is a convenience, not a requirement: every action above
-/// is a public type, so an app that wants its own keymap simply does not call
-/// this and binds what it likes instead —
-///
-/// ```ignore
-/// use ui::input::{self, Home, KEY_CONTEXT};
-/// cx.bind_keys([KeyBinding::new("ctrl-a", Home, Some(KEY_CONTEXT))]);
-/// ```
-///
-/// It is all-or-nothing, so taking the clipboard defaults while replacing the
-/// motion ones means rebinding the lot. That is deliberate until something
-/// needs finer grain.
-pub fn init(cx: &mut App) {
+pub fn bindings() -> Vec<KeyBinding> {
+    let mut bindings = Vec::new();
     let ctx = Some(KEY_CONTEXT);
-    cx.bind_keys([
+    bindings.extend([
         // Character movement and editing, everywhere.
         KeyBinding::new("backspace", Backspace, ctx),
         KeyBinding::new("delete", Delete, ctx),
@@ -165,7 +160,7 @@ pub fn init(cx: &mut App) {
     // Multi-line only — see [`MULTILINE_KEY_CONTEXT`] for why these cannot be
     // bound on every field.
     let area = Some(MULTILINE_KEY_CONTEXT);
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("enter", InsertNewline, area),
         KeyBinding::new("up", Up, area),
         KeyBinding::new("down", Down, area),
@@ -174,7 +169,7 @@ pub fn init(cx: &mut App) {
     ]);
 
     #[cfg(target_os = "macos")]
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("cmd-a", SelectAll, ctx),
         KeyBinding::new("cmd-c", Copy, ctx),
         KeyBinding::new("cmd-x", Cut, ctx),
@@ -207,13 +202,13 @@ pub fn init(cx: &mut App) {
     // `C-n`/`C-p` are emacs' vertical motion and macOS `NSTextView` natives
     // both — the two tests a chord has to pass to earn a binding here.
     #[cfg(target_os = "macos")]
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("ctrl-n", Down, area),
         KeyBinding::new("ctrl-p", Up, area),
     ]);
 
     #[cfg(not(target_os = "macos"))]
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("ctrl-a", SelectAll, ctx),
         KeyBinding::new("ctrl-c", Copy, ctx),
         KeyBinding::new("ctrl-x", Cut, ctx),
@@ -228,6 +223,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-z", Undo, ctx),
         KeyBinding::new("ctrl-shift-z", Redo, ctx),
     ]);
+
+    bindings
 }
 
 /// What shape the field takes.

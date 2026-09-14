@@ -30,13 +30,15 @@
 
 use editor::{Editor, Formatting, Mode};
 use gpui::{
-    Context, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div, prelude::*, px,
+    Action, Context, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
+    prelude::*, px,
 };
 use markdown::Mark;
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
 use ui::{
     popover::{self, Popup},
+    tooltip::Tooltip,
     widgets::{ButtonStyle, Buttons, Controls},
 };
 
@@ -52,24 +54,74 @@ The last two buttons are ==this app's own marks==, not the library's: `markdown`
 - Switch to Markdown and the bar greys out: there is nothing there to toggle
 "#;
 
+/// One button in the mark cluster.
+struct MarkButton {
+    glyph: &'static [u8],
+    /// The element id, and the name of the fade the button animates under.
+    key: &'static str,
+    /// What the tooltip calls it.
+    label: &'static str,
+    mark: Mark,
+    /// The editor action whose chord the tooltip prints. `None` for the two
+    /// marks this app registered itself: they are toggled through the same
+    /// `toggle_mark` as bold but no chord reaches them, and a tooltip that
+    /// invented one would be the drift this whole page is about.
+    action: Option<Box<dyn Action>>,
+}
+
 /// The marks the bar offers, and the glyph each carries. The last two are the
 /// app's own — registered in `gallery::init`, spelled `==` and `++`, and
 /// painted by [`paint`] below. Nothing in `editor` knows their names.
-fn marks() -> [(&'static [u8], &'static str, Mark); 6] {
+fn marks() -> [MarkButton; 6] {
+    let button = |glyph, key, label, mark, action: Option<Box<dyn Action>>| MarkButton {
+        glyph,
+        key,
+        label,
+        mark,
+        action,
+    };
     [
-        (icons::glyph::Bold, "bold", Mark::Bold),
-        (icons::glyph::Italic, "italic", Mark::Italic),
-        (icons::glyph::Strikethrough, "strike", Mark::Strike),
-        (icons::glyph::Code, "code", Mark::Code),
-        (
+        button(
+            icons::glyph::Bold,
+            "bold",
+            "Bold",
+            Mark::Bold,
+            Some(Box::new(editor::keys::ToggleBold)),
+        ),
+        button(
+            icons::glyph::Italic,
+            "italic",
+            "Italic",
+            Mark::Italic,
+            Some(Box::new(editor::keys::ToggleItalic)),
+        ),
+        button(
+            icons::glyph::Strikethrough,
+            "strike",
+            "Strikethrough",
+            Mark::Strike,
+            Some(Box::new(editor::keys::ToggleStrike)),
+        ),
+        button(
+            icons::glyph::Code,
+            "code",
+            "Code",
+            Mark::Code,
+            Some(Box::new(editor::keys::ToggleCode)),
+        ),
+        button(
             icons::glyph::Highlighter,
             "highlight",
+            "Highlight",
             Mark::Custom("highlight".into()),
+            None,
         ),
-        (
+        button(
             icons::glyph::Underline,
             "underline",
+            "Underline",
             Mark::Custom("underline".into()),
+            None,
         ),
     ]
 }
@@ -194,28 +246,44 @@ impl RibbonDemo {
     fn marks(&self, formatting: &Formatting, theme: &Theme, cx: &mut Context<Self>) -> gpui::Div {
         let view = Painter::of(cx);
         let live = formatting.mode == Mode::Blocks;
-        theme
-            .control_group()
-            .children(marks().map(|(glyph, key, mark)| {
-                let lit = formatting.marks.contains(&mark);
-                let button = theme
-                    .icon_button(
-                        glyph,
-                        ButtonStyle::Ghost,
-                        live.then(|| Fade::new(view, format!("ribbon-{key}"))),
-                    )
-                    .id(SharedString::from(format!("ribbon-mark-{key}")))
-                    .when(lit, |el| el.bg(theme.element_active).text_color(theme.text))
-                    .when(!live, |el| el.opacity(0.4));
-                match live {
-                    true => button.on_click(cx.listener(move |this, _, _, cx| {
-                        let mark = mark.clone();
-                        this.editor
-                            .update(cx, |editor, cx| editor.toggle_mark(mark, cx));
-                    })),
-                    false => button,
-                }
-            }))
+        theme.control_group().children(marks().map(|button| {
+            let MarkButton {
+                glyph,
+                key,
+                label,
+                mark,
+                action,
+            } = button;
+            let lit = formatting.marks.contains(&mark);
+            let button = theme
+                .icon_button(
+                    glyph,
+                    ButtonStyle::Ghost,
+                    live.then(|| Fade::new(view, format!("ribbon-{key}"))),
+                )
+                .id(SharedString::from(format!("ribbon-mark-{key}")))
+                .when(lit, |el| el.bg(theme.element_active).text_color(theme.text))
+                .when(!live, |el| el.opacity(0.4))
+                // The chord comes off the keymap, never out of this file —
+                // rebind `ToggleBold` and the hint moves with it. Asked
+                // against `editor::CONTEXT` rather than against focus, because
+                // the bar names the editor's chord whether or not the caret is
+                // still in it.
+                .tooltip(move |window, cx| match &action {
+                    Some(action) => {
+                        Tooltip::for_action_in(label, action.as_ref(), editor::CONTEXT, window, cx)
+                    }
+                    None => Tooltip::text(label, window, cx),
+                });
+            match live {
+                true => button.on_click(cx.listener(move |this, _, _, cx| {
+                    let mark = mark.clone();
+                    this.editor
+                        .update(cx, |editor, cx| editor.toggle_mark(mark, cx));
+                })),
+                false => button,
+            }
+        }))
     }
 }
 

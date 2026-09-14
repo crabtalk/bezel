@@ -36,11 +36,19 @@ actions!(
 /// context, so typing goes to the field while navigation keys fall through.
 pub const KEY_CONTEXT: &str = "Combobox";
 
-/// Install the combobox's navigation bindings. Call once, alongside
+/// Install the bindings — [`bindings`], bound. Call once, alongside
 /// [`crate::input::init`].
 pub fn init(cx: &mut App) {
+    cx.bind_keys(bindings());
+}
+
+/// The combobox's navigation keymap, as data, so an app can have it without having to
+/// take it — see [`crate::keys`] for layering over it or taking a chord
+/// away.
+pub fn bindings() -> Vec<KeyBinding> {
+    let mut bindings = Vec::new();
     let ctx = Some(KEY_CONTEXT);
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("down", SelectNext, ctx),
         KeyBinding::new("up", SelectPrevious, ctx),
         KeyBinding::new("enter", Confirm, ctx),
@@ -48,6 +56,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-n", SelectNext, ctx),
         KeyBinding::new("ctrl-p", SelectPrevious, ctx),
     ]);
+
+    bindings
 }
 
 /// What the combobox reports. The index is into the ORIGINAL item list, never

@@ -46,7 +46,7 @@ use keys::{
     WordLeft, WordRight,
 };
 
-const CONTEXT: &str = "BezelEditor";
+pub const CONTEXT: &str = "BezelEditor";
 
 /// [`CONTEXT`], which every binding in [`keys`] is scoped to, plus the mark
 /// that keeps `tab` for [`Editor::indent`].

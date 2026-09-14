@@ -22,6 +22,7 @@ pub mod floating;
 pub mod focus;
 pub mod hover_card;
 pub mod input;
+pub mod keys;
 pub mod list;
 pub mod loaders;
 pub mod menu;

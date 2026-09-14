@@ -81,7 +81,15 @@ actions!(
 /// focused-but-closed bar drops its first menu.
 pub const KEY_CONTEXT: &str = "Menubar";
 
-/// Install the bar's bindings. Call once, alongside [`crate::input::init`].
+/// Install the bindings — [`bindings`], bound. Call once, alongside
+/// [`crate::input::init`].
+pub fn init(cx: &mut App) {
+    cx.bind_keys(bindings());
+}
+
+/// The bar's keymap, as data, so an app can have it without having to
+/// take it — see [`crate::keys`] for layering over it or taking a chord
+/// away.
 ///
 /// `left`/`right` cross between menus and `up`/`down` walk the rows, which is
 /// the one arrangement every platform's menubar agrees on. With a submenu in
@@ -89,9 +97,10 @@ pub const KEY_CONTEXT: &str = "Menubar";
 /// left to move through. Nothing claims `alt` to focus the bar: that is a
 /// Windows convention, and a component library that binds a chord it is unsure
 /// of takes it away from every app downstream.
-pub fn init(cx: &mut App) {
+pub fn bindings() -> Vec<KeyBinding> {
+    let mut bindings = Vec::new();
     let ctx = Some(KEY_CONTEXT);
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("left", PrevMenu, ctx),
         KeyBinding::new("right", NextMenu, ctx),
         KeyBinding::new("up", PrevItem, ctx),
@@ -99,6 +108,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("enter", Confirm, ctx),
         KeyBinding::new("escape", Dismiss, ctx),
     ]);
+
+    bindings
 }
 
 /// What the bar reports: an item chosen, by its place in the menus it was given.

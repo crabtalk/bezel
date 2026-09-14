@@ -58,15 +58,28 @@ actions!(
     ]
 );
 
-/// Install the editor's key bindings. Scoped to the editor's own key context,
-/// so binding `tab` here does not make `tab` mean "indent" for the whole app.
+/// Install the editor's key bindings — [`bindings`], bound.
+pub fn init(cx: &mut App) {
+    cx.bind_keys(bindings());
+}
+
+/// The editor's default keymap, as data, so an app can have it without having
+/// to take it. Scoped to the editor's own key context, so binding `tab` here
+/// does not make `tab` mean "indent" for the whole app.
 ///
 /// The chords are [`ui::input::TextField`]'s, because a document is not the place to
 /// invent a second set: what `alt-left` does in a search box is what a reader
 /// expects it to do here.
-pub fn init(cx: &mut App) {
+///
+/// An app with a keymap of its own has three ways in, none of which is copying
+/// this list: bind over it (a later binding wins), bind `gpui::NoAction` to a
+/// chord to take it away, or skip [`init`] and bind a filtered `bindings()`.
+/// Either way the actions are public and [`CONTEXT`] names the scope, so what
+/// the editor answers to is the app's to say.
+pub fn bindings() -> Vec<KeyBinding> {
     let ctx = Some(CONTEXT);
-    cx.bind_keys([
+    let mut bindings = Vec::new();
+    bindings.extend([
         KeyBinding::new("backspace", Backspace, ctx),
         KeyBinding::new("delete", Delete, ctx),
         KeyBinding::new("left", Left, ctx),
@@ -90,7 +103,7 @@ pub fn init(cx: &mut App) {
     // The URL prompt's own context, because the field holds focus while it is
     // open and the document behind it must not answer the same two keys.
     let prompt = Some(image::PROMPT_CONTEXT);
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("enter", ConfirmUrl, prompt),
         KeyBinding::new("escape", CancelUrl, prompt),
     ]);
@@ -107,7 +120,7 @@ pub fn init(cx: &mut App) {
     // and `cmd-w`, so a kill deletes and `cmd-x` is how text travels.
 
     #[cfg(target_os = "macos")]
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("cmd-a", SelectAll, ctx),
         KeyBinding::new("cmd-c", Copy, ctx),
         KeyBinding::new("cmd-x", Cut, ctx),
@@ -153,7 +166,7 @@ pub fn init(cx: &mut App) {
     ]);
 
     #[cfg(not(target_os = "macos"))]
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("ctrl-a", SelectAll, ctx),
         KeyBinding::new("ctrl-c", Copy, ctx),
         KeyBinding::new("ctrl-x", Cut, ctx),
@@ -180,4 +193,6 @@ pub fn init(cx: &mut App) {
         // reads it as "insert link", and a chord with two meanings is one this
         // library does not get to claim.
     ]);
+
+    bindings
 }

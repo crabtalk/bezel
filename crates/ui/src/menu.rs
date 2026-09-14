@@ -11,8 +11,10 @@
 //! can never disagree about which row an open submenu hangs off. What the
 //! pointer did comes back as a [`Hit`]; acting on it stays the caller's.
 
-use crate::{icons, popover, tooltip::Tooltip};
-use gpui::{Context, MouseDownEvent, Pixels, Point, SharedString, Window, div, prelude::*, px};
+use crate::{icons, keys, popover, tooltip::Tooltip};
+use gpui::{
+    Action, Context, MouseDownEvent, Pixels, Point, SharedString, Window, div, prelude::*, px,
+};
 use icons::Icon;
 use std::{cell::Cell, rc::Rc};
 use theme::{TextStyle, Theme, Typeset};
@@ -55,7 +57,8 @@ pub enum Item {
         icon: Option<Icon>,
         /// The accelerator to *print* — the binding itself is the app's, and
         /// bezel never dispatches it. A menu that showed a keystroke it did not
-        /// own would be documenting a lie.
+        /// own would be documenting a lie, which is what
+        /// [`Item::with_shortcut`] fills this from the keymap to avoid.
         keystroke: Option<SharedString>,
         /// The choice the menu is currently on, marked with a trailing check.
         checked: bool,
@@ -149,6 +152,31 @@ impl Item {
             *slot = Some(keystroke.into());
         }
         self
+    }
+
+    /// The accelerator read off the keymap instead of typed in — the same slot
+    /// [`Item::with_keystroke`] fills, filled with what would actually fire.
+    /// An action with nothing bound to it leaves the row bare, because a menu
+    /// that prints a chord it no longer owns is documenting a lie.
+    ///
+    /// Still nothing to dispatch: the row's click stays the caller's, and the
+    /// action passed here is read, never run.
+    pub fn with_shortcut(self, action: &dyn Action, window: &Window) -> Self {
+        match keys::shortcut(action, window) {
+            Some(keystroke) => self.with_keystroke(keystroke),
+            None => self,
+        }
+    }
+
+    /// [`Item::with_shortcut`] for a chord bound to a surface that is not
+    /// focused — which is most menu rows, since opening the menu took focus
+    /// off whatever the row acts on. `context` is the one the binding was
+    /// scoped to (`editor::CONTEXT`, [`crate::input::KEY_CONTEXT`]).
+    pub fn with_shortcut_in(self, action: &dyn Action, context: &str, window: &Window) -> Self {
+        match keys::shortcut_in(action, context, window) {
+            Some(keystroke) => self.with_keystroke(keystroke),
+            None => self,
+        }
     }
 
     /// Takes the flag, because what a menu is on is decided per render. No-ops

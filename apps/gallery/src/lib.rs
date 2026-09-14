@@ -26,7 +26,7 @@ use ui::{
     hover_card::HoverCard,
     icons::{self, Icon},
     input::{self, Shape, TextField},
-    list, loaders,
+    keys, list, loaders,
     menu::Item,
     menubar::{self, Menu, Menubar, MenubarEvent},
     pagination,
@@ -3254,7 +3254,14 @@ impl Gallery {
             "palette" => section
                 .child(
                     row()
-                        .child(popover::key_hint_text(&theme, "⌘K", "open palette"))
+                        // Read off the keymap, not typed here: this page and
+                        // `init` are two files, and a chord written in both is
+                        // a chord that drifts.
+                        .child(popover::key_hint_text(
+                            &theme,
+                            keys::shortcut(&OpenPalette, window).unwrap_or_default(),
+                            "open palette",
+                        ))
                         .when_some(self.last_command.clone(), |r, cmd| {
                             r.child(
                                 div()

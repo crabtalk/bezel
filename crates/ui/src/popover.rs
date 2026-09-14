@@ -1146,7 +1146,11 @@ pub fn key_hint(theme: &Theme, icon: impl Into<Icon>, label: &'static str) -> gp
 
 /// A footer legend whose cap holds a WORD ("tab", "esc") instead of a glyph
 /// — for keys with no icon in the set.
-pub fn key_hint_text(theme: &Theme, cap: &'static str, label: &'static str) -> gpui::Div {
+pub fn key_hint_text(
+    theme: &Theme,
+    cap: impl Into<SharedString>,
+    label: &'static str,
+) -> gpui::Div {
     div()
         .flex()
         .flex_row()
@@ -1157,7 +1161,7 @@ pub fn key_hint_text(theme: &Theme, cap: &'static str, label: &'static str) -> g
                 .text_style(TextStyle::Subheadline)
                 .font_family(theme.font_mono.clone())
                 .text_color(theme.text_muted.opacity(0.7))
-                .child(SharedString::from(cap)),
+                .child(cap.into()),
         )
         .child(key_hint_label(theme, label))
 }

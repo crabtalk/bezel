@@ -254,15 +254,23 @@ actions!(
 /// focused-but-closed picker opens it, the way a focused button presses.
 pub const KEY_CONTEXT: &str = "Calendar";
 
-/// Install the picker's bindings. Call once, alongside [`crate::input::init`].
+/// Install the bindings — [`bindings`], bound. Call once, alongside
+/// [`crate::input::init`].
+pub fn init(cx: &mut App) {
+    cx.bind_keys(bindings());
+}
+
+/// The picker's keymap, as data, so an app can have it without having to
+/// take it — see [`crate::keys`] for layering over it or taking a chord
+/// away.
 ///
-/// Optional like every other `init` here: the actions are public, so an app
-/// that wants different keys binds those instead. Arrows walk days and weeks
+/// Arrows walk days and weeks
 /// because the grid is two-dimensional, and `pageup`/`pagedown` page months —
 /// the chords a browser's own date input uses.
-pub fn init(cx: &mut App) {
+pub fn bindings() -> Vec<KeyBinding> {
+    let mut bindings = Vec::new();
     let ctx = Some(KEY_CONTEXT);
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("left", PrevDay, ctx),
         KeyBinding::new("right", NextDay, ctx),
         KeyBinding::new("up", PrevWeek, ctx),
@@ -273,6 +281,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("space", Confirm, ctx),
         KeyBinding::new("escape", Dismiss, ctx),
     ]);
+
+    bindings
 }
 
 /// What the picker reports. Emitted on choosing a day, never on merely moving

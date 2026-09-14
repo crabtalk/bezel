@@ -118,20 +118,31 @@ actions!(bezel_tree, [SelectPrevious, SelectNext, Collapse, Expand]);
 /// The key context a tree claims.
 pub const KEY_CONTEXT: &str = "Tree";
 
-/// Bind the arrows. Call once, alongside [`crate::input::init`].
+/// Install the bindings — [`bindings`], bound. Call once, alongside
+/// [`crate::input::init`].
+pub fn init(cx: &mut App) {
+    cx.bind_keys(bindings());
+}
+
+/// The tree's four arrows, as data, so an app can have it without having to
+/// take it — see [`crate::keys`] for layering over it or taking a chord
+/// away.
 ///
-/// The actions are public and the handlers are the app's — like [`crate::focus`]
+/// The handlers are the app's — like [`crate::focus`]
 /// and unlike the menubar, a tree cannot handle them itself, because applying a
 /// [`Move`] means touching the app's own expansion set. What bezel does here is
 /// name the four chords everyone already agrees on, once.
-pub fn init(cx: &mut App) {
+pub fn bindings() -> Vec<KeyBinding> {
+    let mut bindings = Vec::new();
     let ctx = Some(KEY_CONTEXT);
-    cx.bind_keys([
+    bindings.extend([
         KeyBinding::new("up", SelectPrevious, ctx),
         KeyBinding::new("down", SelectNext, ctx),
         KeyBinding::new("left", Collapse, ctx),
         KeyBinding::new("right", Expand, ctx),
     ]);
+
+    bindings
 }
 
 /// How far one level of nesting indents.

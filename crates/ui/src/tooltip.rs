@@ -13,11 +13,11 @@
 //!     .child("⌘C")
 //! ```
 
-use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelude::*, px};
+use gpui::{Action, AnyView, App, Context, IntoElement, SharedString, Window, div, prelude::*, px};
 
 use theme::{TextStyle, Theme, Typeset};
 
-use crate::{popover, surface::Surfaced as _};
+use crate::{keys, popover, surface::Surfaced as _};
 
 pub struct Tooltip {
     text: SharedString,
@@ -50,6 +50,39 @@ impl Tooltip {
             keystroke: Some(keystroke),
         })
         .into()
+    }
+
+    /// The same pairing with the chord read off the keymap rather than typed
+    /// in, so rebinding the action moves the hint with it. Falls back to plain
+    /// text when nothing is bound.
+    ///
+    /// A tooltip is built on hover, while the surface it describes still holds
+    /// focus, so [`keys::shortcut`] is the right lookup — use
+    /// [`Tooltip::for_action_in`] where it is not, such as a button that moves
+    /// focus to itself.
+    pub fn for_action(
+        text: impl Into<SharedString>,
+        action: &dyn Action,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyView {
+        let text = text.into();
+        let keystroke = keys::shortcut(action, window);
+        cx.new(|_| Self { text, keystroke }).into()
+    }
+
+    /// [`Tooltip::for_action`] against a named key context instead of whatever
+    /// holds focus.
+    pub fn for_action_in(
+        text: impl Into<SharedString>,
+        action: &dyn Action,
+        context: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyView {
+        let text = text.into();
+        let keystroke = keys::shortcut_in(action, context, window);
+        cx.new(|_| Self { text, keystroke }).into()
     }
 }
 
