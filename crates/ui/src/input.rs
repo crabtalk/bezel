@@ -509,8 +509,8 @@ impl TextField {
     ///
     /// `None` until the field has painted once — this is measured off the
     /// shaped layout, and there is none before then.
-    pub fn offset_bounds(&self, offset: usize, window: &Window) -> Option<Bounds<Pixels>> {
-        self.row_bounds(self.text_origin()?, offset..offset, window.line_height())
+    pub fn offset_bounds(&self, offset: usize) -> Option<Bounds<Pixels>> {
+        self.row_bounds(self.text_origin()?, offset..offset, self.line_height())
     }
 
     /// The rectangle `range` spans, starting from the row it opens on, relative
@@ -578,20 +578,20 @@ impl TextField {
         self.select_to(line_end(&self.content, self.cursor_offset()), cx);
     }
 
-    fn up(&mut self, _: &Up, window: &mut Window, cx: &mut Context<Self>) {
-        self.vertical(-1, false, window, cx);
+    fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+        self.vertical(-1, false, cx);
     }
 
-    fn down(&mut self, _: &Down, window: &mut Window, cx: &mut Context<Self>) {
-        self.vertical(1, false, window, cx);
+    fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+        self.vertical(1, false, cx);
     }
 
-    fn select_up(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
-        self.vertical(-1, true, window, cx);
+    fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+        self.vertical(-1, true, cx);
     }
 
-    fn select_down(&mut self, _: &SelectDown, window: &mut Window, cx: &mut Context<Self>) {
-        self.vertical(1, true, window, cx);
+    fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+        self.vertical(1, true, cx);
     }
 
     /// Move the caret `rows` rows, keeping the goal column.
@@ -602,11 +602,11 @@ impl TextField {
     ///
     /// Geometry rather than arithmetic on line numbers, so wrapped rows and hard
     /// newlines are the same case and neither needs counting.
-    fn vertical(&mut self, rows: i32, extend: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn vertical(&mut self, rows: i32, extend: bool, cx: &mut Context<Self>) {
         if self.last_layout.is_empty() {
             return;
         }
-        let line_height = window.line_height();
+        let line_height = self.line_height();
         let Some(at) = position_for_offset(&self.last_layout, self.cursor_offset(), line_height)
         else {
             return;
@@ -739,11 +739,11 @@ impl TextField {
     fn on_mouse_down(
         &mut self,
         event: &MouseDownEvent,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.is_selecting = true;
-        let offset = self.index_for_mouse_position(event.position, window.line_height());
+        let offset = self.index_for_mouse_position(event.position, self.line_height());
         if event.modifiers.shift {
             self.select_to(offset, cx);
         } else {
@@ -761,10 +761,10 @@ impl TextField {
     fn on_scroll_wheel(
         &mut self,
         event: &gpui::ScrollWheelEvent,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let delta = event.delta.pixel_delta(window.line_height());
+        let delta = event.delta.pixel_delta(self.line_height());
         self.scroll.x = (self.scroll.x - delta.x).max(px(0.));
         self.scroll.y = (self.scroll.y - delta.y).max(px(0.));
         cx.notify();
@@ -875,6 +875,20 @@ impl TextField {
         } else {
             self.selected_range.end
         }
+    }
+
+    /// The row height every mapping between a screen point and a byte offset
+    /// walks by: this field's own, which is what its shaped lines were laid
+    /// out at — see [`TextField::render`], which sets it on the box.
+    ///
+    /// Never `window.line_height()`. That answers for whatever text style is
+    /// current, and outside this field's own paint there is none of it on the
+    /// stack — a click handler is told the window's default instead. Walk the
+    /// rows at that stride and the caret lands a line or two above the one
+    /// under the pointer, further out the lower you click, until the last
+    /// lines of a full box cannot be reached at all.
+    fn line_height(&self) -> Pixels {
+        px(self.metrics.line_height())
     }
 
     /// Where the shaped text starts on screen: the box, moved up by the scroll.
@@ -1310,7 +1324,7 @@ impl EntityInputHandler for TextField {
         &mut self,
         range_utf16: Range<usize>,
         bounds: Bounds<Pixels>,
-        window: &mut Window,
+        _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
         let range = self.range_from_utf16(&range_utf16);
@@ -1318,18 +1332,18 @@ impl EntityInputHandler for TextField {
         // row that text is on, not the whole field. `bounds` is what
         // `last_bounds` is set from, so this is the same origin
         // [`TextField::offset_bounds`] measures from.
-        self.row_bounds(bounds.origin - self.scroll, range, window.line_height())
+        self.row_bounds(bounds.origin - self.scroll, range, self.line_height())
     }
 
     fn character_index_for_point(
         &mut self,
         point: Point<Pixels>,
-        window: &mut Window,
+        _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
         self.last_bounds?.localize(&point)?;
         let origin = self.text_origin()?;
-        let offset = offset_for_position(&self.last_layout, point - origin, window.line_height());
+        let offset = offset_for_position(&self.last_layout, point - origin, self.line_height());
         Some(self.offset_to_utf16(offset))
     }
 }
@@ -1466,8 +1480,10 @@ impl Element for TextFieldElement {
     ) -> (LayoutId, ()) {
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        let line_height = window.line_height();
         let field = self.field.read(cx);
+        // The field's own, here as everywhere: sizing the box off one height
+        // and hit-testing it at another is how a click lands on the wrong row.
+        let line_height = field.line_height();
         let shape = field.shape;
 
         let (min, max) = match shape {
@@ -1587,7 +1603,7 @@ impl Element for TextFieldElement {
         };
 
         let font_size = style.font_size.to_pixels(window.rem_size());
-        let line_height = window.line_height();
+        let line_height = field.line_height();
         // A single line never wraps: it scrolls sideways instead, so shaping it
         // against the field's width would fold it into rows nothing can reach.
         let wrap_width = shape.is_multiline().then_some(bounds.size.width);
@@ -1691,7 +1707,7 @@ impl Element for TextFieldElement {
             ElementInputHandler::new(bounds, self.field.clone()),
             cx,
         );
-        let line_height = window.line_height();
+        let line_height = self.field.read(cx).line_height();
         // A drag that leaves the box is still a drag. `on_mouse_move` on the
         // field's own div fires only while the box is the thing under the
         // pointer, so a run dragged past the edge froze at the last character
