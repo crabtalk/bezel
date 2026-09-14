@@ -35,11 +35,22 @@ fn main() {
                     None => "null".to_string(),
                 };
                 out.push_str(&format!(
-                    "{{\"key\":{},\"title\":{},\"source\":{}}}",
+                    "{{\"key\":{},\"title\":{},\"source\":{},\"examples\":[",
                     quote(section.key),
                     quote(section.title),
                     source
                 ));
+                for (e, example) in section.examples.iter().enumerate() {
+                    if e > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&format!(
+                        "{{\"key\":{},\"title\":{}}}",
+                        quote(example.key),
+                        quote(example.title)
+                    ));
+                }
+                out.push_str("]}");
             }
             out.push_str("]}");
         }
