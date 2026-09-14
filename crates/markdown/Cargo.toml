@@ -23,3 +23,8 @@ workspace = true
 theme.workspace = true
 gpui.workspace = true
 pulldown-cmark = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+# `TestAppContext` — a window and a text layout without a display, which is
+# what lets a wrapped line be told from one that scrolled.
+gpui = { workspace = true, features = ["test-support"] }

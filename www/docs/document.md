@@ -23,4 +23,12 @@ On a nested document tree the same list costs a recursive descent that has to re
 
 `parse` and `serialize` are inverses up to a fixed point: parse, serialize, parse again, and the document is unchanged. Byte-identical round tripping is deliberately not promised, because a flat model cannot represent arbitrarily nested CommonMark.
 
+**A long line in a fence wraps.** Wrapping is the default because the caret is what reads a fence in the editor, and a sideways scroller can hold it off the right edge with nothing on the page to bring it back. An app that would rather have the scroller says so once at boot, the same way it installs its typography:
+
+```rust
+markdown::set_layout(cx, markdown::Layout { wrap_code: false });
+```
+
+Either way a source line is one text layout and the caret resolves through it, so wrapping costs nothing at the hit test — a wrapped line is rows of one layout, exactly as a paragraph already is.
+
 The source is at `apps/gallery/src/patterns/document.rs`. Copy the file.

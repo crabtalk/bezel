@@ -20,6 +20,7 @@ use theme::{TextStyle, Theme, Typeset};
 use crate::{
     block,
     doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, Text},
+    layout::Layout,
     preview,
     select::{Cursor, Selection},
     typography::Typography,
@@ -33,7 +34,7 @@ const INDENT_WIDTH: f32 = 22.0;
 /// The marker column of a list row.
 const MARKER_WIDTH: f32 = 18.0;
 const MARKER_GAP: f32 = 8.0;
-/// A fence's height is `lines × the code leading` plus this padding.
+/// What a fence holds its code in, inside its border.
 const CODE_PADDING_X: f32 = 12.0;
 const CODE_PADDING_Y: f32 = 10.0;
 /// What a fence with no info string calls itself, in its header and in a
@@ -1182,7 +1183,6 @@ fn code_block(
     cx: &mut App,
 ) -> AnyElement {
     let ix = overlay.block;
-    // Per line, so the block's height is exactly `lines × line height`.
     // Highlighting recolors runs only — layout does not move, so a build with
     // no highlighter installed paints the same block in one plain run.
     let spans = crate::highlight::spans(cx, language, code);
@@ -1195,8 +1195,10 @@ fn code_block(
         underline: None,
         strikethrough: None,
     };
-    // Each line's own layout, with the slice of the code it covers — the caret
-    // and a click both resolve through these.
+    // Each source line's own layout, with the slice of the code it covers —
+    // the caret and a click both resolve through these. A wrapped line is
+    // several rows of one layout, which is the case `range_rects` already
+    // walks for a paragraph.
     let mut rows: Vec<(Range<usize>, TextLayout)> = Vec::new();
     let mut offset = 0usize;
     let lines: Vec<AnyElement> = code
@@ -1231,6 +1233,8 @@ fn code_block(
             styled.into_any_element()
         })
         .collect();
+
+    let wrap = Layout::of(cx).wrap_code;
 
     let caret = overlay.caret_painted();
     let selected = overlay.selected(code.len());
@@ -1297,6 +1301,41 @@ fn code_block(
     .absolute()
     .size_full();
 
+    let column = div()
+        .flex()
+        .flex_col()
+        .px(px(CODE_PADDING_X))
+        .children(lines);
+    let body = div()
+        .id(ElementId::named_usize("md-code", ix))
+        .relative()
+        .py(px(CODE_PADDING_Y))
+        .text_size(px(typography.code.size()))
+        .line_height(px(typography.code.line_height()))
+        .child(underlay);
+    let body = if wrap {
+        // The column is the block's width here rather than its widest line's,
+        // which is what gives the text something to wrap against.
+        body.child(column.w_full())
+    } else {
+        contain_sideways(body)
+            .overflow_x_scroll()
+            // Without it a scroll down the page turns sideways the moment
+            // the pointer crosses a code block: gpui remaps input to
+            // whichever axis a container can scroll.
+            .restrict_scroll_to_axis()
+            .flex()
+            .flex_row()
+            .whitespace_nowrap()
+            // The padding belongs to the lines, not to the scroller: a scroll
+            // container's trailing padding is not part of what it will scroll
+            // to, so the last characters of a long line sit behind the right
+            // edge with nowhere left to go. As a row's only item this column is
+            // sized by its widest line, and the padding rides along inside that
+            // width.
+            .child(column.items_start())
+    };
+
     div()
         .rounded(px(Theme::panel_radius()))
         .bg(theme.ink(0.035))
@@ -1343,36 +1382,7 @@ fn code_block(
                         )),
                 ),
         )
-        .child(
-            contain_sideways(div().id(ElementId::named_usize("md-code", ix)))
-                .overflow_x_scroll()
-                // Without it a scroll down the page turns sideways the moment
-                // the pointer crosses a code block: gpui remaps input to
-                // whichever axis a container can scroll.
-                .restrict_scroll_to_axis()
-                .relative()
-                .flex()
-                .flex_row()
-                .py(px(CODE_PADDING_Y))
-                .text_size(px(typography.code.size()))
-                .line_height(px(typography.code.line_height()))
-                .whitespace_nowrap()
-                .child(underlay)
-                .child(
-                    // The padding belongs to the lines, not to the scroller: a
-                    // scroll container's trailing padding is not part of what
-                    // it will scroll to, so the last characters of a long line
-                    // sit behind the right edge with nowhere left to go. As a
-                    // row's only item this column is sized by its widest line,
-                    // and the padding rides along inside that width.
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_start()
-                        .px(px(CODE_PADDING_X))
-                        .children(lines),
-                ),
-        )
+        .child(body)
         .child(copy_button(code, ix, theme, window, cx))
         .into_any_element()
 }
