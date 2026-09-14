@@ -260,6 +260,41 @@ impl BlockLayouts {
         Some((point, painted.layout.line_height()))
     }
 
+    /// The painted rows of a range, in document order — what a bar centred over
+    /// a selection is placed against, and what a highlight of a caller's own is
+    /// drawn from.
+    ///
+    /// One rect per visual row rather than one box: a selection that wraps or
+    /// crosses blocks has no single box, and a caller given one would paint
+    /// over the gaps.
+    pub fn rects(&self, selection: Selection) -> Vec<Bounds<Pixels>> {
+        let (start, end) = selection.ordered();
+        self.0
+            .borrow()
+            .texts
+            .iter()
+            .filter_map(|painted| {
+                let here = Cursor::new(painted.block, painted.part, 0);
+                let (from, to) = (
+                    Cursor::new(start.block, start.part, 0),
+                    Cursor::new(end.block, end.part, 0),
+                );
+                if here < from || here > to {
+                    return None;
+                }
+                // The offsets only matter at the two ends: in between, the
+                // whole of the text is covered.
+                let len = painted.range.len();
+                let first = if here == from { start.offset } else { 0 };
+                let last = if here == to { end.offset } else { usize::MAX };
+                let range = first.saturating_sub(painted.range.start).min(len)
+                    ..last.saturating_sub(painted.range.start).min(len);
+                (range.start < range.end).then(|| range_rects(&painted.layout, &range, 0.0, 0.0))
+            })
+            .flatten()
+            .collect()
+    }
+
     /// The position one painted row above or below `at`, and the row it landed
     /// on. Walks the recorded runs in paint order — which is document order.
     ///
@@ -528,7 +563,8 @@ impl<'a> Overlay<'a> {
 
 /// Parse and render in one step — the common case for read-only content.
 pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
-    render(&crate::parse(source), Caption::default(), window, cx)
+    let doc = crate::parse_with(source, &crate::Marks::of(cx));
+    render(&doc, Caption::default(), window, cx)
 }
 
 /// Render a document.
@@ -669,6 +705,7 @@ fn block_element(
             FontWeight::NORMAL,
             body,
             theme,
+            cx,
         ),
         BlockKind::Heading { level, text } => {
             let heading = typography.heading(*level);
@@ -679,10 +716,11 @@ fn block_element(
                 heading.weight,
                 body,
                 theme,
+                cx,
             )
         }
         BlockKind::Bullet(text) => {
-            marker_row(disc(typography, theme), text, body, typography, theme)
+            marker_row(disc(typography, theme), text, body, typography, theme, cx)
         }
         BlockKind::Ordered { number, text } => marker_row(
             div()
@@ -697,6 +735,7 @@ fn block_element(
             body,
             typography,
             theme,
+            cx,
         ),
         BlockKind::Task { checked, text } => marker_row(
             checkbox(*checked, typography, theme),
@@ -704,6 +743,7 @@ fn block_element(
             body,
             typography,
             theme,
+            cx,
         ),
         BlockKind::Quote(text) => div()
             .border_l_2()
@@ -719,6 +759,7 @@ fn block_element(
                 FontWeight::NORMAL,
                 body,
                 theme,
+                cx,
             ))
             .into_any_element(),
         BlockKind::Code { language, code } => {
@@ -751,7 +792,9 @@ fn block_element(
                 ),
             }
         }
-        BlockKind::Image { url, alt, width } => image(url, alt, *width, overlay, typography, theme),
+        BlockKind::Image { url, alt, width } => {
+            image(url, alt, *width, overlay, typography, theme, cx)
+        }
         BlockKind::Bookmark { url, form } => {
             bookmark(overlay.block, url, *form, typography, theme, cx)
         }
@@ -759,7 +802,7 @@ fn block_element(
             align,
             header,
             rows,
-        } => table(align, header, rows, overlay, typography, theme, window),
+        } => table(align, header, rows, overlay, typography, theme, window, cx),
         BlockKind::Rule => div()
             .h(px(1.0))
             .w_full()
@@ -822,6 +865,7 @@ fn marker_row(
     overlay: Overlay,
     typography: &Typography,
     theme: &Theme,
+    cx: &App,
 ) -> AnyElement {
     div()
         .flex()
@@ -835,6 +879,7 @@ fn marker_row(
             FontWeight::NORMAL,
             overlay,
             theme,
+            cx,
         )))
         .into_any_element()
 }
@@ -852,6 +897,17 @@ pub struct Flat {
 /// Marks are ranges, gpui wants consecutive runs — so cut the text at every
 /// mark boundary and ask which marks cover each piece.
 pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
+    flatten_with(text, base_weight, theme, |_| None)
+}
+
+/// [`flatten`] with the app's own marks painted — see [`crate::MarkPaint`]. A
+/// name the app does not paint reads as the text it wraps.
+pub fn flatten_with(
+    text: &Text,
+    base_weight: FontWeight,
+    theme: &Theme,
+    paint: impl Fn(&str) -> Option<crate::MarkPaint>,
+) -> Flat {
     let mut cuts: Vec<usize> = text
         .marks
         .iter()
@@ -877,6 +933,9 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
         let (mut bold, mut italic, mut mono, mut strike) = (false, false, false, false);
         let mut chip = false;
         let mut link = None;
+        // The app's own marks, merged in the order they cover this run: the
+        // last one to say something about a field is the one that says it.
+        let mut custom = crate::MarkPaint::default();
         for span in covering {
             match &span.mark {
                 Mark::Bold => bold = true,
@@ -888,8 +947,18 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
                     link = Some(url.clone());
                 }
                 Mark::Link(url) | Mark::Image(url) => link = Some(url.clone()),
+                Mark::Custom(name) => {
+                    let Some(painted) = paint(name) else { continue };
+                    custom.color = painted.color.or(custom.color);
+                    custom.background = painted.background.or(custom.background);
+                    custom.weight = painted.weight.or(custom.weight);
+                    custom.italic |= painted.italic;
+                    custom.underline |= painted.underline;
+                    custom.strikethrough |= painted.strikethrough;
+                }
             }
         }
+        let (italic, strike) = (italic || custom.italic, strike || custom.strikethrough);
 
         if mono {
             match code.last_mut() {
@@ -918,7 +987,7 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
         face.weight = if bold && base_weight.0 < FontWeight::SEMIBOLD.0 {
             FontWeight::SEMIBOLD
         } else {
-            base_weight
+            custom.weight.unwrap_or(base_weight)
         };
         face.style = if italic {
             FontStyle::Italic
@@ -932,9 +1001,13 @@ pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
             // Links stay monochrome and underlined; the accent is reserved for
             // primary actions. A chip carries its own wash, so underlining it
             // too would say the same thing twice.
-            color: if mono { theme.code_text } else { theme.text },
-            background_color: None,
-            underline: (link.is_some() && !chip).then_some(UnderlineStyle {
+            color: match (mono, custom.color) {
+                (_, Some(color)) => color,
+                (true, None) => theme.code_text,
+                (false, None) => theme.text,
+            },
+            background_color: custom.background,
+            underline: ((link.is_some() && !chip) || custom.underline).then_some(UnderlineStyle {
                 color: Some(theme.text_muted),
                 thickness: px(1.0),
                 wavy: false,
@@ -962,8 +1035,11 @@ fn text_element(
     weight: FontWeight,
     overlay: Overlay,
     theme: &Theme,
+    cx: &App,
 ) -> AnyElement {
-    let flat = flatten(text, weight, theme);
+    let flat = flatten_with(text, weight, theme, |name| {
+        crate::marks::paint_of(cx, name, theme)
+    });
     painted_text(flat, text.text.len(), size, line_height, overlay, theme)
 }
 
@@ -1536,6 +1612,7 @@ fn image(
     overlay: Overlay,
     typography: &Typography,
     theme: &Theme,
+    cx: &App,
 ) -> AnyElement {
     let hint = SharedString::new_static(CAPTION_HINT);
     let overlay = Overlay {
@@ -1611,6 +1688,7 @@ fn image(
                     FontWeight::NORMAL,
                     overlay,
                     theme,
+                    cx,
                 ))
             },
         )
@@ -1808,6 +1886,10 @@ fn initial(host: &str, size: f32, color: Hsla, wash: Hsla) -> AnyElement {
 /// shaped unwrapped to get its max-content width, and the flex resolution does
 /// the rest. When even the floors no longer fit, the table scrolls sideways
 /// rather than crushing every column into per-character wrapping.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a table, its overlay, and what paints them"
+)]
 fn table(
     align: &[Align],
     header: &[Text],
@@ -1816,6 +1898,7 @@ fn table(
     typography: &Typography,
     theme: &Theme,
     window: &mut Window,
+    cx: &App,
 ) -> AnyElement {
     let ix = overlay.block;
     let all: Vec<&[Text]> = std::iter::once(header)
@@ -1843,7 +1926,9 @@ fn table(
                 out.push(None);
                 continue;
             };
-            let flat = flatten(cell, weight, theme);
+            let flat = flatten_with(cell, weight, theme, |name| {
+                crate::marks::paint_of(cx, name, theme)
+            });
             if !flat.text.is_empty() {
                 let width = f32::from(
                     text_system

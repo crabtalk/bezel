@@ -744,3 +744,110 @@ fn a_selection_over_two_blocks_reads_as_fenceable(cx: &mut TestAppContext) {
         "cmd-E over two blocks makes a fence, which only the editor can say"
     );
 }
+
+/// An editor built with something turned off — the app's own chrome in the same
+/// place, or a document meant to carry none.
+fn open_built(
+    source: &str,
+    build: impl FnOnce(Editor) -> Editor,
+    cx: &mut TestAppContext,
+) -> (Entity<Editor>, VisualTestContext) {
+    cx.update(|cx| {
+        theme::Theme::install(theme::Appearance::Dark, cx);
+        editor::init(cx);
+    });
+    let window = cx.add_window(|_, cx| build(Editor::new(source, cx)));
+    let editor = window.root(cx).unwrap();
+    let mut visual = VisualTestContext::from_window(window.into(), cx);
+    visual.simulate_resize(size(px(360.0), px(600.0)));
+    visual.update(|window, cx| {
+        let handle = editor.read(cx).focus_handle(cx);
+        window.focus(&handle, cx);
+    });
+    visual.run_until_parked();
+    (editor, visual)
+}
+
+#[gpui::test]
+fn chrome_turned_off_never_reaches_the_screen(cx: &mut TestAppContext) {
+    let plain = editor::Chrome {
+        handle: false,
+        slash: false,
+        ..Default::default()
+    };
+    let (editor, mut cx) = open_built("# Title", move |editor| editor.with_chrome(plain), cx);
+
+    assert!(
+        cx.debug_bounds(editor::BLOCK_HANDLE).is_none(),
+        "no gutter handle on a document that asked for none"
+    );
+    cx.simulate_keystrokes("end enter");
+    cx.simulate_input("/");
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds(editor::SLASH_MENU).is_none(),
+        "and the slash is a slash"
+    );
+    assert_eq!(
+        source(&editor, &mut cx),
+        "# Title\n\n/",
+        "which is typed into the document like any other character"
+    );
+}
+
+#[gpui::test]
+fn an_editor_can_open_on_its_source(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_built(
+        "# Title\n\nbody",
+        |editor| editor.with_mode(editor::Mode::Source),
+        cx,
+    );
+
+    assert_eq!(
+        cx.update(|_, cx| editor.read(cx).mode()),
+        editor::Mode::Source
+    );
+    assert_eq!(source(&editor, &mut cx), "# Title\n\nbody");
+    assert_eq!(
+        head(&editor, &mut cx).part,
+        markdown::Part::Code,
+        "the caret is in the text the source view paints"
+    );
+}
+
+#[gpui::test]
+fn an_app_mark_survives_the_editor(cx: &mut TestAppContext) {
+    let marks = markdown::Marks::new().with("highlight", "==");
+    let (editor, mut cx) = open_built("a ==lit== word", move |editor| editor.with_marks(marks), cx);
+
+    let highlight = markdown::Mark::Custom("highlight".into());
+    cx.simulate_keystrokes("right right right");
+    assert_eq!(
+        cx.update(|_, cx| editor.read(cx).formatting().marks),
+        vec![highlight.clone()],
+        "a mark the library has never heard of lights a button like any other"
+    );
+    assert_eq!(
+        source(&editor, &mut cx),
+        "a ==lit== word",
+        "and is written back with the delimiter that spells it"
+    );
+
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.select(
+                markdown::Selection::new(
+                    markdown::Cursor::new(0, markdown::Part::Body, 2),
+                    markdown::Cursor::new(0, markdown::Part::Body, 5),
+                ),
+                cx,
+            );
+            editor.toggle_mark(highlight, cx);
+        })
+    });
+    assert_eq!(
+        source(&editor, &mut cx),
+        "a lit word",
+        "and the same toggle takes it off again"
+    );
+}

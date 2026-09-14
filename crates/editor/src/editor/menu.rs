@@ -33,6 +33,9 @@ impl Editor {
     /// The block the handle belongs on: the one being dragged, else the one
     /// under the pointer, else the one the caret is in.
     pub(super) fn handle_block(&self, focused: bool) -> Option<usize> {
+        if !self.chrome().handle {
+            return None;
+        }
         if !self.blocks() {
             return None;
         }
@@ -168,7 +171,7 @@ impl Editor {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         // The source is a fence too, and it has no language to pick.
-        if !self.blocks() {
+        if !self.chrome().language || !self.blocks() {
             return None;
         }
         // Whichever fence the reader is at: the one under the pointer, else the
@@ -217,7 +220,7 @@ impl Editor {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if !self.blocks() {
+        if !self.chrome().language || !self.blocks() {
             return None;
         }
         let view = Painter::of(cx);

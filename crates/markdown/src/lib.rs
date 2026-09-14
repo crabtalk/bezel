@@ -29,6 +29,7 @@ pub mod doc;
 pub mod edit;
 pub mod highlight;
 pub mod layout;
+pub mod marks;
 pub mod parse;
 pub mod preview;
 pub mod render;
@@ -43,12 +44,13 @@ pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, Text};
 pub use edit::{Shortcut, Splice, shortcut};
 pub use highlight::{Highlighter, languages, set_highlighter};
 pub use layout::{Layout, set_layout};
-pub use parse::{is_image, is_url, parse, parse_at};
+pub use marks::{MarkPaint, Marks, set_mark_paint, set_marks};
+pub use parse::{is_image, is_url, parse, parse_at, parse_with};
 pub use preview::{LinkPreview, Preview, set_link_preview};
 pub use render::{
     Annotation, BlockLayouts, Caption, Editing, markdown, render, render_source, render_with,
 };
 pub use select::{Cursor, Selection};
-pub use serialize::{serialize, serialize_at};
+pub use serialize::{serialize, serialize_at, serialize_with};
 pub use source::spans as source_spans;
 pub use typography::{Typography, set_typography};

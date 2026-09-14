@@ -1000,6 +1000,11 @@ impl Doc {
     /// output is one line, and renumbers ordered runs. After this,
     /// `parse(serialize(doc)) == doc`.
     pub fn normalize(&mut self) {
+        self.normalize_with(&crate::Marks::default());
+    }
+
+    /// [`Doc::normalize`] with the app's own marks — see [`crate::Marks`].
+    pub fn normalize_with(&mut self, marks: &crate::Marks) {
         for block in &mut self.blocks {
             let one_line = matches!(block.kind, BlockKind::Heading { .. });
             match &mut block.kind {
@@ -1058,7 +1063,7 @@ impl Doc {
         //
         // The cheaper rules above still earn their place: they are what keeps
         // the ordinary edit lossless, so this step has nothing left to take.
-        *self = crate::parse(&crate::serialize(self));
+        *self = crate::parse_with(&crate::serialize_with(self, marks), marks);
     }
 
     /// Tab. A block can go one level deeper than the one above it, and its

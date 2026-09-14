@@ -81,7 +81,19 @@ editor::set_image_store(cx, |source| match source {
 
 A dropped file is offered to the store first so an app that keeps its own asset directory can copy it in; answer `None` and the picture paints from where it already is. With no store installed a screenshot cannot be pasted at all. The caption under a picture is its alt text, and a caret sits in it like any other line.
 
-`init` binds `ui::input::TextField`'s chords inside the editor's own key context, so `tab` indents a list here and means nothing outside one. Replace that call for a different keymap. Moving, duplicating and deleting a block ship as actions with no chord for an app to bind as it likes; the block menu on the gutter handle reaches them meanwhile.
+## What the editor paints, and what it does not
+
+Every affordance the editor ships — the gutter handle and its menu, the slash menu, a fence's language picker, the menu a pasted URL drops — is on unless the document says otherwise. An app putting its own in the same place turns the library's off:
+
+```rust
+Editor::new(source, cx).with_chrome(editor::Chrome { handle: false, slash: false, ..Default::default() })
+```
+
+`with_mode(Mode::Source)` opens on the markdown rather than the document, and `with_marks` gives one editor a dialect of its own rather than the one `markdown::set_marks` installed.
+
+`layouts()` hands out where everything landed last frame — `block_bounds`, `picture_bounds`, `language_bounds`, `hit`, and `rects(selection)` for the painted rows of a range. A bar centred over a selection wants that last one; `selection_bounds()` is the head alone.
+
+`init` binds `ui::input::TextField`'s chords inside the editor's own key context, so `tab` indents a list here and means nothing outside one. Replace that call for a different keymap. Moving, duplicating and deleting a block ship as actions with no chord: `editor::keys` is the whole set, so an app binds `editor::keys::MoveBlockUp` to whatever it likes. The block menu on the gutter handle reaches them meanwhile.
 
 `editor` is a peer crate you name yourself, alongside `markdown` and `syntax`.
 

@@ -33,7 +33,7 @@ use crate::{
 
 pub(crate) mod image;
 mod input;
-mod keys;
+pub mod keys;
 pub(crate) mod menu;
 
 pub use keys::init;
@@ -86,6 +86,36 @@ pub enum Mode {
     Blocks,
     /// The markdown a save would write, in one editable text.
     Source,
+}
+
+/// Which of the editor's own affordances are on.
+///
+/// All of them unless an app says otherwise: a document with nothing
+/// discoverable on it is the wrong default for a library. Turning one off is
+/// for an app that puts its own in the same place — a bar with its own block
+/// menu does not want the gutter handle's as well — rather than for trimming.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Chrome {
+    /// The gutter handle, the menu it opens, and dragging a block by it.
+    pub handle: bool,
+    /// The `/` menu at an empty block.
+    pub slash: bool,
+    /// A fence's language label, and the picker it opens.
+    pub language: bool,
+    /// The menu a pasted URL drops — leave it, or make a card, a chip or the
+    /// picture it points at.
+    pub paste: bool,
+}
+
+impl Default for Chrome {
+    fn default() -> Self {
+        Self {
+            handle: true,
+            slash: true,
+            language: true,
+            paste: true,
+        }
+    }
 }
 
 /// What a toolbar reads to light itself, in one call.
@@ -202,6 +232,13 @@ pub(crate) type MenuPopup = ui::popover::Popup<(usize, gpui::Point<gpui::Pixels>
 
 pub struct Editor {
     doc: Doc,
+    /// The dialect this document is read and written in — the app's own marks,
+    /// taken once at construction. One editor, one spelling: a document that
+    /// changed dialect between a read and a write would rewrite itself.
+    marks: markdown::Marks,
+    /// Which of the editor's own affordances paint. The app's, so one document
+    /// can carry the lot and another none of it.
+    chrome: Chrome,
     /// Which form the document is in. In [`Mode::Source`] `doc` is one fenced
     /// block holding the markdown, so every operation below that is about
     /// *blocks* asks [`Editor::blocks`] first.
@@ -294,14 +331,17 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
-        let mut doc = markdown::parse(source);
+        let marks = markdown::Marks::of(cx);
+        let mut doc = markdown::parse_with(source, &marks);
         ensure_block(&mut doc);
         Self {
+            marks,
             // Clamped, not defaulted: a document opening on a fence or a table
             // has no body at block zero, and a caret claiming one resolves
             // against nothing until something moves it.
             selection: Selection::at(Cursor::default().clamp(&doc)),
             doc,
+            chrome: Chrome::default(),
             mode: Mode::default(),
             focus_handle: cx.focus_handle(),
             marked: None,
@@ -339,6 +379,39 @@ impl Editor {
     /// parked in it.
     pub fn with_undo_limit(mut self, limit: usize) -> Self {
         self.history = History::with_limit(limit);
+        self
+    }
+
+    /// Read and write this document with marks of its own, rather than the ones
+    /// [`markdown::set_marks`] installed. For an app whose editors do not all
+    /// speak the same dialect.
+    pub fn with_marks(mut self, marks: markdown::Marks) -> Self {
+        let source = self.source();
+        self.marks = marks;
+        self.doc = markdown::parse_with(&source, &self.marks);
+        ensure_block(&mut self.doc);
+        self.selection = self.selection.clamp(&self.doc);
+        self
+    }
+
+    /// Which of the editor's own affordances to paint. See [`Chrome`].
+    pub fn with_chrome(mut self, chrome: Chrome) -> Self {
+        self.chrome = chrome;
+        self
+    }
+
+    /// What is painting now, for an app whose own bar mirrors it.
+    pub fn chrome(&self) -> Chrome {
+        self.chrome
+    }
+
+    /// Open in [`Mode::Source`] rather than on the document — an app whose
+    /// editor is a markdown file first. Nothing is recorded: this is where the
+    /// document starts, not a switch to step back over.
+    pub fn with_mode(mut self, mode: Mode) -> Self {
+        if mode != self.mode {
+            self.switch(mode);
+        }
         self
     }
 
@@ -457,7 +530,19 @@ impl Editor {
     /// The head's row only — a selection spanning ten blocks wants its bubble
     /// where the pointer left off, not centred over the whole span. `None` when
     /// nothing is selected or the caret has not painted yet.
+    /// Where everything landed last frame — blocks, pictures, a fence's
+    /// language label, and the row rects of any range.
+    ///
+    /// Handed out whole rather than a method per question: an app placing
+    /// chrome of its own asks the geometry, and which question it needs is not
+    /// this crate's to guess. See [`markdown::BlockLayouts`].
+    pub fn layouts(&self) -> &BlockLayouts {
+        &self.layouts
+    }
+
     pub fn selection_bounds(&self) -> Option<gpui::Bounds<gpui::Pixels>> {
+        // The head alone. A bar centred over the whole selection wants
+        // `layouts().rects(selection)`, which is every painted row of it.
         if self.selection.is_collapsed() {
             return None;
         }
@@ -734,8 +819,8 @@ impl Editor {
         match self.mode {
             Mode::Blocks => {
                 let mut doc = self.doc.clone();
-                doc.normalize();
-                markdown::serialize(&doc)
+                doc.normalize_with(&self.marks);
+                markdown::serialize_with(&doc, &self.marks)
             }
             Mode::Source => self.source_text().to_string(),
         }
@@ -794,14 +879,28 @@ impl Editor {
             &self.anchors,
         );
         self.dismiss_menus();
+        self.switch(mode);
+        self.history.landed(EditKind::Structure, self.selection);
+        self.reveal = true;
+        self.caret_moved();
+        cx.emit(EditorEvent::ModeChanged(mode));
+        cx.emit(EditorEvent::Changed);
+        cx.notify();
+    }
+
+    /// Turn the document into the other form, caret and all. The half of
+    /// [`Self::set_mode`] that [`Self::with_mode`] needs without a window.
+    fn switch(&mut self, mode: Mode) {
         match mode {
             Mode::Source => {
-                let (source, offset) = markdown::serialize_at(&self.doc, self.cursor());
+                let (source, offset) =
+                    markdown::serialize_at(&self.doc, self.cursor(), &self.marks);
                 self.doc = source_doc(&source);
                 self.selection = Selection::at(Cursor::new(0, Part::Code, offset));
             }
             Mode::Blocks => {
-                let (doc, at) = markdown::parse_at(self.source_text(), self.cursor().offset);
+                let (doc, at) =
+                    markdown::parse_at(self.source_text(), self.cursor().offset, &self.marks);
                 self.doc = doc;
                 ensure_block(&mut self.doc);
                 self.selection = Selection::at(at.clamp(&self.doc));
@@ -811,12 +910,6 @@ impl Editor {
             }
         }
         self.mode = mode;
-        self.history.landed(EditKind::Structure, self.selection);
-        self.reveal = true;
-        self.caret_moved();
-        cx.emit(EditorEvent::ModeChanged(mode));
-        cx.emit(EditorEvent::Changed);
-        cx.notify();
     }
 
     /// [`Mode::Source`] if the document is in blocks, and back again — what a
@@ -918,6 +1011,9 @@ impl Editor {
     /// second field and no focus to hand over — typing filters because typing
     /// is what it already was.
     fn track_slash(&mut self, typed: &str, painter: Painter) {
+        if !self.chrome.slash {
+            return;
+        }
         let at = self.cursor();
         let text = self
             .doc
@@ -1306,8 +1402,8 @@ impl Editor {
     fn selected_source(&self) -> Option<String> {
         (!self.selection.is_collapsed()).then(|| {
             let mut slice = self.doc.slice(self.selection);
-            slice.normalize();
-            markdown::serialize(&slice)
+            slice.normalize_with(&self.marks);
+            markdown::serialize_with(&slice, &self.marks)
         })
     }
 
@@ -1359,7 +1455,9 @@ impl Editor {
         self.edit(EditKind::Structure, cx, |this| {
             let removed = this.selection;
             let before = this.doc.blocks.len();
-            let head = this.doc.splice(removed, markdown::parse(&source));
+            let head = this
+                .doc
+                .splice(removed, markdown::parse_with(&source, &this.marks));
             this.selection = Selection::at(head.clamp(&this.doc));
             vec![Delta::Spliced(Splice {
                 removed,
@@ -1389,7 +1487,7 @@ impl Editor {
         });
         // A fence holds its URL literally and a caption cannot spell a mark, so
         // neither has a richer form to offer.
-        if !matches!(at.part, Part::Code | Part::Caption) {
+        if self.chrome.paste && !matches!(at.part, Part::Code | Part::Caption) {
             self.pasted = Some(link::Paste::open(at, url, alone));
             cx.notify();
         }

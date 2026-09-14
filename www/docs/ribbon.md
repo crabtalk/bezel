@@ -29,6 +29,15 @@ for (label, kind) in editor::turns() {
 }
 ```
 
+**Two of the six buttons are the app's own marks.** `markdown` has no underline and no highlight — CommonMark spells neither — so this gallery registers them itself, with the delimiters that write them and the paint that shows them:
+
+```rust
+markdown::set_marks(cx, markdown::Marks::new().with("highlight", "==").with("underline", "++"));
+markdown::set_mark_paint(cx, paint);
+```
+
+`toggle_mark(Mark::Custom("highlight".into()))` is the same call bold takes, `formatting().marks` lights it the same way, and the editor never learns what the name means. See [Document](/docs/document) for what a registered mark can and cannot reach.
+
 **Disabled is reported, not guessed.** Switch the bar to Markdown and everything left of the toggle greys out: [source mode](/docs/editor) is the markup spelled out, `toggle_mark` refuses there, and a bar that stayed lit would promise something the editor will not do.
 
 The bar is **docked**, so it reflows the document under it — which is why it is a plain row with a hairline rather than [`control_bar`](/docs/control-bar), the floating kind that must never move what it sits over.

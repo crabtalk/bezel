@@ -13,6 +13,7 @@
 
 use crate::{
     doc::{Align, Block, BlockKind, Doc, Mark, Part, Text},
+    marks::Marks,
     select::Cursor,
 };
 
@@ -22,6 +23,11 @@ use crate::{
 const INDENT: &str = "    ";
 
 pub fn serialize(doc: &Doc) -> String {
+    serialize_with(doc, &Marks::default())
+}
+
+/// [`serialize`] with the app's own marks — see [`crate::Marks`].
+pub fn serialize_with(doc: &Doc, marks: &Marks) -> String {
     let mut out = String::new();
     let mut previous: Option<(&BlockKind, u8)> = None;
 
@@ -38,7 +44,7 @@ pub fn serialize(doc: &Doc) -> String {
             }
         }
 
-        write_block(&mut out, &block.kind, indent);
+        write_block(&mut out, &block.kind, indent, marks);
         previous = Some((&block.kind, indent));
     }
 
@@ -118,14 +124,14 @@ fn is_empty_marker(kind: &BlockKind) -> bool {
             .is_some_and(Text::is_empty)
 }
 
-fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
+fn write_block(out: &mut String, kind: &BlockKind, indent: u8, marks: &Marks) {
     let pad = INDENT.repeat(indent as usize);
 
     match kind {
-        BlockKind::Paragraph(text) => write_lines(out, &pad, &pad, &inline(text)),
+        BlockKind::Paragraph(text) => write_lines(out, &pad, &pad, &inline(text, marks)),
         BlockKind::Heading { level, text } => {
             let hashes = "#".repeat((*level).clamp(1, 6) as usize);
-            write_lines(out, &format!("{pad}{hashes} "), &pad, &inline(text));
+            write_lines(out, &format!("{pad}{hashes} "), &pad, &inline(text, marks));
         }
         // A bullet with no text would be written as a line holding nothing but
         // a dash — and a line of dashes directly under a paragraph is a setext
@@ -133,18 +139,18 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
         // cannot be read as one.
         BlockKind::Bullet(text) => {
             let marker = if text.is_empty() { "+ " } else { "- " };
-            write_marked(out, &pad, marker, text)
+            write_marked(out, &pad, marker, text, marks)
         }
         BlockKind::Ordered { number, text } => {
-            write_marked(out, &pad, &format!("{number}. "), text)
+            write_marked(out, &pad, &format!("{number}. "), text, marks)
         }
         BlockKind::Task { checked, text } => {
             let marker = if *checked { "- [x] " } else { "- [ ] " };
-            write_marked(out, &pad, marker, text);
+            write_marked(out, &pad, marker, text, marks);
         }
         BlockKind::Quote(text) => {
             let prefix = format!("{pad}> ");
-            write_lines(out, &prefix, &prefix, &inline(text));
+            write_lines(out, &prefix, &prefix, &inline(text, marks));
         }
         BlockKind::Code { language, code } => {
             let fence = "`".repeat(fence_width(&code.text));
@@ -163,7 +169,7 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
         BlockKind::Image { url, alt, width } => {
             out.push_str(&pad);
             out.push_str("![");
-            escape_inline(out, &alt.text);
+            escape_inline(out, &alt.text, marks);
             // After the escaping, and bare: every `|` a caption holds is
             // written `\|` to keep two body lines from reconstituting into a
             // table, so an unescaped one is the delimiter and nothing else.
@@ -199,7 +205,7 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
             align,
             header,
             rows,
-        } => write_table(out, &pad, align, header, rows),
+        } => write_table(out, &pad, align, header, rows, marks),
         BlockKind::Rule => {
             out.push_str(&pad);
             out.push_str("---");
@@ -208,7 +214,7 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8) {
 }
 
 /// A list item: the marker on the first line, its content column on the rest.
-fn write_marked(out: &mut String, pad: &str, marker: &str, text: &Text) {
+fn write_marked(out: &mut String, pad: &str, marker: &str, text: &Text, marks: &Marks) {
     // An empty item has nothing for the marker's space to hold apart from it,
     // so the space is trailing whitespace no one typed.
     let opener = if text.is_empty() {
@@ -218,7 +224,7 @@ fn write_marked(out: &mut String, pad: &str, marker: &str, text: &Text) {
     };
     let first = format!("{pad}{opener}");
     let rest = format!("{pad}{}", " ".repeat(marker.chars().count()));
-    write_lines(out, &first, &rest, &inline(text));
+    write_lines(out, &first, &rest, &inline(text, marks));
 }
 
 fn write_lines(out: &mut String, first: &str, rest: &str, body: &str) {
@@ -242,7 +248,14 @@ fn fence_width(code: &str) -> usize {
     (longest + 1).max(3)
 }
 
-fn write_table(out: &mut String, pad: &str, align: &[Align], header: &[Text], rows: &[Vec<Text>]) {
+fn write_table(
+    out: &mut String,
+    pad: &str,
+    align: &[Align],
+    header: &[Text],
+    rows: &[Vec<Text>],
+    marks: &Marks,
+) {
     let columns = align.len().max(header.len());
     let row_of = |cells: &[Text]| {
         let mut line = String::from("|");
@@ -250,7 +263,7 @@ fn write_table(out: &mut String, pad: &str, align: &[Align], header: &[Text], ro
             line.push(' ');
             if let Some(cell) = cells.get(ix) {
                 // `escape_span` already escapes the pipes.
-                line.push_str(&inline(cell));
+                line.push_str(&inline(cell, marks));
             }
             line.push_str(" |");
         }
@@ -279,7 +292,7 @@ fn write_table(out: &mut String, pad: &str, align: &[Align], header: &[Text], ro
 /// Render inline content with its marks. Marks are stored outermost first, so
 /// opening them in order and closing them in reverse reproduces the nesting —
 /// which is what keeps `**_x_**` and `_**x**_` distinct.
-fn inline(text: &Text) -> String {
+fn inline(text: &Text, marks: &Marks) -> String {
     let mut out = String::new();
     let mut open: Vec<usize> = Vec::new();
     let mut started = vec![false; text.marks.len()];
@@ -300,12 +313,12 @@ fn inline(text: &Text) -> String {
         if point < cursor {
             continue;
         }
-        escape_inline(&mut out, &text.text[cursor..point]);
+        escape_inline(&mut out, &text.text[cursor..point], marks);
         cursor = point;
 
         while let Some(&top) = open.last() {
             if text.marks[top].range.end <= point {
-                close_mark(&mut out, &text.marks[top].mark, delimiters[top]);
+                close_mark(&mut out, &text.marks[top].mark, delimiters[top], marks);
                 open.pop();
             } else {
                 break;
@@ -359,20 +372,20 @@ fn inline(text: &Text) -> String {
             }
             let italic = italic_delimiter(&out, text, &span.range);
             delimiters[ix] = italic;
-            open_mark(&mut out, &span.mark, italic);
+            open_mark(&mut out, &span.mark, italic, marks);
             // A mark over nothing — an image with no alt text — closes here.
             // Leaving it on the stack would stretch it to the next boundary.
             if span.range.is_empty() {
-                close_mark(&mut out, &span.mark, italic);
+                close_mark(&mut out, &span.mark, italic, marks);
             } else {
                 open.push(ix);
             }
         }
     }
 
-    escape_inline(&mut out, &text.text[cursor.min(text.text.len())..]);
+    escape_inline(&mut out, &text.text[cursor.min(text.text.len())..], marks);
     while let Some(ix) = open.pop() {
-        close_mark(&mut out, &text.marks[ix].mark, delimiters[ix]);
+        close_mark(&mut out, &text.marks[ix].mark, delimiters[ix], marks);
     }
     out
 }
@@ -411,18 +424,21 @@ fn italic_delimiter(written: &str, text: &Text, range: &std::ops::Range<usize>) 
     if intraword { '*' } else { '_' }
 }
 
-fn open_mark(out: &mut String, mark: &Mark, italic: char) {
+fn open_mark(out: &mut String, mark: &Mark, italic: char, marks: &Marks) {
     match mark {
         Mark::Bold => out.push_str("**"),
         Mark::Italic => out.push(italic),
         Mark::Strike => out.push_str("~~"),
         Mark::Link(_) | Mark::Mention { .. } => out.push('['),
         Mark::Image(_) => out.push_str("!["),
+        // A name no registry spells writes nothing and reads back as the text
+        // it wrapped, which is the only degradation that cannot corrupt a file.
+        Mark::Custom(name) => out.push_str(marks.delimiter(name).unwrap_or("")),
         Mark::Code => {}
     }
 }
 
-fn close_mark(out: &mut String, mark: &Mark, italic: char) {
+fn close_mark(out: &mut String, mark: &Mark, italic: char, marks: &Marks) {
     match mark {
         Mark::Bold => out.push_str("**"),
         Mark::Italic => out.push(italic),
@@ -441,6 +457,7 @@ fn close_mark(out: &mut String, mark: &Mark, italic: char) {
             out.push_str(form.title().unwrap_or("chip"));
             out.push_str("\")");
         }
+        Mark::Custom(name) => out.push_str(marks.delimiter(name).unwrap_or("")),
         Mark::Code => {}
     }
 }
@@ -496,7 +513,7 @@ fn bare_destination(url: &str) -> bool {
 ///
 /// Called with slices between mark boundaries, so "line start" means the start
 /// of a line in the *output*, not in the slice.
-fn escape_inline(out: &mut String, s: &str) {
+fn escape_inline(out: &mut String, s: &str, marks: &Marks) {
     let mut line_start = out.is_empty() || out.ends_with('\n');
     for (ix, line) in s.split('\n').enumerate() {
         if ix > 0 {
@@ -508,7 +525,7 @@ fn escape_inline(out: &mut String, s: &str) {
         } else {
             line
         };
-        escape_span(out, body);
+        escape_span(out, body, marks);
         line_start = false;
     }
 }
@@ -562,9 +579,29 @@ fn escape_block_marker<'a>(out: &mut String, line: &'a str) -> &'a str {
 }
 
 /// Per-character escaping within one line.
-fn escape_span(out: &mut String, s: &str) {
+fn escape_span(out: &mut String, s: &str, marks: &Marks) {
+    let mut skip = 0usize;
     for (ix, c) in s.char_indices() {
+        if ix < skip {
+            continue;
+        }
         let rest = &s[ix + c.len_utf8()..];
+        // A registered delimiter standing in the text is text, and has to come
+        // back as text: every character of it takes a backslash, or the next
+        // read finds a mark nobody wrote. Longest first, so `===` is not
+        // escaped as `==` and a stray `=`.
+        if let Some(entry) = marks
+            .sorted()
+            .into_iter()
+            .find(|entry| s[ix..].starts_with(entry.delimiter.as_ref()))
+        {
+            for c in entry.delimiter.chars() {
+                out.push('\\');
+                out.push(c);
+            }
+            skip = ix + entry.delimiter.len();
+            continue;
+        }
         match c {
             // Every tilde, not just a doubled one: GFM strikes on `~x~` as
             // well, so escaping only the first of a pair leaves the survivors
@@ -618,7 +655,7 @@ pub(crate) const SENTINEL: char = '\u{E000}';
 ///
 /// The offset is the end of the output for a caret this cannot place — a
 /// document already carrying the sentinel, or a part that no longer exists.
-pub fn serialize_at(doc: &Doc, at: Cursor) -> (String, usize) {
+pub fn serialize_at(doc: &Doc, at: Cursor, marks: &Marks) -> (String, usize) {
     let mut doc = doc.clone();
     let placed = doc
         .blocks
@@ -635,8 +672,8 @@ pub fn serialize_at(doc: &Doc, at: Cursor) -> (String, usize) {
     // Normalized *after* the sentinel goes in, so the string this returns is
     // the one the offset indexes into — a trailing space is only trailing
     // while nothing sits after it.
-    doc.normalize();
-    let mut source = serialize(&doc);
+    doc.normalize_with(marks);
+    let mut source = serialize_with(&doc, marks);
     let Some(offset) = placed.then(|| source.find(SENTINEL)).flatten() else {
         source = source.replace(SENTINEL, "");
         let end = source.len();

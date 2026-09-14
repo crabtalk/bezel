@@ -4,7 +4,7 @@
 //! answers every question it paints, and each control is the entry point the
 //! chord already takes, so a button and a keystroke cannot disagree.
 //!
-//! Three things it is built to show.
+//! Four things it is built to show.
 //!
 //! **One read, not four.** Which marks are lit, what the block is called,
 //! whether `cmd-E` would fence and whether any of it applies are taken together
@@ -14,6 +14,11 @@
 //! **The block menu is the library's vocabulary.** `editor::turns()` is the
 //! same list the slash menu and the gutter handle offer, so this dropdown
 //! cannot drift from the two menus bezel opens itself.
+//!
+//! **Two of the six marks are this app's.** `highlight` and `underline` are
+//! registered in `gallery::init` with the delimiters that spell them and the
+//! paint that shows them; `editor` toggles them through the same `toggle_mark`
+//! as bold, and never learns their names.
 //!
 //! **Disabled is reported, not guessed.** In the source there is no markup to
 //! toggle — the editor refuses the call — so the bar reads `formatting.mode`
@@ -41,17 +46,51 @@ const SOURCE: &str = r#"# Release notes
 
 The ribbon reads **one** snapshot per frame. Put the caret in _any_ of this and every control above lights itself from it — the block it sits in, the marks it carries, and what `cmd-E` would do with the selection.
 
+The last two buttons are ==this app's own marks==, not the library's: `markdown` has no ++underline++ and no highlight, because CommonMark has no spelling for either. This gallery registered the two it wanted and they round trip like everything else — switch to Markdown and read what they are written as.
+
 - Select across two lines to see the code button become a fence
 - Switch to Markdown and the bar greys out: there is nothing there to toggle
 "#;
 
-/// The marks the bar offers, and the glyph each carries.
-const MARKS: [(&[u8], &str, Mark); 4] = [
-    (icons::glyph::Bold, "bold", Mark::Bold),
-    (icons::glyph::Italic, "italic", Mark::Italic),
-    (icons::glyph::Strikethrough, "strike", Mark::Strike),
-    (icons::glyph::Code, "code", Mark::Code),
-];
+/// The marks the bar offers, and the glyph each carries. The last two are the
+/// app's own — registered in `gallery::init`, spelled `==` and `++`, and
+/// painted by [`paint`] below. Nothing in `editor` knows their names.
+fn marks() -> [(&'static [u8], &'static str, Mark); 6] {
+    [
+        (icons::glyph::Bold, "bold", Mark::Bold),
+        (icons::glyph::Italic, "italic", Mark::Italic),
+        (icons::glyph::Strikethrough, "strike", Mark::Strike),
+        (icons::glyph::Code, "code", Mark::Code),
+        (
+            icons::glyph::Highlighter,
+            "highlight",
+            Mark::Custom("highlight".into()),
+        ),
+        (
+            icons::glyph::Underline,
+            "underline",
+            Mark::Custom("underline".into()),
+        ),
+    ]
+}
+
+/// What the app's own marks look like. Installed once at boot beside the
+/// registry that spells them: `markdown` carries the name through the parse and
+/// the serializer and asks here at paint.
+pub fn paint(name: &str, theme: &Theme) -> Option<markdown::MarkPaint> {
+    let wash = |color: gpui::Hsla, alpha: f32| gpui::Hsla { a: alpha, ..color };
+    match name {
+        "highlight" => Some(markdown::MarkPaint {
+            background: Some(wash(theme.warning, 0.30)),
+            ..Default::default()
+        }),
+        "underline" => Some(markdown::MarkPaint {
+            underline: true,
+            ..Default::default()
+        }),
+        _ => None,
+    }
+}
 
 /// How wide the block dropdown and its menu sit.
 const TURN_WIDTH: f32 = 150.0;
@@ -157,7 +196,7 @@ impl RibbonDemo {
         let live = formatting.mode == Mode::Blocks;
         theme
             .control_group()
-            .children(MARKS.map(|(glyph, key, mark)| {
+            .children(marks().map(|(glyph, key, mark)| {
                 let lit = formatting.marks.contains(&mark);
                 let button = theme
                     .icon_button(

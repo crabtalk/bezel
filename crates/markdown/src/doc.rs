@@ -365,6 +365,10 @@ pub enum Mark {
         url: String,
         form: Form,
     },
+    /// A mark the app spells itself — underline, a highlight, a colour. The
+    /// name is [`crate::Marks`]'s, and the delimiter that writes it comes from
+    /// the same registry.
+    Custom(String),
     /// An image among text. [`BlockKind::Image`] is the shape an editor offers;
     /// this is what keeps `see ![x](u) here` from silently becoming a link when
     /// the document is saved. No width: one among text has no box of its own to

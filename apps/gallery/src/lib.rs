@@ -67,6 +67,15 @@ pub fn init(cx: &mut App) {
     markdown::set_highlighter(cx, highlight::spans, highlight::languages());
     markdown::set_link_preview(cx, preview::of);
     markdown::set_block_renderer(cx, blocks::render);
+    // The dialect this gallery reads and writes: two marks CommonMark has no
+    // spelling for, registered rather than waited on. See the Ribbon page.
+    markdown::set_marks(
+        cx,
+        markdown::Marks::new()
+            .with("highlight", "==")
+            .with("underline", "++"),
+    );
+    markdown::set_mark_paint(cx, patterns::ribbon::paint);
     editor::set_image_store(cx, store::of());
     input::init(cx);
     editor::init(cx);
