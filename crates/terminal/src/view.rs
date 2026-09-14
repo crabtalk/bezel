@@ -487,6 +487,7 @@ type GridHook = Box<dyn Fn(GridGeometry, &mut App) -> Option<GridSnapshot>>;
 pub struct TerminalElement {
     grid: GridHook,
     focused: bool,
+    font_size: f32,
 }
 
 impl TerminalElement {
@@ -497,7 +498,21 @@ impl TerminalElement {
         Self {
             grid: Box::new(grid),
             focused,
+            font_size: TERM_FONT_SIZE,
         }
+    }
+
+    /// Set the grid's font size in points, scaling the line height with it.
+    /// Measurement, selection, cursor and paint all use these same metrics.
+    pub fn with_text_size(mut self, points: f32) -> Self {
+        if points.is_finite() && points > 0. {
+            self.font_size = points;
+        }
+        self
+    }
+
+    fn line_height(&self) -> f32 {
+        self.font_size * TERM_LINE_HEIGHT / TERM_FONT_SIZE
     }
 }
 
@@ -574,13 +589,13 @@ impl gpui::Element for TerminalElement {
         ]));
         // Font probe: measure the actual advance of the resolved mono font so
         // cols/rows track real glyph metrics, not a guessed aspect ratio.
-        let font_size = px(TERM_FONT_SIZE);
+        let font_size = px(self.font_size);
         let font_id = window.text_system().resolve_font(&mono);
         let cell_w = window
             .text_system()
             .em_advance(font_id, font_size)
-            .unwrap_or(px(TERM_FONT_SIZE * 0.6));
-        let line_h = px(TERM_LINE_HEIGHT);
+            .unwrap_or(px(self.font_size * 0.6));
+        let line_h = px(self.line_height());
 
         let inner_w = f32::from(bounds.size.width) - 2.0 * TERM_PADDING;
         let inner_h = f32::from(bounds.size.height) - 2.0 * TERM_PADDING;
@@ -703,7 +718,7 @@ impl gpui::Element for TerminalElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let line_h = px(TERM_LINE_HEIGHT);
+        let line_h = px(self.line_height());
         let origin = point(
             bounds.left() + px(TERM_PADDING),
             bounds.top() + px(TERM_PADDING),

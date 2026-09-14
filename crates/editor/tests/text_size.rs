@@ -185,3 +185,22 @@ fn a_host_can_read_the_adjustment_and_put_it_back(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(painted(&editor, &mut cx), painted_at, "restored");
 }
+
+/// A settings change must resize the existing view without rebuilding the
+/// document, clearing undo history, or consuming the temporary zoom.
+#[gpui::test]
+fn changing_the_base_updates_open_text_and_preserves_zoom(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_at(None, Some(13.0), cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-="));
+    cx.run_until_parked();
+    let before = painted(&editor, &mut cx);
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.set_text_size(18.0, cx)));
+    cx.run_until_parked();
+    assert_eq!(adjustment(&mut cx), 1.0);
+    assert!(painted(&editor, &mut cx) > before);
+    assert_eq!(cx.update(|_, cx| editor.read(cx).source()), SOURCE);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-0"));
+    cx.run_until_parked();
+    assert_eq!(adjustment(&mut cx), 0.0);
+    assert_eq!(cx.update(|_, cx| editor.read(cx).text_size()), Some(18.0));
+}

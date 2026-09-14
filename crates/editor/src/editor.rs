@@ -425,6 +425,14 @@ impl Editor {
         self
     }
 
+    /// Update the configured base size without changing the temporary zoom.
+    pub fn set_text_size(&mut self, points: f32, cx: &mut Context<Self>) {
+        if self.text_size != Some(points) {
+            self.text_size = Some(points);
+            cx.notify();
+        }
+    }
+
     /// The base the app set, if any. Add
     /// [`text_size_adjustment`](crate::text_size_adjustment) for what is on
     /// screen.
