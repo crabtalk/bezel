@@ -36,6 +36,7 @@ use gpui::{
 use markdown::Mark;
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
+use ui::scroll::{self, Axes};
 use ui::{
     popover::{self, Popup},
     tooltip::Tooltip,
@@ -210,10 +211,8 @@ impl RibbonDemo {
                         cx,
                     )
                     .child(
-                        div()
-                            .id("ribbon-turn-rows")
+                        scroll::pane("ribbon-turn-rows", Axes::Vertical)
                             .max_h(px(320.0))
-                            .overflow_y_scroll()
                             .children(editor::turns().into_iter().map(|(row, kind)| {
                                 popover::menu_row(
                                     theme,
@@ -341,12 +340,10 @@ impl Render for RibbonDemo {
                     .child(toggle),
             )
             .child(
-                div()
-                    .id("ribbon-document")
+                scroll::pane("ribbon-document", Axes::Vertical)
                     .flex_1()
                     .min_h_0()
                     .pt(px(16.0))
-                    .overflow_y_scroll()
                     .track_scroll(&self.scroll)
                     .child(self.editor.clone()),
             )

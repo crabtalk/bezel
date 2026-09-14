@@ -269,10 +269,8 @@ impl Editor {
                 cx,
             )
             .child(
-                div()
-                    .id("language-menu-rows")
+                ui::scroll::pane("language-menu-rows", ui::scroll::Axes::Vertical)
                     .max_h(px(280.0))
-                    .overflow_y_scroll()
                     .child(plain)
                     .children(rows),
             )
@@ -322,10 +320,8 @@ impl Editor {
                 cx,
             )
             .child(
-                div()
-                    .id("block-menu-rows")
+                ui::scroll::pane("block-menu-rows", ui::scroll::Axes::Vertical)
                     .max_h(px(320.0))
-                    .overflow_y_scroll()
                     .child(ui::popover::menu_heading(theme, "Turn into"))
                     .children(rows)
                     .child(ui::popover::menu_heading(theme, "Block"))
@@ -428,10 +424,8 @@ impl Editor {
                     cx.notify();
                 }))
                 .child(
-                    div()
-                        .id("slash-rows")
+                    ui::scroll::pane("slash-rows", ui::scroll::Axes::Vertical)
                         .max_h(px(280.0))
-                        .overflow_y_scroll()
                         .track_scroll(&slash.scroll)
                         .children(rows),
                 )

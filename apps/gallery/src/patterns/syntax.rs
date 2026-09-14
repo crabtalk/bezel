@@ -11,7 +11,7 @@ use markdown::Doc;
 use motion::Painter;
 use theme::Theme;
 use ui::{
-    scroll::{self, TransientState},
+    scroll::{self, Axes, TransientState},
     widgets::Controls,
 };
 
@@ -49,10 +49,8 @@ impl Render for Syntax {
             .relative()
             .size_full()
             .child(
-                div()
-                    .id("syntax-page")
+                scroll::pane("syntax-page", Axes::Vertical)
                     .size_full()
-                    .overflow_y_scroll()
                     .track_scroll(&self.scroll)
                     .child(
                         stack()

@@ -118,10 +118,8 @@ pub trait Status: ThemeExt {
         text: impl Into<SharedString>,
     ) -> gpui::Stateful<Div> {
         let theme = self.theme();
-        div()
-            .id(id)
+        crate::scroll::pane(id, crate::scroll::Axes::Vertical)
             .max_h(px(STEP_OUTPUT_MAX))
-            .overflow_y_scroll()
             .border_t_1()
             .border_color(theme.border)
             .px(px(STEP_PAD_X))

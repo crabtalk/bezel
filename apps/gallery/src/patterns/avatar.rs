@@ -23,7 +23,7 @@ use motion::Painter;
 use theme::{TextStyle, Theme, Typeset};
 use ui::{
     focus,
-    scroll::{self, TransientState},
+    scroll::{self, Axes, TransientState},
     tooltip::Tooltip,
     widgets::{self, ButtonStyle, Buttons, Controls, SliderDrag},
 };
@@ -285,10 +285,8 @@ impl Render for Avatars {
             .relative()
             .size_full()
             .child(
-                div()
-                    .id("avatar-page")
+                scroll::pane("avatar-page", Axes::Vertical)
                     .size_full()
-                    .overflow_y_scroll()
                     .track_scroll(&self.scroll)
                     .child(
                         stack()

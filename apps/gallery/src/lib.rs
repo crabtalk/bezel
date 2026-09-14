@@ -32,7 +32,7 @@ use ui::{
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
     popover,
-    scroll::{self, ScrollbarState, TransientState},
+    scroll::{self, Axes, ScrollbarState, TransientState},
     stats::{self, Stats},
     surface::Surfaced as _,
     table::{self, Column, Sort, Width},
@@ -1473,7 +1473,7 @@ impl Gallery {
                     .flex_row()
                     .items_center()
                     .gap(px(18.0))
-                    .when(compact, |strip| strip.overflow_x_scroll())
+                    .when(compact, |strip| scroll::scrolls(strip, Axes::Horizontal))
                     .children(TABS.iter().enumerate().map(|(index, tab)| {
                         let selected = index == current;
                         let mut item = div()
@@ -3992,10 +3992,8 @@ impl Gallery {
                         .border_color(theme.border)
                         .overflow_hidden()
                         .child(scroll::claim_wheel(
-                            div()
-                                .id("scroll-demo")
+                            scroll::pane("scroll-demo", Axes::Vertical)
                                 .size_full()
-                                .overflow_y_scroll()
                                 .track_scroll(&self.demo_scroll)
                                 .child(div().p(px(14.0)).flex().flex_col().gap(px(8.0)).children(
                                     (1..=30).map(|line| {
@@ -4006,7 +4004,7 @@ impl Gallery {
                                     }),
                                 )),
                             &self.demo_scroll,
-                            gpui::Axis::Vertical,
+                            Axes::Vertical,
                             &self.demo_claim,
                         ))
                         .child(scroll::scrollbar(
@@ -4081,10 +4079,8 @@ impl Gallery {
                         .border_color(theme.border)
                         .overflow_hidden()
                         .child(
-                            div()
-                                .id("follow-demo")
+                            scroll::pane("follow-demo", Axes::Vertical)
                                 .size_full()
-                                .overflow_y_scroll()
                                 .track_scroll(&self.log_scroll)
                                 .child(div().p(px(14.0)).flex().flex_col().gap(px(6.0)).children(
                                     (1..=self.log_lines).map(|line| {
@@ -4156,10 +4152,8 @@ impl Gallery {
                                     .relative()
                                     .h(px(150.0))
                                     .child(scroll::claim_wheel(
-                                        div()
-                                            .id("table-body")
+                                        scroll::pane("table-body", Axes::Vertical)
                                             .size_full()
-                                            .overflow_y_scroll()
                                             .track_scroll(&self.table_scroll)
                                             .children(rows.iter().enumerate().map(
                                                 |(index, (name, kind, size))| {
@@ -4189,7 +4183,7 @@ impl Gallery {
                                                 },
                                             )),
                                         &self.table_scroll,
-                                        gpui::Axis::Vertical,
+                                        Axes::Vertical,
                                         &self.table_claim,
                                     ))
                                     .child(scroll::scrollbar(
@@ -4235,10 +4229,8 @@ impl Gallery {
                             .border_color(theme.border)
                             .overflow_hidden()
                             .child(scroll::claim_wheel(
-                                div()
-                                    .id("tree-body")
+                                scroll::pane("tree-body", Axes::Vertical)
                                     .size_full()
-                                    .overflow_y_scroll()
                                     .track_scroll(&self.tree_scroll)
                                     .child(tree::tree().p(px(6.0)).children(
                                         rows.iter().enumerate().map(|(index, entry)| {
@@ -4256,7 +4248,7 @@ impl Gallery {
                                         }),
                                     )),
                                 &self.tree_scroll,
-                                gpui::Axis::Vertical,
+                                Axes::Vertical,
                                 &self.tree_claim,
                             ))
                             .child(scroll::scrollbar(
@@ -4795,7 +4787,7 @@ impl Render for Gallery {
                     div()
                         .id("gallery-canvas")
                         .size_full()
-                        .when(compact, |canvas| canvas.overflow_scroll())
+                        .when(compact, |canvas| scroll::scrolls(canvas, Axes::Both))
                         .child(
                             div()
                                 .size_full()
@@ -4806,10 +4798,8 @@ impl Render for Gallery {
                 )
             } else {
                 pane.child(
-                    div()
-                        .id("gallery-pane")
+                    scroll::pane("gallery-pane", Axes::Vertical)
                         .size_full()
-                        .overflow_y_scroll()
                         .track_scroll(&self.pane_scroll)
                         // The column width components are designed for;
                         // several are `w_full` and would otherwise stretch

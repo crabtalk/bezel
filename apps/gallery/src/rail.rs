@@ -19,7 +19,7 @@ use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
 use ui::{
     popover,
-    scroll::{self, TransientState},
+    scroll::{self, Axes, TransientState},
 };
 
 use crate::{RAIL_PAD, RAIL_WIDTH, TABS, Tab};
@@ -77,10 +77,8 @@ impl Render for Rail {
                     .flex_1()
                     .min_h_0()
                     .child(
-                        div()
-                            .id("gallery-rail")
+                        scroll::pane("gallery-rail", Axes::Vertical)
                             .size_full()
-                            .overflow_y_scroll()
                             .track_scroll(&self.scroll)
                             .child(
                                 div()

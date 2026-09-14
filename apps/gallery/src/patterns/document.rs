@@ -29,6 +29,7 @@
 use gpui::{Context, ElementId, Render, ScrollHandle, SharedString, Window, div, prelude::*, px};
 use markdown::{BlockKind, Doc};
 use theme::{TextStyle, Theme, Typeset};
+use ui::scroll::{self, Axes};
 use ui::widgets::Controls;
 
 /// The document on the page. Canonical markdown — `serialize(parse(SOURCE))`
@@ -192,12 +193,10 @@ impl Render for Document {
                     .gap(px(28.0))
                     .child(outline)
                     .child(
-                        div()
-                            .id("document-body")
+                        scroll::pane("document-body", Axes::Vertical)
                             .flex_1()
                             .min_w_0()
                             .h_full()
-                            .overflow_y_scroll()
                             .track_scroll(&self.scroll)
                             .child(div().max_w(px(680.0)).child(body)),
                     ),

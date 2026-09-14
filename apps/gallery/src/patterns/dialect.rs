@@ -9,7 +9,7 @@ use gpui::{Context, Render, ScrollHandle, SharedString, Window, div, prelude::*,
 use markdown::Doc;
 use motion::Painter;
 use theme::{TextStyle, Theme, Typeset};
-use ui::scroll::{self, TransientState};
+use ui::scroll::{self, Axes, TransientState};
 
 use crate::{hint, stack};
 
@@ -192,10 +192,8 @@ impl Render for Dialect {
             .relative()
             .size_full()
             .child(
-                div()
-                    .id("dialect-page")
+                scroll::pane("dialect-page", Axes::Vertical)
                     .size_full()
-                    .overflow_y_scroll()
                     .track_scroll(&self.scroll)
                     .child(
                         stack()

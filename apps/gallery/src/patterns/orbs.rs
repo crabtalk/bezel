@@ -27,7 +27,7 @@ use motion::Painter;
 use theme::{TextStyle, Theme, Typeset};
 use ui::{
     focus,
-    scroll::{self, TransientState},
+    scroll::{self, Axes, TransientState},
     widgets::Controls,
 };
 
@@ -132,10 +132,8 @@ impl Render for Orbs {
             .relative()
             .size_full()
             .child(
-                div()
-                    .id("orbs-page")
+                scroll::pane("orbs-page", Axes::Vertical)
                     .size_full()
-                    .overflow_y_scroll()
                     .track_scroll(&self.scroll)
                     .child(
                         stack()

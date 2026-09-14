@@ -34,6 +34,7 @@ use gpui::{
 use markdown::{Annotation, Mark};
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
+use ui::scroll::{self, Axes};
 use ui::widgets::Controls as _;
 
 /// Opens on something worth selecting: a heading, a list, and a sentence with
@@ -348,11 +349,9 @@ impl Render for EditorDemo {
         }));
 
         let document = pane("EDITOR", Some(toggle.into_any_element())).child(
-            div()
-                .id("editor-demo-body")
+            scroll::pane("editor-demo-body", Axes::Vertical)
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scroll()
                 .track_scroll(&self.scroll)
                 // Clicking the empty space below the last block should still
                 // put a caret in the document, which is what filling the pane
@@ -361,11 +360,9 @@ impl Render for EditorDemo {
         );
 
         let written = pane("MARKDOWN", None).child(
-            div()
-                .id("editor-demo-source")
+            scroll::pane("editor-demo-source", Axes::Vertical)
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scroll()
                 .p(px(12.0))
                 .rounded(px(8.0))
                 .bg(theme.ink(0.02))
@@ -377,12 +374,10 @@ impl Render for EditorDemo {
         );
 
         let threads = self.comments(&theme, cx).map(|rows| {
-            pane("COMMENTS", None).flex_none().max_h(px(160.0)).child(
-                div()
-                    .id("editor-demo-threads")
-                    .overflow_y_scroll()
-                    .child(rows),
-            )
+            pane("COMMENTS", None)
+                .flex_none()
+                .max_h(px(160.0))
+                .child(scroll::pane("editor-demo-threads", Axes::Vertical).child(rows))
         });
 
         div()

@@ -1,19 +1,23 @@
-//! What gpui's own scroll handles leave to the app: a bar to show the position,
-//! and a rule for which pane a wheel belongs to.
+//! What gpui's own scroll handles leave to the app: a container that scrolls
+//! the way it was asked to, a bar to show the position, and a rule for which
+//! pane a wheel belongs to.
 //!
-//! gpui scrolls a `div` perfectly well and draws nothing while it does, so a
-//! bezel app has no way to show how far down it is. This is that bar: the
-//! caller keeps its own `overflow_y_scroll` container, because a wrapper that
-//! swallowed the content would have to re-implement layout for it. Nesting two
-//! of those containers is [`claim_wheel`]'s business.
+//! [`pane`] is the container — an axis given at construction, the way
+//! SwiftUI's `ScrollView` takes one, because gpui's is a style field that
+//! defaults to unset and gets guessed at. Read its docs before reaching for
+//! `div().overflow_y_scroll()`; the guess is a real bug and not a small one.
+//!
+//! gpui scrolls that pane perfectly well and draws nothing while it does, so a
+//! bezel app has no way to show how far down it is. That is [`scrollbar`]: an
+//! overlay the caller lays over its own pane, because a wrapper that swallowed
+//! the content would have to re-implement layout for it. Nesting two panes is
+//! [`claim_wheel`]'s business.
 //!
 //! ```ignore
 //! div().relative()                                  // the bar is absolute in here
 //!     .child(
-//!         div()
-//!             .id("pane")
+//!         scroll::pane("pane", Axes::Vertical)
 //!             .size_full()
-//!             .overflow_y_scroll()
 //!             .track_scroll(&self.scroll)           // gpui's handle, the app's field
 //!             .child(content),
 //!     )
@@ -35,8 +39,8 @@
 use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
-    Animation, AnimationExt, App, Axis, DragMoveEvent, ElementId, Empty, MouseButton, Pixels,
-    ScrollHandle, SharedString, Window, canvas, div, point, prelude::*, px,
+    Animation, AnimationExt, App, Axis, Div, DragMoveEvent, ElementId, Empty, MouseButton, Pixels,
+    Point, ScrollHandle, SharedString, Stateful, Window, canvas, div, point, prelude::*, px,
 };
 
 use motion::Painter;
@@ -59,6 +63,124 @@ const MARK_GAP: f32 = TRACK;
 const RAIL_INSET: f32 = 12.0;
 /// What a rail needs beside the content before it will paint at all.
 pub const RAIL_ROOM: f32 = RAIL_INSET + MARK;
+
+// ---------------------------------------------------------------------------
+// Pane — a scroll container whose axis is an argument, not a modifier
+// ---------------------------------------------------------------------------
+
+/// Which way a [`pane`] scrolls. SwiftUI's `Axis.Set`, which gpui's [`Axis`]
+/// has no spelling for: a pane that scrolls both ways is not one of two
+/// directions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Axes {
+    Vertical,
+    Horizontal,
+    Both,
+}
+
+impl Axes {
+    pub fn vertical(self) -> bool {
+        matches!(self, Axes::Vertical | Axes::Both)
+    }
+
+    pub fn horizontal(self) -> bool {
+        matches!(self, Axes::Horizontal | Axes::Both)
+    }
+
+    /// The gpui axis this is, where it is only one.
+    pub fn axis(self) -> Option<Axis> {
+        match self {
+            Axes::Vertical => Some(Axis::Vertical),
+            Axes::Horizontal => Some(Axis::Horizontal),
+            Axes::Both => None,
+        }
+    }
+}
+
+/// A scroll container, with the axis as an argument rather than a modifier you
+/// can forget.
+///
+/// ```ignore
+/// scroll::pane("log", Axes::Vertical)
+///     .size_full()
+///     .track_scroll(&self.scroll)
+///     .child(content)
+/// ```
+///
+/// Returns an element for the caller to fill, the way [`crate::stack::row`]
+/// does — it takes no children and lays nothing out, so the pane stays the
+/// app's and only its scroll behaviour is decided here. The id is gpui's
+/// requirement, not ours: a scroll container has state to track.
+///
+/// # Why this exists rather than `div().overflow_y_scroll()`
+///
+/// gpui makes scrollability a late-bound style field with no default, and then
+/// has to guess what to do when a gesture's axis is not one the container
+/// scrolls: it **remaps the delta onto whichever axis the container can
+/// scroll**. A sideways swipe over a vertical list scrolls it down; a downward
+/// swipe over a wide table pans it sideways. `restrict_scroll_to_axis` turns
+/// that off, but it is opt-in per element, so every pane that forgets it is
+/// wrong and nothing says so.
+///
+/// SwiftUI has no such case to guess at — `ScrollView(.vertical)` takes its
+/// axis at construction, so there is no container whose axis is unstated. This
+/// is that: ask for an axis, get a pane that answers only to it.
+///
+/// A horizontal pane also contains a sideways gesture ([`contain_sideways`]),
+/// because the pane it is nested in usually belongs to a consumer and is not
+/// ours to restrict.
+///
+/// `Axes::Both` inherits gpui's dominant-axis lock — a diagonal gesture moves
+/// one axis, not two. gpui exposes no builder for `allow_concurrent_scroll`.
+pub fn pane(id: impl Into<ElementId>, axes: Axes) -> Stateful<Div> {
+    scrolls(div().id(id), axes)
+}
+
+/// [`pane`]'s answer applied to an element that already exists — a container
+/// that scrolls only at some widths, or one another builder handed back.
+///
+/// ```ignore
+/// strip.when(compact, |strip| scroll::scrolls(strip, Axes::Horizontal))
+/// ```
+pub fn scrolls<E: gpui::StatefulInteractiveElement>(el: E, axes: Axes) -> E {
+    let el = match axes {
+        Axes::Vertical => el.overflow_y_scroll(),
+        Axes::Horizontal => el.overflow_x_scroll(),
+        Axes::Both => el.overflow_scroll(),
+    }
+    .restrict_scroll_to_axis();
+    match axes.horizontal() {
+        true => contain_sideways(el),
+        false => el,
+    }
+}
+
+/// Keep a sideways gesture inside the pane it started in.
+///
+/// The other half of [`pane`], and the half [`Axes::Vertical`] does not want:
+/// a vertical pane at its end should hand the wheel to the page behind it
+/// ([`claim_wheel`] is that chaining), but a sideways gesture reaching a
+/// vertical ancestor is never right — unless that ancestor is restricted too,
+/// it will remap the delta and scroll down.
+///
+/// Applied by [`pane`] for the axes that need it. Public because a consumer
+/// wrapping bezel's content in a scroller of its own has the same problem and
+/// the same fix.
+///
+/// Registered before the element's own handler and so run after it — gpui
+/// bubbles the list backwards — which is why the pane has already moved by the
+/// time the event stops here.
+pub fn contain_sideways<E: gpui::InteractiveElement>(el: E) -> E {
+    el.on_scroll_wheel(|event, window, cx| {
+        let delta = event.delta.pixel_delta(window.line_height());
+        // The dominant axis, not "any horizontal component": a trackpad puts a
+        // little of both into every gesture, and a mostly-vertical one still
+        // belongs to the page.
+        if delta.x.abs() > delta.y.abs() {
+            cx.stop_propagation();
+        }
+    })
+}
 
 /// Where the thumb sits in a track of `viewport` length, as a range from the
 /// track's start — or `None` when there is nothing to scroll.
@@ -478,7 +600,7 @@ pub fn transient(
 /// for the same reason: an element rebuilt every render cannot remember
 /// anything, and this has to outlive the frame it was written in.
 #[derive(Clone)]
-pub struct ClaimState(Rc<Cell<Pixels>>);
+pub struct ClaimState(Rc<Cell<Point<Pixels>>>);
 
 impl Default for ClaimState {
     fn default() -> Self {
@@ -488,7 +610,7 @@ impl Default for ClaimState {
 
 impl ClaimState {
     pub fn new() -> Self {
-        Self(Rc::new(Cell::new(px(0.0))))
+        Self(Rc::new(Cell::new(point(px(0.0), px(0.0)))))
     }
 }
 
@@ -517,16 +639,20 @@ impl ClaimState {
 ///
 /// ```ignore
 /// scroll::claim_wheel(
-///     div().id("output").overflow_y_scroll().track_scroll(&self.scroll),
+///     scroll::pane("output", Axes::Vertical).track_scroll(&self.scroll),
 ///     &self.scroll,
-///     Axis::Vertical,
+///     Axes::Vertical,
 ///     &self.claim,
 /// )
 /// ```
+///
+/// `axes` is what the pane scrolls, and must be what [`pane`] was given: an
+/// axis left out here is one whose movement goes unnoticed, so the wheel is
+/// handed on and the ancestor moves too.
 pub fn claim_wheel<E: gpui::StatefulInteractiveElement>(
     el: E,
     handle: &ScrollHandle,
-    axis: Axis,
+    axes: Axes,
     state: &ClaimState,
 ) -> E {
     let handle = handle.clone();
@@ -535,9 +661,9 @@ pub fn claim_wheel<E: gpui::StatefulInteractiveElement>(
     // before anything this frame's listeners are handed. The listener writes it
     // too: a wheel the pane could not act on produces no `notify` and so no
     // render, and the reading below has to stay true across that gap.
-    state.set(travel(&handle, axis));
+    state.set(travel(&handle, axes));
     el.on_scroll_wheel(move |_, _, cx| {
-        let now = travel(&handle, axis);
+        let now = travel(&handle, axes);
         if now != state.get() {
             state.set(now);
             cx.stop_propagation();
@@ -545,19 +671,27 @@ pub fn claim_wheel<E: gpui::StatefulInteractiveElement>(
     })
 }
 
-/// How far `handle` has visibly travelled along `axis`. Negative, as gpui
-/// counts it.
+/// How far `handle` has visibly travelled along each of `axes`. Negative, as
+/// gpui counts it; an axis the pane does not scroll reads zero forever, so it
+/// can never be mistaken for movement.
 ///
 /// Clamped here because gpui's scroll listener is not: it adds the raw delta
 /// and leaves the clamp to the next `paint`, so a pane held at its end keeps
 /// accumulating offset it will never show. Compared raw, every notch past the
 /// end reads as movement and the pane never lets go of the wheel.
-fn travel(handle: &ScrollHandle, axis: Axis) -> Pixels {
-    let (offset, max) = match axis {
-        Axis::Vertical => (handle.offset().y, handle.max_offset().y),
-        Axis::Horizontal => (handle.offset().x, handle.max_offset().x),
-    };
-    offset.clamp(-max.max(px(0.0)), px(0.0))
+fn travel(handle: &ScrollHandle, axes: Axes) -> Point<Pixels> {
+    let (offset, max) = (handle.offset(), handle.max_offset());
+    let seen = |offset: Pixels, max: Pixels| offset.clamp(-max.max(px(0.0)), px(0.0));
+    point(
+        match axes.horizontal() {
+            true => seen(offset.x, max.x),
+            false => px(0.0),
+        },
+        match axes.vertical() {
+            true => seen(offset.y, max.y),
+            false => px(0.0),
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -623,7 +757,7 @@ impl FollowState {
 ///
 /// ```ignore
 /// div().relative()
-///     .child(div().id("log").size_full().overflow_y_scroll().track_scroll(&self.scroll).child(rows))
+///     .child(scroll::pane("log", Axes::Vertical).size_full().track_scroll(&self.scroll).child(rows))
 ///     .child(scroll::follow(&self.scroll, &self.follow))
 ///     .child(scroll::scrollbar("log-bar", &self.scroll, &self.bar))
 /// ```

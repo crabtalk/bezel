@@ -18,6 +18,7 @@
 
 use gpui::{Context, Render, SharedString, Window, div, prelude::*, px};
 use theme::{TextStyle, Theme, Typeset, ink};
+use ui::scroll::{self, Axes};
 use ui::{icons, widgets::Scaffolding};
 
 /// What happened to a line. `Skip` is the gap between hunks — the lines nobody
@@ -212,9 +213,7 @@ impl Render for Diff {
                     .py(px(32.0))
                     .child(
                         theme.group_box().child(Self::header(&theme)).child(
-                            div()
-                                .id("diff-rows")
-                                .overflow_x_scroll()
+                            scroll::pane("diff-rows", Axes::Horizontal)
                                 .restrict_scroll_to_axis()
                                 .py(px(4.0))
                                 .flex()

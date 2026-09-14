@@ -26,7 +26,7 @@ use motion::Painter;
 use theme::{TextStyle, Theme, Typeset};
 use ui::{
     icons, popover,
-    scroll::{self, FollowState, ScrollbarState},
+    scroll::{self, Axes, FollowState, ScrollbarState},
     widgets,
     widgets::{Layout, Status},
 };
@@ -425,10 +425,8 @@ impl Render for Transcript {
                 .w_full()
                 .max_w(px(700.0))
                 .child(
-                    div()
-                        .id("transcript")
+                    scroll::pane("transcript", Axes::Vertical)
                         .size_full()
-                        .overflow_y_scroll()
                         .track_scroll(&self.scroll)
                         .child(
                             div()

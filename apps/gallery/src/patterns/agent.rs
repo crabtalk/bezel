@@ -29,7 +29,7 @@ use ui::{
     icons,
     input::{FieldEvent, Shape, TextField},
     loaders, popover,
-    scroll::{self, FollowState, ScrollbarState},
+    scroll::{self, Axes, FollowState, ScrollbarState},
     widgets,
     widgets::{ButtonStyle, Buttons, Layout, Status},
 };
@@ -216,10 +216,8 @@ impl Activity {
                     .relative()
                     .max_h(px(BOX_MAX))
                     .child(
-                        div()
-                            .id("reasoning")
+                        scroll::pane("reasoning", Axes::Vertical)
                             .max_h(px(BOX_MAX))
-                            .overflow_y_scroll()
                             .track_scroll(&self.scroll)
                             .child(div().flex().flex_col().gap(px(4.0)).pr(px(14.0)).children(
                                 REASONING.iter().take(self.shown()).map(|line| {

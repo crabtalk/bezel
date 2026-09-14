@@ -7,10 +7,10 @@
 //! reaches both.
 
 use gpui::{
-    Axis, ScrollDelta, ScrollHandle, ScrollWheelEvent, TestAppContext, VisualTestContext, div,
-    point, prelude::*, px, size,
+    ScrollDelta, ScrollHandle, ScrollWheelEvent, TestAppContext, VisualTestContext, div, point,
+    prelude::*, px, size,
 };
-use ui::scroll::{self, ClaimState};
+use ui::scroll::{self, Axes, ClaimState};
 
 const WIDTH: f32 = 400.0;
 const HEIGHT: f32 = 300.0;
@@ -34,22 +34,18 @@ struct Nested {
 
 impl gpui::Render for Nested {
     fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
-        let inner = div()
-            .id("inner")
+        let inner = scroll::pane("inner", Axes::Vertical)
             .w_full()
             .h(px(INNER_BOX))
-            .overflow_y_scroll()
             .track_scroll(&self.inner)
             .child(div().w_full().h(px(INNER_CONTENT)));
         let inner = if self.claims {
-            scroll::claim_wheel(inner, &self.inner, Axis::Vertical, &self.claim)
+            scroll::claim_wheel(inner, &self.inner, Axes::Vertical, &self.claim)
         } else {
             inner
         };
-        div()
-            .id("outer")
+        scroll::pane("outer", Axes::Vertical)
             .size_full()
-            .overflow_y_scroll()
             .track_scroll(&self.outer)
             .child(inner)
             .child(div().w_full().h(px(SPACER)))

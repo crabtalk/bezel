@@ -2018,6 +2018,11 @@ fn table(
 /// the other half, because the container a consumer wrapped the document in is
 /// not ours to configure.
 ///
+/// `ui::scroll::pane` is the same pair behind one call, and is what an app
+/// should reach for. It cannot be used here: this crate carries no dependency
+/// on `ui`, deliberately — the document model paints without a component
+/// library.
+///
 /// Registered before the element's own handler and so run after it — gpui
 /// bubbles the list backwards — which is why the pane has already moved by the
 /// time the event stops here.
