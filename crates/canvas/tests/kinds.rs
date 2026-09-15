@@ -2,7 +2,7 @@
 
 use canvas::{
     Canvas, CanvasView, Change, Kinds,
-    kind::{Chrome, Field, Kind, Sizing},
+    kind::{Chrome, Field, Kind},
     mindmap,
     model::Node,
 };
@@ -16,21 +16,20 @@ const DOC: &str = r#"{
   "edges": [{"id":"e","fromNode":"root","toNode":"leaf"}]
 }"#;
 
-const CARD: Kind = Kind {
-    render: |_, _, _, _| div().into_any_element(),
-    sizing: Sizing::Fixed,
-    chrome: Chrome::Bare,
-    edit: Some(Field {
-        read: |node| node.label.clone().unwrap_or_default(),
-        write: |node, label| node.label = Some(label),
-    }),
-    child: |_| Node {
-        kind: "card".into(),
-        width: 80,
-        height: 30,
-        ..Node::default()
-    },
-};
+fn card() -> Kind {
+    Kind::new(|_, _, _, _| div().into_any_element())
+        .chrome(Chrome::Bare)
+        .edit(Field::new(
+            |node| node.label.clone().unwrap_or_default(),
+            |node, label| node.label = Some(label),
+        ))
+        .child(|_| Node {
+            kind: "card".into(),
+            width: 80,
+            height: 30,
+            ..Node::default()
+        })
+}
 
 fn open(
     view: impl FnOnce(CanvasView) -> CanvasView + 'static,
@@ -40,7 +39,7 @@ fn open(
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
         canvas::init(cx);
-        canvas::set_kinds(cx, Kinds::new().with("card", CARD));
+        canvas::set_kinds(cx, Kinds::new().with("card", card()));
     });
     let window = cx.add_window(|_, cx| view(CanvasView::new(Canvas::parse(DOC).unwrap(), cx)));
     let root = window.root(cx).unwrap();

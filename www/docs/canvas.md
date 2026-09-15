@@ -6,7 +6,7 @@ description: A mindmap over JSON Canvas — an app's own node kinds, and every e
 ```rust
 editor::init(cx);
 canvas::init(cx);                                            // after editor::init
-canvas::set_kinds(cx, Kinds::new().with("session", SESSION)); // optional
+canvas::set_kinds(cx, Kinds::new().with("session", session(store))); // optional
 
 let view = cx.new(|cx| CanvasView::new(Canvas::parse(json)?, cx));
 cx.subscribe(&view, |_, view, event, cx| {
@@ -21,16 +21,17 @@ The document is [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/). Fields the 
 ## Your own kinds
 
 ```rust
-const SESSION: Kind = Kind {
-    render: |node, zoom, window, cx| sessions(cx).view(&node.id).into_any_element(),
-    sizing: Sizing::Fixed,             // or Grows: as tall as the content
-    chrome: Chrome::Card,              // Outline, or Bare: the content is the node
-    edit: Some(Field { read: title, write: set_title }),  // what f2 edits
-    child: kind::blank,                // what tab makes under it
-};
+fn session(store: Store) -> Kind {
+    Kind::new(move |node, zoom, window, cx| store.view(&node.id).into_any_element())
+        .sizing(Sizing::Fixed)               // or Grows: as tall as the content
+        .chrome(Chrome::Card)                // Outline, Frame, or Bare: the content is the node
+        .edit(Field::new(title, set_title))  // what f2 edits
+        .open(|node, cx| resume(node, cx))   // what a double-click does instead
+        .child(kind::blank)                  // what tab makes under it
+}
 ```
 
-A kind is keyed by the node's `type`. The spec's four — `kind::TEXT`, `FILE`, `LINK`, `GROUP` — are replaceable the same way, or a starting point: `Kind { chrome: Chrome::Bare, ..kind::TEXT }`.
+A kind is keyed by the node's `type`, and holds what it needs. The spec's four — `kind::text()`, `file()`, `link()`, `group()` — are replaceable the same way, or a starting point: `Kind { chrome: Chrome::Bare, ..kind::text() }`. `Kinds::with_root(dir)` finds files and group backgrounds under `dir`, so images preview. A link opens on a double-click. A group frames the nodes inside its box: they move with it, it paints under them, and it is never a drop target.
 
 State stays with the app: look the view up by the node's id. gpui cannot transform an element, so `zoom` is a scale the content applies itself — `canvas::text_style(div(), TextStyle::Callout, zoom)` sets size, leading and weight together, and `Typography::scaled` does a whole document. A node of fixed size clips what it paints.
 

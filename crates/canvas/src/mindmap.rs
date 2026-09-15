@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::{
     change::{self, Change},
+    group,
     layout::Arrow,
     model::{Canvas, Edge, End, GROUP, Node, Side},
 };
@@ -59,14 +60,15 @@ pub fn unpin(node: &Node) -> Option<Change> {
     })
 }
 
-/// `ids` moved `by`, each with its pinned descendants keeping their place
-/// beside it as layout keeps the rest. `pin` keeps them there.
+/// `ids` moved `by`, a group with its members, each with its pinned
+/// descendants keeping their place beside it as layout keeps the rest. `pin`
+/// keeps them there.
 pub fn carry(canvas: &Canvas, ids: &[String], by: (i64, i64), pin: bool) -> Vec<Change> {
     let shifted = |node: &Node| (node.x + by.0, node.y + by.1);
     let mut changes = Vec::new();
     let mut moves = Vec::new();
     let mut seen = HashSet::new();
-    for id in ids {
+    for id in &group::with_members(canvas, ids) {
         let Some(node) = canvas.node(id) else {
             continue;
         };
@@ -354,7 +356,8 @@ pub fn detach(canvas: &Canvas, ids: &[String]) -> Option<Change> {
     (!cut.is_empty()).then_some(Change::RemoveEdges { ids: cut })
 }
 
-/// The topmost node containing `at`, outside the branches of `except`.
+/// The topmost node containing `at`, outside the branches of `except`. A group
+/// is a frame, never a target.
 pub fn node_at<'a>(canvas: &'a Canvas, at: (i64, i64), except: &[String]) -> Option<&'a str> {
     let skip: HashSet<String> = except
         .iter()
@@ -367,6 +370,7 @@ pub fn node_at<'a>(canvas: &'a Canvas, at: (i64, i64), except: &[String]) -> Opt
         .rev()
         .find(|n| {
             !skip.contains(&n.id)
+                && n.kind != GROUP
                 && (n.x..n.x + n.width).contains(&at.0)
                 && (n.y..n.y + n.height).contains(&at.1)
         })

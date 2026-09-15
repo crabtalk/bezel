@@ -82,7 +82,7 @@ pub fn init(cx: &mut App) {
     canvas::init(cx);
     canvas::set_kinds(
         cx,
-        canvas::Kinds::new().with("session", patterns::canvas::SESSION),
+        canvas::Kinds::new().with("session", patterns::canvas::session_kind()),
     );
     palette::init(cx);
     combobox::init(cx);

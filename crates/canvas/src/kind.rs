@@ -1,18 +1,25 @@
 //! What a node is: how it paints, how its box is sized and dressed, what
-//! editing it changes, and what `tab` under it makes.
+//! editing it changes, what a double-click opens, and what `tab` under it
+//! makes.
 //!
 //! ```ignore
-//! canvas::set_kinds(cx, Kinds::new().with("session", SESSION));  // once, at boot
+//! canvas::set_kinds(cx, Kinds::new().with_root(vault).with("session", session(store)));
 //! ```
 //!
-//! Keyed by the node's `type`. State stays with the app: a `render` looks its
-//! view up by the node's id and hands the entity back. The spec's four are
-//! [`TEXT`], [`FILE`], [`LINK`] and [`GROUP`], each replaceable, and a type
-//! nothing names is [`UNKNOWN`].
+//! Keyed by the node's `type`. A kind is closures, so it holds what it needs;
+//! the view it paints stays with the app, looked up by the node's id. The
+//! spec's four are [`text`], [`file`], [`link`] and [`group`], each
+//! replaceable, and a type nothing names is [`unknown`].
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
-use gpui::{AnyElement, App, Global, Hsla, Styled, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, App, Global, Hsla, ObjectFit, Styled, StyledImage, Window, div, img, prelude::*, px,
+};
 use markdown::{Editing, Marks, Typography};
 use theme::{TextStyle, Theme};
 
@@ -36,97 +43,139 @@ pub enum Sizing {
 pub enum Chrome {
     /// Filled and bordered.
     Card,
-    /// Bordered only, for a frame other nodes sit in.
+    /// Bordered only.
     Outline,
     /// Nothing: the content is the node.
     Bare,
+    /// Bordered and washed in the node's colour, its content unclipped so a
+    /// label can sit above the box — a group.
+    Frame,
 }
+
+/// A node's content at `zoom`. See [`text_style`].
+pub type Paint = Rc<dyn Fn(&Node, f32, &mut Window, &mut App) -> AnyElement>;
+pub type Read = Rc<dyn Fn(&Node) -> String>;
+pub type Write = Rc<dyn Fn(&mut Node, String)>;
+pub type Open = Rc<dyn Fn(&Node, &mut App)>;
+pub type Child = Rc<dyn Fn(&Node) -> Node>;
 
 /// The string field editing a node in place changes.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Field {
-    pub read: fn(&Node) -> String,
-    pub write: fn(&mut Node, String),
+    pub read: Read,
+    pub write: Write,
 }
 
-#[derive(Clone, Copy)]
+impl Field {
+    pub fn new(
+        read: impl Fn(&Node) -> String + 'static,
+        write: impl Fn(&mut Node, String) + 'static,
+    ) -> Self {
+        Self {
+            read: Rc::new(read),
+            write: Rc::new(write),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Kind {
-    /// The content, at `zoom`. See [`text_style`].
-    pub render: fn(node: &Node, zoom: f32, &mut Window, &mut App) -> AnyElement,
+    pub render: Paint,
     pub sizing: Sizing,
     pub chrome: Chrome,
-    /// What a double-click and `f2` edit, if anything.
+    /// What `f2` edits, and a double-click too when the kind opens nothing.
     pub edit: Option<Field>,
+    /// What a double-click does in place of editing.
+    pub open: Option<Open>,
     /// The node `tab` makes under one of this kind. Its id and position are
     /// the canvas's to set.
-    pub child: fn(parent: &Node) -> Node,
+    pub child: Child,
 }
 
-pub const TEXT: Kind = Kind {
-    render: render_text,
-    sizing: Sizing::Grows,
-    chrome: Chrome::Card,
-    edit: Some(Field {
-        read: read_text,
-        write: write_text,
-    }),
-    child: blank,
-};
+impl Kind {
+    /// A fixed card painted by `render`, editing and opening nothing, with a
+    /// blank text node under it.
+    pub fn new(render: impl Fn(&Node, f32, &mut Window, &mut App) -> AnyElement + 'static) -> Self {
+        Self {
+            render: Rc::new(render),
+            sizing: Sizing::Fixed,
+            chrome: Chrome::Card,
+            edit: None,
+            open: None,
+            child: Rc::new(blank),
+        }
+    }
 
-pub const FILE: Kind = Kind {
-    render: render_file,
-    sizing: Sizing::Fixed,
-    chrome: Chrome::Card,
-    edit: None,
-    child: blank,
-};
+    pub fn sizing(mut self, sizing: Sizing) -> Self {
+        self.sizing = sizing;
+        self
+    }
 
-pub const LINK: Kind = Kind {
-    render: render_link,
-    sizing: Sizing::Fixed,
-    chrome: Chrome::Card,
-    edit: None,
-    child: blank,
-};
+    pub fn chrome(mut self, chrome: Chrome) -> Self {
+        self.chrome = chrome;
+        self
+    }
 
-pub const GROUP: Kind = Kind {
-    render: render_group,
-    sizing: Sizing::Fixed,
-    chrome: Chrome::Outline,
-    edit: Some(Field {
-        read: read_label,
-        write: write_label,
-    }),
-    child: blank,
-};
+    pub fn edit(mut self, field: Field) -> Self {
+        self.edit = Some(field);
+        self
+    }
 
-/// A type no kind names: its name, faint.
-pub const UNKNOWN: Kind = Kind {
-    render: render_unknown,
-    sizing: Sizing::Fixed,
-    chrome: Chrome::Card,
-    edit: None,
-    child: blank,
-};
+    pub fn open(mut self, open: impl Fn(&Node, &mut App) + 'static) -> Self {
+        self.open = Some(Rc::new(open));
+        self
+    }
+
+    pub fn child(mut self, child: impl Fn(&Node) -> Node + 'static) -> Self {
+        self.child = Rc::new(child);
+        self
+    }
+}
 
 /// Every kind a canvas paints, by `type`.
 #[derive(Clone)]
-pub struct Kinds(HashMap<String, Kind>);
+pub struct Kinds {
+    kinds: HashMap<String, Kind>,
+    unknown: Kind,
+}
 
 impl Kinds {
     /// The spec's four.
     pub fn new() -> Self {
-        Self(HashMap::new())
+        let kinds = [
+            (model::TEXT, text()),
+            (model::FILE, file()),
+            (model::LINK, link()),
+            (model::GROUP, group()),
+        ]
+        .into_iter()
+        .map(|(name, kind)| (name.to_owned(), kind))
+        .collect();
+        Self {
+            kinds,
+            unknown: unknown(),
+        }
+    }
+
+    /// Files and group backgrounds are found under `root`, so images preview.
+    /// This replaces `file` and `group`: call it before [`Kinds::with`].
+    pub fn with_root(mut self, root: impl Into<PathBuf>) -> Self {
+        let root: Rc<Path> = Rc::from(root.into());
+        self.kinds
+            .insert(model::FILE.into(), file_under(Some(root.clone())));
+        self.kinds
+            .insert(model::GROUP.into(), group_under(Some(root)));
+        self
     }
 
     /// Add a kind, or replace one — the spec's included.
     pub fn with(mut self, name: impl Into<String>, kind: Kind) -> Self {
-        self.0.insert(name.into(), kind);
+        self.kinds.insert(name.into(), kind);
         self
     }
 
-    pub fn get(&self, name: &str) -> Kind {
-        self.0.get(name).copied().unwrap_or_else(|| builtin(name))
+    pub fn get(&self, name: &str) -> &Kind {
+        self.kinds.get(name).unwrap_or(&self.unknown)
     }
 }
 
@@ -145,10 +194,65 @@ pub fn set_kinds(cx: &mut App, kinds: Kinds) {
     cx.set_global(Installed(kinds));
 }
 
+/// The spec's kinds, unless an app set its own.
+pub(crate) fn ensure(cx: &mut App) {
+    if !cx.has_global::<Installed>() {
+        set_kinds(cx, Kinds::new());
+    }
+}
+
 /// What `name` is, from the installed kinds.
 pub fn kind(cx: &App, name: &str) -> Kind {
-    cx.try_global::<Installed>()
-        .map_or_else(|| builtin(name), |installed| installed.0.get(name))
+    match cx.try_global::<Installed>() {
+        Some(installed) => installed.0.get(name).clone(),
+        None => Kinds::new().get(name).clone(),
+    }
+}
+
+/// Markdown, as tall as it runs, edited in place.
+pub fn text() -> Kind {
+    Kind::new(render_text)
+        .sizing(Sizing::Grows)
+        .edit(Field::new(
+            |node| node.text.clone().unwrap_or_default(),
+            |node, text| node.text = Some(text),
+        ))
+}
+
+/// Its path. [`Kinds::with_root`] previews images.
+pub fn file() -> Kind {
+    file_under(None)
+}
+
+/// Its URL, which a double-click opens and `f2` edits.
+pub fn link() -> Kind {
+    Kind::new(|node, zoom, _, cx| {
+        label(
+            node.url.clone().unwrap_or_default(),
+            zoom,
+            Theme::of(cx).accent,
+        )
+    })
+    .edit(Field::new(
+        |node| node.url.clone().unwrap_or_default(),
+        |node, url| node.url = Some(url),
+    ))
+    .open(|node, cx| {
+        if let Some(url) = &node.url {
+            cx.open_url(url);
+        }
+    })
+}
+
+/// A frame for the nodes inside it, its label above. [`Kinds::with_root`]
+/// paints its background.
+pub fn group() -> Kind {
+    group_under(None)
+}
+
+/// A type no kind names: its name, faint.
+pub fn unknown() -> Kind {
+    Kind::new(|node, zoom, _, cx| label(node.kind.clone(), zoom, Theme::of(cx).text_faint))
 }
 
 /// Text in `style` at `zoom`: size, leading and weight together. Scaling the
@@ -170,13 +274,81 @@ pub fn blank(_: &Node) -> Node {
     }
 }
 
-fn builtin(name: &str) -> Kind {
-    match name {
-        model::TEXT => TEXT,
-        model::FILE => FILE,
-        model::LINK => LINK,
-        model::GROUP => GROUP,
-        _ => UNKNOWN,
+/// Whether a path names an image gpui paints.
+pub fn is_image(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg"
+            )
+        })
+}
+
+fn file_under(root: Option<Rc<Path>>) -> Kind {
+    Kind::new(move |node, zoom, _, cx| {
+        let path = node.file.as_deref().unwrap_or_default();
+        match resolve(root.as_deref(), path).filter(|_| is_image(path)) {
+            Some(image) => img(image)
+                .size_full()
+                .object_fit(ObjectFit::Contain)
+                .into_any_element(),
+            None => {
+                let subpath = node.subpath.as_deref().unwrap_or_default();
+                label(format!("{path}{subpath}"), zoom, Theme::of(cx).text)
+            }
+        }
+    })
+}
+
+fn group_under(root: Option<Rc<Path>>) -> Kind {
+    Kind::new(move |node, zoom, _, cx| {
+        let backdrop = node
+            .background
+            .as_deref()
+            .and_then(|path| resolve(root.as_deref(), path))
+            .map(|image| {
+                let fit = match node.background_style.as_deref() {
+                    Some("ratio") => ObjectFit::Contain,
+                    _ => ObjectFit::Cover,
+                };
+                img(image).size_full().object_fit(fit)
+            });
+        let title = node.label.clone().unwrap_or_default();
+        div()
+            .relative()
+            .size_full()
+            .children(backdrop)
+            .when(!title.is_empty(), |d| {
+                d.child(
+                    text_style(div(), TextStyle::Callout, zoom)
+                        .absolute()
+                        .left_0()
+                        .bottom(px(node.height as f32 * zoom))
+                        .pb(px(4.0 * zoom))
+                        .text_color(Theme::of(cx).text_muted)
+                        .child(title),
+                )
+            })
+            .into_any_element()
+    })
+    .chrome(Chrome::Frame)
+    .edit(Field::new(
+        |node| node.label.clone().unwrap_or_default(),
+        |node, label| node.label = Some(label),
+    ))
+}
+
+/// `path` under `root`, or as it is when absolute.
+fn resolve(root: Option<&Path>, path: &str) -> Option<PathBuf> {
+    if path.is_empty() {
+        return None;
+    }
+    match root {
+        Some(root) => Some(root.join(path)),
+        None => Path::new(path).is_absolute().then(|| PathBuf::from(path)),
     }
 }
 
@@ -189,50 +361,9 @@ fn render_text(node: &Node, zoom: f32, window: &mut Window, cx: &mut App) -> Any
     markdown::render_with(&doc, editing, window, cx)
 }
 
-fn render_file(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> AnyElement {
-    let path = format!(
-        "{}{}",
-        node.file.as_deref().unwrap_or_default(),
-        node.subpath.as_deref().unwrap_or_default()
-    );
-    label(path, zoom, Theme::of(cx).text)
-}
-
-fn render_link(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> AnyElement {
-    label(
-        node.url.clone().unwrap_or_default(),
-        zoom,
-        Theme::of(cx).accent,
-    )
-}
-
-fn render_group(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> AnyElement {
-    label(read_label(node), zoom, Theme::of(cx).text_muted)
-}
-
-fn render_unknown(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> AnyElement {
-    label(node.kind.clone(), zoom, Theme::of(cx).text_faint)
-}
-
 fn label(text: String, zoom: f32, color: Hsla) -> AnyElement {
     text_style(div(), TextStyle::Callout, zoom)
         .text_color(color)
         .child(text)
         .into_any_element()
-}
-
-fn read_text(node: &Node) -> String {
-    node.text.clone().unwrap_or_default()
-}
-
-fn write_text(node: &mut Node, text: String) {
-    node.text = Some(text);
-}
-
-fn read_label(node: &Node) -> String {
-    node.label.clone().unwrap_or_default()
-}
-
-fn write_label(node: &mut Node, label: String) {
-    node.label = Some(label);
 }

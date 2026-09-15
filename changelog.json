@@ -4,6 +4,8 @@
     "date": "2026-09-15",
     "summary": "The canvas edits a graph, with trees as a layer over it, laid out the way an app picks.",
     "new": [
+      "Groups frame what sits in their box: `canvas::group` finds the members, they move with the group, groups paint under other nodes and are never drop targets, and the label is drawn above the box through the new `Chrome::Frame`, washed in the group's colour.",
+      "`Kinds::with_root` finds files and group backgrounds under a directory, so image files preview and `background` and `backgroundStyle` paint. A link opens on a double-click, and a kind's `open` says what a double-click does in place of editing.",
       "Edges are picked by a click, removed by `backspace` and labelled by a double-click or `f2`, and labels are drawn. A picked node shows side handles that drag out a connector — onto a node, or onto nothing to make one — and a corner that resizes it through `Change::Resize`. `CanvasView::selected_edge` and `select_edge`, `CanvasEvent::EdgeSelected` and `Canvas::edge` are new, and presets `3` and `5` paint yellow and cyan.",
       "The canvas undoes and redoes: `cmd-z` and `cmd-shift-z`, or `CanvasView::undo` and `redo`, over every batch that landed through `submit` or `apply`, with an add and the typing into it as one step. `change::apply` answers the changes that undo it, and `apply_all` does a batch.",
       "The selection is many: shift- or cmd-click gathers it, a shift-drag on empty canvas draws a marquee, `cmd-a` takes all and `escape` none. Removing, nudging, dragging, copying and duplicating act on all of it; `CanvasView::selection` and `set_selection` read and set it, and `drag::Drag::with` carries the rest of it.",
@@ -12,6 +14,7 @@
       "Arrows walk a tree the way its layout grows it (`mindmap::walk`), or go to the nearest node on a free canvas (`layout::nearest`). `shift`-arrows nudge the selection, and a double-click on empty canvas adds a node there."
     ],
     "changed": [
+      "`Kind` holds closures, so a kind carries what it needs: build one with `Kind::new(render)` and `sizing`, `chrome`, `edit`, `open` and `child`, and a field with `Field::new`. The spec's kinds are `kind::text()`, `file()`, `link()`, `group()` and `unknown()` in place of the constants, and `canvas::init` installs them when an app has not.",
       "`CanvasEvent::Selected` carries the whole selection. `Change::AddNode` takes an `index`. `mindmap::reparent`, `detach` and `carry` take many ids, `carry` a distance rather than a place, and `node_at` skips many branches.",
       "`CanvasView::with_layout`, `layout` and `set_layout` replace `with_arrange`, `arrange` and `set_arrange`, and `Arrange` is gone. `keys::SelectParent`, `SelectChild`, `SelectPrev` and `SelectNext` are `SelectLeft`, `SelectRight`, `SelectUp` and `SelectDown`.",
       "`Change` is a graph's vocabulary — `AddNode`, `AddEdge`, `RemoveNodes`, `RemoveEdges`, `MoveNodes`, `Resize`, `UpdateNode`, `UpdateEdge` — and the view lands them in batches: `submit` and `apply` take many, one refused change refuses the batch, and `CanvasEvent::Changed` carries a `Vec`. `change::added` finds the node a batch adds.",

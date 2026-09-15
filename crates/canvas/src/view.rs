@@ -78,6 +78,8 @@ const LABEL: (f32, f32) = (240.0, 32.0);
 const CUT: f32 = 0.25;
 /// The accent wash inside a node a drop would land on.
 const TARGET_WASH: f32 = 0.12;
+/// A coloured frame's wash of its colour.
+const FRAME_WASH: f32 = 0.06;
 
 pub mod keys {
     //! Every action the canvas answers to, and the chords bound to it.
@@ -158,8 +160,10 @@ pub mod keys {
     }
 }
 
-/// Install the canvas key bindings. Call after `editor::init`.
+/// Install the canvas key bindings, and the spec's kinds unless an app set its
+/// own. Call after `editor::init`.
 pub fn init(cx: &mut App) {
+    kind::ensure(cx);
     cx.bind_keys(keys::bindings());
 }
 
@@ -1118,17 +1122,19 @@ impl CanvasView {
         self.added(changes, window, cx);
     }
 
-    /// The topmost node at a canvas point, other than `except`.
+    /// The topmost node at a canvas point, other than `except`; a node before
+    /// the group it sits in.
     fn node_under(&self, at: (i64, i64), except: &str) -> Option<&str> {
         self.canvas
             .nodes
             .iter()
             .rev()
-            .find(|n| {
+            .filter(|n| {
                 n.id != except
                     && (n.x..n.x + n.width).contains(&at.0)
                     && (n.y..n.y + n.height).contains(&at.1)
             })
+            .min_by_key(|n| n.kind == model::GROUP)
             .map(|n| n.id.as_str())
     }
 
@@ -1181,7 +1187,11 @@ impl CanvasView {
         }
         if event.click_count >= 2 {
             self.select(Some(id.clone()), cx);
-            self.edit(id, None, window, cx);
+            let node = self.canvas.node(&id).cloned();
+            match node.and_then(|node| Some((kind::kind(cx, &node.kind).open?, node))) {
+                Some((open, node)) => open(&node, cx),
+                None => self.edit(id, None, window, cx),
+            }
             return;
         }
         // Pressing one of a selection keeps the rest, to drag them together.
@@ -1628,10 +1638,16 @@ impl CanvasView {
                     .bg(theme.surface_card),
                 Chrome::Outline => d.p(px(PAD * z)).border_1().border_color(border),
                 Chrome::Bare => d,
+                Chrome::Frame => d.border_1().border_color(border).bg(node
+                    .color
+                    .as_deref()
+                    .and_then(|c| color(theme, c))
+                    .map_or(gpui::transparent_black(), |c| c.opacity(FRAME_WASH))),
             })
             .when(draggable, |d| d.cursor_grab())
-            // A box of fixed size keeps whatever a renderer paints inside it.
-            .child(if grows {
+            // A box of fixed size keeps whatever a renderer paints inside it;
+            // a frame's label sits outside it.
+            .child(if grows || kind.chrome == Chrome::Frame {
                 content
             } else {
                 div()
@@ -1918,11 +1934,17 @@ impl Render for CanvasView {
         let shown = self.positions(cx.reduced_motion(), window);
         let theme = Theme::of(cx).clone();
         let edges = self.edge_layer(&theme, &shown, cx.entity().downgrade());
-        // The held node paints last, over whatever it is carried across.
-        let held = self.held().and_then(|id| self.canvas.index_of(id));
-        let order = (0..self.canvas.nodes.len())
+        // Groups paint first, under what they frame. The held node paints
+        // last, over whatever it is carried across, unless it frames them.
+        let group = |ix: usize| self.canvas.nodes[ix].kind == model::GROUP;
+        let held = self
+            .held()
+            .and_then(|id| self.canvas.index_of(id))
+            .filter(|ix| !group(*ix));
+        let (groups, rest): (Vec<usize>, Vec<usize>) = (0..self.canvas.nodes.len())
             .filter(|ix| Some(*ix) != held)
-            .chain(held);
+            .partition(|ix| group(*ix));
+        let order = groups.into_iter().chain(rest).chain(held);
         let connecting = self.connect_target().map(str::to_owned);
         let nodes: Vec<AnyElement> = order
             .filter_map(|ix| {

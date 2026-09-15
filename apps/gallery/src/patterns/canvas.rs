@@ -1,7 +1,7 @@
 //! A mindmap on the canvas, with the JSON Canvas file a save would write
 //! beside it.
 //!
-//! The `session` node is an app's own kind: [`SESSION`] paints fields the spec
+//! The `session` node is an app's own kind: [`session_kind`] paints fields the spec
 //! does not name, edits its title in place, and makes a text note under it by
 //! `tab`. The page keeps its root through `with_changes`.
 //!
@@ -13,7 +13,7 @@
 use canvas::{
     Canvas, CanvasView, Change, change,
     drag::{self, DragHandler},
-    kind::{self, Chrome, Field, Kind, Sizing},
+    kind::{self, Field, Kind},
     layout::{self, Layout},
     mindmap,
     model::Node,
@@ -60,16 +60,9 @@ const SOURCE: &str = r##"{
 const ROOT: &str = "root";
 
 /// Installed with `canvas::set_kinds` under `"session"`.
-pub const SESSION: Kind = Kind {
-    render: session,
-    sizing: Sizing::Fixed,
-    chrome: Chrome::Card,
-    edit: Some(Field {
-        read: title,
-        write: set_title,
-    }),
-    child: kind::blank,
-};
+pub fn session_kind() -> Kind {
+    Kind::new(session).edit(Field::new(title, set_title))
+}
 
 fn title(node: &Node) -> String {
     node.extra
