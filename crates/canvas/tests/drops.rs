@@ -91,6 +91,37 @@ fn detach_cuts_the_edges_in() {
 }
 
 #[test]
+fn a_move_answers_what_the_drop_would_do() {
+    let canvas = tree();
+    let moving = |over| Drag {
+        id: "a",
+        origin: (0, 0),
+        delta: (5, 5),
+        over,
+        phase: Phase::Move,
+    };
+    let intents = |changes: Vec<Change>| -> Vec<Change> {
+        changes
+            .into_iter()
+            .filter(|change| !matches!(change, Change::Move { .. }))
+            .collect()
+    };
+    assert_eq!(
+        intents(drag::reparent(&canvas, &moving(Some("b")))),
+        [Change::Reparent {
+            id: "a".into(),
+            parent: "b".into()
+        }]
+    );
+    assert!(intents(drag::reparent(&canvas, &moving(None))).is_empty());
+    assert_eq!(
+        intents(drag::detach(&canvas, &moving(None))),
+        [Change::Detach { id: "a".into() }]
+    );
+    assert!(intents(drag::pin(&canvas, &moving(None))).is_empty());
+}
+
+#[test]
 fn node_at_skips_the_held_branch() {
     let canvas = tree();
     let inside = |id| {

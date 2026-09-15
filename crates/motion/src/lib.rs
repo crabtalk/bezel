@@ -456,6 +456,9 @@ pub const RESIZE: MotionSpec = MotionSpec::new(200, EASE_OUT);
 pub const TAB_SLIDE: MotionSpec = MotionSpec::new(150, EASE_OUT);
 /// Diff-pane per-file collapse: 180ms height (§1.11).
 pub const COLLAPSE: MotionSpec = MotionSpec::new(180, EASE_OUT);
+/// Canvas nodes gliding to where a layout put them — [`RESIZE`]'s 200ms
+/// ease-out, for a move the reader caused rather than one they are dragging.
+pub const LAYOUT: MotionSpec = MotionSpec::new(200, EASE_OUT);
 /// Diff-pane chevron rotate: 200ms (§1.11; approximated as a crossfade — gpui
 /// divs have no rotation transform at the pinned rev, same caveat as scale).
 pub const CHEVRON: MotionSpec = MotionSpec::new(200, EASE);

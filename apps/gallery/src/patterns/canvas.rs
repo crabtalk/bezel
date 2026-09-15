@@ -3,17 +3,31 @@
 //!
 //! The `session` node is an app's own kind: [`SESSION`] paints fields the spec
 //! does not name, edits its title in place, and makes a text note under it by
-//! `tab`. The page keeps its roots through `with_changes`. Copy this file.
+//! `tab`. The page keeps its root through `with_changes`.
+//!
+//! **The toolbar is a caller, not a component.** Every control is public
+//! `CanvasView` API — adding goes through `submit`, so the filter that keeps
+//! the root refuses the toolbar's delete as it refuses `backspace`, and zoom
+//! is the entry point its chord takes. Copy this file.
 
 use canvas::{
-    Canvas, CanvasView, Change,
+    Arrange, Canvas, CanvasView, Change,
+    drag::{self, DragHandler},
     kind::{self, Chrome, Field, Kind, Sizing},
     mindmap,
     model::Node,
 };
-use gpui::{AnyElement, App, Context, Entity, Render, ScrollHandle, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, App, Context, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
+    prelude::*, px,
+};
+use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
-use ui::scroll::{self, Axes};
+use ui::{
+    scroll::{self, Axes},
+    tooltip::Tooltip,
+    widgets::{ButtonStyle, Buttons},
+};
 
 const SOURCE: &str = r##"{
   "nodes": [
@@ -40,6 +54,9 @@ const SOURCE: &str = r##"{
     {"id":"e9","fromNode":"plugins","toNode":"session","toEnd":"none"}
   ]
 }"##;
+
+/// The sample's root, the one node the page will not let go.
+const ROOT: &str = "root";
 
 /// Installed with `canvas::set_kinds` under `"session"`.
 pub const SESSION: Kind = Kind {
@@ -88,18 +105,79 @@ fn session(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> AnyElement {
         .into_any_element()
 }
 
+/// What dropping a node does, as the toolbar offers it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DragMode {
+    Move,
+    Reparent,
+    Detach,
+}
+
+impl DragMode {
+    /// Each mode, its key and glyph, and what its tooltip says a drop does.
+    const ALL: [(Self, &'static str, &'static [u8], &'static str); 3] = [
+        (
+            Self::Move,
+            "move",
+            icons::glyph::Move,
+            "Move — the node stays where you drop it",
+        ),
+        (
+            Self::Reparent,
+            "reparent",
+            icons::glyph::GitFork,
+            "Reparent — drop onto a node to hang it there",
+        ),
+        (
+            Self::Detach,
+            "detach",
+            icons::glyph::Unlink,
+            "Detach — dropping cuts its connector",
+        ),
+    ];
+
+    fn handler(self) -> DragHandler {
+        match self {
+            Self::Move => drag::pin,
+            Self::Reparent => drag::reparent,
+            Self::Detach => drag::detach,
+        }
+    }
+}
+
+/// A new node of the page's two kinds, before the canvas gives it an id and a
+/// place.
+fn fresh(session: bool) -> Node {
+    if !session {
+        return Node {
+            text: Some("Note".into()),
+            ..kind::blank(&Node::default())
+        };
+    }
+    let mut node = Node {
+        kind: "session".into(),
+        width: 200,
+        height: 64,
+        ..Node::default()
+    };
+    node.extra.insert("title".into(), "New session".into());
+    node.extra.insert("turns".into(), 0u64.into());
+    node
+}
+
 pub struct CanvasDemo {
     view: Entity<CanvasView>,
     scroll: ScrollHandle,
+    drag: DragMode,
 }
 
 impl CanvasDemo {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let canvas = Canvas::parse(SOURCE).expect("the sample is a canvas");
         let view = cx.new(|cx| {
-            CanvasView::new(canvas, cx).with_changes(|canvas, change, _| match &change {
-                // The page keeps its roots.
-                Change::Remove { id } if mindmap::parent(canvas, id).is_none() => None,
+            CanvasView::new(canvas, cx).with_changes(|_, change, _| match &change {
+                // The page keeps its root.
+                Change::Remove { id } if id == ROOT => None,
                 _ => Some(change),
             })
         });
@@ -107,7 +185,197 @@ impl CanvasDemo {
         Self {
             view,
             scroll: ScrollHandle::new(),
+            drag: DragMode::Move,
         }
+    }
+
+    /// A toolbar press hands the keys back to the canvas, so `backspace` after
+    /// "Add" removes what was added.
+    fn refocus(&self, window: &mut Window, cx: &mut App) {
+        let handle = self.view.read(cx).focus_handle(cx);
+        window.focus(&handle, cx);
+    }
+
+    /// Under the selection, or a root in the middle of the view — through the
+    /// filter, the way `tab` goes.
+    fn add(&mut self, session: bool, cx: &mut Context<Self>) {
+        self.view.update(cx, |view, cx| {
+            let node = fresh(session);
+            let change = match view.selected().map(str::to_owned) {
+                Some(parent) => mindmap::child(view.canvas(), &parent, node),
+                None => {
+                    let (x, y) = view.center();
+                    let at = (x - node.width / 2, y - node.height / 2);
+                    Some(mindmap::root(view.canvas(), node, at))
+                }
+            };
+            if let Some(change) = change {
+                let id = change.id().to_owned();
+                if view.submit(change, cx) {
+                    view.select(Some(id), cx);
+                }
+            }
+        });
+    }
+
+    fn toolbar(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::Div {
+        let painter = Painter::of(cx);
+        let view = self.view.read(cx);
+        let removable = view.selected().is_some_and(|id| id != ROOT);
+        let (auto, zoom) = (view.arrange() == Arrange::Mindmap, view.zoom());
+        let button = |key: &'static str, glyph: &'static [u8]| {
+            theme
+                .icon_button(
+                    glyph,
+                    ButtonStyle::Ghost,
+                    Some(Fade::new(painter, format!("canvas-tool-{key}"))),
+                )
+                .id(SharedString::from(format!("canvas-tool-{key}")))
+        };
+        // Lit the way the ribbon lights a mark it applies.
+        let lit = |button: gpui::Stateful<gpui::Div>, on: bool| {
+            button.when(on, |el| el.bg(theme.element_active).text_color(theme.text))
+        };
+        let tip = |text: &'static str| {
+            move |window: &mut Window, cx: &mut App| Tooltip::text(text, window, cx)
+        };
+        // The chord comes off the keymap, so a rebound key moves the hint.
+        let chord = |label: &'static str, action: Box<dyn gpui::Action>| {
+            move |window: &mut Window, cx: &mut App| {
+                Tooltip::for_action_in(label, action.as_ref(), canvas::CONTEXT, window, cx)
+            }
+        };
+        let caption = |text: &'static str| {
+            div()
+                .text_style(TextStyle::Caption2)
+                .text_color(theme.text_faint)
+                .child(text)
+        };
+
+        let add = theme
+            .control_group()
+            .child(
+                button("note", icons::glyph::StickyNote)
+                    .tooltip(tip("Add a note — under the selection, or in the middle"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.add(false, cx);
+                        this.refocus(window, cx);
+                    })),
+            )
+            .child(
+                button("session", icons::glyph::MessageSquare)
+                    .tooltip(tip("Add a session — under the selection, or in the middle"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.add(true, cx);
+                        this.refocus(window, cx);
+                    })),
+            )
+            .child(
+                button("remove", icons::glyph::Trash)
+                    .when(!removable, |button| button.opacity(0.4))
+                    .tooltip(chord(
+                        "Remove the selection",
+                        Box::new(canvas::keys::Remove),
+                    ))
+                    .when(removable, |button| {
+                        button.on_click(cx.listener(|this, _, window, cx| {
+                            this.view.update(cx, |view, cx| view.remove_selected(cx));
+                            this.refocus(window, cx);
+                        }))
+                    }),
+            );
+
+        let drags =
+            theme
+                .control_group()
+                .children(DragMode::ALL.map(|(mode, key, glyph, text)| {
+                    lit(button(key, glyph), self.drag == mode)
+                        .tooltip(tip(text))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.drag = mode;
+                            this.view
+                                .update(cx, |view, _| view.set_drag(mode.handler()));
+                            this.refocus(window, cx);
+                            cx.notify();
+                        }))
+                }));
+
+        let layout = theme.control_group().child(
+            lit(button("auto-layout", icons::glyph::Network), auto)
+                .tooltip(tip(
+                    "Auto layout — keep the tree arranged. Off, nodes stay where they are",
+                ))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    let to = if auto {
+                        Arrange::Free
+                    } else {
+                        Arrange::Mindmap
+                    };
+                    this.view.update(cx, |view, cx| view.set_arrange(to, cx));
+                    this.refocus(window, cx);
+                })),
+        );
+
+        let zooms = theme
+            .control_group()
+            .child(
+                button("zoom-out", icons::glyph::ZoomOut)
+                    .tooltip(chord("Zoom out", Box::new(canvas::keys::ZoomOut)))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.view.update(cx, |view, cx| view.zoom_out(cx));
+                        this.refocus(window, cx);
+                    })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .px(px(4.0))
+                    .font_family(theme.font_mono.clone())
+                    .text_style(TextStyle::Caption2)
+                    .text_color(theme.text_muted)
+                    .child(format!("{:.0}%", zoom * 100.0)),
+            )
+            .child(
+                button("zoom-in", icons::glyph::ZoomIn)
+                    .tooltip(chord("Zoom in", Box::new(canvas::keys::ZoomIn)))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.view.update(cx, |view, cx| view.zoom_in(cx));
+                        this.refocus(window, cx);
+                    })),
+            )
+            .child(
+                button("fit", icons::glyph::Scan)
+                    .tooltip(tip("Fit — centre the document again"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.view.update(cx, |view, cx| view.fit(cx));
+                        this.refocus(window, cx);
+                    })),
+            );
+
+        // Docked, like the ribbon: it sits above the canvas rather than over
+        // it, and wraps when the pane is narrow.
+        div()
+            .flex()
+            .flex_row()
+            .flex_wrap()
+            .items_center()
+            .gap(px(12.0))
+            .pb(px(12.0))
+            .border_b_1()
+            .border_color(theme.hairline(0.10))
+            .child(add)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(caption("Drag"))
+                    .child(drags),
+            )
+            .child(layout)
+            .child(div().flex_1())
+            .child(zooms)
     }
 }
 
@@ -118,7 +386,15 @@ impl Render for CanvasDemo {
         div()
             .size_full()
             .flex()
-            .child(div().flex_1().min_w_0().child(self.view.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .child(self.toolbar(&theme, cx))
+                    .child(div().flex_1().min_h_0().child(self.view.clone())),
+            )
             .child(
                 scroll::pane("canvas-json", Axes::Vertical)
                     .track_scroll(&self.scroll)
@@ -144,9 +420,12 @@ mod tests {
         px, size,
     };
 
+    use super::{CanvasDemo, ROOT};
     use crate::Gallery;
 
-    fn open(cx: &mut TestAppContext) -> (Entity<CanvasView>, VisualTestContext) {
+    fn open(
+        cx: &mut TestAppContext,
+    ) -> (Entity<CanvasDemo>, Entity<CanvasView>, VisualTestContext) {
         cx.update(|cx| {
             ui::register_fonts(cx).ok();
             theme::Theme::install(theme::Appearance::Dark, cx);
@@ -162,8 +441,28 @@ mod tests {
         for _ in 0..3 {
             cx.update(|window, cx| window.draw(cx).clear(cx));
         }
-        let view = cx.update(|_, cx| gallery.read(cx).canvas.read(cx).view.clone());
-        (view, cx)
+        let demo = cx.update(|_, cx| gallery.read(cx).canvas.clone());
+        let view = cx.update(|_, cx| demo.read(cx).view.clone());
+        (demo, view, cx)
+    }
+
+    #[gpui::test]
+    fn a_session_the_toolbar_adds_can_be_removed(cx: &mut TestAppContext) {
+        let (demo, view, mut cx) = open(cx);
+        cx.update(|_, cx| demo.update(cx, |demo, cx| demo.add(true, cx)));
+        let added = cx
+            .update(|_, cx| view.read(cx).selected().map(str::to_owned))
+            .expect("adding selects");
+        cx.update(|_, cx| view.update(cx, |view, cx| view.remove_selected(cx)));
+        assert!(cx.update(|_, cx| view.read(cx).canvas().node(&added).is_none()));
+
+        cx.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.select(Some(ROOT.into()), cx);
+                view.remove_selected(cx);
+            })
+        });
+        assert!(cx.update(|_, cx| view.read(cx).canvas().node(ROOT).is_some()));
     }
 
     fn click(at: Point<Pixels>, cx: &mut VisualTestContext) {
@@ -173,7 +472,7 @@ mod tests {
 
     #[gpui::test]
     fn the_background_drags(cx: &mut TestAppContext) {
-        let (view, mut cx) = open(cx);
+        let (_, view, mut cx) = open(cx);
         let bounds = cx.update(|_, cx| view.read(cx).bounds()).expect("painted");
         assert!(bounds.size.height > px(100.0), "canvas is {bounds:?}");
         let at = bounds.origin + point(px(8.0), bounds.size.height - px(8.0));
@@ -206,7 +505,7 @@ mod tests {
 
     #[gpui::test]
     fn a_node_drags_and_stays(cx: &mut TestAppContext) {
-        let (view, mut cx) = open(cx);
+        let (_, view, mut cx) = open(cx);
         let (at, zoom, origin) = cx.update(|_, cx| {
             let view = view.read(cx);
             let node = view.canvas().node("keys").expect("the sample has it");
@@ -241,7 +540,7 @@ mod tests {
 
     #[gpui::test]
     fn tab_adds_after_clicking_empty_space(cx: &mut TestAppContext) {
-        let (view, mut cx) = open(cx);
+        let (_, view, mut cx) = open(cx);
         let bounds = cx.update(|_, cx| view.read(cx).bounds()).expect("painted");
         let before = cx.update(|_, cx| view.read(cx).canvas().nodes.len());
         click(
@@ -258,7 +557,7 @@ mod tests {
 
     #[gpui::test]
     fn tab_adds_under_a_clicked_node(cx: &mut TestAppContext) {
-        let (view, mut cx) = open(cx);
+        let (_, view, mut cx) = open(cx);
         let at = cx.update(|_, cx| {
             let view = view.read(cx);
             let (bounds, pan, zoom) = (view.bounds().expect("painted"), view.pan(), view.zoom());

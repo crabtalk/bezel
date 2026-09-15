@@ -43,7 +43,7 @@ CanvasView::new(doc, cx).with_changes(|canvas, change, cx| match &change {
 })
 ```
 
-Every edit — a key, a drop, typing in a node — is a `Change`: `Add`, `Move`, `Reparent`, `Detach`, `Remove` or `Update`. The filter answers what lands, and `CanvasEvent::Changed` carries what did. It runs inside the view's update, so reach the view through `cx.defer`; `view.apply(change, cx)` lands one of the app's own past the filter.
+Every edit — a key, a drop, typing in a node — is a `Change`: `Add`, `Move`, `Reparent`, `Detach`, `Remove`, `Unpin` or `Update`. The filter answers what lands, and `CanvasEvent::Changed` carries what did. It runs inside the view's update, so reach the view through `cx.defer`; `view.apply(change, cx)` lands one of the app's own past the filter.
 
 ## Dragging a node
 
@@ -55,7 +55,7 @@ fn my_drag(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
 }
 ```
 
-A move's changes are a preview; the drop's go through the filter, with the node put back first, so a refused drop leaves it where it was. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in.
+On a move, the handler's `Move`s are applied as they come and the rest are drawn as what the drop would do: a ring on the new parent, the connector it would make, faded connectors it would cut. The drop's changes go through the filter, with the node put back first, so a refused drop leaves it where it was. Nodes a layout moves glide there. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in.
 
 ## Keys
 
@@ -72,11 +72,26 @@ impl CanvasView {
     pub fn with_changes(self, filter: impl Fn(&Canvas, Change, &mut App) -> Option<Change> + 'static) -> Self;
     pub fn canvas(&self) -> &Canvas;
     pub fn set_canvas(&mut self, canvas: Canvas, cx: &mut Context<Self>);
+    /// Through the filter, as if the reader made it. A toolbar's way in.
+    pub fn submit(&mut self, change: Change, cx: &mut Context<Self>) -> bool;
+    /// Past the filter.
     pub fn apply(&mut self, change: Change, cx: &mut Context<Self>);
     pub fn selected(&self) -> Option<&str>;
     pub fn select(&mut self, id: Option<String>, cx: &mut Context<Self>);
+    /// What `backspace` does.
+    pub fn remove_selected(&mut self, cx: &mut Context<Self>);
     pub fn zoom(&self) -> f32;
     pub fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>);
+    /// What `cmd-=` and `cmd--` do.
+    pub fn zoom_in(&mut self, cx: &mut Context<Self>);
+    pub fn zoom_out(&mut self, cx: &mut Context<Self>);
+    /// Centre the document again, as it opened.
+    pub fn fit(&mut self, cx: &mut Context<Self>);
+    /// The canvas point under the middle of the view.
+    pub fn center(&self) -> (i64, i64);
+    /// Turning `Arrange::Mindmap` on drops every pin and lays the trees out again.
+    pub fn set_arrange(&mut self, arrange: Arrange, cx: &mut Context<Self>);
+    pub fn set_drag(&mut self, handler: DragHandler);
 }
 
 // canvas::mindmap — pure; the builders answer a Change to submit

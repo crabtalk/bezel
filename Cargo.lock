@@ -606,10 +606,12 @@ dependencies = [
  "bezel-editor",
  "bezel-gpui",
  "bezel-markdown",
+ "bezel-motion",
  "bezel-theme",
  "bezel-ui",
  "serde",
  "serde_json",
+ "web-time",
 ]
 
 [[package]]

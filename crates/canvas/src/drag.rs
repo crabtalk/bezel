@@ -4,12 +4,13 @@
 //! cx.new(|cx| CanvasView::new(doc, cx).with_drag(canvas::drag::reparent))
 //! ```
 //!
-//! A handler answers each move and the drop with [`Change`]s. A move's are a
-//! preview, applied as they come; the drop's go through the view's change
-//! filter, and the held node is put back first, so a refused drop leaves it
-//! where it was. While a node is held, layout keeps it where the preview put
-//! it and its branch follows. [`pin`], [`reparent`] and [`detach`] are answers,
-//! not the list: an app writes its own with the same signature.
+//! A handler answers each move and the drop with [`Change`]s. On a move its
+//! `Move`s are applied as they come, and the rest are drawn as what the drop
+//! would do — a ring on a new parent, the connector it would make, the ones it
+//! would cut. The drop's go through the view's change filter, with the held
+//! node put back first, so a refused drop leaves it where it was. [`pin`],
+//! [`reparent`] and [`detach`] are answers, not the list: an app writes its own
+//! with the same signature.
 
 use crate::{change::Change, model::Canvas};
 
@@ -51,24 +52,25 @@ pub fn pin(_: &Canvas, drag: &Drag) -> Vec<Change> {
 
 /// Dropped on another node, becomes its last child; anywhere else, goes back.
 pub fn reparent(_: &Canvas, drag: &Drag) -> Vec<Change> {
-    match (drag.phase, drag.over) {
-        (Phase::Move, _) => vec![follow(drag)],
-        (Phase::Drop, Some(parent)) => vec![Change::Reparent {
+    let Some(parent) = drag.over else {
+        return match drag.phase {
+            Phase::Move => vec![follow(drag)],
+            Phase::Drop => Vec::new(),
+        };
+    };
+    vec![
+        follow(drag),
+        Change::Reparent {
             id: drag.id.into(),
             parent: parent.into(),
-        }],
-        (Phase::Drop, None) => Vec::new(),
-    }
+        },
+    ]
 }
 
 /// Dropped anywhere, the edges into it are cut: a root of its own, where it
 /// landed.
 pub fn detach(_: &Canvas, drag: &Drag) -> Vec<Change> {
-    let mut changes = vec![follow(drag)];
-    if drag.phase == Phase::Drop {
-        changes.push(Change::Detach { id: drag.id.into() });
-    }
-    changes
+    vec![follow(drag), Change::Detach { id: drag.id.into() }]
 }
 
 fn follow(drag: &Drag) -> Change {

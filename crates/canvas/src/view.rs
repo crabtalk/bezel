@@ -6,7 +6,7 @@
 
 use std::{
     cell::{Cell, RefCell},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     rc::Rc,
 };
 
@@ -17,7 +17,9 @@ use gpui::{
     MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, Rgba, ScrollWheelEvent, Size,
     Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px,
 };
+use motion::{AppExt as _, LAYOUT};
 use theme::{TextStyle, Theme};
+use web_time::Instant;
 
 use crate::{
     change::{self, Change},
@@ -53,6 +55,10 @@ const ARROW: f32 = 8.0;
 const RING: f32 = 3.0;
 /// How far a press on a node travels before it is a drag, in screen pixels.
 const DRAG_SLOP: f32 = 3.0;
+/// How much of a connector a drop would cut still shows.
+const CUT: f32 = 0.25;
+/// The accent wash inside a node a drop would land on.
+const TARGET_WASH: f32 = 0.12;
 
 pub mod keys {
     //! Every action the canvas answers to, and the chords bound to it.
@@ -138,6 +144,9 @@ pub enum Arrange {
 /// Decides each change before it lands: it, another, or `None` to refuse.
 type Filter = Rc<dyn Fn(&Canvas, Change, &mut App) -> Option<Change>>;
 
+/// Canvas positions, by node id.
+type Positions = HashMap<String, (f32, f32)>;
+
 /// What a held button is moving.
 enum Grab {
     Pan(Point<Pixels>),
@@ -149,6 +158,14 @@ enum Grab {
         pinned: bool,
         moved: bool,
     },
+}
+
+/// Nodes easing from where they were painted toward where the document puts
+/// them.
+struct Glide {
+    from: Positions,
+    to: Positions,
+    since: Instant,
 }
 
 struct Session {
@@ -169,6 +186,12 @@ pub struct CanvasView {
     pan: Point<f32>,
     zoom: f32,
     grab: Option<Grab>,
+    /// What the drop would do, drawn while a node is held: the drag handler's
+    /// answer to the last move, less its `Move`s.
+    pending: Vec<Change>,
+    /// Where each node was painted last frame.
+    shown: Positions,
+    glide: Option<Glide>,
     stale: bool,
     /// The view size the document was last centred in.
     framed: Option<Size<Pixels>>,
@@ -200,6 +223,9 @@ impl CanvasView {
             pan: point(0.0, 0.0),
             zoom: 1.0,
             grab: None,
+            pending: Vec::new(),
+            shown: HashMap::new(),
+            glide: None,
             stale: true,
             framed: None,
             touched: false,
@@ -245,6 +271,20 @@ impl CanvasView {
         }
         self.stale = true;
         cx.notify();
+    }
+
+    /// Land a change as if the reader made it: through the filter first.
+    /// `false` when it was refused.
+    pub fn submit(&mut self, change: Change, cx: &mut Context<Self>) -> bool {
+        let change = match self.filter.clone() {
+            Some(filter) => match filter(&self.canvas, change, cx) {
+                Some(change) => change,
+                None => return false,
+            },
+            None => change,
+        };
+        self.apply(change, cx);
+        true
     }
 
     /// Land a change of the app's own, past the filter.
@@ -299,6 +339,74 @@ impl CanvasView {
         self.zoom_about(zoom, middle, cx);
     }
 
+    /// What `cmd-=` does.
+    pub fn zoom_in(&mut self, cx: &mut Context<Self>) {
+        self.set_zoom(self.zoom * ZOOM_STEP, cx);
+    }
+
+    /// What `cmd--` does.
+    pub fn zoom_out(&mut self, cx: &mut Context<Self>) {
+        self.set_zoom(self.zoom / ZOOM_STEP, cx);
+    }
+
+    /// Centre the document again, as it opened.
+    pub fn fit(&mut self, cx: &mut Context<Self>) {
+        self.touched = false;
+        self.framed = None;
+        cx.notify();
+    }
+
+    /// The canvas point under the middle of the view — where something added
+    /// "here" lands.
+    pub fn center(&self) -> (i64, i64) {
+        let middle = self.middle();
+        (
+            ((middle.x - self.pan.x) / self.zoom).round() as i64,
+            ((middle.y - self.pan.y) / self.zoom).round() as i64,
+        )
+    }
+
+    pub fn arrange(&self) -> Arrange {
+        self.arrange
+    }
+
+    /// Turning auto layout on tidies the document: every pin is dropped and
+    /// the trees are laid out again.
+    pub fn set_arrange(&mut self, arrange: Arrange, cx: &mut Context<Self>) {
+        let tidy = arrange == Arrange::Mindmap && self.arrange != Arrange::Mindmap;
+        self.arrange = arrange;
+        if tidy {
+            let pinned: Vec<String> = self
+                .canvas
+                .nodes
+                .iter()
+                .filter(|node| mindmap::is_pinned(node))
+                .map(|node| node.id.clone())
+                .collect();
+            for id in pinned {
+                self.apply(Change::Unpin { id }, cx);
+            }
+        }
+        self.stale = true;
+        cx.notify();
+    }
+
+    /// Swap what dragging a node does, from the next press.
+    pub fn set_drag(&mut self, handler: DragHandler) {
+        self.drag = handler;
+    }
+
+    /// What `backspace` does: the selection and its branch, through the filter.
+    pub fn remove_selected(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.selected.clone() else {
+            return;
+        };
+        let next = mindmap::after_removal(&self.canvas, &id);
+        if self.submit(Change::Remove { id }, cx) {
+            self.select(next.filter(|next| self.canvas.node(next).is_some()), cx);
+        }
+    }
+
     fn middle(&self) -> Point<f32> {
         self.viewport.get().map_or(point(0.0, 0.0), |b| {
             point(b.size.width.as_f32() / 2.0, b.size.height.as_f32() / 2.0)
@@ -334,18 +442,14 @@ impl CanvasView {
         cx.notify();
     }
 
-    /// Hand a change of the canvas's own to the filter, and land what it
-    /// answers. `false` when it was refused.
-    fn submit(&mut self, change: Change, cx: &mut Context<Self>) -> bool {
-        let change = match self.filter.clone() {
-            Some(filter) => match filter(&self.canvas, change, cx) {
-                Some(change) => change,
-                None => return false,
-            },
-            None => change,
-        };
-        self.apply(change, cx);
-        true
+    /// The node a drag has in hand, once it has moved.
+    fn held(&self) -> Option<&str> {
+        match &self.grab {
+            Some(Grab::Node {
+                id, moved: true, ..
+            }) => Some(id),
+            _ => None,
+        }
     }
 
     /// What `tab` makes under `parent`, from its kind.
@@ -396,16 +500,6 @@ impl CanvasView {
                 .and_then(|node| mindmap::child(&self.canvas, &of, node)),
         };
         self.added(change, window, cx);
-    }
-
-    fn remove(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.selected.clone() else {
-            return;
-        };
-        let next = mindmap::after_removal(&self.canvas, &id);
-        if self.submit(Change::Remove { id }, cx) {
-            self.select(next.filter(|next| self.canvas.node(next).is_some()), cx);
-        }
     }
 
     fn step(&mut self, toward: Toward, cx: &mut Context<Self>) {
@@ -531,10 +625,16 @@ impl CanvasView {
                     return;
                 }
                 *moved = true;
-                // A preview: applied as it comes, past the filter.
+                // Moves are a preview, applied as they come past the filter;
+                // the rest is what the drop would do, and only drawn.
+                let mut pending = Vec::new();
                 for change in self.gesture(event.position, Phase::Move) {
-                    change::apply(&mut self.canvas, &change);
+                    match change {
+                        Change::Move { .. } => change::apply(&mut self.canvas, &change),
+                        other => pending.push(other),
+                    }
                 }
+                self.pending = pending;
                 self.stale = true;
                 cx.notify();
             }
@@ -544,15 +644,22 @@ impl CanvasView {
     /// The button came up: a node that moved is put back, and its drop is
     /// submitted.
     fn release(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.pending.clear();
         if let Some(Grab::Node { moved: true, .. }) = self.grab {
             let drop = self.gesture(position, Phase::Drop);
             if let Some(Grab::Node {
                 id, origin, pinned, ..
             }) = &self.grab
-                && let Some(node) = self.canvas.node_mut(id)
             {
-                (node.x, node.y) = *origin;
-                if !*pinned {
+                let (id, to, pinned) = (id.clone(), *origin, *pinned);
+                // Back where the press found it, pinned nodes below included.
+                let back = Change::Move {
+                    id: id.clone(),
+                    to,
+                    pin: false,
+                };
+                change::apply(&mut self.canvas, &back);
+                if !pinned && let Some(node) = self.canvas.node_mut(&id) {
                     node.extra.remove(mindmap::PINNED);
                 }
             }
@@ -625,14 +732,65 @@ impl CanvasView {
             }
         }
         if std::mem::take(&mut self.stale) && self.arrange == Arrange::Mindmap {
-            let held = match &self.grab {
-                Some(Grab::Node {
-                    id, moved: true, ..
-                }) => Some(id.as_str()),
-                _ => None,
-            };
-            mindmap::layout_holding(&mut self.canvas, held);
+            let held = self.held().map(str::to_owned);
+            mindmap::layout_holding(&mut self.canvas, held.as_deref());
         }
+    }
+
+    /// Where each node paints this frame. A node the document moved glides
+    /// there from where it was painted; the held node follows the pointer, and
+    /// a node never painted yet starts where it is.
+    fn positions(&mut self, reduced: bool, window: &mut Window) -> Positions {
+        let held = self.held().map(str::to_owned);
+        let fixed =
+            |id: &str, shown: &Positions| held.as_deref() == Some(id) || !shown.contains_key(id);
+        let to: Positions = self
+            .canvas
+            .nodes
+            .iter()
+            .filter(|n| !fixed(&n.id, &self.shown))
+            .map(|n| (n.id.clone(), (n.x as f32, n.y as f32)))
+            .collect();
+        let moved = to.iter().any(|(id, at)| self.shown.get(id) != Some(at));
+        if reduced {
+            self.glide = None;
+        } else if moved && self.glide.as_ref().is_none_or(|glide| glide.to != to) {
+            self.glide = Some(Glide {
+                from: self.shown.clone(),
+                to,
+                since: Instant::now(),
+            });
+        }
+
+        let raw = self.glide.as_ref().map_or(1.0, |glide| {
+            let total = LAYOUT.total().mul_f32(motion::speed_scale());
+            glide.since.elapsed().as_secs_f32() / total.as_secs_f32().max(f32::EPSILON)
+        });
+        let t = LAYOUT.progress(raw);
+        let shown: Positions = self
+            .canvas
+            .nodes
+            .iter()
+            .map(|n| {
+                let at = (n.x as f32, n.y as f32);
+                let from = self
+                    .glide
+                    .as_ref()
+                    .filter(|_| !fixed(&n.id, &self.shown))
+                    .and_then(|glide| glide.from.get(&n.id));
+                let at = from.map_or(at, |&from| {
+                    (motion::lerp(from.0, at.0, t), motion::lerp(from.1, at.1, t))
+                });
+                (n.id.clone(), at)
+            })
+            .collect();
+        if raw >= 1.0 {
+            self.glide = None;
+        } else {
+            window.request_animation_frame();
+        }
+        self.shown = shown.clone();
+        shown
     }
 
     /// Centre the document whenever the view's size changes, until the reader
@@ -680,16 +838,14 @@ impl CanvasView {
     fn paint_node(
         &self,
         ix: usize,
+        at: (f32, f32),
         theme: &Theme,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let node = &self.canvas.nodes[ix];
         let z = self.zoom;
-        let (x, y) = (
-            self.pan.x + node.x as f32 * z,
-            self.pan.y + node.y as f32 * z,
-        );
+        let (x, y) = (self.pan.x + at.0 * z, self.pan.y + at.1 * z);
         let (w, h) = (node.width as f32 * z, node.height as f32 * z);
         if let Some(viewport) = self.viewport.get() {
             let (vw, vh) = (viewport.size.width.as_f32(), viewport.size.height.as_f32());
@@ -707,6 +863,11 @@ impl CanvasView {
         };
         let grows = kind.sizing == Sizing::Grows;
         let selected = self.selected.as_deref() == Some(node.id.as_str());
+        // A drop would land here.
+        let target = self
+            .pending
+            .iter()
+            .any(|change| matches!(change, Change::Reparent { parent, .. } if *parent == node.id));
         let border = node
             .color
             .as_deref()
@@ -714,6 +875,17 @@ impl CanvasView {
             .unwrap_or(theme.border);
         let (id, measured_id) = (node.id.clone(), node.id.clone());
         let (measured, height) = (self.measured.clone(), node.height);
+        let ring = |color: Hsla| {
+            div()
+                .absolute()
+                .top(px(-RING))
+                .left(px(-RING))
+                .right(px(-RING))
+                .bottom(px(-RING))
+                .rounded(px(RADIUS * z + RING))
+                .border_2()
+                .border_color(color)
+        };
 
         let element = div()
             .id(ElementId::Name(node.id.clone().into()))
@@ -767,19 +939,19 @@ impl CanvasView {
                     .size_full(),
                 )
             })
-            .when(selected, |d| {
+            .when(target, |d| {
                 d.child(
                     div()
                         .absolute()
-                        .top(px(-RING))
-                        .left(px(-RING))
-                        .right(px(-RING))
-                        .bottom(px(-RING))
-                        .rounded(px(RADIUS * z + RING))
-                        .border_2()
-                        .border_color(theme.accent),
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .rounded(px(RADIUS * z))
+                        .bg(theme.accent.opacity(TARGET_WASH)),
                 )
+                .child(ring(theme.accent))
             })
+            .when(selected && !target, |d| d.child(ring(theme.accent)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -790,16 +962,48 @@ impl CanvasView {
         Some(element.into_any_element())
     }
 
-    fn edge_layer(&self, theme: &Theme, view: WeakEntity<Self>) -> impl IntoElement + use<> {
+    fn edge_layer(
+        &self,
+        theme: &Theme,
+        shown: &Positions,
+        view: WeakEntity<Self>,
+    ) -> impl IntoElement + use<> {
         let (z, pan) = (self.zoom, self.pan);
         let grabbing = self.grab.is_some();
         let holding = matches!(self.grab, Some(Grab::Node { .. }));
-        let curves: Vec<Curve> = self
+        // Connectors a drop would cut, and the one it would make.
+        let cut: HashSet<&str> = self
+            .pending
+            .iter()
+            .filter_map(|change| match change {
+                Change::Reparent { id, .. } | Change::Detach { id } => Some(id.as_str()),
+                _ => None,
+            })
+            .collect();
+        let mut curves: Vec<Curve> = self
             .canvas
             .edges
             .iter()
-            .filter_map(|edge| curve(&self.canvas, edge, theme))
+            .filter_map(|edge| {
+                let mut curve = curve(&self.canvas, shown, edge, theme)?;
+                if cut.contains(edge.to_node.as_str()) {
+                    curve.color = curve.color.opacity(CUT);
+                }
+                Some(curve)
+            })
             .collect();
+        curves.extend(self.pending.iter().filter_map(|change| {
+            let Change::Reparent { id, parent } = change else {
+                return None;
+            };
+            let edge = Edge {
+                to_end: Some(End::None),
+                ..Edge::new("", parent.as_str(), id.as_str())
+            };
+            let mut preview = curve(&self.canvas, shown, &edge, theme)?;
+            preview.color = theme.accent;
+            Some(preview)
+        }));
         let viewport = self.viewport.clone();
         painter(
             move |bounds, window, _| {
@@ -867,10 +1071,19 @@ impl Render for CanvasView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.reflow();
         self.frame();
+        let shown = self.positions(cx.reduced_motion(), window);
         let theme = Theme::of(cx).clone();
-        let edges = self.edge_layer(&theme, cx.entity().downgrade());
-        let nodes: Vec<AnyElement> = (0..self.canvas.nodes.len())
-            .filter_map(|ix| self.paint_node(ix, &theme, window, cx))
+        let edges = self.edge_layer(&theme, &shown, cx.entity().downgrade());
+        // The held node paints last, over whatever it is carried across.
+        let held = self.held().and_then(|id| self.canvas.index_of(id));
+        let order = (0..self.canvas.nodes.len())
+            .filter(|ix| Some(*ix) != held)
+            .chain(held);
+        let nodes: Vec<AnyElement> = order
+            .filter_map(|ix| {
+                let at = shown[&self.canvas.nodes[ix].id];
+                self.paint_node(ix, at, &theme, window, cx)
+            })
             .collect();
 
         div()
@@ -886,7 +1099,7 @@ impl Render for CanvasView {
             .on_action(
                 cx.listener(|this, _: &keys::AddSibling, window, cx| this.add_sibling(window, cx)),
             )
-            .on_action(cx.listener(|this, _: &keys::Remove, _, cx| this.remove(cx)))
+            .on_action(cx.listener(|this, _: &keys::Remove, _, cx| this.remove_selected(cx)))
             .on_action(cx.listener(|this, _: &keys::Edit, window, cx| {
                 if let Some(id) = this.selected.clone() {
                     this.edit(id, window, cx);
@@ -909,14 +1122,8 @@ impl Render for CanvasView {
             .on_action(
                 cx.listener(|this, _: &keys::SelectNext, _, cx| this.step(Toward::NextSibling, cx)),
             )
-            .on_action(
-                cx.listener(|this, _: &keys::ZoomIn, _, cx| {
-                    this.set_zoom(this.zoom * ZOOM_STEP, cx)
-                }),
-            )
-            .on_action(cx.listener(|this, _: &keys::ZoomOut, _, cx| {
-                this.set_zoom(this.zoom / ZOOM_STEP, cx)
-            }))
+            .on_action(cx.listener(|this, _: &keys::ZoomIn, _, cx| this.zoom_in(cx)))
+            .on_action(cx.listener(|this, _: &keys::ZoomOut, _, cx| this.zoom_out(cx)))
             .on_action(cx.listener(|this, _: &keys::ResetZoom, _, cx| this.set_zoom(1.0, cx)))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::press_background))
             .on_scroll_wheel(cx.listener(Self::wheel))
@@ -939,6 +1146,30 @@ fn color(theme: &Theme, color: &str) -> Option<Hsla> {
     }
 }
 
+/// A node's box where it paints, in canvas units.
+#[derive(Clone, Copy)]
+struct Rect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl Rect {
+    fn of(node: &Node, shown: &Positions) -> Self {
+        let (x, y) = shown
+            .get(&node.id)
+            .copied()
+            .unwrap_or((node.x as f32, node.y as f32));
+        Self {
+            x,
+            y,
+            w: node.width as f32,
+            h: node.height as f32,
+        }
+    }
+}
+
 struct Curve {
     from: Point<f32>,
     /// Out of the node, at the anchor.
@@ -950,8 +1181,9 @@ struct Curve {
     color: Hsla,
 }
 
-fn curve(canvas: &Canvas, edge: &Edge, theme: &Theme) -> Option<Curve> {
-    let (a, b) = (canvas.node(&edge.from_node)?, canvas.node(&edge.to_node)?);
+fn curve(canvas: &Canvas, shown: &Positions, edge: &Edge, theme: &Theme) -> Option<Curve> {
+    let a = Rect::of(canvas.node(&edge.from_node)?, shown);
+    let b = Rect::of(canvas.node(&edge.to_node)?, shown);
     let (from_side, to_side) = facing(a, b);
     let (from, from_out) = anchor(a, edge.from_side.unwrap_or(from_side));
     let (to, to_out) = anchor(b, edge.to_side.unwrap_or(to_side));
@@ -971,26 +1203,24 @@ fn curve(canvas: &Canvas, edge: &Edge, theme: &Theme) -> Option<Curve> {
 }
 
 /// The sides two nodes face each other on, for an edge that names none.
-fn facing(a: &Node, b: &Node) -> (Side, Side) {
-    if b.x >= a.x + a.width {
+fn facing(a: Rect, b: Rect) -> (Side, Side) {
+    if b.x >= a.x + a.w {
         (Side::Right, Side::Left)
-    } else if b.x + b.width <= a.x {
+    } else if b.x + b.w <= a.x {
         (Side::Left, Side::Right)
-    } else if b.y >= a.y + a.height {
+    } else if b.y >= a.y + a.h {
         (Side::Bottom, Side::Top)
     } else {
         (Side::Top, Side::Bottom)
     }
 }
 
-fn anchor(node: &Node, side: Side) -> (Point<f32>, Point<f32>) {
-    let (x, y) = (node.x as f32, node.y as f32);
-    let (w, h) = (node.width as f32, node.height as f32);
+fn anchor(r: Rect, side: Side) -> (Point<f32>, Point<f32>) {
     match side {
-        Side::Top => (point(x + w / 2.0, y), point(0.0, -1.0)),
-        Side::Right => (point(x + w, y + h / 2.0), point(1.0, 0.0)),
-        Side::Bottom => (point(x + w / 2.0, y + h), point(0.0, 1.0)),
-        Side::Left => (point(x, y + h / 2.0), point(-1.0, 0.0)),
+        Side::Top => (point(r.x + r.w / 2.0, r.y), point(0.0, -1.0)),
+        Side::Right => (point(r.x + r.w, r.y + r.h / 2.0), point(1.0, 0.0)),
+        Side::Bottom => (point(r.x + r.w / 2.0, r.y + r.h), point(0.0, 1.0)),
+        Side::Left => (point(r.x, r.y + r.h / 2.0), point(-1.0, 0.0)),
     }
 }
 

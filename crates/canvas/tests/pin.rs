@@ -46,6 +46,33 @@ fn a_pinned_node_stays_and_its_branch_follows() {
 }
 
 #[test]
+fn a_pinned_node_rides_along_with_its_ancestor() {
+    let mut canvas = tree();
+    mindmap::layout(&mut canvas);
+    mindmap::pin(&mut canvas, "b1", 700, 300).unwrap();
+    let (bx, by) = at(&canvas, "b");
+    canvas::change::apply(
+        &mut canvas,
+        &canvas::Change::Move {
+            id: "b".into(),
+            to: (bx + 10, by + 20),
+            pin: true,
+        },
+    );
+    assert_eq!(at(&canvas, "b1"), (710, 320));
+    // Moving it back carries it back.
+    canvas::change::apply(
+        &mut canvas,
+        &canvas::Change::Move {
+            id: "b".into(),
+            to: (bx, by),
+            pin: false,
+        },
+    );
+    assert_eq!(at(&canvas, "b1"), (700, 300));
+}
+
+#[test]
 fn a_pin_survives_a_save() {
     let mut canvas = tree();
     mindmap::pin(&mut canvas, "a", 7, 9).unwrap();

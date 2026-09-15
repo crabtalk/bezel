@@ -227,6 +227,16 @@ pub fn node_at<'a>(canvas: &'a Canvas, at: (i64, i64), except: &str) -> Option<&
         .map(|n| n.id.as_str())
 }
 
+/// Every node below `id`, however deep.
+pub fn descendants(canvas: &Canvas, id: &str) -> HashSet<String> {
+    let Some(ix) = canvas.index_of(id) else {
+        return HashSet::new();
+    };
+    let mut below = branch_ids(canvas, ix);
+    below.remove(id);
+    below
+}
+
 fn branch_ids(canvas: &Canvas, ix: usize) -> HashSet<String> {
     let mut ixs = Vec::new();
     branch(canvas, ix, &mut HashSet::new()).collect(&mut ixs);
