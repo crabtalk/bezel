@@ -80,9 +80,13 @@ Shift- or cmd-click adds to the selection, a shift-drag on empty canvas selects 
 
 Click an edge to pick it: `backspace` removes it, and a double-click or `f2` edits its label. A picked node shows a handle on each side — drag one onto a node to connect them, or onto nothing to make a node there, a child under a tree — and a corner that resizes it, the width alone for a box that grows. A connector drawn under a tree layout is a cross link.
 
+## Finding your way
+
+`shift-1` fits the whole document in view and `shift-2` the selection, and a node a key moves to is panned into view. A drag held near the view's edge pans it. `CanvasView::with_snap(Snap { grid: Some(20), guides: true })` lands dragged and resized boxes on a grid, drawn as dots, and on lines other nodes share, drawn as guides. `canvas::minimap(&view, cx)` maps the whole canvas where an app places it; press or drag in it to look there. Far out, nodes paint as their boxes.
+
 ## Keys
 
-`tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes, `f2` or a double-click edits, arrows move the selection, `shift`-arrows nudge it, `escape` leaves a node. A double-click on nothing adds a node there. `cmd-=`, `cmd--` and `cmd-0` zoom; a pinch or a `cmd`-wheel zooms at the pointer, and a drag, a middle-button drag or a wheel pans.
+`tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes, `f2` or a double-click edits, arrows move the selection, `shift`-arrows nudge it, `escape` leaves a node. A double-click on nothing adds a node there. `cmd-=`, `cmd--` and `cmd-0` zoom, `shift-1` fits and `shift-2` zooms to the selection; a pinch or a `cmd`-wheel zooms at the pointer, and a drag, a middle-button drag or a wheel pans.
 
 ## API
 
@@ -123,8 +127,14 @@ impl CanvasView {
     /// What `cmd-=` and `cmd--` do.
     pub fn zoom_in(&mut self, cx: &mut Context<Self>);
     pub fn zoom_out(&mut self, cx: &mut Context<Self>);
-    /// Centre the document again, as it opened.
+    /// The whole document in view, no closer than 100%.
     pub fn fit(&mut self, cx: &mut Context<Self>);
+    pub fn zoom_to_selection(&mut self, cx: &mut Context<Self>);
+    /// In canvas units: left, top, width, height.
+    pub fn visible(&self) -> Option<(f32, f32, f32, f32)>;
+    pub fn center_on(&mut self, at: (f32, f32), cx: &mut Context<Self>);
+    pub fn with_snap(self, snap: Snap) -> Self;
+    pub fn set_snap(&mut self, snap: Snap, cx: &mut Context<Self>);
     /// The canvas point under the middle of the view.
     pub fn center(&self) -> (i64, i64);
     /// Switching to a tree that grows another way drops every pin.
@@ -144,6 +154,11 @@ pub fn remove(canvas: &Canvas, id: &str) -> Change;
 pub fn reparent(canvas: &Canvas, ids: &[String], parent: &str) -> Option<Vec<Change>>;
 pub fn detach(canvas: &Canvas, ids: &[String]) -> Option<Change>;
 pub fn carry(canvas: &Canvas, ids: &[String], by: (i64, i64), pin: bool) -> Vec<Change>;
+
+// canvas::snap — pure
+pub fn settle(canvas: &Canvas, moving: &[String], to: (i64, i64), size: (i64, i64), snap: Snap, reach: i64) -> ((i64, i64), Vec<Guide>);
+
+pub fn minimap(view: &Entity<CanvasView>, cx: &App) -> impl IntoElement;
 
 // canvas::clip — pure
 pub fn fragment(canvas: &Canvas, ids: &[String]) -> Canvas;

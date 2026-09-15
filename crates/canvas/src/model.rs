@@ -6,6 +6,8 @@
 //! rather than an enum for the same reason — an app's own kind is a renderer
 //! away, not a fork of the format.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
@@ -125,6 +127,14 @@ impl Canvas {
 
     pub fn edge(&self, id: &str) -> Option<&Edge> {
         self.edges.iter().find(|edge| edge.id == id)
+    }
+
+    /// Every node by id, for looking many up at once.
+    pub fn lookup(&self) -> HashMap<&str, &Node> {
+        self.nodes
+            .iter()
+            .map(|node| (node.id.as_str(), node))
+            .collect()
     }
 
     /// `n` ids no node or edge holds, distinct from each other.

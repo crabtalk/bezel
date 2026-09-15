@@ -12,6 +12,7 @@
 //! replaceable, and a type nothing names is [`unknown`].
 
 use std::{
+    cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
     rc::Rc,
@@ -20,7 +21,7 @@ use std::{
 use gpui::{
     AnyElement, App, Global, Hsla, ObjectFit, Styled, StyledImage, Window, div, img, prelude::*, px,
 };
-use markdown::{Editing, Marks, Typography};
+use markdown::{Doc, Editing, Marks, Typography};
 use theme::{TextStyle, Theme};
 
 use crate::{
@@ -211,7 +212,8 @@ pub fn kind(cx: &App, name: &str) -> Kind {
 
 /// Markdown, as tall as it runs, edited in place.
 pub fn text() -> Kind {
-    Kind::new(render_text)
+    let parsed = Parsed::default();
+    Kind::new(move |node, zoom, window, cx| render_text(&parsed, node, zoom, window, cx))
         .sizing(Sizing::Grows)
         .edit(Field::new(
             |node| node.text.clone().unwrap_or_default(),
@@ -352,8 +354,34 @@ fn resolve(root: Option<&Path>, path: &str) -> Option<PathBuf> {
     }
 }
 
-fn render_text(node: &Node, zoom: f32, window: &mut Window, cx: &mut App) -> AnyElement {
-    let doc = markdown::parse_with(node.text.as_deref().unwrap_or_default(), &Marks::of(cx));
+/// Parsed text kept between frames by node id, while its source holds.
+type Parsed = Rc<RefCell<HashMap<String, (String, Rc<Doc>)>>>;
+
+/// How many parsed texts are kept before they are all let go.
+const PARSED: usize = 4096;
+
+fn render_text(
+    parsed: &Parsed,
+    node: &Node,
+    zoom: f32,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    let source = node.text.as_deref().unwrap_or_default();
+    let doc = {
+        let mut parsed = parsed.borrow_mut();
+        match parsed.get(&node.id) {
+            Some((was, doc)) if was == source => doc.clone(),
+            _ => {
+                if parsed.len() >= PARSED {
+                    parsed.clear();
+                }
+                let doc = Rc::new(markdown::parse_with(source, &Marks::of(cx)));
+                parsed.insert(node.id.clone(), (source.to_owned(), doc.clone()));
+                doc
+            }
+        }
+    };
     let editing = Editing {
         typography: Some(Typography::of(cx).scaled(zoom)),
         ..Editing::default()

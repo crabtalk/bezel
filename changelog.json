@@ -4,6 +4,10 @@
     "date": "2026-09-15",
     "summary": "The canvas edits a graph, with trees as a layer over it, laid out the way an app picks.",
     "new": [
+      "`CanvasView::fit` (`shift-1`) zooms the whole document into view and `zoom_to_selection` (`shift-2`) the selection; a node a key moves to is panned into view, and a drag held near the view's edge pans it. `visible` and `center_on` read and move the part in view.",
+      "`CanvasView::with_snap(Snap { grid, guides })` lands dragged and resized boxes on a grid, drawn as dots, and on the edges and middles other nodes share, drawn as guides, through the pure `snap::settle`.",
+      "`canvas::minimap(&view, cx)` maps the whole canvas with the part in view outlined; press or drag in it to look there.",
+      "Large canvases stay quick: layout indexes the trees once and measures each branch once, edges out of view are not drawn, text is parsed only when it changes, and below 40% a node paints as its box. Two thousand nodes lay out and paint within the tests' bounds.",
       "Groups frame what sits in their box: `canvas::group` finds the members, they move with the group, groups paint under other nodes and are never drop targets, and the label is drawn above the box through the new `Chrome::Frame`, washed in the group's colour.",
       "`Kinds::with_root` finds files and group backgrounds under a directory, so image files preview and `background` and `backgroundStyle` paint. A link opens on a double-click, and a kind's `open` says what a double-click does in place of editing.",
       "Edges are picked by a click, removed by `backspace` and labelled by a double-click or `f2`, and labels are drawn. A picked node shows side handles that drag out a connector — onto a node, or onto nothing to make one — and a corner that resizes it through `Change::Resize`. `CanvasView::selected_edge` and `select_edge`, `CanvasEvent::EdgeSelected` and `Canvas::edge` are new, and presets `3` and `5` paint yellow and cyan.",

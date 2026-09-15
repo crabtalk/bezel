@@ -19,11 +19,15 @@ pub mod group;
 pub mod kind;
 pub mod layout;
 pub mod mindmap;
+mod minimap;
 pub mod model;
+pub mod snap;
 mod view;
 
 pub use change::Change;
 pub use kind::{Kind, Kinds, set_kinds, text_style};
 pub use layout::Layout;
+pub use minimap::minimap;
 pub use model::Canvas;
+pub use snap::Snap;
 pub use view::{CONTEXT, CanvasEvent, CanvasView, init, keys};

@@ -11,7 +11,7 @@
 //! is the entry point its chord takes. Copy this file.
 
 use canvas::{
-    Canvas, CanvasView, Change, change,
+    Canvas, CanvasView, Change, Snap, change,
     drag::{self, DragHandler},
     kind::{self, Field, Kind},
     layout::{self, Layout},
@@ -211,6 +211,7 @@ pub struct CanvasDemo {
     scroll: ScrollHandle,
     drag: DragMode,
     layout: LayoutMode,
+    snap: bool,
 }
 
 impl CanvasDemo {
@@ -229,6 +230,7 @@ impl CanvasDemo {
             scroll: ScrollHandle::new(),
             drag: DragMode::Move,
             layout: LayoutMode::Mindmap,
+            snap: false,
         }
     }
 
@@ -379,6 +381,26 @@ impl CanvasDemo {
                         }))
                 }));
 
+        let snapping = theme.control_group().child(
+            lit(button("snap", icons::glyph::Grip), self.snap)
+                .tooltip(tip(
+                    "Snap — to a grid of 20, and to the lines other nodes share",
+                ))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.snap = !this.snap;
+                    let snap = match this.snap {
+                        true => Snap {
+                            grid: Some(20),
+                            guides: true,
+                        },
+                        false => Snap::default(),
+                    };
+                    this.view.update(cx, |view, cx| view.set_snap(snap, cx));
+                    this.refocus(window, cx);
+                    cx.notify();
+                })),
+        );
+
         let zooms = theme
             .control_group()
             .child(
@@ -409,7 +431,7 @@ impl CanvasDemo {
             )
             .child(
                 button("fit", icons::glyph::Scan)
-                    .tooltip(tip("Fit — centre the document again"))
+                    .tooltip(chord("Fit the whole document", Box::new(canvas::keys::Fit)))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.view.update(cx, |view, cx| view.fit(cx));
                         this.refocus(window, cx);
@@ -445,6 +467,7 @@ impl CanvasDemo {
                     .child(caption("Layout"))
                     .child(layouts),
             )
+            .child(snapping)
             .child(div().flex_1())
             .child(zooms)
     }
@@ -464,7 +487,27 @@ impl Render for CanvasDemo {
                     .flex()
                     .flex_col()
                     .child(self.toolbar(&theme, cx))
-                    .child(div().flex_1().min_h_0().child(self.view.clone())),
+                    .child(
+                        div()
+                            .relative()
+                            .flex_1()
+                            .min_h_0()
+                            .child(self.view.clone())
+                            .child(
+                                div()
+                                    .absolute()
+                                    .right(px(12.0))
+                                    .bottom(px(12.0))
+                                    .w(px(160.0))
+                                    .h(px(110.0))
+                                    .rounded(px(8.0))
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .bg(theme.surface_card)
+                                    .overflow_hidden()
+                                    .child(canvas::minimap(&self.view, cx)),
+                            ),
+                    ),
             )
             .child(
                 scroll::pane("canvas-json", Axes::Vertical)

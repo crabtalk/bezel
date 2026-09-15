@@ -6,7 +6,7 @@
 //! JSON Canvas that any other viewer opens as it was last laid out. The edits
 //! here answer the [`Change`]s they make, for the view to submit.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
@@ -213,17 +213,22 @@ pub fn layout_holding(canvas: &mut Canvas, held: Option<&str>) {
 /// Where every tree growing in `flow` puts each node, leaving out those
 /// already there. Roots stay; `held` stays as if pinned.
 pub fn arrange(canvas: &Canvas, held: Option<&str>, flow: Flow) -> Vec<(String, (i64, i64))> {
+    let index = Index::of(canvas);
     let mut seen = HashSet::new();
     let mut pass = Pass {
         canvas,
         held,
+        spans: HashMap::new(),
         moves: Vec::new(),
     };
-    for root in roots(canvas) {
-        let Some(ix) = canvas.index_of(&root.id) else {
-            continue;
-        };
-        let tree = branch(canvas, ix, &mut seen);
+    let roots = canvas
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| node.kind != GROUP && !index.parented.contains(node.id.as_str()));
+    for (ix, root) in roots {
+        let tree = index.branch(canvas, ix, &mut seen);
+        pass.measure(&tree, flow == Flow::Down);
         let kids: Vec<&Branch> = tree.children.iter().collect();
         let at = (root.x, root.y);
         if flow == Flow::Both {
@@ -428,10 +433,59 @@ fn branch(canvas: &Canvas, ix: usize, seen: &mut HashSet<usize>) -> Branch {
     }
 }
 
+/// Who hangs under whom, looked up once for a whole layout.
+struct Index<'a> {
+    ix: HashMap<&'a str, usize>,
+    kids: HashMap<&'a str, Vec<&'a str>>,
+    parented: HashSet<&'a str>,
+}
+
+impl<'a> Index<'a> {
+    fn of(canvas: &'a Canvas) -> Self {
+        let ix = canvas
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(ix, node)| (node.id.as_str(), ix))
+            .collect();
+        let mut kids: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut parented = HashSet::new();
+        for edge in canvas.edges.iter().filter(|edge| is_branch(edge)) {
+            kids.entry(edge.from_node.as_str())
+                .or_default()
+                .push(edge.to_node.as_str());
+            parented.insert(edge.to_node.as_str());
+        }
+        Self { ix, kids, parented }
+    }
+
+    /// [`branch`], from the index.
+    fn branch(&self, canvas: &Canvas, ix: usize, seen: &mut HashSet<usize>) -> Branch {
+        seen.insert(ix);
+        let kids: Vec<usize> = self
+            .kids
+            .get(canvas.nodes[ix].id.as_str())
+            .into_iter()
+            .flatten()
+            .filter_map(|to| self.ix.get(to).copied())
+            .filter(|kid| seen.insert(*kid))
+            .collect();
+        Branch {
+            ix,
+            children: kids
+                .into_iter()
+                .map(|kid| self.branch(canvas, kid, seen))
+                .collect(),
+        }
+    }
+}
+
 /// One layout's walk over the trees.
 struct Pass<'a> {
     canvas: &'a Canvas,
     held: Option<&'a str>,
+    /// The room each branch takes across the flow, measured once a tree.
+    spans: HashMap<usize, i64>,
     moves: Vec<(String, (i64, i64))>,
 }
 
@@ -441,24 +495,35 @@ impl<'a> Pass<'a> {
         is_pinned(node) || self.held == Some(node.id.as_str())
     }
 
-    /// The room a branch takes across `flow`: its node, or its children
-    /// stacked, whichever is more.
-    fn span(&self, branch: &Branch, flow: Flow) -> i64 {
-        let node = &self.canvas.nodes[branch.ix];
-        let across = if flow == Flow::Down {
-            node.width
-        } else {
-            node.height
-        };
-        across.max(self.stack(&branch.children, flow))
+    /// Measure `branch` and all below it: its node, or its children stacked,
+    /// whichever takes more room across the flow.
+    fn measure(&mut self, branch: &Branch, down: bool) -> i64 {
+        let canvas = self.canvas;
+        let mut stacked = Vec::new();
+        for child in &branch.children {
+            let span = self.measure(child, down);
+            if !self.fixed(&canvas.nodes[child.ix]) {
+                stacked.push(span);
+            }
+        }
+        let node = &canvas.nodes[branch.ix];
+        let across = if down { node.width } else { node.height };
+        let gaps = GAP_Y * (stacked.len() as i64 - 1).max(0);
+        let span = across.max(stacked.iter().sum::<i64>() + gaps);
+        self.spans.insert(branch.ix, span);
+        span
+    }
+
+    fn span(&self, branch: &Branch) -> i64 {
+        self.spans[&branch.ix]
     }
 
     /// The children still in the column: a fixed one left it.
-    fn stack<'b>(&self, branches: impl IntoIterator<Item = &'b Branch>, flow: Flow) -> i64 {
+    fn stack<'b>(&self, branches: impl IntoIterator<Item = &'b Branch>) -> i64 {
         let spans: Vec<i64> = branches
             .into_iter()
             .filter(|b| !self.fixed(&self.canvas.nodes[b.ix]))
-            .map(|b| self.span(b, flow))
+            .map(|b| self.span(b))
             .collect();
         spans.iter().sum::<i64>() + GAP_Y * (spans.len() as i64 - 1).max(0)
     }
@@ -473,7 +538,7 @@ impl<'a> Pass<'a> {
             } else {
                 &mut left
             };
-            side.0 += self.span(kid, Flow::Right);
+            side.0 += self.span(kid);
             side.1.push(kid);
         }
         (right.1, left.1)
@@ -486,14 +551,14 @@ impl<'a> Pass<'a> {
             Flow::Down => at.0 + parent.width / 2,
             _ => at.1 + parent.height / 2,
         };
-        let mut top = center - self.stack(kids.iter().copied(), flow) / 2;
+        let mut top = center - self.stack(kids.iter().copied()) / 2;
         for &kid in kids {
             let node = &canvas.nodes[kid.ix];
             if self.fixed(node) {
                 self.place(kid, (node.x, node.y), flow);
                 continue;
             }
-            let span = self.span(kid, flow);
+            let span = self.span(kid);
             let mid = top + span / 2;
             let to = match flow {
                 Flow::Down => (mid - node.width / 2, at.1 + parent.height + GAP_X),
