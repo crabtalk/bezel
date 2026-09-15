@@ -79,6 +79,8 @@ pub fn init(cx: &mut App) {
     editor::set_image_store(cx, store::of());
     input::init(cx);
     editor::init(cx);
+    canvas::init(cx);
+    canvas::set_node_renderer(cx, patterns::canvas::render);
     palette::init(cx);
     combobox::init(cx);
     date::init(cx);
@@ -697,6 +699,7 @@ pub const PATTERNS: &[Group] = &[
                 "apps/gallery/src/patterns/selectable.rs",
             ),
             section("editor", "Editor", "apps/gallery/src/patterns/editor.rs"),
+            section("canvas", "Canvas", "apps/gallery/src/patterns/canvas.rs"),
             section("ribbon", "Ribbon", "apps/gallery/src/patterns/ribbon.rs"),
             section(
                 "markdown",
@@ -1035,6 +1038,7 @@ pub struct Gallery {
     /// of `markdown::selectable` has to.
     selectable: Entity<patterns::selectable::Selectable>,
     editor: Entity<patterns::editor::EditorDemo>,
+    canvas: Entity<patterns::canvas::CanvasDemo>,
     #[cfg(not(target_family = "wasm"))]
     terminal: Entity<patterns::terminal::Terminal>,
     orbs: Entity<patterns::orbs::Orbs>,
@@ -1229,6 +1233,7 @@ impl Gallery {
             ribbon: cx.new(patterns::ribbon::RibbonDemo::new),
             selectable: cx.new(patterns::selectable::Selectable::new),
             editor: cx.new(patterns::editor::EditorDemo::new),
+            canvas: cx.new(patterns::canvas::CanvasDemo::new),
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(patterns::terminal::Terminal::new),
             orbs: cx.new(patterns::orbs::Orbs::new),
@@ -4647,6 +4652,7 @@ impl Gallery {
                 .child(self.selectable.clone())
                 .into_any_element(),
             "editor" => self.editor.clone().into_any_element(),
+            "canvas" => self.canvas.clone().into_any_element(),
             "ribbon" => self.ribbon.clone().into_any_element(),
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),

@@ -1,0 +1,31 @@
+[package]
+name = "bezel-canvas"
+
+description = "An infinite canvas for gpui over JSON Canvas — nodes and edges in, a pannable mindmap out"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "canvas"
+
+[lints]
+workspace = true
+
+[dependencies]
+editor.workspace = true
+markdown.workspace = true
+theme.workspace = true
+gpui.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }

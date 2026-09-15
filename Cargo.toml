@@ -12,6 +12,7 @@ members = [
     "crates/blocks",
     "crates/editor",
     "crates/terminal",
+    "crates/canvas",
     "apps/gallery",
     "apps/web",
     "apps/hello",
@@ -44,6 +45,7 @@ blocks = { package = "bezel-blocks", path = "crates/blocks", version = "0.1.14" 
 editor = { package = "bezel-editor", path = "crates/editor", version = "0.1.14" }
 syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.1.14" }
 terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.1.14" }
+canvas = { package = "bezel-canvas", path = "crates/canvas", version = "0.1.14" }
 
 # crates-io
 libc = "0.2"
