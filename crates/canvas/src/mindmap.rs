@@ -1,8 +1,10 @@
 //! A mindmap is a canvas whose edges form a tree: a node's children are the
-//! edges leaving it, in edge order.
+//! edges leaving it, in edge order. An edge marked `"tree": false` is a cross
+//! link, never a branch.
 //!
 //! Layout writes positions back into the [`Canvas`], so the file stays plain
-//! JSON Canvas that any other viewer opens as it was last laid out.
+//! JSON Canvas that any other viewer opens as it was last laid out. The edits
+//! here answer the [`Change`]s they make, for the view to submit.
 
 use std::collections::HashSet;
 
@@ -23,21 +25,65 @@ pub const NODE_HEIGHT: i64 = 40;
 /// Our own node field, not the spec's: set when a node is dragged, and layout
 /// leaves its position alone from then on.
 pub const PINNED: &str = "pinned";
+/// Our own edge field: `false` makes the edge a cross link.
+pub const TREE: &str = "tree";
 
 pub fn is_pinned(node: &Node) -> bool {
-    node.extra
-        .get(PINNED)
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
+    flag(&node.extra, PINNED).unwrap_or(false)
 }
 
-/// Put a node where it was dropped and keep it there. Its branch follows it.
+pub fn is_branch(edge: &Edge) -> bool {
+    flag(&edge.extra, TREE).unwrap_or(true)
+}
+
+fn flag(extra: &serde_json::Map<String, Value>, key: &str) -> Option<bool> {
+    extra.get(key).and_then(Value::as_bool)
+}
+
+/// Put a node where it was dropped and keep it there.
 pub fn pin(canvas: &mut Canvas, id: &str, x: i64, y: i64) -> Option<()> {
     let node = canvas.node_mut(id)?;
     node.x = x;
     node.y = y;
     node.extra.insert(PINNED.into(), Value::Bool(true));
     Some(())
+}
+
+/// Hand a pinned node back to layout; `None` when it is not pinned.
+pub fn unpin(node: &Node) -> Option<Change> {
+    is_pinned(node).then(|| {
+        let mut node = node.clone();
+        node.extra.remove(PINNED);
+        Change::UpdateNode { node }
+    })
+}
+
+/// `id` to `to`, its pinned descendants keeping their place beside it as
+/// layout keeps the rest. `pin` keeps it there.
+pub fn carry(canvas: &Canvas, id: &str, to: (i64, i64), pin: bool) -> Vec<Change> {
+    let Some(node) = canvas.node(id) else {
+        return Vec::new();
+    };
+    let delta = (to.0 - node.x, to.1 - node.y);
+    let mut below: Vec<(String, (i64, i64))> = descendants(canvas, id)
+        .into_iter()
+        .filter_map(|below| {
+            let node = canvas.node(&below).filter(|node| is_pinned(node))?;
+            Some((below, (node.x + delta.0, node.y + delta.1)))
+        })
+        .collect();
+    below.sort();
+    let mut changes = Vec::new();
+    if pin && !is_pinned(node) {
+        let mut node = node.clone();
+        (node.x, node.y) = to;
+        node.extra.insert(PINNED.into(), Value::Bool(true));
+        changes.push(Change::UpdateNode { node });
+    }
+    let mut moves = vec![(id.to_owned(), to)];
+    moves.extend(below);
+    changes.push(Change::MoveNodes { moves });
+    changes
 }
 
 /// Tree motion from a node.
@@ -49,11 +95,19 @@ pub enum Toward {
     NextSibling,
 }
 
+/// The branches into `id`: the first is its parent's.
+fn branches_in<'a>(canvas: &'a Canvas, id: &'a str) -> impl Iterator<Item = &'a Edge> {
+    canvas
+        .edges
+        .iter()
+        .filter(move |edge| edge.to_node == id && is_branch(edge))
+}
+
 pub fn parent<'a>(canvas: &'a Canvas, id: &str) -> Option<&'a str> {
     canvas
         .edges
         .iter()
-        .find(|edge| edge.to_node == id)
+        .find(|edge| edge.to_node == id && is_branch(edge))
         .map(|edge| edge.from_node.as_str())
 }
 
@@ -61,11 +115,11 @@ pub fn children<'a>(canvas: &'a Canvas, id: &'a str) -> impl Iterator<Item = &'a
     canvas
         .edges
         .iter()
-        .filter(move |edge| edge.from_node == id)
+        .filter(move |edge| edge.from_node == id && is_branch(edge))
         .map(|edge| edge.to_node.as_str())
 }
 
-/// Nodes nothing points at. Groups are frames, not branches.
+/// Nodes no branch points at. Groups are frames, not branches.
 pub fn roots(canvas: &Canvas) -> impl Iterator<Item = &Node> {
     canvas
         .nodes
@@ -92,7 +146,7 @@ pub fn step(canvas: &Canvas, id: &str, toward: Toward) -> Option<String> {
 /// Lay every tree out to the right of its root, which stays where it is.
 ///
 /// A node reached twice hangs off the first parent that reaches it, so a stray
-/// cycle or a cross link cannot loop the layout.
+/// cycle cannot loop the layout.
 pub fn layout(canvas: &mut Canvas) {
     layout_holding(canvas, None);
 }
@@ -101,7 +155,7 @@ pub fn layout(canvas: &mut Canvas) {
 /// in hand.
 pub fn layout_holding(canvas: &mut Canvas, held: Option<&str>) {
     let moves = arrange(canvas, held);
-    change::apply(canvas, &Change::Layout { moves });
+    change::apply(canvas, &Change::MoveNodes { moves });
 }
 
 /// Where [`layout_holding`] would put each node, leaving out those already
@@ -124,44 +178,45 @@ pub fn arrange(canvas: &Canvas, held: Option<&str>) -> Vec<(String, (i64, i64))>
 pub fn root(canvas: &Canvas, mut node: Node, at: (i64, i64)) -> Change {
     node.id = canvas.mint();
     (node.x, node.y) = at;
-    Change::Add {
-        node,
-        edge: None,
-        index: None,
-    }
+    Change::AddNode { node }
 }
 
 /// `node` as `parent`'s last child, beside it.
 ///
 /// Changes place and do not lay out: a free canvas keeps every other node where
 /// it was, and a mindmap lays out after.
-pub fn child(canvas: &Canvas, parent: &str, mut node: Node) -> Option<Change> {
+pub fn child(canvas: &Canvas, parent: &str, mut node: Node) -> Option<Vec<Change>> {
     let at = canvas.node(parent)?;
     let [id, edge] = <[String; 2]>::try_from(canvas.mint_n(2)).ok()?;
     node.id = id;
     (node.x, node.y) = (at.x + at.width + GAP_X, at.y);
     let edge = tree_edge(edge, parent, &node.id);
-    Some(Change::Add {
-        node,
-        edge: Some(edge),
-        index: None,
-    })
+    Some(vec![
+        Change::AddNode { node },
+        Change::AddEdge { edge, index: None },
+    ])
 }
 
 /// `node` right after `of`, under the same parent.
-pub fn sibling(canvas: &Canvas, of: &str, mut node: Node) -> Option<Change> {
+pub fn sibling(canvas: &Canvas, of: &str, mut node: Node) -> Option<Vec<Change>> {
     let parent = parent(canvas, of)?;
-    let index = canvas.edges.iter().position(|edge| edge.to_node == of)? + 1;
+    let index = canvas
+        .edges
+        .iter()
+        .position(|edge| edge.to_node == of && is_branch(edge))?
+        + 1;
     let below = canvas.node(of)?;
     let [id, edge] = <[String; 2]>::try_from(canvas.mint_n(2)).ok()?;
     node.id = id;
     (node.x, node.y) = (below.x, below.y + below.height + GAP_Y);
     let edge = tree_edge(edge, parent, &node.id);
-    Some(Change::Add {
-        node,
-        edge: Some(edge),
-        index: Some(index),
-    })
+    Some(vec![
+        Change::AddNode { node },
+        Change::AddEdge {
+            edge,
+            index: Some(index),
+        },
+    ])
 }
 
 /// What to select once `id` is removed: the previous sibling, else the next,
@@ -172,46 +227,43 @@ pub fn after_removal(canvas: &Canvas, id: &str) -> Option<String> {
         .or_else(|| step(canvas, id, Toward::Parent))
 }
 
-/// Remove a node and its branch. Answers what to select next: the previous
-/// sibling, else the next, else the parent.
-pub fn remove(canvas: &mut Canvas, id: &str) -> Option<String> {
-    let root = canvas.index_of(id)?;
-    let next = after_removal(canvas, id);
-    let mut seen = HashSet::new();
-    let mut doomed = Vec::new();
-    branch(canvas, root, &mut seen).collect(&mut doomed);
-    let doomed: HashSet<String> = doomed
-        .into_iter()
-        .map(|ix| canvas.nodes[ix].id.clone())
-        .collect();
-    canvas.nodes.retain(|node| !doomed.contains(&node.id));
-    canvas
-        .edges
-        .retain(|edge| !doomed.contains(&edge.from_node) && !doomed.contains(&edge.to_node));
-    next
+/// A node and its branch.
+pub fn remove(canvas: &Canvas, id: &str) -> Change {
+    let mut ixs = Vec::new();
+    if let Some(ix) = canvas.index_of(id) {
+        branch(canvas, ix, &mut HashSet::new()).collect(&mut ixs);
+    }
+    Change::RemoveNodes {
+        ids: ixs
+            .into_iter()
+            .map(|ix| canvas.nodes[ix].id.clone())
+            .collect(),
+    }
 }
 
-/// Hang `id` under `parent` as its last child, cutting the edges it had in.
-/// Refused onto itself or its own branch, which would be a cycle.
-pub fn reparent(canvas: &mut Canvas, id: &str, parent: &str) -> bool {
-    let (Some(ix), Some(_)) = (canvas.index_of(id), canvas.node(parent)) else {
-        return false;
-    };
+/// Hang `id` under `parent` as its last child, cutting the branches it had in.
+/// `None` onto itself or its own branch, which would be a cycle.
+pub fn reparent(canvas: &Canvas, id: &str, parent: &str) -> Option<Vec<Change>> {
+    let (ix, _) = (canvas.index_of(id)?, canvas.node(parent)?);
     if branch_ids(canvas, ix).contains(parent) {
-        return false;
+        return None;
     }
-    detach(canvas, id);
-    if let Some(node) = canvas.node_mut(id) {
-        node.extra.remove(PINNED);
-    }
-    let edge = canvas.mint();
-    canvas.edges.push(tree_edge(edge, parent, id));
-    true
+    let mut changes: Vec<Change> = detach(canvas, id).into_iter().collect();
+    changes.push(Change::AddEdge {
+        edge: tree_edge(canvas.mint(), parent, id),
+        index: None,
+    });
+    changes.extend(unpin(&canvas.nodes[ix]));
+    Some(changes)
 }
 
-/// Cut the edges into `id`, leaving it a root where it is.
-pub fn detach(canvas: &mut Canvas, id: &str) {
-    canvas.edges.retain(|edge| edge.to_node != id);
+/// Cut the branches into `id`, leaving it a root where it is; `None` when it
+/// is one.
+pub fn detach(canvas: &Canvas, id: &str) -> Option<Change> {
+    let ids: Vec<String> = branches_in(canvas, id)
+        .map(|edge| edge.id.clone())
+        .collect();
+    (!ids.is_empty()).then_some(Change::RemoveEdges { ids })
 }
 
 /// The topmost node containing `at`, outside `except`'s branch.

@@ -22,7 +22,7 @@ const DOC: &str = r#"{
   ]
 }"#;
 
-type Log = Rc<RefCell<Vec<Change>>>;
+type Log = Rc<RefCell<Vec<Vec<Change>>>>;
 
 struct Host {
     canvas: Entity<CanvasView>,
@@ -50,8 +50,8 @@ fn open(json: &str, cx: &mut TestAppContext) -> (Canvas, Vec<Change>) {
         move |_, cx| {
             let canvas = cx.new(|cx| CanvasView::new(canvas, cx));
             let _changes = cx.subscribe(&canvas, move |_, _, event, _| {
-                if let CanvasEvent::Changed(change) = event {
-                    log.borrow_mut().push(change.clone());
+                if let CanvasEvent::Changed(changes) = event {
+                    log.borrow_mut().push(changes.clone());
                 }
             });
             Host { canvas, _changes }
@@ -65,14 +65,18 @@ fn open(json: &str, cx: &mut TestAppContext) -> (Canvas, Vec<Change>) {
         cx.run_until_parked();
     }
     let doc = cx.update(|_, cx| host.read(cx).canvas.read(cx).canvas().clone());
-    (doc, log.take())
+    (doc, log.take().into_iter().flatten().collect())
 }
 
 #[gpui::test]
 fn the_announced_changes_replay_to_the_view(cx: &mut TestAppContext) {
     let (shown, changes) = open(DOC, cx);
     assert!(changes.iter().any(|c| matches!(c, Change::Resize { .. })));
-    assert!(changes.iter().any(|c| matches!(c, Change::Layout { .. })));
+    assert!(
+        changes
+            .iter()
+            .any(|c| matches!(c, Change::MoveNodes { .. }))
+    );
     let mut replayed = Canvas::parse(DOC).unwrap();
     for change in &changes {
         change::apply(&mut replayed, change);

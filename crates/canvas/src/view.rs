@@ -126,8 +126,8 @@ pub fn init(cx: &mut App) {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum CanvasEvent {
-    /// A change landed in the document.
-    Changed(Change),
+    /// A batch landed in the document.
+    Changed(Vec<Change>),
     Selected(Option<String>),
 }
 
@@ -154,9 +154,9 @@ enum Grab {
         id: String,
         from: Point<Pixels>,
         origin: (i64, i64),
-        /// Whether it was pinned before the press, to put back on a drop.
-        pinned: bool,
         moved: bool,
+        /// Where each node the preview moved sat before, to put back on a drop.
+        before: HashMap<String, (i64, i64)>,
     },
 }
 
@@ -187,7 +187,7 @@ pub struct CanvasView {
     zoom: f32,
     grab: Option<Grab>,
     /// What the drop would do, drawn while a node is held: the drag handler's
-    /// answer to the last move, less its `Move`s.
+    /// answer to the last move, less its `MoveNodes`.
     pending: Vec<Change>,
     /// Where each node was painted last frame.
     shown: Positions,
@@ -273,23 +273,41 @@ impl CanvasView {
         cx.notify();
     }
 
-    /// Land a change as if the reader made it: through the filter first.
-    /// `false` when it was refused.
-    pub fn submit(&mut self, change: Change, cx: &mut Context<Self>) -> bool {
-        let change = match self.filter.clone() {
-            Some(filter) => match filter(&self.canvas, change, cx) {
-                Some(change) => change,
-                None => return false,
-            },
-            None => change,
+    /// Land a batch as if the reader made it: each change through the filter
+    /// first, against the document before the batch. `false` when one was
+    /// refused, and then none lands.
+    pub fn submit(
+        &mut self,
+        changes: impl IntoIterator<Item = Change>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let changes: Vec<Change> = match self.filter.clone() {
+            Some(filter) => {
+                let canvas = &self.canvas;
+                match changes
+                    .into_iter()
+                    .map(|change| filter(canvas, change, cx))
+                    .collect()
+                {
+                    Some(changes) => changes,
+                    None => return false,
+                }
+            }
+            None => changes.into_iter().collect(),
         };
-        self.apply(change, cx);
+        self.apply(changes, cx);
         true
     }
 
-    /// Land a change of the app's own, past the filter.
-    pub fn apply(&mut self, change: Change, cx: &mut Context<Self>) {
-        change::apply(&mut self.canvas, &change);
+    /// Land a batch of the app's own, past the filter.
+    pub fn apply(&mut self, changes: impl IntoIterator<Item = Change>, cx: &mut Context<Self>) {
+        let changes: Vec<Change> = changes.into_iter().collect();
+        if changes.is_empty() {
+            return;
+        }
+        for change in &changes {
+            change::apply(&mut self.canvas, change);
+        }
         if self
             .editing
             .as_ref()
@@ -303,7 +321,7 @@ impl CanvasView {
             self.select(None, cx);
         }
         self.stale = true;
-        cx.emit(CanvasEvent::Changed(change));
+        cx.emit(CanvasEvent::Changed(changes));
         cx.notify();
     }
 
@@ -376,16 +394,13 @@ impl CanvasView {
         let tidy = arrange == Arrange::Mindmap && self.arrange != Arrange::Mindmap;
         self.arrange = arrange;
         if tidy {
-            let pinned: Vec<String> = self
+            let unpins: Vec<Change> = self
                 .canvas
                 .nodes
                 .iter()
-                .filter(|node| mindmap::is_pinned(node))
-                .map(|node| node.id.clone())
+                .filter_map(mindmap::unpin)
                 .collect();
-            for id in pinned {
-                self.apply(Change::Unpin { id }, cx);
-            }
+            self.apply(unpins, cx);
         }
         self.stale = true;
         cx.notify();
@@ -396,13 +411,18 @@ impl CanvasView {
         self.drag = handler;
     }
 
-    /// What `backspace` does: the selection and its branch, through the filter.
+    /// What `backspace` does, through the filter: the selection, and its branch
+    /// under [`Arrange::Mindmap`].
     pub fn remove_selected(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.selected.clone() else {
             return;
         };
         let next = mindmap::after_removal(&self.canvas, &id);
-        if self.submit(Change::Remove { id }, cx) {
+        let change = match self.arrange {
+            Arrange::Mindmap => mindmap::remove(&self.canvas, &id),
+            Arrange::Free => Change::RemoveNodes { ids: vec![id] },
+        };
+        if self.submit([change], cx) {
             self.select(next.filter(|next| self.canvas.node(next).is_some()), cx);
         }
     }
@@ -458,12 +478,12 @@ impl CanvasView {
         Some((kind::kind(cx, &parent.kind).child)(parent))
     }
 
-    fn added(&mut self, change: Option<Change>, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(change) = change else { return };
-        let Some(id) = change.id().map(str::to_owned) else {
+    fn added(&mut self, changes: Option<Vec<Change>>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(changes) = changes else { return };
+        let Some(id) = change::added(&changes).map(str::to_owned) else {
             return;
         };
-        if self.submit(change, cx) && self.canvas.node(&id).is_some() {
+        if self.submit(changes, cx) && self.canvas.node(&id).is_some() {
             self.select(Some(id.clone()), cx);
             self.edit(id, window, cx);
         }
@@ -482,7 +502,7 @@ impl CanvasView {
                 .and_then(|node| mindmap::child(&self.canvas, &parent, node)),
             None => {
                 let node = (kind::kind(cx, model::TEXT).child)(&Node::default());
-                Some(mindmap::root(&self.canvas, node, (0, 0)))
+                Some(vec![mindmap::root(&self.canvas, node, (0, 0))])
             }
         };
         self.added(change, window, cx);
@@ -547,7 +567,7 @@ impl CanvasView {
                 return;
             };
             (field.write)(&mut node, editor.read(cx).source());
-            this.submit(Change::Update { node }, cx);
+            this.submit([Change::UpdateNode { node }], cx);
         });
         window.focus(&editor.focus_handle(cx), cx);
         self.editing = Some(Session {
@@ -597,10 +617,10 @@ impl CanvasView {
         } else if let Some(node) = self.canvas.node(&id) {
             self.grab = Some(Grab::Node {
                 origin: (node.x, node.y),
-                pinned: mindmap::is_pinned(node),
                 id,
                 from: event.position,
                 moved: false,
+                before: HashMap::new(),
             });
             cx.notify();
         }
@@ -631,10 +651,18 @@ impl CanvasView {
                 // the rest is what the drop would do, and only drawn.
                 let mut pending = Vec::new();
                 for change in self.gesture(event.position, Phase::Move) {
-                    match change {
-                        Change::Move { .. } => change::apply(&mut self.canvas, &change),
-                        other => pending.push(other),
+                    let Change::MoveNodes { moves } = &change else {
+                        pending.push(change);
+                        continue;
+                    };
+                    if let Some(Grab::Node { before, .. }) = &mut self.grab {
+                        for (id, _) in moves {
+                            if let Some(node) = self.canvas.node(id) {
+                                before.entry(id.clone()).or_insert((node.x, node.y));
+                            }
+                        }
                     }
+                    change::apply(&mut self.canvas, &change);
                 }
                 self.pending = pending;
                 self.stale = true;
@@ -643,32 +671,23 @@ impl CanvasView {
         }
     }
 
-    /// The button came up: a node that moved is put back, and its drop is
+    /// The button came up: what the preview moved is put back, and the drop is
     /// submitted.
     fn release(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
         self.pending.clear();
-        if let Some(Grab::Node { moved: true, .. }) = self.grab {
+        if let Some(Grab::Node {
+            moved: true,
+            before,
+            ..
+        }) = &mut self.grab
+        {
+            let back = Change::MoveNodes {
+                moves: before.drain().collect(),
+            };
+            change::apply(&mut self.canvas, &back);
             let drop = self.gesture(position, Phase::Drop);
-            if let Some(Grab::Node {
-                id, origin, pinned, ..
-            }) = &self.grab
-            {
-                let (id, to, pinned) = (id.clone(), *origin, *pinned);
-                // Back where the press found it, pinned nodes below included.
-                let back = Change::Move {
-                    id: id.clone(),
-                    to,
-                    pin: false,
-                };
-                change::apply(&mut self.canvas, &back);
-                if !pinned && let Some(node) = self.canvas.node_mut(&id) {
-                    node.extra.remove(mindmap::PINNED);
-                }
-            }
             self.grab = None;
-            for change in drop {
-                self.submit(change, cx);
-            }
+            self.submit(drop, cx);
             self.stale = true;
             cx.notify();
         }
@@ -723,15 +742,21 @@ impl CanvasView {
     }
 
     /// Land last frame's measurements, and lay out if anything moved.
+    /// The view's own batch, past the filter and announced: last frame's
+    /// measurements, and the layout if anything moved.
     fn reflow(&mut self, cx: &mut Context<Self>) {
         let mut measured: Vec<_> = self.measured.borrow_mut().drain().collect();
         measured.sort();
+        let mut changes = Vec::new();
         for (id, height) in measured {
             if let Some(node) = self.canvas.node(&id)
                 && node.height != height
             {
-                let size = (node.width, height);
-                self.land(Change::Resize { id, size }, cx);
+                changes.push(Change::Resize {
+                    size: (node.width, height),
+                    id,
+                });
+                change::apply(&mut self.canvas, changes.last().expect("just pushed"));
                 self.stale = true;
             }
         }
@@ -739,15 +764,13 @@ impl CanvasView {
             let held = self.held().map(str::to_owned);
             let moves = mindmap::arrange(&self.canvas, held.as_deref());
             if !moves.is_empty() {
-                self.land(Change::Layout { moves }, cx);
+                changes.push(Change::MoveNodes { moves });
+                change::apply(&mut self.canvas, changes.last().expect("just pushed"));
             }
         }
-    }
-
-    /// Apply and announce one of the view's own changes, past the filter.
-    fn land(&mut self, change: Change, cx: &mut Context<Self>) {
-        change::apply(&mut self.canvas, &change);
-        cx.emit(CanvasEvent::Changed(change));
+        if !changes.is_empty() {
+            cx.emit(CanvasEvent::Changed(changes));
+        }
     }
 
     /// Where each node paints this frame. A node the document moved glides
@@ -876,11 +899,12 @@ impl CanvasView {
         };
         let grows = kind.sizing == Sizing::Grows;
         let selected = self.selected.as_deref() == Some(node.id.as_str());
-        // A drop would land here.
-        let target = self
-            .pending
-            .iter()
-            .any(|change| matches!(change, Change::Reparent { parent, .. } if *parent == node.id));
+        // A drop would connect the held node here.
+        let target = self.held() != Some(node.id.as_str())
+            && self.pending.iter().any(|change| {
+                matches!(change, Change::AddEdge { edge, .. }
+                    if edge.from_node == node.id || edge.to_node == node.id)
+            });
         let border = node
             .color
             .as_deref()
@@ -984,14 +1008,15 @@ impl CanvasView {
         let (z, pan) = (self.zoom, self.pan);
         let grabbing = self.grab.is_some();
         let holding = matches!(self.grab, Some(Grab::Node { .. }));
-        // Connectors a drop would cut, and the one it would make.
+        // Connectors a drop would cut, and the ones it would make.
         let cut: HashSet<&str> = self
             .pending
             .iter()
-            .filter_map(|change| match change {
-                Change::Reparent { id, .. } | Change::Detach { id } => Some(id.as_str()),
-                _ => None,
+            .flat_map(|change| match change {
+                Change::RemoveEdges { ids } => ids.as_slice(),
+                _ => &[],
             })
+            .map(String::as_str)
             .collect();
         let mut curves: Vec<Curve> = self
             .canvas
@@ -999,21 +1024,17 @@ impl CanvasView {
             .iter()
             .filter_map(|edge| {
                 let mut curve = curve(&self.canvas, shown, edge, theme)?;
-                if cut.contains(edge.to_node.as_str()) {
+                if cut.contains(edge.id.as_str()) {
                     curve.color = curve.color.opacity(CUT);
                 }
                 Some(curve)
             })
             .collect();
         curves.extend(self.pending.iter().filter_map(|change| {
-            let Change::Reparent { id, parent } = change else {
+            let Change::AddEdge { edge, .. } = change else {
                 return None;
             };
-            let edge = Edge {
-                to_end: Some(End::None),
-                ..Edge::new("", parent.as_str(), id.as_str())
-            };
-            let mut preview = curve(&self.canvas, shown, &edge, theme)?;
+            let mut preview = curve(&self.canvas, shown, edge, theme)?;
             preview.color = theme.accent;
             Some(preview)
         }));

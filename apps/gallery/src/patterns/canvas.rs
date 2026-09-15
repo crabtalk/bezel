@@ -11,7 +11,7 @@
 //! is the entry point its chord takes. Copy this file.
 
 use canvas::{
-    Arrange, Canvas, CanvasView, Change,
+    Arrange, Canvas, CanvasView, Change, change,
     drag::{self, DragHandler},
     kind::{self, Chrome, Field, Kind, Sizing},
     mindmap,
@@ -177,7 +177,7 @@ impl CanvasDemo {
         let view = cx.new(|cx| {
             CanvasView::new(canvas, cx).with_changes(|_, change, _| match &change {
                 // The page keeps its root.
-                Change::Remove { id } if id == ROOT => None,
+                Change::RemoveNodes { ids } if ids.iter().any(|id| id == ROOT) => None,
                 _ => Some(change),
             })
         });
@@ -201,17 +201,17 @@ impl CanvasDemo {
     fn add(&mut self, session: bool, cx: &mut Context<Self>) {
         self.view.update(cx, |view, cx| {
             let node = fresh(session);
-            let change = match view.selected().map(str::to_owned) {
+            let changes = match view.selected().map(str::to_owned) {
                 Some(parent) => mindmap::child(view.canvas(), &parent, node),
                 None => {
                     let (x, y) = view.center();
                     let at = (x - node.width / 2, y - node.height / 2);
-                    Some(mindmap::root(view.canvas(), node, at))
+                    Some(vec![mindmap::root(view.canvas(), node, at)])
                 }
             };
-            if let Some(change) = change
-                && let Some(id) = change.id().map(str::to_owned)
-                && view.submit(change, cx)
+            if let Some(changes) = changes
+                && let Some(id) = change::added(&changes).map(str::to_owned)
+                && view.submit(changes, cx)
             {
                 view.select(Some(id), cx);
             }

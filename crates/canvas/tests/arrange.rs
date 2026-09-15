@@ -40,3 +40,26 @@ fn auto_layout_drops_the_pins_and_lays_out(cx: &mut TestAppContext) {
     let expected = laid.node("child").unwrap();
     assert_eq!((child.x, child.y), (expected.x, expected.y));
 }
+
+#[gpui::test]
+fn a_free_canvas_removes_only_the_node(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        theme::Theme::install(theme::Appearance::Dark, cx);
+        editor::init(cx);
+        canvas::init(cx);
+    });
+    let window = cx.add_window(|_, cx| {
+        CanvasView::new(Canvas::parse(DOC).unwrap(), cx).with_arrange(Arrange::Free)
+    });
+    let view = window.root(cx).unwrap();
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.select(Some("root".into()), cx);
+            view.remove_selected(cx);
+        })
+    });
+    let canvas = cx.update(|_, cx| view.read(cx).canvas().clone());
+    assert!(canvas.node("root").is_none() && canvas.node("child").is_some());
+    assert!(canvas.edges.is_empty());
+}

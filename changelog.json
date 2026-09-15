@@ -2,9 +2,14 @@
   {
     "version": "0.1.16",
     "date": "2026-09-15",
-    "summary": "Every change to a canvas document is announced.",
+    "summary": "The canvas edits a graph, with the mindmap as a layer over it.",
     "changed": [
-      "A canvas's measured heights and its layout land as `Change::Resize` and `Change::Layout`, announced by `CanvasEvent::Changed` and never filtered, so a save on `Changed` writes what is shown. `mindmap::arrange` answers the moves without applying them, and `Change::id` is `None` for a layout."
+      "`Change` is a graph's vocabulary — `AddNode`, `AddEdge`, `RemoveNodes`, `RemoveEdges`, `MoveNodes`, `Resize`, `UpdateNode`, `UpdateEdge` — and the view lands them in batches: `submit` and `apply` take many, one refused change refuses the batch, and `CanvasEvent::Changed` carries a `Vec`. `change::added` finds the node a batch adds.",
+      "Tree edits answer batches: `mindmap::child` and `sibling` answer `Option<Vec<Change>>`, and `remove`, `reparent`, `detach`, `carry` and `unpin` are new. `drag` handlers answer the same, and a drop's preview is put back whole before the drop is filtered.",
+      "A canvas's measured heights and its layout are announced by `CanvasEvent::Changed`, unfiltered, so a save on `Changed` writes what is shown. `mindmap::arrange` answers the moves without applying them."
+    ],
+    "fixed": [
+      "`backspace` on a free canvas removes only the node, not everything its edges reach. An edge marked `\"tree\": false` is a cross link, never a branch, so it is not followed by layout, removal or the arrow keys."
     ]
   },
   {

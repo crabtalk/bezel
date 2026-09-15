@@ -78,15 +78,15 @@ fn a_filter_refuses_and_rewrites(cx: &mut TestAppContext) {
         |view| {
             view.with_changes(|canvas, change, _| match change {
                 // Roots stay.
-                Change::Remove { id } if mindmap::parent(canvas, &id).is_none() => None,
+                Change::RemoveNodes { ids }
+                    if ids.iter().any(|id| mindmap::parent(canvas, id).is_none()) =>
+                {
+                    None
+                }
                 // Every new card is born wide.
-                Change::Add {
-                    mut node,
-                    edge,
-                    index,
-                } => {
+                Change::AddNode { mut node } => {
                     node.width = 300;
-                    Some(Change::Add { node, edge, index })
+                    Some(Change::AddNode { node })
                 }
                 other => Some(other),
             })

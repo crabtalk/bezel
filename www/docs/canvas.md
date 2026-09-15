@@ -38,12 +38,14 @@ State stays with the app: look the view up by the node's id. gpui cannot transfo
 
 ```rust
 CanvasView::new(doc, cx).with_changes(|canvas, change, cx| match &change {
-    Change::Remove { id } if is_running(id, cx) => None,   // refuse
-    _ => Some(change),                                     // or rewrite it
+    Change::RemoveNodes { ids } if ids.iter().any(|id| is_running(id, cx)) => None, // refuse
+    _ => Some(change),                                                              // or rewrite it
 })
 ```
 
-Every edit — a key, a drop, typing in a node — is a `Change`: `Add`, `Move`, `Reparent`, `Detach`, `Remove`, `Unpin` or `Update`. The filter answers what lands, and `CanvasEvent::Changed` carries what did. The view's own `Resize` (a measured height) and `Layout` are announced too but never filtered, so saving on `Changed` misses nothing. It runs inside the view's update, so reach the view through `cx.defer`; `view.apply(change, cx)` lands one of the app's own past the filter.
+Every edit — a key, a drop, typing in a node — is a batch of graph changes: `AddNode`, `AddEdge`, `RemoveNodes`, `RemoveEdges`, `MoveNodes`, `Resize`, `UpdateNode`, `UpdateEdge`. Each goes through the filter, and one refused refuses the batch. `CanvasEvent::Changed` carries each batch that landed, the view's own measured heights and layout included, so saving on it misses nothing. The filter runs inside the view's update, so reach the view through `cx.defer`; `view.apply(changes, cx)` lands the app's own past it.
+
+Tree edits live in `canvas::mindmap` and answer the batch they make: `child`, `sibling`, `remove` (a branch), `reparent`, `detach`, `carry`. An edge with `"tree": false` is a cross link, never a branch. `backspace` removes a branch under `Arrange::Mindmap` and only the node under `Arrange::Free`.
 
 ## Dragging a node
 
@@ -55,7 +57,7 @@ fn my_drag(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
 }
 ```
 
-On a move, the handler's `Move`s are applied as they come and the rest are drawn as what the drop would do: a ring on the new parent, the connector it would make, faded connectors it would cut. The drop's changes go through the filter, with the node put back first, so a refused drop leaves it where it was. Nodes a layout moves glide there. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in.
+On a move, the handler's `MoveNodes` are applied as they come and the rest are drawn as what the drop would do: a ring on a node an `AddEdge` reaches, the connector it would make, faded connectors a `RemoveEdges` would cut. The drop is one batch through the filter, with the preview put back first, so a refused drop leaves everything where it was. Nodes a layout moves glide there. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in.
 
 ## Keys
 
@@ -73,9 +75,9 @@ impl CanvasView {
     pub fn canvas(&self) -> &Canvas;
     pub fn set_canvas(&mut self, canvas: Canvas, cx: &mut Context<Self>);
     /// Through the filter, as if the reader made it. A toolbar's way in.
-    pub fn submit(&mut self, change: Change, cx: &mut Context<Self>) -> bool;
+    pub fn submit(&mut self, changes: impl IntoIterator<Item = Change>, cx: &mut Context<Self>) -> bool;
     /// Past the filter.
-    pub fn apply(&mut self, change: Change, cx: &mut Context<Self>);
+    pub fn apply(&mut self, changes: impl IntoIterator<Item = Change>, cx: &mut Context<Self>);
     pub fn selected(&self) -> Option<&str>;
     pub fn select(&mut self, id: Option<String>, cx: &mut Context<Self>);
     /// What `backspace` does.
@@ -98,12 +100,18 @@ impl CanvasView {
 pub fn layout(canvas: &mut Canvas);
 /// Where layout would move each node, those already there left out.
 pub fn arrange(canvas: &Canvas, held: Option<&str>) -> Vec<(String, (i64, i64))>;
-pub fn child(canvas: &Canvas, parent: &str, node: Node) -> Option<Change>;
-pub fn sibling(canvas: &Canvas, of: &str, node: Node) -> Option<Change>;
+pub fn child(canvas: &Canvas, parent: &str, node: Node) -> Option<Vec<Change>>;
+pub fn sibling(canvas: &Canvas, of: &str, node: Node) -> Option<Vec<Change>>;
 pub fn root(canvas: &Canvas, node: Node, at: (i64, i64)) -> Change;
+pub fn remove(canvas: &Canvas, id: &str) -> Change;
+pub fn reparent(canvas: &Canvas, id: &str, parent: &str) -> Option<Vec<Change>>;
+pub fn detach(canvas: &Canvas, id: &str) -> Option<Change>;
+pub fn carry(canvas: &Canvas, id: &str, to: (i64, i64), pin: bool) -> Vec<Change>;
 
 // canvas::change — pure
 pub fn apply(canvas: &mut Canvas, change: &Change);
+/// The first node a batch adds.
+pub fn added(changes: &[Change]) -> Option<&str>;
 ```
 
 The source is at `apps/gallery/src/patterns/canvas.rs`. Copy the file.

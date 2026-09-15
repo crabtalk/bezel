@@ -103,21 +103,20 @@ fn a_move_answers_what_the_drop_would_do() {
     let intents = |changes: Vec<Change>| -> Vec<Change> {
         changes
             .into_iter()
-            .filter(|change| !matches!(change, Change::Move { .. }))
+            .filter(|change| !matches!(change, Change::MoveNodes { .. }))
             .collect()
     };
-    assert_eq!(
-        intents(drag::reparent(&canvas, &moving(Some("b")))),
-        [Change::Reparent {
-            id: "a".into(),
-            parent: "b".into()
-        }]
+    let cut = || Change::RemoveEdges {
+        ids: vec!["e1".into()],
+    };
+    let hang = intents(drag::reparent(&canvas, &moving(Some("b"))));
+    assert!(
+        matches!(&hang[..], [removed, Change::AddEdge { edge, .. }]
+            if *removed == cut() && (edge.from_node.as_str(), edge.to_node.as_str()) == ("b", "a")),
+        "{hang:?}"
     );
     assert!(intents(drag::reparent(&canvas, &moving(None))).is_empty());
-    assert_eq!(
-        intents(drag::detach(&canvas, &moving(None))),
-        [Change::Detach { id: "a".into() }]
-    );
+    assert_eq!(intents(drag::detach(&canvas, &moving(None))), [cut()]);
     assert!(intents(drag::pin(&canvas, &moving(None))).is_empty());
 }
 
