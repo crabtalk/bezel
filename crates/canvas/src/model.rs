@@ -6,6 +6,8 @@
 //! rather than an enum for the same reason — an app's own kind is a renderer
 //! away, not a fork of the format.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
@@ -123,6 +125,18 @@ impl Canvas {
         self.nodes.iter_mut().find(|node| node.id == id)
     }
 
+    pub fn edge(&self, id: &str) -> Option<&Edge> {
+        self.edges.iter().find(|edge| edge.id == id)
+    }
+
+    /// Every node by id, for looking many up at once.
+    pub fn lookup(&self) -> HashMap<&str, &Node> {
+        self.nodes
+            .iter()
+            .map(|node| (node.id.as_str(), node))
+            .collect()
+    }
+
     /// `n` ids no node or edge holds, distinct from each other.
     pub fn mint_n(&self, n: usize) -> Vec<String> {
         let taken = |id: &str| {
@@ -138,13 +152,8 @@ impl Canvas {
 
     /// An id no node or edge holds, in the 16 hex digits other writers use.
     pub fn mint(&self) -> String {
-        let taken = |id: &str| {
-            self.nodes.iter().any(|node| node.id == id)
-                || self.edges.iter().any(|edge| edge.id == id)
-        };
-        (self.nodes.len() + self.edges.len()..)
-            .map(|n| format!("{n:016x}"))
-            .find(|id| !taken(id))
+        self.mint_n(1)
+            .pop()
             .expect("an unbounded range has a free id")
     }
 }

@@ -1,104 +1,176 @@
 //! Every edit the canvas makes, as data.
 //!
-//! The view turns keys, drags and typing into [`Change`]s and hands each to the
-//! app's filter before [`apply`]ing it, so an app can refuse one, rewrite it,
-//! or do something of its own beside it. An app changing the document itself
-//! sends the same values.
+//! The view turns keys, drags and typing into batches of [`Change`]s and hands
+//! each to the app's filter before [`apply`]ing them, so an app can refuse one,
+//! rewrite it, or do something of its own beside it. A batch lands whole or not
+//! at all, and applying one answers the batch that undoes it. The changes are a
+//! graph's; a tree edit in [`mindmap`](crate::mindmap) answers the batch it
+//! makes.
 
-use crate::{
-    mindmap,
-    model::{Canvas, Edge, Node},
-};
+use crate::model::{Canvas, Edge, Node};
 
 // Handed on and dropped, never kept in bulk; boxing the node would only put a
 // `Box::new` in every filter.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Change {
-    /// A node, and the edge hanging it off another at `index` among the edges.
-    Add {
+    /// At `index` among the nodes, on top when `None`.
+    AddNode {
         node: Node,
-        edge: Option<Edge>,
         index: Option<usize>,
     },
-    /// Put a node at `to`; `pin` keeps it there through layout.
-    Move {
-        id: String,
-        to: (i64, i64),
-        pin: bool,
+    /// At `index` among the edges, the last when `None`. Edge order is a
+    /// tree's child order.
+    AddEdge {
+        edge: Edge,
+        index: Option<usize>,
     },
-    /// Hang `id` under `parent`, cutting its edges in.
-    Reparent { id: String, parent: String },
-    /// Cut the edges into `id`.
-    Detach { id: String },
-    /// A node and its branch.
-    Remove { id: String },
-    /// Hand a pinned node back to layout.
-    Unpin { id: String },
-    /// A node replaced by one with the same id — what editing in place sends.
-    Update { node: Node },
+    /// Nodes, and every edge touching them.
+    RemoveNodes {
+        ids: Vec<String>,
+    },
+    RemoveEdges {
+        ids: Vec<String>,
+    },
+    MoveNodes {
+        moves: Vec<(String, (i64, i64))>,
+    },
+    /// A node's box. The view sends its measured heights unfiltered.
+    Resize {
+        id: String,
+        size: (i64, i64),
+    },
+    /// The whole node, by id — so a batch moves it after, not before.
+    UpdateNode {
+        node: Node,
+    },
+    /// The whole edge, by id.
+    UpdateEdge {
+        edge: Edge,
+    },
 }
 
-impl Change {
-    /// The node the change is about.
-    pub fn id(&self) -> &str {
-        match self {
-            Self::Add { node, .. } | Self::Update { node } => &node.id,
-            Self::Move { id, .. }
-            | Self::Reparent { id, .. }
-            | Self::Detach { id }
-            | Self::Remove { id }
-            | Self::Unpin { id } => id,
-        }
+/// The first node a batch adds: what adding selects.
+pub fn added(changes: &[Change]) -> Option<&str> {
+    changes.iter().find_map(|change| match change {
+        Change::AddNode { node, .. } => Some(node.id.as_str()),
+        _ => None,
+    })
+}
+
+/// Apply a batch in order, answering the batch that undoes it.
+pub fn apply_all(canvas: &mut Canvas, changes: &[Change]) -> Vec<Change> {
+    let mut undo = Vec::new();
+    for change in changes {
+        undo.splice(0..0, apply(canvas, change));
     }
+    undo
 }
 
-pub fn apply(canvas: &mut Canvas, change: &Change) {
+/// Apply `change`, answering the changes that undo it.
+pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change> {
     match change {
-        Change::Add { node, edge, index } => {
-            canvas.nodes.push(node.clone());
-            if let Some(edge) = edge {
-                let len = canvas.edges.len();
+        Change::AddNode { node, index } => {
+            let len = canvas.nodes.len();
+            canvas
+                .nodes
+                .insert(index.unwrap_or(len).min(len), node.clone());
+            vec![Change::RemoveNodes {
+                ids: vec![node.id.clone()],
+            }]
+        }
+        Change::AddEdge { edge, index } => {
+            let len = canvas.edges.len();
+            canvas
+                .edges
+                .insert(index.unwrap_or(len).min(len), edge.clone());
+            vec![Change::RemoveEdges {
+                ids: vec![edge.id.clone()],
+            }]
+        }
+        Change::RemoveNodes { ids } => {
+            let gone = |id: &String| ids.contains(id);
+            // Put back lowest index first, so each lands where it was.
+            let mut undo: Vec<Change> = canvas
+                .nodes
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| gone(&node.id))
+                .map(|(ix, node)| Change::AddNode {
+                    node: node.clone(),
+                    index: Some(ix),
+                })
+                .collect();
+            undo.extend(
                 canvas
                     .edges
-                    .insert(index.unwrap_or(len).min(len), edge.clone());
-            }
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, edge)| gone(&edge.from_node) || gone(&edge.to_node))
+                    .map(|(ix, edge)| Change::AddEdge {
+                        edge: edge.clone(),
+                        index: Some(ix),
+                    }),
+            );
+            canvas.nodes.retain(|node| !gone(&node.id));
+            canvas
+                .edges
+                .retain(|edge| !gone(&edge.from_node) && !gone(&edge.to_node));
+            undo
         }
-        Change::Move { id, to, pin } => {
-            let Some(node) = canvas.node(id) else {
-                return;
-            };
-            let delta = (to.0 - node.x, to.1 - node.y);
-            // A branch moves as one: a pinned node below keeps its place
-            // beside the one carried, as layout keeps the rest.
-            for below in mindmap::descendants(canvas, id) {
-                if let Some(node) = canvas.node_mut(&below)
-                    && mindmap::is_pinned(node)
-                {
-                    (node.x, node.y) = (node.x + delta.0, node.y + delta.1);
+        Change::RemoveEdges { ids } => {
+            let undo = canvas
+                .edges
+                .iter()
+                .enumerate()
+                .filter(|(_, edge)| ids.contains(&edge.id))
+                .map(|(ix, edge)| Change::AddEdge {
+                    edge: edge.clone(),
+                    index: Some(ix),
+                })
+                .collect();
+            canvas.edges.retain(|edge| !ids.contains(&edge.id));
+            undo
+        }
+        Change::MoveNodes { moves } => {
+            let mut back = Vec::new();
+            for (id, to) in moves {
+                if let Some(node) = canvas.node_mut(id) {
+                    back.push((id.clone(), (node.x, node.y)));
+                    (node.x, node.y) = *to;
                 }
             }
-            if *pin {
-                mindmap::pin(canvas, id, to.0, to.1);
-            } else if let Some(node) = canvas.node_mut(id) {
-                (node.x, node.y) = *to;
+            // A node moved twice goes back to where it began.
+            back.reverse();
+            if back.is_empty() {
+                Vec::new()
+            } else {
+                vec![Change::MoveNodes { moves: back }]
             }
         }
-        Change::Reparent { id, parent } => {
-            mindmap::reparent(canvas, id, parent);
-        }
-        Change::Detach { id } => mindmap::detach(canvas, id),
-        Change::Remove { id } => {
-            mindmap::remove(canvas, id);
-        }
-        Change::Unpin { id } => {
-            if let Some(node) = canvas.node_mut(id) {
-                node.extra.remove(mindmap::PINNED);
+        Change::Resize { id, size } => match canvas.node_mut(id) {
+            Some(node) => {
+                let old = (node.width, node.height);
+                (node.width, node.height) = *size;
+                vec![Change::Resize {
+                    id: id.clone(),
+                    size: old,
+                }]
             }
-        }
-        Change::Update { node } => {
-            if let Some(old) = canvas.node_mut(&node.id) {
-                *old = node.clone();
+            None => Vec::new(),
+        },
+        Change::UpdateNode { node } => match canvas.node_mut(&node.id) {
+            Some(old) => vec![Change::UpdateNode {
+                node: std::mem::replace(old, node.clone()),
+            }],
+            None => Vec::new(),
+        },
+        Change::UpdateEdge { edge } => {
+            match canvas.edges.iter_mut().find(|old| old.id == edge.id) {
+                Some(old) => vec![Change::UpdateEdge {
+                    edge: std::mem::replace(old, edge.clone()),
+                }],
+                None => Vec::new(),
             }
         }
     }

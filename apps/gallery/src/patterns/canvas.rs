@@ -1,7 +1,7 @@
 //! A mindmap on the canvas, with the JSON Canvas file a save would write
 //! beside it.
 //!
-//! The `session` node is an app's own kind: [`SESSION`] paints fields the spec
+//! The `session` node is an app's own kind: [`session_kind`] paints fields the spec
 //! does not name, edits its title in place, and makes a text note under it by
 //! `tab`. The page keeps its root through `with_changes`.
 //!
@@ -11,9 +11,10 @@
 //! is the entry point its chord takes. Copy this file.
 
 use canvas::{
-    Arrange, Canvas, CanvasView, Change,
+    Canvas, CanvasView, Change, Snap, change,
     drag::{self, DragHandler},
-    kind::{self, Chrome, Field, Kind, Sizing},
+    kind::{self, Field, Kind},
+    layout::{self, Layout},
     mindmap,
     model::Node,
 };
@@ -59,16 +60,9 @@ const SOURCE: &str = r##"{
 const ROOT: &str = "root";
 
 /// Installed with `canvas::set_kinds` under `"session"`.
-pub const SESSION: Kind = Kind {
-    render: session,
-    sizing: Sizing::Fixed,
-    chrome: Chrome::Card,
-    edit: Some(Field {
-        read: title,
-        write: set_title,
-    }),
-    child: kind::blank,
-};
+pub fn session_kind() -> Kind {
+    Kind::new(session).edit(Field::new(title, set_title))
+}
 
 fn title(node: &Node) -> String {
     node.extra
@@ -145,6 +139,53 @@ impl DragMode {
     }
 }
 
+/// Who places the nodes, as the toolbar offers it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LayoutMode {
+    Free,
+    Mindmap,
+    Balanced,
+    Down,
+}
+
+impl LayoutMode {
+    const ALL: [(Self, &'static str, &'static [u8], &'static str); 4] = [
+        (
+            Self::Free,
+            "free",
+            icons::glyph::LayoutGrid,
+            "Free — nodes stay where they are put, arrows find the nearest",
+        ),
+        (
+            Self::Mindmap,
+            "mindmap",
+            icons::glyph::ListTree,
+            "Mindmap — the tree grows right",
+        ),
+        (
+            Self::Balanced,
+            "balanced",
+            icons::glyph::Split,
+            "Balanced — the root's branches split both ways",
+        ),
+        (
+            Self::Down,
+            "down",
+            icons::glyph::Network,
+            "Down — the tree grows downward",
+        ),
+    ];
+
+    fn layout(self) -> Layout {
+        match self {
+            Self::Free => layout::FREE,
+            Self::Mindmap => layout::MINDMAP,
+            Self::Balanced => layout::BALANCED,
+            Self::Down => layout::DOWN,
+        }
+    }
+}
+
 /// A new node of the page's two kinds, before the canvas gives it an id and a
 /// place.
 fn fresh(session: bool) -> Node {
@@ -169,6 +210,8 @@ pub struct CanvasDemo {
     view: Entity<CanvasView>,
     scroll: ScrollHandle,
     drag: DragMode,
+    layout: LayoutMode,
+    snap: bool,
 }
 
 impl CanvasDemo {
@@ -177,7 +220,7 @@ impl CanvasDemo {
         let view = cx.new(|cx| {
             CanvasView::new(canvas, cx).with_changes(|_, change, _| match &change {
                 // The page keeps its root.
-                Change::Remove { id } if id == ROOT => None,
+                Change::RemoveNodes { ids } if ids.iter().any(|id| id == ROOT) => None,
                 _ => Some(change),
             })
         });
@@ -186,6 +229,8 @@ impl CanvasDemo {
             view,
             scroll: ScrollHandle::new(),
             drag: DragMode::Move,
+            layout: LayoutMode::Mindmap,
+            snap: false,
         }
     }
 
@@ -201,19 +246,19 @@ impl CanvasDemo {
     fn add(&mut self, session: bool, cx: &mut Context<Self>) {
         self.view.update(cx, |view, cx| {
             let node = fresh(session);
-            let change = match view.selected().map(str::to_owned) {
+            let changes = match view.selected().map(str::to_owned) {
                 Some(parent) => mindmap::child(view.canvas(), &parent, node),
                 None => {
                     let (x, y) = view.center();
                     let at = (x - node.width / 2, y - node.height / 2);
-                    Some(mindmap::root(view.canvas(), node, at))
+                    Some(vec![mindmap::root(view.canvas(), node, at)])
                 }
             };
-            if let Some(change) = change {
-                let id = change.id().to_owned();
-                if view.submit(change, cx) {
-                    view.select(Some(id), cx);
-                }
+            if let Some(changes) = changes
+                && let Some(id) = change::added(&changes).map(str::to_owned)
+                && view.submit(changes, cx)
+            {
+                view.select(Some(id), cx);
             }
         });
     }
@@ -222,7 +267,7 @@ impl CanvasDemo {
         let painter = Painter::of(cx);
         let view = self.view.read(cx);
         let removable = view.selected().is_some_and(|id| id != ROOT);
-        let (auto, zoom) = (view.arrange() == Arrange::Mindmap, view.zoom());
+        let (zoom, can_undo, can_redo) = (view.zoom(), view.can_undo(), view.can_redo());
         let button = |key: &'static str, glyph: &'static [u8]| {
             theme
                 .icon_button(
@@ -285,6 +330,27 @@ impl CanvasDemo {
                     }),
             );
 
+        let history = theme
+            .control_group()
+            .child(
+                button("undo", icons::glyph::Undo2)
+                    .when(!can_undo, |button| button.opacity(0.4))
+                    .tooltip(chord("Undo", Box::new(canvas::keys::Undo)))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.view.update(cx, |view, cx| view.undo(cx));
+                        this.refocus(window, cx);
+                    })),
+            )
+            .child(
+                button("redo", icons::glyph::Redo2)
+                    .when(!can_redo, |button| button.opacity(0.4))
+                    .tooltip(chord("Redo", Box::new(canvas::keys::Redo)))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.view.update(cx, |view, cx| view.redo(cx));
+                        this.refocus(window, cx);
+                    })),
+            );
+
         let drags =
             theme
                 .control_group()
@@ -300,19 +366,38 @@ impl CanvasDemo {
                         }))
                 }));
 
-        let layout = theme.control_group().child(
-            lit(button("auto-layout", icons::glyph::Network), auto)
+        let layouts =
+            theme
+                .control_group()
+                .children(LayoutMode::ALL.map(|(mode, key, glyph, text)| {
+                    lit(button(key, glyph), self.layout == mode)
+                        .tooltip(tip(text))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.layout = mode;
+                            this.view
+                                .update(cx, |view, cx| view.set_layout(mode.layout(), cx));
+                            this.refocus(window, cx);
+                            cx.notify();
+                        }))
+                }));
+
+        let snapping = theme.control_group().child(
+            lit(button("snap", icons::glyph::Grip), self.snap)
                 .tooltip(tip(
-                    "Auto layout — keep the tree arranged. Off, nodes stay where they are",
+                    "Snap — to a grid of 20, and to the lines other nodes share",
                 ))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    let to = if auto {
-                        Arrange::Free
-                    } else {
-                        Arrange::Mindmap
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.snap = !this.snap;
+                    let snap = match this.snap {
+                        true => Snap {
+                            grid: Some(20),
+                            guides: true,
+                        },
+                        false => Snap::default(),
                     };
-                    this.view.update(cx, |view, cx| view.set_arrange(to, cx));
+                    this.view.update(cx, |view, cx| view.set_snap(snap, cx));
                     this.refocus(window, cx);
+                    cx.notify();
                 })),
         );
 
@@ -346,7 +431,7 @@ impl CanvasDemo {
             )
             .child(
                 button("fit", icons::glyph::Scan)
-                    .tooltip(tip("Fit — centre the document again"))
+                    .tooltip(chord("Fit the whole document", Box::new(canvas::keys::Fit)))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.view.update(cx, |view, cx| view.fit(cx));
                         this.refocus(window, cx);
@@ -365,6 +450,7 @@ impl CanvasDemo {
             .border_b_1()
             .border_color(theme.hairline(0.10))
             .child(add)
+            .child(history)
             .child(
                 div()
                     .flex()
@@ -373,7 +459,15 @@ impl CanvasDemo {
                     .child(caption("Drag"))
                     .child(drags),
             )
-            .child(layout)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(caption("Layout"))
+                    .child(layouts),
+            )
+            .child(snapping)
             .child(div().flex_1())
             .child(zooms)
     }
@@ -393,7 +487,27 @@ impl Render for CanvasDemo {
                     .flex()
                     .flex_col()
                     .child(self.toolbar(&theme, cx))
-                    .child(div().flex_1().min_h_0().child(self.view.clone())),
+                    .child(
+                        div()
+                            .relative()
+                            .flex_1()
+                            .min_h_0()
+                            .child(self.view.clone())
+                            .child(
+                                div()
+                                    .absolute()
+                                    .right(px(12.0))
+                                    .bottom(px(12.0))
+                                    .w(px(160.0))
+                                    .h(px(110.0))
+                                    .rounded(px(8.0))
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .bg(theme.surface_card)
+                                    .overflow_hidden()
+                                    .child(canvas::minimap(&self.view, cx)),
+                            ),
+                    ),
             )
             .child(
                 scroll::pane("canvas-json", Axes::Vertical)

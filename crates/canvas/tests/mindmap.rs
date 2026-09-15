@@ -38,10 +38,12 @@ fn at(canvas: &Canvas, id: &str) -> (i64, i64) {
     (node.x, node.y)
 }
 
-fn land(canvas: &mut Canvas, change: Option<Change>) -> String {
-    let change = change.expect("a change");
-    let id = change.id().to_owned();
-    change::apply(canvas, &change);
+fn land(canvas: &mut Canvas, changes: Option<Vec<Change>>) -> String {
+    let changes = changes.expect("a change");
+    let id = change::added(&changes).expect("a node").to_owned();
+    for change in &changes {
+        change::apply(canvas, change);
+    }
     id
 }
 
@@ -102,9 +104,52 @@ fn changes_keep_order_and_ids_apart() {
         mindmap::after_removal(&canvas, "b").as_deref(),
         Some(new.as_str())
     );
-    change::apply(&mut canvas, &Change::Remove { id: "a".into() });
+    let remove = mindmap::remove(&canvas, "a");
+    change::apply(&mut canvas, &remove);
     assert!(canvas.node("a1").is_none());
     assert!(canvas.edges.iter().all(|e| e.to_node != "a1"));
+}
+
+/// root → a → a1, and a cross link from b to a1.
+fn crossed() -> Canvas {
+    let mut canvas = tree();
+    let mut link = Edge::new("x", "b", "a1");
+    link.extra.insert(mindmap::TREE.into(), false.into());
+    canvas.edges.insert(0, link);
+    canvas
+}
+
+#[test]
+fn a_cross_link_is_not_a_branch() {
+    let canvas = crossed();
+    assert_eq!(mindmap::parent(&canvas, "a1"), Some("a"));
+    assert_eq!(mindmap::children(&canvas, "b").count(), 0);
+    let Change::RemoveNodes { ids } = mindmap::remove(&canvas, "b") else {
+        panic!("a removal");
+    };
+    assert_eq!(ids, ["b"]);
+    let cut = Change::RemoveEdges {
+        ids: vec!["e3".into()],
+    };
+    assert_eq!(mindmap::detach(&canvas, &["a1".into()]), Some(cut));
+}
+
+#[test]
+fn removing_a_node_takes_every_edge_touching_it() {
+    let mut canvas = crossed();
+    change::apply(
+        &mut canvas,
+        &Change::RemoveNodes {
+            ids: vec!["a1".into()],
+        },
+    );
+    assert!(canvas.node("a").is_some());
+    assert!(
+        canvas
+            .edges
+            .iter()
+            .all(|e| e.from_node != "a1" && e.to_node != "a1")
+    );
 }
 
 #[test]

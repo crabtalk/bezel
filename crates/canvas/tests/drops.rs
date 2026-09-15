@@ -34,6 +34,7 @@ fn tree() -> Canvas {
 fn drop(handler: DragHandler, canvas: &mut Canvas, id: &str, over: Option<&str>) -> Vec<Change> {
     let gesture = Drag {
         id,
+        with: &[],
         origin: (0, 0),
         delta: (30, 40),
         over,
@@ -95,6 +96,7 @@ fn a_move_answers_what_the_drop_would_do() {
     let canvas = tree();
     let moving = |over| Drag {
         id: "a",
+        with: &[],
         origin: (0, 0),
         delta: (5, 5),
         over,
@@ -103,21 +105,20 @@ fn a_move_answers_what_the_drop_would_do() {
     let intents = |changes: Vec<Change>| -> Vec<Change> {
         changes
             .into_iter()
-            .filter(|change| !matches!(change, Change::Move { .. }))
+            .filter(|change| !matches!(change, Change::MoveNodes { .. }))
             .collect()
     };
-    assert_eq!(
-        intents(drag::reparent(&canvas, &moving(Some("b")))),
-        [Change::Reparent {
-            id: "a".into(),
-            parent: "b".into()
-        }]
+    let cut = || Change::RemoveEdges {
+        ids: vec!["e1".into()],
+    };
+    let hang = intents(drag::reparent(&canvas, &moving(Some("b"))));
+    assert!(
+        matches!(&hang[..], [removed, Change::AddEdge { edge, .. }]
+            if *removed == cut() && (edge.from_node.as_str(), edge.to_node.as_str()) == ("b", "a")),
+        "{hang:?}"
     );
     assert!(intents(drag::reparent(&canvas, &moving(None))).is_empty());
-    assert_eq!(
-        intents(drag::detach(&canvas, &moving(None))),
-        [Change::Detach { id: "a".into() }]
-    );
+    assert_eq!(intents(drag::detach(&canvas, &moving(None))), [cut()]);
     assert!(intents(drag::pin(&canvas, &moving(None))).is_empty());
 }
 
@@ -128,8 +129,9 @@ fn node_at_skips_the_held_branch() {
         let (x, y) = at(&canvas, id);
         (x + 10, y + 10)
     };
-    assert_eq!(mindmap::node_at(&canvas, inside("a1"), "a"), None);
-    assert_eq!(mindmap::node_at(&canvas, inside("b"), "a"), Some("b"));
+    let held = ["a".to_owned()];
+    assert_eq!(mindmap::node_at(&canvas, inside("a1"), &held), None);
+    assert_eq!(mindmap::node_at(&canvas, inside("b"), &held), Some("b"));
 }
 
 #[test]
