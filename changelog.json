@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.1.15",
+    "date": "2026-09-15",
+    "summary": "A pluggable mindmap canvas over JSON Canvas, scrollbar overlays for either axis, and line numbers in markdown source.",
+    "new": [
+      "`bezel-canvas` is a mindmap canvas over JSON Canvas 1.0: pan, zoom, keyboard editing and editing in place, with the fields the spec does not name kept and written back. `CanvasView` is the surface; `model`, `mindmap`, `change` and `drag` are pure.",
+      "`canvas::set_kinds` gives each node `type` a `Kind`: how it renders, whether its box is `Fixed` or `Grows`, its `Chrome`, which field editing changes, and what `tab` makes under it. The spec's four ship as `kind::TEXT`, `FILE`, `LINK` and `GROUP`, and `canvas::text_style` scales type with the zoom.",
+      "Every canvas edit is a `Change`. `CanvasView::with_changes` sees each before it lands and can refuse or rewrite it, `submit` sends an app's own through the same filter, and `CanvasEvent::Changed` carries what landed.",
+      "`CanvasView::with_drag` picks what dropping a node does — `drag::pin`, `reparent`, `detach`, or an app's own. A held node previews its drop: a ring on the new parent, the connector it would make, the ones it would cut. Nodes a layout moves glide there over the new `motion::LAYOUT`.",
+      "`scroll::Overlay` is a stateful scrollbar for either axis, laid over its pane `BAR_INSET` from the edges, and `scroll::Viewport` is a scroll container that owns its handle and overlay. `scroll::set_visibility` picks `Scrolling`, `Always` or `Never` for every default overlay, markdown code blocks and tables included.",
+      "The markdown source view numbers its lines, and the gutter widens when the count gains a digit. `markdown::set_source_style` returns a `SourceStyle` per theme for the minimum digits, the gap and the colour, or turns the numbers off."
+    ]
+  },
+  {
     "version": "0.1.14",
     "date": "2026-09-15",
     "summary": "A pane scrolls under a drag held at its edge, and the editor and terminal resize live.",
