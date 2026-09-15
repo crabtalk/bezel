@@ -5,7 +5,8 @@
 //! State stays with the app: a renderer looks its view up by the node's id and
 //! hands the entity back.
 
-use gpui::{AnyElement, App, Global, Window};
+use gpui::{AnyElement, App, Global, Styled, Window, px};
+use theme::TextStyle;
 
 use crate::model::Node;
 
@@ -20,6 +21,14 @@ pub type NodeRenderer = fn(node: &Node, zoom: f32, &mut Window, &mut App) -> Opt
 struct Installed(NodeRenderer);
 
 impl Global for Installed {}
+
+/// Text in `style` at `zoom`: size, leading and weight together. Scaling the
+/// size alone keeps the full leading, and the text spills out of its node.
+pub fn text_style<E: Styled>(el: E, style: TextStyle, zoom: f32) -> E {
+    el.text_size(px(style.painted() * zoom))
+        .line_height(px(style.painted_line_height() * zoom))
+        .font_weight(style.weight())
+}
 
 /// `canvas::set_node_renderer(cx, my_nodes)` — call once at boot.
 pub fn set_node_renderer(cx: &mut App, renderer: NodeRenderer) {

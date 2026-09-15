@@ -18,5 +18,5 @@ mod node;
 mod view;
 
 pub use model::Canvas;
-pub use node::{NodeRenderer, set_node_renderer};
+pub use node::{NodeRenderer, set_node_renderer, text_style};
 pub use view::{Arrange, CONTEXT, CanvasEvent, CanvasView, init, keys};

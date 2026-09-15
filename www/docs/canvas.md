@@ -29,7 +29,7 @@ fn my_nodes(node: &Node, zoom: f32, window: &mut Window, cx: &mut App) -> Option
 }
 ```
 
-State stays with the app: look the view up by the node's id. gpui cannot transform an element, so `zoom` is a scale the content applies itself — `Typography::scaled` for text.
+State stays with the app: look the view up by the node's id. gpui cannot transform an element, so `zoom` is a scale the content applies itself — `canvas::text_style(div(), TextStyle::Callout, zoom)` sets size, leading and weight together, and `Typography::scaled` does a whole document. A node of fixed size clips what its renderer paints.
 
 ## Keys
 

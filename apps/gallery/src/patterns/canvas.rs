@@ -50,14 +50,12 @@ pub fn render(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> Option<An
             .flex()
             .flex_col()
             .child(
-                div()
-                    .text_size(px(TextStyle::Headline.painted() * zoom))
+                canvas::text_style(div(), TextStyle::Headline, zoom)
                     .text_color(theme.text)
                     .child(title),
             )
             .child(
-                div()
-                    .text_size(px(TextStyle::Callout.painted() * zoom))
+                canvas::text_style(div(), TextStyle::Callout, zoom)
                     .text_color(theme.text_muted)
                     .child(format!("Session · {turns} turns")),
             )

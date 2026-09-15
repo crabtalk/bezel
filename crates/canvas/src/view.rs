@@ -12,10 +12,10 @@ use std::{
 
 use editor::{Chrome, Editor, EditorEvent};
 use gpui::{
-    AnyElement, App, Bounds, Context, DispatchPhase, ElementId, Entity, EventEmitter, FocusHandle,
-    Focusable, Hsla, KeyContext, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PathBuilder, PinchEvent, Pixels, Point, Render, Rgba, ScrollWheelEvent, Size, Subscription,
-    WeakEntity, Window, canvas as painter, div, point, prelude::*, px,
+    AnyElement, App, Bounds, Context, CursorStyle, DispatchPhase, ElementId, Entity, EventEmitter,
+    FocusHandle, Focusable, Hsla, KeyContext, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, Rgba, ScrollWheelEvent, Size,
+    Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px,
 };
 use markdown::{Editing, Marks, Typography};
 use theme::{TextStyle, Theme};
@@ -612,6 +612,8 @@ impl CanvasView {
                 .unwrap_or_else(|| builtin(node, z, theme, window, cx)),
         };
         let grows = node.kind == TEXT;
+        // A node being typed in keeps the editor's own cursor.
+        let draggable = !self.editing.as_ref().is_some_and(|s| s.id == node.id);
         let selected = self.selected.as_deref() == Some(node.id.as_str());
         let border = node
             .color
@@ -639,7 +641,17 @@ impl CanvasView {
             .border_1()
             .border_color(border)
             .when(node.kind != GROUP, |d| d.bg(theme.surface_card))
-            .child(content)
+            .when(draggable, |d| d.cursor_grab())
+            // A box of fixed size keeps whatever a renderer paints inside it.
+            .child(if grows {
+                content
+            } else {
+                div()
+                    .size_full()
+                    .overflow_hidden()
+                    .child(content)
+                    .into_any_element()
+            })
             .when(grows, |d| {
                 d.child(
                     painter(
@@ -684,6 +696,7 @@ impl CanvasView {
     fn edge_layer(&self, theme: &Theme, view: WeakEntity<Self>) -> impl IntoElement + use<> {
         let (z, pan) = (self.zoom, self.pan);
         let grabbing = self.grab.is_some();
+        let holding = matches!(self.grab, Some(Grab::Node { .. }));
         let curves: Vec<Curve> = self
             .canvas
             .edges
@@ -723,6 +736,11 @@ impl CanvasView {
                     if curve.from_arrow {
                         arrow(window, p0, curve.from_out, ARROW * z, curve.color);
                     }
+                }
+                // Window-wide, so the hand stays closed wherever the pointer
+                // carries the node.
+                if holding {
+                    window.set_window_cursor_style(CursorStyle::ClosedHand);
                 }
                 // A held press follows the pointer past the view's edge, so it
                 // listens to the window rather than to this element.
@@ -814,9 +832,7 @@ impl Render for CanvasView {
 /// What a node paints when no renderer claims it.
 fn builtin(node: &Node, zoom: f32, theme: &Theme, window: &mut Window, cx: &mut App) -> AnyElement {
     let label = |text: String, color: Hsla| {
-        div()
-            .text_size(px(TextStyle::Callout.painted() * zoom))
-            .line_height(px(TextStyle::Callout.painted_line_height() * zoom))
+        crate::node::text_style(div(), TextStyle::Callout, zoom)
             .text_color(color)
             .child(text)
             .into_any_element()
