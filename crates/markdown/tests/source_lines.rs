@@ -69,7 +69,7 @@ fn wrapped_and_empty_lines_keep_their_caret_and_hit_positions(cx: &mut TestAppCo
 
 #[gpui::test]
 fn gutter_grows_when_line_numbers_gain_a_digit(cx: &mut TestAppContext) {
-    let (page, mut cx) = open(&vec!["x"; 9].join("\n"), cx);
+    let (page, mut cx) = open(&["x"; 9].join("\n"), cx);
     let before = cx.update(|_, cx| {
         page.read(cx)
             .layouts
