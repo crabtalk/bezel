@@ -1,5 +1,5 @@
 use canvas::{
-    Canvas,
+    Canvas, Change, change,
     mindmap::{self, GAP_X, GAP_Y, Toward},
     model::{Edge, Node, TEXT},
 };
@@ -38,6 +38,13 @@ fn at(canvas: &Canvas, id: &str) -> (i64, i64) {
     (node.x, node.y)
 }
 
+fn land(canvas: &mut Canvas, change: Option<Change>) -> String {
+    let change = change.expect("a change");
+    let id = change.id().to_owned();
+    change::apply(canvas, &change);
+    id
+}
+
 #[test]
 fn children_sit_in_a_column_centred_on_the_parent() {
     let mut canvas = tree();
@@ -74,20 +81,28 @@ fn a_cycle_does_not_loop() {
 }
 
 #[test]
-fn edits_keep_order_and_select_sensibly() {
+fn changes_keep_order_and_ids_apart() {
     let mut canvas = tree();
-    let new = mindmap::add_sibling(&mut canvas, "a").unwrap();
+    let change = mindmap::sibling(&canvas, "a", node("", 40));
+    let new = land(&mut canvas, change);
     let order: Vec<&str> = mindmap::children(&canvas, "root").collect();
     assert_eq!(order, ["a", new.as_str(), "b"]);
 
-    let child = mindmap::add_child(&mut canvas, "b").unwrap();
+    let change = mindmap::child(&canvas, "b", node("", 40));
+    let child = land(&mut canvas, change);
     assert_eq!(mindmap::parent(&canvas, &child), Some("b"));
-    assert!(mindmap::add_sibling(&mut canvas, "root").is_none());
+    assert!(mindmap::sibling(&canvas, "root", node("", 40)).is_none());
+    assert!(canvas.edges.iter().all(|e| canvas.node(&e.id).is_none()));
 
     assert_eq!(
-        mindmap::remove(&mut canvas, "a").as_deref(),
+        mindmap::after_removal(&canvas, "a").as_deref(),
         Some(new.as_str())
     );
+    assert_eq!(
+        mindmap::after_removal(&canvas, "b").as_deref(),
+        Some(new.as_str())
+    );
+    change::apply(&mut canvas, &Change::Remove { id: "a".into() });
     assert!(canvas.node("a1").is_none());
     assert!(canvas.edges.iter().all(|e| e.to_node != "a1"));
 }

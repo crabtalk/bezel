@@ -10,21 +10,21 @@ use std::{
     rc::Rc,
 };
 
-use editor::{Chrome, Editor, EditorEvent};
+use editor::{Chrome as EditorChrome, Editor, EditorEvent};
 use gpui::{
     AnyElement, App, Bounds, Context, CursorStyle, DispatchPhase, ElementId, Entity, EventEmitter,
     FocusHandle, Focusable, Hsla, KeyContext, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, Rgba, ScrollWheelEvent, Size,
     Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px,
 };
-use markdown::{Editing, Marks, Typography};
 use theme::{TextStyle, Theme};
 
 use crate::{
+    change::{self, Change},
     drag::{self, Drag, DragHandler, Phase},
+    kind::{self, Chrome, Sizing},
     mindmap::{self, Toward},
-    model::{Canvas, Edge, End, FILE, GROUP, LINK, Node, Side, TEXT},
-    node,
+    model::{self, Canvas, Edge, End, Node, Side},
 };
 
 /// The key context the canvas binds in.
@@ -115,10 +115,13 @@ pub fn init(cx: &mut App) {
     cx.bind_keys(keys::bindings());
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+// A change is handed on and dropped, never kept in bulk; boxing its node would
+// only put a `Box::new` in every filter.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CanvasEvent {
-    /// The document is different: a node added, removed or retyped.
-    Changed,
+    /// A change landed in the document.
+    Changed(Change),
     Selected(Option<String>),
 }
 
@@ -132,6 +135,9 @@ pub enum Arrange {
     Free,
 }
 
+/// Decides each change before it lands: it, another, or `None` to refuse.
+type Filter = Rc<dyn Fn(&Canvas, Change, &mut App) -> Option<Change>>;
+
 /// What a held button is moving.
 enum Grab {
     Pan(Point<Pixels>),
@@ -139,6 +145,8 @@ enum Grab {
         id: String,
         from: Point<Pixels>,
         origin: (i64, i64),
+        /// Whether it was pinned before the press, to put back on a drop.
+        pinned: bool,
         moved: bool,
     },
 }
@@ -153,6 +161,7 @@ pub struct CanvasView {
     canvas: Canvas,
     arrange: Arrange,
     drag: DragHandler,
+    filter: Option<Filter>,
     focus: FocusHandle,
     selected: Option<String>,
     editing: Option<Session>,
@@ -166,7 +175,7 @@ pub struct CanvasView {
     /// The reader has panned or zoomed, so a resize no longer re-centres.
     touched: bool,
     viewport: Rc<Cell<Option<Bounds<Pixels>>>>,
-    /// Text node heights read at prepaint, in canvas units.
+    /// Growing node heights read at prepaint, in canvas units.
     measured: Rc<RefCell<HashMap<String, i64>>>,
 }
 
@@ -184,6 +193,7 @@ impl CanvasView {
             canvas,
             arrange: Arrange::default(),
             drag: drag::pin,
+            filter: None,
             focus: cx.focus_handle(),
             selected: None,
             editing: None,
@@ -209,6 +219,17 @@ impl CanvasView {
         self
     }
 
+    /// Sees every change the canvas is about to make, and answers what lands:
+    /// the change, another, or `None`. Called inside this view's update, so
+    /// reach the view itself through `cx.defer`.
+    pub fn with_changes(
+        mut self,
+        filter: impl Fn(&Canvas, Change, &mut App) -> Option<Change> + 'static,
+    ) -> Self {
+        self.filter = Some(Rc::new(filter));
+        self
+    }
+
     /// The document as a save would write it.
     pub fn canvas(&self) -> &Canvas {
         &self.canvas
@@ -223,6 +244,26 @@ impl CanvasView {
             self.select(None, cx);
         }
         self.stale = true;
+        cx.notify();
+    }
+
+    /// Land a change of the app's own, past the filter.
+    pub fn apply(&mut self, change: Change, cx: &mut Context<Self>) {
+        change::apply(&mut self.canvas, &change);
+        if self
+            .editing
+            .as_ref()
+            .is_some_and(|s| self.canvas.node(&s.id).is_none())
+        {
+            self.editing = None;
+        }
+        if let Some(id) = &self.selected
+            && self.canvas.node(id).is_none()
+        {
+            self.select(None, cx);
+        }
+        self.stale = true;
+        cx.emit(CanvasEvent::Changed(change));
         cx.notify();
     }
 
@@ -293,17 +334,33 @@ impl CanvasView {
         cx.notify();
     }
 
-    fn changed(&mut self, cx: &mut Context<Self>) {
-        self.stale = true;
-        cx.emit(CanvasEvent::Changed);
-        cx.notify();
+    /// Hand a change of the canvas's own to the filter, and land what it
+    /// answers. `false` when it was refused.
+    fn submit(&mut self, change: Change, cx: &mut Context<Self>) -> bool {
+        let change = match self.filter.clone() {
+            Some(filter) => match filter(&self.canvas, change, cx) {
+                Some(change) => change,
+                None => return false,
+            },
+            None => change,
+        };
+        self.apply(change, cx);
+        true
     }
 
-    fn added(&mut self, id: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(id) = id else { return };
-        self.changed(cx);
-        self.select(Some(id.clone()), cx);
-        self.edit(id, window, cx);
+    /// What `tab` makes under `parent`, from its kind.
+    fn template(&self, parent: &str, cx: &App) -> Option<Node> {
+        let parent = self.canvas.node(parent)?;
+        Some((kind::kind(cx, &parent.kind).child)(parent))
+    }
+
+    fn added(&mut self, change: Option<Change>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(change) = change else { return };
+        let id = change.id().to_owned();
+        if self.submit(change, cx) && self.canvas.node(&id).is_some() {
+            self.select(Some(id.clone()), cx);
+            self.edit(id, window, cx);
+        }
     }
 
     fn add_child(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -313,11 +370,16 @@ impl CanvasView {
                 .next()
                 .map(|root| root.id.clone())
         });
-        let id = match parent {
-            Some(parent) => mindmap::add_child(&mut self.canvas, &parent),
-            None => Some(mindmap::add_root(&mut self.canvas, 0, 0)),
+        let change = match parent {
+            Some(parent) => self
+                .template(&parent, cx)
+                .and_then(|node| mindmap::child(&self.canvas, &parent, node)),
+            None => {
+                let node = (kind::kind(cx, model::TEXT).child)(&Node::default());
+                Some(mindmap::root(&self.canvas, node, (0, 0)))
+            }
         };
-        self.added(id, window, cx);
+        self.added(change, window, cx);
     }
 
     /// A root has no siblings, so Enter on one adds a child.
@@ -325,18 +387,25 @@ impl CanvasView {
         let Some(of) = self.selected.clone() else {
             return;
         };
-        let id = mindmap::add_sibling(&mut self.canvas, &of)
-            .or_else(|| mindmap::add_child(&mut self.canvas, &of));
-        self.added(id, window, cx);
+        let change = match mindmap::parent(&self.canvas, &of).map(str::to_owned) {
+            Some(parent) => self
+                .template(&parent, cx)
+                .and_then(|node| mindmap::sibling(&self.canvas, &of, node)),
+            None => self
+                .template(&of, cx)
+                .and_then(|node| mindmap::child(&self.canvas, &of, node)),
+        };
+        self.added(change, window, cx);
     }
 
     fn remove(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.selected.clone() else {
             return;
         };
-        let next = mindmap::remove(&mut self.canvas, &id);
-        self.changed(cx);
-        self.select(next, cx);
+        let next = mindmap::after_removal(&self.canvas, &id);
+        if self.submit(Change::Remove { id }, cx) {
+            self.select(next.filter(|next| self.canvas.node(next).is_some()), cx);
+        }
     }
 
     fn step(&mut self, toward: Toward, cx: &mut Context<Self>) {
@@ -351,14 +420,17 @@ impl CanvasView {
 
     fn edit(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         self.stop_editing(window, cx);
-        let Some(node) = self.canvas.node(&id).filter(|n| n.kind == TEXT) else {
+        let Some(node) = self.canvas.node(&id) else {
             return;
         };
-        let text = node.text.clone().unwrap_or_default();
+        let Some(field) = kind::kind(cx, &node.kind).edit else {
+            return;
+        };
+        let value = (field.read)(node);
         let size = TextStyle::Body.painted() * self.zoom;
         let editor = cx.new(|cx| {
-            Editor::new(&text, cx)
-                .with_chrome(Chrome {
+            Editor::new(&value, cx)
+                .with_chrome(EditorChrome {
                     handle: false,
                     slash: false,
                     language: false,
@@ -366,18 +438,20 @@ impl CanvasView {
                 })
                 .with_text_size(size)
         });
-        let changes = cx.subscribe(&editor, |this, editor, event, cx| {
+        let changes = cx.subscribe(&editor, move |this, editor, event, cx| {
             if *event != EditorEvent::Changed {
                 return;
             }
-            let source = editor.read(cx).source();
-            if let Some(session) = &this.editing
-                && let Some(node) = this.canvas.node_mut(&session.id)
-            {
-                node.text = Some(source);
-                cx.emit(CanvasEvent::Changed);
-                cx.notify();
-            }
+            let Some(mut node) = this
+                .editing
+                .as_ref()
+                .and_then(|s| this.canvas.node(&s.id))
+                .cloned()
+            else {
+                return;
+            };
+            (field.write)(&mut node, editor.read(cx).source());
+            this.submit(Change::Update { node }, cx);
         });
         window.focus(&editor.focus_handle(cx), cx);
         self.editing = Some(Session {
@@ -427,6 +501,7 @@ impl CanvasView {
         } else if let Some(node) = self.canvas.node(&id) {
             self.grab = Some(Grab::Node {
                 origin: (node.x, node.y),
+                pinned: mindmap::is_pinned(node),
                 id,
                 from: event.position,
                 moved: false,
@@ -456,32 +531,50 @@ impl CanvasView {
                     return;
                 }
                 *moved = true;
-                self.carry(event.position, Phase::Move);
+                // A preview: applied as it comes, past the filter.
+                for change in self.gesture(event.position, Phase::Move) {
+                    change::apply(&mut self.canvas, &change);
+                }
+                self.stale = true;
                 cx.notify();
             }
         }
     }
 
-    /// The button came up: a node that moved is dropped, and the document
-    /// changed.
+    /// The button came up: a node that moved is put back, and its drop is
+    /// submitted.
     fn release(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
         if let Some(Grab::Node { moved: true, .. }) = self.grab {
-            self.carry(position, Phase::Drop);
-            cx.emit(CanvasEvent::Changed);
+            let drop = self.gesture(position, Phase::Drop);
+            if let Some(Grab::Node {
+                id, origin, pinned, ..
+            }) = &self.grab
+                && let Some(node) = self.canvas.node_mut(id)
+            {
+                (node.x, node.y) = *origin;
+                if !*pinned {
+                    node.extra.remove(mindmap::PINNED);
+                }
+            }
+            self.grab = None;
+            for change in drop {
+                self.submit(change, cx);
+            }
+            self.stale = true;
             cx.notify();
         }
         self.grab = None;
     }
 
-    /// Hand the held node's gesture at `position` to the drag handler.
-    fn carry(&mut self, position: Point<Pixels>, phase: Phase) {
+    /// The drag handler's answer to the held node at `position`.
+    fn gesture(&self, position: Point<Pixels>, phase: Phase) -> Vec<Change> {
         let Some(Grab::Node {
             id, from, origin, ..
         }) = &self.grab
         else {
-            return;
+            return Vec::new();
         };
-        let (id, origin, zoom) = (id.clone(), *origin, self.zoom);
+        let zoom = self.zoom;
         let delta = (
             ((position.x - from.x).as_f32() / zoom).round() as i64,
             ((position.y - from.y).as_f32() / zoom).round() as i64,
@@ -491,16 +584,14 @@ impl CanvasView {
             ((local.x - self.pan.x) / zoom).round() as i64,
             ((local.y - self.pan.y) / zoom).round() as i64,
         );
-        let over = mindmap::node_at(&self.canvas, pointer, &id).map(str::to_owned);
         let gesture = Drag {
-            id: &id,
-            origin,
+            id,
+            origin: *origin,
             delta,
-            over: over.as_deref(),
+            over: mindmap::node_at(&self.canvas, pointer, id),
             phase,
         };
-        (self.drag)(&mut self.canvas, &gesture);
-        self.stale = true;
+        (self.drag)(&self.canvas, &gesture)
     }
 
     fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -606,14 +697,15 @@ impl CanvasView {
                 return None;
             }
         }
-        let content = match self.editing.as_ref().filter(|s| s.id == node.id) {
-            Some(session) => session.editor.clone().into_any_element(),
-            None => node::render(node, z, window, cx)
-                .unwrap_or_else(|| builtin(node, z, theme, window, cx)),
-        };
-        let grows = node.kind == TEXT;
+        let kind = kind::kind(cx, &node.kind);
+        let editing = self.editing.as_ref().filter(|s| s.id == node.id);
         // A node being typed in keeps the editor's own cursor.
-        let draggable = !self.editing.as_ref().is_some_and(|s| s.id == node.id);
+        let draggable = editing.is_none();
+        let content = match editing {
+            Some(session) => session.editor.clone().into_any_element(),
+            None => (kind.render)(node, z, window, cx),
+        };
+        let grows = kind.sizing == Sizing::Grows;
         let selected = self.selected.as_deref() == Some(node.id.as_str());
         let border = node
             .color
@@ -636,11 +728,16 @@ impl CanvasView {
                     d.h(px(h))
                 }
             })
-            .p(px(PAD * z))
             .rounded(px(RADIUS * z))
-            .border_1()
-            .border_color(border)
-            .when(node.kind != GROUP, |d| d.bg(theme.surface_card))
+            .map(|d| match kind.chrome {
+                Chrome::Card => d
+                    .p(px(PAD * z))
+                    .border_1()
+                    .border_color(border)
+                    .bg(theme.surface_card),
+                Chrome::Outline => d.p(px(PAD * z)).border_1().border_color(border),
+                Chrome::Bare => d,
+            })
             .when(draggable, |d| d.cursor_grab())
             // A box of fixed size keeps whatever a renderer paints inside it.
             .child(if grows {
@@ -826,38 +923,6 @@ impl Render for CanvasView {
             .on_pinch(cx.listener(Self::pinch))
             .child(edges)
             .children(nodes)
-    }
-}
-
-/// What a node paints when no renderer claims it.
-fn builtin(node: &Node, zoom: f32, theme: &Theme, window: &mut Window, cx: &mut App) -> AnyElement {
-    let label = |text: String, color: Hsla| {
-        crate::node::text_style(div(), TextStyle::Callout, zoom)
-            .text_color(color)
-            .child(text)
-            .into_any_element()
-    };
-    match node.kind.as_str() {
-        TEXT => {
-            let doc =
-                markdown::parse_with(node.text.as_deref().unwrap_or_default(), &Marks::of(cx));
-            let editing = Editing {
-                typography: Some(Typography::of(cx).scaled(zoom)),
-                ..Editing::default()
-            };
-            markdown::render_with(&doc, editing, window, cx)
-        }
-        LINK => label(node.url.clone().unwrap_or_default(), theme.accent),
-        FILE => label(
-            format!(
-                "{}{}",
-                node.file.as_deref().unwrap_or_default(),
-                node.subpath.as_deref().unwrap_or_default()
-            ),
-            theme.text,
-        ),
-        GROUP => label(node.label.clone().unwrap_or_default(), theme.text_muted),
-        other => label(other.to_owned(), theme.text_faint),
     }
 }
 

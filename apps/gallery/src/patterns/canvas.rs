@@ -1,11 +1,16 @@
 //! A mindmap on the canvas, with the JSON Canvas file a save would write
 //! beside it.
 //!
-//! The `session` node is an app's own kind: [`render`] is installed with
-//! `canvas::set_node_renderer` and paints it from a field the spec does not
-//! name. Copy this file.
+//! The `session` node is an app's own kind: [`SESSION`] paints fields the spec
+//! does not name, edits its title in place, and makes a text note under it by
+//! `tab`. The page keeps its roots through `with_changes`. Copy this file.
 
-use canvas::{Canvas, CanvasView, model::Node};
+use canvas::{
+    Canvas, CanvasView, Change,
+    kind::{self, Chrome, Field, Kind, Sizing},
+    mindmap,
+    model::Node,
+};
 use gpui::{AnyElement, App, Context, Entity, Render, ScrollHandle, Window, div, prelude::*, px};
 use theme::{TextStyle, Theme, Typeset};
 use ui::scroll::{self, Axes};
@@ -36,31 +41,51 @@ const SOURCE: &str = r##"{
   ]
 }"##;
 
-/// Paints `session` nodes; every other kind falls through to the canvas.
-pub fn render(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> Option<AnyElement> {
-    if node.kind != "session" {
-        return None;
-    }
+/// Installed with `canvas::set_kinds` under `"session"`.
+pub const SESSION: Kind = Kind {
+    render: session,
+    sizing: Sizing::Fixed,
+    chrome: Chrome::Card,
+    edit: Some(Field {
+        read: title,
+        write: set_title,
+    }),
+    child: kind::blank,
+};
+
+fn title(node: &Node) -> String {
+    node.extra
+        .get("title")
+        .and_then(|title| title.as_str())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn set_title(node: &mut Node, title: String) {
+    node.extra.insert("title".into(), title.into());
+}
+
+fn session(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> AnyElement {
     let theme = Theme::of(cx);
-    let field = |key: &str| node.extra.get(key).cloned().unwrap_or_default();
-    let title = field("title").as_str().unwrap_or_default().to_owned();
-    let turns = field("turns").as_u64().unwrap_or_default();
-    Some(
-        div()
-            .flex()
-            .flex_col()
-            .child(
-                canvas::text_style(div(), TextStyle::Headline, zoom)
-                    .text_color(theme.text)
-                    .child(title),
-            )
-            .child(
-                canvas::text_style(div(), TextStyle::Callout, zoom)
-                    .text_color(theme.text_muted)
-                    .child(format!("Session · {turns} turns")),
-            )
-            .into_any_element(),
-    )
+    let turns = node
+        .extra
+        .get("turns")
+        .and_then(|turns| turns.as_u64())
+        .unwrap_or_default();
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            canvas::text_style(div(), TextStyle::Headline, zoom)
+                .text_color(theme.text)
+                .child(title(node)),
+        )
+        .child(
+            canvas::text_style(div(), TextStyle::Callout, zoom)
+                .text_color(theme.text_muted)
+                .child(format!("Session · {turns} turns")),
+        )
+        .into_any_element()
 }
 
 pub struct CanvasDemo {
@@ -71,7 +96,13 @@ pub struct CanvasDemo {
 impl CanvasDemo {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let canvas = Canvas::parse(SOURCE).expect("the sample is a canvas");
-        let view = cx.new(|cx| CanvasView::new(canvas, cx));
+        let view = cx.new(|cx| {
+            CanvasView::new(canvas, cx).with_changes(|canvas, change, _| match &change {
+                // The page keeps its roots.
+                Change::Remove { id } if mindmap::parent(canvas, id).is_none() => None,
+                _ => Some(change),
+            })
+        });
         cx.observe(&view, |_, _, cx| cx.notify()).detach();
         Self {
             view,

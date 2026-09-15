@@ -80,7 +80,10 @@ pub fn init(cx: &mut App) {
     input::init(cx);
     editor::init(cx);
     canvas::init(cx);
-    canvas::set_node_renderer(cx, patterns::canvas::render);
+    canvas::set_kinds(
+        cx,
+        canvas::Kinds::new().with("session", patterns::canvas::SESSION),
+    );
     palette::init(cx);
     combobox::init(cx);
     date::init(cx);

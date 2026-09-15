@@ -1,6 +1,6 @@
 use canvas::{
-    Canvas,
-    drag::{self, Drag, Phase},
+    Canvas, Change, change,
+    drag::{self, Drag, DragHandler, Phase},
     mindmap::{self, GAP_X},
     model::{Edge, Node, TEXT},
 };
@@ -30,14 +30,20 @@ fn tree() -> Canvas {
     canvas
 }
 
-fn dropped<'a>(id: &'a str, over: Option<&'a str>) -> Drag<'a> {
-    Drag {
+/// Drop `id` over `over`, 30 right and 40 down of the origin.
+fn drop(handler: DragHandler, canvas: &mut Canvas, id: &str, over: Option<&str>) -> Vec<Change> {
+    let gesture = Drag {
         id,
         origin: (0, 0),
         delta: (30, 40),
         over,
         phase: Phase::Drop,
+    };
+    let changes = handler(canvas, &gesture);
+    for change in &changes {
+        change::apply(canvas, change);
     }
+    changes
 }
 
 fn at(canvas: &Canvas, id: &str) -> (i64, i64) {
@@ -48,7 +54,7 @@ fn at(canvas: &Canvas, id: &str) -> (i64, i64) {
 #[test]
 fn pin_keeps_the_drop() {
     let mut canvas = tree();
-    drag::pin(&mut canvas, &dropped("a", None));
+    drop(drag::pin, &mut canvas, "a", None);
     assert_eq!(at(&canvas, "a"), (30, 40));
     assert!(mindmap::is_pinned(canvas.node("a").unwrap()));
 }
@@ -56,7 +62,7 @@ fn pin_keeps_the_drop() {
 #[test]
 fn reparent_moves_the_edge_and_the_branch_with_it() {
     let mut canvas = tree();
-    drag::reparent(&mut canvas, &dropped("a", Some("b")));
+    drop(drag::reparent, &mut canvas, "a", Some("b"));
     assert_eq!(mindmap::parent(&canvas, "a"), Some("b"));
     assert_eq!(mindmap::parent(&canvas, "a1"), Some("a"));
 }
@@ -64,14 +70,20 @@ fn reparent_moves_the_edge_and_the_branch_with_it() {
 #[test]
 fn reparent_refuses_its_own_branch() {
     let mut canvas = tree();
-    drag::reparent(&mut canvas, &dropped("a", Some("a1")));
+    drop(drag::reparent, &mut canvas, "a", Some("a1"));
     assert_eq!(mindmap::parent(&canvas, "a"), Some("root"));
+}
+
+#[test]
+fn reparent_over_nothing_changes_nothing() {
+    let mut canvas = tree();
+    assert!(drop(drag::reparent, &mut canvas, "a", None).is_empty());
 }
 
 #[test]
 fn detach_cuts_the_edges_in() {
     let mut canvas = tree();
-    drag::detach(&mut canvas, &dropped("a", Some("b")));
+    drop(drag::detach, &mut canvas, "a", Some("b"));
     assert_eq!(mindmap::parent(&canvas, "a"), None);
     assert_eq!(mindmap::parent(&canvas, "a1"), Some("a"));
     mindmap::layout(&mut canvas);

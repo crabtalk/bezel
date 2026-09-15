@@ -123,6 +123,19 @@ impl Canvas {
         self.nodes.iter_mut().find(|node| node.id == id)
     }
 
+    /// `n` ids no node or edge holds, distinct from each other.
+    pub fn mint_n(&self, n: usize) -> Vec<String> {
+        let taken = |id: &str| {
+            self.nodes.iter().any(|node| node.id == id)
+                || self.edges.iter().any(|edge| edge.id == id)
+        };
+        (self.nodes.len() + self.edges.len()..)
+            .map(|n| format!("{n:016x}"))
+            .filter(|id| !taken(id))
+            .take(n)
+            .collect()
+    }
+
     /// An id no node or edge holds, in the 16 hex digits other writers use.
     pub fn mint(&self) -> String {
         let taken = |id: &str| {

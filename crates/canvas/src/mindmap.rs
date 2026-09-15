@@ -8,7 +8,10 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use crate::model::{Canvas, Edge, End, GROUP, Node, Side, TEXT};
+use crate::{
+    change::Change,
+    model::{Canvas, Edge, End, GROUP, Node, Side},
+};
 
 /// Between a parent's right side and its children's left.
 pub const GAP_X: i64 = 64;
@@ -112,43 +115,63 @@ pub fn layout_holding(canvas: &mut Canvas, held: Option<&str>) {
     }
 }
 
-/// A new empty text node with no parent.
-pub fn add_root(canvas: &mut Canvas, x: i64, y: i64) -> String {
-    push_node(canvas, x, y)
+/// `node` as a root at `at`, under an id nothing holds.
+pub fn root(canvas: &Canvas, mut node: Node, at: (i64, i64)) -> Change {
+    node.id = canvas.mint();
+    (node.x, node.y) = at;
+    Change::Add {
+        node,
+        edge: None,
+        index: None,
+    }
 }
 
-/// A new empty text node as `parent`'s last child, beside it.
+/// `node` as `parent`'s last child, beside it.
 ///
-/// Edits place and do not lay out: a free canvas keeps every other node where
-/// it was, and a mindmap calls [`layout`] after.
-pub fn add_child(canvas: &mut Canvas, parent: &str) -> Option<String> {
+/// Changes place and do not lay out: a free canvas keeps every other node where
+/// it was, and a mindmap lays out after.
+pub fn child(canvas: &Canvas, parent: &str, mut node: Node) -> Option<Change> {
     let at = canvas.node(parent)?;
-    let (x, y) = (at.x + at.width + GAP_X, at.y);
-    let id = push_node(canvas, x, y);
-    let edge = canvas.mint();
-    canvas.edges.push(tree_edge(edge, parent, &id));
-    Some(id)
+    let [id, edge] = <[String; 2]>::try_from(canvas.mint_n(2)).ok()?;
+    node.id = id;
+    (node.x, node.y) = (at.x + at.width + GAP_X, at.y);
+    let edge = tree_edge(edge, parent, &node.id);
+    Some(Change::Add {
+        node,
+        edge: Some(edge),
+        index: None,
+    })
 }
 
-/// A new empty text node right after `of`, under the same parent.
-pub fn add_sibling(canvas: &mut Canvas, of: &str) -> Option<String> {
-    let parent = parent(canvas, of)?.to_owned();
-    let at = canvas.edges.iter().position(|edge| edge.to_node == of)? + 1;
+/// `node` right after `of`, under the same parent.
+pub fn sibling(canvas: &Canvas, of: &str, mut node: Node) -> Option<Change> {
+    let parent = parent(canvas, of)?;
+    let index = canvas.edges.iter().position(|edge| edge.to_node == of)? + 1;
     let below = canvas.node(of)?;
-    let (x, y) = (below.x, below.y + below.height + GAP_Y);
-    let id = push_node(canvas, x, y);
-    let edge = canvas.mint();
-    canvas.edges.insert(at, tree_edge(edge, &parent, &id));
-    Some(id)
+    let [id, edge] = <[String; 2]>::try_from(canvas.mint_n(2)).ok()?;
+    node.id = id;
+    (node.x, node.y) = (below.x, below.y + below.height + GAP_Y);
+    let edge = tree_edge(edge, parent, &node.id);
+    Some(Change::Add {
+        node,
+        edge: Some(edge),
+        index: Some(index),
+    })
+}
+
+/// What to select once `id` is removed: the previous sibling, else the next,
+/// else the parent.
+pub fn after_removal(canvas: &Canvas, id: &str) -> Option<String> {
+    step(canvas, id, Toward::PrevSibling)
+        .or_else(|| step(canvas, id, Toward::NextSibling))
+        .or_else(|| step(canvas, id, Toward::Parent))
 }
 
 /// Remove a node and its branch. Answers what to select next: the previous
 /// sibling, else the next, else the parent.
 pub fn remove(canvas: &mut Canvas, id: &str) -> Option<String> {
     let root = canvas.index_of(id)?;
-    let next = step(canvas, id, Toward::PrevSibling)
-        .or_else(|| step(canvas, id, Toward::NextSibling))
-        .or_else(|| step(canvas, id, Toward::Parent));
+    let next = after_removal(canvas, id);
     let mut seen = HashSet::new();
     let mut doomed = Vec::new();
     branch(canvas, root, &mut seen).collect(&mut doomed);
@@ -285,21 +308,6 @@ fn place(canvas: &mut Canvas, branch: &Branch, x: i64, center: i64, held: Option
         place(canvas, child, column, top + span / 2, held);
         top += span + GAP_Y;
     }
-}
-
-fn push_node(canvas: &mut Canvas, x: i64, y: i64) -> String {
-    let id = canvas.mint();
-    canvas.nodes.push(Node {
-        id: id.clone(),
-        kind: TEXT.into(),
-        x,
-        y,
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT,
-        text: Some(String::new()),
-        ..Node::default()
-    });
-    id
 }
 
 fn tree_edge(id: String, from: &str, to: &str) -> Edge {
