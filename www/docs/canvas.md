@@ -43,7 +43,7 @@ CanvasView::new(doc, cx).with_changes(|canvas, change, cx| match &change {
 })
 ```
 
-Every edit — a key, a drop, typing in a node — is a `Change`: `Add`, `Move`, `Reparent`, `Detach`, `Remove`, `Unpin` or `Update`. The filter answers what lands, and `CanvasEvent::Changed` carries what did. It runs inside the view's update, so reach the view through `cx.defer`; `view.apply(change, cx)` lands one of the app's own past the filter.
+Every edit — a key, a drop, typing in a node — is a `Change`: `Add`, `Move`, `Reparent`, `Detach`, `Remove`, `Unpin` or `Update`. The filter answers what lands, and `CanvasEvent::Changed` carries what did. The view's own `Resize` (a measured height) and `Layout` are announced too but never filtered, so saving on `Changed` misses nothing. It runs inside the view's update, so reach the view through `cx.defer`; `view.apply(change, cx)` lands one of the app's own past the filter.
 
 ## Dragging a node
 
@@ -96,6 +96,8 @@ impl CanvasView {
 
 // canvas::mindmap — pure; the builders answer a Change to submit
 pub fn layout(canvas: &mut Canvas);
+/// Where layout would move each node, those already there left out.
+pub fn arrange(canvas: &Canvas, held: Option<&str>) -> Vec<(String, (i64, i64))>;
 pub fn child(canvas: &Canvas, parent: &str, node: Node) -> Option<Change>;
 pub fn sibling(canvas: &Canvas, of: &str, node: Node) -> Option<Change>;
 pub fn root(canvas: &Canvas, node: Node, at: (i64, i64)) -> Change;

@@ -209,11 +209,11 @@ impl CanvasDemo {
                     Some(mindmap::root(view.canvas(), node, at))
                 }
             };
-            if let Some(change) = change {
-                let id = change.id().to_owned();
-                if view.submit(change, cx) {
-                    view.select(Some(id), cx);
-                }
+            if let Some(change) = change
+                && let Some(id) = change.id().map(str::to_owned)
+                && view.submit(change, cx)
+            {
+                view.select(Some(id), cx);
             }
         });
     }

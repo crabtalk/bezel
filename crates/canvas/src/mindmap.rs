@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use serde_json::Value;
 
 use crate::{
-    change::Change,
+    change::{self, Change},
     model::{Canvas, Edge, End, GROUP, Node, Side},
 };
 
@@ -100,19 +100,24 @@ pub fn layout(canvas: &mut Canvas) {
 /// [`layout`], keeping `held` where it is as if pinned — the node a drag has
 /// in hand.
 pub fn layout_holding(canvas: &mut Canvas, held: Option<&str>) {
-    let roots: Vec<usize> = roots(canvas)
-        .filter_map(|node| canvas.index_of(&node.id))
-        .collect();
+    let moves = arrange(canvas, held);
+    change::apply(canvas, &Change::Layout { moves });
+}
+
+/// Where [`layout_holding`] would put each node, leaving out those already
+/// there.
+pub fn arrange(canvas: &Canvas, held: Option<&str>) -> Vec<(String, (i64, i64))> {
     let mut seen = HashSet::new();
-    let trees: Vec<Branch> = roots
-        .into_iter()
-        .map(|root| branch(canvas, root, &mut seen))
-        .collect();
-    for tree in &trees {
-        let root = &canvas.nodes[tree.ix];
-        let (x, center) = (root.x, root.y + root.height / 2);
-        place(canvas, tree, x, center, held);
+    let mut moves = Vec::new();
+    for root in roots(canvas) {
+        let Some(ix) = canvas.index_of(&root.id) else {
+            continue;
+        };
+        let tree = branch(canvas, ix, &mut seen);
+        let center = root.y + root.height / 2;
+        place(canvas, &tree, root.x, center, held, &mut moves);
     }
+    moves
 }
 
 /// `node` as a root at `at`, under an id nothing holds.
@@ -301,21 +306,30 @@ fn stack(canvas: &Canvas, branches: &[Branch], held: Option<&str>) -> i64 {
     flowing.iter().map(|b| span(canvas, b, held)).sum::<i64>() + gaps
 }
 
-fn place(canvas: &mut Canvas, branch: &Branch, x: i64, center: i64, held: Option<&str>) {
-    let node = &mut canvas.nodes[branch.ix];
-    node.x = x;
-    node.y = center - node.height / 2;
+fn place(
+    canvas: &Canvas,
+    branch: &Branch,
+    x: i64,
+    center: i64,
+    held: Option<&str>,
+    moves: &mut Vec<(String, (i64, i64))>,
+) {
+    let node = &canvas.nodes[branch.ix];
+    let y = center - node.height / 2;
+    if (node.x, node.y) != (x, y) {
+        moves.push((node.id.clone(), (x, y)));
+    }
     let column = x + node.width + GAP_X;
     let mut top = center - stack(canvas, &branch.children, held) / 2;
     for child in &branch.children {
         let kid = &canvas.nodes[child.ix];
         if fixed(kid, held) {
             let (x, center) = (kid.x, kid.y + kid.height / 2);
-            place(canvas, child, x, center, held);
+            place(canvas, child, x, center, held, moves);
             continue;
         }
         let span = span(canvas, child, held);
-        place(canvas, child, column, top + span / 2, held);
+        place(canvas, child, column, top + span / 2, held, moves);
         top += span + GAP_Y;
     }
 }

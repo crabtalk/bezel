@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.16",
+    "date": "2026-09-15",
+    "summary": "Every change to a canvas document is announced.",
+    "changed": [
+      "A canvas's measured heights and its layout land as `Change::Resize` and `Change::Layout`, announced by `CanvasEvent::Changed` and never filtered, so a save on `Changed` writes what is shown. `mindmap::arrange` answers the moves without applying them, and `Change::id` is `None` for a layout."
+    ]
+  },
+  {
     "version": "0.1.15",
     "date": "2026-09-15",
     "summary": "A pluggable mindmap canvas over JSON Canvas, scrollbar overlays for either axis, and line numbers in markdown source.",

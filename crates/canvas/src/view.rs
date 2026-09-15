@@ -460,7 +460,9 @@ impl CanvasView {
 
     fn added(&mut self, change: Option<Change>, window: &mut Window, cx: &mut Context<Self>) {
         let Some(change) = change else { return };
-        let id = change.id().to_owned();
+        let Some(id) = change.id().map(str::to_owned) else {
+            return;
+        };
         if self.submit(change, cx) && self.canvas.node(&id).is_some() {
             self.select(Some(id.clone()), cx);
             self.edit(id, window, cx);
@@ -720,21 +722,32 @@ impl CanvasView {
         self.zoom_about(zoom, self.local(event.position), cx);
     }
 
-    /// Take last frame's measurements, and lay out if anything moved.
-    fn reflow(&mut self) {
-        let measured = std::mem::take(&mut *self.measured.borrow_mut());
+    /// Land last frame's measurements, and lay out if anything moved.
+    fn reflow(&mut self, cx: &mut Context<Self>) {
+        let mut measured: Vec<_> = self.measured.borrow_mut().drain().collect();
+        measured.sort();
         for (id, height) in measured {
-            if let Some(node) = self.canvas.node_mut(&id)
+            if let Some(node) = self.canvas.node(&id)
                 && node.height != height
             {
-                node.height = height;
+                let size = (node.width, height);
+                self.land(Change::Resize { id, size }, cx);
                 self.stale = true;
             }
         }
         if std::mem::take(&mut self.stale) && self.arrange == Arrange::Mindmap {
             let held = self.held().map(str::to_owned);
-            mindmap::layout_holding(&mut self.canvas, held.as_deref());
+            let moves = mindmap::arrange(&self.canvas, held.as_deref());
+            if !moves.is_empty() {
+                self.land(Change::Layout { moves }, cx);
+            }
         }
+    }
+
+    /// Apply and announce one of the view's own changes, past the filter.
+    fn land(&mut self, change: Change, cx: &mut Context<Self>) {
+        change::apply(&mut self.canvas, &change);
+        cx.emit(CanvasEvent::Changed(change));
     }
 
     /// Where each node paints this frame. A node the document moved glides
@@ -1069,7 +1082,7 @@ impl CanvasView {
 
 impl Render for CanvasView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.reflow();
+        self.reflow(cx);
         self.frame();
         let shown = self.positions(cx.reduced_motion(), window);
         let theme = Theme::of(cx).clone();

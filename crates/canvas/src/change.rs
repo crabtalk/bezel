@@ -37,18 +37,24 @@ pub enum Change {
     Unpin { id: String },
     /// A node replaced by one with the same id — what editing in place sends.
     Update { node: Node },
+    /// A node's box, as its content measured. The view's own: never filtered.
+    Resize { id: String, size: (i64, i64) },
+    /// Where layout put the nodes it moved. The view's own: never filtered.
+    Layout { moves: Vec<(String, (i64, i64))> },
 }
 
 impl Change {
-    /// The node the change is about.
-    pub fn id(&self) -> &str {
+    /// The node the change is about; `None` for a layout, which is about many.
+    pub fn id(&self) -> Option<&str> {
         match self {
-            Self::Add { node, .. } | Self::Update { node } => &node.id,
+            Self::Add { node, .. } | Self::Update { node } => Some(&node.id),
             Self::Move { id, .. }
             | Self::Reparent { id, .. }
             | Self::Detach { id }
             | Self::Remove { id }
-            | Self::Unpin { id } => id,
+            | Self::Unpin { id }
+            | Self::Resize { id, .. } => Some(id),
+            Self::Layout { .. } => None,
         }
     }
 }
@@ -99,6 +105,18 @@ pub fn apply(canvas: &mut Canvas, change: &Change) {
         Change::Update { node } => {
             if let Some(old) = canvas.node_mut(&node.id) {
                 *old = node.clone();
+            }
+        }
+        Change::Resize { id, size } => {
+            if let Some(node) = canvas.node_mut(id) {
+                (node.width, node.height) = *size;
+            }
+        }
+        Change::Layout { moves } => {
+            for (id, to) in moves {
+                if let Some(node) = canvas.node_mut(id) {
+                    (node.x, node.y) = *to;
+                }
             }
         }
     }

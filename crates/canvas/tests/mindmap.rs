@@ -40,7 +40,7 @@ fn at(canvas: &Canvas, id: &str) -> (i64, i64) {
 
 fn land(canvas: &mut Canvas, change: Option<Change>) -> String {
     let change = change.expect("a change");
-    let id = change.id().to_owned();
+    let id = change.id().expect("a node").to_owned();
     change::apply(canvas, &change);
     id
 }

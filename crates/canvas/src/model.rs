@@ -138,13 +138,8 @@ impl Canvas {
 
     /// An id no node or edge holds, in the 16 hex digits other writers use.
     pub fn mint(&self) -> String {
-        let taken = |id: &str| {
-            self.nodes.iter().any(|node| node.id == id)
-                || self.edges.iter().any(|edge| edge.id == id)
-        };
-        (self.nodes.len() + self.edges.len()..)
-            .map(|n| format!("{n:016x}"))
-            .find(|id| !taken(id))
+        self.mint_n(1)
+            .pop()
             .expect("an unbounded range has a free id")
     }
 }
