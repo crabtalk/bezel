@@ -14,9 +14,9 @@ use editor::{Chrome as EditorChrome, Editor, EditorEvent};
 use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
     EventEmitter, FocusHandle, Focusable, Hsla, KeyContext, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, Rgba,
-    ScrollWheelEvent, Size, Subscription, WeakEntity, Window, canvas as painter, div, fill, point,
-    prelude::*, px, size,
+    MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
+    Size, Subscription, WeakEntity, Window, canvas as painter, div, fill, point, prelude::*, px,
+    size,
 };
 use motion::{AppExt as _, LAYOUT};
 use theme::{TextStyle, Theme};
@@ -24,13 +24,12 @@ use web_time::Instant;
 
 use crate::{
     change::{self, Change},
-    clip,
+    clip, contain,
     drag::{self, Drag, DragHandler, Phase},
-    group,
-    kind::{self, Chrome, Sizing},
+    kind::{self, Look, PAD, RADIUS, Sizing, color},
     layout::{self, Arrow, Layout},
     mindmap,
-    model::{self, Canvas, Edge, End, Node, Side},
+    model::{Canvas, Edge, End, Node, Side},
     snap::{self, Axis, Guide, Snap},
 };
 
@@ -51,9 +50,6 @@ const MAX_ZOOM: f32 = 4.0;
 const ZOOM_STEP: f32 = 1.25;
 /// Zoom per pixel of a modified wheel.
 const WHEEL_ZOOM: f32 = 0.01;
-/// Inside a node, in canvas units.
-const PAD: f32 = 12.0;
-const RADIUS: f32 = 8.0;
 /// Arrowhead length, in canvas units.
 const ARROW: f32 = 8.0;
 /// How far the selection ring sits outside a node, in screen pixels.
@@ -80,8 +76,6 @@ const LABEL: (f32, f32) = (240.0, 32.0);
 const CUT: f32 = 0.25;
 /// The accent wash inside a node a drop would land on.
 const TARGET_WASH: f32 = 0.12;
-/// A coloured frame's wash of its colour.
-const FRAME_WASH: f32 = 0.06;
 /// The room `fit` leaves around what it shows, in screen pixels.
 const FIT_MARGIN: f32 = 32.0;
 /// The closest `zoom_to_selection` comes.
@@ -238,12 +232,12 @@ enum Grab {
         start: Point<Pixels>,
         to: Point<Pixels>,
     },
-    /// `id`'s corner pulled from `start`: `size` is its box before, and `grows`
-    /// leaves the height to its content.
+    /// `id`'s corner pulled from `start`: `before` is the node as the press
+    /// found it, and `grows` pulls a height its content may run past.
     Resize {
         id: String,
         start: Point<Pixels>,
-        size: (i64, i64),
+        before: Box<Node>,
         grows: bool,
         /// The pan at the press.
         pan: Point<f32>,
@@ -604,7 +598,7 @@ impl CanvasView {
     /// JSON Canvas.
     pub fn copy(&self, cx: &mut App) {
         if !self.selected.is_empty() {
-            let fragment = clip::fragment(&self.canvas, &self.reach());
+            let fragment = clip::fragment(&self.canvas, &self.contents(&self.reach(), cx));
             cx.write_to_clipboard(ClipboardItem::new_string(fragment.to_json()));
         }
     }
@@ -621,15 +615,9 @@ impl CanvasView {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
-        let fragment = Canvas::parse(&text).unwrap_or_else(|_| {
-            let blank = (kind::kind(cx, model::TEXT).child)(&Node::default());
-            Canvas {
-                nodes: vec![Node {
-                    text: Some(text),
-                    ..blank
-                }],
-                ..Canvas::default()
-            }
+        let fragment = Canvas::parse(&text).unwrap_or_else(|_| Canvas {
+            nodes: vec![kind::fresh(cx, Some(text))],
+            ..Canvas::default()
         });
         let under = self.layout.flow.and(self.selected().map(str::to_owned));
         let at = match under.as_deref().and_then(|id| self.canvas.node(id)) {
@@ -649,7 +637,7 @@ impl CanvasView {
         let Some(primary) = self.selected().map(str::to_owned) else {
             return;
         };
-        let fragment = clip::fragment(&self.canvas, &self.reach());
+        let fragment = clip::fragment(&self.canvas, &self.contents(&self.reach(), cx));
         let Some(((x, y), _)) = clip::bounds(&fragment) else {
             return;
         };
@@ -703,6 +691,11 @@ impl CanvasView {
             }
         }
         ids
+    }
+
+    /// `ids`, and everything they hold.
+    fn contents(&self, ids: &[String], cx: &App) -> Vec<String> {
+        contain::with_contents(&self.canvas, ids, |node| kind::holds(cx, &node.kind))
     }
 
     pub fn zoom(&self) -> f32 {
@@ -948,7 +941,7 @@ impl CanvasView {
                 .template(&parent, cx)
                 .and_then(|node| mindmap::child(&self.canvas, &parent, node)),
             None => {
-                let node = (kind::kind(cx, model::TEXT).child)(&Node::default());
+                let node = kind::fresh(cx, None);
                 Some(vec![mindmap::root(&self.canvas, node, (0, 0))])
             }
         };
@@ -993,7 +986,8 @@ impl CanvasView {
         let pin = self.layout.flow.is_some();
         let step = self.snap.grid.unwrap_or(NUDGE);
         let by = (dx * step, dy * step);
-        let changes = mindmap::carry(&self.canvas, &self.selected, by, pin);
+        let ids = self.contents(&self.selected, cx);
+        let changes = mindmap::carry(&self.canvas, &ids, by, pin);
         self.submit(changes, cx);
     }
 
@@ -1130,7 +1124,7 @@ impl CanvasView {
         self.select_edge(None, cx);
         if event.click_count >= 2 {
             // A double-click on nothing makes a root there.
-            let node = (kind::kind(cx, model::TEXT).child)(&Node::default());
+            let node = kind::fresh(cx, None);
             let (x, y) = self.to_canvas(event.position);
             let at = (x - node.width / 2, y - node.height / 2);
             let root = mindmap::root(&self.canvas, node, at);
@@ -1186,7 +1180,7 @@ impl CanvasView {
         };
         let grows = kind::kind(cx, &node.kind).sizing == Sizing::Grows;
         self.grab = Some(Grab::Resize {
-            size: (node.width, node.height),
+            before: Box::new(node.clone()),
             id,
             start: event.position,
             grows,
@@ -1208,7 +1202,7 @@ impl CanvasView {
     ) {
         let at = self.to_canvas(position);
         let tree = self.layout.flow.is_some();
-        if let Some(to) = self.node_under(at, &from).map(str::to_owned) {
+        if let Some(to) = self.node_under(at, &from, cx).map(str::to_owned) {
             let mut edge = Edge {
                 from_side: Some(side),
                 ..Edge::new(self.canvas.mint(), from, to)
@@ -1242,28 +1236,28 @@ impl CanvasView {
         self.added(changes, window, cx);
     }
 
-    /// The topmost node at a canvas point, other than `except`; a node before
-    /// the group it sits in.
-    fn node_under(&self, at: (i64, i64), except: &str) -> Option<&str> {
+    /// The topmost node at a canvas point, other than `except`: what a
+    /// container holds before the container.
+    fn node_under(&self, at: (i64, i64), except: &str, cx: &App) -> Option<&str> {
+        let depths = contain::depths(&self.canvas, |node| kind::holds(cx, &node.kind));
         self.canvas
             .nodes
             .iter()
-            .rev()
             .filter(|n| {
                 n.id != except
                     && (n.x..n.x + n.width).contains(&at.0)
                     && (n.y..n.y + n.height).contains(&at.1)
             })
-            .min_by_key(|n| n.kind == model::GROUP)
+            .max_by_key(|n| depths.get(&n.id).copied().unwrap_or(0))
             .map(|n| n.id.as_str())
     }
 
     /// The node a connector being drawn would reach.
-    fn connect_target(&self) -> Option<&str> {
+    fn connect_target(&self, cx: &App) -> Option<&str> {
         let Some(Grab::Connect { from, to, .. }) = &self.grab else {
             return None;
         };
-        self.node_under(self.to_canvas(*to), from)
+        self.node_under(self.to_canvas(*to), from, cx)
     }
 
     /// The topmost edge passing near a window position.
@@ -1378,7 +1372,7 @@ impl CanvasView {
     /// The held node at `position`: its moves applied as they come, past the
     /// filter, and the rest of what the drop would do only drawn.
     fn preview(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        let (changes, guides) = self.gesture(position, Phase::Move);
+        let (changes, guides) = self.gesture(position, Phase::Move, cx);
         let mut pending = Vec::new();
         for change in changes {
             let Change::MoveNodes { moves } = &change else {
@@ -1405,7 +1399,7 @@ impl CanvasView {
         let Some(Grab::Resize {
             id,
             start,
-            size,
+            before,
             grows,
             pan,
         }) = &self.grab
@@ -1417,17 +1411,18 @@ impl CanvasView {
             (((to - from).as_f32() - (now - then)) / z).round() as i64
         };
         let grid = |value: i64| self.snap.grid.map_or(value, |g| snap::round_to(value, g));
-        let width = grid(size.0 + pulled(position.x, start.x, pan.x, self.pan.x)).max(MIN_SIZE.0);
-        let height = if *grows {
-            self.canvas.node(id).map_or(size.1, |node| node.height)
-        } else {
-            grid(size.1 + pulled(position.y, start.y, pan.y, self.pan.y)).max(MIN_SIZE.1)
+        let width = grid(before.width + pulled(position.x, start.x, pan.x, self.pan.x));
+        let height = grid(before.height + pulled(position.y, start.y, pan.y, self.pan.y));
+        let Some(mut node) = self.canvas.node(id).cloned() else {
+            return;
         };
-        let change = Change::Resize {
-            id: id.clone(),
-            size: (width, height),
-        };
-        change::apply(&mut self.canvas, &change);
+        (node.width, node.height) = (width.max(MIN_SIZE.0), height.max(MIN_SIZE.1));
+        // Measuring keeps a growing node as tall as its content.
+        if *grows {
+            node.extra
+                .insert(kind::MIN_HEIGHT.into(), node.height.into());
+        }
+        change::apply(&mut self.canvas, &Change::UpdateNode { node });
         self.stale = true;
         cx.notify();
     }
@@ -1441,14 +1436,23 @@ impl CanvasView {
         match &mut self.grab {
             Some(Grab::Node {
                 moved: true,
+                id,
+                with,
                 before,
                 ..
             }) => {
+                let held: Vec<String> = std::iter::once(id.clone())
+                    .chain(with.iter().cloned())
+                    .collect();
                 let back = Change::MoveNodes {
                     moves: before.drain().collect(),
                 };
                 change::apply(&mut self.canvas, &back);
-                let (drop, _) = self.gesture(position, Phase::Drop);
+                let (mut drop, _) = self.gesture(position, Phase::Drop, cx);
+                // A node carried out of the container it names lets it go.
+                let mut after = self.canvas.clone();
+                change::apply_all(&mut after, &drop);
+                drop.extend(contain::loosen(&after, &held));
                 self.grab = None;
                 self.submit(drop, cx);
                 self.stale = true;
@@ -1478,19 +1482,25 @@ impl CanvasView {
                 }
                 cx.notify();
             }
-            // The preview is put back, and the pull submitted as one resize.
-            Some(Grab::Resize { id, size, .. }) => {
-                let (id, before) = (id.clone(), *size);
+            // The preview is put back, and the pull submitted as one change: a
+            // resize, or for a growing node the node with its least height.
+            Some(Grab::Resize { before, grows, .. }) => {
+                let (before, grows) = ((**before).clone(), *grows);
                 self.grab = None;
-                if let Some(node) = self.canvas.node(&id) {
-                    let now = (node.width, node.height);
-                    let back = Change::Resize {
-                        id: id.clone(),
-                        size: before,
+                if let Some(now) = self.canvas.node(&before.id).cloned() {
+                    let back = Change::UpdateNode {
+                        node: before.clone(),
                     };
                     change::apply(&mut self.canvas, &back);
                     if now != before {
-                        self.submit([Change::Resize { id, size: now }], cx);
+                        let change = match grows {
+                            true => Change::UpdateNode { node: now },
+                            false => Change::Resize {
+                                size: (now.width, now.height),
+                                id: now.id,
+                            },
+                        };
+                        self.submit([change], cx);
                     }
                 }
                 self.stale = true;
@@ -1524,7 +1534,12 @@ impl CanvasView {
 
     /// The drag handler's answer to the held node at `position`, settled by
     /// the snap, and the guides that caught it.
-    fn gesture(&self, position: Point<Pixels>, phase: Phase) -> (Vec<Change>, Vec<Guide>) {
+    fn gesture(
+        &self,
+        position: Point<Pixels>,
+        phase: Phase,
+        cx: &App,
+    ) -> (Vec<Change>, Vec<Guide>) {
         let Some(Grab::Node {
             id,
             with,
@@ -1548,11 +1563,18 @@ impl CanvasView {
         let held: Vec<String> = std::iter::once(id.clone())
             .chain(with.iter().cloned())
             .collect();
+        let holds = |node: &Node| kind::holds(cx, &node.kind);
+        let carried = contain::with_contents(&self.canvas, &held, holds);
+        let contents: Vec<String> = carried
+            .iter()
+            .filter(|id| !held.contains(id))
+            .cloned()
+            .collect();
         let mut guides = Vec::new();
         if self.snap != Snap::default()
             && let Some(node) = self.canvas.node(id)
         {
-            let moving: Vec<String> = group::with_members(&self.canvas, &held)
+            let moving: Vec<String> = carried
                 .iter()
                 .flat_map(|id| mindmap::branch_of(&self.canvas, id))
                 .collect();
@@ -1563,12 +1585,14 @@ impl CanvasView {
             delta = (settled.0 - origin.0, settled.1 - origin.1);
             guides = caught;
         }
+        let pointer = self.to_canvas(position);
         let gesture = Drag {
             id,
             with,
+            contents: &contents,
             origin: *origin,
             delta,
-            over: mindmap::node_at(&self.canvas, self.to_canvas(position), &held),
+            over: mindmap::node_at(&self.canvas, pointer, &held, |n| !holds(n)),
             phase,
         };
         ((self.drag)(&self.canvas, &gesture), guides)
@@ -1813,12 +1837,22 @@ impl CanvasView {
         let editing = self.editing.as_ref().filter(|s| !s.edge && s.id == node.id);
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
-        // Far out a node is its box, its content too small to read.
+        // Far out a node is a plain box, its content too small to read.
         let far = z < FAR_ZOOM && draggable;
-        let content = match editing {
-            Some(session) => session.editor.clone().into_any_element(),
-            None if far => div().into_any_element(),
-            None => (kind.render)(node, z, window, cx),
+        let content = if far {
+            div()
+                .size_full()
+                .rounded(px(RADIUS * z))
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.surface_card)
+                .into_any_element()
+        } else {
+            let look = Look {
+                zoom: z,
+                editor: editing.map(|session| session.editor.clone().into_any_element()),
+            };
+            (kind.render)(node, look, window, cx)
         };
         let grows = kind.sizing == Sizing::Grows && !far;
         let selected = self.selected.contains(&node.id);
@@ -1831,11 +1865,6 @@ impl CanvasView {
                 });
         // A node picked alone, with nothing held, shows its handles.
         let handles = selected && draggable && self.selected.len() == 1 && self.grab.is_none();
-        let border = node
-            .color
-            .as_deref()
-            .and_then(|c| color(theme, c))
-            .unwrap_or(theme.border);
         let (id, measured_id) = (node.id.clone(), node.id.clone());
         let (measured, height) = (self.measured.clone(), node.height);
         let ring = |color: Hsla| {
@@ -1850,46 +1879,25 @@ impl CanvasView {
                 .border_color(color)
         };
 
+        // The box is the canvas's; everything painted inside it is the kind's.
         let element = div()
             .id(ElementId::Name(node.id.clone().into()))
             .absolute()
             .left(px(x))
             .top(px(y))
             .w(px(w))
+            .flex()
+            .flex_col()
             .map(|d| {
                 if grows {
-                    d.min_h(px(mindmap::NODE_HEIGHT as f32 * z))
+                    let least = kind::min_height(node).unwrap_or(mindmap::NODE_HEIGHT);
+                    d.min_h(px(least as f32 * z))
                 } else {
                     d.h(px(h))
                 }
             })
-            .rounded(px(RADIUS * z))
-            .map(|d| match kind.chrome {
-                Chrome::Card => d
-                    .p(px(PAD * z))
-                    .border_1()
-                    .border_color(border)
-                    .bg(theme.surface_card),
-                Chrome::Outline => d.p(px(PAD * z)).border_1().border_color(border),
-                Chrome::Bare => d,
-                Chrome::Frame => d.border_1().border_color(border).bg(node
-                    .color
-                    .as_deref()
-                    .and_then(|c| color(theme, c))
-                    .map_or(gpui::transparent_black(), |c| c.opacity(FRAME_WASH))),
-            })
             .when(draggable, |d| d.cursor_grab())
-            // A box of fixed size keeps whatever a renderer paints inside it;
-            // a frame's label sits outside it.
-            .child(if grows || kind.chrome == Chrome::Frame {
-                content
-            } else {
-                div()
-                    .size_full()
-                    .overflow_hidden()
-                    .child(content)
-                    .into_any_element()
-            })
+            .child(content)
             .when(grows, |d| {
                 d.child(
                     painter(
@@ -1956,11 +1964,7 @@ impl CanvasView {
                 .child(
                     handle(format!("{}-corner", node.id), w, h)
                         .rounded(px(2.0))
-                        .cursor(if grows {
-                            CursorStyle::ResizeLeftRight
-                        } else {
-                            CursorStyle::ResizeUpLeftDownRight
-                        })
+                        .cursor(CursorStyle::ResizeUpLeftDownRight)
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -2211,19 +2215,24 @@ impl Render for CanvasView {
         let shown = self.positions(cx.reduced_motion(), window);
         let theme = Theme::of(cx).clone();
         let edges = self.edge_layer(&theme, &shown, cx.entity().downgrade());
-        // Groups paint first, under what they frame. The held node paints
-        // last, over whatever it is carried across, unless it frames them.
-        let group = |ix: usize| self.canvas.nodes[ix].kind == model::GROUP;
-        let held = self
-            .held()
-            .and_then(|id| self.canvas.index_of(id))
-            .filter(|ix| !group(*ix));
-        let (groups, rest): (Vec<usize>, Vec<usize>) = (0..self.canvas.nodes.len())
-            .filter(|ix| Some(*ix) != held)
-            .partition(|ix| group(*ix));
-        let order = groups.into_iter().chain(rest).chain(held);
-        let connecting = self.connect_target().map(str::to_owned);
+        // A container paints under what it holds. What a drag has in hand
+        // paints last, with what it holds, over whatever it is carried across.
+        let holds = |node: &Node| kind::holds(cx, &node.kind);
+        let depths = contain::depths(&self.canvas, holds);
+        let carried: HashSet<String> = match self.held() {
+            Some(id) => contain::with_contents(&self.canvas, &[id.to_owned()], holds)
+                .into_iter()
+                .collect(),
+            None => HashSet::new(),
+        };
+        let mut order: Vec<usize> = (0..self.canvas.nodes.len()).collect();
+        order.sort_by_key(|ix| {
+            let id = &self.canvas.nodes[*ix].id;
+            (carried.contains(id), depths.get(id).copied().unwrap_or(0))
+        });
+        let connecting = self.connect_target(cx).map(str::to_owned);
         let nodes: Vec<AnyElement> = order
+            .into_iter()
             .filter_map(|ix| {
                 let at = shown[&self.canvas.nodes[ix].id];
                 self.paint_node(ix, at, connecting.as_deref(), &theme, window, cx)
@@ -2329,26 +2338,6 @@ fn extent<'a>(nodes: impl IntoIterator<Item = &'a Node>) -> Option<(i64, i64, i6
         .into_iter()
         .map(|n| (n.x, n.y, n.x + n.width, n.y + n.height))
         .reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
-}
-
-/// A JSON Canvas color: a preset, or hex. Yellow and cyan have no token, so
-/// they turn the hue of the token beside them.
-fn color(theme: &Theme, color: &str) -> Option<Hsla> {
-    match color {
-        "1" => Some(theme.danger),
-        "2" => Some(theme.warning),
-        "3" => Some(Hsla {
-            h: 50.0 / 360.0,
-            ..theme.warning
-        }),
-        "4" => Some(theme.success),
-        "5" => Some(Hsla {
-            h: 185.0 / 360.0,
-            ..theme.success
-        }),
-        "6" => Some(theme.accent),
-        hex => Rgba::try_from(hex).ok().map(Into::into),
-    }
 }
 
 /// A node's box where it paints, in canvas units.

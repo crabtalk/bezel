@@ -14,8 +14,8 @@
 
 pub mod change;
 pub mod clip;
+pub mod contain;
 pub mod drag;
-pub mod group;
 pub mod kind;
 pub mod layout;
 pub mod mindmap;

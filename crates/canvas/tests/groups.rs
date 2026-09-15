@@ -2,7 +2,7 @@
 //! group is never a drop target.
 
 use canvas::{
-    Canvas, CanvasView, change, group, kind, layout, mindmap,
+    Canvas, CanvasView, change, contain, kind, layout, mindmap,
     model::{GROUP, Node, TEXT},
 };
 use gpui::{
@@ -42,8 +42,9 @@ fn at(canvas: &Canvas, id: &str) -> (i64, i64) {
 #[test]
 fn a_group_carries_what_it_frames() {
     let mut canvas = framed();
-    assert_eq!(group::members(&canvas, "g"), ["a"]);
-    let changes = mindmap::carry(&canvas, &["g".into()], (10, 20), false);
+    let ids = contain::with_contents(&canvas, &["g".into()], |n| n.kind == GROUP);
+    assert_eq!(ids, ["g", "a"]);
+    let changes = mindmap::carry(&canvas, &ids, (10, 20), false);
     change::apply_all(&mut canvas, &changes);
     assert_eq!(
         [at(&canvas, "g"), at(&canvas, "a"), at(&canvas, "b")],
@@ -54,8 +55,9 @@ fn a_group_carries_what_it_frames() {
 #[test]
 fn a_group_is_no_drop_target() {
     let canvas = framed();
-    assert_eq!(mindmap::node_at(&canvas, (300, 200), &[]), None);
-    assert_eq!(mindmap::node_at(&canvas, (50, 50), &[]), Some("a"));
+    let target = |n: &Node| n.kind != GROUP;
+    assert_eq!(mindmap::node_at(&canvas, (300, 200), &[], target), None);
+    assert_eq!(mindmap::node_at(&canvas, (50, 50), &[], target), Some("a"));
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 use canvas::{
     Canvas, CanvasView, Change, Kinds,
-    kind::{Chrome, Field, Kind},
+    kind::{Field, Kind},
     mindmap,
     model::Node,
 };
@@ -18,7 +18,6 @@ const DOC: &str = r#"{
 
 fn card() -> Kind {
     Kind::new(|_, _, _, _| div().into_any_element())
-        .chrome(Chrome::Bare)
         .edit(Field::new(
             |node| node.label.clone().unwrap_or_default(),
             |node, label| node.label = Some(label),

@@ -22,16 +22,27 @@ The document is [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/). Fields the 
 
 ```rust
 fn session(store: Store) -> Kind {
-    Kind::new(move |node, zoom, window, cx| store.view(&node.id).into_any_element())
-        .sizing(Sizing::Fixed)               // or Grows: as tall as the content
-        .chrome(Chrome::Card)                // Outline, Frame, or Bare: the content is the node
-        .edit(Field::new(title, set_title))  // what f2 edits
-        .open(|node, cx| resume(node, cx))   // what a double-click does instead
-        .child(kind::blank)                  // what tab makes under it
+    // Everything inside the box is yours: dress it or not, and place the
+    // editor while f2 is open.
+    Kind::new(move |node, look, window, cx| {
+        let body = look.editor.unwrap_or_else(|| store.view(&node.id).into_any_element());
+        kind::chrome(Chrome::Card, node, look.zoom, cx).child(body).into_any_element()
+    })
+    .sizing(Sizing::Fixed)               // or Grows: as tall as the content
+    .edit(Field::new(title, set_title))  // what f2 edits
+    .open(|node, cx| resume(node, cx))   // what a double-click does instead
+    .child(kind::blank)                  // what tab makes under it
+    .holds()                             // what sits in its box is held
 }
+
+Kinds::new().with("session", session(store)).with_fresh(|| new_session());  // what the canvas makes from nothing
 ```
 
-A kind is keyed by the node's `type`, and holds what it needs. The spec's four — `kind::text()`, `file()`, `link()`, `group()` — are replaceable the same way, or a starting point: `Kind { chrome: Chrome::Bare, ..kind::text() }`. `Kinds::with_root(dir)` finds files and group backgrounds under `dir`, so images preview. A link opens on a double-click. A group frames the nodes inside its box: they move with it, it paints under them, and it is never a drop target.
+A kind is keyed by the node's `type`, and holds what it needs. The canvas owns the node's box — position, size, the selection ring, the handles, dragging and resizing — and the kind paints everything inside it; `kind::chrome` dresses a box as the spec's kinds do. The spec's four — `kind::text()`, `file()`, `link()`, `group()` — are replaceable the same way. `Kinds::with_root(dir)` finds files and group backgrounds under `dir`, so images preview. A link opens on a double-click. `with_fresh` names the node made from nothing — a double-click on empty canvas, `tab` on an empty one, pasted text, written through its kind's edit field — a blank text node unless an app says.
+
+## Containers
+
+Any node holds others. A node names its container in `"container"` (`contain::hold`); one that names none sits in the smallest node around it whose kind `holds`, as a group does. What a node holds, however deep, moves, copies and duplicates with it and paints above it; removing a container leaves what it held. A node carried out of the container it names lets it go, and a kind that holds is never a drop target.
 
 State stays with the app: look the view up by the node's id. gpui cannot transform an element, so `zoom` is a scale the content applies itself — `canvas::text_style(div(), TextStyle::Callout, zoom)` sets size, leading and weight together, and `Typography::scaled` does a whole document. A node of fixed size clips what it paints.
 
@@ -64,7 +75,7 @@ A `Layout` answers where nodes go after every change. `layout::MINDMAP` (the def
 CanvasView::new(doc, cx).with_drag(canvas::drag::reparent);
 
 fn my_drag(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
-    // drag.id, drag.with (the rest of the selection), drag.to(), drag.over, drag.phase (Move…, then one Drop)
+    // drag.id, drag.with (the rest of the selection), drag.contents (what the held nodes hold), drag.to(), drag.over, drag.phase (Move…, then one Drop)
 }
 ```
 
@@ -78,7 +89,7 @@ Shift- or cmd-click adds to the selection, a shift-drag on empty canvas selects 
 
 ## Edges and boxes
 
-Click an edge to pick it: `backspace` removes it, and a double-click or `f2` edits its label. A picked node shows a handle on each side — drag one onto a node to connect them, or onto nothing to make a node there, a child under a tree — and a corner that resizes it, the width alone for a box that grows. A connector drawn under a tree layout is a cross link.
+Click an edge to pick it: `backspace` removes it, and a double-click or `f2` edits its label. A picked node shows a handle on each side — drag one onto a node to connect them, or onto nothing to make a node there, a child under a tree — and a corner that resizes it. A box that grows with its content is pulled to a least height, kept as `"minHeight"`, and stays as tall as its content. A connector drawn under a tree layout is a cross link.
 
 ## Finding your way
 

@@ -25,6 +25,8 @@ pub struct Drag<'a> {
     pub id: &'a str,
     /// The rest of the selection, carried along.
     pub with: &'a [String],
+    /// What the held nodes hold: carried along, not otherwise moved.
+    pub contents: &'a [String],
     /// Where the node was when the press began.
     pub origin: (i64, i64),
     /// How far the pointer has moved since, in canvas units.
@@ -77,11 +79,14 @@ pub fn detach(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
     changes
 }
 
-/// The selection moved as far as the pointer carried the held node.
+/// The selection and what it holds moved as far as the pointer carried the
+/// held node.
 fn follow(canvas: &Canvas, drag: &Drag, pin: bool) -> Vec<Change> {
     let Some(node) = canvas.node(drag.id) else {
         return Vec::new();
     };
     let to = drag.to();
-    mindmap::carry(canvas, &drag.ids(), (to.0 - node.x, to.1 - node.y), pin)
+    let mut ids = drag.ids();
+    ids.extend(drag.contents.iter().cloned());
+    mindmap::carry(canvas, &ids, (to.0 - node.x, to.1 - node.y), pin)
 }

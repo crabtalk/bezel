@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::{
     change::Change,
-    mindmap,
+    contain, mindmap,
     model::{Canvas, Edge},
 };
 
@@ -87,6 +87,13 @@ pub fn paste(
             if roots.contains(&old.id.as_str()) {
                 node.extra.remove(mindmap::PINNED);
             }
+            // A container copied along is named afresh; one left behind is not.
+            match contain::named(old).and_then(|container| ids.get(container)) {
+                Some(container) => node
+                    .extra
+                    .insert(contain::CONTAINER.into(), container.clone().into()),
+                None => node.extra.remove(contain::CONTAINER),
+            };
             Change::AddNode { node, index: None }
         })
         .collect();

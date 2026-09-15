@@ -35,6 +35,7 @@ fn drop(handler: DragHandler, canvas: &mut Canvas, id: &str, over: Option<&str>)
     let gesture = Drag {
         id,
         with: &[],
+        contents: &[],
         origin: (0, 0),
         delta: (30, 40),
         over,
@@ -97,6 +98,7 @@ fn a_move_answers_what_the_drop_would_do() {
     let moving = |over| Drag {
         id: "a",
         with: &[],
+        contents: &[],
         origin: (0, 0),
         delta: (5, 5),
         over,
@@ -130,8 +132,12 @@ fn node_at_skips_the_held_branch() {
         (x + 10, y + 10)
     };
     let held = ["a".to_owned()];
-    assert_eq!(mindmap::node_at(&canvas, inside("a1"), &held), None);
-    assert_eq!(mindmap::node_at(&canvas, inside("b"), &held), Some("b"));
+    let any = |_: &canvas::model::Node| true;
+    assert_eq!(mindmap::node_at(&canvas, inside("a1"), &held, any), None);
+    assert_eq!(
+        mindmap::node_at(&canvas, inside("b"), &held, any),
+        Some("b")
+    );
 }
 
 #[test]

@@ -13,7 +13,7 @@
 use canvas::{
     Canvas, CanvasView, Change, Snap, change,
     drag::{self, DragHandler},
-    kind::{self, Field, Kind},
+    kind::{self, Chrome, Field, Kind, Look},
     layout::{self, Layout},
     mindmap,
     model::Node,
@@ -76,21 +76,22 @@ fn set_title(node: &mut Node, title: String) {
     node.extra.insert("title".into(), title.into());
 }
 
-fn session(node: &Node, zoom: f32, _: &mut Window, cx: &mut App) -> AnyElement {
+fn session(node: &Node, look: Look, _: &mut Window, cx: &mut App) -> AnyElement {
     let theme = Theme::of(cx);
+    let zoom = look.zoom;
     let turns = node
         .extra
         .get("turns")
         .and_then(|turns| turns.as_u64())
         .unwrap_or_default();
-    div()
-        .flex()
-        .flex_col()
-        .child(
-            canvas::text_style(div(), TextStyle::Headline, zoom)
-                .text_color(theme.text)
-                .child(title(node)),
-        )
+    let title = look.editor.unwrap_or_else(|| {
+        canvas::text_style(div(), TextStyle::Headline, zoom)
+            .text_color(theme.text)
+            .child(title(node))
+            .into_any_element()
+    });
+    kind::chrome(Chrome::Card, node, zoom, cx)
+        .child(title)
         .child(
             canvas::text_style(div(), TextStyle::Callout, zoom)
                 .text_color(theme.text_muted)
