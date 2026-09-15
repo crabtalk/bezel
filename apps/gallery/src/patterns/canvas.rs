@@ -11,9 +11,10 @@
 //! is the entry point its chord takes. Copy this file.
 
 use canvas::{
-    Arrange, Canvas, CanvasView, Change, change,
+    Canvas, CanvasView, Change, change,
     drag::{self, DragHandler},
     kind::{self, Chrome, Field, Kind, Sizing},
+    layout::{self, Layout},
     mindmap,
     model::Node,
 };
@@ -145,6 +146,53 @@ impl DragMode {
     }
 }
 
+/// Who places the nodes, as the toolbar offers it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LayoutMode {
+    Free,
+    Mindmap,
+    Balanced,
+    Down,
+}
+
+impl LayoutMode {
+    const ALL: [(Self, &'static str, &'static [u8], &'static str); 4] = [
+        (
+            Self::Free,
+            "free",
+            icons::glyph::LayoutGrid,
+            "Free — nodes stay where they are put, arrows find the nearest",
+        ),
+        (
+            Self::Mindmap,
+            "mindmap",
+            icons::glyph::ListTree,
+            "Mindmap — the tree grows right",
+        ),
+        (
+            Self::Balanced,
+            "balanced",
+            icons::glyph::Split,
+            "Balanced — the root's branches split both ways",
+        ),
+        (
+            Self::Down,
+            "down",
+            icons::glyph::Network,
+            "Down — the tree grows downward",
+        ),
+    ];
+
+    fn layout(self) -> Layout {
+        match self {
+            Self::Free => layout::FREE,
+            Self::Mindmap => layout::MINDMAP,
+            Self::Balanced => layout::BALANCED,
+            Self::Down => layout::DOWN,
+        }
+    }
+}
+
 /// A new node of the page's two kinds, before the canvas gives it an id and a
 /// place.
 fn fresh(session: bool) -> Node {
@@ -169,6 +217,7 @@ pub struct CanvasDemo {
     view: Entity<CanvasView>,
     scroll: ScrollHandle,
     drag: DragMode,
+    layout: LayoutMode,
 }
 
 impl CanvasDemo {
@@ -186,6 +235,7 @@ impl CanvasDemo {
             view,
             scroll: ScrollHandle::new(),
             drag: DragMode::Move,
+            layout: LayoutMode::Mindmap,
         }
     }
 
@@ -222,7 +272,7 @@ impl CanvasDemo {
         let painter = Painter::of(cx);
         let view = self.view.read(cx);
         let removable = view.selected().is_some_and(|id| id != ROOT);
-        let (auto, zoom) = (view.arrange() == Arrange::Mindmap, view.zoom());
+        let zoom = view.zoom();
         let button = |key: &'static str, glyph: &'static [u8]| {
             theme
                 .icon_button(
@@ -300,21 +350,20 @@ impl CanvasDemo {
                         }))
                 }));
 
-        let layout = theme.control_group().child(
-            lit(button("auto-layout", icons::glyph::Network), auto)
-                .tooltip(tip(
-                    "Auto layout — keep the tree arranged. Off, nodes stay where they are",
-                ))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    let to = if auto {
-                        Arrange::Free
-                    } else {
-                        Arrange::Mindmap
-                    };
-                    this.view.update(cx, |view, cx| view.set_arrange(to, cx));
-                    this.refocus(window, cx);
-                })),
-        );
+        let layouts =
+            theme
+                .control_group()
+                .children(LayoutMode::ALL.map(|(mode, key, glyph, text)| {
+                    lit(button(key, glyph), self.layout == mode)
+                        .tooltip(tip(text))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.layout = mode;
+                            this.view
+                                .update(cx, |view, cx| view.set_layout(mode.layout(), cx));
+                            this.refocus(window, cx);
+                            cx.notify();
+                        }))
+                }));
 
         let zooms = theme
             .control_group()
@@ -373,7 +422,14 @@ impl CanvasDemo {
                     .child(caption("Drag"))
                     .child(drags),
             )
-            .child(layout)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(caption("Layout"))
+                    .child(layouts),
+            )
             .child(div().flex_1())
             .child(zooms)
     }

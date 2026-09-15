@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::{
     change::{self, Change},
+    layout::Arrow,
     model::{Canvas, Edge, End, GROUP, Node, Side},
 };
 
@@ -143,6 +144,57 @@ pub fn step(canvas: &Canvas, id: &str, toward: Toward) -> Option<String> {
     }
 }
 
+/// The way a tree grows from its root.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flow {
+    Right,
+    Left,
+    Down,
+    /// A root's children split right and left, by the room they take.
+    Both,
+}
+
+/// Tree motion by arrow key, the way `flow` grows: toward the root is the
+/// parent, away is the first child, across is a sibling. On a balanced root,
+/// left and right pick a side.
+pub fn walk(canvas: &Canvas, id: &str, flow: Flow, arrow: Arrow) -> Option<String> {
+    let mid = |id: &str| canvas.node(id).map(|node| node.x + node.width / 2);
+    // Which way a node grows from its parent.
+    let side = |id: &str| match flow {
+        Flow::Both => match (parent(canvas, id).and_then(mid), mid(id)) {
+            (Some(parent), Some(x)) if x < parent => Flow::Left,
+            _ => Flow::Right,
+        },
+        flow => flow,
+    };
+    let here = match (flow, parent(canvas, id), arrow) {
+        (Flow::Both, None, Arrow::Left) => Flow::Left,
+        (Flow::Both, None, _) => Flow::Right,
+        _ => side(id),
+    };
+    let sibling = |offset: isize| {
+        let siblings: Vec<&str> = children(canvas, parent(canvas, id)?)
+            .filter(|sibling| side(sibling) == here)
+            .collect();
+        let at = siblings.iter().position(|s| *s == id)?;
+        siblings
+            .get(at.checked_add_signed(offset)?)
+            .map(|s| s.to_string())
+    };
+    match (here, arrow) {
+        (Flow::Right | Flow::Both, Arrow::Left)
+        | (Flow::Left, Arrow::Right)
+        | (Flow::Down, Arrow::Up) => parent(canvas, id).map(str::to_owned),
+        (Flow::Right | Flow::Both, Arrow::Right)
+        | (Flow::Left, Arrow::Left)
+        | (Flow::Down, Arrow::Down) => children(canvas, id)
+            .find(|child| side(child) == here)
+            .map(str::to_owned),
+        (_, Arrow::Up) | (Flow::Down, Arrow::Left) => sibling(-1),
+        (_, Arrow::Down) | (Flow::Down, Arrow::Right) => sibling(1),
+    }
+}
+
 /// Lay every tree out to the right of its root, which stays where it is.
 ///
 /// A node reached twice hangs off the first parent that reaches it, so a stray
@@ -154,24 +206,35 @@ pub fn layout(canvas: &mut Canvas) {
 /// [`layout`], keeping `held` where it is as if pinned — the node a drag has
 /// in hand.
 pub fn layout_holding(canvas: &mut Canvas, held: Option<&str>) {
-    let moves = arrange(canvas, held);
+    let moves = arrange(canvas, held, Flow::Right);
     change::apply(canvas, &Change::MoveNodes { moves });
 }
 
-/// Where [`layout_holding`] would put each node, leaving out those already
-/// there.
-pub fn arrange(canvas: &Canvas, held: Option<&str>) -> Vec<(String, (i64, i64))> {
+/// Where every tree growing in `flow` puts each node, leaving out those
+/// already there. Roots stay; `held` stays as if pinned.
+pub fn arrange(canvas: &Canvas, held: Option<&str>, flow: Flow) -> Vec<(String, (i64, i64))> {
     let mut seen = HashSet::new();
-    let mut moves = Vec::new();
+    let mut pass = Pass {
+        canvas,
+        held,
+        moves: Vec::new(),
+    };
     for root in roots(canvas) {
         let Some(ix) = canvas.index_of(&root.id) else {
             continue;
         };
         let tree = branch(canvas, ix, &mut seen);
-        let center = root.y + root.height / 2;
-        place(canvas, &tree, root.x, center, held, &mut moves);
+        let kids: Vec<&Branch> = tree.children.iter().collect();
+        let at = (root.x, root.y);
+        if flow == Flow::Both {
+            let (right, left) = pass.split(&kids);
+            pass.column(root, at, &right, Flow::Right);
+            pass.column(root, at, &left, Flow::Left);
+        } else {
+            pass.column(root, at, &kids, flow);
+        }
     }
-    moves
+    pass.moves
 }
 
 /// `node` as a root at `at`, under an id nothing holds.
@@ -335,54 +398,91 @@ fn branch(canvas: &Canvas, ix: usize, seen: &mut HashSet<usize>) -> Branch {
     }
 }
 
-/// The height a branch takes: its node, or its children stacked, whichever is
-/// taller.
-fn span(canvas: &Canvas, branch: &Branch, held: Option<&str>) -> i64 {
-    canvas.nodes[branch.ix]
-        .height
-        .max(stack(canvas, &branch.children, held))
+/// One layout's walk over the trees.
+struct Pass<'a> {
+    canvas: &'a Canvas,
+    held: Option<&'a str>,
+    moves: Vec<(String, (i64, i64))>,
 }
 
-/// Whether layout leaves a node where it is: pinned, or in a drag's hand.
-fn fixed(node: &Node, held: Option<&str>) -> bool {
-    is_pinned(node) || held == Some(node.id.as_str())
-}
-
-/// The children still in the column: a fixed one left it.
-fn stack(canvas: &Canvas, branches: &[Branch], held: Option<&str>) -> i64 {
-    let flowing: Vec<&Branch> = branches
-        .iter()
-        .filter(|b| !fixed(&canvas.nodes[b.ix], held))
-        .collect();
-    let gaps = GAP_Y * (flowing.len() as i64 - 1).max(0);
-    flowing.iter().map(|b| span(canvas, b, held)).sum::<i64>() + gaps
-}
-
-fn place(
-    canvas: &Canvas,
-    branch: &Branch,
-    x: i64,
-    center: i64,
-    held: Option<&str>,
-    moves: &mut Vec<(String, (i64, i64))>,
-) {
-    let node = &canvas.nodes[branch.ix];
-    let y = center - node.height / 2;
-    if (node.x, node.y) != (x, y) {
-        moves.push((node.id.clone(), (x, y)));
+impl<'a> Pass<'a> {
+    /// Whether layout leaves a node where it is: pinned, or in a drag's hand.
+    fn fixed(&self, node: &Node) -> bool {
+        is_pinned(node) || self.held == Some(node.id.as_str())
     }
-    let column = x + node.width + GAP_X;
-    let mut top = center - stack(canvas, &branch.children, held) / 2;
-    for child in &branch.children {
-        let kid = &canvas.nodes[child.ix];
-        if fixed(kid, held) {
-            let (x, center) = (kid.x, kid.y + kid.height / 2);
-            place(canvas, child, x, center, held, moves);
-            continue;
+
+    /// The room a branch takes across `flow`: its node, or its children
+    /// stacked, whichever is more.
+    fn span(&self, branch: &Branch, flow: Flow) -> i64 {
+        let node = &self.canvas.nodes[branch.ix];
+        let across = if flow == Flow::Down {
+            node.width
+        } else {
+            node.height
+        };
+        across.max(self.stack(&branch.children, flow))
+    }
+
+    /// The children still in the column: a fixed one left it.
+    fn stack<'b>(&self, branches: impl IntoIterator<Item = &'b Branch>, flow: Flow) -> i64 {
+        let spans: Vec<i64> = branches
+            .into_iter()
+            .filter(|b| !self.fixed(&self.canvas.nodes[b.ix]))
+            .map(|b| self.span(b, flow))
+            .collect();
+        spans.iter().sum::<i64>() + GAP_Y * (spans.len() as i64 - 1).max(0)
+    }
+
+    /// A balanced root's children, right and left, each to the side with less
+    /// room taken so far.
+    fn split<'b>(&self, kids: &[&'b Branch]) -> (Vec<&'b Branch>, Vec<&'b Branch>) {
+        let (mut right, mut left) = ((0, Vec::new()), (0, Vec::new()));
+        for &kid in kids {
+            let side = if right.0 <= left.0 {
+                &mut right
+            } else {
+                &mut left
+            };
+            side.0 += self.span(kid, Flow::Right);
+            side.1.push(kid);
         }
-        let span = span(canvas, child, held);
-        place(canvas, child, column, top + span / 2, held, moves);
-        top += span + GAP_Y;
+        (right.1, left.1)
+    }
+
+    /// `kids` beside a parent sitting at `at`, growing in `flow`.
+    fn column(&mut self, parent: &Node, at: (i64, i64), kids: &[&Branch], flow: Flow) {
+        let canvas = self.canvas;
+        let center = match flow {
+            Flow::Down => at.0 + parent.width / 2,
+            _ => at.1 + parent.height / 2,
+        };
+        let mut top = center - self.stack(kids.iter().copied(), flow) / 2;
+        for &kid in kids {
+            let node = &canvas.nodes[kid.ix];
+            if self.fixed(node) {
+                self.place(kid, (node.x, node.y), flow);
+                continue;
+            }
+            let span = self.span(kid, flow);
+            let mid = top + span / 2;
+            let to = match flow {
+                Flow::Down => (mid - node.width / 2, at.1 + parent.height + GAP_X),
+                Flow::Left => (at.0 - GAP_X - node.width, mid - node.height / 2),
+                Flow::Right | Flow::Both => (at.0 + parent.width + GAP_X, mid - node.height / 2),
+            };
+            self.place(kid, to, flow);
+            top += span + GAP_Y;
+        }
+    }
+
+    fn place(&mut self, branch: &Branch, to: (i64, i64), flow: Flow) {
+        let canvas = self.canvas;
+        let node = &canvas.nodes[branch.ix];
+        if (node.x, node.y) != to {
+            self.moves.push((node.id.clone(), to));
+        }
+        let kids: Vec<&Branch> = branch.children.iter().collect();
+        self.column(node, to, &kids, flow);
     }
 }
 

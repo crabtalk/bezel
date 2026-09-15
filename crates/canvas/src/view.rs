@@ -25,7 +25,8 @@ use crate::{
     change::{self, Change},
     drag::{self, Drag, DragHandler, Phase},
     kind::{self, Chrome, Sizing},
-    mindmap::{self, Toward},
+    layout::{self, Arrow, Layout},
+    mindmap,
     model::{self, Canvas, Edge, End, Node, Side},
 };
 
@@ -55,6 +56,8 @@ const ARROW: f32 = 8.0;
 const RING: f32 = 3.0;
 /// How far a press on a node travels before it is a drag, in screen pixels.
 const DRAG_SLOP: f32 = 3.0;
+/// One `shift`-arrow, in canvas units.
+const NUDGE: i64 = 8;
 /// How much of a connector a drop would cut still shows.
 const CUT: f32 = 0.25;
 /// The accent wash inside a node a drop would land on.
@@ -73,10 +76,14 @@ pub mod keys {
             Remove,
             Edit,
             StopEditing,
-            SelectParent,
-            SelectChild,
-            SelectPrev,
-            SelectNext,
+            SelectLeft,
+            SelectRight,
+            SelectUp,
+            SelectDown,
+            NudgeLeft,
+            NudgeRight,
+            NudgeUp,
+            NudgeDown,
             ZoomIn,
             ZoomOut,
             ResetZoom,
@@ -94,10 +101,14 @@ pub mod keys {
             KeyBinding::new("backspace", Remove, ctx),
             KeyBinding::new("delete", Remove, ctx),
             KeyBinding::new("f2", Edit, ctx),
-            KeyBinding::new("left", SelectParent, ctx),
-            KeyBinding::new("right", SelectChild, ctx),
-            KeyBinding::new("up", SelectPrev, ctx),
-            KeyBinding::new("down", SelectNext, ctx),
+            KeyBinding::new("left", SelectLeft, ctx),
+            KeyBinding::new("right", SelectRight, ctx),
+            KeyBinding::new("up", SelectUp, ctx),
+            KeyBinding::new("down", SelectDown, ctx),
+            KeyBinding::new("shift-left", NudgeLeft, ctx),
+            KeyBinding::new("shift-right", NudgeRight, ctx),
+            KeyBinding::new("shift-up", NudgeUp, ctx),
+            KeyBinding::new("shift-down", NudgeDown, ctx),
             KeyBinding::new("escape", StopEditing, Some(&editing)),
         ];
         #[cfg(target_os = "macos")]
@@ -129,16 +140,6 @@ pub enum CanvasEvent {
     /// A batch landed in the document.
     Changed(Vec<Change>),
     Selected(Option<String>),
-}
-
-/// Who decides where nodes sit.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Arrange {
-    /// [`mindmap::layout`] after every change.
-    #[default]
-    Mindmap,
-    /// Where the document, and the drag handler, put them.
-    Free,
 }
 
 /// Decides each change before it lands: it, another, or `None` to refuse.
@@ -176,7 +177,7 @@ struct Session {
 
 pub struct CanvasView {
     canvas: Canvas,
-    arrange: Arrange,
+    layout: Layout,
     drag: DragHandler,
     filter: Option<Filter>,
     focus: FocusHandle,
@@ -214,7 +215,7 @@ impl CanvasView {
     pub fn new(canvas: Canvas, cx: &mut Context<Self>) -> Self {
         Self {
             canvas,
-            arrange: Arrange::default(),
+            layout: layout::MINDMAP,
             drag: drag::pin,
             filter: None,
             focus: cx.focus_handle(),
@@ -234,8 +235,9 @@ impl CanvasView {
         }
     }
 
-    pub fn with_arrange(mut self, arrange: Arrange) -> Self {
-        self.arrange = arrange;
+    /// Who places the nodes. [`layout::MINDMAP`] unless an app says otherwise.
+    pub fn with_layout(mut self, layout: Layout) -> Self {
+        self.layout = layout;
         self
     }
 
@@ -384,15 +386,15 @@ impl CanvasView {
         )
     }
 
-    pub fn arrange(&self) -> Arrange {
-        self.arrange
+    pub fn layout(&self) -> Layout {
+        self.layout
     }
 
-    /// Turning auto layout on tidies the document: every pin is dropped and
-    /// the trees are laid out again.
-    pub fn set_arrange(&mut self, arrange: Arrange, cx: &mut Context<Self>) {
-        let tidy = arrange == Arrange::Mindmap && self.arrange != Arrange::Mindmap;
-        self.arrange = arrange;
+    /// Switching to a tree that grows another way tidies the document: every
+    /// pin is dropped and the trees are laid out again.
+    pub fn set_layout(&mut self, layout: Layout, cx: &mut Context<Self>) {
+        let tidy = layout.flow.is_some() && layout.flow != self.layout.flow;
+        self.layout = layout;
         if tidy {
             let unpins: Vec<Change> = self
                 .canvas
@@ -412,15 +414,15 @@ impl CanvasView {
     }
 
     /// What `backspace` does, through the filter: the selection, and its branch
-    /// under [`Arrange::Mindmap`].
+    /// under a layout that grows trees.
     pub fn remove_selected(&mut self, cx: &mut Context<Self>) {
         let Some(id) = self.selected.clone() else {
             return;
         };
         let next = mindmap::after_removal(&self.canvas, &id);
-        let change = match self.arrange {
-            Arrange::Mindmap => mindmap::remove(&self.canvas, &id),
-            Arrange::Free => Change::RemoveNodes { ids: vec![id] },
+        let change = match self.layout.flow {
+            Some(_) => mindmap::remove(&self.canvas, &id),
+            None => Change::RemoveNodes { ids: vec![id] },
         };
         if self.submit([change], cx) {
             self.select(next.filter(|next| self.canvas.node(next).is_some()), cx);
@@ -438,6 +440,15 @@ impl CanvasView {
         point(
             (position.x - origin.x).as_f32(),
             (position.y - origin.y).as_f32(),
+        )
+    }
+
+    /// The canvas point under a window position.
+    fn to_canvas(&self, position: Point<Pixels>) -> (i64, i64) {
+        let local = self.local(position);
+        (
+            ((local.x - self.pan.x) / self.zoom).round() as i64,
+            ((local.y - self.pan.y) / self.zoom).round() as i64,
         )
     }
 
@@ -524,14 +535,28 @@ impl CanvasView {
         self.added(change, window, cx);
     }
 
-    fn step(&mut self, toward: Toward, cx: &mut Context<Self>) {
-        let next = match &self.selected {
-            Some(id) => mindmap::step(&self.canvas, id, toward),
-            None => mindmap::roots(&self.canvas).next().map(|n| n.id.clone()),
+    /// An arrow walks the tree the layout grows, or to the nearest node.
+    fn arrow(&mut self, arrow: Arrow, cx: &mut Context<Self>) {
+        let next = match (&self.selected, self.layout.flow) {
+            (Some(id), Some(flow)) => mindmap::walk(&self.canvas, id, flow, arrow),
+            (Some(id), None) => layout::nearest(&self.canvas, id, arrow).map(str::to_owned),
+            (None, _) => mindmap::roots(&self.canvas).next().map(|n| n.id.clone()),
         };
         if next.is_some() {
             self.select(next, cx);
         }
+    }
+
+    /// A `shift`-arrow moves the selection, pinned under a tree.
+    fn nudge(&mut self, arrow: Arrow, cx: &mut Context<Self>) {
+        let Some(node) = self.selected.as_deref().and_then(|id| self.canvas.node(id)) else {
+            return;
+        };
+        let (dx, dy) = arrow.unit();
+        let to = (node.x + dx * NUDGE, node.y + dy * NUDGE);
+        let pin = self.layout.flow.is_some();
+        let changes = mindmap::carry(&self.canvas, &node.id, to, pin);
+        self.submit(changes, cx);
     }
 
     fn edit(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -594,6 +619,15 @@ impl CanvasView {
         self.stop_editing(window, cx);
         window.focus(&self.focus, cx);
         self.select(None, cx);
+        if event.click_count >= 2 {
+            // A double-click on nothing makes a root there.
+            let node = (kind::kind(cx, model::TEXT).child)(&Node::default());
+            let (x, y) = self.to_canvas(event.position);
+            let at = (x - node.width / 2, y - node.height / 2);
+            let root = mindmap::root(&self.canvas, node, at);
+            self.added(Some(vec![root]), window, cx);
+            return;
+        }
         self.grab = Some(Grab::Pan(event.position));
         // The listeners that follow the grab are painted next frame.
         cx.notify();
@@ -707,11 +741,7 @@ impl CanvasView {
             ((position.x - from.x).as_f32() / zoom).round() as i64,
             ((position.y - from.y).as_f32() / zoom).round() as i64,
         );
-        let local = self.local(position);
-        let pointer = (
-            ((local.x - self.pan.x) / zoom).round() as i64,
-            ((local.y - self.pan.y) / zoom).round() as i64,
-        );
+        let pointer = self.to_canvas(position);
         let gesture = Drag {
             id,
             origin: *origin,
@@ -741,7 +771,6 @@ impl CanvasView {
         self.zoom_about(zoom, self.local(event.position), cx);
     }
 
-    /// Land last frame's measurements, and lay out if anything moved.
     /// The view's own batch, past the filter and announced: last frame's
     /// measurements, and the layout if anything moved.
     fn reflow(&mut self, cx: &mut Context<Self>) {
@@ -760,9 +789,9 @@ impl CanvasView {
                 self.stale = true;
             }
         }
-        if std::mem::take(&mut self.stale) && self.arrange == Arrange::Mindmap {
+        if std::mem::take(&mut self.stale) {
             let held = self.held().map(str::to_owned);
-            let moves = mindmap::arrange(&self.canvas, held.as_deref());
+            let moves = (self.layout.arrange)(&self.canvas, held.as_deref());
             if !moves.is_empty() {
                 changes.push(Change::MoveNodes { moves });
                 change::apply(&mut self.canvas, changes.last().expect("just pushed"));
@@ -1144,18 +1173,18 @@ impl Render for CanvasView {
                     this.stop_editing(window, cx)
                 }),
             )
+            .on_action(cx.listener(|this, _: &keys::SelectLeft, _, cx| this.arrow(Arrow::Left, cx)))
             .on_action(
-                cx.listener(|this, _: &keys::SelectParent, _, cx| this.step(Toward::Parent, cx)),
+                cx.listener(|this, _: &keys::SelectRight, _, cx| this.arrow(Arrow::Right, cx)),
             )
+            .on_action(cx.listener(|this, _: &keys::SelectUp, _, cx| this.arrow(Arrow::Up, cx)))
+            .on_action(cx.listener(|this, _: &keys::SelectDown, _, cx| this.arrow(Arrow::Down, cx)))
+            .on_action(cx.listener(|this, _: &keys::NudgeLeft, _, cx| this.nudge(Arrow::Left, cx)))
             .on_action(
-                cx.listener(|this, _: &keys::SelectChild, _, cx| this.step(Toward::FirstChild, cx)),
+                cx.listener(|this, _: &keys::NudgeRight, _, cx| this.nudge(Arrow::Right, cx)),
             )
-            .on_action(
-                cx.listener(|this, _: &keys::SelectPrev, _, cx| this.step(Toward::PrevSibling, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &keys::SelectNext, _, cx| this.step(Toward::NextSibling, cx)),
-            )
+            .on_action(cx.listener(|this, _: &keys::NudgeUp, _, cx| this.nudge(Arrow::Up, cx)))
+            .on_action(cx.listener(|this, _: &keys::NudgeDown, _, cx| this.nudge(Arrow::Down, cx)))
             .on_action(cx.listener(|this, _: &keys::ZoomIn, _, cx| this.zoom_in(cx)))
             .on_action(cx.listener(|this, _: &keys::ZoomOut, _, cx| this.zoom_out(cx)))
             .on_action(cx.listener(|this, _: &keys::ResetZoom, _, cx| this.set_zoom(1.0, cx)))

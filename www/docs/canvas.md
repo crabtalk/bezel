@@ -45,7 +45,17 @@ CanvasView::new(doc, cx).with_changes(|canvas, change, cx| match &change {
 
 Every edit — a key, a drop, typing in a node — is a batch of graph changes: `AddNode`, `AddEdge`, `RemoveNodes`, `RemoveEdges`, `MoveNodes`, `Resize`, `UpdateNode`, `UpdateEdge`. Each goes through the filter, and one refused refuses the batch. `CanvasEvent::Changed` carries each batch that landed, the view's own measured heights and layout included, so saving on it misses nothing. The filter runs inside the view's update, so reach the view through `cx.defer`; `view.apply(changes, cx)` lands the app's own past it.
 
-Tree edits live in `canvas::mindmap` and answer the batch they make: `child`, `sibling`, `remove` (a branch), `reparent`, `detach`, `carry`. An edge with `"tree": false` is a cross link, never a branch. `backspace` removes a branch under `Arrange::Mindmap` and only the node under `Arrange::Free`.
+Tree edits live in `canvas::mindmap` and answer the batch they make: `child`, `sibling`, `remove` (a branch), `reparent`, `detach`, `carry`. An edge with `"tree": false` is a cross link, never a branch.
+
+## Layouts
+
+```rust
+CanvasView::new(doc, cx).with_layout(canvas::layout::DOWN);
+
+const RADIAL: Layout = Layout { arrange: my_arrange, flow: None };
+```
+
+A `Layout` answers where nodes go after every change. `layout::MINDMAP` (the default) grows trees right, `BALANCED` splits a root's branches both ways, `DOWN` grows them down, and `FREE` leaves nodes where they are put. A layout with a `flow` grows trees: arrows walk them that way and `backspace` takes a branch. Without one, arrows go to the nearest node and `backspace` takes one node.
 
 ## Dragging a node
 
@@ -61,15 +71,14 @@ On a move, the handler's `MoveNodes` are applied as they come and the rest are d
 
 ## Keys
 
-`tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes a branch, `f2` or a double-click edits, arrows walk the tree, `escape` leaves a node. `cmd-=`, `cmd--` and `cmd-0` zoom; a pinch or a `cmd`-wheel zooms at the pointer, and a drag or a wheel pans.
+`tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes, `f2` or a double-click edits, arrows move the selection, `shift`-arrows nudge it, `escape` leaves a node. A double-click on nothing adds a node there. `cmd-=`, `cmd--` and `cmd-0` zoom; a pinch or a `cmd`-wheel zooms at the pointer, and a drag or a wheel pans.
 
 ## API
 
 ```rust
 impl CanvasView {
     pub fn new(canvas: Canvas, cx: &mut Context<Self>) -> Self;
-    /// `Arrange::Free` keeps positions as the document has them.
-    pub fn with_arrange(self, arrange: Arrange) -> Self;
+    pub fn with_layout(self, layout: Layout) -> Self;
     pub fn with_drag(self, handler: DragHandler) -> Self;
     pub fn with_changes(self, filter: impl Fn(&Canvas, Change, &mut App) -> Option<Change> + 'static) -> Self;
     pub fn canvas(&self) -> &Canvas;
@@ -91,15 +100,16 @@ impl CanvasView {
     pub fn fit(&mut self, cx: &mut Context<Self>);
     /// The canvas point under the middle of the view.
     pub fn center(&self) -> (i64, i64);
-    /// Turning `Arrange::Mindmap` on drops every pin and lays the trees out again.
-    pub fn set_arrange(&mut self, arrange: Arrange, cx: &mut Context<Self>);
+    /// Switching to a tree that grows another way drops every pin.
+    pub fn set_layout(&mut self, layout: Layout, cx: &mut Context<Self>);
     pub fn set_drag(&mut self, handler: DragHandler);
 }
 
 // canvas::mindmap — pure; the builders answer a Change to submit
 pub fn layout(canvas: &mut Canvas);
 /// Where layout would move each node, those already there left out.
-pub fn arrange(canvas: &Canvas, held: Option<&str>) -> Vec<(String, (i64, i64))>;
+pub fn arrange(canvas: &Canvas, held: Option<&str>, flow: Flow) -> Vec<(String, (i64, i64))>;
+pub fn walk(canvas: &Canvas, id: &str, flow: Flow, arrow: Arrow) -> Option<String>;
 pub fn child(canvas: &Canvas, parent: &str, node: Node) -> Option<Vec<Change>>;
 pub fn sibling(canvas: &Canvas, of: &str, node: Node) -> Option<Vec<Change>>;
 pub fn root(canvas: &Canvas, node: Node, at: (i64, i64)) -> Change;
