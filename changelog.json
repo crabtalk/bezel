@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.1.14",
+    "date": "2026-09-15",
+    "summary": "A pane scrolls under a drag held at its edge, and the editor and terminal resize live.",
+    "new": [
+      "`scroll::drift` scrolls a pane while a drag is held near its edge, faster the closer the pointer and full speed past it. Feed it from a typed `on_drag_move` with `DriftState::aim`; `drift_velocity` is the ramp on its own.",
+      "`Editor::set_text_size` changes the base size of an open editor without rebuilding the document, clearing undo or dropping the zoom. `TerminalElement::with_text_size` sets the grid's font size, with the line height scaled to match.",
+      "`appearance::keep_background` leaves a window's background alone across appearance switches, for a window that is opaque on purpose."
+    ],
+    "fixed": [
+      "Switching back to `AppearanceMode::System` resolves to what the OS says rather than the mode just left. A pinned mode's override was being recorded as the system appearance.",
+      "The window that observed an appearance change gets the new background too. It was mid-update when the reapply ran, so it was skipped."
+    ]
+  },
+  {
     "version": "0.1.13",
     "date": "2026-09-14",
     "summary": "A sheet can come up from the bottom, a drag holds its run past the edge of the box, and a doc page is the component and its signatures.",
