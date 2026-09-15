@@ -1509,7 +1509,7 @@ fn code_body(
     lines: Vec<AnyElement>,
     typography: &Typography,
     wrap: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> AnyElement {
     let column = div()
         .flex()
         .flex_col()
@@ -1525,24 +1525,23 @@ fn code_body(
     if wrap {
         // The column is the block's width here rather than its widest line's,
         // which is what gives the text something to wrap against.
-        body.child(column.w_full())
+        body.child(column.w_full()).into_any_element()
     } else {
-        contain_sideways(body)
-            .overflow_x_scroll()
-            // Without it a scroll down the page turns sideways the moment the
-            // pointer crosses a code block: gpui remaps input to whichever axis
-            // a container can scroll.
-            .restrict_scroll_to_axis()
-            .flex()
-            .flex_row()
-            .whitespace_nowrap()
-            // The padding belongs to the lines, not to the scroller: a scroll
-            // container's trailing padding is not part of what it will scroll
-            // to, so the last characters of a long line sit behind the right
-            // edge with nowhere left to go. As a row's only item this column is
-            // sized by its widest line, and the padding rides along inside that
-            // width.
-            .child(column.items_start())
+        ui::scroll::Viewport::new(
+            format!("md-code-scroll-{ix}"),
+            body.flex()
+                .flex_row()
+                .whitespace_nowrap()
+                // The padding belongs to the lines, not to the scroller: a scroll
+                // container's trailing padding is not part of what it will scroll
+                // to, so the last characters of a long line sit behind the right
+                // edge with nowhere left to go. As a row's only item this column is
+                // sized by its widest line, and the padding rides along inside that
+                // width.
+                .child(column.items_start()),
+            gpui::Axis::Horizontal,
+        )
+        .into_any_element()
     }
 }
 
@@ -2001,39 +2000,13 @@ fn table(
         inner = inner.child(row_el);
     }
 
-    contain_sideways(div().id(ElementId::named_usize("md-table", ix)))
-        .w_full()
-        .overflow_x_scroll()
-        .restrict_scroll_to_axis()
-        .child(inner)
-        .into_any_element()
-}
-
-/// Keeps a sideways gesture inside the pane it started in.
-///
-/// gpui hands a vertical scroller the horizontal delta whenever its own axis
-/// reads zero, and its scroll handling never stops the event, so panning a
-/// fence or a wide table drives the page down behind it.
-/// `restrict_scroll_to_axis` is the half we can set on our own element; this is
-/// the other half, because the container a consumer wrapped the document in is
-/// not ours to configure.
-///
-/// `ui::scroll::pane` is the same pair behind one call, and is what an app
-/// should reach for. It cannot be used here: this crate carries no dependency
-/// on `ui`, deliberately — the document model paints without a component
-/// library.
-///
-/// Registered before the element's own handler and so run after it — gpui
-/// bubbles the list backwards — which is why the pane has already moved by the
-/// time the event stops here.
-fn contain_sideways<E: gpui::InteractiveElement>(el: E) -> E {
-    el.on_scroll_wheel(|event, window, cx| {
-        let delta = event.delta.pixel_delta(window.line_height());
-        // The dominant axis, not "any horizontal component": a trackpad puts a
-        // little of both into every gesture, and a mostly-vertical one still
-        // belongs to the page.
-        if delta.x.abs() > delta.y.abs() {
-            cx.stop_propagation();
-        }
-    })
+    ui::scroll::Viewport::new(
+        format!("md-table-scroll-{ix}"),
+        div()
+            .id(ElementId::named_usize("md-table", ix))
+            .w_full()
+            .child(inner),
+        gpui::Axis::Horizontal,
+    )
+    .into_any_element()
 }

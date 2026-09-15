@@ -1,0 +1,322 @@
+//! Stateful overlays for either scroll axis.
+
+use super::{self as scroll, ScrollbarState, TransientState};
+use gpui::{
+    self, Animation, AnimationExt, AnyElement, App, Axis, Div, DragMoveEvent, Empty, Global,
+    IntoElement, MouseButton, Pixels, RenderOnce, ScrollHandle, SharedString, Stateful, Window,
+    canvas, div, point, prelude::*, px,
+};
+use motion::Painter;
+use std::{cell::Cell, rc::Rc};
+use theme::ink;
+
+/// Visibility for overflowing panes; content that fits never draws a bar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Visibility {
+    #[default]
+    Scrolling,
+    Always,
+    Never,
+}
+impl Global for Visibility {}
+
+pub fn visibility(cx: &App) -> Visibility {
+    cx.try_global::<Visibility>().copied().unwrap_or_default()
+}
+
+/// Set the default for overlays, including those inside Markdown blocks.
+pub fn set_visibility(value: Visibility, cx: &mut App) {
+    cx.set_global(value);
+    cx.refresh_windows();
+}
+
+#[derive(IntoElement)]
+pub struct Overlay {
+    id: SharedString,
+    handle: ScrollHandle,
+    axis: Axis,
+    visibility: Option<Visibility>,
+    end_inset: Pixels,
+}
+
+impl Overlay {
+    /// Mount beside the scroller in a relative wrapper of the same size.
+    pub fn new(id: impl Into<SharedString>, handle: &ScrollHandle, axis: Axis) -> Self {
+        Self {
+            id: id.into(),
+            handle: handle.clone(),
+            axis,
+            visibility: None,
+            end_inset: px(0.),
+        }
+    }
+
+    /// Shorten the track to clear an overlaid footer without resizing content.
+    pub fn end_inset(mut self, inset: Pixels) -> Self {
+        self.end_inset = inset.max(px(0.));
+        self
+    }
+
+    /// Override the default for an individual pane, such as a sidebar.
+    pub fn visibility(mut self, visibility: Visibility) -> Self {
+        self.visibility = Some(visibility);
+        self
+    }
+}
+
+/// An intrinsically sized scroll container with its own handle and overlay.
+#[derive(IntoElement)]
+pub struct Viewport {
+    id: SharedString,
+    content: Stateful<Div>,
+    axis: Axis,
+    fill: bool,
+}
+
+impl Viewport {
+    pub fn new(id: impl Into<SharedString>, content: Stateful<Div>, axis: Axis) -> Self {
+        Self {
+            id: id.into(),
+            content,
+            axis,
+            fill: false,
+        }
+    }
+
+    /// Fill the remaining space in a flex container instead of sizing to content.
+    pub fn fill(mut self) -> Self {
+        self.fill = true;
+        self
+    }
+}
+
+impl RenderOnce for Viewport {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let state = window.use_keyed_state(
+            SharedString::from(format!("{}-handle", self.id)),
+            cx,
+            |_, _| ScrollHandle::new(),
+        );
+        let handle = state.read(cx).clone();
+        let axes = match self.axis {
+            Axis::Vertical => scroll::Axes::Vertical,
+            Axis::Horizontal => scroll::Axes::Horizontal,
+        };
+        div()
+            .relative()
+            .w_full()
+            .min_w_0()
+            .when(self.fill, |el| el.flex_1().min_h_0().flex().flex_col())
+            .child(scroll::scrolls(self.content, axes).track_scroll(&handle))
+            .child(Overlay::new(self.id, &handle, self.axis))
+    }
+}
+
+struct State {
+    steady: ScrollbarState,
+    transient: TransientState,
+    horizontal: Rc<Cell<Horizontal>>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Horizontal {
+    offset: Pixels,
+    max: Pixels,
+    generation: usize,
+    hovered: bool,
+    grab: Option<Pixels>,
+}
+
+impl RenderOnce for Overlay {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let mode = self.visibility.unwrap_or_else(|| visibility(cx));
+        if mode == Visibility::Never {
+            return Empty.into_any_element();
+        }
+        let state = window.use_keyed_state(
+            SharedString::from(format!("{}-state", self.id)),
+            cx,
+            |_, cx| State {
+                steady: ScrollbarState::new(Painter::of(cx)),
+                transient: TransientState::new(Painter::of(cx)),
+                horizontal: Rc::default(),
+            },
+        );
+        let held = state.read(cx);
+        let always = mode == Visibility::Always || cx.reduce_motion();
+        let inner = match self.axis {
+            Axis::Vertical if always => {
+                scroll::scrollbar_with_inset(self.id, &self.handle, &held.steady, self.end_inset)
+            }
+            Axis::Vertical => scroll::transient_with_inset(
+                self.id,
+                &self.handle,
+                &held.transient,
+                false,
+                self.end_inset,
+            ),
+            Axis::Horizontal => horizontal(
+                self.id,
+                &self.handle,
+                held.horizontal.clone(),
+                always,
+                self.end_inset,
+            ),
+        };
+        let handle = self.handle;
+        let before = (handle.bounds(), handle.max_offset(), handle.offset());
+        // Handles receive new geometry during layout, after this render pass.
+        div()
+            .absolute()
+            .inset_0()
+            .child(inner)
+            .child(
+                canvas(
+                    move |_, window, _| {
+                        if before != (handle.bounds(), handle.max_offset(), handle.offset()) {
+                            window.request_animation_frame();
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
+            .into_any_element()
+    }
+}
+
+#[derive(Clone)]
+struct HorizontalDrag(SharedString);
+
+fn horizontal(
+    id: SharedString,
+    handle: &ScrollHandle,
+    state: Rc<Cell<Horizontal>>,
+    always: bool,
+    end_inset: Pixels,
+) -> AnyElement {
+    let viewport = handle.bounds().size.width;
+    let max = handle.max_offset().x;
+    let Some(range) = scroll::thumb_in_track(
+        viewport,
+        max,
+        handle.offset().x,
+        viewport - 2. * scroll::BAR_INSET - end_inset,
+    ) else {
+        return Empty.into_any_element();
+    };
+    let size = range.end - range.start;
+    let mut held = state.get();
+    if (held.offset - handle.offset().x).abs() > px(0.5) || (held.max - max).abs() > px(0.5) {
+        held.offset = handle.offset().x;
+        held.max = max;
+        held.generation += 1;
+        state.set(held);
+    }
+    let drag_id = id.clone();
+    let drag_handle = handle.clone();
+    let drag_state = state.clone();
+    let release_state = state.clone();
+    let release = move |_: &gpui::MouseUpEvent, window: &mut Window, _: &mut App| {
+        let mut held = release_state.get();
+        held.grab = None;
+        held.generation += 1;
+        release_state.set(held);
+        window.refresh();
+    };
+    let hover_state = state.clone();
+    let debug_id = id.clone();
+    let track = div()
+        .debug_selector(move || format!("{debug_id}-track"))
+        .id(SharedString::from(format!("{id}-track")))
+        .absolute()
+        .left(scroll::BAR_INSET)
+        .right(scroll::BAR_INSET + end_inset)
+        .bottom(scroll::BAR_INSET)
+        .h(px(scroll::TRACK))
+        .flex()
+        .items_center()
+        .on_hover(move |hovered, window, _| {
+            let mut held = hover_state.get();
+            held.hovered = *hovered;
+            held.generation += 1;
+            hover_state.set(held);
+            window.refresh();
+        })
+        .on_drag_move(move |event: &DragMoveEvent<HorizontalDrag>, window, cx| {
+            if event.drag(cx).0 != drag_id {
+                return;
+            }
+            let viewport = drag_handle.bounds().size.width;
+            let max = drag_handle.max_offset().x;
+            let Some(range) = scroll::thumb_in_track(
+                viewport,
+                max,
+                drag_handle.offset().x,
+                viewport - 2. * scroll::BAR_INSET - end_inset,
+            ) else {
+                return;
+            };
+            let pointer = event.event.position.x - event.bounds.left();
+            let mut held = drag_state.get();
+            let grab = *held
+                .grab
+                .get_or_insert((pointer - range.start).clamp(px(0.), range.end - range.start));
+            drag_state.set(held);
+            let x = scroll::offset_for_thumb(
+                pointer - grab,
+                viewport - 2. * scroll::BAR_INSET - end_inset,
+                max,
+                range.end - range.start,
+            );
+            drag_handle.set_offset(point(x, drag_handle.offset().y));
+            window.refresh();
+        })
+        .on_mouse_up(MouseButton::Left, release.clone())
+        .on_mouse_up_out(MouseButton::Left, release);
+    let thumb_debug_id = id.clone();
+    let press_state = state.clone();
+    let press_handle = handle.clone();
+    let thumb = div()
+        .debug_selector(move || format!("{thumb_debug_id}-thumb"))
+        .id(SharedString::from(format!("{id}-thumb")))
+        .absolute()
+        .left(range.start)
+        .w(size)
+        .h(px(scroll::THUMB))
+        .rounded_full()
+        .bg(ink(0.2))
+        .hover(|s| s.bg(ink(0.32)))
+        .on_mouse_down(MouseButton::Left, move |event, window, _| {
+            let mut held = press_state.get();
+            held.grab = Some(
+                (event.position.x - press_handle.bounds().left() - scroll::BAR_INSET - range.start)
+                    .clamp(px(0.), size),
+            );
+            press_state.set(held);
+            window.refresh();
+        })
+        .on_drag(HorizontalDrag(id.clone()), |_, _, _, cx| cx.new(|_| Empty));
+    let thumb = if always {
+        thumb.into_any_element()
+    } else {
+        thumb
+            .with_animation(
+                SharedString::from(format!("{id}-fade-{}", held.generation)),
+                Animation::new(scroll::TRANSIENT_IDLE),
+                move |el, p| {
+                    let held = state.get();
+                    if held.hovered || held.grab.is_some() {
+                        el
+                    } else if p < 1. {
+                        el.opacity(1. - p)
+                    } else {
+                        el.hidden()
+                    }
+                },
+            )
+            .into_any_element()
+    };
+    track.child(thumb).into_any_element()
+}
