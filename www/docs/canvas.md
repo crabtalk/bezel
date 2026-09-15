@@ -33,7 +33,19 @@ State stays with the app: look the view up by the node's id. gpui cannot transfo
 
 ## Keys
 
-`tab` adds a child, `enter` a sibling, `backspace` removes a branch, `f2` or a double-click edits, arrows walk the tree, `escape` leaves a node. `cmd-=`, `cmd--` and `cmd-0` zoom; a pinch or a `cmd`-wheel zooms at the pointer, and a drag or a wheel pans.
+## Dragging a node
+
+```rust
+cx.new(|cx| CanvasView::new(doc, cx).with_drag(canvas::drag::reparent));
+
+fn my_drop(canvas: &mut Canvas, drag: &canvas::drag::Drag) {
+    // drag.id, drag.to(), drag.over, drag.phase (Move, then one Drop)
+}
+```
+
+What a drop does is the app's, per view. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in. While held, the node stays where the handler put it and its branch follows.
+
+`tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes a branch, `f2` or a double-click edits, arrows walk the tree, `escape` leaves a node. `cmd-=`, `cmd--` and `cmd-0` zoom; a pinch or a `cmd`-wheel zooms at the pointer, and a drag or a wheel pans.
 
 ## API
 

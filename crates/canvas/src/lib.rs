@@ -6,10 +6,12 @@
 //! let view = cx.new(|cx| canvas::CanvasView::new(Canvas::parse(json)?, cx));
 //! ```
 //!
-//! [`model`] and [`mindmap`] are pure — no gpui. [`CanvasView`] is the surface:
-//! pan, zoom, selection, and the mindmap keys over the same document a save
-//! writes.
+//! [`model`], [`mindmap`] and [`drag`] are pure — no gpui. [`CanvasView`] is
+//! the surface: pan, zoom, selection, and the mindmap keys over the same
+//! document a save writes. What a dropped node does is the app's
+//! ([`drag::DragHandler`]).
 
+pub mod drag;
 pub mod mindmap;
 pub mod model;
 mod node;

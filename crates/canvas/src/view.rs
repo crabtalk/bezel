@@ -12,15 +12,16 @@ use std::{
 
 use editor::{Chrome, Editor, EditorEvent};
 use gpui::{
-    AnyElement, App, Bounds, Context, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
-    Hsla, MouseButton, MouseDownEvent, MouseMoveEvent, PathBuilder, PinchEvent, Pixels, Point,
-    Render, Rgba, ScrollWheelEvent, Subscription, Window, canvas as painter, div, point,
-    prelude::*, px,
+    AnyElement, App, Bounds, Context, DispatchPhase, ElementId, Entity, EventEmitter, FocusHandle,
+    Focusable, Hsla, KeyContext, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PathBuilder, PinchEvent, Pixels, Point, Render, Rgba, ScrollWheelEvent, Size, Subscription,
+    WeakEntity, Window, canvas as painter, div, point, prelude::*, px,
 };
 use markdown::{Editing, Marks, Typography};
 use theme::{TextStyle, Theme};
 
 use crate::{
+    drag::{self, Drag, DragHandler, Phase},
     mindmap::{self, Toward},
     model::{Canvas, Edge, End, FILE, GROUP, LINK, Node, Side, TEXT},
     node,
@@ -28,6 +29,14 @@ use crate::{
 
 /// The key context the canvas binds in.
 pub const CONTEXT: &str = "BezelCanvas";
+
+/// Claims `tab`, which adds a child here, from `ui::focus` traversal.
+fn key_context() -> KeyContext {
+    let mut context = KeyContext::default();
+    context.add(CONTEXT);
+    context.add(ui::focus::CLAIMS_TAB);
+    context
+}
 
 const MIN_ZOOM: f32 = 0.25;
 const MAX_ZOOM: f32 = 4.0;
@@ -42,6 +51,8 @@ const RADIUS: f32 = 8.0;
 const ARROW: f32 = 8.0;
 /// How far the selection ring sits outside a node, in screen pixels.
 const RING: f32 = 3.0;
+/// How far a press on a node travels before it is a drag, in screen pixels.
+const DRAG_SLOP: f32 = 3.0;
 
 pub mod keys {
     //! Every action the canvas answers to, and the chords bound to it.
@@ -117,8 +128,19 @@ pub enum Arrange {
     /// [`mindmap::layout`] after every change.
     #[default]
     Mindmap,
-    /// Where the document says.
+    /// Where the document, and the drag handler, put them.
     Free,
+}
+
+/// What a held button is moving.
+enum Grab {
+    Pan(Point<Pixels>),
+    Node {
+        id: String,
+        from: Point<Pixels>,
+        origin: (i64, i64),
+        moved: bool,
+    },
 }
 
 struct Session {
@@ -130,15 +152,19 @@ struct Session {
 pub struct CanvasView {
     canvas: Canvas,
     arrange: Arrange,
+    drag: DragHandler,
     focus: FocusHandle,
     selected: Option<String>,
     editing: Option<Session>,
     /// Screen position of the canvas origin, from the view's top left.
     pan: Point<f32>,
     zoom: f32,
-    grab: Option<Point<Pixels>>,
+    grab: Option<Grab>,
     stale: bool,
-    framed: bool,
+    /// The view size the document was last centred in.
+    framed: Option<Size<Pixels>>,
+    /// The reader has panned or zoomed, so a resize no longer re-centres.
+    touched: bool,
     viewport: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// Text node heights read at prepaint, in canvas units.
     measured: Rc<RefCell<HashMap<String, i64>>>,
@@ -157,6 +183,7 @@ impl CanvasView {
         Self {
             canvas,
             arrange: Arrange::default(),
+            drag: drag::pin,
             focus: cx.focus_handle(),
             selected: None,
             editing: None,
@@ -164,7 +191,8 @@ impl CanvasView {
             zoom: 1.0,
             grab: None,
             stale: true,
-            framed: false,
+            framed: None,
+            touched: false,
             viewport: Rc::default(),
             measured: Rc::default(),
         }
@@ -172,6 +200,12 @@ impl CanvasView {
 
     pub fn with_arrange(mut self, arrange: Arrange) -> Self {
         self.arrange = arrange;
+        self
+    }
+
+    /// What dragging a node does. [`drag::pin`] unless an app says otherwise.
+    pub fn with_drag(mut self, handler: DragHandler) -> Self {
+        self.drag = handler;
         self
     }
 
@@ -208,6 +242,16 @@ impl CanvasView {
         self.zoom
     }
 
+    /// Where the canvas origin sits, in pixels from the view's top left.
+    pub fn pan(&self) -> Point<f32> {
+        self.pan
+    }
+
+    /// Where the view painted last frame, in window coordinates.
+    pub fn bounds(&self) -> Option<Bounds<Pixels>> {
+        self.viewport.get()
+    }
+
     /// Zoom about the middle of the view.
     pub fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
         let middle = self.middle();
@@ -233,6 +277,7 @@ impl CanvasView {
         if zoom == self.zoom {
             return;
         }
+        self.touched = true;
         let world = point(
             (anchor.x - self.pan.x) / self.zoom,
             (anchor.y - self.pan.y) / self.zoom,
@@ -262,10 +307,15 @@ impl CanvasView {
     }
 
     fn add_child(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let id = match &self.selected {
-            Some(parent) => mindmap::add_child(&mut self.canvas, parent),
-            None if self.canvas.nodes.is_empty() => Some(mindmap::add_root(&mut self.canvas, 0, 0)),
-            None => None,
+        // Nothing selected: under the first root, or a root of its own.
+        let parent = self.selected.clone().or_else(|| {
+            mindmap::roots(&self.canvas)
+                .next()
+                .map(|root| root.id.clone())
+        });
+        let id = match parent {
+            Some(parent) => mindmap::add_child(&mut self.canvas, &parent),
+            None => Some(mindmap::add_root(&mut self.canvas, 0, 0)),
         };
         self.added(id, window, cx);
     }
@@ -354,7 +404,9 @@ impl CanvasView {
         self.stop_editing(window, cx);
         window.focus(&self.focus, cx);
         self.select(None, cx);
-        self.grab = Some(event.position);
+        self.grab = Some(Grab::Pan(event.position));
+        // The listeners that follow the grab are painted next frame.
+        cx.notify();
     }
 
     fn press_node(
@@ -372,19 +424,83 @@ impl CanvasView {
         self.select(Some(id.clone()), cx);
         if event.click_count >= 2 {
             self.edit(id, window, cx);
+        } else if let Some(node) = self.canvas.node(&id) {
+            self.grab = Some(Grab::Node {
+                origin: (node.x, node.y),
+                id,
+                from: event.position,
+                moved: false,
+            });
+            cx.notify();
         }
     }
 
     fn drag(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(last) = self.grab else { return };
         if !event.dragging() {
-            self.grab = None;
+            self.release(event.position, cx);
             return;
         }
-        self.pan.x += (event.position.x - last.x).as_f32();
-        self.pan.y += (event.position.y - last.y).as_f32();
-        self.grab = Some(event.position);
-        cx.notify();
+        match &mut self.grab {
+            None => {}
+            Some(Grab::Pan(last)) => {
+                self.pan.x += (event.position.x - last.x).as_f32();
+                self.pan.y += (event.position.y - last.y).as_f32();
+                *last = event.position;
+                self.touched = true;
+                cx.notify();
+            }
+            Some(Grab::Node { from, moved, .. }) => {
+                let dx = (event.position.x - from.x).as_f32();
+                let dy = (event.position.y - from.y).as_f32();
+                if !*moved && dx.abs().max(dy.abs()) < DRAG_SLOP {
+                    return;
+                }
+                *moved = true;
+                self.carry(event.position, Phase::Move);
+                cx.notify();
+            }
+        }
+    }
+
+    /// The button came up: a node that moved is dropped, and the document
+    /// changed.
+    fn release(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if let Some(Grab::Node { moved: true, .. }) = self.grab {
+            self.carry(position, Phase::Drop);
+            cx.emit(CanvasEvent::Changed);
+            cx.notify();
+        }
+        self.grab = None;
+    }
+
+    /// Hand the held node's gesture at `position` to the drag handler.
+    fn carry(&mut self, position: Point<Pixels>, phase: Phase) {
+        let Some(Grab::Node {
+            id, from, origin, ..
+        }) = &self.grab
+        else {
+            return;
+        };
+        let (id, origin, zoom) = (id.clone(), *origin, self.zoom);
+        let delta = (
+            ((position.x - from.x).as_f32() / zoom).round() as i64,
+            ((position.y - from.y).as_f32() / zoom).round() as i64,
+        );
+        let local = self.local(position);
+        let pointer = (
+            ((local.x - self.pan.x) / zoom).round() as i64,
+            ((local.y - self.pan.y) / zoom).round() as i64,
+        );
+        let over = mindmap::node_at(&self.canvas, pointer, &id).map(str::to_owned);
+        let gesture = Drag {
+            id: &id,
+            origin,
+            delta,
+            over: over.as_deref(),
+            phase,
+        };
+        (self.drag)(&mut self.canvas, &gesture);
+        self.stale = true;
     }
 
     fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -395,6 +511,7 @@ impl CanvasView {
         } else {
             self.pan.x += delta.x.as_f32();
             self.pan.y += delta.y.as_f32();
+            self.touched = true;
             cx.notify();
         }
         cx.stop_propagation();
@@ -417,16 +534,28 @@ impl CanvasView {
             }
         }
         if std::mem::take(&mut self.stale) && self.arrange == Arrange::Mindmap {
-            mindmap::layout(&mut self.canvas);
+            let held = match &self.grab {
+                Some(Grab::Node {
+                    id, moved: true, ..
+                }) => Some(id.as_str()),
+                _ => None,
+            };
+            mindmap::layout_holding(&mut self.canvas, held);
         }
     }
 
-    /// Centre the document in the view, once, when the view has a size.
+    /// Centre the document whenever the view's size changes, until the reader
+    /// pans or zooms. An axis the document overflows starts at its edge
+    /// instead, so a wide tree still shows its root.
     fn frame(&mut self) {
-        let Some(viewport) = self.viewport.get().filter(|_| !self.framed) else {
+        let Some(viewport) = self
+            .viewport
+            .get()
+            .filter(|v| !self.touched && self.framed != Some(v.size))
+        else {
             return;
         };
-        self.framed = true;
+        self.framed = Some(viewport.size);
         let size = point(viewport.size.width.as_f32(), viewport.size.height.as_f32());
         let nodes = &self.canvas.nodes;
         let (x0, y0, x1, y1) = nodes.iter().fold(
@@ -444,10 +573,16 @@ impl CanvasView {
             point(size.x / 2.0, size.y / 2.0)
         } else {
             let z = self.zoom;
-            point(
-                (size.x - (x1 - x0) as f32 * z) / 2.0 - x0 as f32 * z,
-                (size.y - (y1 - y0) as f32 * z) / 2.0 - y0 as f32 * z,
-            )
+            let fit = |view: f32, lo: i64, hi: i64| {
+                let span = (hi - lo) as f32 * z;
+                let start = if span <= view {
+                    (view - span) / 2.0
+                } else {
+                    PAD * z
+                };
+                start - lo as f32 * z
+            };
+            point(fit(size.x, x0, x1), fit(size.y, y0, y1))
         };
     }
 
@@ -546,8 +681,9 @@ impl CanvasView {
         Some(element.into_any_element())
     }
 
-    fn edge_layer(&self, theme: &Theme) -> impl IntoElement + use<> {
+    fn edge_layer(&self, theme: &Theme, view: WeakEntity<Self>) -> impl IntoElement + use<> {
         let (z, pan) = (self.zoom, self.pan);
+        let grabbing = self.grab.is_some();
         let curves: Vec<Curve> = self
             .canvas
             .edges
@@ -557,7 +693,7 @@ impl CanvasView {
         let viewport = self.viewport.clone();
         painter(
             move |bounds, window, _| {
-                if viewport.replace(Some(bounds)).is_none() {
+                if viewport.replace(Some(bounds)).map(|b| b.size) != Some(bounds.size) {
                     window.refresh();
                 }
             },
@@ -588,6 +724,21 @@ impl CanvasView {
                         arrow(window, p0, curve.from_out, ARROW * z, curve.color);
                     }
                 }
+                // A held press follows the pointer past the view's edge, so it
+                // listens to the window rather than to this element.
+                if grabbing {
+                    let moves = view.clone();
+                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                        if phase == DispatchPhase::Bubble {
+                            let _ = moves.update(cx, |this, cx| this.drag(event, window, cx));
+                        }
+                    });
+                    window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                        if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+                            let _ = view.update(cx, |this, cx| this.release(event.position, cx));
+                        }
+                    });
+                }
             },
         )
         .absolute()
@@ -602,14 +753,14 @@ impl Render for CanvasView {
         self.reflow();
         self.frame();
         let theme = Theme::of(cx).clone();
-        let edges = self.edge_layer(&theme);
+        let edges = self.edge_layer(&theme, cx.entity().downgrade());
         let nodes: Vec<AnyElement> = (0..self.canvas.nodes.len())
             .filter_map(|ix| self.paint_node(ix, &theme, window, cx))
             .collect();
 
         div()
             .id("bezel-canvas")
-            .key_context(CONTEXT)
+            .key_context(key_context())
             .track_focus(&self.focus)
             .relative()
             .size_full()
@@ -653,11 +804,6 @@ impl Render for CanvasView {
             }))
             .on_action(cx.listener(|this, _: &keys::ResetZoom, _, cx| this.set_zoom(1.0, cx)))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::press_background))
-            .on_mouse_move(cx.listener(Self::drag))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _, _, _| this.grab = None),
-            )
             .on_scroll_wheel(cx.listener(Self::wheel))
             .on_pinch(cx.listener(Self::pinch))
             .child(edges)

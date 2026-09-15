@@ -607,6 +607,7 @@ dependencies = [
  "bezel-gpui",
  "bezel-markdown",
  "bezel-theme",
+ "bezel-ui",
  "serde",
  "serde_json",
 ]

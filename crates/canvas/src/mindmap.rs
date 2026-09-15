@@ -6,6 +6,8 @@
 
 use std::collections::HashSet;
 
+use serde_json::Value;
+
 use crate::model::{Canvas, Edge, End, GROUP, Node, Side, TEXT};
 
 /// Between a parent's right side and its children's left.
@@ -15,6 +17,25 @@ pub const GAP_Y: i64 = 16;
 /// A new node's box, until its content is measured.
 pub const NODE_WIDTH: i64 = 200;
 pub const NODE_HEIGHT: i64 = 40;
+/// Our own node field, not the spec's: set when a node is dragged, and layout
+/// leaves its position alone from then on.
+pub const PINNED: &str = "pinned";
+
+pub fn is_pinned(node: &Node) -> bool {
+    node.extra
+        .get(PINNED)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// Put a node where it was dropped and keep it there. Its branch follows it.
+pub fn pin(canvas: &mut Canvas, id: &str, x: i64, y: i64) -> Option<()> {
+    let node = canvas.node_mut(id)?;
+    node.x = x;
+    node.y = y;
+    node.extra.insert(PINNED.into(), Value::Bool(true));
+    Some(())
+}
 
 /// Tree motion from a node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +91,12 @@ pub fn step(canvas: &Canvas, id: &str, toward: Toward) -> Option<String> {
 /// A node reached twice hangs off the first parent that reaches it, so a stray
 /// cycle or a cross link cannot loop the layout.
 pub fn layout(canvas: &mut Canvas) {
+    layout_holding(canvas, None);
+}
+
+/// [`layout`], keeping `held` where it is as if pinned — the node a drag has
+/// in hand.
+pub fn layout_holding(canvas: &mut Canvas, held: Option<&str>) {
     let roots: Vec<usize> = roots(canvas)
         .filter_map(|node| canvas.index_of(&node.id))
         .collect();
@@ -81,7 +108,7 @@ pub fn layout(canvas: &mut Canvas) {
     for tree in &trees {
         let root = &canvas.nodes[tree.ix];
         let (x, center) = (root.x, root.y + root.height / 2);
-        place(canvas, tree, x, center);
+        place(canvas, tree, x, center, held);
     }
 }
 
@@ -136,6 +163,55 @@ pub fn remove(canvas: &mut Canvas, id: &str) -> Option<String> {
     next
 }
 
+/// Hang `id` under `parent` as its last child, cutting the edges it had in.
+/// Refused onto itself or its own branch, which would be a cycle.
+pub fn reparent(canvas: &mut Canvas, id: &str, parent: &str) -> bool {
+    let (Some(ix), Some(_)) = (canvas.index_of(id), canvas.node(parent)) else {
+        return false;
+    };
+    if branch_ids(canvas, ix).contains(parent) {
+        return false;
+    }
+    detach(canvas, id);
+    if let Some(node) = canvas.node_mut(id) {
+        node.extra.remove(PINNED);
+    }
+    let edge = canvas.mint();
+    canvas.edges.push(tree_edge(edge, parent, id));
+    true
+}
+
+/// Cut the edges into `id`, leaving it a root where it is.
+pub fn detach(canvas: &mut Canvas, id: &str) {
+    canvas.edges.retain(|edge| edge.to_node != id);
+}
+
+/// The topmost node containing `at`, outside `except`'s branch.
+pub fn node_at<'a>(canvas: &'a Canvas, at: (i64, i64), except: &str) -> Option<&'a str> {
+    let skip = canvas
+        .index_of(except)
+        .map(|ix| branch_ids(canvas, ix))
+        .unwrap_or_default();
+    canvas
+        .nodes
+        .iter()
+        .rev()
+        .find(|n| {
+            !skip.contains(&n.id)
+                && (n.x..n.x + n.width).contains(&at.0)
+                && (n.y..n.y + n.height).contains(&at.1)
+        })
+        .map(|n| n.id.as_str())
+}
+
+fn branch_ids(canvas: &Canvas, ix: usize) -> HashSet<String> {
+    let mut ixs = Vec::new();
+    branch(canvas, ix, &mut HashSet::new()).collect(&mut ixs);
+    ixs.into_iter()
+        .map(|ix| canvas.nodes[ix].id.clone())
+        .collect()
+}
+
 struct Branch {
     ix: usize,
     children: Vec<Branch>,
@@ -171,26 +247,42 @@ fn branch(canvas: &Canvas, ix: usize, seen: &mut HashSet<usize>) -> Branch {
 
 /// The height a branch takes: its node, or its children stacked, whichever is
 /// taller.
-fn span(canvas: &Canvas, branch: &Branch) -> i64 {
+fn span(canvas: &Canvas, branch: &Branch, held: Option<&str>) -> i64 {
     canvas.nodes[branch.ix]
         .height
-        .max(stack(canvas, &branch.children))
+        .max(stack(canvas, &branch.children, held))
 }
 
-fn stack(canvas: &Canvas, branches: &[Branch]) -> i64 {
-    let gaps = GAP_Y * (branches.len() as i64 - 1).max(0);
-    branches.iter().map(|b| span(canvas, b)).sum::<i64>() + gaps
+/// Whether layout leaves a node where it is: pinned, or in a drag's hand.
+fn fixed(node: &Node, held: Option<&str>) -> bool {
+    is_pinned(node) || held == Some(node.id.as_str())
 }
 
-fn place(canvas: &mut Canvas, branch: &Branch, x: i64, center: i64) {
+/// The children still in the column: a fixed one left it.
+fn stack(canvas: &Canvas, branches: &[Branch], held: Option<&str>) -> i64 {
+    let flowing: Vec<&Branch> = branches
+        .iter()
+        .filter(|b| !fixed(&canvas.nodes[b.ix], held))
+        .collect();
+    let gaps = GAP_Y * (flowing.len() as i64 - 1).max(0);
+    flowing.iter().map(|b| span(canvas, b, held)).sum::<i64>() + gaps
+}
+
+fn place(canvas: &mut Canvas, branch: &Branch, x: i64, center: i64, held: Option<&str>) {
     let node = &mut canvas.nodes[branch.ix];
     node.x = x;
     node.y = center - node.height / 2;
     let column = x + node.width + GAP_X;
-    let mut top = center - stack(canvas, &branch.children) / 2;
+    let mut top = center - stack(canvas, &branch.children, held) / 2;
     for child in &branch.children {
-        let span = span(canvas, child);
-        place(canvas, child, column, top + span / 2);
+        let kid = &canvas.nodes[child.ix];
+        if fixed(kid, held) {
+            let (x, center) = (kid.x, kid.y + kid.height / 2);
+            place(canvas, child, x, center, held);
+            continue;
+        }
+        let span = span(canvas, child, held);
+        place(canvas, child, column, top + span / 2, held);
         top += span + GAP_Y;
     }
 }
