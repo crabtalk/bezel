@@ -123,6 +123,10 @@ impl Canvas {
         self.nodes.iter_mut().find(|node| node.id == id)
     }
 
+    pub fn edge(&self, id: &str) -> Option<&Edge> {
+        self.edges.iter().find(|edge| edge.id == id)
+    }
+
     /// `n` ids no node or edge holds, distinct from each other.
     pub fn mint_n(&self, n: usize) -> Vec<String> {
         let taken = |id: &str| {

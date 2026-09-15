@@ -75,6 +75,10 @@ Shift- or cmd-click adds to the selection, a shift-drag on empty canvas selects 
 
 `cmd-z` and `cmd-shift-z` undo and redo what landed through `submit` or `apply`; an add and the typing into it are one step. Copy writes JSON Canvas; paste mints fresh ids and lands under the selection in a tree, or in the middle of the view, and plain text pastes as a text node. `cmd-d` duplicates.
 
+## Edges and boxes
+
+Click an edge to pick it: `backspace` removes it, and a double-click or `f2` edits its label. A picked node shows a handle on each side — drag one onto a node to connect them, or onto nothing to make a node there, a child under a tree — and a corner that resizes it, the width alone for a box that grows. A connector drawn under a tree layout is a cross link.
+
 ## Keys
 
 `tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes, `f2` or a double-click edits, arrows move the selection, `shift`-arrows nudge it, `escape` leaves a node. A double-click on nothing adds a node there. `cmd-=`, `cmd--` and `cmd-0` zoom; a pinch or a `cmd`-wheel zooms at the pointer, and a drag, a middle-button drag or a wheel pans.
@@ -99,6 +103,9 @@ impl CanvasView {
     pub fn selection(&self) -> &[String];
     pub fn select(&mut self, id: Option<String>, cx: &mut Context<Self>);
     pub fn set_selection(&mut self, ids: Vec<String>, cx: &mut Context<Self>);
+    /// An edge is picked apart from nodes: picking one lets the others go.
+    pub fn selected_edge(&self) -> Option<&str>;
+    pub fn select_edge(&mut self, id: Option<String>, cx: &mut Context<Self>);
     pub fn select_all(&mut self, cx: &mut Context<Self>);
     /// What `backspace` does.
     pub fn remove_selected(&mut self, cx: &mut Context<Self>);

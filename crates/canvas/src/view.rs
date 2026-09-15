@@ -66,6 +66,14 @@ const DUPLICATE: i64 = 24;
 const HISTORY: usize = 200;
 /// The accent wash inside a marquee.
 const MARQUEE_WASH: f32 = 0.08;
+/// A picked node's side and corner handles, in screen pixels.
+const HANDLE: f32 = 8.0;
+/// How near a press must come to an edge to pick it, in screen pixels.
+const EDGE_REACH: f32 = 6.0;
+/// The smallest box a corner pulls a node to, in canvas units.
+const MIN_SIZE: (i64, i64) = (60, 32);
+/// The room an edge label is centred in, in canvas units.
+const LABEL: (f32, f32) = (240.0, 32.0);
 /// How much of a connector a drop would cut still shows.
 const CUT: f32 = 0.25;
 /// The accent wash inside a node a drop would land on.
@@ -164,6 +172,8 @@ pub enum CanvasEvent {
     Changed(Vec<Change>),
     /// The selection, the primary last.
     Selected(Vec<String>),
+    /// The picked edge.
+    EdgeSelected(Option<String>),
 }
 
 /// Decides each change before it lands: it, another, or `None` to refuse.
@@ -191,6 +201,21 @@ enum Grab {
         to: Point<Pixels>,
         base: Vec<String>,
     },
+    /// A connector drawn out of `from`'s `side`, pressed at `start`, now at `to`.
+    Connect {
+        from: String,
+        side: Side,
+        start: Point<Pixels>,
+        to: Point<Pixels>,
+    },
+    /// `id`'s corner pulled from `start`: `size` is its box before, and `grows`
+    /// leaves the height to its content.
+    Resize {
+        id: String,
+        start: Point<Pixels>,
+        size: (i64, i64),
+        grows: bool,
+    },
 }
 
 /// One undoable edit: the changes that take it back, and the typing session it
@@ -210,6 +235,8 @@ struct Glide {
 
 struct Session {
     id: String,
+    /// An edge's label, not a node.
+    edge: bool,
     editor: Entity<Editor>,
     _changes: Subscription,
 }
@@ -222,6 +249,8 @@ pub struct CanvasView {
     focus: FocusHandle,
     /// The primary is last.
     selected: Vec<String>,
+    /// The picked edge, apart from the nodes.
+    edge: Option<String>,
     editing: Option<Session>,
     undo: Vec<Step>,
     redo: Vec<Step>,
@@ -265,6 +294,7 @@ impl CanvasView {
             filter: None,
             focus: cx.focus_handle(),
             selected: Vec::new(),
+            edge: None,
             editing: None,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -422,11 +452,14 @@ impl CanvasView {
 
     /// Tidy up after the document changed, and announce what did.
     fn landed(&mut self, changes: Vec<Change>, cx: &mut Context<Self>) {
-        if self
-            .editing
-            .as_ref()
-            .is_some_and(|s| self.canvas.node(&s.id).is_none())
-        {
+        let gone = self.editing.as_ref().is_some_and(|s| {
+            if s.edge {
+                self.canvas.edge(&s.id).is_none()
+            } else {
+                self.canvas.node(&s.id).is_none()
+            }
+        });
+        if gone {
             self.editing = None;
         }
         self.prune(cx);
@@ -451,9 +484,28 @@ impl CanvasView {
     }
 
     pub fn set_selection(&mut self, ids: Vec<String>, cx: &mut Context<Self>) {
+        if !ids.is_empty() {
+            self.select_edge(None, cx);
+        }
         if self.selected != ids {
             self.selected = ids.clone();
             cx.emit(CanvasEvent::Selected(ids));
+            cx.notify();
+        }
+    }
+
+    pub fn selected_edge(&self) -> Option<&str> {
+        self.edge.as_deref()
+    }
+
+    /// Pick an edge, or none. Picking one lets the nodes go.
+    pub fn select_edge(&mut self, id: Option<String>, cx: &mut Context<Self>) {
+        if id.is_some() {
+            self.set_selection(Vec::new(), cx);
+        }
+        if self.edge != id {
+            self.edge = id.clone();
+            cx.emit(CanvasEvent::EdgeSelected(id));
             cx.notify();
         }
     }
@@ -478,6 +530,13 @@ impl CanvasView {
             .cloned()
             .collect();
         self.set_selection(kept, cx);
+        if self
+            .edge
+            .as_deref()
+            .is_some_and(|id| self.canvas.edge(id).is_none())
+        {
+            self.select_edge(None, cx);
+        }
     }
 
     /// What `cmd-c` does: the selection, with its branches under a tree, as
@@ -658,9 +717,13 @@ impl CanvasView {
         self.drag = handler;
     }
 
-    /// What `backspace` does, through the filter: the selection, each with its
-    /// branch under a layout that grows trees.
+    /// What `backspace` does, through the filter: the picked edge, or the
+    /// selection, each node with its branch under a layout that grows trees.
     pub fn remove_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.edge.clone() {
+            self.submit([Change::RemoveEdges { ids: vec![id] }], cx);
+            return;
+        }
         let Some(primary) = self.selected().map(str::to_owned) else {
             return;
         };
@@ -827,17 +890,7 @@ impl CanvasView {
             return;
         };
         let value = (field.read)(node);
-        let size = TextStyle::Body.painted() * self.zoom;
-        let editor = cx.new(|cx| {
-            Editor::new(&value, cx)
-                .with_chrome(EditorChrome {
-                    handle: false,
-                    slash: false,
-                    language: false,
-                    paste: false,
-                })
-                .with_text_size(size)
-        });
+        let editor = self.editor(&value, cx);
         let changes = cx.subscribe(&editor, move |this, editor, event, cx| {
             if *event != EditorEvent::Changed {
                 return;
@@ -845,6 +898,7 @@ impl CanvasView {
             let Some(mut node) = this
                 .editing
                 .as_ref()
+                .filter(|s| !s.edge)
                 .and_then(|s| this.canvas.node(&s.id))
                 .cloned()
             else {
@@ -854,16 +908,70 @@ impl CanvasView {
             this.submit([Change::UpdateNode { node }], cx);
         });
         window.focus(&editor.focus_handle(cx), cx);
+        // A press that opened it would hand focus back to the canvas.
+        window.prevent_default();
         self.group = Some(match group {
             Some(group) => group,
             None => self.next_group(),
         });
         self.editing = Some(Session {
             id,
+            edge: false,
             editor,
             _changes: changes,
         });
         cx.notify();
+    }
+
+    /// Edit an edge's label in place, its typing one undo step.
+    fn edit_edge(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.stop_editing(window, cx);
+        let Some(edge) = self.canvas.edge(&id) else {
+            return;
+        };
+        let editor = self.editor(edge.label.as_deref().unwrap_or_default(), cx);
+        let changes = cx.subscribe(&editor, |this, editor, event, cx| {
+            if *event != EditorEvent::Changed {
+                return;
+            }
+            let Some(mut edge) = this
+                .editing
+                .as_ref()
+                .filter(|s| s.edge)
+                .and_then(|s| this.canvas.edge(&s.id))
+                .cloned()
+            else {
+                return;
+            };
+            let label = editor.read(cx).source();
+            edge.label = (!label.is_empty()).then_some(label);
+            this.submit([Change::UpdateEdge { edge }], cx);
+        });
+        window.focus(&editor.focus_handle(cx), cx);
+        window.prevent_default();
+        self.group = Some(self.next_group());
+        self.editing = Some(Session {
+            id,
+            edge: true,
+            editor,
+            _changes: changes,
+        });
+        cx.notify();
+    }
+
+    /// An editor for text typed in place, at the zoom.
+    fn editor(&self, value: &str, cx: &mut Context<Self>) -> Entity<Editor> {
+        let size = TextStyle::Body.painted() * self.zoom;
+        cx.new(|cx| {
+            Editor::new(value, cx)
+                .with_chrome(EditorChrome {
+                    handle: false,
+                    slash: false,
+                    language: false,
+                    paste: false,
+                })
+                .with_text_size(size)
+        })
     }
 
     fn stop_editing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -882,6 +990,10 @@ impl CanvasView {
     ) {
         self.stop_editing(window, cx);
         window.focus(&self.focus, cx);
+        if let Some(id) = self.edge_at(event.position) {
+            self.press_edge(id, event, window, cx);
+            return;
+        }
         if event.modifiers.shift {
             self.grab = Some(Grab::Marquee {
                 from: event.position,
@@ -892,6 +1004,7 @@ impl CanvasView {
             return;
         }
         self.select(None, cx);
+        self.select_edge(None, cx);
         if event.click_count >= 2 {
             // A double-click on nothing makes a root there.
             let node = (kind::kind(cx, model::TEXT).child)(&Node::default());
@@ -910,6 +1023,141 @@ impl CanvasView {
         cx.notify();
     }
 
+    fn press_edge(
+        &mut self,
+        id: String,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.editing.as_ref().is_some_and(|s| s.edge && s.id == id) {
+            return;
+        }
+        self.stop_editing(window, cx);
+        window.focus(&self.focus, cx);
+        self.select_edge(Some(id.clone()), cx);
+        if event.click_count >= 2 {
+            self.edit_edge(id, window, cx);
+        }
+    }
+
+    fn press_connect(
+        &mut self,
+        from: String,
+        side: Side,
+        event: &MouseDownEvent,
+        cx: &mut Context<Self>,
+    ) {
+        self.grab = Some(Grab::Connect {
+            from,
+            side,
+            start: event.position,
+            to: event.position,
+        });
+        cx.notify();
+    }
+
+    fn press_resize(&mut self, id: String, event: &MouseDownEvent, cx: &mut Context<Self>) {
+        let Some(node) = self.canvas.node(&id) else {
+            return;
+        };
+        let grows = kind::kind(cx, &node.kind).sizing == Sizing::Grows;
+        self.grab = Some(Grab::Resize {
+            size: (node.width, node.height),
+            id,
+            start: event.position,
+            grows,
+        });
+        cx.notify();
+    }
+
+    /// A connector let go of at `position`: onto the node there, else to a new
+    /// node, a child under a tree. Between two nodes under a tree, it is a
+    /// cross link.
+    fn connect(
+        &mut self,
+        from: String,
+        side: Side,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let at = self.to_canvas(position);
+        let tree = self.layout.flow.is_some();
+        if let Some(to) = self.node_under(at, &from).map(str::to_owned) {
+            let mut edge = Edge {
+                from_side: Some(side),
+                ..Edge::new(self.canvas.mint(), from, to)
+            };
+            if tree {
+                edge.extra.insert(mindmap::TREE.into(), false.into());
+            }
+            self.submit([Change::AddEdge { edge, index: None }], cx);
+            return;
+        }
+        let Some(mut node) = self.template(&from, cx) else {
+            return;
+        };
+        let changes = if tree {
+            mindmap::child(&self.canvas, &from, node)
+        } else {
+            let Ok([id, edge]) = <[String; 2]>::try_from(self.canvas.mint_n(2)) else {
+                return;
+            };
+            node.id = id;
+            (node.x, node.y) = (at.0 - node.width / 2, at.1 - node.height / 2);
+            let edge = Edge {
+                from_side: Some(side),
+                ..Edge::new(edge, from.as_str(), node.id.as_str())
+            };
+            Some(vec![
+                Change::AddNode { node, index: None },
+                Change::AddEdge { edge, index: None },
+            ])
+        };
+        self.added(changes, window, cx);
+    }
+
+    /// The topmost node at a canvas point, other than `except`.
+    fn node_under(&self, at: (i64, i64), except: &str) -> Option<&str> {
+        self.canvas
+            .nodes
+            .iter()
+            .rev()
+            .find(|n| {
+                n.id != except
+                    && (n.x..n.x + n.width).contains(&at.0)
+                    && (n.y..n.y + n.height).contains(&at.1)
+            })
+            .map(|n| n.id.as_str())
+    }
+
+    /// The node a connector being drawn would reach.
+    fn connect_target(&self) -> Option<&str> {
+        let Some(Grab::Connect { from, to, .. }) = &self.grab else {
+            return None;
+        };
+        self.node_under(self.to_canvas(*to), from)
+    }
+
+    /// The topmost edge passing near a window position.
+    fn edge_at(&self, position: Point<Pixels>) -> Option<String> {
+        let local = self.local(position);
+        let at = point(
+            (local.x - self.pan.x) / self.zoom,
+            (local.y - self.pan.y) / self.zoom,
+        );
+        let reach = EDGE_REACH / self.zoom;
+        self.canvas
+            .edges
+            .iter()
+            .rev()
+            .find(|edge| {
+                curve(&self.canvas, &self.shown, edge).is_some_and(|c| c.distance(at) <= reach)
+            })
+            .map(|edge| edge.id.clone())
+    }
+
     fn press_node(
         &mut self,
         id: String,
@@ -917,7 +1165,7 @@ impl CanvasView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.editing.as_ref().is_some_and(|s| s.id == id) {
+        if self.editing.as_ref().is_some_and(|s| !s.edge && s.id == id) {
             return;
         }
         self.stop_editing(window, cx);
@@ -960,9 +1208,9 @@ impl CanvasView {
         }
     }
 
-    fn drag(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn drag(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         if !event.dragging() {
-            self.release(event.position, cx);
+            self.release(event.position, window, cx);
             return;
         }
         match &mut self.grab {
@@ -977,6 +1225,32 @@ impl CanvasView {
             Some(Grab::Marquee { to, .. }) => {
                 *to = event.position;
                 self.mark(cx);
+                cx.notify();
+            }
+            Some(Grab::Connect { to, .. }) => {
+                *to = event.position;
+                cx.notify();
+            }
+            Some(Grab::Resize {
+                id,
+                start,
+                size,
+                grows,
+            }) => {
+                let z = self.zoom;
+                let pulled = |from: Pixels, to: Pixels| ((to - from).as_f32() / z).round() as i64;
+                let width = (size.0 + pulled(start.x, event.position.x)).max(MIN_SIZE.0);
+                let height = if *grows {
+                    self.canvas.node(id).map_or(size.1, |node| node.height)
+                } else {
+                    (size.1 + pulled(start.y, event.position.y)).max(MIN_SIZE.1)
+                };
+                let change = Change::Resize {
+                    id: id.clone(),
+                    size: (width, height),
+                };
+                change::apply(&mut self.canvas, &change);
+                self.stale = true;
                 cx.notify();
             }
             Some(Grab::Node { from, moved, .. }) => {
@@ -1012,7 +1286,7 @@ impl CanvasView {
 
     /// The button came up: what the preview moved is put back, and the drop is
     /// submitted.
-    fn release(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+    fn release(&mut self, position: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
         self.pending.clear();
         match &mut self.grab {
             Some(Grab::Node {
@@ -1037,6 +1311,41 @@ impl CanvasView {
                 self.select(Some(id), cx);
             }
             Some(Grab::Marquee { .. }) => cx.notify(),
+            Some(Grab::Connect {
+                from,
+                side,
+                start,
+                to,
+            }) => {
+                let pulled = (to.x - start.x)
+                    .as_f32()
+                    .abs()
+                    .max((to.y - start.y).as_f32().abs());
+                let (from, side, to) = (from.clone(), *side, *to);
+                self.grab = None;
+                if pulled >= DRAG_SLOP {
+                    self.connect(from, side, to, window, cx);
+                }
+                cx.notify();
+            }
+            // The preview is put back, and the pull submitted as one resize.
+            Some(Grab::Resize { id, size, .. }) => {
+                let (id, before) = (id.clone(), *size);
+                self.grab = None;
+                if let Some(node) = self.canvas.node(&id) {
+                    let now = (node.width, node.height);
+                    let back = Change::Resize {
+                        id: id.clone(),
+                        size: before,
+                    };
+                    change::apply(&mut self.canvas, &back);
+                    if now != before {
+                        self.submit([Change::Resize { id, size: now }], cx);
+                    }
+                }
+                self.stale = true;
+                cx.notify();
+            }
             Some(Grab::Pan(_)) | None => {}
         }
         self.grab = None;
@@ -1244,6 +1553,7 @@ impl CanvasView {
         &self,
         ix: usize,
         at: (f32, f32),
+        connecting: Option<&str>,
         theme: &Theme,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -1259,7 +1569,7 @@ impl CanvasView {
             }
         }
         let kind = kind::kind(cx, &node.kind);
-        let editing = self.editing.as_ref().filter(|s| s.id == node.id);
+        let editing = self.editing.as_ref().filter(|s| !s.edge && s.id == node.id);
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
         let content = match editing {
@@ -1268,12 +1578,15 @@ impl CanvasView {
         };
         let grows = kind.sizing == Sizing::Grows;
         let selected = self.selected.contains(&node.id);
-        // A drop would connect the held node here.
-        let target = self.held() != Some(node.id.as_str())
-            && self.pending.iter().any(|change| {
-                matches!(change, Change::AddEdge { edge, .. }
-                    if edge.from_node == node.id || edge.to_node == node.id)
-            });
+        // A drop, or a connector let go here, would connect to this node.
+        let target = connecting == Some(node.id.as_str())
+            || self.held() != Some(node.id.as_str())
+                && self.pending.iter().any(|change| {
+                    matches!(change, Change::AddEdge { edge, .. }
+                        if edge.from_node == node.id || edge.to_node == node.id)
+                });
+        // A node picked alone, with nothing held, shows its handles.
+        let handles = selected && draggable && self.selected.len() == 1 && self.grab.is_none();
         let border = node
             .color
             .as_deref()
@@ -1358,6 +1671,55 @@ impl CanvasView {
                 .child(ring(theme.accent))
             })
             .when(selected && !target, |d| d.child(ring(theme.accent)))
+            .when(handles, |d| {
+                let handle = |key: String, x: f32, y: f32| {
+                    div()
+                        .id(ElementId::Name(key.into()))
+                        .absolute()
+                        .left(px(x - HANDLE / 2.0))
+                        .top(px(y - HANDLE / 2.0))
+                        .size(px(HANDLE))
+                        .border_1()
+                        .border_color(theme.accent)
+                        .bg(theme.surface_card)
+                };
+                let sides = [
+                    (Side::Top, w / 2.0, 0.0),
+                    (Side::Right, w, h / 2.0),
+                    (Side::Bottom, w / 2.0, h),
+                    (Side::Left, 0.0, h / 2.0),
+                ];
+                let corner = node.id.clone();
+                d.children(sides.map(|(side, x, y)| {
+                    let from = node.id.clone();
+                    handle(format!("{}-{side:?}", node.id), x, y)
+                        .rounded_full()
+                        .cursor(CursorStyle::Crosshair)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                this.press_connect(from.clone(), side, event, cx);
+                            }),
+                        )
+                }))
+                .child(
+                    handle(format!("{}-corner", node.id), w, h)
+                        .rounded(px(2.0))
+                        .cursor(if grows {
+                            CursorStyle::ResizeLeftRight
+                        } else {
+                            CursorStyle::ResizeUpLeftDownRight
+                        })
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                this.press_resize(corner.clone(), event, cx);
+                            }),
+                        ),
+                )
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -1366,6 +1728,64 @@ impl CanvasView {
                 }),
             );
         Some(element.into_any_element())
+    }
+
+    /// Edge labels, at the middle of their curves, and the one being typed.
+    fn labels(&self, theme: &Theme, shown: &Positions, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let z = self.zoom;
+        self.canvas
+            .edges
+            .iter()
+            .filter_map(|edge| {
+                let editing = self.editing.as_ref().filter(|s| s.edge && s.id == edge.id);
+                let text = edge.label.as_deref().filter(|label| !label.is_empty());
+                if editing.is_none() && text.is_none() {
+                    return None;
+                }
+                let middle = curve(&self.canvas, shown, edge)?.middle();
+                let (x, y) = (self.pan.x + middle.x * z, self.pan.y + middle.y * z);
+                let body = match editing {
+                    Some(session) => div()
+                        .min_w(px(LABEL.0 / 2.0 * z))
+                        .child(session.editor.clone())
+                        .into_any_element(),
+                    None => kind::text_style(div(), TextStyle::Callout, z)
+                        .text_color(theme.text_muted)
+                        .child(text.unwrap_or_default().to_owned())
+                        .into_any_element(),
+                };
+                let picked = self.edge.as_deref() == Some(edge.id.as_str());
+                let id = edge.id.clone();
+                let label = div()
+                    .id(ElementId::Name(format!("edge-label-{}", edge.id).into()))
+                    .px(px(PAD / 2.0 * z))
+                    .rounded(px(RADIUS * z))
+                    .border_1()
+                    .border_color(if picked { theme.accent } else { theme.border })
+                    .bg(theme.surface_card)
+                    .child(body)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.press_edge(id.clone(), event, window, cx);
+                        }),
+                    );
+                Some(
+                    div()
+                        .absolute()
+                        .left(px(x - LABEL.0 * z / 2.0))
+                        .top(px(y - LABEL.1 * z / 2.0))
+                        .w(px(LABEL.0 * z))
+                        .h(px(LABEL.1 * z))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(label)
+                        .into_any_element(),
+                )
+            })
+            .collect()
     }
 
     fn edge_layer(
@@ -1387,26 +1807,50 @@ impl CanvasView {
             })
             .map(String::as_str)
             .collect();
-        let mut curves: Vec<Curve> = self
+        // Each curve, its colour and its weight.
+        let mut strokes: Vec<(Curve, Hsla, f32)> = self
             .canvas
             .edges
             .iter()
             .filter_map(|edge| {
-                let mut curve = curve(&self.canvas, shown, edge, theme)?;
-                if cut.contains(edge.id.as_str()) {
-                    curve.color = curve.color.opacity(CUT);
+                let curve = curve(&self.canvas, shown, edge)?;
+                if self.edge.as_deref() == Some(edge.id.as_str()) {
+                    return Some((curve, theme.accent, 2.0));
                 }
-                Some(curve)
+                let mut paint = edge
+                    .color
+                    .as_deref()
+                    .and_then(|c| color(theme, c))
+                    .unwrap_or(theme.border_strong);
+                if cut.contains(edge.id.as_str()) {
+                    paint = paint.opacity(CUT);
+                }
+                Some((curve, paint, 1.0))
             })
             .collect();
-        curves.extend(self.pending.iter().filter_map(|change| {
+        strokes.extend(self.pending.iter().filter_map(|change| {
             let Change::AddEdge { edge, .. } = change else {
                 return None;
             };
-            let mut preview = curve(&self.canvas, shown, edge, theme)?;
-            preview.color = theme.accent;
-            Some(preview)
+            Some((curve(&self.canvas, shown, edge)?, theme.accent, 1.0))
         }));
+        // The connector being drawn, out to the pointer.
+        if let Some(Grab::Connect { from, side, to, .. }) = &self.grab
+            && let Some(node) = self.canvas.node(from)
+        {
+            let (start, out) = anchor(Rect::of(node, shown), *side);
+            let local = self.local(*to);
+            let end = point((local.x - pan.x) / z, (local.y - pan.y) / z);
+            let loose = Curve {
+                from: start,
+                from_out: out,
+                to: end,
+                to_out: point(-out.x, -out.y),
+                from_arrow: false,
+                to_arrow: true,
+            };
+            strokes.push((loose, theme.accent, 1.0));
+        }
         let viewport = self.viewport.clone();
         painter(
             move |bounds, window, _| {
@@ -1418,27 +1862,22 @@ impl CanvasView {
                 let origin = point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32());
                 let screen =
                     |p: Point<f32>| point(origin.x + pan.x + p.x * z, origin.y + pan.y + p.y * z);
-                for curve in curves {
-                    let (p0, p1) = (screen(curve.from), screen(curve.to));
-                    let reach = (p1.x - p0.x).abs().max((p1.y - p0.y).abs()) / 2.0;
-                    let c0 = point(
-                        p0.x + curve.from_out.x * reach,
-                        p0.y + curve.from_out.y * reach,
-                    );
-                    let c1 = point(p1.x + curve.to_out.x * reach, p1.y + curve.to_out.y * reach);
-                    let mid = point((c0.x + c1.x) / 2.0, (c0.y + c1.y) / 2.0);
-                    let mut path = PathBuilder::stroke(px(z.max(1.0)));
+                for (curve, paint, weight) in strokes {
+                    let [(p0, c0, mid), (_, c1, p1)] = curve
+                        .segments()
+                        .map(|(a, c, b)| (screen(a), screen(c), screen(b)));
+                    let mut path = PathBuilder::stroke(px(weight * z.max(1.0)));
                     path.move_to(pt(p0));
                     path.curve_to(pt(mid), pt(c0));
                     path.curve_to(pt(p1), pt(c1));
                     if let Ok(path) = path.build() {
-                        window.paint_path(path, curve.color);
+                        window.paint_path(path, paint);
                     }
                     if curve.to_arrow {
-                        arrow(window, p1, curve.to_out, ARROW * z, curve.color);
+                        arrow(window, p1, curve.to_out, ARROW * z, paint);
                     }
                     if curve.from_arrow {
-                        arrow(window, p0, curve.from_out, ARROW * z, curve.color);
+                        arrow(window, p0, curve.from_out, ARROW * z, paint);
                     }
                 }
                 // Window-wide, so the hand stays closed wherever the pointer
@@ -1455,10 +1894,11 @@ impl CanvasView {
                             let _ = moves.update(cx, |this, cx| this.drag(event, window, cx));
                         }
                     });
-                    window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                         let held = matches!(event.button, MouseButton::Left | MouseButton::Middle);
                         if phase == DispatchPhase::Bubble && held {
-                            let _ = view.update(cx, |this, cx| this.release(event.position, cx));
+                            let _ = view
+                                .update(cx, |this, cx| this.release(event.position, window, cx));
                         }
                     });
                 }
@@ -1483,12 +1923,14 @@ impl Render for CanvasView {
         let order = (0..self.canvas.nodes.len())
             .filter(|ix| Some(*ix) != held)
             .chain(held);
+        let connecting = self.connect_target().map(str::to_owned);
         let nodes: Vec<AnyElement> = order
             .filter_map(|ix| {
                 let at = shown[&self.canvas.nodes[ix].id];
-                self.paint_node(ix, at, &theme, window, cx)
+                self.paint_node(ix, at, connecting.as_deref(), &theme, window, cx)
             })
             .collect();
+        let labels = self.labels(&theme, &shown, cx);
         let marquee = match &self.grab {
             Some(Grab::Marquee { from, to, .. }) => {
                 let (a, b) = (self.local(*from), self.local(*to));
@@ -1522,12 +1964,17 @@ impl Render for CanvasView {
             )
             .on_action(cx.listener(|this, _: &keys::Remove, _, cx| this.remove_selected(cx)))
             .on_action(cx.listener(|this, _: &keys::Edit, window, cx| {
-                if let Some(id) = this.selected().map(str::to_owned) {
+                if let Some(id) = this.edge.clone() {
+                    this.edit_edge(id, window, cx);
+                } else if let Some(id) = this.selected().map(str::to_owned) {
                     this.edit(id, None, window, cx);
                 }
             }))
             .on_action(cx.listener(|this, _: &keys::SelectAll, _, cx| this.select_all(cx)))
-            .on_action(cx.listener(|this, _: &keys::Deselect, _, cx| this.select(None, cx)))
+            .on_action(cx.listener(|this, _: &keys::Deselect, _, cx| {
+                this.select(None, cx);
+                this.select_edge(None, cx);
+            }))
             .on_action(cx.listener(|this, _: &keys::Undo, _, cx| {
                 this.undo(cx);
             }))
@@ -1563,20 +2010,28 @@ impl Render for CanvasView {
             .on_scroll_wheel(cx.listener(Self::wheel))
             .on_pinch(cx.listener(Self::pinch))
             .child(edges)
+            .children(labels)
             .children(nodes)
             .children(marquee)
     }
 }
 
-/// A JSON Canvas color: a preset, or hex.
+/// A JSON Canvas color: a preset, or hex. Yellow and cyan have no token, so
+/// they turn the hue of the token beside them.
 fn color(theme: &Theme, color: &str) -> Option<Hsla> {
     match color {
         "1" => Some(theme.danger),
         "2" => Some(theme.warning),
+        "3" => Some(Hsla {
+            h: 50.0 / 360.0,
+            ..theme.warning
+        }),
         "4" => Some(theme.success),
+        "5" => Some(Hsla {
+            h: 185.0 / 360.0,
+            ..theme.success
+        }),
         "6" => Some(theme.accent),
-        // Yellow and cyan have no token to stand for them.
-        "3" | "5" => None,
         hex => Rgba::try_from(hex).ok().map(Into::into),
     }
 }
@@ -1605,6 +2060,7 @@ impl Rect {
     }
 }
 
+/// An edge where it paints, in canvas units.
 struct Curve {
     from: Point<f32>,
     /// Out of the node, at the anchor.
@@ -1613,10 +2069,62 @@ struct Curve {
     to_out: Point<f32>,
     from_arrow: bool,
     to_arrow: bool,
-    color: Hsla,
 }
 
-fn curve(canvas: &Canvas, shown: &Positions, edge: &Edge, theme: &Theme) -> Option<Curve> {
+impl Curve {
+    /// The two quadratic halves painted: start, control, end.
+    fn segments(&self) -> [(Point<f32>, Point<f32>, Point<f32>); 2] {
+        let (p0, p1) = (self.from, self.to);
+        let reach = (p1.x - p0.x).abs().max((p1.y - p0.y).abs()) / 2.0;
+        let c0 = point(
+            p0.x + self.from_out.x * reach,
+            p0.y + self.from_out.y * reach,
+        );
+        let c1 = point(p1.x + self.to_out.x * reach, p1.y + self.to_out.y * reach);
+        let mid = point((c0.x + c1.x) / 2.0, (c0.y + c1.y) / 2.0);
+        [(p0, c0, mid), (mid, c1, p1)]
+    }
+
+    fn middle(&self) -> Point<f32> {
+        self.segments()[0].2
+    }
+
+    /// How far `at` is from the curve.
+    fn distance(&self, at: Point<f32>) -> f32 {
+        const STEPS: usize = 16;
+        let mut nearest = f32::MAX;
+        for (a, c, b) in self.segments() {
+            let along = |t: f32| {
+                let u = 1.0 - t;
+                point(
+                    u * u * a.x + 2.0 * u * t * c.x + t * t * b.x,
+                    u * u * a.y + 2.0 * u * t * c.y + t * t * b.y,
+                )
+            };
+            let mut last = a;
+            for step in 1..=STEPS {
+                let next = along(step as f32 / STEPS as f32);
+                nearest = nearest.min(to_segment(at, last, next));
+                last = next;
+            }
+        }
+        nearest
+    }
+}
+
+/// How far `p` is from the segment `a`–`b`.
+fn to_segment(p: Point<f32>, a: Point<f32>, b: Point<f32>) -> f32 {
+    let (dx, dy) = (b.x - a.x, b.y - a.y);
+    let length = dx * dx + dy * dy;
+    let t = if length == 0.0 {
+        0.0
+    } else {
+        (((p.x - a.x) * dx + (p.y - a.y) * dy) / length).clamp(0.0, 1.0)
+    };
+    ((p.x - a.x - t * dx).powi(2) + (p.y - a.y - t * dy).powi(2)).sqrt()
+}
+
+fn curve(canvas: &Canvas, shown: &Positions, edge: &Edge) -> Option<Curve> {
     let a = Rect::of(canvas.node(&edge.from_node)?, shown);
     let b = Rect::of(canvas.node(&edge.to_node)?, shown);
     let (from_side, to_side) = facing(a, b);
@@ -1629,11 +2137,6 @@ fn curve(canvas: &Canvas, shown: &Positions, edge: &Edge, theme: &Theme) -> Opti
         to_out,
         from_arrow: edge.from_end == Some(End::Arrow),
         to_arrow: edge.to_end.unwrap_or(End::Arrow) == End::Arrow,
-        color: edge
-            .color
-            .as_deref()
-            .and_then(|c| color(theme, c))
-            .unwrap_or(theme.border_strong),
     })
 }
 
