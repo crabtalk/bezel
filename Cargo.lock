@@ -938,6 +938,7 @@ version = "0.1.14"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
+ "bezel-ui",
  "pulldown-cmark",
 ]
 

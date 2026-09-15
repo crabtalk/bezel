@@ -35,6 +35,12 @@
 //! scroll down.
 //!
 //! [`transient`] is the same bar, shown only while its content moves.
+//! [`Overlay`] manages its own state and supports either axis. Its default is
+//! [`Visibility::Scrolling`]; [`set_visibility`] updates all default overlays,
+//! including Markdown code blocks and tables. [`Viewport`] also owns the handle.
+
+mod overlay;
+pub use overlay::{Overlay, Viewport, Visibility, set_visibility, visibility};
 
 use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
@@ -50,6 +56,8 @@ use web_time::Instant;
 /// Shortest a thumb may get, however long the document — below this it stops
 /// being something a pointer can catch.
 pub const MIN_THUMB: Pixels = px(25.0);
+/// Space between the overlay track and the viewport edges.
+pub const BAR_INSET: Pixels = px(4.0);
 /// Width of the strip the thumb sits in.
 const TRACK: f32 = 10.0;
 /// Width of the thumb itself, centred in the track.
@@ -209,6 +217,20 @@ pub fn thumb(
     Some(start..start + size)
 }
 
+fn thumb_in_track(
+    viewport: Pixels,
+    max_offset: Pixels,
+    offset: Pixels,
+    track: Pixels,
+) -> Option<Range<Pixels>> {
+    if track <= px(0.) {
+        return None;
+    }
+    let scale = track / viewport;
+    let range = thumb(viewport, max_offset, offset, MIN_THUMB / scale)?;
+    Some(range.start * scale..range.end * scale)
+}
+
 /// The inverse: the scroll offset that puts the thumb's top at `top`.
 ///
 /// Negative, because that is the direction gpui counts in, and clamped to the
@@ -249,6 +271,21 @@ impl ScrollbarState {
         }
     }
 
+    fn begin(&self, handle: &ScrollHandle, event: &gpui::MouseDownEvent, end_inset: Pixels) {
+        let viewport = handle.bounds().size.height;
+        if let Some(range) = thumb_in_track(
+            viewport,
+            handle.max_offset().y,
+            handle.offset().y,
+            viewport - 2. * BAR_INSET - end_inset,
+        ) {
+            self.grab.set(Some(
+                (event.position.y - handle.bounds().top() - BAR_INSET - range.start)
+                    .clamp(px(0.), range.end - range.start),
+            ));
+        }
+    }
+
     /// Whether a thumb drag is in flight.
     pub fn dragging(&self) -> bool {
         self.grab.get().is_some()
@@ -261,6 +298,7 @@ impl ScrollbarState {
         track_id: &SharedString,
         handle: &ScrollHandle,
         event: &DragMoveEvent<ScrollbarDrag>,
+        end_inset: Pixels,
         cx: &mut App,
     ) {
         // Another bar's thumb: `on_drag_move` filters by payload type, and
@@ -270,7 +308,12 @@ impl ScrollbarState {
         }
         let viewport = handle.bounds().size.height;
         let max_offset = handle.max_offset().y;
-        let Some(range) = thumb(viewport, max_offset, handle.offset().y, MIN_THUMB) else {
+        let Some(range) = thumb_in_track(
+            viewport,
+            max_offset,
+            handle.offset().y,
+            viewport - 2. * BAR_INSET - end_inset,
+        ) else {
             return;
         };
         let size = range.end - range.start;
@@ -285,7 +328,12 @@ impl ScrollbarState {
             self.grab.set(Some(grab));
             grab
         });
-        let offset = offset_for_thumb(pointer - grab, viewport, max_offset, size);
+        let offset = offset_for_thumb(
+            pointer - grab,
+            viewport - 2. * BAR_INSET - end_inset,
+            max_offset,
+            size,
+        );
         handle.set_offset(point(handle.offset().x, offset));
         self.painter.notify(cx);
     }
@@ -310,10 +358,23 @@ pub fn scrollbar(
     handle: &ScrollHandle,
     state: &ScrollbarState,
 ) -> gpui::AnyElement {
-    let id = id.into();
+    scrollbar_with_inset(id.into(), handle, state, px(0.))
+}
+
+fn scrollbar_with_inset(
+    id: SharedString,
+    handle: &ScrollHandle,
+    state: &ScrollbarState,
+    end_inset: Pixels,
+) -> gpui::AnyElement {
     let viewport = handle.bounds().size.height;
     let max_offset = handle.max_offset().y;
-    let Some(range) = thumb(viewport, max_offset, handle.offset().y, MIN_THUMB) else {
+    let Some(range) = thumb_in_track(
+        viewport,
+        max_offset,
+        handle.offset().y,
+        viewport - 2. * BAR_INSET - end_inset,
+    ) else {
         return Empty.into_any_element();
     };
     let size = range.end - range.start;
@@ -323,21 +384,26 @@ pub fn scrollbar(
     let drag_handle = handle.clone();
     let drag_state = state.clone();
     let release_state = state.clone();
+    let press_state = state.clone();
+    let press_handle = handle.clone();
     let released = move |_: &gpui::MouseUpEvent, _: &mut Window, _: &mut App| {
         release_state.grab.set(None);
     };
 
+    let debug_id = id.clone();
+    let thumb_debug_id = id.clone();
     div()
+        .debug_selector(move || format!("{debug_id}-track"))
         .id(SharedString::from(format!("{id}-track")))
         .absolute()
-        .top_0()
-        .right_0()
-        .bottom_0()
+        .top(BAR_INSET)
+        .right(BAR_INSET)
+        .bottom(BAR_INSET + end_inset)
         .w(px(TRACK))
         .flex()
         .justify_center()
         .on_drag_move(move |event, _, cx| {
-            drag_state.drag(&track_id, &drag_handle, event, cx);
+            drag_state.drag(&track_id, &drag_handle, event, end_inset, cx);
         })
         // Both, because a release can land anywhere on screen; a grab left set
         // would make the next press continue the last gesture.
@@ -345,6 +411,7 @@ pub fn scrollbar(
         .on_mouse_up_out(MouseButton::Left, released)
         .child(
             div()
+                .debug_selector(move || format!("{thumb_debug_id}-thumb"))
                 .id(SharedString::from(format!("{id}-thumb")))
                 .absolute()
                 .top(range.start)
@@ -353,6 +420,10 @@ pub fn scrollbar(
                 .rounded_full()
                 .bg(if dragging { ink(0.38) } else { ink(0.2) })
                 .hover(|s| s.bg(ink(0.32)))
+                .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                    press_state.begin(&press_handle, event, end_inset);
+                    press_state.painter.notify(cx);
+                })
                 .on_drag(ScrollbarDrag(id.clone()), |_, _, _, cx| cx.new(|_| Empty)),
         )
         .child(
@@ -362,7 +433,8 @@ pub fn scrollbar(
                     // computed from: that geometry came from last frame's
                     // handle. Ask for the frame that will paint it right.
                     // Self-limiting — once they agree, nothing is requested.
-                    if (bounds.size.height - viewport).abs() > px(0.5) {
+                    if (bounds.size.height + 2. * BAR_INSET + end_inset - viewport).abs() > px(0.5)
+                    {
                         window.request_animation_frame();
                     }
                 },
@@ -468,10 +540,24 @@ pub fn transient(
     state: &TransientState,
     reduce_motion: bool,
 ) -> gpui::AnyElement {
-    let id = id.into();
+    transient_with_inset(id.into(), handle, state, reduce_motion, px(0.))
+}
+
+fn transient_with_inset(
+    id: SharedString,
+    handle: &ScrollHandle,
+    state: &TransientState,
+    reduce_motion: bool,
+    end_inset: Pixels,
+) -> gpui::AnyElement {
     let viewport = handle.bounds().size.height;
     let max_offset = handle.max_offset().y;
-    let Some(range) = thumb(viewport, max_offset, handle.offset().y, MIN_THUMB) else {
+    let Some(range) = thumb_in_track(
+        viewport,
+        max_offset,
+        handle.offset().y,
+        viewport - 2. * BAR_INSET - end_inset,
+    ) else {
         return Empty.into_any_element();
     };
     let size = range.end - range.start;
@@ -493,21 +579,28 @@ pub fn transient(
     let drag_handle = handle.clone();
     let drag_state = state.clone();
     let release_state = state.clone();
+    let press_state = state.clone();
+    let press_handle = handle.clone();
     let released = move |_: &gpui::MouseUpEvent, _: &mut Window, _: &mut App| {
         release_state.bar.grab.set(None);
     };
 
+    let debug_id = id.clone();
+    let thumb_debug_id = id.clone();
     let track = div()
+        .debug_selector(move || format!("{debug_id}-track"))
         .id(SharedString::from(format!("{id}-track")))
         .absolute()
-        .top_0()
-        .right_0()
-        .bottom_0()
+        .top(BAR_INSET)
+        .right(BAR_INSET)
+        .bottom(BAR_INSET + end_inset)
         .w(px(TRACK))
         .flex()
         .justify_center()
         .on_drag_move(move |event, _, cx| {
-            drag_state.bar.drag(&track_id, &drag_handle, event, cx);
+            drag_state
+                .bar
+                .drag(&track_id, &drag_handle, event, end_inset, cx);
         })
         // Both, because a release can land anywhere on screen; a grab left set
         // would make the next press continue the last gesture.
@@ -535,6 +628,7 @@ pub fn transient(
         });
 
     let thumb = div()
+        .debug_selector(move || format!("{thumb_debug_id}-thumb"))
         .id(SharedString::from(format!("{id}-thumb")))
         .absolute()
         .top(range.start)
@@ -543,6 +637,10 @@ pub fn transient(
         .rounded_full()
         .bg(if dragging { ink(0.38) } else { ink(0.2) })
         .hover(|s| s.bg(ink(0.32)))
+        .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+            press_state.bar.begin(&press_handle, event, end_inset);
+            press_state.bar.painter.notify(cx);
+        })
         .on_drag(ScrollbarDrag(id.clone()), |_, _, _, cx| cx.new(|_| Empty));
 
     let thumb: gpui::AnyElement = if reduce_motion {
@@ -579,7 +677,8 @@ pub fn transient(
                     // computed from: that geometry came from last frame's
                     // handle. Ask for the frame that will paint it right.
                     // Self-limiting — once they agree, nothing is requested.
-                    if (bounds.size.height - viewport).abs() > px(0.5) {
+                    if (bounds.size.height + 2. * BAR_INSET + end_inset - viewport).abs() > px(0.5)
+                    {
                         window.request_animation_frame();
                     }
                 },

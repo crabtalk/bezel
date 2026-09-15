@@ -21,6 +21,7 @@ workspace = true
 
 [dependencies]
 theme.workspace = true
+ui.workspace = true
 gpui.workspace = true
 pulldown-cmark = { version = "0.13", default-features = false }
 
