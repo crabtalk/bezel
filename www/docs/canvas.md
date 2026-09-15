@@ -63,15 +63,21 @@ A `Layout` answers where nodes go after every change. `layout::MINDMAP` (the def
 CanvasView::new(doc, cx).with_drag(canvas::drag::reparent);
 
 fn my_drag(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
-    // drag.id, drag.to(), drag.over, drag.phase (Move…, then one Drop)
+    // drag.id, drag.with (the rest of the selection), drag.to(), drag.over, drag.phase (Move…, then one Drop)
 }
 ```
 
 On a move, the handler's `MoveNodes` are applied as they come and the rest are drawn as what the drop would do: a ring on a node an `AddEdge` reaches, the connector it would make, faded connectors a `RemoveEdges` would cut. The drop is one batch through the filter, with the preview put back first, so a refused drop leaves everything where it was. Nodes a layout moves glide there. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in.
 
+## Selection, undo and the clipboard
+
+Shift- or cmd-click adds to the selection, a shift-drag on empty canvas selects what the box touches, `cmd-a` selects all and `escape` none. The keys act from the primary — the last chosen — and removing, nudging, dragging, copying and duplicating take the whole selection, each node with its branch under a tree layout.
+
+`cmd-z` and `cmd-shift-z` undo and redo what landed through `submit` or `apply`; an add and the typing into it are one step. Copy writes JSON Canvas; paste mints fresh ids and lands under the selection in a tree, or in the middle of the view, and plain text pastes as a text node. `cmd-d` duplicates.
+
 ## Keys
 
-`tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes, `f2` or a double-click edits, arrows move the selection, `shift`-arrows nudge it, `escape` leaves a node. A double-click on nothing adds a node there. `cmd-=`, `cmd--` and `cmd-0` zoom; a pinch or a `cmd`-wheel zooms at the pointer, and a drag or a wheel pans.
+`tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes, `f2` or a double-click edits, arrows move the selection, `shift`-arrows nudge it, `escape` leaves a node. A double-click on nothing adds a node there. `cmd-=`, `cmd--` and `cmd-0` zoom; a pinch or a `cmd`-wheel zooms at the pointer, and a drag, a middle-button drag or a wheel pans.
 
 ## API
 
@@ -87,10 +93,23 @@ impl CanvasView {
     pub fn submit(&mut self, changes: impl IntoIterator<Item = Change>, cx: &mut Context<Self>) -> bool;
     /// Past the filter.
     pub fn apply(&mut self, changes: impl IntoIterator<Item = Change>, cx: &mut Context<Self>);
+    /// The primary selection.
     pub fn selected(&self) -> Option<&str>;
+    /// The whole selection, the primary last.
+    pub fn selection(&self) -> &[String];
     pub fn select(&mut self, id: Option<String>, cx: &mut Context<Self>);
+    pub fn set_selection(&mut self, ids: Vec<String>, cx: &mut Context<Self>);
+    pub fn select_all(&mut self, cx: &mut Context<Self>);
     /// What `backspace` does.
     pub fn remove_selected(&mut self, cx: &mut Context<Self>);
+    pub fn undo(&mut self, cx: &mut Context<Self>) -> bool;
+    pub fn redo(&mut self, cx: &mut Context<Self>) -> bool;
+    pub fn can_undo(&self) -> bool;
+    pub fn can_redo(&self) -> bool;
+    pub fn copy(&self, cx: &mut App);
+    pub fn cut(&mut self, cx: &mut Context<Self>);
+    pub fn paste(&mut self, cx: &mut Context<Self>);
+    pub fn duplicate(&mut self, cx: &mut Context<Self>);
     pub fn zoom(&self) -> f32;
     pub fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>);
     /// What `cmd-=` and `cmd--` do.
@@ -114,12 +133,18 @@ pub fn child(canvas: &Canvas, parent: &str, node: Node) -> Option<Vec<Change>>;
 pub fn sibling(canvas: &Canvas, of: &str, node: Node) -> Option<Vec<Change>>;
 pub fn root(canvas: &Canvas, node: Node, at: (i64, i64)) -> Change;
 pub fn remove(canvas: &Canvas, id: &str) -> Change;
-pub fn reparent(canvas: &Canvas, id: &str, parent: &str) -> Option<Vec<Change>>;
-pub fn detach(canvas: &Canvas, id: &str) -> Option<Change>;
-pub fn carry(canvas: &Canvas, id: &str, to: (i64, i64), pin: bool) -> Vec<Change>;
+pub fn reparent(canvas: &Canvas, ids: &[String], parent: &str) -> Option<Vec<Change>>;
+pub fn detach(canvas: &Canvas, ids: &[String]) -> Option<Change>;
+pub fn carry(canvas: &Canvas, ids: &[String], by: (i64, i64), pin: bool) -> Vec<Change>;
+
+// canvas::clip — pure
+pub fn fragment(canvas: &Canvas, ids: &[String]) -> Canvas;
+pub fn paste(canvas: &Canvas, fragment: &Canvas, at: (i64, i64), under: Option<&str>) -> Vec<Change>;
 
 // canvas::change — pure
-pub fn apply(canvas: &mut Canvas, change: &Change);
+/// Answers the changes that undo it.
+pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change>;
+pub fn apply_all(canvas: &mut Canvas, changes: &[Change]) -> Vec<Change>;
 /// The first node a batch adds.
 pub fn added(changes: &[Change]) -> Option<&str>;
 ```

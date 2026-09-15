@@ -84,9 +84,9 @@ fn a_filter_refuses_and_rewrites(cx: &mut TestAppContext) {
                     None
                 }
                 // Every new card is born wide.
-                Change::AddNode { mut node } => {
+                Change::AddNode { mut node, index } => {
                     node.width = 300;
-                    Some(Change::AddNode { node })
+                    Some(Change::AddNode { node, index })
                 }
                 other => Some(other),
             })

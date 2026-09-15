@@ -51,10 +51,11 @@ fn a_pinned_node_rides_along_with_its_ancestor() {
     mindmap::layout(&mut canvas);
     mindmap::pin(&mut canvas, "b1", 700, 300).unwrap();
     let (bx, by) = at(&canvas, "b");
-    let carry = |canvas: &mut Canvas, to, pin| {
-        for change in mindmap::carry(canvas, "b", to, pin) {
-            canvas::change::apply(canvas, &change);
-        }
+    let carry = |canvas: &mut Canvas, to: (i64, i64), pin| {
+        let b = canvas.node("b").unwrap();
+        let by = (to.0 - b.x, to.1 - b.y);
+        let changes = mindmap::carry(canvas, &["b".into()], by, pin);
+        canvas::change::apply_all(canvas, &changes);
     };
     carry(&mut canvas, (bx + 10, by + 20), true);
     assert_eq!(at(&canvas, "b1"), (710, 320));

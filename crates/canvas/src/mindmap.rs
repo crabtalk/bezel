@@ -59,30 +59,36 @@ pub fn unpin(node: &Node) -> Option<Change> {
     })
 }
 
-/// `id` to `to`, its pinned descendants keeping their place beside it as
-/// layout keeps the rest. `pin` keeps it there.
-pub fn carry(canvas: &Canvas, id: &str, to: (i64, i64), pin: bool) -> Vec<Change> {
-    let Some(node) = canvas.node(id) else {
-        return Vec::new();
-    };
-    let delta = (to.0 - node.x, to.1 - node.y);
-    let mut below: Vec<(String, (i64, i64))> = descendants(canvas, id)
-        .into_iter()
-        .filter_map(|below| {
-            let node = canvas.node(&below).filter(|node| is_pinned(node))?;
-            Some((below, (node.x + delta.0, node.y + delta.1)))
-        })
-        .collect();
-    below.sort();
+/// `ids` moved `by`, each with its pinned descendants keeping their place
+/// beside it as layout keeps the rest. `pin` keeps them there.
+pub fn carry(canvas: &Canvas, ids: &[String], by: (i64, i64), pin: bool) -> Vec<Change> {
+    let shifted = |node: &Node| (node.x + by.0, node.y + by.1);
     let mut changes = Vec::new();
-    if pin && !is_pinned(node) {
-        let mut node = node.clone();
-        (node.x, node.y) = to;
-        node.extra.insert(PINNED.into(), Value::Bool(true));
-        changes.push(Change::UpdateNode { node });
+    let mut moves = Vec::new();
+    let mut seen = HashSet::new();
+    for id in ids {
+        let Some(node) = canvas.node(id) else {
+            continue;
+        };
+        if seen.insert(id.clone()) {
+            if pin && !is_pinned(node) {
+                let mut pinned = node.clone();
+                (pinned.x, pinned.y) = shifted(node);
+                pinned.extra.insert(PINNED.into(), Value::Bool(true));
+                changes.push(Change::UpdateNode { node: pinned });
+            }
+            moves.push((id.clone(), shifted(node)));
+        }
+        let mut below: Vec<String> = descendants(canvas, id).into_iter().collect();
+        below.sort();
+        for below in below {
+            if let Some(node) = canvas.node(&below).filter(|node| is_pinned(node))
+                && seen.insert(below.clone())
+            {
+                moves.push((below, shifted(node)));
+            }
+        }
     }
-    let mut moves = vec![(id.to_owned(), to)];
-    moves.extend(below);
     changes.push(Change::MoveNodes { moves });
     changes
 }
@@ -94,14 +100,6 @@ pub enum Toward {
     FirstChild,
     PrevSibling,
     NextSibling,
-}
-
-/// The branches into `id`: the first is its parent's.
-fn branches_in<'a>(canvas: &'a Canvas, id: &'a str) -> impl Iterator<Item = &'a Edge> {
-    canvas
-        .edges
-        .iter()
-        .filter(move |edge| edge.to_node == id && is_branch(edge))
 }
 
 pub fn parent<'a>(canvas: &'a Canvas, id: &str) -> Option<&'a str> {
@@ -241,7 +239,7 @@ pub fn arrange(canvas: &Canvas, held: Option<&str>, flow: Flow) -> Vec<(String, 
 pub fn root(canvas: &Canvas, mut node: Node, at: (i64, i64)) -> Change {
     node.id = canvas.mint();
     (node.x, node.y) = at;
-    Change::AddNode { node }
+    Change::AddNode { node, index: None }
 }
 
 /// `node` as `parent`'s last child, beside it.
@@ -253,9 +251,9 @@ pub fn child(canvas: &Canvas, parent: &str, mut node: Node) -> Option<Vec<Change
     let [id, edge] = <[String; 2]>::try_from(canvas.mint_n(2)).ok()?;
     node.id = id;
     (node.x, node.y) = (at.x + at.width + GAP_X, at.y);
-    let edge = tree_edge(edge, parent, &node.id);
+    let edge = branch_edge(edge, parent, &node.id);
     Some(vec![
-        Change::AddNode { node },
+        Change::AddNode { node, index: None },
         Change::AddEdge { edge, index: None },
     ])
 }
@@ -272,9 +270,9 @@ pub fn sibling(canvas: &Canvas, of: &str, mut node: Node) -> Option<Vec<Change>>
     let [id, edge] = <[String; 2]>::try_from(canvas.mint_n(2)).ok()?;
     node.id = id;
     (node.x, node.y) = (below.x, below.y + below.height + GAP_Y);
-    let edge = tree_edge(edge, parent, &node.id);
+    let edge = branch_edge(edge, parent, &node.id);
     Some(vec![
-        Change::AddNode { node },
+        Change::AddNode { node, index: None },
         Change::AddEdge {
             edge,
             index: Some(index),
@@ -292,49 +290,77 @@ pub fn after_removal(canvas: &Canvas, id: &str) -> Option<String> {
 
 /// A node and its branch.
 pub fn remove(canvas: &Canvas, id: &str) -> Change {
+    Change::RemoveNodes {
+        ids: branch_of(canvas, id),
+    }
+}
+
+/// `id` and every node below it, top down.
+pub fn branch_of(canvas: &Canvas, id: &str) -> Vec<String> {
     let mut ixs = Vec::new();
     if let Some(ix) = canvas.index_of(id) {
         branch(canvas, ix, &mut HashSet::new()).collect(&mut ixs);
     }
-    Change::RemoveNodes {
-        ids: ixs
-            .into_iter()
-            .map(|ix| canvas.nodes[ix].id.clone())
-            .collect(),
-    }
+    ixs.into_iter()
+        .map(|ix| canvas.nodes[ix].id.clone())
+        .collect()
 }
 
-/// Hang `id` under `parent` as its last child, cutting the branches it had in.
-/// `None` onto itself or its own branch, which would be a cycle.
-pub fn reparent(canvas: &Canvas, id: &str, parent: &str) -> Option<Vec<Change>> {
-    let (ix, _) = (canvas.index_of(id)?, canvas.node(parent)?);
-    if branch_ids(canvas, ix).contains(parent) {
+/// Hang each of `ids` under `parent` as its last child, cutting the branches
+/// it had in. One that would make a cycle stays, and so does one below another
+/// of `ids`, which it follows. `None` when none moves.
+pub fn reparent(canvas: &Canvas, ids: &[String], parent: &str) -> Option<Vec<Change>> {
+    canvas.node(parent)?;
+    let moving: Vec<String> = ids
+        .iter()
+        .filter(|id| {
+            let cycle = canvas
+                .index_of(id)
+                .is_none_or(|ix| branch_ids(canvas, ix).contains(parent));
+            let follows = ids
+                .iter()
+                .any(|other| other != *id && descendants(canvas, other).contains(id.as_str()));
+            !cycle && !follows
+        })
+        .cloned()
+        .collect();
+    if moving.is_empty() {
         return None;
     }
-    let mut changes: Vec<Change> = detach(canvas, id).into_iter().collect();
-    changes.push(Change::AddEdge {
-        edge: tree_edge(canvas.mint(), parent, id),
-        index: None,
-    });
-    changes.extend(unpin(&canvas.nodes[ix]));
+    let mut changes: Vec<Change> = detach(canvas, &moving).into_iter().collect();
+    for (id, edge) in moving.iter().zip(canvas.mint_n(moving.len())) {
+        changes.push(Change::AddEdge {
+            edge: branch_edge(edge, parent, id),
+            index: None,
+        });
+    }
+    changes.extend(
+        moving
+            .iter()
+            .filter_map(|id| canvas.node(id).and_then(unpin)),
+    );
     Some(changes)
 }
 
-/// Cut the branches into `id`, leaving it a root where it is; `None` when it
-/// is one.
-pub fn detach(canvas: &Canvas, id: &str) -> Option<Change> {
-    let ids: Vec<String> = branches_in(canvas, id)
+/// Cut the branches into each of `ids`, leaving it a root where it is; `None`
+/// when all are.
+pub fn detach(canvas: &Canvas, ids: &[String]) -> Option<Change> {
+    let cut: Vec<String> = canvas
+        .edges
+        .iter()
+        .filter(|edge| ids.contains(&edge.to_node) && is_branch(edge))
         .map(|edge| edge.id.clone())
         .collect();
-    (!ids.is_empty()).then_some(Change::RemoveEdges { ids })
+    (!cut.is_empty()).then_some(Change::RemoveEdges { ids: cut })
 }
 
-/// The topmost node containing `at`, outside `except`'s branch.
-pub fn node_at<'a>(canvas: &'a Canvas, at: (i64, i64), except: &str) -> Option<&'a str> {
-    let skip = canvas
-        .index_of(except)
-        .map(|ix| branch_ids(canvas, ix))
-        .unwrap_or_default();
+/// The topmost node containing `at`, outside the branches of `except`.
+pub fn node_at<'a>(canvas: &'a Canvas, at: (i64, i64), except: &[String]) -> Option<&'a str> {
+    let skip: HashSet<String> = except
+        .iter()
+        .filter_map(|id| canvas.index_of(id))
+        .flat_map(|ix| branch_ids(canvas, ix))
+        .collect();
     canvas
         .nodes
         .iter()
@@ -486,7 +512,8 @@ impl<'a> Pass<'a> {
     }
 }
 
-fn tree_edge(id: String, from: &str, to: &str) -> Edge {
+/// An edge that hangs `to` under `from`.
+pub fn branch_edge(id: String, from: &str, to: &str) -> Edge {
     Edge {
         from_side: Some(Side::Right),
         to_side: Some(Side::Left),

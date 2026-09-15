@@ -34,6 +34,7 @@ fn tree() -> Canvas {
 fn drop(handler: DragHandler, canvas: &mut Canvas, id: &str, over: Option<&str>) -> Vec<Change> {
     let gesture = Drag {
         id,
+        with: &[],
         origin: (0, 0),
         delta: (30, 40),
         over,
@@ -95,6 +96,7 @@ fn a_move_answers_what_the_drop_would_do() {
     let canvas = tree();
     let moving = |over| Drag {
         id: "a",
+        with: &[],
         origin: (0, 0),
         delta: (5, 5),
         over,
@@ -127,8 +129,9 @@ fn node_at_skips_the_held_branch() {
         let (x, y) = at(&canvas, id);
         (x + 10, y + 10)
     };
-    assert_eq!(mindmap::node_at(&canvas, inside("a1"), "a"), None);
-    assert_eq!(mindmap::node_at(&canvas, inside("b"), "a"), Some("b"));
+    let held = ["a".to_owned()];
+    assert_eq!(mindmap::node_at(&canvas, inside("a1"), &held), None);
+    assert_eq!(mindmap::node_at(&canvas, inside("b"), &held), Some("b"));
 }
 
 #[test]

@@ -12,10 +12,11 @@ use std::{
 
 use editor::{Chrome as EditorChrome, Editor, EditorEvent};
 use gpui::{
-    AnyElement, App, Bounds, Context, CursorStyle, DispatchPhase, ElementId, Entity, EventEmitter,
-    FocusHandle, Focusable, Hsla, KeyContext, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, Rgba, ScrollWheelEvent, Size,
-    Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px,
+    AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
+    EventEmitter, FocusHandle, Focusable, Hsla, KeyContext, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, Rgba,
+    ScrollWheelEvent, Size, Subscription, WeakEntity, Window, canvas as painter, div, point,
+    prelude::*, px,
 };
 use motion::{AppExt as _, LAYOUT};
 use theme::{TextStyle, Theme};
@@ -23,6 +24,7 @@ use web_time::Instant;
 
 use crate::{
     change::{self, Change},
+    clip,
     drag::{self, Drag, DragHandler, Phase},
     kind::{self, Chrome, Sizing},
     layout::{self, Arrow, Layout},
@@ -58,6 +60,12 @@ const RING: f32 = 3.0;
 const DRAG_SLOP: f32 = 3.0;
 /// One `shift`-arrow, in canvas units.
 const NUDGE: i64 = 8;
+/// How far a duplicate sits from what it copies, in canvas units.
+const DUPLICATE: i64 = 24;
+/// Undo steps kept.
+const HISTORY: usize = 200;
+/// The accent wash inside a marquee.
+const MARQUEE_WASH: f32 = 0.08;
 /// How much of a connector a drop would cut still shows.
 const CUT: f32 = 0.25;
 /// The accent wash inside a node a drop would land on.
@@ -84,6 +92,14 @@ pub mod keys {
             NudgeRight,
             NudgeUp,
             NudgeDown,
+            SelectAll,
+            Deselect,
+            Undo,
+            Redo,
+            Copy,
+            Cut,
+            Paste,
+            Duplicate,
             ZoomIn,
             ZoomOut,
             ResetZoom,
@@ -109,19 +125,26 @@ pub mod keys {
             KeyBinding::new("shift-right", NudgeRight, ctx),
             KeyBinding::new("shift-up", NudgeUp, ctx),
             KeyBinding::new("shift-down", NudgeDown, ctx),
+            KeyBinding::new("escape", Deselect, ctx),
             KeyBinding::new("escape", StopEditing, Some(&editing)),
         ];
-        #[cfg(target_os = "macos")]
+        let platform = if cfg!(target_os = "macos") {
+            "cmd"
+        } else {
+            "ctrl"
+        };
+        let chord = |key: &str| format!("{platform}-{key}");
         bindings.extend([
-            KeyBinding::new("cmd-=", ZoomIn, ctx),
-            KeyBinding::new("cmd--", ZoomOut, ctx),
-            KeyBinding::new("cmd-0", ResetZoom, ctx),
-        ]);
-        #[cfg(not(target_os = "macos"))]
-        bindings.extend([
-            KeyBinding::new("ctrl-=", ZoomIn, ctx),
-            KeyBinding::new("ctrl--", ZoomOut, ctx),
-            KeyBinding::new("ctrl-0", ResetZoom, ctx),
+            KeyBinding::new(&chord("a"), SelectAll, ctx),
+            KeyBinding::new(&chord("z"), Undo, ctx),
+            KeyBinding::new(&chord("shift-z"), Redo, ctx),
+            KeyBinding::new(&chord("c"), Copy, ctx),
+            KeyBinding::new(&chord("x"), Cut, ctx),
+            KeyBinding::new(&chord("v"), Paste, ctx),
+            KeyBinding::new(&chord("d"), Duplicate, ctx),
+            KeyBinding::new(&chord("="), ZoomIn, ctx),
+            KeyBinding::new(&chord("-"), ZoomOut, ctx),
+            KeyBinding::new(&chord("0"), ResetZoom, ctx),
         ]);
         bindings
     }
@@ -139,7 +162,8 @@ pub fn init(cx: &mut App) {
 pub enum CanvasEvent {
     /// A batch landed in the document.
     Changed(Vec<Change>),
-    Selected(Option<String>),
+    /// The selection, the primary last.
+    Selected(Vec<String>),
 }
 
 /// Decides each change before it lands: it, another, or `None` to refuse.
@@ -153,12 +177,27 @@ enum Grab {
     Pan(Point<Pixels>),
     Node {
         id: String,
+        /// The rest of the selection, carried along.
+        with: Vec<String>,
         from: Point<Pixels>,
         origin: (i64, i64),
         moved: bool,
         /// Where each node the preview moved sat before, to put back on a drop.
         before: HashMap<String, (i64, i64)>,
     },
+    /// A box drawn from `from`, selecting what it touches beside `base`.
+    Marquee {
+        from: Point<Pixels>,
+        to: Point<Pixels>,
+        base: Vec<String>,
+    },
+}
+
+/// One undoable edit: the changes that take it back, and the typing session it
+/// belongs to, which later typing joins.
+struct Step {
+    changes: Vec<Change>,
+    group: Option<u64>,
 }
 
 /// Nodes easing from where they were painted toward where the document puts
@@ -181,8 +220,14 @@ pub struct CanvasView {
     drag: DragHandler,
     filter: Option<Filter>,
     focus: FocusHandle,
-    selected: Option<String>,
+    /// The primary is last.
+    selected: Vec<String>,
     editing: Option<Session>,
+    undo: Vec<Step>,
+    redo: Vec<Step>,
+    /// The typing session edits now join, and the last one handed out.
+    group: Option<u64>,
+    groups: u64,
     /// Screen position of the canvas origin, from the view's top left.
     pan: Point<f32>,
     zoom: f32,
@@ -219,8 +264,12 @@ impl CanvasView {
             drag: drag::pin,
             filter: None,
             focus: cx.focus_handle(),
-            selected: None,
+            selected: Vec::new(),
             editing: None,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            group: None,
+            groups: 0,
             pan: point(0.0, 0.0),
             zoom: 1.0,
             grab: None,
@@ -263,14 +312,12 @@ impl CanvasView {
         &self.canvas
     }
 
+    /// A new document, with no history.
     pub fn set_canvas(&mut self, canvas: Canvas, cx: &mut Context<Self>) {
         self.canvas = canvas;
         self.editing = None;
-        if let Some(id) = &self.selected
-            && self.canvas.node(id).is_none()
-        {
-            self.select(None, cx);
-        }
+        (self.undo, self.redo) = (Vec::new(), Vec::new());
+        self.prune(cx);
         self.stale = true;
         cx.notify();
     }
@@ -301,15 +348,80 @@ impl CanvasView {
         true
     }
 
-    /// Land a batch of the app's own, past the filter.
+    /// Land a batch of the app's own, past the filter. It can be undone.
     pub fn apply(&mut self, changes: impl IntoIterator<Item = Change>, cx: &mut Context<Self>) {
         let changes: Vec<Change> = changes.into_iter().collect();
         if changes.is_empty() {
             return;
         }
-        for change in &changes {
-            change::apply(&mut self.canvas, change);
+        let undo = change::apply_all(&mut self.canvas, &changes);
+        if !undo.is_empty() {
+            self.redo.clear();
+            match self.undo.last_mut() {
+                Some(step) if self.group.is_some() && step.group == self.group => {
+                    step.changes.splice(0..0, undo);
+                }
+                _ => {
+                    self.undo.push(Step {
+                        changes: undo,
+                        group: self.group,
+                    });
+                    if self.undo.len() > HISTORY {
+                        self.undo.remove(0);
+                    }
+                }
+            }
         }
+        self.landed(changes, cx);
+    }
+
+    /// What `cmd-z` does: take back the last edit, past the filter. `false`
+    /// when there is none.
+    pub fn undo(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(step) = self.undo.pop() else {
+            return false;
+        };
+        let redo = change::apply_all(&mut self.canvas, &step.changes);
+        self.redo.push(Step {
+            changes: redo,
+            group: None,
+        });
+        self.rewound(step.changes, cx);
+        true
+    }
+
+    /// What `cmd-shift-z` does.
+    pub fn redo(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(step) = self.redo.pop() else {
+            return false;
+        };
+        let undo = change::apply_all(&mut self.canvas, &step.changes);
+        self.undo.push(Step {
+            changes: undo,
+            group: None,
+        });
+        self.rewound(step.changes, cx);
+        true
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    /// An open editor would hold what was taken back, and typing after starts
+    /// a step of its own.
+    fn rewound(&mut self, changes: Vec<Change>, cx: &mut Context<Self>) {
+        self.group = None;
+        self.editing = None;
+        self.landed(changes, cx);
+    }
+
+    /// Tidy up after the document changed, and announce what did.
+    fn landed(&mut self, changes: Vec<Change>, cx: &mut Context<Self>) {
         if self
             .editing
             .as_ref()
@@ -317,26 +429,159 @@ impl CanvasView {
         {
             self.editing = None;
         }
-        if let Some(id) = &self.selected
-            && self.canvas.node(id).is_none()
-        {
-            self.select(None, cx);
-        }
+        self.prune(cx);
         self.stale = true;
         cx.emit(CanvasEvent::Changed(changes));
         cx.notify();
     }
 
+    /// The primary selection: the last chosen, which the keys act from.
     pub fn selected(&self) -> Option<&str> {
-        self.selected.as_deref()
+        self.selected.last().map(String::as_str)
     }
 
+    /// Everything selected, the primary last.
+    pub fn selection(&self) -> &[String] {
+        &self.selected
+    }
+
+    /// Select only `id`, or nothing.
     pub fn select(&mut self, id: Option<String>, cx: &mut Context<Self>) {
-        if self.selected != id {
-            self.selected = id.clone();
-            cx.emit(CanvasEvent::Selected(id));
+        self.set_selection(id.into_iter().collect(), cx);
+    }
+
+    pub fn set_selection(&mut self, ids: Vec<String>, cx: &mut Context<Self>) {
+        if self.selected != ids {
+            self.selected = ids.clone();
+            cx.emit(CanvasEvent::Selected(ids));
             cx.notify();
         }
+    }
+
+    /// What `cmd-a` does.
+    pub fn select_all(&mut self, cx: &mut Context<Self>) {
+        let ids = self
+            .canvas
+            .nodes
+            .iter()
+            .map(|node| node.id.clone())
+            .collect();
+        self.set_selection(ids, cx);
+    }
+
+    /// Let go of what the document no longer holds.
+    fn prune(&mut self, cx: &mut Context<Self>) {
+        let kept = self
+            .selected
+            .iter()
+            .filter(|id| self.canvas.node(id).is_some())
+            .cloned()
+            .collect();
+        self.set_selection(kept, cx);
+    }
+
+    /// What `cmd-c` does: the selection, with its branches under a tree, as
+    /// JSON Canvas.
+    pub fn copy(&self, cx: &mut App) {
+        if !self.selected.is_empty() {
+            let fragment = clip::fragment(&self.canvas, &self.reach());
+            cx.write_to_clipboard(ClipboardItem::new_string(fragment.to_json()));
+        }
+    }
+
+    /// What `cmd-x` does.
+    pub fn cut(&mut self, cx: &mut Context<Self>) {
+        self.copy(cx);
+        self.remove_selected(cx);
+    }
+
+    /// What `cmd-v` does: a copied canvas, or text as a text node — under the
+    /// selection in a tree, else in the middle of the view.
+    pub fn paste(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        let fragment = Canvas::parse(&text).unwrap_or_else(|_| {
+            let blank = (kind::kind(cx, model::TEXT).child)(&Node::default());
+            Canvas {
+                nodes: vec![Node {
+                    text: Some(text),
+                    ..blank
+                }],
+                ..Canvas::default()
+            }
+        });
+        let under = self.layout.flow.and(self.selected().map(str::to_owned));
+        let at = match under.as_deref().and_then(|id| self.canvas.node(id)) {
+            Some(parent) => (parent.x + parent.width + mindmap::GAP_X, parent.y),
+            None => {
+                let (x, y) = self.center();
+                let (_, (w, h)) = clip::bounds(&fragment).unwrap_or_default();
+                (x - w / 2, y - h / 2)
+            }
+        };
+        self.place(&fragment, at, under.as_deref(), cx);
+    }
+
+    /// What `cmd-d` does: the selection copied beside itself, or under the same
+    /// parent in a tree.
+    pub fn duplicate(&mut self, cx: &mut Context<Self>) {
+        let Some(primary) = self.selected().map(str::to_owned) else {
+            return;
+        };
+        let fragment = clip::fragment(&self.canvas, &self.reach());
+        let Some(((x, y), _)) = clip::bounds(&fragment) else {
+            return;
+        };
+        let under = self
+            .layout
+            .flow
+            .and_then(|_| mindmap::parent(&self.canvas, &primary))
+            .map(str::to_owned);
+        self.place(
+            &fragment,
+            (x + DUPLICATE, y + DUPLICATE),
+            under.as_deref(),
+            cx,
+        );
+    }
+
+    /// A fragment added through the filter, and selected.
+    fn place(
+        &mut self,
+        fragment: &Canvas,
+        at: (i64, i64),
+        under: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        let changes = clip::paste(&self.canvas, fragment, at, under);
+        let added = changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::AddNode { node, .. } => Some(node.id.clone()),
+                _ => None,
+            })
+            .collect();
+        if self.submit(changes, cx) {
+            self.set_selection(added, cx);
+        }
+    }
+
+    /// The selection, each with its branch under a layout that grows trees.
+    fn reach(&self) -> Vec<String> {
+        let mut ids: Vec<String> = Vec::new();
+        for id in &self.selected {
+            let branch = match self.layout.flow {
+                Some(_) => mindmap::branch_of(&self.canvas, id),
+                None => vec![id.clone()],
+            };
+            for id in branch {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        ids
     }
 
     pub fn zoom(&self) -> f32 {
@@ -413,18 +658,14 @@ impl CanvasView {
         self.drag = handler;
     }
 
-    /// What `backspace` does, through the filter: the selection, and its branch
-    /// under a layout that grows trees.
+    /// What `backspace` does, through the filter: the selection, each with its
+    /// branch under a layout that grows trees.
     pub fn remove_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.selected.clone() else {
+        let Some(primary) = self.selected().map(str::to_owned) else {
             return;
         };
-        let next = mindmap::after_removal(&self.canvas, &id);
-        let change = match self.layout.flow {
-            Some(_) => mindmap::remove(&self.canvas, &id),
-            None => Change::RemoveNodes { ids: vec![id] },
-        };
-        if self.submit([change], cx) {
+        let next = mindmap::after_removal(&self.canvas, &primary);
+        if self.submit([Change::RemoveNodes { ids: self.reach() }], cx) {
             self.select(next.filter(|next| self.canvas.node(next).is_some()), cx);
         }
     }
@@ -494,15 +735,26 @@ impl CanvasView {
         let Some(id) = change::added(&changes).map(str::to_owned) else {
             return;
         };
+        // Typing into what was added joins the add in one undo step.
+        let group = self.next_group();
+        self.group = Some(group);
         if self.submit(changes, cx) && self.canvas.node(&id).is_some() {
             self.select(Some(id.clone()), cx);
-            self.edit(id, window, cx);
+            self.edit(id, Some(group), window, cx);
         }
+        if self.editing.is_none() {
+            self.group = None;
+        }
+    }
+
+    fn next_group(&mut self) -> u64 {
+        self.groups += 1;
+        self.groups
     }
 
     fn add_child(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Nothing selected: under the first root, or a root of its own.
-        let parent = self.selected.clone().or_else(|| {
+        let parent = self.selected().map(str::to_owned).or_else(|| {
             mindmap::roots(&self.canvas)
                 .next()
                 .map(|root| root.id.clone())
@@ -521,7 +773,7 @@ impl CanvasView {
 
     /// A root has no siblings, so Enter on one adds a child.
     fn add_sibling(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(of) = self.selected.clone() else {
+        let Some(of) = self.selected().map(str::to_owned) else {
             return;
         };
         let change = match mindmap::parent(&self.canvas, &of).map(str::to_owned) {
@@ -537,7 +789,7 @@ impl CanvasView {
 
     /// An arrow walks the tree the layout grows, or to the nearest node.
     fn arrow(&mut self, arrow: Arrow, cx: &mut Context<Self>) {
-        let next = match (&self.selected, self.layout.flow) {
+        let next = match (self.selected(), self.layout.flow) {
             (Some(id), Some(flow)) => mindmap::walk(&self.canvas, id, flow, arrow),
             (Some(id), None) => layout::nearest(&self.canvas, id, arrow).map(str::to_owned),
             (None, _) => mindmap::roots(&self.canvas).next().map(|n| n.id.clone()),
@@ -549,17 +801,24 @@ impl CanvasView {
 
     /// A `shift`-arrow moves the selection, pinned under a tree.
     fn nudge(&mut self, arrow: Arrow, cx: &mut Context<Self>) {
-        let Some(node) = self.selected.as_deref().and_then(|id| self.canvas.node(id)) else {
+        if self.selected.is_empty() {
             return;
-        };
+        }
         let (dx, dy) = arrow.unit();
-        let to = (node.x + dx * NUDGE, node.y + dy * NUDGE);
         let pin = self.layout.flow.is_some();
-        let changes = mindmap::carry(&self.canvas, &node.id, to, pin);
+        let by = (dx * NUDGE, dy * NUDGE);
+        let changes = mindmap::carry(&self.canvas, &self.selected, by, pin);
         self.submit(changes, cx);
     }
 
-    fn edit(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+    /// Edit `id` in place, its typing one undo step: `group`'s, or a new one.
+    fn edit(
+        &mut self,
+        id: String,
+        group: Option<u64>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.stop_editing(window, cx);
         let Some(node) = self.canvas.node(&id) else {
             return;
@@ -595,6 +854,10 @@ impl CanvasView {
             this.submit([Change::UpdateNode { node }], cx);
         });
         window.focus(&editor.focus_handle(cx), cx);
+        self.group = Some(match group {
+            Some(group) => group,
+            None => self.next_group(),
+        });
         self.editing = Some(Session {
             id,
             editor,
@@ -604,6 +867,7 @@ impl CanvasView {
     }
 
     fn stop_editing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.group = None;
         if self.editing.take().is_some() {
             window.focus(&self.focus, cx);
             cx.notify();
@@ -618,6 +882,15 @@ impl CanvasView {
     ) {
         self.stop_editing(window, cx);
         window.focus(&self.focus, cx);
+        if event.modifiers.shift {
+            self.grab = Some(Grab::Marquee {
+                from: event.position,
+                to: event.position,
+                base: self.selected.clone(),
+            });
+            cx.notify();
+            return;
+        }
         self.select(None, cx);
         if event.click_count >= 2 {
             // A double-click on nothing makes a root there.
@@ -628,6 +901,10 @@ impl CanvasView {
             self.added(Some(vec![root]), window, cx);
             return;
         }
+        self.press_pan(event, window, cx);
+    }
+
+    fn press_pan(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         self.grab = Some(Grab::Pan(event.position));
         // The listeners that follow the grab are painted next frame.
         cx.notify();
@@ -645,13 +922,36 @@ impl CanvasView {
         }
         self.stop_editing(window, cx);
         window.focus(&self.focus, cx);
-        self.select(Some(id.clone()), cx);
+        if event.modifiers.shift || event.modifiers.platform {
+            let mut ids = self.selected.clone();
+            match ids.iter().position(|s| *s == id) {
+                Some(at) => drop(ids.remove(at)),
+                None => ids.push(id),
+            }
+            self.set_selection(ids, cx);
+            return;
+        }
         if event.click_count >= 2 {
-            self.edit(id, window, cx);
-        } else if let Some(node) = self.canvas.node(&id) {
+            self.select(Some(id.clone()), cx);
+            self.edit(id, None, window, cx);
+            return;
+        }
+        // Pressing one of a selection keeps the rest, to drag them together.
+        let mut with: Vec<String> = self
+            .selected
+            .iter()
+            .filter(|s| **s != id)
+            .cloned()
+            .collect();
+        if with.len() == self.selected.len() {
+            with.clear();
+        }
+        self.set_selection(with.iter().cloned().chain([id.clone()]).collect(), cx);
+        if let Some(node) = self.canvas.node(&id) {
             self.grab = Some(Grab::Node {
                 origin: (node.x, node.y),
                 id,
+                with,
                 from: event.position,
                 moved: false,
                 before: HashMap::new(),
@@ -672,6 +972,11 @@ impl CanvasView {
                 self.pan.y += (event.position.y - last.y).as_f32();
                 *last = event.position;
                 self.touched = true;
+                cx.notify();
+            }
+            Some(Grab::Marquee { to, .. }) => {
+                *to = event.position;
+                self.mark(cx);
                 cx.notify();
             }
             Some(Grab::Node { from, moved, .. }) => {
@@ -709,29 +1014,60 @@ impl CanvasView {
     /// submitted.
     fn release(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
         self.pending.clear();
-        if let Some(Grab::Node {
-            moved: true,
-            before,
-            ..
-        }) = &mut self.grab
-        {
-            let back = Change::MoveNodes {
-                moves: before.drain().collect(),
-            };
-            change::apply(&mut self.canvas, &back);
-            let drop = self.gesture(position, Phase::Drop);
-            self.grab = None;
-            self.submit(drop, cx);
-            self.stale = true;
-            cx.notify();
+        match &mut self.grab {
+            Some(Grab::Node {
+                moved: true,
+                before,
+                ..
+            }) => {
+                let back = Change::MoveNodes {
+                    moves: before.drain().collect(),
+                };
+                change::apply(&mut self.canvas, &back);
+                let drop = self.gesture(position, Phase::Drop);
+                self.grab = None;
+                self.submit(drop, cx);
+                self.stale = true;
+                cx.notify();
+            }
+            // A click on one of a selection, without a drag, selects just it.
+            Some(Grab::Node { id, .. }) => {
+                let id = id.clone();
+                self.grab = None;
+                self.select(Some(id), cx);
+            }
+            Some(Grab::Marquee { .. }) => cx.notify(),
+            Some(Grab::Pan(_)) | None => {}
         }
         self.grab = None;
+    }
+
+    /// Select what the marquee touches, beside what was selected before it.
+    fn mark(&mut self, cx: &mut Context<Self>) {
+        let Some(Grab::Marquee { from, to, base }) = &self.grab else {
+            return;
+        };
+        let (a, b) = (self.to_canvas(*from), self.to_canvas(*to));
+        let (x0, x1, y0, y1) = (a.0.min(b.0), a.0.max(b.0), a.1.min(b.1), a.1.max(b.1));
+        let touched = self.canvas.nodes.iter().filter(|n| {
+            n.x < x1
+                && n.x + n.width > x0
+                && n.y < y1
+                && n.y + n.height > y0
+                && !base.contains(&n.id)
+        });
+        let ids = base.iter().chain(touched.map(|n| &n.id)).cloned().collect();
+        self.set_selection(ids, cx);
     }
 
     /// The drag handler's answer to the held node at `position`.
     fn gesture(&self, position: Point<Pixels>, phase: Phase) -> Vec<Change> {
         let Some(Grab::Node {
-            id, from, origin, ..
+            id,
+            with,
+            from,
+            origin,
+            ..
         }) = &self.grab
         else {
             return Vec::new();
@@ -742,11 +1078,15 @@ impl CanvasView {
             ((position.y - from.y).as_f32() / zoom).round() as i64,
         );
         let pointer = self.to_canvas(position);
+        let held: Vec<String> = std::iter::once(id.clone())
+            .chain(with.iter().cloned())
+            .collect();
         let gesture = Drag {
             id,
+            with,
             origin: *origin,
             delta,
-            over: mindmap::node_at(&self.canvas, pointer, id),
+            over: mindmap::node_at(&self.canvas, pointer, &held),
             phase,
         };
         (self.drag)(&self.canvas, &gesture)
@@ -927,7 +1267,7 @@ impl CanvasView {
             None => (kind.render)(node, z, window, cx),
         };
         let grows = kind.sizing == Sizing::Grows;
-        let selected = self.selected.as_deref() == Some(node.id.as_str());
+        let selected = self.selected.contains(&node.id);
         // A drop would connect the held node here.
         let target = self.held() != Some(node.id.as_str())
             && self.pending.iter().any(|change| {
@@ -1116,7 +1456,8 @@ impl CanvasView {
                         }
                     });
                     window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
-                        if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+                        let held = matches!(event.button, MouseButton::Left | MouseButton::Middle);
+                        if phase == DispatchPhase::Bubble && held {
                             let _ = view.update(cx, |this, cx| this.release(event.position, cx));
                         }
                     });
@@ -1148,6 +1489,23 @@ impl Render for CanvasView {
                 self.paint_node(ix, at, &theme, window, cx)
             })
             .collect();
+        let marquee = match &self.grab {
+            Some(Grab::Marquee { from, to, .. }) => {
+                let (a, b) = (self.local(*from), self.local(*to));
+                Some(
+                    div()
+                        .absolute()
+                        .left(px(a.x.min(b.x)))
+                        .top(px(a.y.min(b.y)))
+                        .w(px((a.x - b.x).abs()))
+                        .h(px((a.y - b.y).abs()))
+                        .border_1()
+                        .border_color(theme.accent)
+                        .bg(theme.accent.opacity(MARQUEE_WASH)),
+                )
+            }
+            _ => None,
+        };
 
         div()
             .id("bezel-canvas")
@@ -1164,10 +1522,22 @@ impl Render for CanvasView {
             )
             .on_action(cx.listener(|this, _: &keys::Remove, _, cx| this.remove_selected(cx)))
             .on_action(cx.listener(|this, _: &keys::Edit, window, cx| {
-                if let Some(id) = this.selected.clone() {
-                    this.edit(id, window, cx);
+                if let Some(id) = this.selected().map(str::to_owned) {
+                    this.edit(id, None, window, cx);
                 }
             }))
+            .on_action(cx.listener(|this, _: &keys::SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &keys::Deselect, _, cx| this.select(None, cx)))
+            .on_action(cx.listener(|this, _: &keys::Undo, _, cx| {
+                this.undo(cx);
+            }))
+            .on_action(cx.listener(|this, _: &keys::Redo, _, cx| {
+                this.redo(cx);
+            }))
+            .on_action(cx.listener(|this, _: &keys::Copy, _, cx| this.copy(cx)))
+            .on_action(cx.listener(|this, _: &keys::Cut, _, cx| this.cut(cx)))
+            .on_action(cx.listener(|this, _: &keys::Paste, _, cx| this.paste(cx)))
+            .on_action(cx.listener(|this, _: &keys::Duplicate, _, cx| this.duplicate(cx)))
             .on_action(
                 cx.listener(|this, _: &keys::StopEditing, window, cx| {
                     this.stop_editing(window, cx)
@@ -1189,10 +1559,12 @@ impl Render for CanvasView {
             .on_action(cx.listener(|this, _: &keys::ZoomOut, _, cx| this.zoom_out(cx)))
             .on_action(cx.listener(|this, _: &keys::ResetZoom, _, cx| this.set_zoom(1.0, cx)))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::press_background))
+            .on_mouse_down(MouseButton::Middle, cx.listener(Self::press_pan))
             .on_scroll_wheel(cx.listener(Self::wheel))
             .on_pinch(cx.listener(Self::pinch))
             .child(edges)
             .children(nodes)
+            .children(marquee)
     }
 }
 

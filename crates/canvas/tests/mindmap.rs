@@ -131,7 +131,7 @@ fn a_cross_link_is_not_a_branch() {
     let cut = Change::RemoveEdges {
         ids: vec!["e3".into()],
     };
-    assert_eq!(mindmap::detach(&canvas, "a1"), Some(cut));
+    assert_eq!(mindmap::detach(&canvas, &["a1".into()]), Some(cut));
 }
 
 #[test]

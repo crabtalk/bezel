@@ -272,7 +272,7 @@ impl CanvasDemo {
         let painter = Painter::of(cx);
         let view = self.view.read(cx);
         let removable = view.selected().is_some_and(|id| id != ROOT);
-        let zoom = view.zoom();
+        let (zoom, can_undo, can_redo) = (view.zoom(), view.can_undo(), view.can_redo());
         let button = |key: &'static str, glyph: &'static [u8]| {
             theme
                 .icon_button(
@@ -333,6 +333,27 @@ impl CanvasDemo {
                             this.refocus(window, cx);
                         }))
                     }),
+            );
+
+        let history = theme
+            .control_group()
+            .child(
+                button("undo", icons::glyph::Undo2)
+                    .when(!can_undo, |button| button.opacity(0.4))
+                    .tooltip(chord("Undo", Box::new(canvas::keys::Undo)))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.view.update(cx, |view, cx| view.undo(cx));
+                        this.refocus(window, cx);
+                    })),
+            )
+            .child(
+                button("redo", icons::glyph::Redo2)
+                    .when(!can_redo, |button| button.opacity(0.4))
+                    .tooltip(chord("Redo", Box::new(canvas::keys::Redo)))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.view.update(cx, |view, cx| view.redo(cx));
+                        this.refocus(window, cx);
+                    })),
             );
 
         let drags =
@@ -414,6 +435,7 @@ impl CanvasDemo {
             .border_b_1()
             .border_color(theme.hairline(0.10))
             .child(add)
+            .child(history)
             .child(
                 div()
                     .flex()

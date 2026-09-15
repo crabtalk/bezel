@@ -4,10 +4,14 @@
     "date": "2026-09-15",
     "summary": "The canvas edits a graph, with trees as a layer over it, laid out the way an app picks.",
     "new": [
+      "The canvas undoes and redoes: `cmd-z` and `cmd-shift-z`, or `CanvasView::undo` and `redo`, over every batch that landed through `submit` or `apply`, with an add and the typing into it as one step. `change::apply` answers the changes that undo it, and `apply_all` does a batch.",
+      "The selection is many: shift- or cmd-click gathers it, a shift-drag on empty canvas draws a marquee, `cmd-a` takes all and `escape` none. Removing, nudging, dragging, copying and duplicating act on all of it; `CanvasView::selection` and `set_selection` read and set it, and `drag::Drag::with` carries the rest of it.",
+      "`cmd-c`, `cmd-x`, `cmd-v` and `cmd-d` copy, cut, paste and duplicate as JSON Canvas through `canvas::clip`, minting fresh ids and hanging a pasted branch under the selection in a tree. Plain text pastes as a text node. A middle-button drag pans.",
       "`canvas::layout` makes layout pluggable: a `Layout` is an `arrange` function and the `flow` its trees grow in. `MINDMAP`, `BALANCED` (a root's branches both ways), `DOWN` and `FREE` ship, and `mindmap::arrange` takes a `Flow`.",
       "Arrows walk a tree the way its layout grows it (`mindmap::walk`), or go to the nearest node on a free canvas (`layout::nearest`). `shift`-arrows nudge the selection, and a double-click on empty canvas adds a node there."
     ],
     "changed": [
+      "`CanvasEvent::Selected` carries the whole selection. `Change::AddNode` takes an `index`. `mindmap::reparent`, `detach` and `carry` take many ids, `carry` a distance rather than a place, and `node_at` skips many branches.",
       "`CanvasView::with_layout`, `layout` and `set_layout` replace `with_arrange`, `arrange` and `set_arrange`, and `Arrange` is gone. `keys::SelectParent`, `SelectChild`, `SelectPrev` and `SelectNext` are `SelectLeft`, `SelectRight`, `SelectUp` and `SelectDown`.",
       "`Change` is a graph's vocabulary — `AddNode`, `AddEdge`, `RemoveNodes`, `RemoveEdges`, `MoveNodes`, `Resize`, `UpdateNode`, `UpdateEdge` — and the view lands them in batches: `submit` and `apply` take many, one refused change refuses the batch, and `CanvasEvent::Changed` carries a `Vec`. `change::added` finds the node a batch adds.",
       "Tree edits answer batches: `mindmap::child` and `sibling` answer `Option<Vec<Change>>`, and `remove`, `reparent`, `detach`, `carry` and `unpin` are new. `drag` handlers answer the same, and a drop's preview is put back whole before the drop is filtered.",

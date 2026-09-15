@@ -6,13 +6,14 @@
 //! let view = cx.new(|cx| canvas::CanvasView::new(Canvas::parse(json)?, cx));
 //! ```
 //!
-//! [`model`], [`mindmap`], [`layout`], [`change`] and [`drag`] are pure — no
-//! gpui. What a node is comes from [`kind`]; where it sits from [`layout`];
+//! [`model`], [`mindmap`], [`layout`], [`change`], [`clip`] and [`drag`] are
+//! pure — no gpui. What a node is comes from [`kind`]; where it sits from [`layout`];
 //! every edit is a [`Change`] an app can refuse or rewrite
 //! ([`CanvasView::with_changes`]). [`CanvasView`] is the surface: pan, zoom,
 //! selection and the keys.
 
 pub mod change;
+pub mod clip;
 pub mod drag;
 pub mod kind;
 pub mod layout;
