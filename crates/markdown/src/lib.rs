@@ -37,6 +37,7 @@ pub mod select;
 pub mod selectable;
 pub mod serialize;
 pub mod source;
+pub mod source_style;
 pub mod typography;
 
 pub use block::{BlockRenderer, set_block_renderer};
@@ -53,4 +54,5 @@ pub use render::{
 pub use select::{Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_with};
 pub use source::spans as source_spans;
+pub use source_style::{SourceStyle, set_source_style};
 pub use typography::{Typography, set_typography};

@@ -1294,6 +1294,35 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         &theme,
         cx,
     );
+    // Keep each number beside its source line, including wrapped and empty lines.
+    let style = crate::SourceStyle::of(cx);
+    let digits = lines.len().to_string().len().max(style.gutter_min_digits);
+    let gap = style.gutter_gap.max(0.0) * typography.code.size();
+    let gutter_width = digits as f32 * typography.code.size() + gap;
+    let lines = lines
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| {
+            if !style.line_numbers {
+                return line;
+            }
+            div()
+                .flex()
+                .items_start()
+                .child(
+                    div()
+                        .w(px(gutter_width))
+                        .flex_shrink_0()
+                        .pr(px(gap))
+                        .font_family(theme.font_mono.clone())
+                        .text_color(style.gutter_color.unwrap_or(theme.text_faint))
+                        .text_right()
+                        .child((index + 1).to_string()),
+                )
+                .child(div().flex_1().min_w_0().child(line))
+                .into_any_element()
+        })
+        .collect();
     div()
         .flex()
         .flex_col()
