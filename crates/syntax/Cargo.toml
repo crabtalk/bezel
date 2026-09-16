@@ -1,7 +1,7 @@
 [package]
 name = "bezel-syntax"
 
-description = "Tree-sitter syntax classification for isolated code blocks — source and a fence tag in, (byte range, kind) spans out"
+description = "Tree-sitter syntax classification — a language registry, injections, and (byte range, kind) spans out. Grammars come from a provider"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -18,6 +18,9 @@ name = "syntax"
 
 [lints]
 workspace = true
+
+[features]
+wasm = ["tree-sitter/wasm"]
 
 [dependencies]
 theme.workspace = true

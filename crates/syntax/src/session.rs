@@ -12,9 +12,13 @@
 //! through a captured node instead — the language is in the source text — is
 //! only painted if that language was already compiled.
 
-use crate::{lang::Lang, registry};
+use crate::{
+    lang::{Grammar, Lang},
+    registry,
+};
 use std::{cell::RefCell, collections::HashMap, ops::Range};
 use theme::HighlightKind;
+use tree_sitter::Language;
 use tree_sitter_highlight::{HighlightEvent, Highlighter};
 
 /// A parser and its compiled queries.
@@ -36,7 +40,7 @@ impl Session {
         if self.configs.contains_key(lang.name) {
             return;
         }
-        let compiled = lang.compile();
+        let compiled = self.compile(lang);
         let injected = compiled
             .as_ref()
             .map(|compiled| compiled.injected.clone())
@@ -49,6 +53,41 @@ impl Session {
                 self.ensure(lang);
             }
         }
+    }
+
+    /// The grammar for `lang`, then its queries compiled against it.
+    fn compile(&mut self, lang: &'static Lang) -> Option<crate::lang::Compiled> {
+        let grammar = match &lang.grammar {
+            Grammar::Native(grammar) => (*grammar).into(),
+            Grammar::Wasm(bytes) => self.load_wasm(lang.name, &bytes.clone())?,
+        };
+        lang.compile_with(grammar)
+    }
+
+    /// Instantiate a wasm grammar in this session's store, making one from the
+    /// installed engine if there is not one yet.
+    ///
+    /// The store lives on the parser rather than beside it: `set_language` with
+    /// a wasm language reads the store off the parser, and the highlighter calls
+    /// it for every layer. Taking it back out is how a later language is loaded
+    /// into the same store.
+    #[cfg(feature = "wasm")]
+    fn load_wasm(&mut self, name: &str, bytes: &[u8]) -> Option<Language> {
+        use tree_sitter::WasmStore;
+
+        let mut store = match self.highlighter.parser().take_wasm_store() {
+            Some(store) => store,
+            None => WasmStore::new(crate::engine()?).ok()?,
+        };
+        let language = store.load_language(name, bytes).ok();
+        self.highlighter.parser().set_wasm_store(store).ok()?;
+        language
+    }
+
+    /// Without the `wasm` feature there is no engine to instantiate in.
+    #[cfg(not(feature = "wasm"))]
+    fn load_wasm(&mut self, _name: &str, _bytes: &[u8]) -> Option<Language> {
+        None
     }
 
     /// Spans over `source`, in bytes, in document order. `None` when the query

@@ -33,6 +33,31 @@ pub mod session;
 pub use tree_sitter;
 pub use tree_sitter_language;
 
+/// The wasm engine, which this crate borrows and never builds.
+///
+/// `tree_sitter::wasmtime` is the only handle that works: wasmtime arrives
+/// through tree-sitter, and a second one in the graph is a second `Engine` type.
+#[cfg(feature = "wasm")]
+pub use tree_sitter::wasmtime;
+
+#[cfg(feature = "wasm")]
+static ENGINE: std::sync::OnceLock<wasmtime::Engine> = std::sync::OnceLock::new();
+
+/// Hand this crate the engine wasm grammars are instantiated in. `false` if one
+/// was already set, which leaves the first in place.
+///
+/// The app owns the engine; this keeps a handle so other consumers share it.
+/// Until one is set, a [`Grammar::Wasm`](lang::Grammar::Wasm) cannot load.
+#[cfg(feature = "wasm")]
+pub fn set_engine(engine: wasmtime::Engine) -> bool {
+    ENGINE.set(engine).is_ok()
+}
+
+#[cfg(feature = "wasm")]
+pub(crate) fn engine() -> Option<&'static wasmtime::Engine> {
+    ENGINE.get()
+}
+
 /// Highlight `source` as `language` (a fence tag — `rs`, `py`, `tsx`, …).
 /// `None` when the tag names no language.
 pub fn highlight(source: &str, language: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {

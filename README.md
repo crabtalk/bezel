@@ -138,6 +138,7 @@ the bootstrap, the laws, and the traps that only bite at runtime.
 | Thinking orbs          | [gpui-thinking-orbs]               | MIT         |
 | Blob avatars           | [blobatar]                         | MIT         |
 | Syntax highlighting    | tree-sitter core and grammars      | MIT         |
+| Wasm grammar fixtures  | [tree-sitter-json], [tree-sitter-css] | MIT      |
 | TypeScript/TSX queries | [nvim-treesitter]                  | Apache-2.0  |
 | Icons                  | [Lucide], ported from a release    | ISC         |
 | Fonts                  | Geist and Geist Mono © Vercel Inc. | SIL OFL 1.1 |
@@ -147,4 +148,6 @@ the bootstrap, the laws, and the traps that only bite at runtime.
 [gpui-thinking-orbs]: https://github.com/FrancoEscob/gpui-thinking-orbs
 [blobatar]: https://github.com/Alain00/blobatar
 [nvim-treesitter]: https://github.com/nvim-treesitter/nvim-treesitter
+[tree-sitter-json]: https://github.com/tree-sitter/tree-sitter-json
+[tree-sitter-css]: https://github.com/tree-sitter/tree-sitter-css
 [lucide]: https://lucide.dev

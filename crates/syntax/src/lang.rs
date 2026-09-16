@@ -154,10 +154,10 @@ impl Lang {
         crate::session::with(|session| session.highlight(self, source))
     }
 
-    /// Compile this language's queries against its grammar. `None` where the
-    /// grammar cannot be made without a store, or the query does not compile.
-    pub(crate) fn compile(&self) -> Option<Compiled> {
-        let grammar = self.grammar.language()?;
+    /// Compile this language's queries against `grammar`, which the session
+    /// supplies because a wasm one comes from its store. `None` where a query
+    /// does not compile.
+    pub(crate) fn compile_with(&self, grammar: Language) -> Option<Compiled> {
         let mut config =
             HighlightConfiguration::new(grammar, self.name, self.query, self.injections, "").ok()?;
         config.configure(NAMES);
