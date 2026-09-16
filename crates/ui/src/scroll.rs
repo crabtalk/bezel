@@ -217,7 +217,7 @@ pub fn thumb(
     Some(start..start + size)
 }
 
-fn thumb_in_track(
+pub(crate) fn thumb_in_track(
     viewport: Pixels,
     max_offset: Pixels,
     offset: Pixels,

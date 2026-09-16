@@ -17,16 +17,7 @@
 //! is not something a consumer should have to find by reading gpui's source.
 //! [`scroll_handle`] is that reach, named.
 //!
-//! ## Why not gpui's `list()`
-//!
-//! gpui has a second virtualizer for rows of *varying* height, and it cannot
-//! carry a proportional scrollbar: `ListState` speaks in `ListOffset { item_ix,
-//! offset_in_item }` — logical position, not pixels — with no maximum offset
-//! and no viewport. A thumb's length is the visible share of a total height, and
-//! a variable-height list cannot know its total without measuring every row,
-//! which is the work virtualization exists to skip. A list of thousands of rows
-//! wants a bar; a list that needs varying heights is a different component, and
-//! nothing has asked for one yet.
+//! [`VariableList`] supports rows of varying height with stable scroll anchors.
 //!
 //! ```ignore
 //! div().relative().h(px(240.0))
@@ -88,3 +79,6 @@ where
     .size_full()
     .track_scroll(handle)
 }
+
+mod variable;
+pub use variable::VariableList;
