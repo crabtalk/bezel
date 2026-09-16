@@ -1,13 +1,7 @@
 //! Text you can select with the pointer and copy out of.
 //!
-//! The two hard halves are already here: [`render_with`] paints a [`Selection`]
-//! it is handed, and fills a [`BlockLayouts`] whose [`BlockLayouts::hit`] turns
-//! a point back into a [`Cursor`]. What was missing is the *gesture* — press,
-//! drag, release — which belonged to whoever owns the selection, and until now
-//! only an editor ever did.
-//!
-//! This is that gesture and nothing else. Which item holds the selection, and
-//! what copying means, stay the caller's.
+//! [`render`] handles pointer selection; [`surface`] adds keyboard focus and copy.
+//! Selection state stays with the caller so lists can share one selection.
 
 use crate::{BlockLayouts, Cursor, Doc, Editing, Selection, render_with};
 use gpui::{
@@ -112,4 +106,43 @@ pub fn copied(doc: &Doc, selection: Selection) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+gpui::actions!(selectable, [Copy]);
+
+struct Bindings;
+impl gpui::Global for Bindings {}
+
+/// Wrap selectable content with focus-on-click and platform copy shortcuts.
+/// Rebuild when the document or selection changes. Keep `focus` stable per surface.
+pub fn surface(
+    focus: &gpui::FocusHandle,
+    doc: &Doc,
+    selection: Option<Selection>,
+    cx: &mut gpui::App,
+) -> gpui::Div {
+    if !cx.has_global::<Bindings>() {
+        let chord = if cfg!(target_os = "macos") {
+            "cmd-c"
+        } else {
+            "ctrl-c"
+        };
+        cx.bind_keys([gpui::KeyBinding::new(chord, Copy, Some("SelectableText"))]);
+        cx.set_global(Bindings);
+    }
+    let text = selection
+        .map(|selection| copied(doc, selection))
+        .unwrap_or_default();
+    let focus = focus.clone();
+    div()
+        .key_context("SelectableText")
+        .track_focus(&focus)
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            window.focus(&focus, cx)
+        })
+        .on_action(move |_: &Copy, _, cx| {
+            if !text.is_empty() {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()));
+            }
+        })
 }

@@ -46,3 +46,46 @@ fn a_press_that_never_dragged_copies_nothing() {
     let doc = parse(DOC);
     assert_eq!(copied(&doc, Selection::at(body(1, 4))), "");
 }
+
+#[gpui::test]
+fn surface_takes_focus_and_copies_selected_plain_text(cx: &mut gpui::TestAppContext) {
+    use gpui::{Context, Render, Window, prelude::*};
+    struct Reader {
+        focus: gpui::FocusHandle,
+    }
+    impl Render for Reader {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            selectable::surface(
+                &self.focus,
+                &parse("hello **world**"),
+                Some(Selection::new(body(0, 6), body(0, 11))),
+                cx,
+            )
+            .id("reader")
+            .debug_selector(|| "reader".into())
+            .size_full()
+            .child("hello world")
+        }
+    }
+    let window = cx.add_window(|_, cx| Reader {
+        focus: cx.focus_handle(),
+    });
+    let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+    visual.run_until_parked();
+    let point = visual.debug_bounds("reader").unwrap().center();
+    visual.simulate_click(point, gpui::Modifiers::default());
+    visual.run_until_parked();
+    visual.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-c"
+    } else {
+        "ctrl-c"
+    });
+    visual.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard()
+                .and_then(|item| item.text())
+                .as_deref(),
+            Some("world")
+        )
+    });
+}
