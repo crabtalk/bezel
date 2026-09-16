@@ -9,9 +9,7 @@
 > APIs are still evolving, so expect changes as the library takes shape.
 
 A gpui component library, SwiftUI-lean: style flows through the environment,
-never through parameters, and its numbers are measured rather than chosen — the
-type ladder is `NSFont.preferredFont(forTextStyle:)`, the gap between siblings
-is `NSStackView().spacing`. [CONTRIBUTING.md](CONTRIBUTING.md) has the laws.
+never through parameters.
 
 https://github.com/user-attachments/assets/34861f29-004f-47f0-89e6-42cc8772749f
 

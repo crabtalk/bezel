@@ -1,5 +1,24 @@
 [
   {
+    "version": "0.1.18",
+    "date": "2026-09-16",
+    "summary": "Runtime syntax providers, Wasm grammars, and richer text and list controls.",
+    "new": [
+      "Syntax supports runtime language registration, language injections, and optional Wasm grammars with per-session query compilation.",
+      "Text fields accept syntax spans and live typography updates; selectable Markdown gains reusable focus and copy handling.",
+      "Variable-height virtual lists preserve scroll anchors, follow the tail, and report visible rows."
+    ],
+    "changed": [
+      "Linked grammars move to `bezel-syntax-std`; consumers must install a provider or register their own languages.",
+      "Tree-sitter moves to 0.27 and the minimum Rust version rises to 1.90."
+    ],
+    "fixed": [
+      "Terminal tab markers no longer expand twice during text shaping.",
+      "The gallery installs its syntax provider for native highlighting and generated browser samples.",
+      "Variable-height list scrollbars honour `Visibility::Scrolling`: the thumb fades after the idle window unless it is being dragged."
+    ]
+  },
+  {
     "version": "0.1.17",
     "date": "2026-09-16",
     "summary": "Canvas editing respects locks and zoom limits, with faster undo and cached containment.",
