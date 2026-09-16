@@ -4,6 +4,10 @@
 [![license](https://img.shields.io/crates/l/bezel.svg?style=flat-square)](LICENSE)
 [![gpui](https://img.shields.io/crates/v/bezel-gpui.svg?style=flat-square&label=gpui)](https://crates.io/crates/bezel-gpui)
 
+> [!NOTE]
+> Bezel is developing fast, with frequent releases and version bumps.
+> APIs are still evolving, so expect changes as the library takes shape.
+
 A gpui component library, SwiftUI-lean: style flows through the environment,
 never through parameters, and its numbers are measured rather than chosen — the
 type ladder is `NSFont.preferredFont(forTextStyle:)`, the gap between siblings
@@ -15,6 +19,12 @@ https://github.com/user-attachments/assets/34861f29-004f-47f0-89e6-42cc8772749f
 use bezel::ui::widgets::{ButtonStyle, Buttons};
 theme.button("Save", ButtonStyle::Prominent, None)
 ```
+
+## Built with Bezel
+
+[Cydonia](https://github.com/crabtalk/cydonia) is a desktop workspace for working
+with coding agents in a project directory. It's a real app built with Bezel —
+explore it to see the library in use beyond the component gallery.
 
 ## Install
 
