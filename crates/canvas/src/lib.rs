@@ -1,21 +1,25 @@
 //! An infinite canvas for gpui, over [JSON Canvas](https://jsoncanvas.org).
 //!
 //! ```ignore
-//! canvas::init(cx);                                               // once, at startup
-//! canvas::set_kinds(cx, Kinds::new().with("session", SESSION));  // an app's own types
-//! let view = cx.new(|cx| canvas::CanvasView::new(Canvas::parse(json)?, cx));
+//! canvas::init(cx);                                                // once, at startup
+//! let view = cx.new(|cx| {
+//!     CanvasView::new(Canvas::parse(json)?, cx)
+//!         .with_kinds(Kinds::new().with("session", SESSION))       // an app's own types
+//! });
 //! ```
 //!
 //! [`model`], [`mindmap`], [`layout`], [`change`], [`clip`] and [`drag`] are
 //! pure — no gpui. What a node is comes from [`kind`]; where it sits from [`layout`];
 //! every edit is a [`Change`] an app can refuse or rewrite
-//! ([`CanvasView::with_changes`]). [`CanvasView`] is the surface: pan, zoom,
-//! selection and the keys.
+//! ([`CanvasEditor::with_changes`]). [`CanvasEditor`] is the canvas without a
+//! window — document, selection, history, the part in view — and
+//! [`CanvasView`] paints it and turns keys and the pointer into its commands.
 
 pub mod change;
 pub mod clip;
 pub mod contain;
 pub mod drag;
+mod edit;
 pub mod kind;
 pub mod layout;
 pub mod mindmap;
@@ -25,9 +29,10 @@ pub mod snap;
 mod view;
 
 pub use change::Change;
+pub use edit::{CanvasEditor, CanvasEvent, Item};
 pub use kind::{Kind, Kinds, set_kinds, text_style};
 pub use layout::Layout;
 pub use minimap::minimap;
 pub use model::Canvas;
 pub use snap::Snap;
-pub use view::{CONTEXT, CanvasEvent, CanvasView, init, keys};
+pub use view::{CONTEXT, CanvasView, init, keys};

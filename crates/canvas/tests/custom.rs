@@ -33,7 +33,7 @@ fn card() -> Node {
 }
 
 fn open(cx: &mut TestAppContext) -> (Entity<CanvasView>, VisualTestContext) {
-    cx.update(|cx| {
+    let kinds = cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
         let blank =
@@ -48,11 +48,15 @@ fn open(cx: &mut TestAppContext) -> (Entity<CanvasView>, VisualTestContext) {
                 )),
             )
             .with_fresh(card);
-        canvas::set_kinds(cx, kinds);
         canvas::init(cx);
+        kinds
     });
     let doc = Canvas::parse(DOC).unwrap();
-    let window = cx.add_window(move |_, cx| CanvasView::new(doc, cx).with_layout(layout::FREE));
+    let window = cx.add_window(move |_, cx| {
+        CanvasView::new(doc, cx)
+            .with_kinds(kinds)
+            .with_layout(layout::FREE)
+    });
     let view = window.root(cx).unwrap();
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(800.0), px(600.0)));
@@ -69,7 +73,11 @@ fn open(cx: &mut TestAppContext) -> (Entity<CanvasView>, VisualTestContext) {
 fn screen(view: &Entity<CanvasView>, at: (i64, i64), cx: &mut VisualTestContext) -> Point<Pixels> {
     cx.update(|_, cx| {
         let view = view.read(cx);
-        let (bounds, pan, zoom) = (view.bounds().unwrap(), view.pan(), view.zoom());
+        let (bounds, pan, zoom) = (
+            view.bounds().unwrap(),
+            view.editor().pan(),
+            view.editor().zoom(),
+        );
         bounds.origin
             + point(
                 px(pan.x + at.0 as f32 * zoom),
@@ -79,13 +87,13 @@ fn screen(view: &Entity<CanvasView>, at: (i64, i64), cx: &mut VisualTestContext)
 }
 
 fn doc(view: &Entity<CanvasView>, cx: &mut VisualTestContext) -> Canvas {
-    cx.update(|_, cx| view.read(cx).canvas().clone())
+    cx.update(|_, cx| view.read(cx).editor().canvas().clone())
 }
 
 #[gpui::test]
 fn a_kind_that_holds_carries_what_sits_in_it(cx: &mut TestAppContext) {
     let (view, mut cx) = open(cx);
-    let zoom = cx.update(|_, cx| view.read(cx).zoom());
+    let zoom = cx.update(|_, cx| view.read(cx).editor().zoom());
     let from = screen(&view, (300, 250), &mut cx);
     let to = from + point(px(60.0 * zoom), px(40.0 * zoom));
     cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
@@ -148,7 +156,7 @@ fn drag_by(
     by: (f32, f32),
     cx: &mut VisualTestContext,
 ) {
-    let zoom = cx.update(|_, cx| view.read(cx).zoom());
+    let zoom = cx.update(|_, cx| view.read(cx).editor().zoom());
     let start = screen(view, from, cx);
     let end = start + point(px(by.0 * zoom), px(by.1 * zoom));
     cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());

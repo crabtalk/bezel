@@ -86,7 +86,11 @@ fn a_drag_on_a_grid_lands_on_it(cx: &mut TestAppContext) {
 
     let (at, zoom) = cx.update(|_, cx| {
         let view = view.read(cx);
-        let (bounds, pan, zoom) = (view.bounds().unwrap(), view.pan(), view.zoom());
+        let (bounds, pan, zoom) = (
+            view.bounds().unwrap(),
+            view.editor().pan(),
+            view.editor().zoom(),
+        );
         let at = bounds.origin + point(px(pan.x + 100.0 * zoom), px(pan.y + 20.0 * zoom));
         (at, zoom)
     });
@@ -95,6 +99,6 @@ fn a_drag_on_a_grid_lands_on_it(cx: &mut TestAppContext) {
     cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
 
-    let a = cx.update(|_, cx| view.read(cx).canvas().node("a").cloned().unwrap());
+    let a = cx.update(|_, cx| view.read(cx).editor().canvas().node("a").cloned().unwrap());
     assert_eq!((a.x, a.y), (40, 40));
 }

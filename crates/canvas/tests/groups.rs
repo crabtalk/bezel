@@ -70,7 +70,11 @@ fn images_are_known_by_their_extension() {
 fn screen(view: &Entity<CanvasView>, at: (i64, i64), cx: &mut VisualTestContext) -> Point<Pixels> {
     cx.update(|_, cx| {
         let view = view.read(cx);
-        let (bounds, pan, zoom) = (view.bounds().unwrap(), view.pan(), view.zoom());
+        let (bounds, pan, zoom) = (
+            view.bounds().unwrap(),
+            view.editor().pan(),
+            view.editor().zoom(),
+        );
         bounds.origin
             + point(
                 px(pan.x + at.0 as f32 * zoom),
@@ -94,14 +98,14 @@ fn dragging_a_group_moves_its_members(cx: &mut TestAppContext) {
         cx.update(|window, cx| window.draw(cx).clear(cx));
     }
 
-    let zoom = cx.update(|_, cx| view.read(cx).zoom());
+    let zoom = cx.update(|_, cx| view.read(cx).editor().zoom());
     let from = screen(&view, (300, 250), &mut cx);
     let to = from + point(px(60.0 * zoom), px(40.0 * zoom));
     cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
 
-    let canvas = cx.update(|_, cx| view.read(cx).canvas().clone());
+    let canvas = cx.update(|_, cx| view.read(cx).editor().canvas().clone());
     assert_eq!(
         [at(&canvas, "g"), at(&canvas, "a"), at(&canvas, "b")],
         [(60, 40), (80, 80), (500, 0)]

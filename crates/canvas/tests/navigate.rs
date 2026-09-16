@@ -1,5 +1,5 @@
-//! Finding one's way: fit, zoom to the selection, a selection kept in view,
-//! and the part in view read and moved.
+//! A selection an arrow picks is brought into view. Fit, zoom to the selection
+//! and the part in view are in `editor.rs`.
 
 use canvas::{Canvas, CanvasView, layout};
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
@@ -42,8 +42,8 @@ fn draw(cx: &mut VisualTestContext) {
 fn in_view(view: &Entity<CanvasView>, id: &str, cx: &mut VisualTestContext) -> bool {
     cx.update(|_, cx| {
         let view = view.read(cx);
-        let (x, y, w, h) = view.visible().unwrap();
-        let node = view.canvas().node(id).unwrap();
+        let (x, y, w, h) = view.editor().visible().unwrap();
+        let node = view.editor().canvas().node(id).unwrap();
         let (left, top) = (node.x as f32, node.y as f32);
         left >= x
             && top >= y
@@ -53,45 +53,16 @@ fn in_view(view: &Entity<CanvasView>, id: &str, cx: &mut VisualTestContext) -> b
 }
 
 #[gpui::test]
-fn fit_shows_everything(cx: &mut TestAppContext) {
-    let (view, mut cx) = open(cx);
-    assert!(!in_view(&view, "b", &mut cx));
-    cx.update(|_, cx| view.update(cx, |view, cx| view.fit(cx)));
-    assert!(cx.update(|_, cx| view.read(cx).zoom()) < 1.0);
-    for id in ["a", "b", "c"] {
-        assert!(in_view(&view, id, &mut cx), "{id} is out of view");
-    }
-}
-
-#[gpui::test]
-fn zoom_to_selection_centres_it(cx: &mut TestAppContext) {
+fn an_arrow_brings_what_it_picks_into_view(cx: &mut TestAppContext) {
     let (view, mut cx) = open(cx);
     cx.update(|_, cx| {
         view.update(cx, |view, cx| {
-            view.select(Some("c".into()), cx);
-            view.zoom_to_selection(cx);
+            view.update_editor(cx, |editor| editor.select(Some("a".into())))
         })
     });
-    assert!(in_view(&view, "c", &mut cx));
-    let (x, y, w, h) = cx.update(|_, cx| view.read(cx).visible().unwrap());
-    assert!((x + w / 2.0 - 1600.0).abs() < 1.0 && (y + h / 2.0 - 1220.0).abs() < 1.0);
-}
-
-#[gpui::test]
-fn an_arrow_brings_what_it_picks_into_view(cx: &mut TestAppContext) {
-    let (view, mut cx) = open(cx);
-    cx.update(|_, cx| view.update(cx, |view, cx| view.select(Some("a".into()), cx)));
     cx.simulate_keystrokes("right");
     draw(&mut cx);
-    let picked = cx.update(|_, cx| view.read(cx).selected().map(str::to_owned));
+    let picked = cx.update(|_, cx| view.read(cx).editor().selected().map(str::to_owned));
     assert_eq!(picked.as_deref(), Some("b"));
     assert!(in_view(&view, "b", &mut cx));
-}
-
-#[gpui::test]
-fn center_on_puts_a_point_in_the_middle(cx: &mut TestAppContext) {
-    let (view, mut cx) = open(cx);
-    cx.update(|_, cx| view.update(cx, |view, cx| view.center_on((1500.0, 600.0), cx)));
-    let (x, y, w, h) = cx.update(|_, cx| view.read(cx).visible().unwrap());
-    assert_eq!((x + w / 2.0, y + h / 2.0), (1500.0, 600.0));
 }

@@ -14,8 +14,12 @@ const TREE: &str = r#"{
 }"#;
 
 fn middle(view: &CanvasView, id: &str) -> Point<Pixels> {
-    let (bounds, pan, zoom) = (view.bounds().expect("painted"), view.pan(), view.zoom());
-    let node = view.canvas().node(id).expect("in the tree");
+    let (bounds, pan, zoom) = (
+        view.bounds().expect("painted"),
+        view.editor().pan(),
+        view.editor().zoom(),
+    );
+    let node = view.editor().canvas().node(id).expect("in the tree");
     bounds.origin
         + point(
             px(pan.x + (node.x + node.width / 2) as f32 * zoom),
@@ -43,11 +47,11 @@ fn a_child_drags_and_stays(cx: &mut TestAppContext) {
 
     let (at, origin) = cx.update(|_, cx| {
         let view = view.read(cx);
-        let child = view.canvas().node("child").unwrap();
+        let child = view.editor().canvas().node("child").unwrap();
         (middle(view, "child"), (child.x, child.y))
     });
     cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
-    let selected = cx.update(|_, cx| view.read(cx).selected().map(str::to_owned));
+    let selected = cx.update(|_, cx| view.read(cx).editor().selected().map(str::to_owned));
     assert_eq!(selected.as_deref(), Some("child"), "the press missed");
     let to = at + point(px(30.0), px(50.0));
     cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::none());
@@ -55,7 +59,7 @@ fn a_child_drags_and_stays(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     let child = cx
-        .update(|_, cx| view.read(cx).canvas().node("child").cloned())
+        .update(|_, cx| view.read(cx).editor().canvas().node("child").cloned())
         .unwrap();
     assert_eq!((child.x, child.y), (origin.0 + 30, origin.1 + 50));
     assert!(mindmap::is_pinned(&child));

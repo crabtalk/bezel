@@ -53,7 +53,9 @@ fn open(
 
 fn select(view: &Entity<CanvasView>, id: &str, cx: &mut VisualTestContext) {
     cx.update(|window, cx| {
-        view.update(cx, |view, cx| view.select(Some(id.into()), cx));
+        view.update(cx, |view, cx| {
+            view.update_editor(cx, |editor| editor.select(Some(id.into())))
+        });
         let handle = view.read(cx).focus_handle(cx);
         window.focus(&handle, cx);
     });
@@ -64,7 +66,7 @@ fn tab_makes_the_kinds_child(cx: &mut TestAppContext) {
     let (view, mut cx) = open(|view| view, cx);
     select(&view, "leaf", &mut cx);
     cx.simulate_keystrokes("tab");
-    let canvas = cx.update(|_, cx| view.read(cx).canvas().clone());
+    let canvas = cx.update(|_, cx| view.read(cx).editor().canvas().clone());
     let made = canvas.nodes.last().unwrap();
     assert_eq!((made.kind.as_str(), made.width), ("card", 80));
     assert_eq!(mindmap::parent(&canvas, &made.id), Some("leaf"));
@@ -74,7 +76,7 @@ fn tab_makes_the_kinds_child(cx: &mut TestAppContext) {
 fn a_filter_refuses_and_rewrites(cx: &mut TestAppContext) {
     let (view, mut cx) = open(
         |view| {
-            view.with_changes(|canvas, change, _| match change {
+            view.with_changes(|canvas, change| match change {
                 // Roots stay.
                 Change::RemoveNodes { ids }
                     if ids.iter().any(|id| mindmap::parent(canvas, id).is_none()) =>
@@ -93,13 +95,13 @@ fn a_filter_refuses_and_rewrites(cx: &mut TestAppContext) {
     );
     select(&view, "root", &mut cx);
     cx.simulate_keystrokes("backspace");
-    assert!(cx.update(|_, cx| view.read(cx).canvas().node("root").is_some()));
+    assert!(cx.update(|_, cx| view.read(cx).editor().canvas().node("root").is_some()));
 
     cx.simulate_keystrokes("tab");
-    let width = cx.update(|_, cx| view.read(cx).canvas().nodes.last().unwrap().width);
+    let width = cx.update(|_, cx| view.read(cx).editor().canvas().nodes.last().unwrap().width);
     assert_eq!(width, 300);
 
     select(&view, "leaf", &mut cx);
     cx.simulate_keystrokes("backspace");
-    assert!(cx.update(|_, cx| view.read(cx).canvas().node("leaf").is_none()));
+    assert!(cx.update(|_, cx| view.read(cx).editor().canvas().node("leaf").is_none()));
 }

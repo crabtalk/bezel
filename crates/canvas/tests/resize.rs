@@ -16,7 +16,7 @@ fn draw(cx: &mut VisualTestContext) {
 }
 
 fn note(view: &Entity<CanvasView>, cx: &mut VisualTestContext) -> canvas::model::Node {
-    cx.update(|_, cx| view.read(cx).canvas().node("t").cloned().unwrap())
+    cx.update(|_, cx| view.read(cx).editor().canvas().node("t").cloned().unwrap())
 }
 
 #[gpui::test]
@@ -34,7 +34,9 @@ fn a_growing_node_pulls_taller_and_undo_lets_it_go(cx: &mut TestAppContext) {
     cx.simulate_resize(size(px(800.0), px(600.0)));
     draw(&mut cx);
     cx.update(|window, cx| {
-        view.update(cx, |view, cx| view.select(Some("t".into()), cx));
+        view.update(cx, |view, cx| {
+            view.update_editor(cx, |editor| editor.select(Some("t".into())))
+        });
         let handle = view.read(cx).focus_handle(cx);
         window.focus(&handle, cx);
     });
@@ -43,7 +45,11 @@ fn a_growing_node_pulls_taller_and_undo_lets_it_go(cx: &mut TestAppContext) {
     let measured = note(&view, &mut cx).height;
     let (corner, zoom) = cx.update(|_, cx| {
         let view = view.read(cx);
-        let (bounds, pan, zoom) = (view.bounds().unwrap(), view.pan(), view.zoom());
+        let (bounds, pan, zoom) = (
+            view.bounds().unwrap(),
+            view.editor().pan(),
+            view.editor().zoom(),
+        );
         let corner =
             bounds.origin + point(px(pan.x + 200.0 * zoom), px(pan.y + measured as f32 * zoom));
         (corner, zoom)

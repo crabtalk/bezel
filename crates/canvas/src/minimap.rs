@@ -37,22 +37,25 @@ impl Scale {
 
 /// A map of `view`'s canvas, to size and place beside it.
 pub fn minimap(view: &Entity<CanvasView>, cx: &App) -> impl IntoElement + use<> {
-    let read = view.read(cx);
+    let editor = view.read(cx).editor();
     let theme = Theme::of(cx);
-    let boxes: Vec<(f32, f32, f32, f32)> = read
-        .canvas()
+    let boxes: Vec<(f32, f32, f32, f32)> = editor
+        .painted()
         .nodes
         .iter()
         .map(|n| (n.x as f32, n.y as f32, n.width as f32, n.height as f32))
         .collect();
-    let seen = read.visible();
+    let seen = editor.visible();
     let (ink, frame) = (theme.text_faint, theme.accent);
     let scale: Rc<Cell<Option<Scale>>> = Rc::default();
     let look = Rc::new({
         let (view, scale) = (view.downgrade(), scale.clone());
         move |at: Point<Pixels>, cx: &mut App| {
             if let Some(scale) = scale.get() {
-                let _ = view.update(cx, |view, cx| view.center_on(scale.to_canvas(at), cx));
+                let at = scale.to_canvas(at);
+                let _ = view.update(cx, |view, cx| {
+                    view.update_editor(cx, |editor| editor.center_on(at))
+                });
             }
         }
     });

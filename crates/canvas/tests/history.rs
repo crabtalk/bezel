@@ -148,18 +148,29 @@ fn press(keys: &str, cx: &mut VisualTestContext) {
 }
 
 fn doc(view: &Entity<CanvasView>, cx: &mut VisualTestContext) -> Canvas {
-    cx.update(|_, cx| view.read(cx).canvas().clone())
+    cx.update(|_, cx| view.read(cx).editor().canvas().clone())
 }
 
 fn selection(view: &Entity<CanvasView>, cx: &mut VisualTestContext) -> Vec<String> {
-    cx.update(|_, cx| view.read(cx).selection().to_vec())
+    cx.update(|_, cx| {
+        view.read(cx)
+            .editor()
+            .selected_nodes()
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    })
 }
 
 /// A canvas point, in window coordinates.
 fn screen(view: &Entity<CanvasView>, at: (i64, i64), cx: &mut VisualTestContext) -> Point<Pixels> {
     cx.update(|_, cx| {
         let view = view.read(cx);
-        let (bounds, pan, zoom) = (view.bounds().unwrap(), view.pan(), view.zoom());
+        let (bounds, pan, zoom) = (
+            view.bounds().unwrap(),
+            view.editor().pan(),
+            view.editor().zoom(),
+        );
         bounds.origin
             + point(
                 px(pan.x + at.0 as f32 * zoom),
@@ -183,7 +194,11 @@ fn shift() -> Modifiers {
 #[gpui::test]
 fn undo_takes_back_an_edit_and_redo_puts_it_back(cx: &mut TestAppContext) {
     let (view, mut cx) = open(SCATTER, layout::FREE, cx);
-    cx.update(|_, cx| view.update(cx, |view, cx| view.select(Some("a".into()), cx)));
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.update_editor(cx, |editor| editor.select(Some("a".into())))
+        })
+    });
     press("shift-right shift-right", &mut cx);
     assert_eq!(doc(&view, &mut cx).node("a").unwrap().x, 16);
     press("cmd-z", &mut cx);
@@ -241,9 +256,17 @@ fn a_shift_drag_on_nothing_selects_what_it_touches(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_copied_branch_pastes_under_the_selection(cx: &mut TestAppContext) {
     let (view, mut cx) = open(TREE, layout::MINDMAP, cx);
-    cx.update(|_, cx| view.update(cx, |view, cx| view.select(Some("a".into()), cx)));
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.update_editor(cx, |editor| editor.select(Some("a".into())))
+        })
+    });
     press("cmd-c", &mut cx);
-    cx.update(|_, cx| view.update(cx, |view, cx| view.select(Some("b".into()), cx)));
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.update_editor(cx, |editor| editor.select(Some("b".into())))
+        })
+    });
     press("cmd-v", &mut cx);
 
     let canvas = doc(&view, &mut cx);

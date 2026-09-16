@@ -59,13 +59,16 @@ fn a_click_focuses_and_tab_adds_a_node(cx: &mut TestAppContext) {
     );
     cx.simulate_keystrokes("tab");
     cx.run_until_parked();
-    assert_eq!(cx.update(|_, cx| view.read(cx).canvas().nodes.len()), 1);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).editor().canvas().nodes.len()),
+        1
+    );
 }
 
 #[gpui::test]
 fn dragging_the_background_pans(cx: &mut TestAppContext) {
     let (view, mut cx) = open("{}", cx);
-    let before = cx.update(|_, cx| view.read(cx).pan());
+    let before = cx.update(|_, cx| view.read(cx).editor().pan());
     cx.simulate_mouse_down(
         point(px(100.0), px(100.0)),
         MouseButton::Left,
@@ -81,6 +84,6 @@ fn dragging_the_background_pans(cx: &mut TestAppContext) {
         MouseButton::Left,
         Modifiers::none(),
     );
-    let after = cx.update(|_, cx| view.read(cx).pan());
+    let after = cx.update(|_, cx| view.read(cx).editor().pan());
     assert_eq!((after.x - before.x, after.y - before.y), (50.0, 30.0));
 }

@@ -53,14 +53,18 @@ fn press(keys: &str, cx: &mut VisualTestContext) {
 }
 
 fn doc(view: &Entity<CanvasView>, cx: &mut VisualTestContext) -> Canvas {
-    cx.update(|_, cx| view.read(cx).canvas().clone())
+    cx.update(|_, cx| view.read(cx).editor().canvas().clone())
 }
 
 /// A canvas point, in window coordinates.
 fn screen(view: &Entity<CanvasView>, at: (i64, i64), cx: &mut VisualTestContext) -> Point<Pixels> {
     cx.update(|_, cx| {
         let view = view.read(cx);
-        let (bounds, pan, zoom) = (view.bounds().unwrap(), view.pan(), view.zoom());
+        let (bounds, pan, zoom) = (
+            view.bounds().unwrap(),
+            view.editor().pan(),
+            view.editor().zoom(),
+        );
         bounds.origin
             + point(
                 px(pan.x + at.0 as f32 * zoom),
@@ -70,7 +74,11 @@ fn screen(view: &Entity<CanvasView>, at: (i64, i64), cx: &mut VisualTestContext)
 }
 
 fn select(view: &Entity<CanvasView>, id: &str, cx: &mut VisualTestContext) {
-    cx.update(|_, cx| view.update(cx, |view, cx| view.select(Some(id.into()), cx)));
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            view.update_editor(cx, |editor| editor.select(Some(id.into())))
+        })
+    });
     draw(cx);
 }
 
@@ -105,7 +113,7 @@ fn a_click_on_an_edge_picks_it_and_backspace_removes_it(cx: &mut TestAppContext)
     let middle = screen(&view, (300, 20), &mut cx);
     cx.simulate_mouse_down(middle, MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_up(middle, MouseButton::Left, Modifiers::none());
-    let picked = cx.update(|_, cx| view.read(cx).selected_edge().map(str::to_owned));
+    let picked = cx.update(|_, cx| view.read(cx).editor().selected_edge().map(str::to_owned));
     assert_eq!(picked.as_deref(), Some("e"));
 
     press("backspace", &mut cx);

@@ -5,10 +5,13 @@
 //! dropped inside it.
 //!
 //! ```ignore
-//! canvas::set_kinds(cx, Kinds::new().with_root(vault).with("session", session(store)));
+//! CanvasView::new(doc, cx).with_kinds(Kinds::new().with_root(vault).with("session", session(store)))
 //! ```
 //!
-//! Keyed by the node's `type`. A kind is closures, so it holds what it needs.
+//! Keyed by the node's `type`, per view; [`set_kinds`] names them for every
+//! view that names none. A kind is closures, so it holds what it needs. Its
+//! [`Rules`] are what the canvas reads without a window; its render and open
+//! need one.
 //! The spec's four are [`text`], [`file`], [`link`] and [`group`], each
 //! replaceable, and a type nothing names is [`unknown`]. [`chrome`] dresses a
 //! box the way they do.
@@ -97,20 +100,26 @@ impl Field {
     }
 }
 
+/// What the canvas reads of a kind without a window.
 #[derive(Clone)]
-pub struct Kind {
-    pub render: Paint,
+pub struct Rules {
     pub sizing: Sizing,
     /// What `f2` edits, and a double-click too when the kind opens nothing.
     pub edit: Option<Field>,
-    /// What a double-click does in place of editing.
-    pub open: Option<Open>,
     /// The node `tab` makes under one of this kind. Its id and position are
     /// the canvas's to set.
     pub child: Child,
     /// A node inside its box that names no container is held by it, and it is
     /// never a drop target. See [`crate::contain`].
     pub holds: bool,
+}
+
+#[derive(Clone)]
+pub struct Kind {
+    pub rules: Rules,
+    pub render: Paint,
+    /// What a double-click does in place of editing.
+    pub open: Option<Open>,
 }
 
 impl Kind {
@@ -120,28 +129,30 @@ impl Kind {
         render: impl Fn(&Node, Look, &mut Window, &mut App) -> AnyElement + 'static,
     ) -> Self {
         Self {
+            rules: Rules {
+                sizing: Sizing::Fixed,
+                edit: None,
+                child: Rc::new(blank),
+                holds: false,
+            },
             render: Rc::new(render),
-            sizing: Sizing::Fixed,
-            edit: None,
             open: None,
-            child: Rc::new(blank),
-            holds: false,
         }
     }
 
     /// Hold what sits inside its box, as a group does.
     pub fn holds(mut self) -> Self {
-        self.holds = true;
+        self.rules.holds = true;
         self
     }
 
     pub fn sizing(mut self, sizing: Sizing) -> Self {
-        self.sizing = sizing;
+        self.rules.sizing = sizing;
         self
     }
 
     pub fn edit(mut self, field: Field) -> Self {
-        self.edit = Some(field);
+        self.rules.edit = Some(field);
         self
     }
 
@@ -151,7 +162,7 @@ impl Kind {
     }
 
     pub fn child(mut self, child: impl Fn(&Node) -> Node + 'static) -> Self {
-        self.child = Rc::new(child);
+        self.rules.child = Rc::new(child);
         self
     }
 }
@@ -211,6 +222,20 @@ impl Kinds {
     pub fn get(&self, name: &str) -> &Kind {
         self.kinds.get(name).unwrap_or(&self.unknown)
     }
+
+    /// Whether a node's kind holds what sits inside it.
+    pub fn holds(&self, node: &Node) -> bool {
+        self.get(&node.kind).rules.holds
+    }
+
+    /// A node made from nothing, holding `text` when its kind edits one.
+    pub fn fresh(&self, text: Option<String>) -> Node {
+        let mut node = (self.fresh)();
+        if let (Some(text), Some(field)) = (text, &self.get(&node.kind).rules.edit) {
+            (field.write)(&mut node, text);
+        }
+        node
+    }
 }
 
 impl Default for Kinds {
@@ -223,44 +248,15 @@ struct Installed(Kinds);
 
 impl Global for Installed {}
 
-/// `canvas::set_kinds(cx, kinds)` — call once at boot.
+/// The kinds every view that names none paints with.
 pub fn set_kinds(cx: &mut App, kinds: Kinds) {
     cx.set_global(Installed(kinds));
 }
 
-/// The spec's kinds, unless an app set its own.
-pub(crate) fn ensure(cx: &mut App) {
-    if !cx.has_global::<Installed>() {
-        set_kinds(cx, Kinds::new());
-    }
-}
-
-fn installed<R>(cx: &App, read: impl FnOnce(&Kinds) -> R) -> R {
-    match cx.try_global::<Installed>() {
-        Some(installed) => read(&installed.0),
-        None => read(&Kinds::new()),
-    }
-}
-
-/// What `name` is, from the installed kinds.
-pub fn kind(cx: &App, name: &str) -> Kind {
-    installed(cx, |kinds| kinds.get(name).clone())
-}
-
-/// Whether a node of type `name` holds what sits inside it.
-pub fn holds(cx: &App, name: &str) -> bool {
-    installed(cx, |kinds| kinds.get(name).holds)
-}
-
-/// A node made from nothing, holding `text` when its kind edits one.
-pub fn fresh(cx: &App, text: Option<String>) -> Node {
-    installed(cx, |kinds| {
-        let mut node = (kinds.fresh)();
-        if let (Some(text), Some(field)) = (text, &kinds.get(&node.kind).edit) {
-            (field.write)(&mut node, text);
-        }
-        node
-    })
+/// What [`set_kinds`] named, else the spec's.
+pub(crate) fn installed(cx: &App) -> Kinds {
+    cx.try_global::<Installed>()
+        .map_or_else(Kinds::new, |installed| installed.0.clone())
 }
 
 /// Markdown in a card, as tall as it runs, edited in place.

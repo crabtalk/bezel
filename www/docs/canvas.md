@@ -6,12 +6,14 @@ description: A mindmap over JSON Canvas — an app's own node kinds, and every e
 ```rust
 editor::init(cx);
 canvas::init(cx);                                            // after editor::init
-canvas::set_kinds(cx, Kinds::new().with("session", session(store))); // optional
 
-let view = cx.new(|cx| CanvasView::new(Canvas::parse(json)?, cx));
+let view = cx.new(|cx| {
+    CanvasView::new(Canvas::parse(json)?, cx)
+        .with_kinds(Kinds::new().with("session", session(store)))  // optional
+});
 cx.subscribe(&view, |_, view, event, cx| {
     if let CanvasEvent::Changed(_) = event {
-        save(view.read(cx).canvas().to_json());
+        save(view.read(cx).editor().canvas().to_json());
     }
 }).detach();
 ```
@@ -38,7 +40,7 @@ fn session(store: Store) -> Kind {
 Kinds::new().with("session", session(store)).with_fresh(|| new_session());  // what the canvas makes from nothing
 ```
 
-A kind is keyed by the node's `type`, and holds what it needs. The canvas owns the node's box — position, size, the selection ring, the handles, dragging and resizing — and the kind paints everything inside it; `kind::chrome` dresses a box as the spec's kinds do. The spec's four — `kind::text()`, `file()`, `link()`, `group()` — are replaceable the same way. `Kinds::with_root(dir)` finds files and group backgrounds under `dir`, so images preview. A link opens on a double-click. `with_fresh` names the node made from nothing — a double-click on empty canvas, `tab` on an empty one, pasted text, written through its kind's edit field — a blank text node unless an app says.
+A kind is keyed by the node's `type`, and holds what it needs. Kinds belong to a view (`with_kinds`); `canvas::set_kinds(cx, kinds)` names them for every view that names none. A kind's `rules` — sizing, edit field, child, holds — are what the editor reads without a window. The canvas owns the node's box — position, size, the selection ring, the handles, dragging and resizing — and the kind paints everything inside it; `kind::chrome` dresses a box as the spec's kinds do. The spec's four — `kind::text()`, `file()`, `link()`, `group()` — are replaceable the same way. `Kinds::with_root(dir)` finds files and group backgrounds under `dir`, so images preview. A link opens on a double-click. `with_fresh` names the node made from nothing — a double-click on empty canvas, `tab` on an empty one, pasted text, written through its kind's edit field — a blank text node unless an app says.
 
 ## Containers
 
@@ -49,13 +51,13 @@ State stays with the app: look the view up by the node's id. gpui cannot transfo
 ## Changes
 
 ```rust
-CanvasView::new(doc, cx).with_changes(|canvas, change, cx| match &change {
-    Change::RemoveNodes { ids } if ids.iter().any(|id| is_running(id, cx)) => None, // refuse
-    _ => Some(change),                                                              // or rewrite it
+CanvasView::new(doc, cx).with_changes(move |canvas, change| match &change {
+    Change::RemoveNodes { ids } if ids.iter().any(|id| running.contains(id)) => None, // refuse
+    _ => Some(change),                                                                // or rewrite it
 })
 ```
 
-Every edit — a key, a drop, typing in a node — is a batch of graph changes: `AddNode`, `AddEdge`, `RemoveNodes`, `RemoveEdges`, `MoveNodes`, `Resize`, `UpdateNode`, `UpdateEdge`. Each goes through the filter, and one refused refuses the batch. `CanvasEvent::Changed` carries each batch that landed, the view's own measured heights and layout included, so saving on it misses nothing. The filter runs inside the view's update, so reach the view through `cx.defer`; `view.apply(changes, cx)` lands the app's own past it.
+Every edit — a key, a drop, typing in a node — is a batch of graph changes: `AddNode`, `AddEdge`, `RemoveNodes`, `RemoveEdges`, `MoveNodes`, `Resize`, `UpdateNode`, `UpdateEdge`. Each goes through the filter, and one refused refuses the batch. The filter sees only the document and the change; what it needs from the app, it captures. `CanvasEvent::Changed` carries each batch that landed, the view's own measured heights and layout included, so saving on it misses nothing. `editor.apply(changes)` lands the app's own past the filter.
 
 Tree edits live in `canvas::mindmap` and answer the batch they make: `child`, `sibling`, `remove` (a branch), `reparent`, `detach`, `carry`. An edge with `"tree": false` is a cross link, never a branch.
 
@@ -79,7 +81,7 @@ fn my_drag(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
 }
 ```
 
-On a move, the handler's `MoveNodes` are applied as they come and the rest are drawn as what the drop would do: a ring on a node an `AddEdge` reaches, the connector it would make, faded connectors a `RemoveEdges` would cut. The drop is one batch through the filter, with the preview put back first, so a refused drop leaves everything where it was. Nodes a layout moves glide there. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in.
+On a move, the handler's `MoveNodes` paint over the document (`editor.painted()`) and the rest are drawn as what the drop would do: a ring on a node an `AddEdge` reaches, the connector it would make, faded connectors a `RemoveEdges` would cut. `editor.canvas()` stays as it was until the drop lands as one batch through the filter, so a refused drop leaves everything where it was. A resize in hand paints the same way. Nodes a layout moves glide there. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in.
 
 ## Selection, undo and the clipboard
 
@@ -99,58 +101,117 @@ Click an edge to pick it: `backspace` removes it, and a double-click or `f2` edi
 
 `tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes, `f2` or a double-click edits, arrows move the selection, `shift`-arrows nudge it, `escape` leaves a node. A double-click on nothing adds a node there. `cmd-=`, `cmd--` and `cmd-0` zoom, `shift-1` fits and `shift-2` zooms to the selection; a pinch or a `cmd`-wheel zooms at the pointer, and a drag, a middle-button drag or a wheel pans.
 
+## The editor
+
+```rust
+let mut editor = CanvasEditor::new(Canvas::parse(json)?).with_layout(layout::FREE);
+editor.select(Some("a".into()));
+editor.remove_selected();
+editor.undo();
+
+view.update(cx, |view, cx| view.update_editor(cx, |editor| editor.fit())); // a toolbar's way in
+```
+
+`CanvasEditor` is the canvas without a window: the document, its kinds and layout, the selection, history and the part in view, behind the commands the keys run. `CanvasView` paints one and turns keys and the pointer into its commands; `view.editor()` reads it, and `update_editor` runs commands and announces what they did as `CanvasEvent`s. The selection is `Item`s, nodes or one edge.
+
 ## API
 
 ```rust
 impl CanvasView {
+    /// Painted with the kinds `set_kinds` named, else the spec's.
     pub fn new(canvas: Canvas, cx: &mut Context<Self>) -> Self;
+    pub fn with_kinds(self, kinds: Kinds) -> Self;
     pub fn with_layout(self, layout: Layout) -> Self;
     pub fn with_drag(self, handler: DragHandler) -> Self;
-    pub fn with_changes(self, filter: impl Fn(&Canvas, Change, &mut App) -> Option<Change> + 'static) -> Self;
-    pub fn canvas(&self) -> &Canvas;
-    pub fn set_canvas(&mut self, canvas: Canvas, cx: &mut Context<Self>);
-    /// Through the filter, as if the reader made it. A toolbar's way in.
-    pub fn submit(&mut self, changes: impl IntoIterator<Item = Change>, cx: &mut Context<Self>) -> bool;
-    /// Past the filter.
-    pub fn apply(&mut self, changes: impl IntoIterator<Item = Change>, cx: &mut Context<Self>);
-    /// The primary selection.
-    pub fn selected(&self) -> Option<&str>;
-    /// The whole selection, the primary last.
-    pub fn selection(&self) -> &[String];
-    pub fn select(&mut self, id: Option<String>, cx: &mut Context<Self>);
-    pub fn set_selection(&mut self, ids: Vec<String>, cx: &mut Context<Self>);
-    /// An edge is picked apart from nodes: picking one lets the others go.
-    pub fn selected_edge(&self) -> Option<&str>;
-    pub fn select_edge(&mut self, id: Option<String>, cx: &mut Context<Self>);
-    pub fn select_all(&mut self, cx: &mut Context<Self>);
-    /// What `backspace` does.
-    pub fn remove_selected(&mut self, cx: &mut Context<Self>);
-    pub fn undo(&mut self, cx: &mut Context<Self>) -> bool;
-    pub fn redo(&mut self, cx: &mut Context<Self>) -> bool;
-    pub fn can_undo(&self) -> bool;
-    pub fn can_redo(&self) -> bool;
+    pub fn with_snap(self, snap: Snap) -> Self;
+    pub fn with_changes(self, filter: impl Fn(&Canvas, Change) -> Option<Change> + 'static) -> Self;
+    pub fn editor(&self) -> &CanvasEditor;
+    pub fn update_editor<R>(&mut self, cx: &mut Context<Self>, update: impl FnOnce(&mut CanvasEditor) -> R) -> R;
+    /// Where the view painted last frame, in window coordinates.
+    pub fn bounds(&self) -> Option<Bounds<Pixels>>;
+    /// Through the clipboard.
     pub fn copy(&self, cx: &mut App);
     pub fn cut(&mut self, cx: &mut Context<Self>);
     pub fn paste(&mut self, cx: &mut Context<Self>);
-    pub fn duplicate(&mut self, cx: &mut Context<Self>);
+}
+
+impl CanvasEditor {
+    pub fn new(canvas: Canvas) -> Self;
+    pub fn with_kinds(self, kinds: Kinds) -> Self;
+    pub fn with_layout(self, layout: Layout) -> Self;
+    pub fn with_drag(self, handler: DragHandler) -> Self;
+    pub fn with_snap(self, snap: Snap) -> Self;
+    pub fn with_changes(self, filter: impl Fn(&Canvas, Change) -> Option<Change> + 'static) -> Self;
+    /// The document as a save would write it.
+    pub fn canvas(&self) -> &Canvas;
+    /// The document with the gesture in hand over it.
+    pub fn painted(&self) -> &Canvas;
+    pub fn set_canvas(&mut self, canvas: Canvas);
+    pub fn kinds(&self) -> &Kinds;
+    pub fn set_kinds(&mut self, kinds: Kinds);
+    /// Through the filter, as if the reader made it.
+    pub fn submit(&mut self, changes: impl IntoIterator<Item = Change>) -> bool;
+    /// Past the filter.
+    pub fn apply(&mut self, changes: impl IntoIterator<Item = Change>);
+    pub fn undo(&mut self) -> bool;
+    pub fn redo(&mut self) -> bool;
+    pub fn can_undo(&self) -> bool;
+    pub fn can_redo(&self) -> bool;
+    /// Nodes, or one edge; the primary last.
+    pub fn selection(&self) -> &[Item];
+    pub fn selected_nodes(&self) -> Vec<&str>;
+    /// The primary selection.
+    pub fn selected(&self) -> Option<&str>;
+    pub fn selected_edge(&self) -> Option<&str>;
+    pub fn select(&mut self, id: Option<String>);
+    pub fn set_selection(&mut self, ids: Vec<String>);
+    /// Selecting an edge lets the nodes go, and nodes the edge.
+    pub fn select_edge(&mut self, id: Option<String>);
+    pub fn select_all(&mut self);
+    /// What `backspace` does.
+    pub fn remove_selected(&mut self);
+    /// JSON Canvas, for the clipboard.
+    pub fn copy(&self) -> Option<String>;
+    pub fn cut(&mut self) -> Option<String>;
+    pub fn paste(&mut self, text: &str);
+    pub fn duplicate(&mut self);
+    /// What the arrows and `shift`-arrows do.
+    pub fn select_toward(&mut self, arrow: Arrow);
+    pub fn nudge(&mut self, arrow: Arrow);
+    /// What `tab`, `enter`, a double-click on nothing and a connector let go do; each answers the node added.
+    pub fn add_child(&mut self) -> Option<String>;
+    pub fn add_sibling(&mut self) -> Option<String>;
+    pub fn add_root(&mut self, at: (i64, i64)) -> Option<String>;
+    pub fn connect(&mut self, from: &str, side: Side, at: (i64, i64)) -> Option<String>;
     pub fn zoom(&self) -> f32;
-    pub fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>);
-    /// What `cmd-=` and `cmd--` do.
-    pub fn zoom_in(&mut self, cx: &mut Context<Self>);
-    pub fn zoom_out(&mut self, cx: &mut Context<Self>);
+    /// Where the canvas origin sits, in pixels from the view's top left.
+    pub fn pan(&self) -> Point<f32>;
+    pub fn pan_by(&mut self, dx: f32, dy: f32);
+    pub fn set_zoom(&mut self, zoom: f32);
+    pub fn zoom_in(&mut self);
+    pub fn zoom_out(&mut self);
+    pub fn zoom_about(&mut self, zoom: f32, anchor: Point<f32>);
+    /// The view's size in pixels, which the view sets as it paints.
+    pub fn viewport(&self) -> Option<Size<f32>>;
+    pub fn set_viewport(&mut self, size: Size<f32>);
     /// The whole document in view, no closer than 100%.
-    pub fn fit(&mut self, cx: &mut Context<Self>);
-    pub fn zoom_to_selection(&mut self, cx: &mut Context<Self>);
+    pub fn fit(&mut self);
+    pub fn zoom_to_selection(&mut self);
     /// In canvas units: left, top, width, height.
     pub fn visible(&self) -> Option<(f32, f32, f32, f32)>;
-    pub fn center_on(&mut self, at: (f32, f32), cx: &mut Context<Self>);
-    pub fn with_snap(self, snap: Snap) -> Self;
-    pub fn set_snap(&mut self, snap: Snap, cx: &mut Context<Self>);
+    pub fn center_on(&mut self, at: (f32, f32));
     /// The canvas point under the middle of the view.
     pub fn center(&self) -> (i64, i64);
+    pub fn layout(&self) -> Layout;
     /// Switching to a tree that grows another way drops every pin.
-    pub fn set_layout(&mut self, layout: Layout, cx: &mut Context<Self>);
+    pub fn set_layout(&mut self, layout: Layout);
+    pub fn drag(&self) -> DragHandler;
     pub fn set_drag(&mut self, handler: DragHandler);
+    pub fn snap(&self) -> Snap;
+    pub fn set_snap(&mut self, snap: Snap);
+    /// Settle measured heights and the layout, `held` staying put. The view calls it, then `frame`, each frame.
+    pub fn reflow(&mut self, measured: impl IntoIterator<Item = (String, i64)>, held: Option<&str>);
+    pub fn frame(&mut self);
 }
 
 // canvas::mindmap — pure; the builders answer a Change to submit

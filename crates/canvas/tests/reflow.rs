@@ -64,7 +64,7 @@ fn open(json: &str, cx: &mut TestAppContext) -> (Canvas, Vec<Change>) {
         cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.run_until_parked();
     }
-    let doc = cx.update(|_, cx| host.read(cx).canvas.read(cx).canvas().clone());
+    let doc = cx.update(|_, cx| host.read(cx).canvas.read(cx).editor().canvas().clone());
     (doc, log.take().into_iter().flatten().collect())
 }
 
