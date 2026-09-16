@@ -20,7 +20,7 @@ name = "syntax"
 workspace = true
 
 [features]
-default = ["rust", "python", "typescript", "json", "go", "bash", "toml"]
+default = ["rust", "python", "typescript", "json", "go", "bash", "toml", "html", "css"]
 rust = ["dep:tree-sitter-rust"]
 python = ["dep:tree-sitter-python"]
 # Both the TypeScript and TSX rows — one grammar crate, and JavaScript rides TSX.
@@ -29,6 +29,8 @@ json = ["dep:tree-sitter-json"]
 go = ["dep:tree-sitter-go"]
 bash = ["dep:tree-sitter-bash"]
 toml = ["dep:tree-sitter-toml-ng"]
+html = ["dep:tree-sitter-html", "css", "typescript"]
+css = ["dep:tree-sitter-css"]
 
 [dependencies]
 theme.workspace = true
@@ -42,3 +44,5 @@ tree-sitter-typescript = { workspace = true, optional = true }
 tree-sitter-go = { workspace = true, optional = true }
 tree-sitter-bash = { workspace = true, optional = true }
 tree-sitter-toml-ng = { workspace = true, optional = true }
+tree-sitter-html = { workspace = true, optional = true }
+tree-sitter-css = { workspace = true, optional = true }

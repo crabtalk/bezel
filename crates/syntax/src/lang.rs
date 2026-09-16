@@ -36,16 +36,87 @@ pub struct Lang {
     pub aliases: &'static [&'static str],
     pub grammar: Grammar,
     pub query: &'static str,
+    /// Which regions are written in another language, and which. Empty is a
+    /// document parsed with one grammar throughout.
+    pub injections: &'static str,
     /// Compiling a highlights query costs milliseconds — tsx.scm is 750 lines
     /// — and a render loop calls [`Lang::compiled`] every frame.
     compiled: OnceLock<Option<Compiled>>,
 }
 
+/// Every capture name [`kind_of`] answers to.
+///
+/// One list for every language, because a `Highlight` index means whatever the
+/// layer that produced it was configured with — an injected CSS parse inside
+/// html returns indices its own query decided. Configuring each `Lang` with its
+/// own captures makes those indices mean different things per layer.
+pub const NAMES: &[&str] = &[
+    "comment",
+    "comment.documentation",
+    "keyword",
+    "keyword.function",
+    "keyword.return",
+    "keyword.operator",
+    "keyword.conditional",
+    "keyword.conditional.ternary",
+    "keyword.coroutine",
+    "keyword.directive",
+    "keyword.exception",
+    "keyword.import",
+    "keyword.modifier",
+    "keyword.repeat",
+    "keyword.type",
+    "string",
+    "string.special",
+    "string.special.key",
+    "string.special.url",
+    "string.regexp",
+    "character.special",
+    "escape",
+    "string.escape",
+    "number",
+    "boolean",
+    "type",
+    "type.interface",
+    "type.builtin",
+    "constructor",
+    "function",
+    "function.method",
+    "function.method.call",
+    "function.call",
+    "function.builtin",
+    "macro",
+    "function.macro",
+    "property",
+    "property.definition",
+    "variable.member",
+    "constant",
+    "constant.builtin",
+    "module",
+    "module.builtin",
+    "variable",
+    "variable.builtin",
+    "variable.special",
+    "self",
+    "variable.parameter",
+    "parameter",
+    "operator",
+    "punctuation",
+    "punctuation.bracket",
+    "punctuation.delimiter",
+    "punctuation.special",
+    "tag",
+    "tag.builtin",
+    "tag.delimiter",
+    "attribute",
+    "tag.attribute",
+    "label",
+    "invalid",
+];
+
 /// A grammar's query, compiled and configured once.
 pub struct Compiled {
     pub config: HighlightConfiguration,
-    /// Capture names by `Highlight` index, for [`kind_of`].
-    pub names: Vec<String>,
 }
 
 impl Lang {
@@ -63,12 +134,26 @@ impl Lang {
             aliases,
             grammar,
             query,
+            injections: "",
             compiled: OnceLock::new(),
         }
     }
 
+    /// Give this language an injections query. `@injection.content` marks the
+    /// region and `@injection.language` names what it is written in; the name
+    /// is resolved through [`crate::registry`], so an injected language must be
+    /// one the registry can paint.
+    pub const fn with_injections(mut self, injections: &'static str) -> Self {
+        self.injections = injections;
+        self
+    }
+
     /// Spans over `source`, in bytes, in document order. `None` when the query
     /// does not compile against the grammar.
+    // The callback is a closure rather than `injected` itself: as a fn item its
+    // return type unifies with the callback's `'a`, binding it to `'static` and
+    // requiring `source` and the local highlighter to outlive the call.
+    #[allow(clippy::redundant_closure)]
     pub fn highlight(&'static self, source: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
         let compiled = self.compiled()?;
         let config = &compiled.config;
@@ -81,14 +166,13 @@ impl Lang {
         for event in highlighter
             // `None` encoding: the source is a `&str`, so it is UTF-8 and
             // tree-sitter's default is the one to take.
-            .highlight(config, source.as_bytes(), None, None, |_| None)
+            .highlight(config, source.as_bytes(), None, None, |name| injected(name))
             .ok()?
             .flatten()
         {
             match event {
                 HighlightEvent::HighlightStart(hl) => {
-                    let name = compiled.names.get(hl.0).map(String::as_str).unwrap_or("");
-                    kinds.push(kind_of(name));
+                    kinds.push(kind_of(NAMES.get(hl.0).copied().unwrap_or("")));
                 }
                 HighlightEvent::HighlightEnd => {
                     kinds.pop();
@@ -108,23 +192,23 @@ impl Lang {
             .get_or_init(|| {
                 let grammar = self.grammar.language()?;
                 let mut config =
-                    HighlightConfiguration::new(grammar, self.name, self.query, "", "").ok()?;
-                // Recognize exactly the capture names the query uses, so every
-                // `Highlight` index resolves straight through `names`.
-                // `_`-prefixed names are predicate anchors, never paint —
-                // recognizing them would emit their ranges as spans.
-                let names: Vec<String> = config
-                    .query
-                    .capture_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .filter(|s| !s.starts_with('_'))
-                    .collect();
-                config.configure(&names);
-                Some(Compiled { config, names })
+                    HighlightConfiguration::new(grammar, self.name, self.query, self.injections, "")
+                        .ok()?;
+                config.configure(NAMES);
+                Some(Compiled { config })
             })
             .as_ref()
     }
+}
+
+/// The configuration an injected language is painted with.
+///
+/// Every `Lang` outlives the parse that borrows it, so an injected layer needs
+/// no lifetime of its own — which stops holding once a grammar is loaded into a
+/// per-parser store rather than linked.
+fn injected(name: &str) -> Option<&'static HighlightConfiguration> {
+    let lang = crate::registry::of_tag(name)?.lang()?;
+    Some(&lang.compiled()?.config)
 }
 
 #[cfg(feature = "rust")]
@@ -187,6 +271,24 @@ static TOML: Lang = Lang::new(
     include_str!("../queries/toml.scm"),
 );
 
+#[cfg(feature = "css")]
+static CSS: Lang = Lang::new(
+    "css",
+    &["css"],
+    Grammar::Native(tree_sitter_css::LANGUAGE),
+    include_str!("../queries/css.scm"),
+);
+/// The first row with an injections query: a `<script>` body is TSX and a
+/// `<style>` body is CSS, so the `html` feature pulls both.
+#[cfg(feature = "html")]
+static HTML: Lang = Lang::new(
+    "html",
+    &["html", "htm"],
+    Grammar::Native(tree_sitter_html::LANGUAGE),
+    include_str!("../queries/html.scm"),
+)
+.with_injections(include_str!("../queries/html-injections.scm"));
+
 /// A slice rather than an array: its length is whatever the enabled features
 /// add up to, and an app that highlights one language compiles one grammar.
 pub static LANGS: &[&Lang] = &[
@@ -206,6 +308,10 @@ pub static LANGS: &[&Lang] = &[
     &BASH,
     #[cfg(feature = "toml")]
     &TOML,
+    #[cfg(feature = "css")]
+    &CSS,
+    #[cfg(feature = "html")]
+    &HTML,
 ];
 
 /// Find the language a fence tag names, where this build carries a grammar for
@@ -214,9 +320,10 @@ pub fn resolve(tag: &str) -> Option<&'static Lang> {
     crate::registry::of_tag(tag)?.lang()
 }
 
-/// Map a tree-sitter highlight capture name onto the bezel vocabulary. Names
-/// with no slot degrade to [`HighlightKind::Variable`], which the palettes
-/// paint in the text color — an unknown capture reads as plain text.
+/// Map a tree-sitter highlight capture name onto the bezel vocabulary.
+///
+/// [`NAMES`] is this function's domain. A capture outside it is never
+/// configured, so it produces no span and its text is left plain.
 pub fn kind_of(name: &str) -> HighlightKind {
     match name {
         "comment" | "comment.documentation" => HighlightKind::Comment,

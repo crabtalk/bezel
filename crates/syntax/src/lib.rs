@@ -8,11 +8,16 @@
 //! [`registry`], which also holds the languages this build can name and not
 //! paint, and which [`registry::register`] adds to at runtime.
 //!
-//! No injection support: a document is one parse with one grammar, so a region
-//! written in another language — `<script>` and `<style>` in Svelte, Vue or
-//! HTML — is left unhighlighted. No locals support either. Both queries are
-//! passed empty in [`Lang::compiled`](lang::Lang::compiled), and the injection
-//! callback in [`Lang::highlight`](lang::Lang::highlight) always returns `None`.
+//! A language may carry an injections query marking regions written in another
+//! language — `<script>` and `<style>` in html. The injected name is resolved
+//! through [`registry`], so it must be one this build can paint.
+//!
+//! Every language is configured with [`lang::NAMES`]. A `Highlight` index means
+//! whatever the layer that produced it was configured with, and an injected
+//! parse returns indices of its own.
+//!
+//! No locals support: that query is passed empty in
+//! [`Lang::compiled`](lang::Lang::compiled).
 
 use std::ops::Range;
 use theme::HighlightKind;
