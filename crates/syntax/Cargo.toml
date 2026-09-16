@@ -19,30 +19,14 @@ name = "syntax"
 [lints]
 workspace = true
 
-[features]
-default = ["rust", "python", "typescript", "json", "go", "bash", "toml", "html", "css"]
-rust = ["dep:tree-sitter-rust"]
-python = ["dep:tree-sitter-python"]
-# Both the TypeScript and TSX rows — one grammar crate, and JavaScript rides TSX.
-typescript = ["dep:tree-sitter-typescript"]
-json = ["dep:tree-sitter-json"]
-go = ["dep:tree-sitter-go"]
-bash = ["dep:tree-sitter-bash"]
-toml = ["dep:tree-sitter-toml-ng"]
-html = ["dep:tree-sitter-html", "css", "typescript"]
-css = ["dep:tree-sitter-css"]
-
 [dependencies]
 theme.workspace = true
 tree-sitter.workspace = true
 tree-sitter-highlight.workspace = true
 tree-sitter-language.workspace = true
-tree-sitter-rust = { workspace = true, optional = true }
-tree-sitter-python = { workspace = true, optional = true }
-tree-sitter-json = { workspace = true, optional = true }
-tree-sitter-typescript = { workspace = true, optional = true }
-tree-sitter-go = { workspace = true, optional = true }
-tree-sitter-bash = { workspace = true, optional = true }
-tree-sitter-toml-ng = { workspace = true, optional = true }
-tree-sitter-html = { workspace = true, optional = true }
-tree-sitter-css = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Fixtures only. The core links no grammar of its own — these give the
+# injection and registry tests a host/injected pair to run against.
+tree-sitter-html.workspace = true
+tree-sitter-css.workspace = true

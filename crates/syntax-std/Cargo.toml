@@ -1,0 +1,40 @@
+[package]
+name = "bezel-syntax-std"
+description = "The tree-sitter grammars bezel links in — one provider for bezel-syntax's language registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "syntax_std"
+
+[lints]
+workspace = true
+
+[features]
+default = ["rust", "python", "typescript", "json", "go", "bash", "toml"]
+rust = ["dep:tree-sitter-rust"]
+python = ["dep:tree-sitter-python"]
+# Both the TypeScript and TSX rows — one grammar crate, and JavaScript rides TSX.
+typescript = ["dep:tree-sitter-typescript"]
+json = ["dep:tree-sitter-json"]
+go = ["dep:tree-sitter-go"]
+bash = ["dep:tree-sitter-bash"]
+toml = ["dep:tree-sitter-toml-ng"]
+
+[dependencies]
+syntax.workspace = true
+tree-sitter-rust = { workspace = true, optional = true }
+tree-sitter-python = { workspace = true, optional = true }
+tree-sitter-json = { workspace = true, optional = true }
+tree-sitter-typescript = { workspace = true, optional = true }
+tree-sitter-go = { workspace = true, optional = true }
+tree-sitter-bash = { workspace = true, optional = true }
+tree-sitter-toml-ng = { workspace = true, optional = true }

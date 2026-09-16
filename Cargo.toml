@@ -8,6 +8,7 @@ members = [
     "crates/ui",
     "crates/icons",
     "crates/syntax",
+    "crates/syntax-std",
     "crates/markdown",
     "crates/blocks",
     "crates/editor",
@@ -44,6 +45,7 @@ markdown = { package = "bezel-markdown", path = "crates/markdown", version = "0.
 blocks = { package = "bezel-blocks", path = "crates/blocks", version = "0.1.17" }
 editor = { package = "bezel-editor", path = "crates/editor", version = "0.1.17" }
 syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.1.17" }
+syntax-std = { package = "bezel-syntax-std", path = "crates/syntax-std", version = "0.1.17" }
 terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.1.17" }
 canvas = { package = "bezel-canvas", path = "crates/canvas", version = "0.1.17" }
 

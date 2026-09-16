@@ -8,7 +8,7 @@
 //! Registrations are leaked. A language lives for the process, and the strings
 //! are a few hundred bytes against grammar bytes that are refcounted.
 
-use crate::lang::{LANGS, Lang};
+use crate::lang::Lang;
 use std::{
     fmt,
     path::Path,
@@ -89,27 +89,18 @@ fn registry() -> &'static RwLock<Vec<Entry>> {
     REGISTRY.get_or_init(|| RwLock::new(seeded()))
 }
 
-/// The rows this build carries, then the rows it can only name.
+/// The names alone. Grammars arrive through [`register`], from
+/// `bezel-syntax-std` or from a provider of your own.
 fn seeded() -> Vec<Entry> {
-    let mut entries: Vec<Entry> = LANGS
+    NAMED
         .iter()
-        .map(|lang| Entry {
-            name: lang.name,
-            aliases: lang.aliases,
-            files: files_for(lang.name),
-            lang: Some(*lang),
-        })
-        .collect();
-    let carried: Vec<&str> = entries.iter().map(|entry| entry.name).collect();
-    entries.extend(NAMED.iter().filter(|(name, ..)| !carried.contains(name)).map(
-        |(name, aliases, files)| Entry {
+        .map(|(name, aliases, files)| Entry {
             name,
             aliases,
             files,
             lang: None,
-        },
-    ));
-    entries
+        })
+        .collect()
 }
 
 /// Add a language, or replace the entry of the same name. Leaks: see the module
@@ -187,52 +178,24 @@ pub fn ready() -> Vec<&'static str> {
         .collect()
 }
 
-/// File names and extensions for the grammars a build can carry, keyed by the
-/// [`Lang::name`] they belong to.
-const BUILTIN_FILES: &[(&str, &[&str])] = &[
-    (
-        "bash",
-        &[
-            ".bash_profile",
-            ".bashrc",
-            ".profile",
-            ".zshrc",
-            "bash",
-            "sh",
-            "zsh",
-        ],
-    ),
-    ("css", &["css", "scss"]),
-    ("go", &["go"]),
-    ("html", &["htm", "html"]),
-    ("json", &["json", "jsonc"]),
-    ("python", &["py", "pyi"]),
-    ("rust", &["rs"]),
-    ("toml", &["toml"]),
-    ("tsx", &["cjs", "jsx", "mjs", "tsx"]),
-    ("typescript", &["cts", "mts", "ts"]),
-];
-
-fn files_for(name: &str) -> &'static [&'static str] {
-    BUILTIN_FILES
-        .iter()
-        .find(|(held, _)| *held == name)
-        .map(|(_, files)| *files)
-        .unwrap_or(&[])
-}
-
-/// Languages with no grammar in any build of this crate yet: name, fence tags,
-/// then file names and extensions.
+/// Every language this crate can name: name, fence tags, then file names and
+/// extensions. None carries a grammar — that is a provider's job, and until one
+/// registers, every one of these resolves to [`Known::Named`].
 #[rustfmt::skip]
 const NAMED: &[(&str, &[&str], &[&str])] = &[
+    ("bash", &["bash", "sh", "shell", "zsh", "console"], &[".bash_profile", ".bashrc", ".profile", ".zshrc", "bash", "sh", "zsh"]),
     ("c", &["c"], &["c", "h"]),
     ("cpp", &["cpp", "c++"], &["cc", "cpp", "cxx", "hpp"]),
     ("csharp", &["csharp", "cs"], &["cs"]),
+    ("css", &["css", "scss"], &["css", "scss"]),
     ("dockerfile", &["dockerfile"], &["Containerfile", "Dockerfile"]),
     ("elixir", &["elixir", "ex"], &["ex", "exs"]),
+    ("go", &["go", "golang"], &["go"]),
     ("graphql", &["graphql", "gql"], &["gql", "graphql"]),
     ("haskell", &["haskell", "hs"], &["hs"]),
+    ("html", &["html"], &["htm", "html"]),
     ("java", &["java"], &["java"]),
+    ("json", &["json", "jsonc"], &["json", "jsonc"]),
     ("kotlin", &["kotlin", "kt"], &["kt", "kts"]),
     ("lua", &["lua"], &["lua"]),
     ("make", &["make", "makefile"], &["Makefile", "mk"]),
@@ -240,11 +203,16 @@ const NAMED: &[(&str, &[&str], &[&str])] = &[
     ("nix", &["nix"], &["nix"]),
     ("php", &["php"], &["php"]),
     ("proto", &["proto", "protobuf"], &["proto"]),
+    ("python", &["python", "py"], &["py", "pyi"]),
     ("ruby", &["ruby", "rb"], &["Gemfile", "Rakefile", "erb", "rb"]),
+    ("rust", &["rust", "rs"], &["rs"]),
     ("scala", &["scala"], &["sbt", "scala"]),
     ("sql", &["sql"], &["sql"]),
     ("svelte", &["svelte"], &["svelte"]),
     ("swift", &["swift"], &["swift"]),
+    ("toml", &["toml"], &["toml"]),
+    ("tsx", &["tsx", "jsx", "javascript", "js"], &["cjs", "jsx", "mjs", "tsx"]),
+    ("typescript", &["typescript", "ts"], &["cts", "mts", "ts"]),
     ("vue", &["vue"], &["vue"]),
     ("xml", &["xml"], &["xml"]),
     ("yaml", &["yaml", "yml"], &["yaml", "yml"]),

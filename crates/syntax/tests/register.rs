@@ -3,6 +3,8 @@
 //! Each test mutates the process-wide registry. nextest runs every test in its
 //! own process, so they do not see each other's registrations.
 
+mod fixture;
+
 use std::path::Path;
 use syntax::registry::{self, Entry, Known};
 
@@ -45,23 +47,18 @@ fn registering_a_held_name_replaces_rather_than_shadows() {
     );
 }
 
-/// A registration carrying a grammar is [`Known::Ready`], and paints.
+/// A registration carrying a grammar is [`Known::Ready`], and replaces the
+/// name-only row seeded under that name.
 #[test]
 fn a_registration_carrying_a_grammar_is_ready() {
-    let rust = registry::of_tag("rs")
-        .and_then(Known::lang)
-        .expect("rust is seeded");
+    assert_eq!(registry::of_tag("css"), Some(Known::Named("css")));
 
-    registry::register(Entry {
-        name: "rust-script",
-        aliases: &["rust-script"],
-        files: &["rs-script"],
-        lang: Some(rust),
-    });
+    fixture::install();
 
-    let known = registry::of_tag("rust-script").expect("just registered");
-    assert_eq!(known, Known::Ready(rust));
+    let known = registry::of_tag("css").expect("css was registered");
+    assert_eq!(known, Known::Ready(&fixture::CSS));
     assert!(known.lang().is_some());
+    assert_eq!(registry::ready(), vec!["css", "html"]);
 }
 
 /// Registering does not disturb the rows already there.
@@ -79,4 +76,8 @@ fn the_seeded_rows_survive_a_registration() {
     assert_eq!(registry::names().len(), before + 1);
     assert_eq!(registry::of_tag("rs").map(Known::name), Some("rust"));
     assert_eq!(registry::of_tag("svelte"), Some(Known::Named("svelte")));
+    assert_eq!(
+        registry::of_path(Path::new("main.gleam")),
+        Some(Known::Named("gleam"))
+    );
 }

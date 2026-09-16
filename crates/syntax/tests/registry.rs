@@ -1,30 +1,31 @@
-//! What the registry answers for a name, and what it answers for a file.
+//! What the registry answers with no provider installed.
+//!
+//! This crate links no grammar, so every seeded row is [`Known::Named`] until
+//! something registers one. nextest runs each test in its own process, so a
+//! registration in one is invisible to the rest.
 
 use std::path::Path;
 use syntax::registry::{self, Known};
 
-/// A grammar this build carries resolves to the row that holds it.
+/// Nothing paints until a provider registers.
 #[test]
-fn a_carried_language_is_ready() {
-    let known = registry::of_tag("rs").expect("rust is a seeded row");
-    assert!(matches!(known, Known::Ready(_)));
-    assert_eq!(known.name(), "rust");
-    assert!(known.lang().is_some());
-}
-
-/// The distinction the whole registry exists for: a language the build can name
-/// and not paint is an entry, not a miss.
-#[test]
-fn a_language_with_no_grammar_is_named_rather_than_missing() {
-    let known = registry::of_tag("svelte").expect("svelte is a named row");
-    assert_eq!(known, Known::Named("svelte"));
-    assert!(known.lang().is_none());
+fn every_seeded_row_is_named_and_none_is_ready() {
+    assert!(registry::ready().is_empty());
+    assert!(!registry::names().is_empty());
+    for name in registry::names() {
+        assert_eq!(
+            registry::of_tag(name),
+            Some(Known::Named(name)),
+            "{name} claims a grammar this crate does not link"
+        );
+    }
 }
 
 /// A name nothing in the table claims stays nothing.
 #[test]
 fn an_unknown_tag_is_none() {
     assert!(registry::of_tag("gleam").is_none());
+    assert!(registry::of_path(Path::new("notes.gleam")).is_none());
 }
 
 /// Tags carry whatever the fence wrote after them.
@@ -46,10 +47,9 @@ fn a_path_resolves_to_the_same_rows() {
         Some("rust")
     );
     assert_eq!(
-        registry::of_path(Path::new("+page.svelte")),
-        Some(Known::Named("svelte"))
+        registry::of_path(Path::new("routes/+page.svelte")).map(Known::name),
+        Some("svelte")
     );
-    assert!(registry::of_path(Path::new("notes.gleam")).is_none());
 }
 
 /// A whole name beats an extension, and the longer extension beats the shorter.
@@ -63,19 +63,12 @@ fn a_whole_name_beats_an_extension() {
         registry::of_path(Path::new(".bashrc")).map(Known::name),
         Some("bash")
     );
-}
-
-/// Every seeded row that claims a grammar has one behind it.
-#[test]
-fn every_ready_row_carries_a_lang() {
-    for name in registry::ready() {
-        let known = registry::of_tag(name).expect("a ready row answers to its own name");
-        assert!(known.lang().is_some(), "{name} is ready without a lang");
-    }
-}
-
-/// Named rows outnumber carried ones, and both are in one table.
-#[test]
-fn the_table_holds_more_names_than_grammars() {
-    assert!(registry::names().len() > registry::ready().len());
+    assert_eq!(
+        registry::of_path(Path::new("App.tsx")).map(Known::name),
+        Some("tsx")
+    );
+    assert_eq!(
+        registry::of_path(Path::new("app.ts")).map(Known::name),
+        Some("typescript")
+    );
 }
