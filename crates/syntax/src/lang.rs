@@ -159,7 +159,8 @@ impl Lang {
     /// does not compile.
     pub(crate) fn compile_with(&self, grammar: Language) -> Option<Compiled> {
         let mut config =
-            HighlightConfiguration::new(grammar, self.name, self.query, self.injections, "").ok()?;
+            HighlightConfiguration::new(grammar, self.name, self.query, self.injections, "")
+                .ok()?;
         config.configure(NAMES);
         let injected = (0..config.query.pattern_count())
             .flat_map(|pattern| config.query.property_settings(pattern))

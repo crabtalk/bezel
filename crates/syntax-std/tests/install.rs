@@ -23,7 +23,11 @@ fn every_carried_row_is_ready_and_paints() {
 
     for lang in syntax_std::LANGS {
         let known = registry::of_tag(lang.name).expect("a carried row answers to its own name");
-        assert!(known.lang().is_some(), "{} registered without a lang", lang.name);
+        assert!(
+            known.lang().is_some(),
+            "{} registered without a lang",
+            lang.name
+        );
     }
     assert_eq!(registry::ready().len(), syntax_std::LANGS.len());
     assert_eq!(
