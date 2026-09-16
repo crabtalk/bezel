@@ -17,13 +17,14 @@
 //! parse returns indices of its own.
 //!
 //! No locals support: that query is passed empty in
-//! [`Lang::compiled`](lang::Lang::compiled).
+//! [`Lang::compile`](lang::Lang).
 
 use std::ops::Range;
 use theme::HighlightKind;
 
 pub mod lang;
 pub mod registry;
+pub mod session;
 
 /// The exact tree-sitter these grammars were built against. Reach for a
 /// `LanguageFn` through here rather than declaring your own tree-sitter, or

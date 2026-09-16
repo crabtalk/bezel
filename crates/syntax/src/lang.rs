@@ -2,10 +2,10 @@
 //! it answers to, the tree-sitter grammar, and its highlights query. Each row
 //! is behind the feature of the same name.
 
-use std::{ops::Range, sync::Arc, sync::OnceLock};
+use std::{ops::Range, sync::Arc};
 use theme::HighlightKind;
 use tree_sitter::Language;
-use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
+use tree_sitter_highlight::HighlightConfiguration;
 use tree_sitter_language::LanguageFn;
 
 /// Where a grammar's parse tables come from.
@@ -39,9 +39,6 @@ pub struct Lang {
     /// Which regions are written in another language, and which. Empty is a
     /// document parsed with one grammar throughout.
     pub injections: &'static str,
-    /// Compiling a highlights query costs milliseconds — tsx.scm is 750 lines
-    /// — and a render loop calls [`Lang::compiled`] every frame.
-    compiled: OnceLock<Option<Compiled>>,
 }
 
 /// Every capture name [`kind_of`] answers to.
@@ -114,9 +111,13 @@ pub const NAMES: &[&str] = &[
     "invalid",
 ];
 
-/// A grammar's query, compiled and configured once.
+/// A grammar's query, compiled and configured. Held by a
+/// [`Session`](crate::session::Session), never shared between two.
 pub struct Compiled {
     pub config: HighlightConfiguration,
+    /// Languages named by a `#set! injection.language` in the query, so a
+    /// session can compile them before a parse needs them.
+    pub injected: Vec<String>,
 }
 
 impl Lang {
@@ -135,7 +136,6 @@ impl Lang {
             grammar,
             query,
             injections: "",
-            compiled: OnceLock::new(),
         }
     }
 
@@ -148,67 +148,26 @@ impl Lang {
         self
     }
 
-    /// Spans over `source`, in bytes, in document order. `None` when the query
-    /// does not compile against the grammar.
-    // The callback is a closure rather than `injected` itself: as a fn item its
-    // return type unifies with the callback's `'a`, binding it to `'static` and
-    // requiring `source` and the local highlighter to outlive the call.
-    #[allow(clippy::redundant_closure)]
+    /// Spans over `source`, through this thread's
+    /// [`Session`](crate::session::Session).
     pub fn highlight(&'static self, source: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
-        let compiled = self.compiled()?;
-        let config = &compiled.config;
-        let mut highlighter = Highlighter::new();
-        highlighter.parser().set_language(&config.language).ok()?;
-        let mut spans = Vec::new();
-        // Nested highlight starts end with `HighlightEnd`; the top of the stack
-        // is the kind painting the `Source` ranges that follow it.
-        let mut kinds: Vec<HighlightKind> = Vec::new();
-        for event in highlighter
-            // `None` encoding: the source is a `&str`, so it is UTF-8 and
-            // tree-sitter's default is the one to take.
-            .highlight(config, source.as_bytes(), None, None, |name| injected(name))
-            .ok()?
-            .flatten()
-        {
-            match event {
-                HighlightEvent::HighlightStart(hl) => {
-                    kinds.push(kind_of(NAMES.get(hl.0).copied().unwrap_or("")));
-                }
-                HighlightEvent::HighlightEnd => {
-                    kinds.pop();
-                }
-                HighlightEvent::Source { start, end } => {
-                    if let Some(&kind) = kinds.last() {
-                        spans.push((start..end, kind));
-                    }
-                }
-            }
-        }
-        Some(spans)
+        crate::session::with(|session| session.highlight(self, source))
     }
 
-    pub fn compiled(&'static self) -> Option<&'static Compiled> {
-        self.compiled
-            .get_or_init(|| {
-                let grammar = self.grammar.language()?;
-                let mut config =
-                    HighlightConfiguration::new(grammar, self.name, self.query, self.injections, "")
-                        .ok()?;
-                config.configure(NAMES);
-                Some(Compiled { config })
-            })
-            .as_ref()
+    /// Compile this language's queries against its grammar. `None` where the
+    /// grammar cannot be made without a store, or the query does not compile.
+    pub(crate) fn compile(&self) -> Option<Compiled> {
+        let grammar = self.grammar.language()?;
+        let mut config =
+            HighlightConfiguration::new(grammar, self.name, self.query, self.injections, "").ok()?;
+        config.configure(NAMES);
+        let injected = (0..config.query.pattern_count())
+            .flat_map(|pattern| config.query.property_settings(pattern))
+            .filter(|property| property.key.as_ref() == "injection.language")
+            .filter_map(|property| property.value.as_ref().map(|value| value.to_string()))
+            .collect();
+        Some(Compiled { config, injected })
     }
-}
-
-/// The configuration an injected language is painted with.
-///
-/// Every `Lang` outlives the parse that borrows it, so an injected layer needs
-/// no lifetime of its own — which stops holding once a grammar is loaded into a
-/// per-parser store rather than linked.
-fn injected(name: &str) -> Option<&'static HighlightConfiguration> {
-    let lang = crate::registry::of_tag(name)?.lang()?;
-    Some(&lang.compiled()?.config)
 }
 
 /// Find the language a fence tag names, where this build carries a grammar for
