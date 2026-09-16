@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.1.17",
+    "date": "2026-09-16",
+    "summary": "Canvas editing respects locks and zoom limits, with faster undo and cached containment.",
+    "new": [
+      "`CanvasEditor::take_events` lets headless callers drain pending events and release retained changes; the view drains them automatically."
+    ],
+    "changed": [
+      "Undo batches are built in linear time without repeated vector prepends, preserving undo and redo order.",
+      "Rendering and gestures reuse containment indexes for the document and preview, invalidated by edits, measurements and kind changes. Container depths are memoized, including cycles.",
+      "`CanvasEditor::selected` finds the primary selection without allocating a temporary vector."
+    ],
+    "fixed": [
+      "Zero or negative snap grid spacing paints no dots instead of hanging rendering.",
+      "Dragging a selection leaves nodes that disallow dragging stationary and selected.",
+      "`fit` and `zoom_to_selection` respect both configured zoom limits."
+    ]
+  },
+  {
     "version": "0.1.16",
     "date": "2026-09-15",
     "summary": "The canvas edits a graph, with trees as a layer over it, laid out the way an app picks.",
@@ -28,7 +46,7 @@
       "Kinds belong to a view: `CanvasView::with_kinds` and `CanvasEditor::with_kinds`, with `set_kinds` naming them for views that name none. `Kind`'s `sizing`, `edit`, `child` and `holds` live in `Kind::rules`, and `kind::kind`, `holds` and `fresh` are `Kinds::get`, `holds` and `fresh`.",
       "The selection is `Item`s, nodes or one edge: `CanvasEditor::selection` answers them and `selected_nodes` the node ids.",
       "Every canvas names its layout — `CanvasView::new(doc, layout, cx)` — and there is no default. A `Layout` carries what its edits mean: `reach`, `walk`, `link`, `extend`, `paste_under`, `duplicate_under`, `pins` and the `drag` it moves with, filled by `Layout::free` or `Layout::tree`, so the view holds no tree branch of its own. `drag::moves` is a free canvas's drag, which pins nothing. `mindmap::arrange` and `roots` take which nodes frame others in place of matching `group` by name, and `mindmap::node_at` is `contain::topmost`, the one hit-test.",
-      "Each gesture is a `canvas::tool::Tool`: the view says what a press landed on (`Hit`) and the first tool to take it holds the pointer until it comes up. `tool::defaults()` — `Connect`, `Resize`, `PickEdge`, `Marquee`, `Create`, `Select`, `Pan` — are what `CanvasView::with_tools` replaces. A tool commands the editor, draws through a `Sketch` and asks the view for an editor through a `Wish`; `escape` gives up the gesture in hand.",
+      "Each gesture is a `canvas::tool::Tool`: the view says what a press landed on (`Hit`) and the first tool to take it holds the pointer until it comes up. `tool::defaults()` — `Connect`, `Resize`, `Reconnect`, `PickEdge`, `Marquee`, `Create`, `Select`, `Pan` — are what `CanvasView::with_tools` replaces. A tool commands the editor, draws through a `Sketch` and asks the view for an editor through a `Wish`; `escape` gives up the gesture in hand.",
       "`Kind` holds closures, so a kind carries what it needs: build one with `Kind::new(render)` and `sizing`, `edit`, `open`, `child` and `holds`, and a field with `Field::new`. The spec's kinds are `kind::text()`, `file()`, `link()`, `group()` and `unknown()` in place of the constants.",
       "`CanvasEvent::Selected` carries the whole selection. `Change::AddNode` takes an `index`. `mindmap::reparent`, `detach` and `carry` take many ids, `carry` a distance rather than a place, and `node_at` skips many branches.",
       "`with_layout`, `CanvasEditor::layout` and `set_layout` replace `with_arrange`, `arrange` and `set_arrange`, and `Arrange` is gone. `keys::SelectParent`, `SelectChild`, `SelectPrev` and `SelectNext` are `SelectLeft`, `SelectRight`, `SelectUp` and `SelectDown`.",
