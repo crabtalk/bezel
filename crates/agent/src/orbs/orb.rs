@@ -464,10 +464,8 @@ fn apply_pause_clock(
 ) {
     if *paused == want {
         // Still clear a stuck paused_at if someone left it set while unpaused.
-        if !want {
-            if let Some(at) = paused_at.take() {
-                *paused_total += at.elapsed();
-            }
+        if !want && let Some(at) = paused_at.take() {
+            *paused_total += at.elapsed();
         }
         return;
     }

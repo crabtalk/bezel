@@ -56,7 +56,9 @@ impl Lang {
         // is the kind painting the `Source` ranges that follow it.
         let mut kinds: Vec<HighlightKind> = Vec::new();
         for event in highlighter
-            .highlight(config, source.as_bytes(), None, |_| None)
+            // `None` encoding: the source is a `&str`, so it is UTF-8 and
+            // tree-sitter's default is the one to take.
+            .highlight(config, source.as_bytes(), None, None, |_| None)
             .ok()?
             .flatten()
         {

@@ -29,7 +29,7 @@ homepage = "https://github.com/crabtalk/bezel"
 readme = "README.md"
 keywords = ["gpui", "gui", "ui", "components"]
 categories = ["gui"]
-rust-version = "1.85"
+rust-version = "1.90"
 
 [workspace.dependencies]
 # The short names are taken on crates.io, so packages publish as `bezel-*`; the
@@ -51,8 +51,8 @@ canvas = { package = "bezel-canvas", path = "crates/canvas", version = "0.1.17" 
 libc = "0.2"
 web-time = "1"
 alacritty_terminal = "0.26"
-tree-sitter = "0.26.9"
-tree-sitter-highlight = "0.26"
+tree-sitter = "0.27"
+tree-sitter-highlight = "0.27"
 tree-sitter-language = "0.1"
 tree-sitter-rust = "0.24.2"
 tree-sitter-python = "0.25"

@@ -135,7 +135,7 @@ impl Path {
         if count == 0 {
             return point(0.0, 0.0);
         }
-        if count % 2 == 0 {
+        if count.is_multiple_of(2) {
             return self.segments[count / 2 - 1].2;
         }
         let (a, c, b) = self.segments[count / 2];

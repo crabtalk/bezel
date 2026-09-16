@@ -28,7 +28,7 @@ use gpui::{
 };
 use unicode_segmentation::UnicodeSegmentation as _;
 
-use theme::{Metrics, TextStyle, Theme};
+use theme::{HighlightKind, Metrics, SyntaxPalette, TextStyle, Theme};
 
 actions!(
     bezel_text_field,
@@ -331,6 +331,9 @@ pub struct TextField {
     /// unconditionally would snap the view back to it on the very next frame,
     /// so scrolling away to read would be impossible.
     follow_caret: bool,
+    /// Byte ranges to paint in a syntax colour, in document order — see
+    /// [`Self::set_spans`]. Empty for every field that is prose.
+    spans: Vec<(Range<usize>, HighlightKind)>,
 }
 
 impl EventEmitter<FieldEvent> for TextField {}
@@ -360,6 +363,7 @@ impl TextField {
             caret_on: true,
             blink: None,
             follow_caret: false,
+            spans: Vec::new(),
         }
     }
 
@@ -435,9 +439,16 @@ impl TextField {
         &self.content
     }
 
+    /// The syntax spans this field is painting — see [`Self::set_spans`].
+    pub fn spans(&self) -> &[(Range<usize>, HighlightKind)] {
+        &self.spans
+    }
+
     /// Replace the content, putting the cursor at the end.
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.content = normalize(&content.into(), self.shape).into();
+        // Colours describe text this field no longer holds.
+        self.spans.clear();
         // A programmatic reset is not something the user did, so there is
         // nothing here for them to undo back past.
         self.history.clear();
@@ -451,6 +462,24 @@ impl TextField {
 
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.set_content("", cx);
+    }
+
+    /// Paint these byte ranges in syntax colours, in document order. Whatever
+    /// they leave uncovered stays the field's own text colour, so a language
+    /// nothing can colour is simply no spans at all.
+    ///
+    /// This field holds text, not a document: it does not parse, and it does
+    /// not keep the spans in step with edits. The caller recomputes them —
+    /// [`FieldEvent::Changed`] is the signal — and until it does, the frames in
+    /// between paint the ranges it last handed over. Stale ones are dropped
+    /// rather than shifted, so the worst a late recolour looks like is a word
+    /// in the wrong colour for a frame.
+    ///
+    /// [`set_content`](Self::set_content) clears them: replacing the text
+    /// replaces what the colours were about.
+    pub fn set_spans(&mut self, spans: Vec<(Range<usize>, HighlightKind)>, cx: &mut Context<Self>) {
+        self.spans = spans;
+        cx.notify();
     }
 
     /// [`Self::with_placeholder`] after construction, for a hint that follows
@@ -1104,6 +1133,96 @@ fn display_text(field: &TextField) -> (SharedString, bool) {
     }
 }
 
+/// One run per span, the text between them in the field's own colour.
+///
+/// The runs a field paints [`TextField::set_spans`] as, public for the same
+/// reason [`next_boundary`] is: anything shaping the same text with the same
+/// palette wants the same answer, and this is where it is decided.
+///
+/// The spans are whatever the caller last handed over, which may describe text
+/// this frame no longer holds — see [`TextField::set_spans`]. A range that runs
+/// past the end, overlaps the one before it, or cuts a character in half is
+/// dropped rather than shifting the runs after it: shaping needs the lengths to
+/// add up to the text, and a colour that is wrong for one frame is cheaper than
+/// a panic.
+///
+/// `base.len` is ignored: every run is measured off `text`.
+pub fn coloured(
+    text: &str,
+    spans: &[(Range<usize>, HighlightKind)],
+    base: &TextRun,
+    palette: &SyntaxPalette,
+) -> Vec<TextRun> {
+    if spans.is_empty() {
+        return vec![TextRun {
+            len: text.len(),
+            ..base.clone()
+        }];
+    }
+    let mut runs = Vec::with_capacity(spans.len() * 2 + 1);
+    let mut at = 0;
+    for (range, kind) in spans {
+        if range.start < at
+            || range.end <= range.start
+            || range.end > text.len()
+            || !text.is_char_boundary(range.start)
+            || !text.is_char_boundary(range.end)
+        {
+            continue;
+        }
+        if range.start > at {
+            runs.push(TextRun {
+                len: range.start - at,
+                ..base.clone()
+            });
+        }
+        runs.push(TextRun {
+            len: range.end - range.start,
+            color: palette.color(*kind),
+            ..base.clone()
+        });
+        at = range.end;
+    }
+    if at < text.len() {
+        runs.push(TextRun {
+            len: text.len() - at,
+            ..base.clone()
+        });
+    }
+    runs
+}
+
+/// The IME composition range underlined, so the user can see what is still
+/// provisional. Each run is cut at the range's edges and the pieces inside it
+/// take the line, in whatever colour they already had.
+pub fn underlined(runs: Vec<TextRun>, marked: &Range<usize>) -> Vec<TextRun> {
+    let mut out = Vec::with_capacity(runs.len() + 2);
+    let mut at = 0;
+    for run in runs {
+        let end = at + run.len;
+        for (start, stop, mark) in [
+            (at, end.min(marked.start), false),
+            (at.max(marked.start), end.min(marked.end), true),
+            (at.max(marked.end), end, false),
+        ] {
+            if stop <= start {
+                continue;
+            }
+            out.push(TextRun {
+                len: stop - start,
+                underline: mark.then(|| UnderlineStyle {
+                    color: Some(run.color),
+                    thickness: px(1.0),
+                    wavy: false,
+                }),
+                ..run.clone()
+            });
+        }
+        at = end;
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Line geometry. `shape_text` returns one `WrappedLine` per hard newline, each
 // wrapping into rows of its own; gpui resolves positions *within* a line, so
@@ -1573,33 +1692,17 @@ impl Element for TextFieldElement {
             underline: None,
             strikethrough: None,
         };
-        // The IME composition range is underlined so the user can see what is
-        // still provisional.
-        let runs = if let Some(marked) = marked_range.as_ref() {
-            vec![
-                TextRun {
-                    len: marked.start,
-                    ..run.clone()
-                },
-                TextRun {
-                    len: marked.end - marked.start,
-                    underline: Some(UnderlineStyle {
-                        color: Some(run.color),
-                        thickness: px(1.0),
-                        wavy: false,
-                    }),
-                    ..run.clone()
-                },
-                TextRun {
-                    len: text.len() - marked.end,
-                    ..run
-                },
-            ]
-            .into_iter()
-            .filter(|run| run.len > 0)
-            .collect()
-        } else {
+        // Syntax first, then the IME composition range underlined over the top
+        // of it: both cut the text into runs, and the underline has to land on
+        // whatever colour is already there.
+        let runs = if is_placeholder {
             vec![run]
+        } else {
+            coloured(&text, &field.spans, &run, &theme.syntax)
+        };
+        let runs = match marked_range.as_ref() {
+            Some(marked) => underlined(runs, marked),
+            None => runs,
         };
 
         let font_size = style.font_size.to_pixels(window.rem_size());
