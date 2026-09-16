@@ -16,6 +16,7 @@ profiler = ["gpui/profiler"]
 # ship highlighted samples it could never compile tree-sitter to produce.
 [build-dependencies]
 syntax.workspace = true
+syntax-std.workspace = true
 theme.workspace = true
 
 [dependencies]
@@ -52,6 +53,7 @@ terminal.workspace = true
 gpui_platform.workspace = true
 # The live highlighter. A web build has the build script's table instead.
 syntax.workspace = true
+syntax-std.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

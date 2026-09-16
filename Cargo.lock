@@ -2738,6 +2738,7 @@ dependencies = [
  "bezel-markdown",
  "bezel-motion",
  "bezel-syntax",
+ "bezel-syntax-std",
  "bezel-terminal",
  "bezel-theme",
  "bezel-ui",

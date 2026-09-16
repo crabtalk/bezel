@@ -13,13 +13,21 @@ use theme::HighlightKind;
 /// Install with `markdown::set_highlighter(cx, highlight::spans, highlight::languages())`.
 #[cfg(not(target_family = "wasm"))]
 pub fn spans(language: &str, code: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
+    install();
     syntax::highlight(code, language)
 }
 
-/// The names a language picker offers. Whichever grammars the features left in.
+#[cfg(not(target_family = "wasm"))]
+fn install() {
+    static INSTALLED: std::sync::Once = std::sync::Once::new();
+    INSTALLED.call_once(syntax_std::install);
+}
+
+/// The names of registered languages with grammars.
 #[cfg(not(target_family = "wasm"))]
 pub fn languages() -> Vec<&'static str> {
-    syntax::lang::LANGS.iter().map(|lang| lang.name).collect()
+    install();
+    syntax::registry::ready()
 }
 
 /// The same list, read from the table rather than the grammars — `syntax` is

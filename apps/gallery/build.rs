@@ -15,6 +15,7 @@ use theme::HighlightKind;
 include!("src/patterns/samples.rs");
 
 fn main() {
+    syntax_std::install();
     println!("cargo:rerun-if-changed=src/patterns/samples.rs");
 
     let mut out = String::from(
@@ -49,8 +50,8 @@ fn main() {
     // The picker's list. Generated for the same reason the spans are: the web
     // build has no `syntax` to enumerate at runtime.
     out.push_str("pub static LANGUAGES: &[&str] = &[\n");
-    for lang in syntax::lang::LANGS {
-        out.push_str(&format!("    {:?},\n", lang.name));
+    for lang in syntax::registry::ready() {
+        out.push_str(&format!("    {lang:?},\n"));
     }
     out.push_str("];\n");
 
