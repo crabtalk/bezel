@@ -1,25 +1,24 @@
-//! Tree-sitter syntax classification for isolated code blocks.
+//! Tree-sitter syntax classification.
 //!
-//! [`highlight`] takes a source string and a fence tag and returns the
-//! highlighted spans as `(byte range, kind)` pairs, in document order.
-//! Everything outside those spans is unhighlighted text. There is no color
-//! and no rendering here — kinds map to colors through
-//! [`SyntaxPalette::color`](theme::SyntaxPalette::color) — and no injection
-//! machinery: the fence already names the grammar, so a block is one parse
-//! with one highlights query. Languages are a table ([`lang::LANGS`], one row
-//! per feature); a grammar with no match returns `None` and the caller renders
-//! plain text.
+//! Spans come back in document order, and anything they do not cover is
+//! unhighlighted text. No color and no rendering here — kinds map to colors
+//! through [`SyntaxPalette::color`](theme::SyntaxPalette::color).
 //!
-//! A language the table does not carry is a [`Lang::new`](lang::Lang::new)
-//! `static` of your own, highlighted through
-//! [`Lang::highlight`](lang::Lang::highlight) — the same path the built-in rows
-//! take, so nothing about the query cache or the capture vocabulary has to be
-//! rebuilt to add one.
+//! [`lang::LANGS`] is one row per cargo feature, fixed at build time; it seeds
+//! [`registry`], which also holds the languages this build can name and not
+//! paint, and which [`registry::register`] adds to at runtime.
+//!
+//! No injection support: a document is one parse with one grammar, so a region
+//! written in another language — `<script>` and `<style>` in Svelte, Vue or
+//! HTML — is left unhighlighted. No locals support either. Both queries are
+//! passed empty in [`Lang::compiled`](lang::Lang::compiled), and the injection
+//! callback in [`Lang::highlight`](lang::Lang::highlight) always returns `None`.
 
 use std::ops::Range;
 use theme::HighlightKind;
 
 pub mod lang;
+pub mod registry;
 
 /// The exact tree-sitter these grammars were built against. Reach for a
 /// `LanguageFn` through here rather than declaring your own tree-sitter, or
