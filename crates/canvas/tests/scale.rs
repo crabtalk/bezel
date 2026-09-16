@@ -66,3 +66,29 @@ fn two_thousand_nodes_paint(cx: &mut TestAppContext) {
     let took = started.elapsed();
     assert!(took.as_secs_f32() < 20.0, "three frames took {took:?}");
 }
+
+#[test]
+fn ten_thousand_named_containers_have_correct_depths() {
+    let canvas = Canvas {
+        nodes: (0..10_000)
+            .map(|i| {
+                let mut node = Node {
+                    id: i.to_string(),
+                    ..Node::default()
+                };
+                if i > 0 {
+                    node.extra.insert(
+                        canvas::contain::CONTAINER.into(),
+                        (i - 1).to_string().into(),
+                    );
+                }
+                node
+            })
+            .collect(),
+        ..Canvas::default()
+    };
+    let depths = canvas::contain::depths(&canvas, |_| false);
+    for i in 0..10_000 {
+        assert_eq!(depths[&i.to_string()], i);
+    }
+}

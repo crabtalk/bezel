@@ -52,53 +52,111 @@ pub fn containers(canvas: &Canvas, holds: impl Fn(&Node) -> bool) -> HashMap<&st
         .collect()
 }
 
+/// Containment shared by hit testing, carrying and paint order.
+pub(crate) struct Index {
+    held: HashMap<String, Vec<String>>,
+    depths: HashMap<String, usize>,
+}
+
+impl Index {
+    pub(crate) fn new(canvas: &Canvas, holds: impl Fn(&Node) -> bool) -> Self {
+        let parents = containers(canvas, holds);
+        let mut held: HashMap<String, Vec<String>> = HashMap::new();
+        for (&id, &by) in &parents {
+            held.entry(by.to_owned()).or_default().push(id.to_owned());
+        }
+        let mut depths = HashMap::with_capacity(canvas.nodes.len());
+        let mut path = Vec::new();
+        let mut seen = HashMap::new();
+        for node in &canvas.nodes {
+            path.clear();
+            seen.clear();
+            let mut at = node.id.as_str();
+            let mut depth = loop {
+                if let Some(&depth) = depths.get(at) {
+                    break depth;
+                }
+                if let Some(&start) = seen.get(at) {
+                    // Each cycle member counts every other member once.
+                    let depth = path.len() - start - 1;
+                    for id in path.drain(start..) {
+                        depths.insert(str::to_owned(id), depth);
+                    }
+                    break depth;
+                }
+                let Some(&parent) = parents.get(at) else {
+                    depths.insert(at.to_owned(), 0);
+                    break 0;
+                };
+                seen.insert(at, path.len());
+                path.push(at);
+                at = parent;
+            };
+            for id in path.drain(..).rev() {
+                depth += 1;
+                depths.insert(id.to_owned(), depth);
+            }
+        }
+        Self { held, depths }
+    }
+
+    pub(crate) fn depth(&self, id: &str) -> usize {
+        self.depths.get(id).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn with_contents(&self, ids: &[String]) -> Vec<String> {
+        let mut seen = HashSet::new();
+        let mut all: Vec<&str> = ids
+            .iter()
+            .map(String::as_str)
+            .filter(|id| seen.insert(*id))
+            .collect();
+        let mut at = 0;
+        while at < all.len() {
+            for inner in self.held.get(all[at]).into_iter().flatten() {
+                if seen.insert(inner.as_str()) {
+                    all.push(inner);
+                }
+            }
+            at += 1;
+        }
+        all.into_iter().map(str::to_owned).collect()
+    }
+
+    pub(crate) fn topmost<'a>(
+        &self,
+        canvas: &'a Canvas,
+        at: (i64, i64),
+        except: &[String],
+        accept: impl Fn(&Node) -> bool,
+    ) -> Option<&'a str> {
+        let except: HashSet<&str> = except.iter().map(String::as_str).collect();
+        canvas
+            .nodes
+            .iter()
+            .filter(|node| {
+                !except.contains(node.id.as_str())
+                    && accept(node)
+                    && (node.x..node.x + node.width).contains(&at.0)
+                    && (node.y..node.y + node.height).contains(&at.1)
+            })
+            .max_by_key(|node| self.depth(&node.id))
+            .map(|node| node.id.as_str())
+    }
+}
+
 /// `ids`, then everything they hold however deep, none twice.
 pub fn with_contents(
     canvas: &Canvas,
     ids: &[String],
     holds: impl Fn(&Node) -> bool,
 ) -> Vec<String> {
-    let mut held: HashMap<&str, Vec<&str>> = HashMap::new();
-    for (id, by) in containers(canvas, holds) {
-        held.entry(by).or_default().push(id);
-    }
-    let mut seen = HashSet::new();
-    let mut all: Vec<String> = ids
-        .iter()
-        .filter(|id| seen.insert((*id).clone()))
-        .cloned()
-        .collect();
-    let mut at = 0;
-    while at < all.len() {
-        let id = all[at].clone();
-        for inner in held.get(id.as_str()).into_iter().flatten() {
-            if seen.insert(inner.to_string()) {
-                all.push(inner.to_string());
-            }
-        }
-        at += 1;
-    }
-    all
+    Index::new(canvas, holds).with_contents(ids)
 }
 
 /// How many containers hold each node: shallower paints first.
 pub fn depths(canvas: &Canvas, holds: impl Fn(&Node) -> bool) -> HashMap<String, usize> {
-    let containers = containers(canvas, holds);
-    canvas
-        .nodes
-        .iter()
-        .map(|node| {
-            let (mut depth, mut at) = (0, node.id.as_str());
-            let mut seen = HashSet::from([at]);
-            while let Some(&by) = containers.get(at) {
-                if !seen.insert(by) {
-                    break;
-                }
-                (depth, at) = (depth + 1, by);
-            }
-            (node.id.clone(), depth)
-        })
-        .collect()
+    Index::new(canvas, holds).depths
 }
 
 /// The node at `at` that `accept` takes, outside `except`: what a container
@@ -110,18 +168,7 @@ pub fn topmost<'a>(
     accept: impl Fn(&Node) -> bool,
     holds: impl Fn(&Node) -> bool,
 ) -> Option<&'a str> {
-    let depths = depths(canvas, holds);
-    canvas
-        .nodes
-        .iter()
-        .filter(|node| {
-            !except.contains(&node.id)
-                && accept(node)
-                && (node.x..node.x + node.width).contains(&at.0)
-                && (node.y..node.y + node.height).contains(&at.1)
-        })
-        .max_by_key(|node| depths.get(&node.id).copied().unwrap_or(0))
-        .map(|node| node.id.as_str())
+    Index::new(canvas, holds).topmost(canvas, at, except, accept)
 }
 
 /// `id` naming `container` as what holds it, or naming nothing.

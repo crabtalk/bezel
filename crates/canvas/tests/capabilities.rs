@@ -6,6 +6,7 @@ use canvas::{
     layout,
     layout::Arrow,
     model::Side,
+    tool::{Hand, Hit, Pointer, Select, Tool},
 };
 use gpui::{
     IntoElement, Modifiers, MouseButton, TestAppContext, VisualTestContext, div, point, px, size,
@@ -62,6 +63,39 @@ fn what_cannot_be_dragged_does_not_nudge() {
     editor.nudge(Arrow::Right);
     let x = |id| editor.canvas().node(id).unwrap().x;
     assert_eq!((x("a"), x("wall"), x("locked")), (8, 0, 200));
+}
+
+#[test]
+fn group_drag_keeps_locked_nodes_selected_but_unmoved() {
+    let mut doc = Canvas::parse(DOC).unwrap();
+    doc.node_mut("locked").unwrap().extra.remove("selectable");
+    let mut editor = CanvasEditor::new(doc.clone(), layout::FREE).with_kinds(kinds());
+    editor.select_all();
+    let mut tool = Select::default();
+    let mut pointer = Pointer {
+        screen: point(px(10.0), px(10.0)),
+        at: point(10.0, 10.0),
+        button: MouseButton::Left,
+        modifiers: Modifiers::none(),
+        clicks: 1,
+        hit: Hit::Node("a".into()),
+    };
+    assert!(tool.press(&pointer, &mut Hand::new(&mut editor)));
+    pointer.at.x += 50.0;
+    pointer.screen.x += px(50.0);
+    tool.drag(&pointer, &mut Hand::new(&mut editor));
+    assert_eq!(editor.painted().node("a").unwrap().x, 50);
+    for id in ["locked", "wall"] {
+        assert_eq!(editor.painted().node(id), doc.node(id));
+    }
+    tool.release(&pointer, &mut Hand::new(&mut editor));
+    assert_eq!(editor.canvas().node("a").unwrap().x, 50);
+    for id in ["locked", "wall"] {
+        assert_eq!(editor.canvas().node(id), doc.node(id));
+    }
+    assert_eq!(editor.selected_nodes(), ["locked", "wall", "a"]);
+    assert!(editor.undo());
+    assert_eq!(editor.canvas(), &doc);
 }
 
 #[test]

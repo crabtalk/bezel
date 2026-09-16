@@ -236,8 +236,11 @@ pub fn handle(mark: &Mark, _: &mut Window, cx: &mut App) -> AnyElement {
 }
 
 /// Dots at every `step`, thinned out until they are no closer than the style
-/// asks for.
+/// asks for. Nonpositive steps paint nothing.
 pub fn grid(frame: &Frame, step: i64, window: &mut Window, cx: &mut App) {
+    if step <= 0 {
+        return;
+    }
     let ink = Theme::of(cx).border;
     let dot = frame.style.dot;
     let mut gap = step as f32 * frame.zoom;

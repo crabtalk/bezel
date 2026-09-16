@@ -3,7 +3,7 @@
 use std::{cell::Cell, rc::Rc};
 
 use canvas::{
-    Canvas, CanvasEditor, CanvasView, Options, Overlays,
+    Canvas, CanvasEditor, CanvasView, Options, Overlays, Snap,
     layout::{self, Arrow},
 };
 use gpui::{IntoElement, TestAppContext, VisualTestContext, div, px, size};
@@ -32,6 +32,57 @@ fn zoom_stops_where_the_options_say() {
         editor.zoom_out();
     }
     assert_eq!(editor.zoom(), editor.options().min_zoom);
+}
+
+#[test]
+fn fitting_respects_both_zoom_limits() {
+    for (min_zoom, max_zoom, selection_zoom, expected) in [
+        (0.25, 1.25, 2.0, 1.25),
+        (0.25, 0.5, 2.0, 0.5),
+        (0.5, 4.0, 0.25, 0.5),
+    ] {
+        let mut editor = editor(Options {
+            min_zoom,
+            max_zoom,
+            selection_zoom,
+            ..Options::default()
+        });
+        editor.set_viewport(size(800.0, 600.0));
+        editor.select(Some("a".into()));
+        editor.zoom_to_selection();
+        assert_eq!(editor.zoom(), expected);
+        editor.fit();
+        assert_eq!(editor.zoom(), 1.0_f32.clamp(min_zoom, max_zoom));
+    }
+}
+
+#[gpui::test]
+fn nonpositive_grids_do_not_block_rendering(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        theme::Theme::install(theme::Appearance::Dark, cx);
+        editor::init(cx);
+        canvas::init(cx);
+    });
+    let window =
+        cx.add_window(|_, cx| CanvasView::new(Canvas::parse(ONE).unwrap(), layout::FREE, cx));
+    let view = window.root(cx).unwrap();
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(size(px(800.0), px(600.0)));
+    for step in [0, -16, 16] {
+        cx.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.update_editor(cx, |editor| {
+                    editor.set_snap(Snap {
+                        grid: Some(step),
+                        guides: false,
+                    });
+                });
+            });
+        });
+        for _ in 0..3 {
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+        }
+    }
 }
 
 #[test]

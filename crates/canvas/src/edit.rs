@@ -11,7 +11,7 @@
 //!
 //! [`CanvasView`]: crate::CanvasView
 
-use std::rc::Rc;
+use std::{cell::OnceCell, rc::Rc};
 
 use gpui::{Point, Size, point};
 
@@ -90,6 +90,8 @@ pub struct CanvasEditor {
     /// The document as a gesture in hand would leave it.
     preview: Option<Canvas>,
     preview_stale: bool,
+    containment: OnceCell<contain::Index>,
+    preview_containment: OnceCell<contain::Index>,
     /// What a drop would do beyond its moves, drawn while a node is held.
     pub(crate) pending: Vec<Change>,
     /// The lines a drag caught on.
@@ -126,6 +128,8 @@ impl CanvasEditor {
             stale: true,
             preview: None,
             preview_stale: false,
+            containment: OnceCell::new(),
+            preview_containment: OnceCell::new(),
             pending: Vec::new(),
             guides: Vec::new(),
             events: Vec::new(),
@@ -195,6 +199,8 @@ impl CanvasEditor {
 
     pub fn set_kinds(&mut self, kinds: Kinds) {
         self.kinds = kinds;
+        self.containment.take();
+        self.preview_containment.take();
         self.stale = true;
     }
 
@@ -209,6 +215,7 @@ impl CanvasEditor {
     /// A new document, with no history.
     pub fn set_canvas(&mut self, canvas: Canvas) {
         self.canvas = canvas;
+        self.containment.take();
         (self.undo, self.redo, self.group) = (Vec::new(), Vec::new(), None);
         self.clear_preview();
         self.rewound = true;
@@ -307,6 +314,7 @@ impl CanvasEditor {
     }
 
     fn landed(&mut self, changes: Vec<Change>) {
+        self.containment.take();
         self.prune();
         self.stale = true;
         self.events.push(CanvasEvent::Changed(changes));
@@ -329,7 +337,10 @@ impl CanvasEditor {
 
     /// The primary selection: the last node chosen, which the keys act from.
     pub fn selected(&self) -> Option<&str> {
-        self.selected_nodes().pop()
+        self.selection.iter().rev().find_map(|item| match item {
+            Item::Node(id) => Some(id.as_str()),
+            Item::Edge(_) => None,
+        })
     }
 
     pub fn selected_edge(&self) -> Option<&str> {
@@ -514,7 +525,21 @@ impl CanvasEditor {
 
     /// `ids`, and everything they hold.
     pub(crate) fn contents(&self, ids: &[String]) -> Vec<String> {
-        contain::with_contents(&self.canvas, ids, |node| self.kinds.holds(node))
+        self.containment().with_contents(ids)
+    }
+
+    fn containment(&self) -> &contain::Index {
+        self.containment
+            .get_or_init(|| contain::Index::new(&self.canvas, |node| self.kinds.holds(node)))
+    }
+
+    pub(crate) fn painted_containment(&self) -> &contain::Index {
+        match &self.preview {
+            Some(preview) => self
+                .preview_containment
+                .get_or_init(|| contain::Index::new(preview, |node| self.kinds.holds(node))),
+            None => self.containment(),
+        }
     }
 
     /// What `backspace` does, through the filter: the selected edge, or the
@@ -682,13 +707,8 @@ impl CanvasEditor {
     /// The topmost node at a canvas point, other than `except`: what a
     /// container holds before the container.
     pub(crate) fn node_under(&self, at: (i64, i64), except: &str) -> Option<&str> {
-        contain::topmost(
-            self.painted(),
-            at,
-            &[except.to_owned()],
-            |_| true,
-            |node| self.kinds.holds(node),
-        )
+        self.painted_containment()
+            .topmost(self.painted(), at, &[except.to_owned()], |_| true)
     }
 
     pub fn zoom(&self) -> f32 {
@@ -800,7 +820,10 @@ impl CanvasEditor {
         let (bw, bh) = (((x1 - x0) as f32).max(1.0), ((y1 - y0) as f32).max(1.0));
         let zoom = ((vw - 2.0 * self.options.fit_padding) / bw)
             .min((vh - 2.0 * self.options.fit_padding) / bh)
-            .clamp(self.options.min_zoom, most.max(self.options.min_zoom));
+            .clamp(
+                self.options.min_zoom,
+                most.clamp(self.options.min_zoom, self.options.max_zoom),
+            );
         self.zoom = zoom;
         self.pan = point(
             vw / 2.0 - (x0 as f32 + bw / 2.0) * zoom,
@@ -927,12 +950,14 @@ impl CanvasEditor {
         guides: Vec<Guide>,
     ) {
         self.preview = Some(preview);
+        self.preview_containment.take();
         self.preview_stale = true;
         (self.pending, self.guides) = (pending, guides);
     }
 
     pub(crate) fn clear_preview(&mut self) {
         self.preview = None;
+        self.preview_containment.take();
         self.pending.clear();
         self.guides.clear();
     }
@@ -997,15 +1022,19 @@ impl CanvasEditor {
         if std::mem::take(&mut self.preview_stale)
             && let Some(preview) = &mut self.preview
         {
+            self.preview_containment.take();
             let moves = arrange(preview, held, &holds);
             change::apply(preview, &Change::MoveNodes { moves });
         }
         if !changes.is_empty() {
+            self.containment.take();
             self.events.push(CanvasEvent::Changed(changes));
         }
     }
 
-    pub(crate) fn take_events(&mut self) -> Vec<CanvasEvent> {
+    /// Drain pending events in order. Headless callers should drain regularly
+    /// to release retained changes; the view does this automatically.
+    pub fn take_events(&mut self) -> Vec<CanvasEvent> {
         std::mem::take(&mut self.events)
     }
 

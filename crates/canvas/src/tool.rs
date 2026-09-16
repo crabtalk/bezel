@@ -356,6 +356,7 @@ impl Tool for Select {
         if !hand.editor.node_can(&id, Capability::Draggable) {
             return true;
         }
+        with.retain(|id| hand.editor.node_can(id, Capability::Draggable));
         if let Some(node) = hand.editor.canvas().node(&id) {
             self.held = Some(Held {
                 origin: (node.x, node.y),
@@ -720,7 +721,7 @@ fn gesture(
         .collect();
     let holds = |node: &Node| editor.kinds().holds(node);
     let canvas = editor.canvas();
-    let carried = contain::with_contents(canvas, &ids, holds);
+    let carried = editor.contents(&ids);
     let contents: Vec<String> = carried
         .iter()
         .filter(|id| !ids.contains(id))
@@ -756,7 +757,9 @@ fn gesture(
         contents: &contents,
         origin: held.origin,
         delta,
-        over: contain::topmost(editor.painted(), pointer, &except, |n| !holds(n), holds),
+        over: editor
+            .painted_containment()
+            .topmost(editor.painted(), pointer, &except, |n| !holds(n)),
         phase,
     };
     ((editor.drag())(canvas, &drag), guides)

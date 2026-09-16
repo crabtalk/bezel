@@ -95,3 +95,137 @@ fn a_paste_names_its_container_afresh() {
     change::apply_all(&mut pasted, &clip::paste(&canvas, &alone, (0, 500), None));
     assert_eq!(contain::named(pasted.nodes.last().unwrap()), None);
 }
+
+#[test]
+fn depths_match_parent_walks_including_cycles() {
+    use std::collections::HashSet;
+
+    for mut graph in 0..6_usize.pow(4) {
+        let canvas = Canvas {
+            nodes: (0..4)
+                .map(|i| {
+                    let parent = graph % 6;
+                    graph /= 6;
+                    let node = node(&i.to_string(), TEXT, (0, 0, 10, 10));
+                    if parent == 5 {
+                        node
+                    } else {
+                        naming(node, &parent.to_string())
+                    }
+                })
+                .collect(),
+            ..Canvas::default()
+        };
+        let parents = contain::containers(&canvas, groups);
+        let depths = contain::depths(&canvas, groups);
+        for node in &canvas.nodes {
+            let mut seen = HashSet::from([node.id.as_str()]);
+            let mut at = node.id.as_str();
+            while let Some(&parent) = parents.get(at) {
+                if !seen.insert(parent) {
+                    break;
+                }
+                at = parent;
+            }
+            assert_eq!(depths[&node.id], seen.len() - 1, "{parents:?}");
+        }
+    }
+}
+
+fn copied_ids(editor: &canvas::CanvasEditor) -> Vec<String> {
+    let mut ids: Vec<_> = Canvas::parse(&editor.copy().unwrap())
+        .unwrap()
+        .nodes
+        .into_iter()
+        .map(|node| node.id)
+        .collect();
+    ids.sort();
+    ids
+}
+
+#[test]
+fn editor_containment_tracks_edits_history_measurements_and_kinds() {
+    use canvas::{CanvasEditor, Change, Kinds, kind, layout};
+
+    let mut editor = CanvasEditor::new(nested(), layout::FREE);
+    editor.select(Some("g".into()));
+    assert_eq!(copied_ids(&editor), ["a", "b", "g"]);
+    editor.apply([Change::MoveNodes {
+        moves: vec![("a".into(), (900, 0))],
+    }]);
+    assert_eq!(copied_ids(&editor), ["g"]);
+    assert!(editor.undo());
+    assert_eq!(copied_ids(&editor), ["a", "b", "g"]);
+    assert!(editor.redo());
+    assert_eq!(copied_ids(&editor), ["g"]);
+    editor.set_canvas(nested());
+    assert_eq!(copied_ids(&editor), ["a", "b", "g"]);
+    editor.reflow([("g".into(), 10)], None);
+    assert_eq!(copied_ids(&editor), ["g"]);
+    editor.reflow([("g".into(), 300)], None);
+    assert_eq!(copied_ids(&editor), ["a", "b", "g"]);
+    editor.set_kinds(Kinds::new().with(GROUP, kind::text()));
+    assert_eq!(copied_ids(&editor), ["g"]);
+    editor.set_kinds(Kinds::new());
+    assert_eq!(copied_ids(&editor), ["a", "b", "g"]);
+}
+
+#[test]
+fn preview_hit_testing_tracks_resize_measurements_kinds_and_cancel() {
+    use canvas::{
+        CanvasEditor, Change, Handle, Kinds, kind, layout,
+        model::Side,
+        tool::{Hand, Hit, Pointer, Resize, Tool},
+    };
+    use gpui::{Modifiers, MouseButton, point, px};
+    use std::{cell::RefCell, rc::Rc};
+
+    let mut doc = nested();
+    doc.nodes.swap(0, 1);
+    let target = Rc::new(RefCell::new(None));
+    let output = target.clone();
+    let mut editor = CanvasEditor::new(doc, layout::FREE).with_changes(move |_, change| {
+        if let Change::AddEdge { edge, .. } = change {
+            *output.borrow_mut() = Some(edge.to_node);
+        }
+        None
+    });
+    let check = |editor: &mut CanvasEditor, expected: &str| {
+        target.borrow_mut().take();
+        editor.connect("b", &Handle::connect(Side::Left), (30, 30));
+        assert_eq!(target.borrow().as_deref(), Some(expected));
+    };
+    check(&mut editor, "a");
+    let mut pointer = Pointer {
+        screen: point(px(400.0), px(300.0)),
+        at: point(400.0, 300.0),
+        button: MouseButton::Left,
+        modifiers: Modifiers::none(),
+        clicks: 1,
+        hit: Hit::Handle {
+            owner: "g".into(),
+            handle: Handle::corner(),
+        },
+    };
+    let mut resize = Resize::default();
+    assert!(resize.press(&pointer, &mut Hand::new(&mut editor)));
+    pointer.at.y = 40.0;
+    resize.drag(&pointer, &mut Hand::new(&mut editor));
+    check(&mut editor, "g");
+    pointer.at.y = 100.0;
+    resize.drag(&pointer, &mut Hand::new(&mut editor));
+    check(&mut editor, "a");
+    editor.reflow([("g".into(), 40)], None);
+    check(&mut editor, "g");
+    editor.reflow([("g".into(), 100)], None);
+    check(&mut editor, "a");
+    editor.set_kinds(Kinds::new().with(GROUP, kind::text()));
+    check(&mut editor, "g");
+    editor.set_kinds(Kinds::new());
+    check(&mut editor, "a");
+    pointer.at.y = 40.0;
+    resize.drag(&pointer, &mut Hand::new(&mut editor));
+    check(&mut editor, "g");
+    resize.cancel(&mut Hand::new(&mut editor));
+    check(&mut editor, "a");
+}

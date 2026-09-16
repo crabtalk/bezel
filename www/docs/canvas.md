@@ -158,6 +158,8 @@ view.update(cx, |view, cx| view.update_editor(cx, |editor| editor.fit())); // a 
 
 `CanvasEditor` is the canvas without a window: the document, its kinds and layout, the selection, history and the part in view, behind the commands the keys run. `CanvasView` paints one and turns keys and the pointer into its commands; `view.editor()` reads it, and `update_editor` runs commands and announces what they did as `CanvasEvent`s. The selection is `Item`s, nodes or one edge.
 
+Headless callers should regularly call `editor.take_events()` to drain pending events and release retained changes. The view drains them automatically.
+
 ## API
 
 ```rust

@@ -24,7 +24,6 @@ use web_time::Instant;
 
 use crate::{
     change::Change,
-    contain,
     drag::DragHandler,
     edge::{self, EdgeKinds},
     edit::{CanvasEditor, CanvasEvent},
@@ -1234,10 +1233,10 @@ impl Render for CanvasView {
         // A container paints under what it holds. What a drag has in hand
         // paints last, with what it holds, over whatever it is carried across.
         let canvas = self.editor.painted();
-        let holds = |node: &Node| self.editor.kinds().holds(node);
-        let depths = contain::depths(canvas, holds);
+        let containment = self.editor.painted_containment();
         let carried: HashSet<String> = match self.held() {
-            Some(id) => contain::with_contents(canvas, &[id.to_owned()], holds)
+            Some(id) => containment
+                .with_contents(&[id.to_owned()])
                 .into_iter()
                 .collect(),
             None => HashSet::new(),
@@ -1245,7 +1244,7 @@ impl Render for CanvasView {
         let mut order: Vec<usize> = (0..canvas.nodes.len()).collect();
         order.sort_by_key(|ix| {
             let id = &canvas.nodes[*ix].id;
-            (carried.contains(id), depths.get(id).copied().unwrap_or(0))
+            (carried.contains(id), containment.depth(id))
         });
         let connecting = self.connect_target();
         let picked = self.editor.selected_nodes();

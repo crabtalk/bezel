@@ -62,8 +62,10 @@ pub fn added(changes: &[Change]) -> Option<&str> {
 pub fn apply_all(canvas: &mut Canvas, changes: &[Change]) -> Vec<Change> {
     let mut undo = Vec::new();
     for change in changes {
-        undo.splice(0..0, apply(canvas, change));
+        undo.extend(apply(canvas, change).into_iter().rev());
     }
+    // Reverse batch order while preserving each inverse batch's order.
+    undo.reverse();
     undo
 }
 

@@ -2,7 +2,7 @@
 //! in view, layouts and kinds, driven by its commands.
 
 use canvas::{
-    Canvas, CanvasEditor, Change, Item, Kinds,
+    Canvas, CanvasEditor, CanvasEvent, Change, Item, Kinds,
     kind::Kind,
     layout::{self, Arrow},
     mindmap,
@@ -56,6 +56,32 @@ fn nudges_undo_and_redo() {
     assert_eq!(x(&editor), 0);
     assert!(editor.redo());
     assert_eq!(x(&editor), 8);
+}
+
+#[test]
+fn headless_events_drain_in_order_and_replay() {
+    let mut editor = free(SCATTER);
+    let mut replay = editor.canvas().clone();
+    editor.select(Some("a".into()));
+    editor.nudge(Arrow::Right);
+    let events = editor.take_events();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0], CanvasEvent::Selected(vec!["a".into()]));
+    let CanvasEvent::Changed(changes) = &events[1] else {
+        panic!("expected changes after selection");
+    };
+    canvas::change::apply_all(&mut replay, changes);
+    assert_eq!(&replay, editor.canvas());
+    assert!(editor.take_events().is_empty());
+    assert!(editor.undo());
+    let events = editor.take_events();
+    assert_eq!(events.len(), 1);
+    let CanvasEvent::Changed(changes) = &events[0] else {
+        panic!("expected undo changes");
+    };
+    canvas::change::apply_all(&mut replay, changes);
+    assert_eq!(&replay, editor.canvas());
+    assert!(editor.take_events().is_empty());
 }
 
 #[test]
