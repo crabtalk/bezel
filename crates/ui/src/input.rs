@@ -426,6 +426,14 @@ impl TextField {
         self
     }
 
+    /// Update typography without replacing the editing state.
+    pub fn set_metrics(&mut self, metrics: Metrics, cx: &mut Context<Self>) {
+        if self.metrics != metrics {
+            self.metrics = metrics;
+            cx.notify();
+        }
+    }
+
     pub fn with_shape(mut self, shape: Shape) -> Self {
         self.shape = shape;
         self

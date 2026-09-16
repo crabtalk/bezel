@@ -805,7 +805,13 @@ fn shape_row(
         if cell.wide_spacer {
             continue;
         }
-        let ch = if cell.hidden { ' ' } else { cell.ch };
+        // Tab stops are already expanded in the grid. Paint the stored tab
+        // marker as one blank cell so the shaper cannot expand it again.
+        let ch = if cell.hidden || cell.ch == '\t' {
+            ' '
+        } else {
+            cell.ch
+        };
         // Anything that can leave the mono font gets its own pinned segment.
         let pinned = !ch.is_ascii() || cell.wide;
         if pinned {
