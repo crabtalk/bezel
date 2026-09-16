@@ -26,6 +26,7 @@ pub mod mindmap;
 mod minimap;
 pub mod model;
 pub mod snap;
+pub mod tool;
 mod view;
 
 pub use change::Change;
@@ -35,4 +36,5 @@ pub use layout::Layout;
 pub use minimap::minimap;
 pub use model::Canvas;
 pub use snap::Snap;
+pub use tool::Tool;
 pub use view::{CONTEXT, CanvasView, init, keys};

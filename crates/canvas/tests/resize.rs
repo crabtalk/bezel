@@ -26,9 +26,8 @@ fn a_growing_node_pulls_taller_and_undo_lets_it_go(cx: &mut TestAppContext) {
         editor::init(cx);
         canvas::init(cx);
     });
-    let window = cx.add_window(|_, cx| {
-        CanvasView::new(Canvas::parse(NOTE).unwrap(), cx).with_layout(layout::FREE)
-    });
+    let window =
+        cx.add_window(|_, cx| CanvasView::new(Canvas::parse(NOTE).unwrap(), layout::FREE, cx));
     let view = window.root(cx).unwrap();
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(800.0), px(600.0)));

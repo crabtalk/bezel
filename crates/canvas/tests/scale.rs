@@ -5,7 +5,7 @@
 use std::time::Instant;
 
 use canvas::{
-    Canvas, CanvasView,
+    Canvas, CanvasView, layout,
     mindmap::{self, Flow},
     model::{Edge, Node},
 };
@@ -43,7 +43,7 @@ fn forest(n: usize) -> Canvas {
 fn two_thousand_nodes_lay_out() {
     let canvas = forest(NODES);
     let started = Instant::now();
-    let moves = mindmap::arrange(&canvas, None, Flow::Right);
+    let moves = mindmap::arrange(&canvas, None, Flow::Right, &|_| false);
     let took = started.elapsed();
     assert_eq!(moves.len(), NODES - 1);
     assert!(took.as_secs_f32() < 2.0, "layout took {took:?}");
@@ -56,7 +56,7 @@ fn two_thousand_nodes_paint(cx: &mut TestAppContext) {
         editor::init(cx);
         canvas::init(cx);
     });
-    let window = cx.add_window(|_, cx| CanvasView::new(forest(NODES), cx));
+    let window = cx.add_window(|_, cx| CanvasView::new(forest(NODES), layout::MINDMAP, cx));
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(1200.0), px(800.0)));
     let started = Instant::now();

@@ -8,7 +8,7 @@ editor::init(cx);
 canvas::init(cx);                                            // after editor::init
 
 let view = cx.new(|cx| {
-    CanvasView::new(Canvas::parse(json)?, cx)
+    CanvasView::new(Canvas::parse(json)?, canvas::layout::MINDMAP, cx)
         .with_kinds(Kinds::new().with("session", session(store)))  // optional
 });
 cx.subscribe(&view, |_, view, event, cx| {
@@ -51,7 +51,7 @@ State stays with the app: look the view up by the node's id. gpui cannot transfo
 ## Changes
 
 ```rust
-CanvasView::new(doc, cx).with_changes(move |canvas, change| match &change {
+CanvasView::new(doc, layout, cx).with_changes(move |canvas, change| match &change {
     Change::RemoveNodes { ids } if ids.iter().any(|id| running.contains(id)) => None, // refuse
     _ => Some(change),                                                                // or rewrite it
 })
@@ -64,24 +64,26 @@ Tree edits live in `canvas::mindmap` and answer the batch they make: `child`, `s
 ## Layouts
 
 ```rust
-CanvasView::new(doc, cx).with_layout(canvas::layout::DOWN);
+CanvasView::new(doc, canvas::layout::DOWN, cx);
 
-const RADIAL: Layout = Layout { arrange: my_arrange, flow: None };
+let radial = Layout { walk: my_walk, ..Layout::free(my_arrange) };
 ```
 
-A `Layout` answers where nodes go after every change. `layout::MINDMAP` (the default) grows trees right, `BALANCED` splits a root's branches both ways, `DOWN` grows them down, and `FREE` leaves nodes where they are put. A layout with a `flow` grows trees: arrows walk them that way and `backspace` takes a branch. Without one, arrows go to the nearest node and `backspace` takes one node.
+Every canvas names a layout; there is no default. A `Layout` answers where nodes go after every change, and what its edits mean: `reach` (what acting on a node touches), `walk` (where an arrow goes), `link` and `extend` (what a connector makes), `paste_under` and `duplicate_under`, whether a move `pins`, and the `drag` it moves with. `Layout::free` fills them for a canvas where nodes stay put, `Layout::tree` for one whose edges are branches; replace a field for your own.
+
+`layout::MINDMAP` grows trees right, `BALANCED` splits a root's branches both ways, `DOWN` grows them down, and `FREE` leaves nodes where they are put. Under a tree, arrows walk it, `backspace` takes a branch, a paste hangs under the selection, a connector between two nodes is a cross link, and a drop pins. On a free canvas, arrows go to the nearest node, `backspace` takes one node, and a connector makes a node where it is let go.
 
 ## Dragging a node
 
 ```rust
-CanvasView::new(doc, cx).with_drag(canvas::drag::reparent);
+CanvasView::new(doc, layout::FREE, cx).with_drag(canvas::drag::reparent);
 
 fn my_drag(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
     // drag.id, drag.with (the rest of the selection), drag.contents (what the held nodes hold), drag.to(), drag.over, drag.phase (Move…, then one Drop)
 }
 ```
 
-On a move, the handler's `MoveNodes` paint over the document (`editor.painted()`) and the rest are drawn as what the drop would do: a ring on a node an `AddEdge` reaches, the connector it would make, faded connectors a `RemoveEdges` would cut. `editor.canvas()` stays as it was until the drop lands as one batch through the filter, so a refused drop leaves everything where it was. A resize in hand paints the same way. Nodes a layout moves glide there. `drag::pin` (the default) leaves the node where it lands and marks it `"pinned": true`; `drag::reparent` hangs it under the node it is dropped on; `drag::detach` cuts its edges in.
+On a move, the handler's `MoveNodes` paint over the document (`editor.painted()`) and the rest are drawn as what the drop would do: a ring on a node an `AddEdge` reaches, the connector it would make, faded connectors a `RemoveEdges` would cut. `editor.canvas()` stays as it was until the drop lands as one batch through the filter, so a refused drop leaves everything where it was. A resize in hand paints the same way. Nodes a layout moves glide there. A layout brings its own — `drag::pin` for a tree, which leaves the node where it lands and marks it `"pinned": true`, and `drag::moves` for a free canvas, which pins nothing — and `with_drag` replaces it. `drag::reparent` hangs the node under the one it is dropped on; `drag::detach` cuts its edges in.
 
 ## Selection, undo and the clipboard
 
@@ -101,6 +103,22 @@ Click an edge to pick it: `backspace` removes it, and a double-click or `f2` edi
 
 `tab` adds a child (under the first root when nothing is selected), `enter` a sibling, `backspace` removes, `f2` or a double-click edits, arrows move the selection, `shift`-arrows nudge it, `escape` leaves a node. A double-click on nothing adds a node there. `cmd-=`, `cmd--` and `cmd-0` zoom, `shift-1` fits and `shift-2` zooms to the selection; a pinch or a `cmd`-wheel zooms at the pointer, and a drag, a middle-button drag or a wheel pans.
 
+## What a node lets you do
+
+```rust
+Kind::new(paint).can(Capabilities { draggable: false, ..Capabilities::ALL })
+```
+
+A kind says what its nodes allow — `draggable`, `selectable`, `connectable`, `resizable`, `deletable` — and a node or an edge refuses any of them with a field of its own (`"draggable": false`). `Capabilities::READ_ONLY` allows only selecting. Every command honours it, so a key, a toolbar and a gesture stop at the same place: what cannot be selected is never selected, what cannot be deleted stays behind when the rest goes, what cannot be dragged does not nudge, and a node that cannot connect or resize paints no handle for it. What a container holds moves with it either way. `editor.can(&Item::Node(id), Capability::Draggable)` asks.
+
+## Gestures
+
+```rust
+CanvasView::new(doc, layout, cx).with_tools(my_tools());  // tool::defaults() unless you say
+```
+
+Each gesture is a `Tool`. The view says what a press landed on — a node, an edge, a handle, or nothing — and the first tool to take it holds the pointer until it comes up. `tool::defaults()` are `Connect`, `Resize`, `PickEdge`, `Marquee`, `Create`, `Select` and `Pan`, in that order; drop one, reorder them, or write your own. A tool reads and commands a `CanvasEditor`, says what it draws as a `Sketch` for the view to paint, and asks the view for what only it can do — opening a node, or typing in one — with a `Wish`. `escape` gives up the gesture in hand.
+
 ## The editor
 
 ```rust
@@ -118,10 +136,11 @@ view.update(cx, |view, cx| view.update_editor(cx, |editor| editor.fit())); // a 
 
 ```rust
 impl CanvasView {
-    /// Painted with the kinds `set_kinds` named, else the spec's.
-    pub fn new(canvas: Canvas, cx: &mut Context<Self>) -> Self;
+    /// `layout` places the nodes; the kinds are what `set_kinds` named, else the spec's.
+    pub fn new(canvas: Canvas, layout: Layout, cx: &mut Context<Self>) -> Self;
     pub fn with_kinds(self, kinds: Kinds) -> Self;
-    pub fn with_layout(self, layout: Layout) -> Self;
+    /// Every gesture, in the order a press is offered to them.
+    pub fn with_tools(self, tools: Vec<Box<dyn Tool>>) -> Self;
     pub fn with_drag(self, handler: DragHandler) -> Self;
     pub fn with_snap(self, snap: Snap) -> Self;
     pub fn with_changes(self, filter: impl Fn(&Canvas, Change) -> Option<Change> + 'static) -> Self;
@@ -136,9 +155,8 @@ impl CanvasView {
 }
 
 impl CanvasEditor {
-    pub fn new(canvas: Canvas) -> Self;
+    pub fn new(canvas: Canvas, layout: Layout) -> Self;
     pub fn with_kinds(self, kinds: Kinds) -> Self;
-    pub fn with_layout(self, layout: Layout) -> Self;
     pub fn with_drag(self, handler: DragHandler) -> Self;
     pub fn with_snap(self, snap: Snap) -> Self;
     pub fn with_changes(self, filter: impl Fn(&Canvas, Change) -> Option<Change> + 'static) -> Self;
@@ -157,6 +175,10 @@ impl CanvasEditor {
     pub fn redo(&mut self) -> bool;
     pub fn can_undo(&self) -> bool;
     pub fn can_redo(&self) -> bool;
+    /// Whether an item lets the reader do this; every command honours it.
+    pub fn can(&self, item: &Item, what: Capability) -> bool;
+    pub fn node_can(&self, id: &str, what: Capability) -> bool;
+    pub fn edge_can(&self, id: &str, what: Capability) -> bool;
     /// Nodes, or one edge; the primary last.
     pub fn selection(&self) -> &[Item];
     pub fn selected_nodes(&self) -> Vec<&str>;

@@ -3,7 +3,7 @@
 use canvas::{
     Canvas, CanvasView, Change, Kinds,
     kind::{Field, Kind},
-    mindmap,
+    layout, mindmap,
     model::Node,
 };
 use gpui::{Entity, Focusable, IntoElement, TestAppContext, VisualTestContext, div, px, size};
@@ -40,7 +40,13 @@ fn open(
         canvas::init(cx);
         canvas::set_kinds(cx, Kinds::new().with("card", card()));
     });
-    let window = cx.add_window(|_, cx| view(CanvasView::new(Canvas::parse(DOC).unwrap(), cx)));
+    let window = cx.add_window(|_, cx| {
+        view(CanvasView::new(
+            Canvas::parse(DOC).unwrap(),
+            layout::MINDMAP,
+            cx,
+        ))
+    });
     let root = window.root(cx).unwrap();
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(800.0), px(600.0)));

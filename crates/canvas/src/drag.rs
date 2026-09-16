@@ -52,9 +52,16 @@ impl Drag<'_> {
 
 pub type DragHandler = fn(&Canvas, &Drag) -> Vec<Change>;
 
-/// Stays where it is dropped, its branch following. The default.
+/// Stays where it is dropped, its branch following, and layout leaves it there
+/// from then on. What a tree layout drags with.
 pub fn pin(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
     follow(canvas, drag, drag.phase == Phase::Drop)
+}
+
+/// Stays where it is dropped, pinning nothing — there is no layout to keep it
+/// from. What a free layout drags with.
+pub fn moves(canvas: &Canvas, drag: &Drag) -> Vec<Change> {
+    follow(canvas, drag, false)
 }
 
 /// Dropped on another node, becomes its last child; anywhere else, goes back.

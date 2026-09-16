@@ -1,6 +1,7 @@
 use canvas::{
-    Canvas, Change, change,
+    Canvas, Change, change, contain,
     drag::{self, Drag, DragHandler, Phase},
+    layout,
     mindmap::{self, GAP_X},
     model::{Edge, Node, TEXT},
 };
@@ -125,17 +126,22 @@ fn a_move_answers_what_the_drop_would_do() {
 }
 
 #[test]
-fn node_at_skips_the_held_branch() {
+fn a_drop_skips_what_the_layout_carries() {
     let canvas = tree();
     let inside = |id| {
         let (x, y) = at(&canvas, id);
         (x + 10, y + 10)
     };
-    let held = ["a".to_owned()];
+    // What a tree layout carries with `a`: its branch.
+    let held = (layout::MINDMAP.reach)(&canvas, "a");
     let any = |_: &canvas::model::Node| true;
-    assert_eq!(mindmap::node_at(&canvas, inside("a1"), &held, any), None);
+    let bare = |_: &canvas::model::Node| false;
     assert_eq!(
-        mindmap::node_at(&canvas, inside("b"), &held, any),
+        contain::topmost(&canvas, inside("a1"), &held, any, bare),
+        None
+    );
+    assert_eq!(
+        contain::topmost(&canvas, inside("b"), &held, any, bare),
         Some("b")
     );
 }

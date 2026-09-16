@@ -1,7 +1,7 @@
 //! The canvas inside a host that does `ui::focus` traversal, the way an app
 //! root does.
 
-use canvas::{Canvas, CanvasView};
+use canvas::{Canvas, CanvasView, layout};
 use gpui::{
     AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement, Modifiers,
     MouseButton, ParentElement as _, Render, Styled as _, TestAppContext, VisualTestContext,
@@ -28,7 +28,7 @@ fn open(json: &str, cx: &mut TestAppContext) -> (Entity<CanvasView>, VisualTestC
     });
     let canvas = Canvas::parse(json).unwrap();
     let window = cx.add_window(|_, cx| Host {
-        canvas: cx.new(|cx| CanvasView::new(canvas, cx)),
+        canvas: cx.new(|cx| CanvasView::new(canvas, layout::MINDMAP, cx)),
         focus: cx.focus_handle(),
     });
     let host = window.root(cx).unwrap();

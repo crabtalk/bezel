@@ -100,9 +100,89 @@ impl Field {
     }
 }
 
+/// Something a node or an edge lets the reader do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Capability {
+    Draggable,
+    Selectable,
+    Connectable,
+    Resizable,
+    Deletable,
+}
+
+impl Capability {
+    /// Our own node and edge field. `false` there refuses it, whatever the
+    /// kind allows.
+    pub const fn field(self) -> &'static str {
+        match self {
+            Self::Draggable => "draggable",
+            Self::Selectable => "selectable",
+            Self::Connectable => "connectable",
+            Self::Resizable => "resizable",
+            Self::Deletable => "deletable",
+        }
+    }
+}
+
+/// What a kind lets the reader do: all of it, unless the kind says otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Capabilities {
+    pub draggable: bool,
+    pub selectable: bool,
+    pub connectable: bool,
+    pub resizable: bool,
+    pub deletable: bool,
+}
+
+impl Capabilities {
+    pub const ALL: Self = Self {
+        draggable: true,
+        selectable: true,
+        connectable: true,
+        resizable: true,
+        deletable: true,
+    };
+
+    /// Selectable, and nothing else: a node to be read, not edited.
+    pub const READ_ONLY: Self = Self {
+        draggable: false,
+        selectable: true,
+        connectable: false,
+        resizable: false,
+        deletable: false,
+    };
+
+    pub const fn has(self, what: Capability) -> bool {
+        match what {
+            Capability::Draggable => self.draggable,
+            Capability::Selectable => self.selectable,
+            Capability::Connectable => self.connectable,
+            Capability::Resizable => self.resizable,
+            Capability::Deletable => self.deletable,
+        }
+    }
+}
+
+impl Default for Capabilities {
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
+/// Whether a node's or an edge's own fields allow `what`; one they do not name
+/// allows it.
+pub fn allows(extra: &serde_json::Map<String, serde_json::Value>, what: Capability) -> bool {
+    extra
+        .get(what.field())
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true)
+}
+
 /// What the canvas reads of a kind without a window.
 #[derive(Clone)]
 pub struct Rules {
+    /// What a node of this kind lets the reader do.
+    pub can: Capabilities,
     pub sizing: Sizing,
     /// What `f2` edits, and a double-click too when the kind opens nothing.
     pub edit: Option<Field>,
@@ -130,6 +210,7 @@ impl Kind {
     ) -> Self {
         Self {
             rules: Rules {
+                can: Capabilities::ALL,
                 sizing: Sizing::Fixed,
                 edit: None,
                 child: Rc::new(blank),
@@ -143,6 +224,13 @@ impl Kind {
     /// Hold what sits inside its box, as a group does.
     pub fn holds(mut self) -> Self {
         self.rules.holds = true;
+        self
+    }
+
+    /// What a node of this kind lets the reader do. A node's own field still
+    /// refuses what the kind allows.
+    pub fn can(mut self, can: Capabilities) -> Self {
+        self.rules.can = can;
         self
     }
 
@@ -226,6 +314,12 @@ impl Kinds {
     /// Whether a node's kind holds what sits inside it.
     pub fn holds(&self, node: &Node) -> bool {
         self.get(&node.kind).rules.holds
+    }
+
+    /// Whether `node` lets the reader do `what`: its kind's rules, and its own
+    /// field where it names one.
+    pub fn allows(&self, node: &Node, what: Capability) -> bool {
+        self.get(&node.kind).rules.can.has(what) && allows(&node.extra, what)
     }
 
     /// A node made from nothing, holding `text` when its kind edits one.

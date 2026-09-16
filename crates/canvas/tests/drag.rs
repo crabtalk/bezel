@@ -1,6 +1,6 @@
 //! Dragging a node on a canvas with nothing around it.
 
-use canvas::{Canvas, CanvasView, mindmap};
+use canvas::{Canvas, CanvasView, layout, mindmap};
 use gpui::{
     Modifiers, MouseButton, Pixels, Point, TestAppContext, VisualTestContext, point, px, size,
 };
@@ -34,7 +34,8 @@ fn a_child_drags_and_stays(cx: &mut TestAppContext) {
         editor::init(cx);
         canvas::init(cx);
     });
-    let window = cx.add_window(|_, cx| CanvasView::new(Canvas::parse(TREE).unwrap(), cx));
+    let window =
+        cx.add_window(|_, cx| CanvasView::new(Canvas::parse(TREE).unwrap(), layout::MINDMAP, cx));
     let view = window.root(cx).unwrap();
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(800.0), px(600.0)));

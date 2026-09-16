@@ -56,8 +56,15 @@ fn a_group_carries_what_it_frames() {
 fn a_group_is_no_drop_target() {
     let canvas = framed();
     let target = |n: &Node| n.kind != GROUP;
-    assert_eq!(mindmap::node_at(&canvas, (300, 200), &[], target), None);
-    assert_eq!(mindmap::node_at(&canvas, (50, 50), &[], target), Some("a"));
+    let holds = |n: &Node| n.kind == GROUP;
+    assert_eq!(
+        contain::topmost(&canvas, (300, 200), &[], target, holds),
+        None
+    );
+    assert_eq!(
+        contain::topmost(&canvas, (50, 50), &[], target, holds),
+        Some("a")
+    );
 }
 
 #[test]
@@ -90,7 +97,7 @@ fn dragging_a_group_moves_its_members(cx: &mut TestAppContext) {
         editor::init(cx);
         canvas::init(cx);
     });
-    let window = cx.add_window(|_, cx| CanvasView::new(framed(), cx).with_layout(layout::FREE));
+    let window = cx.add_window(|_, cx| CanvasView::new(framed(), layout::FREE, cx));
     let view = window.root(cx).unwrap();
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(800.0), px(600.0)));

@@ -73,9 +73,7 @@ fn a_drag_on_a_grid_lands_on_it(cx: &mut TestAppContext) {
         guides: false,
     };
     let window = cx.add_window(move |_, cx| {
-        CanvasView::new(Canvas::parse(PAIR).unwrap(), cx)
-            .with_layout(layout::FREE)
-            .with_snap(grid)
+        CanvasView::new(Canvas::parse(PAIR).unwrap(), layout::FREE, cx).with_snap(grid)
     });
     let view = window.root(cx).unwrap();
     let mut cx = VisualTestContext::from_window(window.into(), cx);

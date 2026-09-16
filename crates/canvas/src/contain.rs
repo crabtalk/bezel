@@ -101,6 +101,29 @@ pub fn depths(canvas: &Canvas, holds: impl Fn(&Node) -> bool) -> HashMap<String,
         .collect()
 }
 
+/// The node at `at` that `accept` takes, outside `except`: what a container
+/// holds before the container, and the topmost of those.
+pub fn topmost<'a>(
+    canvas: &'a Canvas,
+    at: (i64, i64),
+    except: &[String],
+    accept: impl Fn(&Node) -> bool,
+    holds: impl Fn(&Node) -> bool,
+) -> Option<&'a str> {
+    let depths = depths(canvas, holds);
+    canvas
+        .nodes
+        .iter()
+        .filter(|node| {
+            !except.contains(&node.id)
+                && accept(node)
+                && (node.x..node.x + node.width).contains(&at.0)
+                && (node.y..node.y + node.height).contains(&at.1)
+        })
+        .max_by_key(|node| depths.get(&node.id).copied().unwrap_or(0))
+        .map(|node| node.id.as_str())
+}
+
 /// `id` naming `container` as what holds it, or naming nothing.
 pub fn hold(canvas: &Canvas, id: &str, container: Option<&str>) -> Option<Change> {
     let mut node = canvas.node(id)?.clone();

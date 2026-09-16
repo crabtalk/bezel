@@ -119,12 +119,15 @@ pub fn children<'a>(canvas: &'a Canvas, id: &'a str) -> impl Iterator<Item = &'a
         .map(|edge| edge.to_node.as_str())
 }
 
-/// Nodes no branch points at. Groups are frames, not branches.
-pub fn roots(canvas: &Canvas) -> impl Iterator<Item = &Node> {
+/// Nodes no branch points at. A node that `holds` is a frame, not a branch.
+pub fn roots<'a>(
+    canvas: &'a Canvas,
+    holds: impl Fn(&Node) -> bool + 'a,
+) -> impl Iterator<Item = &'a Node> {
     canvas
         .nodes
         .iter()
-        .filter(|node| node.kind != GROUP && parent(canvas, &node.id).is_none())
+        .filter(move |node| !holds(node) && parent(canvas, &node.id).is_none())
 }
 
 pub fn step(canvas: &Canvas, id: &str, toward: Toward) -> Option<String> {
@@ -205,13 +208,19 @@ pub fn layout(canvas: &mut Canvas) {
 /// [`layout`], keeping `held` where it is as if pinned — the node a drag has
 /// in hand.
 pub fn layout_holding(canvas: &mut Canvas, held: Option<&str>) {
-    let moves = arrange(canvas, held, Flow::Right);
+    let moves = arrange(canvas, held, Flow::Right, &|node| node.kind == GROUP);
     change::apply(canvas, &Change::MoveNodes { moves });
 }
 
 /// Where every tree growing in `flow` puts each node, leaving out those
-/// already there. Roots stay; `held` stays as if pinned.
-pub fn arrange(canvas: &Canvas, held: Option<&str>, flow: Flow) -> Vec<(String, (i64, i64))> {
+/// already there. Roots stay; `held` stays as if pinned, and a node that
+/// `holds` is a frame layout leaves alone.
+pub fn arrange(
+    canvas: &Canvas,
+    held: Option<&str>,
+    flow: Flow,
+    holds: &dyn Fn(&Node) -> bool,
+) -> Vec<(String, (i64, i64))> {
     let index = Index::of(canvas);
     let mut seen = HashSet::new();
     let mut pass = Pass {
@@ -224,7 +233,7 @@ pub fn arrange(canvas: &Canvas, held: Option<&str>, flow: Flow) -> Vec<(String, 
         .nodes
         .iter()
         .enumerate()
-        .filter(|(_, node)| node.kind != GROUP && !index.parented.contains(node.id.as_str()));
+        .filter(|(_, node)| !holds(node) && !index.parented.contains(node.id.as_str()));
     for (ix, root) in roots {
         let tree = index.branch(canvas, ix, &mut seen);
         pass.measure(&tree, flow == Flow::Down);
@@ -358,32 +367,6 @@ pub fn detach(canvas: &Canvas, ids: &[String]) -> Option<Change> {
         .map(|edge| edge.id.clone())
         .collect();
     (!cut.is_empty()).then_some(Change::RemoveEdges { ids: cut })
-}
-
-/// The topmost node containing `at` that `target` takes, outside the branches
-/// of `except`. A view refuses frames.
-pub fn node_at<'a>(
-    canvas: &'a Canvas,
-    at: (i64, i64),
-    except: &[String],
-    target: impl Fn(&Node) -> bool,
-) -> Option<&'a str> {
-    let skip: HashSet<String> = except
-        .iter()
-        .filter_map(|id| canvas.index_of(id))
-        .flat_map(|ix| branch_ids(canvas, ix))
-        .collect();
-    canvas
-        .nodes
-        .iter()
-        .rev()
-        .find(|n| {
-            !skip.contains(&n.id)
-                && target(n)
-                && (n.x..n.x + n.width).contains(&at.0)
-                && (n.y..n.y + n.height).contains(&at.1)
-        })
-        .map(|n| n.id.as_str())
 }
 
 /// Every node below `id`, however deep.

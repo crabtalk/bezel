@@ -26,7 +26,7 @@ fn fan(flow: Flow) -> Canvas {
         ],
         ..Canvas::default()
     };
-    let moves = mindmap::arrange(&canvas, None, flow);
+    let moves = mindmap::arrange(&canvas, None, flow, &|_| false);
     change::apply(&mut canvas, &Change::MoveNodes { moves });
     canvas
 }

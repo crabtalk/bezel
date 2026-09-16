@@ -23,8 +23,7 @@ fn open(refuse: bool, cx: &mut TestAppContext) -> (Entity<CanvasView>, VisualTes
     });
     let doc = Canvas::parse(PAIR).unwrap();
     let window = cx.add_window(move |_, cx| {
-        CanvasView::new(doc, cx)
-            .with_layout(layout::FREE)
+        CanvasView::new(doc, layout::FREE, cx)
             .with_changes(move |_, change| (!refuse).then_some(change))
     });
     let view = window.root(cx).unwrap();

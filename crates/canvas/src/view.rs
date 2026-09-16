@@ -14,7 +14,7 @@ use std::{
 use editor::{Chrome as EditorChrome, Editor, EditorEvent};
 use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
-    EventEmitter, FocusHandle, Focusable, Hsla, KeyContext, MouseButton, MouseDownEvent,
+    EventEmitter, FocusHandle, Focusable, Hsla, KeyContext, Modifiers, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
     Subscription, WeakEntity, Window, canvas as painter, div, fill, point, prelude::*, px, size,
 };
@@ -23,15 +23,16 @@ use theme::{TextStyle, Theme};
 use web_time::Instant;
 
 use crate::{
-    change::{self, Change},
+    change::Change,
     contain,
-    drag::{Drag, DragHandler, Phase},
+    drag::DragHandler,
     edit::{CanvasEditor, CanvasEvent},
-    kind::{self, Kinds, Look, PAD, RADIUS, Sizing, color},
+    kind::{self, Capability, Kinds, Look, PAD, RADIUS, Sizing, color},
     layout::{Arrow, Layout},
     mindmap,
     model::{Canvas, Edge, End, Node, Side},
-    snap::{self, Axis, Guide, Snap},
+    snap::{Axis, Snap},
+    tool::{self, Hand, Hit, Part, Pointer, Sketch, Tool, Wish},
 };
 
 /// The key context the canvas binds in.
@@ -51,16 +52,12 @@ const WHEEL_ZOOM: f32 = 0.01;
 const ARROW: f32 = 8.0;
 /// How far the selection ring sits outside a node, in screen pixels.
 const RING: f32 = 3.0;
-/// How far a press on a node travels before it is a drag, in screen pixels.
-const DRAG_SLOP: f32 = 3.0;
 /// The accent wash inside a marquee.
 const MARQUEE_WASH: f32 = 0.08;
 /// A picked node's side and corner handles, in screen pixels.
 const HANDLE: f32 = 8.0;
 /// How near a press must come to an edge to pick it, in screen pixels.
 const EDGE_REACH: f32 = 6.0;
-/// The smallest box a corner pulls a node to, in canvas units.
-const MIN_SIZE: (i64, i64) = (60, 32);
 /// The room an edge label is centred in, in canvas units.
 const LABEL: (f32, f32) = (240.0, 32.0);
 /// How much of a connector a drop would cut still shows.
@@ -69,9 +66,6 @@ const CUT: f32 = 0.25;
 const TARGET_WASH: f32 = 0.12;
 /// The most one frame of drift may travel, in seconds, however late it ran.
 const DRIFT_STEP: f32 = 0.05;
-/// How near a dragged box's line comes to another's before it catches, in
-/// screen pixels.
-const GUIDE_REACH: f32 = 6.0;
 /// Below this zoom a node paints as its box, its content unread.
 const FAR_ZOOM: f32 = 0.4;
 /// The closest grid dots come, in screen pixels; a denser grid skips rows.
@@ -170,44 +164,6 @@ pub fn init(cx: &mut App) {
 /// Canvas positions, by node id.
 type Positions = HashMap<String, (f32, f32)>;
 
-/// What a held button is moving.
-enum Grab {
-    Pan(Point<Pixels>),
-    Node {
-        id: String,
-        /// The rest of the selection, carried along.
-        with: Vec<String>,
-        from: Point<Pixels>,
-        origin: (i64, i64),
-        moved: bool,
-        /// The pan at the press, so a drift keeps the node under the pointer.
-        pan: Point<f32>,
-    },
-    /// A box drawn from `from`, in canvas units so a drift carries it, to the
-    /// pointer, selecting what it touches beside `base`.
-    Marquee {
-        from: Point<f32>,
-        to: Point<Pixels>,
-        base: Vec<String>,
-    },
-    /// A connector drawn out of `from`'s `side`, pressed at `start`, now at `to`.
-    Connect {
-        from: String,
-        side: Side,
-        start: Point<Pixels>,
-        to: Point<Pixels>,
-    },
-    /// `id`'s corner pulled from `start`; `grows` pulls a height its content
-    /// may run past.
-    Resize {
-        id: String,
-        start: Point<Pixels>,
-        grows: bool,
-        /// The pan at the press.
-        pan: Point<f32>,
-    },
-}
-
 /// Nodes easing from where they were painted toward where the document puts
 /// them.
 struct Glide {
@@ -228,7 +184,10 @@ pub struct CanvasView {
     editor: CanvasEditor,
     focus: FocusHandle,
     editing: Option<Session>,
-    grab: Option<Grab>,
+    /// Every gesture, in the order a press is offered to them.
+    tools: Vec<Box<dyn Tool>>,
+    /// The tool holding the pointer until it comes up.
+    holding: Option<usize>,
     /// Where each node was painted last frame.
     shown: Positions,
     glide: Option<Glide>,
@@ -257,13 +216,15 @@ fn command<A: 'static>(
 }
 
 impl CanvasView {
-    /// Painted with the kinds [`kind::set_kinds`] named, else the spec's.
-    pub fn new(canvas: Canvas, cx: &mut Context<Self>) -> Self {
+    /// `layout` places the nodes; the kinds are what [`kind::set_kinds`]
+    /// named, else the spec's.
+    pub fn new(canvas: Canvas, layout: Layout, cx: &mut Context<Self>) -> Self {
         Self {
-            editor: CanvasEditor::new(canvas).with_kinds(kind::installed(cx)),
+            editor: CanvasEditor::new(canvas, layout).with_kinds(kind::installed(cx)),
             focus: cx.focus_handle(),
             editing: None,
-            grab: None,
+            tools: tool::defaults(),
+            holding: None,
             shown: HashMap::new(),
             glide: None,
             viewport: Rc::default(),
@@ -278,15 +239,14 @@ impl CanvasView {
         self
     }
 
-    /// Who places the nodes. [`crate::layout::MINDMAP`] unless an app says
-    /// otherwise.
-    pub fn with_layout(mut self, layout: Layout) -> Self {
-        self.editor.set_layout(layout);
+    /// Every gesture the canvas answers, in the order a press is offered to
+    /// them. [`tool::defaults`] unless an app says otherwise.
+    pub fn with_tools(mut self, tools: Vec<Box<dyn Tool>>) -> Self {
+        self.tools = tools;
         self
     }
 
-    /// What dragging a node does. [`crate::drag::pin`] unless an app says
-    /// otherwise.
+    /// What dragging a node does, in place of the layout's own.
     pub fn with_drag(mut self, handler: DragHandler) -> Self {
         self.editor.set_drag(handler);
         self
@@ -382,12 +342,6 @@ impl CanvasView {
         )
     }
 
-    /// The canvas point under a window position.
-    fn to_canvas(&self, position: Point<Pixels>) -> (i64, i64) {
-        let at = self.canvas_point(position);
-        (at.x.round() as i64, at.y.round() as i64)
-    }
-
     fn canvas_point(&self, position: Point<Pixels>) -> Point<f32> {
         let (local, pan, zoom) = (self.local(position), self.editor.pan(), self.editor.zoom());
         point((local.x - pan.x) / zoom, (local.y - pan.y) / zoom)
@@ -395,19 +349,18 @@ impl CanvasView {
 
     /// The node a drag has in hand, once it has moved.
     fn held(&self) -> Option<&str> {
-        match &self.grab {
-            Some(Grab::Node {
-                id, moved: true, ..
-            }) => Some(id),
-            _ => None,
-        }
+        self.holding.and_then(|ix| self.tools[ix].held())
     }
 
-    /// Edit what the editor just added, its typing joining the add.
+    /// What the tool holding the pointer draws.
+    fn sketch(&self) -> Option<Sketch> {
+        self.holding.and_then(|ix| self.tools[ix].sketch())
+    }
+
+    /// Edit what a command just added, its typing joining the add.
     fn edit_added(&mut self, added: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = added {
-            let group = self.editor.last_group();
-            self.edit(id, group, window, cx);
+            self.grant(Wish::EditAdded(id), window, cx);
         }
     }
 
@@ -518,106 +471,136 @@ impl CanvasView {
         }
     }
 
-    fn press_background(
+    /// What a press landed on. A node and its handles answer for themselves,
+    /// as they are painted over the canvas; the background asks the edges.
+    fn hit_at(&self, position: Point<Pixels>) -> Hit {
+        match self.edge_at(position) {
+            Some(id) => Hit::Edge(id),
+            None => Hit::Nothing,
+        }
+    }
+
+    fn pointer(&self, screen: Point<Pixels>, hit: Hit) -> Pointer {
+        Pointer {
+            screen,
+            at: self.canvas_point(screen),
+            button: MouseButton::Left,
+            modifiers: Modifiers::default(),
+            clicks: 1,
+            hit,
+        }
+    }
+
+    /// Offer a press to the tools: the first that takes it holds the pointer
+    /// until it comes up.
+    fn press(
         &mut self,
         event: &MouseDownEvent,
+        hit: Hit,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.stop_editing(window, cx);
-        window.focus(&self.focus, cx);
-        if let Some(id) = self.edge_at(event.position) {
-            self.press_edge(id, event, window, cx);
-            return;
-        }
-        if event.modifiers.shift {
-            self.grab = Some(Grab::Marquee {
-                from: self.canvas_point(event.position),
-                to: event.position,
-                base: self
-                    .editor
-                    .selected_nodes()
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
-            });
-            cx.notify();
-            return;
-        }
-        self.update_editor(cx, |editor| {
-            editor.select(None);
-            editor.select_edge(None);
+        // A press inside what is being typed in belongs to the editor.
+        let typing = self.editing.as_ref().is_some_and(|session| match &hit {
+            Hit::Node(id) => !session.edge && session.id == *id,
+            Hit::Edge(id) => session.edge && session.id == *id,
+            _ => false,
         });
-        if event.click_count >= 2 {
-            // A double-click on nothing makes a root there.
-            let at = self.to_canvas(event.position);
-            let added = self.update_editor(cx, |editor| editor.add_root(at));
-            self.edit_added(added, window, cx);
-            return;
-        }
-        self.press_pan(event, window, cx);
-    }
-
-    fn press_pan(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.grab = Some(Grab::Pan(event.position));
-        // The listeners that follow the grab are painted next frame.
-        cx.notify();
-    }
-
-    fn press_edge(
-        &mut self,
-        id: String,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.editing.as_ref().is_some_and(|s| s.edge && s.id == id) {
+        if typing {
             return;
         }
         self.stop_editing(window, cx);
         window.focus(&self.focus, cx);
-        self.update_editor(cx, |editor| editor.select_edge(Some(id.clone())));
-        if event.click_count >= 2 {
-            self.edit_edge(id, window, cx);
+        let pointer = Pointer {
+            button: event.button,
+            modifiers: event.modifiers,
+            clicks: event.click_count,
+            ..self.pointer(event.position, hit)
+        };
+        self.aim = Some(event.position);
+        let mut wish = Wish::Nothing;
+        self.holding = None;
+        for (ix, tool) in self.tools.iter_mut().enumerate() {
+            let mut hand = Hand::new(&mut self.editor);
+            if tool.press(&pointer, &mut hand) {
+                wish = hand.wish;
+                self.holding = Some(ix);
+                break;
+            }
+        }
+        self.announce(cx);
+        cx.notify();
+        self.grant(wish, window, cx);
+    }
+
+    /// What the tool asked of the view once its commands had landed.
+    fn grant(&mut self, wish: Wish, window: &mut Window, cx: &mut Context<Self>) {
+        match wish {
+            Wish::Nothing => {}
+            Wish::Enter(id) => {
+                let node = self.editor.canvas().node(&id).cloned();
+                let open = node
+                    .as_ref()
+                    .and_then(|node| self.editor.kinds().get(&node.kind).open.clone());
+                match (open, node) {
+                    (Some(open), Some(node)) => open(&node, cx),
+                    _ => self.edit(id, None, window, cx),
+                }
+            }
+            Wish::EditEdge(id) => self.edit_edge(id, window, cx),
+            // Typing into what was added joins the add in one undo step.
+            Wish::EditAdded(id) => {
+                let group = self.editor.last_group();
+                self.edit(id, group, window, cx);
+            }
         }
     }
 
-    fn press_connect(
-        &mut self,
-        from: String,
-        side: Side,
-        event: &MouseDownEvent,
-        cx: &mut Context<Self>,
-    ) {
-        self.grab = Some(Grab::Connect {
-            from,
-            side,
-            start: event.position,
-            to: event.position,
-        });
-        cx.notify();
-    }
-
-    fn press_resize(&mut self, id: String, event: &MouseDownEvent, cx: &mut Context<Self>) {
-        let Some(node) = self.editor.canvas().node(&id) else {
+    /// Hand the held tool where the pointer is now.
+    fn feed(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let Some(ix) = self.holding else {
             return;
         };
-        let grows = self.editor.kinds().get(&node.kind).rules.sizing == Sizing::Grows;
-        self.grab = Some(Grab::Resize {
-            id,
-            start: event.position,
-            grows,
-            pan: self.editor.pan(),
-        });
+        let pointer = self.pointer(position, Hit::Nothing);
+        let mut hand = Hand::new(&mut self.editor);
+        self.tools[ix].drag(&pointer, &mut hand);
+        self.announce(cx);
+        cx.notify();
+    }
+
+    /// The button came up: the held tool lands its gesture.
+    fn lift(&mut self, position: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        (self.aim, self.drifted) = (None, None);
+        let Some(ix) = self.holding.take() else {
+            return;
+        };
+        let pointer = self.pointer(position, Hit::Nothing);
+        let mut hand = Hand::new(&mut self.editor);
+        self.tools[ix].release(&pointer, &mut hand);
+        let wish = hand.wish;
+        self.announce(cx);
+        cx.notify();
+        self.grant(wish, window, cx);
+    }
+
+    /// Give up the gesture in hand, as `escape` does.
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        let Some(ix) = self.holding.take() else {
+            return;
+        };
+        let mut hand = Hand::new(&mut self.editor);
+        self.tools[ix].cancel(&mut hand);
+        self.announce(cx);
         cx.notify();
     }
 
     /// The node a connector being drawn would reach.
-    fn connect_target(&self) -> Option<&str> {
-        let Some(Grab::Connect { from, to, .. }) = &self.grab else {
+    fn connect_target(&self) -> Option<String> {
+        let Some(Sketch::Connector { from, to, .. }) = self.sketch() else {
             return None;
         };
-        self.editor.node_under(self.to_canvas(*to), from)
+        let at = (to.x.round() as i64, to.y.round() as i64);
+        self.editor.node_under(at, &from).map(str::to_owned)
     }
 
     /// The topmost edge passing near a window position.
@@ -634,330 +617,6 @@ impl CanvasView {
             .map(|edge| edge.id.clone())
     }
 
-    fn press_node(
-        &mut self,
-        id: String,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.editing.as_ref().is_some_and(|s| !s.edge && s.id == id) {
-            return;
-        }
-        self.stop_editing(window, cx);
-        window.focus(&self.focus, cx);
-        let selected: Vec<String> = self
-            .editor
-            .selected_nodes()
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-        if event.modifiers.shift || event.modifiers.platform {
-            let mut ids = selected;
-            match ids.iter().position(|s| *s == id) {
-                Some(at) => drop(ids.remove(at)),
-                None => ids.push(id),
-            }
-            self.update_editor(cx, |editor| editor.set_selection(ids));
-            return;
-        }
-        if event.click_count >= 2 {
-            self.update_editor(cx, |editor| editor.select(Some(id.clone())));
-            let node = self.editor.canvas().node(&id).cloned();
-            let open = node
-                .as_ref()
-                .and_then(|node| self.editor.kinds().get(&node.kind).open.clone());
-            match (open, node) {
-                (Some(open), Some(node)) => open(&node, cx),
-                _ => self.edit(id, None, window, cx),
-            }
-            return;
-        }
-        // Pressing one of a selection keeps the rest, to drag them together.
-        let mut with: Vec<String> = selected.iter().filter(|s| **s != id).cloned().collect();
-        if with.len() == selected.len() {
-            with.clear();
-        }
-        let ids = with.iter().cloned().chain([id.clone()]).collect();
-        self.update_editor(cx, |editor| editor.set_selection(ids));
-        if let Some(node) = self.editor.canvas().node(&id) {
-            self.grab = Some(Grab::Node {
-                origin: (node.x, node.y),
-                id,
-                with,
-                from: event.position,
-                moved: false,
-                pan: self.editor.pan(),
-            });
-            cx.notify();
-        }
-    }
-
-    fn drag(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if !event.dragging() {
-            self.release(event.position, window, cx);
-            return;
-        }
-        self.aim = Some(event.position);
-        match &mut self.grab {
-            None => {}
-            Some(Grab::Pan(last)) => {
-                let dx = (event.position.x - last.x).as_f32();
-                let dy = (event.position.y - last.y).as_f32();
-                *last = event.position;
-                self.editor.pan_by(dx, dy);
-                cx.notify();
-            }
-            Some(Grab::Marquee { to, .. }) => {
-                *to = event.position;
-                self.mark(cx);
-            }
-            Some(Grab::Connect { to, .. }) => {
-                *to = event.position;
-                cx.notify();
-            }
-            Some(Grab::Resize { .. }) => self.pull(event.position, cx),
-            Some(Grab::Node { from, moved, .. }) => {
-                let dx = (event.position.x - from.x).as_f32();
-                let dy = (event.position.y - from.y).as_f32();
-                if !*moved && dx.abs().max(dy.abs()) < DRAG_SLOP {
-                    return;
-                }
-                *moved = true;
-                self.preview(event.position, cx);
-            }
-        }
-    }
-
-    /// The held node at `position`: its moves shown over the document, and the
-    /// rest of what the drop would do drawn.
-    fn preview(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        let Some(grab) = &self.grab else {
-            return;
-        };
-        let (changes, guides) = self.gesture(grab, position, Phase::Move);
-        let mut shown = self.editor.canvas().clone();
-        let mut pending = Vec::new();
-        for change in changes {
-            match change {
-                Change::MoveNodes { .. } => drop(change::apply(&mut shown, &change)),
-                other => pending.push(other),
-            }
-        }
-        self.editor.set_preview(shown, pending, guides);
-        cx.notify();
-    }
-
-    /// The held corner pulled to `position`, on the grid when there is one,
-    /// shown over the document.
-    fn pull(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        let Some(Grab::Resize {
-            id,
-            start,
-            grows,
-            pan,
-        }) = &self.grab
-        else {
-            return;
-        };
-        let (z, now, snap) = (self.editor.zoom(), self.editor.pan(), self.editor.snap());
-        let pulled = |to: Pixels, from: Pixels, then: f32, now: f32| {
-            (((to - from).as_f32() - (now - then)) / z).round() as i64
-        };
-        let grid = |value: i64| snap.grid.map_or(value, |g| snap::round_to(value, g));
-        let Some(mut node) = self.editor.canvas().node(id).cloned() else {
-            return;
-        };
-        let width = grid(node.width + pulled(position.x, start.x, pan.x, now.x));
-        let height = grid(node.height + pulled(position.y, start.y, pan.y, now.y));
-        (node.width, node.height) = (width.max(MIN_SIZE.0), height.max(MIN_SIZE.1));
-        // Measuring keeps a growing node as tall as its content.
-        if *grows {
-            node.extra
-                .insert(kind::MIN_HEIGHT.into(), node.height.into());
-        }
-        let mut shown = self.editor.canvas().clone();
-        change::apply(&mut shown, &Change::UpdateNode { node });
-        self.editor.set_preview(shown, Vec::new(), Vec::new());
-        cx.notify();
-    }
-
-    /// The button came up: the preview goes, and the drop is submitted against
-    /// the document as it was.
-    fn release(&mut self, position: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
-        (self.aim, self.drifted) = (None, None);
-        let Some(grab) = self.grab.take() else {
-            return;
-        };
-        match &grab {
-            Grab::Node {
-                moved: true,
-                id,
-                with,
-                ..
-            } => {
-                self.editor.clear_preview();
-                let (mut drop, _) = self.gesture(&grab, position, Phase::Drop);
-                let held: Vec<String> = std::iter::once(id.clone())
-                    .chain(with.iter().cloned())
-                    .collect();
-                // A node carried out of the container it names lets it go.
-                let mut after = self.editor.canvas().clone();
-                change::apply_all(&mut after, &drop);
-                drop.extend(contain::loosen(&after, &held));
-                self.update_editor(cx, |editor| editor.submit(drop));
-            }
-            // A click on one of a selection, without a drag, selects just it.
-            Grab::Node { id, .. } => {
-                let id = id.clone();
-                self.update_editor(cx, |editor| editor.select(Some(id)));
-            }
-            Grab::Marquee { .. } => cx.notify(),
-            Grab::Connect {
-                from,
-                side,
-                start,
-                to,
-            } => {
-                let pulled = (to.x - start.x)
-                    .as_f32()
-                    .abs()
-                    .max((to.y - start.y).as_f32().abs());
-                if pulled >= DRAG_SLOP {
-                    self.connect(from.clone(), *side, *to, window, cx);
-                }
-                cx.notify();
-            }
-            // The pull lands as one change: a resize, or for a growing node the
-            // node with its least height.
-            Grab::Resize { id, grows, .. } => {
-                let now = self.editor.painted().node(id).cloned();
-                self.editor.clear_preview();
-                let Some(now) = now.filter(|now| self.editor.canvas().node(id) != Some(now)) else {
-                    cx.notify();
-                    return;
-                };
-                let change = match grows {
-                    true => Change::UpdateNode { node: now },
-                    false => Change::Resize {
-                        size: (now.width, now.height),
-                        id: now.id,
-                    },
-                };
-                self.update_editor(cx, |editor| editor.submit([change]));
-            }
-            Grab::Pan(_) => {}
-        }
-    }
-
-    /// A connector let go of at `position`.
-    fn connect(
-        &mut self,
-        from: String,
-        side: Side,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let at = self.to_canvas(position);
-        let added = self.update_editor(cx, |editor| editor.connect(&from, side, at));
-        self.edit_added(added, window, cx);
-    }
-
-    /// Select what the marquee touches, beside what was selected before it.
-    fn mark(&mut self, cx: &mut Context<Self>) {
-        let Some(Grab::Marquee { from, to, base }) = &self.grab else {
-            return;
-        };
-        let (a, b) = (
-            (from.x.round() as i64, from.y.round() as i64),
-            self.to_canvas(*to),
-        );
-        let (x0, x1, y0, y1) = (a.0.min(b.0), a.0.max(b.0), a.1.min(b.1), a.1.max(b.1));
-        let touched = self.editor.painted().nodes.iter().filter(|n| {
-            n.x < x1
-                && n.x + n.width > x0
-                && n.y < y1
-                && n.y + n.height > y0
-                && !base.contains(&n.id)
-        });
-        let ids = base
-            .iter()
-            .cloned()
-            .chain(touched.map(|n| n.id.clone()))
-            .collect();
-        self.update_editor(cx, |editor| editor.set_selection(ids));
-    }
-
-    /// The drag handler's answer to the held node at `position`, against the
-    /// document, settled by the snap, and the guides that caught it.
-    fn gesture(
-        &self,
-        grab: &Grab,
-        position: Point<Pixels>,
-        phase: Phase,
-    ) -> (Vec<Change>, Vec<Guide>) {
-        let Grab::Node {
-            id,
-            with,
-            from,
-            origin,
-            pan,
-            ..
-        } = grab
-        else {
-            return (Vec::new(), Vec::new());
-        };
-        let editor = &self.editor;
-        let (zoom, now) = (editor.zoom(), editor.pan());
-        // The pointer's travel, less what the view drifted under it.
-        let travel = |to: Pixels, from: Pixels, then: f32, now: f32| {
-            (((to - from).as_f32() - (now - then)) / zoom).round() as i64
-        };
-        let mut delta = (
-            travel(position.x, from.x, pan.x, now.x),
-            travel(position.y, from.y, pan.y, now.y),
-        );
-        let held: Vec<String> = std::iter::once(id.clone())
-            .chain(with.iter().cloned())
-            .collect();
-        let holds = |node: &Node| editor.kinds().holds(node);
-        let canvas = editor.canvas();
-        let carried = contain::with_contents(canvas, &held, holds);
-        let contents: Vec<String> = carried
-            .iter()
-            .filter(|id| !held.contains(id))
-            .cloned()
-            .collect();
-        let mut guides = Vec::new();
-        if editor.snap() != Snap::default()
-            && let Some(node) = canvas.node(id)
-        {
-            let moving: Vec<String> = carried
-                .iter()
-                .flat_map(|id| mindmap::branch_of(canvas, id))
-                .collect();
-            let to = (origin.0 + delta.0, origin.1 + delta.1);
-            let reach = (GUIDE_REACH / zoom).round() as i64;
-            let size = (node.width, node.height);
-            let (settled, caught) =
-                snap::settle(editor.painted(), &moving, to, size, editor.snap(), reach);
-            delta = (settled.0 - origin.0, settled.1 - origin.1);
-            guides = caught;
-        }
-        let pointer = self.to_canvas(position);
-        let gesture = Drag {
-            id,
-            with,
-            contents: &contents,
-            origin: *origin,
-            delta,
-            over: mindmap::node_at(editor.painted(), pointer, &held, |n| !holds(n)),
-            phase,
-        };
-        ((editor.drag())(canvas, &gesture), guides)
-    }
-
     fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
         let delta = event.delta.pixel_delta(window.line_height());
         if event.modifiers.platform || event.modifiers.control {
@@ -972,6 +631,16 @@ impl CanvasView {
         cx.stop_propagation();
     }
 
+    /// The pointer moved with a button down: the tool holding it hears.
+    fn moved(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if !event.dragging() {
+            self.lift(event.position, window, cx);
+            return;
+        }
+        self.aim = Some(event.position);
+        self.feed(event.position, cx);
+    }
+
     fn pinch(&mut self, event: &PinchEvent, _: &mut Window, cx: &mut Context<Self>) {
         let zoom = self.editor.zoom() * (1.0 + event.delta);
         let anchor = self.local(event.position);
@@ -981,16 +650,8 @@ impl CanvasView {
     /// Pan while a held press rests near the view's edge, carrying what it
     /// holds along.
     fn drift(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let holding = matches!(
-            self.grab,
-            Some(
-                Grab::Node { moved: true, .. }
-                    | Grab::Marquee { .. }
-                    | Grab::Connect { .. }
-                    | Grab::Resize { .. }
-            )
-        );
-        let (Some(aim), Some(bounds), true) = (self.aim, self.viewport.get(), holding) else {
+        let drifting = self.holding.is_some_and(|ix| self.tools[ix].drifts());
+        let (Some(aim), Some(bounds), true) = (self.aim, self.viewport.get(), drifting) else {
             self.drifted = None;
             return;
         };
@@ -1010,12 +671,8 @@ impl CanvasView {
         };
         let step = (now - last).as_secs_f32().min(DRIFT_STEP);
         self.editor.pan_by(velocity.x * step, velocity.y * step);
-        match self.grab {
-            Some(Grab::Node { .. }) => self.preview(aim, cx),
-            Some(Grab::Resize { .. }) => self.pull(aim, cx),
-            Some(Grab::Marquee { .. }) => self.mark(cx),
-            _ => {}
-        }
+        // The pointer has not moved, but the canvas under it has.
+        self.feed(aim, cx);
     }
 
     /// Where each node paints this frame. A node the document moved glides
@@ -1124,8 +781,10 @@ impl CanvasView {
                     matches!(change, Change::AddEdge { edge, .. }
                         if edge.from_node == node.id || edge.to_node == node.id)
                 });
-        // A node picked alone, with nothing held, shows its handles.
-        let handles = selected && draggable && picked.len() == 1 && self.grab.is_none();
+        // A node picked alone, with nothing held, shows the handles it allows.
+        let handles = selected && draggable && picked.len() == 1 && self.holding.is_none();
+        let connects = handles && self.editor.node_can(&node.id, Capability::Connectable);
+        let resizes = handles && self.editor.node_can(&node.id, Capability::Resizable);
         let (id, measured_id) = (node.id.clone(), node.id.clone());
         let (measured, height) = (self.measured.clone(), node.height);
         let ring = |color: Hsla| {
@@ -1190,7 +849,7 @@ impl CanvasView {
                 .child(ring(theme.accent))
             })
             .when(selected && !target, |d| d.child(ring(theme.accent)))
-            .when(handles, |d| {
+            .when(connects || resizes, |d| {
                 let handle = |key: String, x: f32, y: f32| {
                     div()
                         .id(ElementId::Name(key.into()))
@@ -1209,37 +868,49 @@ impl CanvasView {
                     (Side::Left, 0.0, h / 2.0),
                 ];
                 let corner = node.id.clone();
-                d.children(sides.map(|(side, x, y)| {
-                    let from = node.id.clone();
-                    handle(format!("{}-{side:?}", node.id), x, y)
-                        .rounded_full()
-                        .cursor(CursorStyle::Crosshair)
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                                cx.stop_propagation();
-                                this.press_connect(from.clone(), side, event, cx);
-                            }),
-                        )
-                }))
-                .child(
-                    handle(format!("{}-corner", node.id), w, h)
-                        .rounded(px(2.0))
-                        .cursor(CursorStyle::ResizeUpLeftDownRight)
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                                cx.stop_propagation();
-                                this.press_resize(corner.clone(), event, cx);
-                            }),
-                        ),
-                )
+                d.when(connects, |d| {
+                    d.children(sides.map(|(side, x, y)| {
+                        let from = node.id.clone();
+                        handle(format!("{}-{side:?}", node.id), x, y)
+                            .rounded_full()
+                            .cursor(CursorStyle::Crosshair)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                    cx.stop_propagation();
+                                    let hit = Hit::Handle {
+                                        node: from.clone(),
+                                        part: Part::Connect(side),
+                                    };
+                                    this.press(event, hit, window, cx);
+                                }),
+                            )
+                    }))
+                })
+                .when(resizes, |d| {
+                    d.child(
+                        handle(format!("{}-corner", node.id), w, h)
+                            .rounded(px(2.0))
+                            .cursor(CursorStyle::ResizeUpLeftDownRight)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                    cx.stop_propagation();
+                                    let hit = Hit::Handle {
+                                        node: corner.clone(),
+                                        part: Part::Resize,
+                                    };
+                                    this.press(event, hit, window, cx);
+                                }),
+                            ),
+                    )
+                })
             })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     cx.stop_propagation();
-                    this.press_node(id.clone(), event, window, cx);
+                    this.press(event, Hit::Node(id.clone()), window, cx);
                 }),
             );
         Some(element.into_any_element())
@@ -1285,7 +956,7 @@ impl CanvasView {
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
-                            this.press_edge(id.clone(), event, window, cx);
+                            this.press(event, Hit::Edge(id.clone()), window, cx);
                         }),
                     );
                 Some(
@@ -1312,8 +983,8 @@ impl CanvasView {
         view: WeakEntity<Self>,
     ) -> impl IntoElement + use<> {
         let (z, pan) = (self.editor.zoom(), self.editor.pan());
-        let grabbing = self.grab.is_some();
-        let holding = matches!(self.grab, Some(Grab::Node { .. }));
+        let grabbing = self.holding.is_some();
+        let holding = self.held().is_some();
         let pending = &self.editor.pending;
         // Connectors a drop would cut, and the ones it would make.
         let cut: HashSet<&str> = pending
@@ -1359,15 +1030,14 @@ impl CanvasView {
             Some((curve(&nodes, shown, edge)?, theme.accent, 1.0))
         }));
         // The connector being drawn, out to the pointer.
-        if let Some(Grab::Connect { from, side, to, .. }) = &self.grab
-            && let Some(node) = canvas.node(from)
+        if let Some(Sketch::Connector { from, side, to }) = self.sketch()
+            && let Some(node) = canvas.node(&from)
         {
-            let (start, out) = anchor(Rect::of(node, shown), *side);
-            let end = self.canvas_point(*to);
+            let (start, out) = anchor(Rect::of(node, shown), side);
             let loose = Curve {
                 from: start,
                 from_out: out,
-                to: end,
+                to,
                 to_out: point(-out.x, -out.y),
                 from_arrow: false,
                 to_arrow: true,
@@ -1448,14 +1118,14 @@ impl CanvasView {
                     let moves = view.clone();
                     window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
                         if phase == DispatchPhase::Bubble {
-                            let _ = moves.update(cx, |this, cx| this.drag(event, window, cx));
+                            let _ = moves.update(cx, |this, cx| this.moved(event, window, cx));
                         }
                     });
                     window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                         let held = matches!(event.button, MouseButton::Left | MouseButton::Middle);
                         if phase == DispatchPhase::Bubble && held {
-                            let _ = view
-                                .update(cx, |this, cx| this.release(event.position, window, cx));
+                            let _ =
+                                view.update(cx, |this, cx| this.lift(event.position, window, cx));
                         }
                     });
                 }
@@ -1499,7 +1169,7 @@ impl Render for CanvasView {
             let id = &canvas.nodes[*ix].id;
             (carried.contains(id), depths.get(id).copied().unwrap_or(0))
         });
-        let connecting = self.connect_target().map(str::to_owned);
+        let connecting = self.connect_target();
         let picked = self.editor.selected_nodes();
         let nodes: Vec<AnyElement> = order
             .into_iter()
@@ -1509,11 +1179,11 @@ impl Render for CanvasView {
             })
             .collect();
         let labels = self.labels(&theme, &shown, cx);
-        let marquee = match &self.grab {
-            Some(Grab::Marquee { from, to, .. }) => {
+        let marquee = match self.sketch() {
+            Some(Sketch::Box { from, to }) => {
                 let (pan, zoom) = (self.editor.pan(), self.editor.zoom());
                 let a = point(pan.x + from.x * zoom, pan.y + from.y * zoom);
-                let b = self.local(*to);
+                let b = point(pan.x + to.x * zoom, pan.y + to.y * zoom);
                 Some(
                     div()
                         .absolute()
@@ -1553,9 +1223,12 @@ impl Render for CanvasView {
                 }
             }))
             .on_action(command::<keys::SelectAll>(cx, CanvasEditor::select_all))
-            .on_action(command::<keys::Deselect>(cx, |editor| {
-                editor.select(None);
-                editor.select_edge(None);
+            .on_action(cx.listener(|this, _: &keys::Deselect, _, cx| {
+                this.cancel(cx);
+                this.update_editor(cx, |editor| {
+                    editor.select(None);
+                    editor.select_edge(None);
+                });
             }))
             .on_action(command::<keys::Undo>(cx, |editor| {
                 editor.undo();
@@ -1596,8 +1269,19 @@ impl Render for CanvasView {
                 cx,
                 CanvasEditor::zoom_to_selection,
             ))
-            .on_mouse_down(MouseButton::Left, cx.listener(Self::press_background))
-            .on_mouse_down(MouseButton::Middle, cx.listener(Self::press_pan))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    let hit = this.hit_at(event.position);
+                    this.press(event, hit, window, cx);
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Middle,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.press(event, Hit::Nothing, window, cx);
+                }),
+            )
             .on_scroll_wheel(cx.listener(Self::wheel))
             .on_pinch(cx.listener(Self::pinch))
             .child(edges)

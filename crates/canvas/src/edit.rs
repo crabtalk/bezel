@@ -3,7 +3,7 @@
 //! turns keys and the pointer into them and paints what they leave.
 //!
 //! ```ignore
-//! let mut editor = CanvasEditor::new(Canvas::parse(json)?).with_layout(layout::FREE);
+//! let mut editor = CanvasEditor::new(Canvas::parse(json)?, layout::FREE);
 //! editor.select(Some("a".into()));
 //! editor.remove_selected();
 //! assert!(editor.undo());
@@ -18,11 +18,11 @@ use gpui::{Point, Size, point};
 use crate::{
     change::{self, Change},
     clip, contain,
-    drag::{self, DragHandler},
-    kind::{Kinds, PAD},
-    layout::{self, Arrow, Layout},
+    drag::DragHandler,
+    kind::{self, Capability, Kinds, PAD},
+    layout::{Arrow, Layout},
     mindmap,
-    model::{Canvas, Edge, Node, Side},
+    model::{Canvas, Node, Side},
     snap::{Guide, Snap},
 };
 
@@ -77,7 +77,8 @@ pub struct CanvasEditor {
     canvas: Canvas,
     kinds: Kinds,
     layout: Layout,
-    drag: DragHandler,
+    /// What an app said dragging does, in place of the layout's.
+    drag: Option<DragHandler>,
     snap: Snap,
     filter: Option<Filter>,
     /// Nodes, or one edge; the primary is last.
@@ -111,13 +112,14 @@ pub struct CanvasEditor {
 }
 
 impl CanvasEditor {
-    /// The spec's kinds, trees growing right, and a dragged node pinned.
-    pub fn new(canvas: Canvas) -> Self {
+    /// `layout` places the nodes and says what its edits mean; the kinds are
+    /// the spec's until [`Self::with_kinds`].
+    pub fn new(canvas: Canvas, layout: Layout) -> Self {
         Self {
             canvas,
             kinds: Kinds::new(),
-            layout: layout::MINDMAP,
-            drag: drag::pin,
+            layout,
+            drag: None,
             snap: Snap::default(),
             filter: None,
             selection: Vec::new(),
@@ -146,14 +148,9 @@ impl CanvasEditor {
         self
     }
 
-    pub fn with_layout(mut self, layout: Layout) -> Self {
-        self.layout = layout;
-        self
-    }
-
-    /// What dragging a node does.
+    /// What dragging a node does, in place of the layout's own.
     pub fn with_drag(mut self, handler: DragHandler) -> Self {
-        self.drag = handler;
+        self.drag = Some(handler);
         self
     }
 
@@ -325,13 +322,39 @@ impl CanvasEditor {
         })
     }
 
+    /// Whether `item` lets the reader do `what`. Every command honours this,
+    /// so a key, a toolbar and a gesture all stop at the same place.
+    pub fn can(&self, item: &Item, what: Capability) -> bool {
+        match item {
+            Item::Node(id) => self.node_can(id, what),
+            Item::Edge(id) => self.edge_can(id, what),
+        }
+    }
+
+    pub fn node_can(&self, id: &str, what: Capability) -> bool {
+        self.canvas
+            .node(id)
+            .is_some_and(|node| self.kinds.allows(node, what))
+    }
+
+    pub fn edge_can(&self, id: &str, what: Capability) -> bool {
+        self.canvas
+            .edge(id)
+            .is_some_and(|edge| kind::allows(&edge.extra, what))
+    }
+
     /// Select only `id`, or nothing.
     pub fn select(&mut self, id: Option<String>) {
         self.set_selection(id.into_iter().collect());
     }
 
-    /// Select these nodes, the primary last. Any lets the edge go.
+    /// Select these nodes, the primary last, those that may be selected. Any
+    /// lets the edge go.
     pub fn set_selection(&mut self, ids: Vec<String>) {
+        let ids: Vec<String> = ids
+            .into_iter()
+            .filter(|id| self.node_can(id, Capability::Selectable))
+            .collect();
         if !ids.is_empty() {
             self.select_edge(None);
         }
@@ -344,6 +367,7 @@ impl CanvasEditor {
 
     /// Select an edge, or none. Selecting one lets the nodes go.
     pub fn select_edge(&mut self, id: Option<String>) {
+        let id = id.filter(|id| self.edge_can(id, Capability::Selectable));
         if id.is_some() {
             self.set_selection(Vec::new());
         }
@@ -407,7 +431,9 @@ impl CanvasEditor {
             nodes: vec![self.kinds.fresh(Some(text.to_owned()))],
             ..Canvas::default()
         });
-        let under = self.layout.flow.and(self.selected().map(str::to_owned));
+        let under = self
+            .selected()
+            .and_then(|id| (self.layout.paste_under)(&self.canvas, id));
         let at = match under.as_deref().and_then(|id| self.canvas.node(id)) {
             Some(parent) => (parent.x + parent.width + mindmap::GAP_X, parent.y),
             None => {
@@ -429,11 +455,7 @@ impl CanvasEditor {
         let Some(((x, y), _)) = clip::bounds(&fragment) else {
             return;
         };
-        let under = self
-            .layout
-            .flow
-            .and_then(|_| mindmap::parent(&self.canvas, &primary))
-            .map(str::to_owned);
+        let under = (self.layout.duplicate_under)(&self.canvas, &primary);
         self.place(&fragment, (x + DUPLICATE, y + DUPLICATE), under.as_deref());
     }
 
@@ -457,11 +479,7 @@ impl CanvasEditor {
     fn reach(&self) -> Vec<String> {
         let mut ids: Vec<String> = Vec::new();
         for id in self.selected_nodes() {
-            let branch = match self.layout.flow {
-                Some(_) => mindmap::branch_of(&self.canvas, id),
-                None => vec![id.to_owned()],
-            };
-            for id in branch {
+            for id in (self.layout.reach)(&self.canvas, id) {
                 if !ids.contains(&id) {
                     ids.push(id);
                 }
@@ -479,25 +497,34 @@ impl CanvasEditor {
     /// selection, each node with its branch under a layout that grows trees.
     pub fn remove_selected(&mut self) {
         if let Some(id) = self.selected_edge().map(str::to_owned) {
-            self.submit([Change::RemoveEdges { ids: vec![id] }]);
+            if self.edge_can(&id, Capability::Deletable) {
+                self.submit([Change::RemoveEdges { ids: vec![id] }]);
+            }
             return;
         }
         let Some(primary) = self.selected().map(str::to_owned) else {
             return;
         };
+        // What will not be deleted stays, and the rest goes.
+        let ids: Vec<String> = self
+            .reach()
+            .into_iter()
+            .filter(|id| self.node_can(id, Capability::Deletable))
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
         let next = mindmap::after_removal(&self.canvas, &primary);
-        if self.submit([Change::RemoveNodes { ids: self.reach() }]) {
+        if self.submit([Change::RemoveNodes { ids }]) {
             self.select(next.filter(|next| self.canvas.node(next).is_some()));
         }
     }
 
-    /// What an arrow does: walk the tree the layout grows, or go to the
-    /// nearest node.
+    /// What an arrow does, the way the layout walks.
     pub fn select_toward(&mut self, arrow: Arrow) {
-        let next = match (self.selected(), self.layout.flow) {
-            (Some(id), Some(flow)) => mindmap::walk(&self.canvas, id, flow, arrow),
-            (Some(id), None) => layout::nearest(&self.canvas, id, arrow).map(str::to_owned),
-            (None, _) => mindmap::roots(&self.canvas).next().map(|n| n.id.clone()),
+        let next = match self.selected() {
+            Some(id) => (self.layout.walk)(&self.canvas, id, arrow),
+            None => self.first_root(),
         };
         if next.is_some() {
             self.reveal = next.clone();
@@ -505,16 +532,21 @@ impl CanvasEditor {
         }
     }
 
-    /// What a `shift`-arrow does: move the selection, pinned under a tree.
+    /// What a `shift`-arrow does: move what may be dragged, pinned under a
+    /// tree. What a container holds goes with it either way.
     pub fn nudge(&mut self, arrow: Arrow) {
-        let ids = self.nodes();
+        let ids: Vec<String> = self
+            .nodes()
+            .into_iter()
+            .filter(|id| self.node_can(id, Capability::Draggable))
+            .collect();
         if ids.is_empty() {
             return;
         }
         let (dx, dy) = arrow.unit();
         let step = self.snap.grid.unwrap_or(NUDGE);
         let ids = self.contents(&ids);
-        let pin = self.layout.flow.is_some();
+        let pin = self.layout.pins;
         let changes = mindmap::carry(&self.canvas, &ids, (dx * step, dy * step), pin);
         self.submit(changes);
     }
@@ -522,11 +554,10 @@ impl CanvasEditor {
     /// What `tab` does: a child of the primary, or of the first root, or a
     /// root of its own. Answers what was added and selected.
     pub fn add_child(&mut self) -> Option<String> {
-        let parent = self.selected().map(str::to_owned).or_else(|| {
-            mindmap::roots(&self.canvas)
-                .next()
-                .map(|root| root.id.clone())
-        });
+        let parent = self
+            .selected()
+            .map(str::to_owned)
+            .or_else(|| self.first_root());
         let changes = match parent {
             Some(parent) => self
                 .template(&parent)
@@ -562,38 +593,21 @@ impl CanvasEditor {
         self.added(Some(vec![root]))
     }
 
-    /// A connector out of `from`'s `side` let go at `at`: onto the node there,
-    /// else to a new node, a child under a tree. Between two nodes under a
-    /// tree, it is a cross link. Answers the node added.
+    /// A connector out of `from`'s `side` let go at `at`, as the layout reads
+    /// it: onto the node there, else a node made there. Answers what it added.
     pub fn connect(&mut self, from: &str, side: Side, at: (i64, i64)) -> Option<String> {
-        let tree = self.layout.flow.is_some();
-        if let Some(to) = self.node_under(at, from).map(str::to_owned) {
-            let mut edge = Edge {
-                from_side: Some(side),
-                ..Edge::new(self.canvas.mint(), from, to)
-            };
-            if tree {
-                edge.extra.insert(mindmap::TREE.into(), false.into());
-            }
-            self.submit([Change::AddEdge { edge, index: None }]);
+        if !self.node_can(from, Capability::Connectable) {
             return None;
         }
-        let mut node = self.template(from)?;
-        let changes = if tree {
-            mindmap::child(&self.canvas, from, node)
-        } else {
-            let [id, edge] = <[String; 2]>::try_from(self.canvas.mint_n(2)).ok()?;
-            node.id = id;
-            (node.x, node.y) = (at.0 - node.width / 2, at.1 - node.height / 2);
-            let edge = Edge {
-                from_side: Some(side),
-                ..Edge::new(edge, from, node.id.as_str())
-            };
-            Some(vec![
-                Change::AddNode { node, index: None },
-                Change::AddEdge { edge, index: None },
-            ])
-        };
+        if let Some(to) = self.node_under(at, from).map(str::to_owned) {
+            if self.node_can(&to, Capability::Connectable) {
+                let changes = (self.layout.link)(&self.canvas, from, side, &to);
+                self.submit(changes);
+            }
+            return None;
+        }
+        let node = self.template(from)?;
+        let changes = (self.layout.extend)(&self.canvas, from, side, at, node);
         self.added(changes)
     }
 
@@ -625,6 +639,14 @@ impl CanvasEditor {
         self.groups
     }
 
+    /// The first node no branch points at, which is what `tab` and an arrow
+    /// reach for when nothing is selected.
+    fn first_root(&self) -> Option<String> {
+        mindmap::roots(&self.canvas, |node| self.kinds.holds(node))
+            .next()
+            .map(|root| root.id.clone())
+    }
+
     /// What `tab` makes under `parent`, from its kind.
     fn template(&self, parent: &str) -> Option<Node> {
         let parent = self.canvas.node(parent)?;
@@ -634,18 +656,13 @@ impl CanvasEditor {
     /// The topmost node at a canvas point, other than `except`: what a
     /// container holds before the container.
     pub(crate) fn node_under(&self, at: (i64, i64), except: &str) -> Option<&str> {
-        let canvas = self.painted();
-        let depths = contain::depths(canvas, |node| self.kinds.holds(node));
-        canvas
-            .nodes
-            .iter()
-            .filter(|n| {
-                n.id != except
-                    && (n.x..n.x + n.width).contains(&at.0)
-                    && (n.y..n.y + n.height).contains(&at.1)
-            })
-            .max_by_key(|n| depths.get(&n.id).copied().unwrap_or(0))
-            .map(|n| n.id.as_str())
+        contain::topmost(
+            self.painted(),
+            at,
+            &[except.to_owned()],
+            |_| true,
+            |node| self.kinds.holds(node),
+        )
     }
 
     pub fn zoom(&self) -> f32 {
@@ -857,13 +874,14 @@ impl CanvasEditor {
         self.stale = true;
     }
 
+    /// What an app said, else the layout's.
     pub fn drag(&self) -> DragHandler {
-        self.drag
+        self.drag.unwrap_or(self.layout.drag)
     }
 
     /// Swap what dragging a node does, from the next press.
     pub fn set_drag(&mut self, handler: DragHandler) {
-        self.drag = handler;
+        self.drag = Some(handler);
     }
 
     pub fn snap(&self) -> Snap {
@@ -940,8 +958,10 @@ impl CanvasEditor {
             changes.push(change);
             self.stale = true;
         }
+        let (arrange, kinds) = (self.layout.arrange, &self.kinds);
+        let holds = |node: &Node| kinds.holds(node);
         if std::mem::take(&mut self.stale) {
-            let moves = (self.layout.arrange)(&self.canvas, held);
+            let moves = arrange(&self.canvas, held, &holds);
             if !moves.is_empty() {
                 let change = Change::MoveNodes { moves };
                 change::apply(&mut self.canvas, &change);
@@ -951,7 +971,7 @@ impl CanvasEditor {
         if std::mem::take(&mut self.preview_stale)
             && let Some(preview) = &mut self.preview
         {
-            let moves = (self.layout.arrange)(preview, held);
+            let moves = arrange(preview, held, &holds);
             change::apply(preview, &Change::MoveNodes { moves });
         }
         if !changes.is_empty() {

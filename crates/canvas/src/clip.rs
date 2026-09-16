@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use crate::{
     change::Change,
     contain, mindmap,
-    model::{Canvas, Edge},
+    model::{self, Canvas, Edge},
 };
 
 /// The nodes `ids` name, in paint order, and the edges between two of them.
@@ -63,7 +63,7 @@ pub fn paste(
         return Vec::new();
     };
     let roots: Vec<&str> = match under {
-        Some(_) => mindmap::roots(fragment)
+        Some(_) => mindmap::roots(fragment, |node| node.kind == model::GROUP)
             .map(|node| node.id.as_str())
             .collect(),
         None => Vec::new(),

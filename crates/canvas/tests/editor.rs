@@ -39,7 +39,7 @@ const PINNED: &str = r#"{
 }"#;
 
 fn free(json: &str) -> CanvasEditor {
-    CanvasEditor::new(Canvas::parse(json).unwrap()).with_layout(layout::FREE)
+    CanvasEditor::new(Canvas::parse(json).unwrap(), layout::FREE)
 }
 
 #[test]
@@ -165,8 +165,8 @@ fn each_editor_makes_with_its_own_kinds() {
     )
     .unwrap();
     for width in [80, 300] {
-        let mut editor =
-            CanvasEditor::new(doc.clone()).with_kinds(Kinds::new().with("card", card(width)));
+        let mut editor = CanvasEditor::new(doc.clone(), layout::MINDMAP)
+            .with_kinds(Kinds::new().with("card", card(width)));
         editor.select(Some("root".into()));
         let made = editor.add_child().expect("tab adds");
         assert_eq!(editor.canvas().node(&made).unwrap().width, width);

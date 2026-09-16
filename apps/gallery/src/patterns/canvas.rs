@@ -219,7 +219,7 @@ impl CanvasDemo {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let canvas = Canvas::parse(SOURCE).expect("the sample is a canvas");
         let view = cx.new(|cx| {
-            CanvasView::new(canvas, cx)
+            CanvasView::new(canvas, layout::MINDMAP, cx)
                 .with_kinds(Kinds::new().with("session", session_kind()))
                 .with_changes(|_, change| match &change {
                     // The page keeps its root.

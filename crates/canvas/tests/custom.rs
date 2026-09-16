@@ -52,11 +52,8 @@ fn open(cx: &mut TestAppContext) -> (Entity<CanvasView>, VisualTestContext) {
         kinds
     });
     let doc = Canvas::parse(DOC).unwrap();
-    let window = cx.add_window(move |_, cx| {
-        CanvasView::new(doc, cx)
-            .with_kinds(kinds)
-            .with_layout(layout::FREE)
-    });
+    let window =
+        cx.add_window(move |_, cx| CanvasView::new(doc, layout::FREE, cx).with_kinds(kinds));
     let view = window.root(cx).unwrap();
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(800.0), px(600.0)));

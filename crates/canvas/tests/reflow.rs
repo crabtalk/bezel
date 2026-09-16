@@ -3,7 +3,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use canvas::{Canvas, CanvasEvent, CanvasView, Change, change};
+use canvas::{Canvas, CanvasEvent, CanvasView, Change, change, layout};
 use gpui::{
     AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
     Subscription, TestAppContext, VisualTestContext, Window, div, px, size,
@@ -48,7 +48,7 @@ fn open(json: &str, cx: &mut TestAppContext) -> (Canvas, Vec<Change>) {
     let window = cx.add_window({
         let log = log.clone();
         move |_, cx| {
-            let canvas = cx.new(|cx| CanvasView::new(canvas, cx));
+            let canvas = cx.new(|cx| CanvasView::new(canvas, layout::MINDMAP, cx));
             let _changes = cx.subscribe(&canvas, move |_, _, event, _| {
                 if let CanvasEvent::Changed(changes) = event {
                     log.borrow_mut().push(changes.clone());
