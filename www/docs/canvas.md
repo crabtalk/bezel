@@ -119,6 +119,32 @@ CanvasView::new(doc, layout, cx).with_tools(my_tools());  // tool::defaults() un
 
 Each gesture is a `Tool`. The view says what a press landed on — a node, an edge, a handle, or nothing — and the first tool to take it holds the pointer until it comes up. `tool::defaults()` are `Connect`, `Resize`, `PickEdge`, `Marquee`, `Create`, `Select` and `Pan`, in that order; drop one, reorder them, or write your own. A tool reads and commands a `CanvasEditor`, says what it draws as a `Sketch` for the view to paint, and asks the view for what only it can do — opening a node, or typing in one — with a `Wish`. `escape` gives up the gesture in hand.
 
+## Edges
+
+```rust
+CanvasView::new(doc, layout, cx).with_edge_kinds(EdgeKinds::new().with("straight", edge::line()))
+```
+
+An edge's `type` names its kind, as a node's does. An `EdgeKind` says where it runs, how thick it paints, how near a press must come to pick it (`reach`), what its label edits (`EdgeField`), what it lets the reader do, and what handles it declares. `edge::curve()` is the spec's and `edge::line()` a straight one; an app's own is a function from `Ends` — the boxes it joins and the sides it leaves — to a `Path` of quadratic segments. The geometry is pure (`canvas::path`), so a press is measured against the same line the paint draws, and a label sits at its middle.
+
+## Handles
+
+```rust
+Kind::new(paint).handles(|_| vec![Handle::connect(Side::Right), Handle::corner()])
+```
+
+A kind declares what a picked node or edge paints, and what dragging each one does. A `Handle` is an id, a `Spot` and a `Role`: a node's spots are `Side { side, at }` and `Corner`, an edge's are `End(Which)` and `Along(t)`; the roles are `Connect`, `Resize` and `Reconnect`. The canvas works out where each lands from the box or the path, so a press finds it without waiting for a frame to be laid out, and a kind that declares none has none. Dragging an edge's end carries it onto another node. A connector remembers the handle it left from in our own `fromHandle`, and the edge leaves exactly where that handle sits — a quarter of the way along a side, if that is what the kind declared. The side it leaves is still written to `fromSide`, so a reader that knows only the spec sees the edge on the right face.
+
+## Tuning and overlays
+
+```rust
+CanvasView::new(doc, layout, cx)
+    .with_options(Options { max_zoom: 8.0, ..Options::default() })
+    .with_overlays(Overlays { ring: Rc::new(my_ring), ..Overlays::new() })
+```
+
+`Options` is what the canvas is tuned by — the zoom's limits and step, the drag threshold, the nudge, how far a duplicate sits, how many undo steps are kept, the smallest box a corner pulls to, the room `fit` leaves, the snap's reach, the drift step — read by the editor and by the tools. `Style` is what the canvas's own paint measures: the ring, handles, arrowheads, an edge label's room, the washes, the zoom a node stops being read at, and the grid's dots. `Overlays` is everything the canvas paints beside the kinds: a node's `ring`, the `drop` wash over one a connector would land on, each `handle`, the `placeholder` a node too far out paints as, the `grid` behind them all, and the `guides` a drag catches on. Each is replaceable; the marquee and the connector belong to the tools that draw them.
+
 ## The editor
 
 ```rust
@@ -139,9 +165,14 @@ impl CanvasView {
     /// `layout` places the nodes; the kinds are what `set_kinds` named, else the spec's.
     pub fn new(canvas: Canvas, layout: Layout, cx: &mut Context<Self>) -> Self;
     pub fn with_kinds(self, kinds: Kinds) -> Self;
+    pub fn with_edge_kinds(self, kinds: EdgeKinds) -> Self;
     /// Every gesture, in the order a press is offered to them.
     pub fn with_tools(self, tools: Vec<Box<dyn Tool>>) -> Self;
     pub fn with_drag(self, handler: DragHandler) -> Self;
+    /// What it is tuned by, what its paint measures, and what a node wears.
+    pub fn with_options(self, options: Options) -> Self;
+    pub fn with_style(self, style: Style) -> Self;
+    pub fn with_overlays(self, overlays: Overlays) -> Self;
     pub fn with_snap(self, snap: Snap) -> Self;
     pub fn with_changes(self, filter: impl Fn(&Canvas, Change) -> Option<Change> + 'static) -> Self;
     pub fn editor(&self) -> &CanvasEditor;
@@ -167,6 +198,11 @@ impl CanvasEditor {
     pub fn set_canvas(&mut self, canvas: Canvas);
     pub fn kinds(&self) -> &Kinds;
     pub fn set_kinds(&mut self, kinds: Kinds);
+    pub fn edge_kinds(&self) -> &EdgeKinds;
+    pub fn set_edge_kinds(&mut self, kinds: EdgeKinds);
+    /// What it is tuned by; the tools read it too.
+    pub fn options(&self) -> Options;
+    pub fn set_options(&mut self, options: Options);
     /// Through the filter, as if the reader made it.
     pub fn submit(&mut self, changes: impl IntoIterator<Item = Change>) -> bool;
     /// Past the filter.
@@ -204,7 +240,7 @@ impl CanvasEditor {
     pub fn add_child(&mut self) -> Option<String>;
     pub fn add_sibling(&mut self) -> Option<String>;
     pub fn add_root(&mut self, at: (i64, i64)) -> Option<String>;
-    pub fn connect(&mut self, from: &str, side: Side, at: (i64, i64)) -> Option<String>;
+    pub fn connect(&mut self, from: &str, handle: &Handle, at: (i64, i64)) -> Option<String>;
     pub fn zoom(&self) -> f32;
     /// Where the canvas origin sits, in pixels from the view's top left.
     pub fn pan(&self) -> Point<f32>;

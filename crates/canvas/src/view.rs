@@ -16,7 +16,7 @@ use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
     EventEmitter, FocusHandle, Focusable, Hsla, KeyContext, Modifiers, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
-    Subscription, WeakEntity, Window, canvas as painter, div, fill, point, prelude::*, px, size,
+    Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px, size,
 };
 use motion::{AppExt as _, LAYOUT};
 use theme::{TextStyle, Theme};
@@ -26,13 +26,17 @@ use crate::{
     change::Change,
     contain,
     drag::DragHandler,
+    edge::{self, EdgeKinds},
     edit::{CanvasEditor, CanvasEvent},
+    handle::{Handle, Role, Which},
     kind::{self, Capability, Kinds, Look, PAD, RADIUS, Sizing, color},
     layout::{Arrow, Layout},
     mindmap,
-    model::{Canvas, Edge, End, Node, Side},
-    snap::{Axis, Snap},
-    tool::{self, Hand, Hit, Part, Pointer, Sketch, Tool, Wish},
+    model::{Canvas, Edge, End, Node},
+    options::{Frame, Mark, Options, Overlays, Style},
+    path::{Ends, Path, Rect},
+    snap::Snap,
+    tool::{self, Hand, Hit, Pointer, Sketch, Tool, Wish},
 };
 
 /// The key context the canvas binds in.
@@ -45,33 +49,6 @@ fn key_context() -> KeyContext {
     context.add(ui::focus::CLAIMS_TAB);
     context
 }
-
-/// Zoom per pixel of a modified wheel.
-const WHEEL_ZOOM: f32 = 0.01;
-/// Arrowhead length, in canvas units.
-const ARROW: f32 = 8.0;
-/// How far the selection ring sits outside a node, in screen pixels.
-const RING: f32 = 3.0;
-/// The accent wash inside a marquee.
-const MARQUEE_WASH: f32 = 0.08;
-/// A picked node's side and corner handles, in screen pixels.
-const HANDLE: f32 = 8.0;
-/// How near a press must come to an edge to pick it, in screen pixels.
-const EDGE_REACH: f32 = 6.0;
-/// The room an edge label is centred in, in canvas units.
-const LABEL: (f32, f32) = (240.0, 32.0);
-/// How much of a connector a drop would cut still shows.
-const CUT: f32 = 0.25;
-/// The accent wash inside a node a drop would land on.
-const TARGET_WASH: f32 = 0.12;
-/// The most one frame of drift may travel, in seconds, however late it ran.
-const DRIFT_STEP: f32 = 0.05;
-/// Below this zoom a node paints as its box, its content unread.
-const FAR_ZOOM: f32 = 0.4;
-/// The closest grid dots come, in screen pixels; a denser grid skips rows.
-const DOT_SPACING: f32 = 12.0;
-/// A grid dot, in screen pixels.
-const DOT: f32 = 1.5;
 
 pub mod keys {
     //! Every action the canvas answers to, and the chords bound to it.
@@ -188,6 +165,8 @@ pub struct CanvasView {
     tools: Vec<Box<dyn Tool>>,
     /// The tool holding the pointer until it comes up.
     holding: Option<usize>,
+    style: Style,
+    overlays: Overlays,
     /// Where each node was painted last frame.
     shown: Positions,
     glide: Option<Glide>,
@@ -225,6 +204,8 @@ impl CanvasView {
             editing: None,
             tools: tool::defaults(),
             holding: None,
+            style: Style::default(),
+            overlays: Overlays::new(),
             shown: HashMap::new(),
             glide: None,
             viewport: Rc::default(),
@@ -236,6 +217,32 @@ impl CanvasView {
 
     pub fn with_kinds(mut self, kinds: Kinds) -> Self {
         self.editor.set_kinds(kinds);
+        self
+    }
+
+    /// What the canvas is tuned by.
+    pub fn with_options(mut self, options: Options) -> Self {
+        self.editor.set_options(options);
+        self
+    }
+
+    /// What its own paint measures.
+    pub fn with_style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// What a node wears: its ring, a drop's wash, its handles, and the box it
+    /// paints as when it is too far out to read.
+    pub fn with_overlays(mut self, overlays: Overlays) -> Self {
+        self.overlays = overlays;
+        self
+    }
+
+    /// What an edge is, by its `type`. [`EdgeKinds::new`] unless an app says
+    /// otherwise.
+    pub fn with_edge_kinds(mut self, kinds: EdgeKinds) -> Self {
+        self.editor.set_edge_kinds(kinds);
         self
     }
 
@@ -418,8 +425,11 @@ impl CanvasView {
         let Some(edge) = self.editor.canvas().edge(&id) else {
             return;
         };
-        let input = self.input(edge.label.as_deref().unwrap_or_default(), cx);
-        let changes = cx.subscribe(&input, |this, input, event, cx| {
+        let Some(field) = self.editor.edge_kinds().get(edge).rules.edit.clone() else {
+            return;
+        };
+        let input = self.input(&(field.read)(edge), cx);
+        let changes = cx.subscribe(&input, move |this, input, event, cx| {
             if *event != EditorEvent::Changed {
                 return;
             }
@@ -432,8 +442,7 @@ impl CanvasView {
             else {
                 return;
             };
-            let label = input.read(cx).source();
-            edge.label = (!label.is_empty()).then_some(label);
+            (field.write)(&mut edge, input.read(cx).source());
             this.update_editor(cx, |editor| editor.submit([Change::UpdateEdge { edge }]));
         });
         window.focus(&input.focus_handle(cx), cx);
@@ -603,24 +612,100 @@ impl CanvasView {
         self.editor.node_under(at, &from).map(str::to_owned)
     }
 
-    /// The topmost edge passing near a window position.
+    /// Where an edge runs, as its kind draws it.
+    fn path_of(
+        &self,
+        nodes: &HashMap<&str, &Node>,
+        shown: &Positions,
+        edge: &Edge,
+    ) -> Option<Path> {
+        let ends = ends_of(nodes, shown, edge, self.editor.kinds())?;
+        Some((self.editor.edge_kinds().get(edge).path)(&ends))
+    }
+
+    /// The handles the picked edge's kind declares, along its path.
+    fn edge_handles(
+        &self,
+        theme: &Theme,
+        shown: &Positions,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let Some(id) = self.editor.selected_edge().map(str::to_owned) else {
+            return Vec::new();
+        };
+        if self.holding.is_some() || !self.editor.edge_can(&id, Capability::Reconnectable) {
+            return Vec::new();
+        }
+        let canvas = self.editor.painted();
+        let nodes = canvas.lookup();
+        let Some(edge) = canvas.edge(&id) else {
+            return Vec::new();
+        };
+        let Some(path) = self.path_of(&nodes, shown, edge) else {
+            return Vec::new();
+        };
+        let (z, pan) = (self.editor.zoom(), self.editor.pan());
+        (self.editor.edge_kinds().get(edge).rules.handles)(edge)
+            .into_iter()
+            .filter(|declared| matches!(declared.role, Role::Reconnect(_)))
+            .filter_map(|declared| {
+                let at = declared.spot.along(&path)?;
+                let (x, y) = (pan.x + at.x * z, pan.y + at.y * z);
+                let owner = id.clone();
+                Some(
+                    div()
+                        .id(ElementId::Name(
+                            format!("edge-handle-{}-{}", id, declared.id).into(),
+                        ))
+                        .absolute()
+                        .left(px(x - self.style.handle / 2.0))
+                        .top(px(y - self.style.handle / 2.0))
+                        .size(px(self.style.handle))
+                        .rounded_full()
+                        .border_1()
+                        .border_color(theme.accent)
+                        .bg(theme.surface_card)
+                        .cursor(CursorStyle::Crosshair)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                cx.stop_propagation();
+                                let hit = Hit::Handle {
+                                    owner: owner.clone(),
+                                    handle: declared.clone(),
+                                };
+                                this.press(event, hit, window, cx);
+                            }),
+                        )
+                        .into_any_element(),
+                )
+            })
+            .collect()
+    }
+
+    /// The topmost edge passing within its kind's reach of a window position.
     fn edge_at(&self, position: Point<Pixels>) -> Option<String> {
         let at = self.canvas_point(position);
-        let reach = EDGE_REACH / self.editor.zoom();
+        let zoom = self.editor.zoom();
         let canvas = self.editor.painted();
         let nodes = canvas.lookup();
         canvas
             .edges
             .iter()
             .rev()
-            .find(|edge| curve(&nodes, &self.shown, edge).is_some_and(|c| c.distance(at) <= reach))
+            .find(|edge| {
+                let reach = self.editor.edge_kinds().get(edge).reach / zoom;
+                self.path_of(&nodes, &self.shown, edge)
+                    .is_some_and(|path| path.distance(at) <= reach)
+            })
             .map(|edge| edge.id.clone())
     }
 
     fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
         let delta = event.delta.pixel_delta(window.line_height());
         if event.modifiers.platform || event.modifiers.control {
-            let zoom = self.editor.zoom() * (delta.y.as_f32() * WHEEL_ZOOM).exp();
+            let zoom =
+                self.editor.zoom() * (delta.y.as_f32() * self.editor.options().wheel_zoom).exp();
             let anchor = self.local(event.position);
             self.update_editor(cx, |editor| editor.zoom_about(zoom, anchor));
         } else {
@@ -669,7 +754,9 @@ impl CanvasView {
         let Some(last) = self.drifted.replace(now) else {
             return;
         };
-        let step = (now - last).as_secs_f32().min(DRIFT_STEP);
+        let step = (now - last)
+            .as_secs_f32()
+            .min(self.editor.options().drift_step);
         self.editor.pan_by(velocity.x * step, velocity.y * step);
         // The pointer has not moved, but the canvas under it has.
         self.feed(aim, cx);
@@ -737,7 +824,6 @@ impl CanvasView {
         at: (f32, f32),
         connecting: Option<&str>,
         picked: &[&str],
-        theme: &Theme,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
@@ -756,15 +842,15 @@ impl CanvasView {
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
         // Far out a node is a plain box, its content too small to read.
-        let far = z < FAR_ZOOM && draggable;
+        let far = z < self.style.far_zoom && draggable;
+        let mark = Mark {
+            width: w,
+            height: h,
+            zoom: z,
+            style: self.style,
+        };
         let content = if far {
-            div()
-                .size_full()
-                .rounded(px(RADIUS * z))
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.surface_card)
-                .into_any_element()
+            (self.overlays.placeholder)(&mark, window, cx)
         } else {
             let look = Look {
                 zoom: z,
@@ -781,23 +867,72 @@ impl CanvasView {
                     matches!(change, Change::AddEdge { edge, .. }
                         if edge.from_node == node.id || edge.to_node == node.id)
                 });
-        // A node picked alone, with nothing held, shows the handles it allows.
-        let handles = selected && draggable && picked.len() == 1 && self.holding.is_none();
-        let connects = handles && self.editor.node_can(&node.id, Capability::Connectable);
-        let resizes = handles && self.editor.node_can(&node.id, Capability::Resizable);
+        // A node picked alone, with nothing held, shows the handles its kind
+        // declares, less what it will not let the reader do.
+        let shows = selected && draggable && picked.len() == 1 && self.holding.is_none();
+        let allowed = |role: Role| match role {
+            Role::Connect => self.editor.node_can(&node.id, Capability::Connectable),
+            Role::Resize => self.editor.node_can(&node.id, Capability::Resizable),
+            Role::Reconnect(_) => false,
+        };
+        let declared: Vec<Handle> = match shows {
+            true => (kind.rules.handles)(node)
+                .into_iter()
+                .filter(|declared| allowed(declared.role))
+                .collect(),
+            false => Vec::new(),
+        };
         let (id, measured_id) = (node.id.clone(), node.id.clone());
         let (measured, height) = (self.measured.clone(), node.height);
-        let ring = |color: Hsla| {
-            div()
-                .absolute()
-                .top(px(-RING))
-                .left(px(-RING))
-                .right(px(-RING))
-                .bottom(px(-RING))
-                .rounded(px(RADIUS * z + RING))
-                .border_2()
-                .border_color(color)
-        };
+        let wash = target.then(|| (self.overlays.drop)(&mark, window, cx));
+        let ring = (selected || target).then(|| (self.overlays.ring)(&mark, window, cx));
+        let handles: Vec<AnyElement> = declared
+            .into_iter()
+            .map(|declared| {
+                let (spot, _) = declared
+                    .spot
+                    .on(Rect::of(node, at))
+                    .unwrap_or((point(0.0, 0.0), point(0.0, 0.0)));
+                let (hx, hy) = ((spot.x - at.0) * z, (spot.y - at.1) * z);
+                let size = self.style.handle;
+                let look = (self.overlays.handle)(
+                    &Mark {
+                        width: size,
+                        height: size,
+                        ..mark
+                    },
+                    window,
+                    cx,
+                );
+                let cursor = match declared.role {
+                    Role::Resize => CursorStyle::ResizeUpLeftDownRight,
+                    _ => CursorStyle::Crosshair,
+                };
+                let owner = node.id.clone();
+                div()
+                    .id(ElementId::Name(
+                        format!("{}-{}", node.id, declared.id).into(),
+                    ))
+                    .absolute()
+                    .left(px(hx - size / 2.0))
+                    .top(px(hy - size / 2.0))
+                    .size(px(size))
+                    .cursor(cursor)
+                    .child(look)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            let hit = Hit::Handle {
+                                owner: owner.clone(),
+                                handle: declared.clone(),
+                            };
+                            this.press(event, hit, window, cx);
+                        }),
+                    )
+                    .into_any_element()
+            })
+            .collect();
 
         // The box is the canvas's; everything painted inside it is the kind's.
         let element = div()
@@ -836,76 +971,9 @@ impl CanvasView {
                     .size_full(),
                 )
             })
-            .when(target, |d| {
-                d.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full()
-                        .rounded(px(RADIUS * z))
-                        .bg(theme.accent.opacity(TARGET_WASH)),
-                )
-                .child(ring(theme.accent))
-            })
-            .when(selected && !target, |d| d.child(ring(theme.accent)))
-            .when(connects || resizes, |d| {
-                let handle = |key: String, x: f32, y: f32| {
-                    div()
-                        .id(ElementId::Name(key.into()))
-                        .absolute()
-                        .left(px(x - HANDLE / 2.0))
-                        .top(px(y - HANDLE / 2.0))
-                        .size(px(HANDLE))
-                        .border_1()
-                        .border_color(theme.accent)
-                        .bg(theme.surface_card)
-                };
-                let sides = [
-                    (Side::Top, w / 2.0, 0.0),
-                    (Side::Right, w, h / 2.0),
-                    (Side::Bottom, w / 2.0, h),
-                    (Side::Left, 0.0, h / 2.0),
-                ];
-                let corner = node.id.clone();
-                d.when(connects, |d| {
-                    d.children(sides.map(|(side, x, y)| {
-                        let from = node.id.clone();
-                        handle(format!("{}-{side:?}", node.id), x, y)
-                            .rounded_full()
-                            .cursor(CursorStyle::Crosshair)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                    cx.stop_propagation();
-                                    let hit = Hit::Handle {
-                                        node: from.clone(),
-                                        part: Part::Connect(side),
-                                    };
-                                    this.press(event, hit, window, cx);
-                                }),
-                            )
-                    }))
-                })
-                .when(resizes, |d| {
-                    d.child(
-                        handle(format!("{}-corner", node.id), w, h)
-                            .rounded(px(2.0))
-                            .cursor(CursorStyle::ResizeUpLeftDownRight)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                    cx.stop_propagation();
-                                    let hit = Hit::Handle {
-                                        node: corner.clone(),
-                                        part: Part::Resize,
-                                    };
-                                    this.press(event, hit, window, cx);
-                                }),
-                            ),
-                    )
-                })
-            })
+            .children(wash)
+            .children(ring)
+            .children(handles)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -926,20 +994,28 @@ impl CanvasView {
             .iter()
             .filter_map(|edge| {
                 let editing = self.editing.as_ref().filter(|s| s.edge && s.id == edge.id);
-                let text = edge.label.as_deref().filter(|label| !label.is_empty());
-                if editing.is_none() && (text.is_none() || z < FAR_ZOOM) {
+                let text = self
+                    .editor
+                    .edge_kinds()
+                    .get(edge)
+                    .rules
+                    .edit
+                    .as_ref()
+                    .map(|field| (field.read)(edge))
+                    .filter(|label| !label.is_empty());
+                if editing.is_none() && (text.is_none() || z < self.style.far_zoom) {
                     return None;
                 }
-                let middle = curve(&nodes, shown, edge)?.middle();
+                let middle = self.path_of(&nodes, shown, edge)?.middle();
                 let (x, y) = (pan.x + middle.x * z, pan.y + middle.y * z);
                 let body = match editing {
                     Some(session) => div()
-                        .min_w(px(LABEL.0 / 2.0 * z))
+                        .min_w(px(self.style.label.0 / 2.0 * z))
                         .child(session.input.clone())
                         .into_any_element(),
                     None => kind::text_style(div(), TextStyle::Callout, z)
                         .text_color(theme.text_muted)
-                        .child(text.unwrap_or_default().to_owned())
+                        .child(text.unwrap_or_default())
                         .into_any_element(),
                 };
                 let picked = self.editor.selected_edge() == Some(edge.id.as_str());
@@ -962,10 +1038,10 @@ impl CanvasView {
                 Some(
                     div()
                         .absolute()
-                        .left(px(x - LABEL.0 * z / 2.0))
-                        .top(px(y - LABEL.1 * z / 2.0))
-                        .w(px(LABEL.0 * z))
-                        .h(px(LABEL.1 * z))
+                        .left(px(x - self.style.label.0 * z / 2.0))
+                        .top(px(y - self.style.label.1 * z / 2.0))
+                        .w(px(self.style.label.0 * z))
+                        .h(px(self.style.label.1 * z))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -1000,17 +1076,18 @@ impl CanvasView {
         let nodes = canvas.lookup();
         let seen = self.editor.visible();
         let picked = self.editor.selected_edge();
-        let mut strokes: Vec<(Curve, Hsla, f32)> = canvas
+        let mut strokes: Vec<(Path, Hsla, f32)> = canvas
             .edges
             .iter()
             .filter_map(|edge| {
-                let curve = curve(&nodes, shown, edge)?;
-                let (x0, y0, x1, y1) = curve.hull();
+                let path = self.path_of(&nodes, shown, edge)?;
+                let (x0, y0, x1, y1) = path.hull();
                 if seen.is_some_and(|(x, y, w, h)| x1 < x || x0 > x + w || y1 < y || y0 > y + h) {
                     return None;
                 }
+                let weight = self.editor.edge_kinds().get(edge).weight;
                 if picked == Some(edge.id.as_str()) {
-                    return Some((curve, theme.accent, 2.0));
+                    return Some((path, theme.accent, weight * 2.0));
                 }
                 let mut paint = edge
                     .color
@@ -1018,35 +1095,43 @@ impl CanvasView {
                     .and_then(|c| color(theme, c))
                     .unwrap_or(theme.border_strong);
                 if cut.contains(edge.id.as_str()) {
-                    paint = paint.opacity(CUT);
+                    paint = paint.opacity(self.style.cut);
                 }
-                Some((curve, paint, 1.0))
+                Some((path, paint, weight))
             })
             .collect();
         strokes.extend(pending.iter().filter_map(|change| {
             let Change::AddEdge { edge, .. } = change else {
                 return None;
             };
-            Some((curve(&nodes, shown, edge)?, theme.accent, 1.0))
+            Some((self.path_of(&nodes, shown, edge)?, theme.accent, 1.0))
         }));
         // The connector being drawn, out to the pointer.
         if let Some(Sketch::Connector { from, side, to }) = self.sketch()
             && let Some(node) = canvas.node(&from)
         {
-            let (start, out) = anchor(Rect::of(node, shown), side);
-            let loose = Curve {
-                from: start,
+            let at = shown
+                .get(&from)
+                .copied()
+                .unwrap_or((node.x as f32, node.y as f32));
+            let (start, out) = Rect::of(node, at).anchor(side);
+            let reach = (to.x - start.x).abs().max((to.y - start.y).abs()) / 2.0;
+            let c0 = point(start.x + out.x * reach, start.y + out.y * reach);
+            let c1 = point(to.x - out.x * reach, to.y - out.y * reach);
+            let mid = point((c0.x + c1.x) / 2.0, (c0.y + c1.y) / 2.0);
+            let loose = Path {
+                segments: vec![(start, c0, mid), (mid, c1, to)],
                 from_out: out,
-                to,
                 to_out: point(-out.x, -out.y),
                 from_arrow: false,
                 to_arrow: true,
             };
             strokes.push((loose, theme.accent, 1.0));
         }
-        let dots = self.editor.snap().grid.map(|grid| grid as f32);
-        let (dot, accent) = (theme.border, theme.accent);
-        let guides = self.editor.guides.clone();
+        let step = self.editor.snap().grid;
+        let (arrow_size, style) = (self.style.arrow, self.style);
+        let (grid, guides) = (self.overlays.grid.clone(), self.overlays.guides.clone());
+        let caught = self.editor.guides.clone();
         let viewport = self.viewport.clone();
         painter(
             move |bounds, window, _| {
@@ -1054,59 +1139,52 @@ impl CanvasView {
                     window.refresh();
                 }
             },
-            move |bounds, _, window, _| {
+            move |bounds, _, window, cx| {
                 let origin = point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32());
                 let screen =
                     |p: Point<f32>| point(origin.x + pan.x + p.x * z, origin.y + pan.y + p.y * z);
-                if let Some(grid) = dots {
-                    let mut step = grid * z;
-                    while step < DOT_SPACING {
-                        step *= 2.0;
-                    }
-                    let (w, h) = (bounds.size.width.as_f32(), bounds.size.height.as_f32());
-                    let mut y = pan.y.rem_euclid(step);
-                    while y < h {
-                        let mut x = pan.x.rem_euclid(step);
-                        while x < w {
-                            let at =
-                                point(px(origin.x + x - DOT / 2.0), px(origin.y + y - DOT / 2.0));
-                            window.paint_quad(fill(Bounds::new(at, size(px(DOT), px(DOT))), dot));
-                            x += step;
+                let frame = Frame {
+                    origin,
+                    pan,
+                    zoom: z,
+                    width: bounds.size.width.as_f32(),
+                    height: bounds.size.height.as_f32(),
+                    style,
+                };
+                if let Some(step) = step {
+                    grid(&frame, step, window, cx);
+                }
+                for (path, paint, weight) in strokes {
+                    let mut stroke = PathBuilder::stroke(px(weight * z.max(1.0)));
+                    for (ix, (a, c, b)) in path.segments.iter().enumerate() {
+                        if ix == 0 {
+                            stroke.move_to(pt(screen(*a)));
                         }
-                        y += step;
+                        stroke.curve_to(pt(screen(*b)), pt(screen(*c)));
+                    }
+                    if let Ok(stroke) = stroke.build() {
+                        window.paint_path(stroke, paint);
+                    }
+                    if path.to_arrow {
+                        arrow(
+                            window,
+                            screen(path.end()),
+                            path.to_out,
+                            arrow_size * z,
+                            paint,
+                        );
+                    }
+                    if path.from_arrow {
+                        arrow(
+                            window,
+                            screen(path.start()),
+                            path.from_out,
+                            arrow_size * z,
+                            paint,
+                        );
                     }
                 }
-                for (curve, paint, weight) in strokes {
-                    let [(p0, c0, mid), (_, c1, p1)] = curve
-                        .segments()
-                        .map(|(a, c, b)| (screen(a), screen(c), screen(b)));
-                    let mut path = PathBuilder::stroke(px(weight * z.max(1.0)));
-                    path.move_to(pt(p0));
-                    path.curve_to(pt(mid), pt(c0));
-                    path.curve_to(pt(p1), pt(c1));
-                    if let Ok(path) = path.build() {
-                        window.paint_path(path, paint);
-                    }
-                    if curve.to_arrow {
-                        arrow(window, p1, curve.to_out, ARROW * z, paint);
-                    }
-                    if curve.from_arrow {
-                        arrow(window, p0, curve.from_out, ARROW * z, paint);
-                    }
-                }
-                for guide in guides {
-                    let (at, from, to) = (guide.at as f32, guide.from as f32, guide.to as f32);
-                    let (a, b) = match guide.axis {
-                        Axis::X => (point(at, from), point(at, to)),
-                        Axis::Y => (point(from, at), point(to, at)),
-                    };
-                    let mut path = PathBuilder::stroke(px(1.0));
-                    path.move_to(pt(screen(a)));
-                    path.line_to(pt(screen(b)));
-                    if let Ok(path) = path.build() {
-                        window.paint_path(path, accent);
-                    }
-                }
+                guides(&frame, &caught, window, cx);
                 // Window-wide, so the hand stays closed wherever the pointer
                 // carries the node.
                 if holding {
@@ -1175,10 +1253,11 @@ impl Render for CanvasView {
             .into_iter()
             .filter_map(|ix| {
                 let at = shown[&canvas.nodes[ix].id];
-                self.paint_node(ix, at, connecting.as_deref(), &picked, &theme, window, cx)
+                self.paint_node(ix, at, connecting.as_deref(), &picked, window, cx)
             })
             .collect();
         let labels = self.labels(&theme, &shown, cx);
+        let edge_handles = self.edge_handles(&theme, &shown, cx);
         let marquee = match self.sketch() {
             Some(Sketch::Box { from, to }) => {
                 let (pan, zoom) = (self.editor.pan(), self.editor.zoom());
@@ -1193,7 +1272,7 @@ impl Render for CanvasView {
                         .h(px((a.y - b.y).abs()))
                         .border_1()
                         .border_color(theme.accent)
-                        .bg(theme.accent.opacity(MARQUEE_WASH)),
+                        .bg(theme.accent.opacity(self.style.marquee_wash)),
                 )
             }
             _ => None,
@@ -1287,143 +1366,48 @@ impl Render for CanvasView {
             .child(edges)
             .children(labels)
             .children(nodes)
+            .children(edge_handles)
             .children(marquee)
     }
 }
 
-/// A node's box where it paints, in canvas units.
-#[derive(Clone, Copy)]
-struct Rect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-}
-
-impl Rect {
-    fn of(node: &Node, shown: &Positions) -> Self {
-        let (x, y) = shown
-            .get(&node.id)
+/// The boxes an edge joins, where they paint. An end that names a handle
+/// leaves the side that handle sits on; one that names none leaves the side
+/// the spec gave it, else the side the boxes face each other on.
+fn ends_of(
+    nodes: &HashMap<&str, &Node>,
+    shown: &Positions,
+    edge: &Edge,
+    kinds: &Kinds,
+) -> Option<Ends> {
+    let rect = |id: &str| {
+        let node = *nodes.get(id)?;
+        let at = shown
+            .get(id)
             .copied()
             .unwrap_or((node.x as f32, node.y as f32));
-        Self {
-            x,
-            y,
-            w: node.width as f32,
-            h: node.height as f32,
-        }
-    }
-}
-
-/// An edge where it paints, in canvas units.
-struct Curve {
-    from: Point<f32>,
-    /// Out of the node, at the anchor.
-    from_out: Point<f32>,
-    to: Point<f32>,
-    to_out: Point<f32>,
-    from_arrow: bool,
-    to_arrow: bool,
-}
-
-impl Curve {
-    /// The two quadratic halves painted: start, control, end.
-    fn segments(&self) -> [(Point<f32>, Point<f32>, Point<f32>); 2] {
-        let (p0, p1) = (self.from, self.to);
-        let reach = (p1.x - p0.x).abs().max((p1.y - p0.y).abs()) / 2.0;
-        let c0 = point(
-            p0.x + self.from_out.x * reach,
-            p0.y + self.from_out.y * reach,
-        );
-        let c1 = point(p1.x + self.to_out.x * reach, p1.y + self.to_out.y * reach);
-        let mid = point((c0.x + c1.x) / 2.0, (c0.y + c1.y) / 2.0);
-        [(p0, c0, mid), (mid, c1, p1)]
-    }
-
-    fn middle(&self) -> Point<f32> {
-        self.segments()[0].2
-    }
-
-    /// A box the curve stays inside: left, top, right, bottom.
-    fn hull(&self) -> (f32, f32, f32, f32) {
-        let points = self.segments().into_iter().flat_map(|(a, c, b)| [a, c, b]);
-        points.fold(
-            (f32::MAX, f32::MAX, f32::MIN, f32::MIN),
-            |(x0, y0, x1, y1), p| (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y)),
-        )
-    }
-
-    /// How far `at` is from the curve.
-    fn distance(&self, at: Point<f32>) -> f32 {
-        const STEPS: usize = 16;
-        let mut nearest = f32::MAX;
-        for (a, c, b) in self.segments() {
-            let along = |t: f32| {
-                let u = 1.0 - t;
-                point(
-                    u * u * a.x + 2.0 * u * t * c.x + t * t * b.x,
-                    u * u * a.y + 2.0 * u * t * c.y + t * t * b.y,
-                )
-            };
-            let mut last = a;
-            for step in 1..=STEPS {
-                let next = along(step as f32 / STEPS as f32);
-                nearest = nearest.min(to_segment(at, last, next));
-                last = next;
-            }
-        }
-        nearest
-    }
-}
-
-/// How far `p` is from the segment `a`–`b`.
-fn to_segment(p: Point<f32>, a: Point<f32>, b: Point<f32>) -> f32 {
-    let (dx, dy) = (b.x - a.x, b.y - a.y);
-    let length = dx * dx + dy * dy;
-    let t = if length == 0.0 {
-        0.0
-    } else {
-        (((p.x - a.x) * dx + (p.y - a.y) * dy) / length).clamp(0.0, 1.0)
+        Some(Rect::of(node, at))
     };
-    ((p.x - a.x - t * dx).powi(2) + (p.y - a.y - t * dy).powi(2)).sqrt()
-}
-
-fn curve(nodes: &HashMap<&str, &Node>, shown: &Positions, edge: &Edge) -> Option<Curve> {
-    let a = Rect::of(nodes.get(edge.from_node.as_str())?, shown);
-    let b = Rect::of(nodes.get(edge.to_node.as_str())?, shown);
-    let (from_side, to_side) = facing(a, b);
-    let (from, from_out) = anchor(a, edge.from_side.unwrap_or(from_side));
-    let (to, to_out) = anchor(b, edge.to_side.unwrap_or(to_side));
-    Some(Curve {
-        from,
-        from_out,
-        to,
-        to_out,
-        from_arrow: edge.from_end == Some(End::Arrow),
-        to_arrow: edge.to_end.unwrap_or(End::Arrow) == End::Arrow,
+    // Where a named handle sits, offset and all — more than a side can say.
+    let anchor = |id: &str, which: Which| {
+        let named = edge::handle_of(edge, which)?;
+        let node = *nodes.get(id)?;
+        (kinds.get(&node.kind).rules.handles)(node)
+            .into_iter()
+            .find(|declared| declared.id == named)?
+            .spot
+            .on(rect(id)?)
+    };
+    Some(Ends {
+        from: rect(&edge.from_node)?,
+        to: rect(&edge.to_node)?,
+        from_anchor: anchor(&edge.from_node, Which::From),
+        to_anchor: anchor(&edge.to_node, Which::To),
+        from_side: edge.from_side,
+        to_side: edge.to_side,
+        from_end: edge.from_end.unwrap_or(End::None),
+        to_end: edge.to_end.unwrap_or(End::Arrow),
     })
-}
-
-/// The sides two nodes face each other on, for an edge that names none.
-fn facing(a: Rect, b: Rect) -> (Side, Side) {
-    if b.x >= a.x + a.w {
-        (Side::Right, Side::Left)
-    } else if b.x + b.w <= a.x {
-        (Side::Left, Side::Right)
-    } else if b.y >= a.y + a.h {
-        (Side::Bottom, Side::Top)
-    } else {
-        (Side::Top, Side::Bottom)
-    }
-}
-
-fn anchor(r: Rect, side: Side) -> (Point<f32>, Point<f32>) {
-    match side {
-        Side::Top => (point(r.x + r.w / 2.0, r.y), point(0.0, -1.0)),
-        Side::Right => (point(r.x + r.w, r.y + r.h / 2.0), point(1.0, 0.0)),
-        Side::Bottom => (point(r.x + r.w / 2.0, r.y + r.h), point(0.0, 1.0)),
-        Side::Left => (point(r.x, r.y + r.h / 2.0), point(-1.0, 0.0)),
-    }
 }
 
 fn arrow(window: &mut Window, tip: Point<f32>, out: Point<f32>, size: f32, color: Hsla) {

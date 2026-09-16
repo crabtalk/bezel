@@ -31,6 +31,7 @@ use markdown::{Doc, Editing, Marks, Typography};
 use theme::{TextStyle, Theme};
 
 use crate::{
+    handle::{self, Handle},
     mindmap::{NODE_HEIGHT, NODE_WIDTH},
     model::{self, Node},
 };
@@ -107,6 +108,8 @@ pub enum Capability {
     Selectable,
     Connectable,
     Resizable,
+    /// An edge's end, carried onto another node.
+    Reconnectable,
     Deletable,
 }
 
@@ -119,6 +122,7 @@ impl Capability {
             Self::Selectable => "selectable",
             Self::Connectable => "connectable",
             Self::Resizable => "resizable",
+            Self::Reconnectable => "reconnectable",
             Self::Deletable => "deletable",
         }
     }
@@ -131,6 +135,7 @@ pub struct Capabilities {
     pub selectable: bool,
     pub connectable: bool,
     pub resizable: bool,
+    pub reconnectable: bool,
     pub deletable: bool,
 }
 
@@ -140,6 +145,7 @@ impl Capabilities {
         selectable: true,
         connectable: true,
         resizable: true,
+        reconnectable: true,
         deletable: true,
     };
 
@@ -149,6 +155,7 @@ impl Capabilities {
         selectable: true,
         connectable: false,
         resizable: false,
+        reconnectable: false,
         deletable: false,
     };
 
@@ -158,6 +165,7 @@ impl Capabilities {
             Capability::Selectable => self.selectable,
             Capability::Connectable => self.connectable,
             Capability::Resizable => self.resizable,
+            Capability::Reconnectable => self.reconnectable,
             Capability::Deletable => self.deletable,
         }
     }
@@ -192,6 +200,9 @@ pub struct Rules {
     /// A node inside its box that names no container is held by it, and it is
     /// never a drop target. See [`crate::contain`].
     pub holds: bool,
+    /// What a node picked alone paints, and what dragging each one does. A
+    /// kind that declares none has none.
+    pub handles: fn(&Node) -> Vec<Handle>,
 }
 
 #[derive(Clone)]
@@ -215,6 +226,7 @@ impl Kind {
                 edit: None,
                 child: Rc::new(blank),
                 holds: false,
+                handles: handle::sides_and_corner,
             },
             render: Rc::new(render),
             open: None,
@@ -236,6 +248,13 @@ impl Kind {
 
     pub fn sizing(mut self, sizing: Sizing) -> Self {
         self.rules.sizing = sizing;
+        self
+    }
+
+    /// What a node of this kind paints when it is picked alone.
+    /// [`handle::bare_node`] paints none.
+    pub fn handles(mut self, handles: fn(&Node) -> Vec<Handle>) -> Self {
+        self.rules.handles = handles;
         self
     }
 

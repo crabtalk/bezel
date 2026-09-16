@@ -68,6 +68,10 @@ pub struct Node {
 #[serde(rename_all = "camelCase")]
 pub struct Edge {
     pub id: String,
+    /// `curve`, or an app's own. The spec names no edge type; ours is written
+    /// back as any field we add is, and another reader ignores it.
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     pub from_node: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_side: Option<Side>,

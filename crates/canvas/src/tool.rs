@@ -16,40 +16,25 @@ use crate::{
     contain,
     drag::{Drag, Phase},
     edit::CanvasEditor,
+    handle::{Handle, Role, Which},
     kind::{self, Capability, Sizing},
     mindmap,
-    model::{Node, Side},
+    model::{Edge, Node, Side},
     snap::{self, Guide, Snap},
 };
 
-/// How far a press travels before it is a drag, in screen pixels.
-const DRAG_SLOP: f32 = 3.0;
-/// How near a dragged box's line comes to another's before it catches, in
-/// screen pixels.
-const GUIDE_REACH: f32 = 6.0;
-/// The smallest box a corner pulls a node to, in canvas units.
-const MIN_SIZE: (i64, i64) = (60, 32);
-
 /// What a press landed on.
-#[derive(Clone, Debug, PartialEq, Eq)]
+// A handle carries where it sits, which is a measure, not a whole number.
+#[derive(Clone, Debug, PartialEq)]
 pub enum Hit {
     Node(String),
     Edge(String),
-    /// A handle a picked node paints.
+    /// A handle a picked node or edge paints, and what it is on.
     Handle {
-        node: String,
-        part: Part,
+        owner: String,
+        handle: Handle,
     },
     Nothing,
-}
-
-/// Which handle was pressed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Part {
-    /// A side dot, which draws a connector.
-    Connect(Side),
-    /// The corner, which resizes.
-    Resize,
 }
 
 /// A pointer event in the window's terms and the canvas's.
@@ -153,6 +138,7 @@ pub fn defaults() -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(Connect::default()),
         Box::new(Resize::default()),
+        Box::new(Reconnect::default()),
         Box::new(PickEdge),
         Box::new(Marquee::default()),
         Box::new(Create),
@@ -390,7 +376,7 @@ impl Tool for Select {
         let travelled = (pointer.at.x - held.from.x)
             .abs()
             .max((pointer.at.y - held.from.y).abs());
-        if !held.moved && travelled * zoom < DRAG_SLOP {
+        if !held.moved && travelled * zoom < hand.editor.options().drag_threshold {
             return;
         }
         held.moved = true;
@@ -445,6 +431,9 @@ pub struct Connect {
 
 struct Drawing {
     from: String,
+    /// The handle it was drawn out of, which says where it leaves and what
+    /// the edge writes down.
+    handle: Handle,
     side: Side,
     start: Point<f32>,
     to: Point<f32>,
@@ -452,19 +441,19 @@ struct Drawing {
 
 impl Tool for Connect {
     fn press(&mut self, pointer: &Pointer, _: &mut Hand) -> bool {
-        let Hit::Handle {
-            node,
-            part: Part::Connect(side),
-        } = &pointer.hit
-        else {
+        let Hit::Handle { owner, handle } = &pointer.hit else {
+            return false;
+        };
+        let Some(side) = handle.side().filter(|_| handle.role == Role::Connect) else {
             return false;
         };
         if !pointer.left() {
             return false;
         }
         self.drawing = Some(Drawing {
-            from: node.clone(),
-            side: *side,
+            from: owner.clone(),
+            handle: handle.clone(),
+            side,
             start: pointer.at,
             to: pointer.at,
         });
@@ -484,11 +473,12 @@ impl Tool for Connect {
         let pulled = (drawing.to.x - drawing.start.x)
             .abs()
             .max((drawing.to.y - drawing.start.y).abs());
-        if pulled * hand.editor.zoom() < DRAG_SLOP {
+        if pulled * hand.editor.zoom() < hand.editor.options().drag_threshold {
             return;
         }
         let at = (pointer.at.x.round() as i64, pointer.at.y.round() as i64);
-        if let Some(added) = hand.editor.connect(&drawing.from, drawing.side, at) {
+        let drawn = hand.editor.connect(&drawing.from, &drawing.handle, at);
+        if let Some(added) = drawn {
             hand.wish = Wish::EditAdded(added);
         }
     }
@@ -529,22 +519,21 @@ struct Pulling {
 
 impl Tool for Resize {
     fn press(&mut self, pointer: &Pointer, hand: &mut Hand) -> bool {
-        let Hit::Handle {
-            node,
-            part: Part::Resize,
-        } = &pointer.hit
-        else {
+        let Hit::Handle { owner, handle } = &pointer.hit else {
             return false;
         };
-        if !pointer.left() || !hand.editor.node_can(node, Capability::Resizable) {
+        if handle.role != Role::Resize {
             return false;
         }
-        let Some(found) = hand.editor.canvas().node(node) else {
+        if !pointer.left() || !hand.editor.node_can(owner, Capability::Resizable) {
+            return false;
+        }
+        let Some(found) = hand.editor.canvas().node(owner) else {
             return false;
         };
         let grows = hand.editor.kinds().get(&found.kind).rules.sizing == Sizing::Grows;
         self.pulling = Some(Pulling {
-            id: node.clone(),
+            id: owner.clone(),
             from: pointer.at,
             size: (found.width, found.height),
             grows,
@@ -564,7 +553,10 @@ impl Tool for Resize {
         let pulled = |to: f32, from: f32| (to - from).round() as i64;
         let width = grid(pulling.size.0 + pulled(pointer.at.x, pulling.from.x));
         let height = grid(pulling.size.1 + pulled(pointer.at.y, pulling.from.y));
-        (node.width, node.height) = (width.max(MIN_SIZE.0), height.max(MIN_SIZE.1));
+        (node.width, node.height) = (
+            width.max(hand.editor.options().min_size.0),
+            height.max(hand.editor.options().min_size.1),
+        );
         // Measuring keeps a growing node as tall as its content.
         if pulling.grows {
             node.extra
@@ -605,6 +597,94 @@ impl Tool for Resize {
     fn drifts(&self) -> bool {
         self.pulling.is_some()
     }
+}
+
+/// Carry an edge's end onto another node.
+#[derive(Default)]
+pub struct Reconnect {
+    carrying: Option<Carrying>,
+}
+
+struct Carrying {
+    edge: String,
+    which: Which,
+}
+
+impl Tool for Reconnect {
+    fn press(&mut self, pointer: &Pointer, hand: &mut Hand) -> bool {
+        let Hit::Handle { owner, handle } = &pointer.hit else {
+            return false;
+        };
+        let Role::Reconnect(which) = handle.role else {
+            return false;
+        };
+        if !pointer.left() || !hand.editor.edge_can(owner, Capability::Reconnectable) {
+            return false;
+        }
+        self.carrying = Some(Carrying {
+            edge: owner.clone(),
+            which,
+        });
+        true
+    }
+
+    /// The end follows the pointer as far as the node under it, which the
+    /// preview shows joined.
+    fn drag(&mut self, pointer: &Pointer, hand: &mut Hand) {
+        let Some(carrying) = &self.carrying else {
+            return;
+        };
+        let Some(edge) = carried(hand.editor, carrying, pointer.round()) else {
+            hand.editor.clear_preview();
+            return;
+        };
+        let mut shown = hand.editor.canvas().clone();
+        change::apply(&mut shown, &Change::UpdateEdge { edge });
+        hand.editor.set_preview(shown, Vec::new(), Vec::new());
+    }
+
+    fn release(&mut self, pointer: &Pointer, hand: &mut Hand) {
+        let Some(carrying) = self.carrying.take() else {
+            return;
+        };
+        hand.editor.clear_preview();
+        if let Some(edge) = carried(hand.editor, &carrying, pointer.round()) {
+            hand.editor.submit([Change::UpdateEdge { edge }]);
+        }
+    }
+
+    fn cancel(&mut self, hand: &mut Hand) {
+        self.carrying = None;
+        hand.editor.clear_preview();
+    }
+
+    fn drifts(&self) -> bool {
+        self.carrying.is_some()
+    }
+}
+
+/// The edge with its end carried onto the node at `at`, if there is one there
+/// that will take it and it is not where the end already is.
+fn carried(editor: &CanvasEditor, carrying: &Carrying, at: (i64, i64)) -> Option<Edge> {
+    let mut edge = editor.canvas().edge(&carrying.edge)?.clone();
+    let onto = editor.node_under(at, "")?.to_owned();
+    if !editor.node_can(&onto, Capability::Connectable) {
+        return None;
+    }
+    let end = match carrying.which {
+        Which::From => &mut edge.from_node,
+        Which::To => &mut edge.to_node,
+    };
+    if *end == onto {
+        return None;
+    }
+    *end = onto;
+    // The side it left is the pointer's to find again.
+    match carrying.which {
+        Which::From => edge.from_side = None,
+        Which::To => edge.to_side = None,
+    }
+    Some(edge)
 }
 
 /// The held node's moves shown over the document, and the rest of what the
@@ -655,7 +735,7 @@ fn gesture(
             .flat_map(|id| mindmap::branch_of(canvas, id))
             .collect();
         let to = (held.origin.0 + delta.0, held.origin.1 + delta.1);
-        let reach = (GUIDE_REACH / editor.zoom()).round() as i64;
+        let reach = (editor.options().snap_reach / editor.zoom()).round() as i64;
         let size = (node.width, node.height);
         let (settled, caught) =
             snap::settle(editor.painted(), &moving, to, size, editor.snap(), reach);

@@ -1,7 +1,7 @@
 //! What a kind and a node let the reader do, honoured by every command.
 
 use canvas::{
-    Canvas, CanvasEditor, CanvasView, Item, Kinds,
+    Canvas, CanvasEditor, CanvasView, Handle, Item, Kinds,
     kind::{Capabilities, Capability, Kind},
     layout,
     layout::Arrow,
@@ -82,8 +82,9 @@ fn what_cannot_connect_draws_nothing() {
     let mut editor = editor();
     let edges = editor.canvas().edges.len();
     // Out of the wall, onto nothing, and onto a node.
-    assert_eq!(editor.connect("wall", Side::Right, (600, 600)), None);
-    assert_eq!(editor.connect("a", Side::Right, (30, 210)), None);
+    let right = Handle::connect(Side::Right);
+    assert_eq!(editor.connect("wall", &right, (600, 600)), None);
+    assert_eq!(editor.connect("a", &right, (30, 210)), None);
     assert_eq!(editor.canvas().edges.len(), edges);
 }
 

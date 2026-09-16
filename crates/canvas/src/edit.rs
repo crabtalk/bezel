@@ -19,29 +19,15 @@ use crate::{
     change::{self, Change},
     clip, contain,
     drag::DragHandler,
-    kind::{self, Capability, Kinds, PAD},
+    edge::EdgeKinds,
+    handle::Handle,
+    kind::{Capability, Kinds, PAD},
     layout::{Arrow, Layout},
     mindmap,
     model::{Canvas, Node, Side},
+    options::Options,
     snap::{Guide, Snap},
 };
-
-const MIN_ZOOM: f32 = 0.25;
-const MAX_ZOOM: f32 = 4.0;
-/// One chord's zoom.
-const ZOOM_STEP: f32 = 1.25;
-/// One `shift`-arrow, in canvas units.
-const NUDGE: i64 = 8;
-/// How far a duplicate sits from what it copies, in canvas units.
-const DUPLICATE: i64 = 24;
-/// Undo steps kept.
-const HISTORY: usize = 200;
-/// The room `fit` leaves around what it shows, in pixels.
-const FIT_MARGIN: f32 = 32.0;
-/// The closest `zoom_to_selection` comes.
-const SELECTION_ZOOM: f32 = 2.0;
-/// How near the view's edge a node brought into view sits, in pixels.
-const REVEAL_MARGIN: f32 = 24.0;
 
 // A change is handed on and dropped, never kept in bulk; boxing its node would
 // only put a `Box::new` in every filter.
@@ -76,10 +62,12 @@ struct Step {
 pub struct CanvasEditor {
     canvas: Canvas,
     kinds: Kinds,
+    edge_kinds: EdgeKinds,
     layout: Layout,
     /// What an app said dragging does, in place of the layout's.
     drag: Option<DragHandler>,
     snap: Snap,
+    options: Options,
     filter: Option<Filter>,
     /// Nodes, or one edge; the primary is last.
     selection: Vec<Item>,
@@ -118,9 +106,11 @@ impl CanvasEditor {
         Self {
             canvas,
             kinds: Kinds::new(),
+            edge_kinds: EdgeKinds::new(),
             layout,
             drag: None,
             snap: Snap::default(),
+            options: Options::default(),
             filter: None,
             selection: Vec::new(),
             undo: Vec::new(),
@@ -148,6 +138,11 @@ impl CanvasEditor {
         self
     }
 
+    pub fn with_edge_kinds(mut self, kinds: EdgeKinds) -> Self {
+        self.set_edge_kinds(kinds);
+        self
+    }
+
     /// What dragging a node does, in place of the layout's own.
     pub fn with_drag(mut self, handler: DragHandler) -> Self {
         self.drag = Some(handler);
@@ -158,6 +153,20 @@ impl CanvasEditor {
     pub fn with_snap(mut self, snap: Snap) -> Self {
         self.snap = snap;
         self
+    }
+
+    /// What the canvas is tuned by. The tools read it too.
+    pub fn with_options(mut self, options: Options) -> Self {
+        self.options = options;
+        self
+    }
+
+    pub fn options(&self) -> Options {
+        self.options
+    }
+
+    pub fn set_options(&mut self, options: Options) {
+        self.options = options;
     }
 
     /// Sees every change about to land through [`Self::submit`], and answers
@@ -187,6 +196,14 @@ impl CanvasEditor {
     pub fn set_kinds(&mut self, kinds: Kinds) {
         self.kinds = kinds;
         self.stale = true;
+    }
+
+    pub fn edge_kinds(&self) -> &EdgeKinds {
+        &self.edge_kinds
+    }
+
+    pub fn set_edge_kinds(&mut self, kinds: EdgeKinds) {
+        self.edge_kinds = kinds;
     }
 
     /// A new document, with no history.
@@ -236,7 +253,7 @@ impl CanvasEditor {
                         changes: undo,
                         group: self.group,
                     });
-                    if self.undo.len() > HISTORY {
+                    if self.undo.len() > self.options.history {
                         self.undo.remove(0);
                     }
                 }
@@ -340,7 +357,7 @@ impl CanvasEditor {
     pub fn edge_can(&self, id: &str, what: Capability) -> bool {
         self.canvas
             .edge(id)
-            .is_some_and(|edge| kind::allows(&edge.extra, what))
+            .is_some_and(|edge| self.edge_kinds.allows(edge, what))
     }
 
     /// Select only `id`, or nothing.
@@ -456,7 +473,14 @@ impl CanvasEditor {
             return;
         };
         let under = (self.layout.duplicate_under)(&self.canvas, &primary);
-        self.place(&fragment, (x + DUPLICATE, y + DUPLICATE), under.as_deref());
+        self.place(
+            &fragment,
+            (
+                x + self.options.duplicate_offset,
+                y + self.options.duplicate_offset,
+            ),
+            under.as_deref(),
+        );
     }
 
     /// A fragment added through the filter, and selected.
@@ -544,7 +568,7 @@ impl CanvasEditor {
             return;
         }
         let (dx, dy) = arrow.unit();
-        let step = self.snap.grid.unwrap_or(NUDGE);
+        let step = self.snap.grid.unwrap_or(self.options.nudge);
         let ids = self.contents(&ids);
         let pin = self.layout.pins;
         let changes = mindmap::carry(&self.canvas, &ids, (dx * step, dy * step), pin);
@@ -595,20 +619,22 @@ impl CanvasEditor {
 
     /// A connector out of `from`'s `side` let go at `at`, as the layout reads
     /// it: onto the node there, else a node made there. Answers what it added.
-    pub fn connect(&mut self, from: &str, side: Side, at: (i64, i64)) -> Option<String> {
+    pub fn connect(&mut self, from: &str, handle: &Handle, at: (i64, i64)) -> Option<String> {
+        // A connector leaves a side; a handle that sits on none draws nothing.
+        let side = handle.side()?;
         if !self.node_can(from, Capability::Connectable) {
             return None;
         }
         if let Some(to) = self.node_under(at, from).map(str::to_owned) {
             if self.node_can(&to, Capability::Connectable) {
                 let changes = (self.layout.link)(&self.canvas, from, side, &to);
-                self.submit(changes);
+                self.submit(named(changes, &handle.id, side));
             }
             return None;
         }
         let node = self.template(from)?;
         let changes = (self.layout.extend)(&self.canvas, from, side, at, node);
-        self.added(changes)
+        self.added(changes.map(|changes| named(changes, &handle.id, side)))
     }
 
     /// A batch that adds a node, as one undo step through the filter; the
@@ -687,18 +713,18 @@ impl CanvasEditor {
 
     /// What `cmd-=` does.
     pub fn zoom_in(&mut self) {
-        self.set_zoom(self.zoom * ZOOM_STEP);
+        self.set_zoom(self.zoom * self.options.zoom_step);
     }
 
     /// What `cmd--` does.
     pub fn zoom_out(&mut self) {
-        self.set_zoom(self.zoom / ZOOM_STEP);
+        self.set_zoom(self.zoom / self.options.zoom_step);
     }
 
     /// Zoom keeping the canvas point under `anchor`, in pixels from the view's
     /// top left, where it is.
     pub fn zoom_about(&mut self, zoom: f32, anchor: Point<f32>) {
-        let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+        let zoom = zoom.clamp(self.options.min_zoom, self.options.max_zoom);
         if zoom == self.zoom {
             return;
         }
@@ -731,7 +757,7 @@ impl CanvasEditor {
             .selected_nodes()
             .into_iter()
             .filter_map(|id| self.canvas.node(id));
-        self.show(extent(nodes), SELECTION_ZOOM);
+        self.show(extent(nodes), self.options.selection_zoom);
     }
 
     /// The part of the canvas in view, in canvas units: left, top, width,
@@ -772,9 +798,9 @@ impl CanvasEditor {
         };
         let (vw, vh) = (viewport.width, viewport.height);
         let (bw, bh) = (((x1 - x0) as f32).max(1.0), ((y1 - y0) as f32).max(1.0));
-        let zoom = ((vw - 2.0 * FIT_MARGIN) / bw)
-            .min((vh - 2.0 * FIT_MARGIN) / bh)
-            .clamp(MIN_ZOOM, most.max(MIN_ZOOM));
+        let zoom = ((vw - 2.0 * self.options.fit_padding) / bw)
+            .min((vh - 2.0 * self.options.fit_padding) / bh)
+            .clamp(self.options.min_zoom, most.max(self.options.min_zoom));
         self.zoom = zoom;
         self.pan = point(
             vw / 2.0 - (x0 as f32 + bw / 2.0) * zoom,
@@ -828,12 +854,12 @@ impl CanvasEditor {
         };
         let z = self.zoom;
         let shift = |start: f32, length: f32, view: f32| {
-            if length + 2.0 * REVEAL_MARGIN > view {
+            if length + 2.0 * self.options.reveal_margin > view {
                 view / 2.0 - (start + length / 2.0)
-            } else if start < REVEAL_MARGIN {
-                REVEAL_MARGIN - start
-            } else if start + length > view - REVEAL_MARGIN {
-                view - REVEAL_MARGIN - (start + length)
+            } else if start < self.options.reveal_margin {
+                self.options.reveal_margin - start
+            } else if start + length > view - self.options.reveal_margin {
+                view - self.options.reveal_margin - (start + length)
             } else {
                 0.0
             }
@@ -986,6 +1012,25 @@ impl CanvasEditor {
     pub(crate) fn take_rewound(&mut self) -> bool {
         std::mem::take(&mut self.rewound)
     }
+}
+
+/// The batch, with the handle a connector left from written onto the edge it
+/// adds — unless it was the plain middle of that side, which the side says.
+fn named(changes: Vec<Change>, handle: &str, side: Side) -> Vec<Change> {
+    if crate::handle::name(side) == handle {
+        return changes;
+    }
+    changes
+        .into_iter()
+        .map(|change| match change {
+            Change::AddEdge { mut edge, index } => {
+                edge.extra
+                    .insert(crate::edge::FROM_HANDLE.into(), handle.into());
+                Change::AddEdge { edge, index }
+            }
+            other => other,
+        })
+        .collect()
 }
 
 /// The box around `nodes`: left, top, right, bottom.
