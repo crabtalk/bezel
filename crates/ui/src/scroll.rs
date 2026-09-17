@@ -56,19 +56,14 @@ use web_time::Instant;
 /// Shortest a thumb may get, however long the document — below this it stops
 /// being something a pointer can catch.
 pub const MIN_THUMB: Pixels = px(25.0);
-/// Space between the overlay track and the viewport edges.
-pub const BAR_INSET: Pixels = px(4.0);
-/// Width of the strip the thumb sits in. Wider than the thumb, which is
-/// centred in it, so there is something for a pointer to catch.
-pub const TRACK: f32 = 10.0;
-
-/// How far the thumb's centre line runs from the edge of the pane it reports
-/// on: the track's own inset, plus half the track.
-///
-/// A bar is a layer and takes no layout, so a pane that wants its content clear
-/// of the thumb reserves the room itself — and a pane that wants the thumb
-/// centred in the clearance it leaves makes that clearance twice this.
-pub const THUMB_CENTRE: f32 = 4.0 + TRACK / 2.0;
+/// Space between the overlay track and the viewport edges, along the axis the
+/// bar runs.
+const INSET: f32 = 4.0;
+const BAR_INSET: Pixels = px(INSET);
+/// Width of the strip the thumb sits in.
+const TRACK: f32 = 10.0;
+/// Room a bar is centred in across its axis when the caller reserves none.
+const CHANNEL: f32 = 2.0 * INSET + TRACK;
 /// Width of the thumb itself, centred in the track.
 const THUMB: f32 = 6.0;
 /// Length of one [`rail`] mark, and its thickness.
@@ -80,7 +75,7 @@ const MARK_GAP: f32 = TRACK;
 /// How far the rail stands off the edge it is pinned to.
 const RAIL_INSET: f32 = 12.0;
 /// What a rail needs beside the content before it will paint at all.
-pub const RAIL_ROOM: f32 = RAIL_INSET + MARK;
+const RAIL_ROOM: f32 = RAIL_INSET + MARK;
 
 // ---------------------------------------------------------------------------
 // Pane — a scroll container whose axis is an argument, not a modifier
@@ -411,6 +406,32 @@ impl ScrollbarState {
     }
 }
 
+/// Where a bar sits in the pane it reports on. [`Overlay`] builds one; the free
+/// bars take the default.
+#[derive(Clone, Copy)]
+struct Place {
+    /// Shortens the track at its far end.
+    end: Pixels,
+    /// Room reserved across the axis, which the track is centred in.
+    channel: Pixels,
+}
+
+impl Default for Place {
+    fn default() -> Self {
+        Self {
+            end: px(0.),
+            channel: px(CHANNEL),
+        }
+    }
+}
+
+impl Place {
+    /// Gap between the near edge of the pane and the near side of the track.
+    fn near(self) -> Pixels {
+        ((self.channel - px(TRACK)) * 0.5).max(px(0.))
+    }
+}
+
 /// The bar: an overlay strip along the right edge of whatever it is laid over,
 /// showing nothing at all when the content fits.
 ///
@@ -430,15 +451,16 @@ pub fn scrollbar(
     handle: &ScrollHandle,
     state: &ScrollbarState,
 ) -> gpui::AnyElement {
-    scrollbar_with_inset(id.into(), handle, state, px(0.))
+    scrollbar_placed(id.into(), handle, state, Place::default())
 }
 
-fn scrollbar_with_inset(
+fn scrollbar_placed(
     id: SharedString,
     handle: &ScrollHandle,
     state: &ScrollbarState,
-    end_inset: Pixels,
+    place: Place,
 ) -> gpui::AnyElement {
+    let end_inset = place.end;
     let viewport = handle.bounds().size.height;
     let max_offset = handle.max_offset().y;
     let Some(range) = thumb_in_track(
@@ -474,7 +496,7 @@ fn scrollbar_with_inset(
         .block_mouse_except_scroll()
         .absolute()
         .top(BAR_INSET)
-        .right(BAR_INSET)
+        .right(place.near())
         .bottom(BAR_INSET + end_inset)
         .w(px(TRACK))
         .flex()
@@ -523,6 +545,12 @@ fn scrollbar_with_inset(
         .into_any_element()
 }
 
+/// Whether `room` beside the content is enough for a rail to paint in. A
+/// hand-rolled rail asks this to land on the same floor as [`rail`].
+pub fn rail_fits(room: Pixels) -> bool {
+    room >= px(RAIL_ROOM)
+}
+
 /// A mark per item, the one at the top of the viewport lit — for a pane whose
 /// content comes in countable pieces (a transcript's turns) rather than as one
 /// continuous document, where how far down you are matters less than which
@@ -536,15 +564,14 @@ fn scrollbar_with_inset(
 /// `.relative()` on whichever box the rail belongs to the edge of.
 ///
 /// `room` is the clear space beside the content, which only the caller can
-/// measure — the rail paints nothing under [`RAIL_ROOM`], because marks over
-/// the text would be worse than no marks at all.
+/// measure; under what [`rail_fits`] accepts the rail paints nothing.
 pub fn rail(
     id: impl Into<SharedString>,
     handle: &ScrollHandle,
     count: usize,
     room: Pixels,
 ) -> gpui::AnyElement {
-    if count == 0 || room < px(RAIL_ROOM) {
+    if count == 0 || !rail_fits(room) {
         return Empty.into_any_element();
     }
     let id = id.into();
@@ -617,16 +644,17 @@ pub fn transient(
     state: &TransientState,
     reduce_motion: bool,
 ) -> gpui::AnyElement {
-    transient_with_inset(id.into(), handle, state, reduce_motion, px(0.))
+    transient_placed(id.into(), handle, state, reduce_motion, Place::default())
 }
 
-fn transient_with_inset(
+fn transient_placed(
     id: SharedString,
     handle: &ScrollHandle,
     state: &TransientState,
     reduce_motion: bool,
-    end_inset: Pixels,
+    place: Place,
 ) -> gpui::AnyElement {
+    let end_inset = place.end;
     let viewport = handle.bounds().size.height;
     let max_offset = handle.max_offset().y;
     let Some(range) = thumb_in_track(
@@ -674,7 +702,7 @@ fn transient_with_inset(
         .block_mouse_except_scroll()
         .absolute()
         .top(BAR_INSET)
-        .right(BAR_INSET)
+        .right(place.near())
         .bottom(BAR_INSET + end_inset)
         .w(px(TRACK))
         .flex()

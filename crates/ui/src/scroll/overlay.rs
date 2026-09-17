@@ -36,7 +36,7 @@ pub struct Overlay {
     handle: ScrollHandle,
     axis: Axis,
     visibility: Option<Visibility>,
-    end_inset: Pixels,
+    place: scroll::Place,
 }
 
 impl Overlay {
@@ -47,13 +47,21 @@ impl Overlay {
             handle: handle.clone(),
             axis,
             visibility: None,
-            end_inset: px(0.),
+            place: scroll::Place::default(),
         }
     }
 
     /// Shorten the track to clear an overlaid footer without resizing content.
     pub fn end_inset(mut self, inset: Pixels) -> Self {
-        self.end_inset = inset.max(px(0.));
+        self.place.end = inset.max(px(0.));
+        self
+    }
+
+    /// Centre the bar in `room` reserved across its axis rather than in the
+    /// default strip at the edge. Pass the padding the pane holds beside its
+    /// content and the thumb runs down the middle of it.
+    pub fn channel(mut self, room: Pixels) -> Self {
+        self.place.channel = room.max(px(0.));
         self
     }
 
@@ -146,21 +154,17 @@ impl RenderOnce for Overlay {
         let always = mode == Visibility::Always || cx.reduce_motion();
         let inner = match self.axis {
             Axis::Vertical if always => {
-                scroll::scrollbar_with_inset(self.id, &self.handle, &held.steady, self.end_inset)
+                scroll::scrollbar_placed(self.id, &self.handle, &held.steady, self.place)
             }
-            Axis::Vertical => scroll::transient_with_inset(
-                self.id,
-                &self.handle,
-                &held.transient,
-                false,
-                self.end_inset,
-            ),
+            Axis::Vertical => {
+                scroll::transient_placed(self.id, &self.handle, &held.transient, false, self.place)
+            }
             Axis::Horizontal => horizontal(
                 self.id,
                 &self.handle,
                 held.horizontal.clone(),
                 always,
-                self.end_inset,
+                self.place,
             ),
         };
         let handle = self.handle;
@@ -194,8 +198,9 @@ fn horizontal(
     handle: &ScrollHandle,
     state: Rc<Cell<Horizontal>>,
     always: bool,
-    end_inset: Pixels,
+    place: scroll::Place,
 ) -> AnyElement {
+    let end_inset = place.end;
     let viewport = handle.bounds().size.width;
     let max = handle.max_offset().x;
     let Some(range) = scroll::thumb_in_track(
@@ -238,7 +243,7 @@ fn horizontal(
         .absolute()
         .left(scroll::BAR_INSET)
         .right(scroll::BAR_INSET + end_inset)
-        .bottom(scroll::BAR_INSET)
+        .bottom(place.near())
         .h(px(scroll::TRACK))
         .flex()
         .items_center()

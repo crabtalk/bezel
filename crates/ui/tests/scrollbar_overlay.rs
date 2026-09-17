@@ -10,6 +10,7 @@ struct Host {
     presses: usize,
     visibility: Option<Scrollbars>,
     end_inset: gpui::Pixels,
+    channel: Option<gpui::Pixels>,
     narrow: bool,
 }
 
@@ -24,6 +25,9 @@ impl Render for Host {
             .on_click(cx.listener(|this, _, _, _| this.presses += 1));
         let mut overlay =
             scrollbars::Overlay::new("test-bar", &self.handle, self.axis).end_inset(self.end_inset);
+        if let Some(channel) = self.channel {
+            overlay = overlay.channel(channel);
+        }
         if let Some(visibility) = self.visibility {
             overlay = overlay.visibility(visibility);
         }
@@ -51,6 +55,7 @@ fn open(axis: Axis, cx: &mut TestAppContext) -> (gpui::Entity<Host>, VisualTestC
         presses: 0,
         visibility: None,
         end_inset: px(0.),
+        channel: None,
         narrow: false,
     });
     let host = window.root(cx).unwrap();
@@ -367,6 +372,46 @@ fn detached_track_clears_footer_and_reaches_scroll_end(cx: &mut TestAppContext) 
         assert_eq!(
             cx.debug_bounds("test-bar-thumb").unwrap().bottom(),
             px(136.)
+        );
+    }
+}
+
+/// The thumb's centre line sits half a channel from the edge, for any channel.
+#[gpui::test]
+fn channel_centres_the_thumb_in_the_room_the_pane_reserves(cx: &mut TestAppContext) {
+    for (axis, channel) in [(Axis::Vertical, px(40.)), (Axis::Horizontal, px(24.))] {
+        let (host, mut cx) = open(axis, cx);
+        let default = cx.debug_bounds("test-bar-thumb").unwrap();
+        cx.update(|window, cx| {
+            host.update(cx, |host, cx| {
+                host.channel = Some(channel);
+                cx.notify();
+            });
+            window.refresh();
+        });
+        cx.run_until_parked();
+        let placed = cx.debug_bounds("test-bar-thumb").unwrap();
+        let pane = cx.update(|_, cx| host.read(cx).handle.bounds());
+        let (far, centre, thickness) = match axis {
+            Axis::Vertical => (
+                pane.right(),
+                placed.center().x,
+                placed.size.width,
+            ),
+            Axis::Horizontal => (
+                pane.bottom(),
+                placed.center().y,
+                placed.size.height,
+            ),
+        };
+        assert_eq!(far - centre, channel * 0.5, "{axis:?}");
+        assert_eq!(
+            thickness,
+            match axis {
+                Axis::Vertical => default.size.width,
+                Axis::Horizontal => default.size.height,
+            },
+            "a wider channel moves the thumb, it does not fatten it: {axis:?}"
         );
     }
 }
