@@ -58,8 +58,17 @@ use web_time::Instant;
 pub const MIN_THUMB: Pixels = px(25.0);
 /// Space between the overlay track and the viewport edges.
 pub const BAR_INSET: Pixels = px(4.0);
-/// Width of the strip the thumb sits in.
-const TRACK: f32 = 10.0;
+/// Width of the strip the thumb sits in. Wider than the thumb, which is
+/// centred in it, so there is something for a pointer to catch.
+pub const TRACK: f32 = 10.0;
+
+/// How far the thumb's centre line runs from the edge of the pane it reports
+/// on: the track's own inset, plus half the track.
+///
+/// A bar is a layer and takes no layout, so a pane that wants its content clear
+/// of the thumb reserves the room itself — and a pane that wants the thumb
+/// centred in the clearance it leaves makes that clearance twice this.
+pub const THUMB_CENTRE: f32 = 4.0 + TRACK / 2.0;
 /// Width of the thumb itself, centred in the track.
 const THUMB: f32 = 6.0;
 /// Length of one [`rail`] mark, and its thickness.
