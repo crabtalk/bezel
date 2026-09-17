@@ -112,22 +112,29 @@ pub trait Status: ThemeExt {
     /// `ScrollHandle` and a `ScrollbarState` from every caller for a box that
     /// is usually four lines long. Wrap it in `div().relative()` with
     /// [`crate::scroll::scrollbar`] over it if a particular one earns the bar.
+    ///
+    /// A wheel over the box is the box's, and never the page's
+    /// ([`crate::scroll::contain_wheel`]): gpui hands one to every pane under
+    /// the pointer, and this one hangs off a row in a page that scrolls too.
     fn step_output(
         &self,
         id: impl Into<gpui::ElementId>,
         text: impl Into<SharedString>,
     ) -> gpui::Stateful<Div> {
         let theme = self.theme();
-        crate::scroll::pane(id, crate::scroll::Axes::Vertical)
-            .max_h(px(STEP_OUTPUT_MAX))
-            .border_t_1()
-            .border_color(theme.border)
-            .px(px(STEP_PAD_X))
-            .py(px(STEP_PAD_Y))
-            .font_family(theme.font_mono.clone())
-            .text_style(TextStyle::Callout)
-            .text_color(theme.text_muted)
-            .child(text.into())
+        crate::scroll::contain_wheel(
+            crate::scroll::pane(id, crate::scroll::Axes::Vertical),
+            crate::scroll::Axes::Vertical,
+        )
+        .max_h(px(STEP_OUTPUT_MAX))
+        .border_t_1()
+        .border_color(theme.border)
+        .px(px(STEP_PAD_X))
+        .py(px(STEP_PAD_Y))
+        .font_family(theme.font_mono.clone())
+        .text_style(TextStyle::Callout)
+        .text_color(theme.text_muted)
+        .child(text.into())
     }
 
     /// The dismissible red error strip (`flex items-start gap-2 rounded-xl

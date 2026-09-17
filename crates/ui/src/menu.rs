@@ -599,6 +599,14 @@ impl<V: 'static> Tree<V> {
     /// One panel's share of the out-click test: it reports the press it did not
     /// contain, and whichever panel completes the tally is the one that calls
     /// it a dismissal. Order between them does not matter, only the count.
+    ///
+    /// The dismissing press is swallowed. It runs in the capture phase, where
+    /// stopping propagation skips the bubble phase entirely — which is where
+    /// gpui records the press a click is later built from, so the row under the
+    /// pointer never fires. A press that lands on something while a menu is
+    /// open is a press asking for the menu to go away, and acting on what it
+    /// landed on runs an operation nobody aimed at (user report, DEV-11). The
+    /// thing under it is still one more press away.
     fn dismissal(&self, cx: &mut Context<V>) -> Listener<MouseDownEvent> {
         let outside = self.outside.clone();
         let panels = self.panels;
@@ -615,6 +623,7 @@ impl<V: 'static> Tree<V> {
                 if count >= panels {
                     outside.set((None, 0));
                     on(view, Hit::Dismiss, window, cx);
+                    cx.stop_propagation();
                 }
             }),
         )

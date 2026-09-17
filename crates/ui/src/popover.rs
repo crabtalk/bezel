@@ -259,14 +259,21 @@ pub fn close_popup<V: 'static, T: 'static>(
 /// load-bearing rather than cosmetic: the exit phase is what keeps the popup
 /// reading as mounted while the trigger's own press handler runs, whichever of
 /// the two the frame happens to dispatch first.
+///
+/// The press is swallowed, as [`crate::menu::card`]'s own dismissal swallows
+/// it: this listener runs in the capture phase, and stopping there skips the
+/// bubble phase where gpui records the press a click is built from. A press
+/// that dismisses an open card is spent on the dismissal, and whatever it
+/// landed on is one more press away.
 pub fn dismiss_on_out<V: 'static, T: 'static, E: gpui::InteractiveElement>(
     el: E,
     popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
     cx: &gpui::Context<V>,
 ) -> E {
-    el.on_mouse_down_out(
-        cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| close_popup(view, cx, popup)),
-    )
+    el.on_mouse_down_out(cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
+        close_popup(view, cx, popup);
+        cx.stop_propagation();
+    }))
 }
 
 /// Wire a trigger to the popup it toggles: press note on the way down, open or

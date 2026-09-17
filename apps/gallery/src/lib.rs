@@ -1056,6 +1056,9 @@ pub struct Gallery {
     stats_shown: bool,
     /// Where the meter has been dragged to, if it has.
     stats_at: Floating,
+    /// What answered the last press on the layer demo — the band over the page,
+    /// or a row under it.
+    layer_answer: Option<SharedString>,
     /// The Floating panel page's own panel, so dragging the demo never moves
     /// the meter — one state per panel is what keeps two of them apart.
     panel_demo: Floating,
@@ -1245,6 +1248,7 @@ impl Gallery {
             stats: cx.new(Stats::new),
             stats_shown: false,
             stats_at: Floating::new(Painter::of(cx)),
+            layer_answer: None,
             panel_demo: Floating::new(Painter::of(cx)),
             stats_spinner: false,
             probe_at: Floating::new(Painter::of(cx)),
@@ -3453,6 +3457,71 @@ impl Gallery {
                                 .child(popover::menu_heading(&theme, "Drag me"))
                                 .surface(&theme, theme.popover_surface),
                         )),
+                )
+                .child(hint(
+                    &theme,
+                    "A layer is the panel without the drag: a band the app places \
+                     over its own page, taking the presses and the wheel that land \
+                     on it. Hitboxes in gpui are paint-order only, so a plain \
+                     absolute box hands both to whatever sits behind it — press the \
+                     band below, then the rows, and watch which one answers.",
+                ))
+                .child(
+                    div()
+                        .relative()
+                        .h(px(160.0))
+                        .w_full()
+                        .rounded(px(Theme::panel_radius()))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.surface)
+                        .overflow_hidden()
+                        .child(
+                            div()
+                                .id("layer-page")
+                                .size_full()
+                                .flex()
+                                .flex_col()
+                                .children((0..6).map(|row| {
+                                    div()
+                                        .id(SharedString::from(format!("layer-row-{row}")))
+                                        .w_full()
+                                        .px(px(12.0))
+                                        .py(px(8.0))
+                                        .text_color(theme.text_muted)
+                                        .hover(|el| el.bg(theme.element_hover))
+                                        .on_click(cx.listener(move |view: &mut Self, _, _, cx| {
+                                            view.layer_answer = Some(format!("row {row}").into());
+                                            cx.notify();
+                                        }))
+                                        .child(SharedString::from(format!("Row {row}")))
+                                })),
+                        )
+                        .child(
+                            floating::layer("layer-band")
+                                .bottom_0()
+                                .left_0()
+                                .right_0()
+                                .h(px(56.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .on_click(cx.listener(|view: &mut Self, _, _, cx| {
+                                    view.layer_answer = Some("the band".into());
+                                    cx.notify();
+                                }))
+                                .child(
+                                    popover::popover_card(&theme)
+                                        .px(px(16.0))
+                                        .child(match &self.layer_answer {
+                                            Some(what) => {
+                                                SharedString::from(format!("{what} took the press"))
+                                            }
+                                            None => SharedString::from("Press the band"),
+                                        })
+                                        .surface(&theme, theme.popover_surface),
+                                ),
+                        ),
                 )
                 .into_any_element(),
 

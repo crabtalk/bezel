@@ -129,6 +129,31 @@ impl Floating {
     }
 }
 
+/// A layer over a page: placed by the caller, and taking the mouse it covers.
+///
+/// Hitboxes in gpui are paint-order only. Every hitbox containing the pointer
+/// hears a press, and `should_handle_scroll` is looser still — it asks only
+/// whether the hitbox is in the hit list at all. So a band drawn over a page
+/// passes both through: a press inside it also fires whatever sits behind, and
+/// a wheel over a box that scrolls moves the page as well. Only a hitbox that
+/// blocks the mouse (gpui's `occlude`) ends the walk.
+///
+/// That is what this is: `absolute` and occluding, for a control the app floats
+/// over its own content — a composer band, a heading held over a list, the
+/// scrim a dialog is asked over. [`crate::popover`]'s layers do the same for
+/// menus, and [`panel`] is this plus a drag.
+///
+/// ```ignore
+/// floating::layer("composer").bottom(px(16.0)).left_0().right_0().child(composer)
+/// ```
+///
+/// It blocks the whole box it covers, gaps included: a band of cards with air
+/// between them takes the presses landing in the air too. Where that matters,
+/// put the layer around each card rather than around the group.
+pub fn layer(id: impl Into<ElementId>) -> gpui::Stateful<gpui::Div> {
+    div().id(id).absolute().occlude()
+}
+
 /// The panel: `child` floating where `state` left it, or at `home` until it is
 /// dragged. Mount it in a `relative()` container — it lays a layer over that
 /// container's whole box.

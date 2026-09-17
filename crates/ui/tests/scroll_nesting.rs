@@ -132,3 +132,157 @@ fn without_the_claim_both_panes_move_at_once(cx: &mut TestAppContext) {
     let (outer, inner) = travelled(&view, &mut cx);
     assert!(inner > 0.0 && outer > 0.0, "which is the reported bug");
 }
+
+/// The same nesting, through the pane that carries its own claim: no handle,
+/// no [`ClaimState`], nothing for the consumer to wire — which is what a
+/// bounded box inside someone else's page has to offer, because that consumer
+/// never holds a handle to it.
+mod carried {
+    use super::*;
+    use ui::scroll::claiming_pane;
+
+    /// The inner pane's content, in a box of [`INNER_BOX`].
+    const CONTENT: f32 = 400.0;
+
+    struct Page {
+        outer: ScrollHandle,
+    }
+
+    impl gpui::Render for Page {
+        fn render(
+            &mut self,
+            window: &mut gpui::Window,
+            cx: &mut gpui::Context<Self>,
+        ) -> impl IntoElement {
+            scroll::pane("page", Axes::Vertical)
+                .size_full()
+                .track_scroll(&self.outer)
+                .child(
+                    claiming_pane("inner", Axes::Vertical, window, cx)
+                        .w_full()
+                        .h(px(INNER_BOX))
+                        .child(div().w_full().h(px(CONTENT))),
+                )
+                .child(div().w_full().h(px(SPACER)))
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (gpui::Entity<Page>, VisualTestContext) {
+        cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+        let window = cx.add_window(|_, _| Page {
+            outer: ScrollHandle::new(),
+        });
+        let view = window.root(cx).unwrap();
+        let visual = VisualTestContext::from_window(window.into(), cx);
+        visual.simulate_resize(size(px(WIDTH), px(HEIGHT)));
+        visual.run_until_parked();
+        (view, visual)
+    }
+
+    fn page_travel(view: &gpui::Entity<Page>, cx: &mut VisualTestContext) -> f32 {
+        cx.update(|_, cx| f32::from(view.read(cx).outer.offset().y).abs())
+    }
+
+    #[gpui::test]
+    fn a_pane_that_carries_its_claim_keeps_the_wheel(cx: &mut TestAppContext) {
+        let (view, mut cx) = open(cx);
+
+        wheel_over_inner(&mut cx);
+        assert_eq!(
+            page_travel(&view, &mut cx),
+            0.0,
+            "the page moved behind the pane under the pointer"
+        );
+    }
+
+    #[gpui::test]
+    fn and_hands_it_on_at_its_end(cx: &mut TestAppContext) {
+        let (view, mut cx) = open(cx);
+
+        for _ in 0..(((CONTENT - INNER_BOX) / -NOTCH) as usize + 2) {
+            wheel_over_inner(&mut cx);
+        }
+        assert!(
+            page_travel(&view, &mut cx) > 0.0,
+            "with the pane at its end the page should take the wheel"
+        );
+    }
+}
+
+/// A capped box, which contains the wheel instead of chaining it: what
+/// [`ui::widgets::Status::step_output`] is, and the pane every consumer meets
+/// it through.
+mod contained {
+    use super::*;
+    use ui::widgets::Status;
+
+    /// Longer than the cap `step_output` puts on itself, so the box has travel.
+    const LINES: usize = 80;
+
+    struct Page {
+        outer: ScrollHandle,
+    }
+
+    impl gpui::Render for Page {
+        fn render(
+            &mut self,
+            _: &mut gpui::Window,
+            cx: &mut gpui::Context<Self>,
+        ) -> impl IntoElement {
+            let theme = theme::Theme::of(cx).clone();
+            scroll::pane("page", Axes::Vertical)
+                .size_full()
+                .track_scroll(&self.outer)
+                .child(theme.step_output("output", "a line\n".repeat(LINES)))
+                .child(div().w_full().h(px(SPACER)))
+        }
+    }
+
+    fn open(cx: &mut TestAppContext) -> (gpui::Entity<Page>, VisualTestContext) {
+        cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+        let window = cx.add_window(|_, _| Page {
+            outer: ScrollHandle::new(),
+        });
+        let view = window.root(cx).unwrap();
+        let visual = VisualTestContext::from_window(window.into(), cx);
+        visual.simulate_resize(size(px(WIDTH), px(HEIGHT)));
+        visual.run_until_parked();
+        (view, visual)
+    }
+
+    fn page_travel(view: &gpui::Entity<Page>, cx: &mut VisualTestContext) -> f32 {
+        cx.update(|_, cx| f32::from(view.read(cx).outer.offset().y).abs())
+    }
+
+    #[gpui::test]
+    fn an_output_box_never_hands_the_page_a_wheel(cx: &mut TestAppContext) {
+        let (view, mut cx) = open(cx);
+
+        // Far past the box's own travel: a contained pane at its end still
+        // keeps the wheel, which is the whole difference from the claim.
+        for _ in 0..40 {
+            wheel_over_inner(&mut cx);
+        }
+        assert_eq!(
+            page_travel(&view, &mut cx),
+            0.0,
+            "the page scrolled under the output box"
+        );
+    }
+
+    #[gpui::test]
+    fn a_sideways_gesture_is_still_the_pages(cx: &mut TestAppContext) {
+        let (view, mut cx) = open(cx);
+
+        cx.simulate_event(ScrollWheelEvent {
+            position: point(px(WIDTH / 2.0), px(INNER_BOX / 2.0)),
+            delta: ScrollDelta::Pixels(point(px(NOTCH), px(0.0))),
+            modifiers: Default::default(),
+            touch_phase: Default::default(),
+        });
+        cx.run_until_parked();
+        // The page scrolls vertically only, so nothing should move — the point
+        // is that the box did not swallow an axis it does not scroll.
+        assert_eq!(page_travel(&view, &mut cx), 0.0);
+    }
+}

@@ -145,6 +145,45 @@ pub fn pane(id: impl Into<ElementId>, axes: Axes) -> Stateful<Div> {
     scrolls(div().id(id), axes)
 }
 
+/// [`pane`], keeping the wheel it can act on: the pane a consumer nests inside
+/// another and never wires a handle to.
+///
+/// [`claim_wheel`] asks the caller for a [`ScrollHandle`] and a [`ClaimState`],
+/// because the caller usually has the handle already — it is scrolling the pane
+/// from elsewhere. A bounded box inside someone else's page has neither, and a
+/// pane that is only ever read by the wheel that moves it should not make a
+/// consumer hold two fields to stop it dragging the page behind it. Both live
+/// in keyed element state here, so the pane is still one call.
+///
+/// ```ignore
+/// scroll::claiming_pane("output", Axes::Vertical, window, cx).child(text)
+/// ```
+///
+/// The chaining is [`claim_wheel`]'s: at its ends the pane hands the wheel back
+/// to the page.
+pub fn claiming_pane(
+    id: impl Into<ElementId>,
+    axes: Axes,
+    window: &mut Window,
+    cx: &mut App,
+) -> Stateful<Div> {
+    let id = id.into();
+    let held = window.use_keyed_state(id.clone(), cx, |_, _| Claiming::default());
+    let (handle, state) = {
+        let held = held.read(cx);
+        (held.handle.clone(), held.state.clone())
+    };
+    claim_wheel(pane(id, axes).track_scroll(&handle), &handle, axes, &state)
+}
+
+/// What [`claiming_pane`] keeps between frames: the handle it reads its own
+/// travel off, and where that travel stood before the wheel being dispatched.
+#[derive(Default)]
+struct Claiming {
+    handle: ScrollHandle,
+    state: ClaimState,
+}
+
 /// [`pane`]'s answer applied to an element that already exists — a container
 /// that scrolls only at some widths, or one another builder handed back.
 ///
@@ -186,6 +225,30 @@ pub fn contain_sideways<E: gpui::InteractiveElement>(el: E) -> E {
         // little of both into every gesture, and a mostly-vertical one still
         // belongs to the page.
         if delta.x.abs() > delta.y.abs() {
+            cx.stop_propagation();
+        }
+    })
+}
+
+/// Keep every wheel inside the pane it landed on — `overscroll-behavior:
+/// contain`, where [`claim_wheel`] is the chaining kind.
+///
+/// For a box with a cap on it, where the content is a program's output rather
+/// than a document: it is a window onto something, and a wheel over a window
+/// belongs to what is inside it. Chaining asks the pane to prove it moved,
+/// which it reads off a handle carrying the previous frame's layout — under a
+/// pane whose content is still arriving that reads as "did not move", and the
+/// page takes the wheel while the box is still scrolling (user report,
+/// DEV-13).
+///
+/// The page is still reachable: move the pointer off the box.
+pub fn contain_wheel<E: gpui::InteractiveElement>(el: E, axes: Axes) -> E {
+    el.on_scroll_wheel(move |event, window, cx| {
+        let delta = event.delta.pixel_delta(window.line_height());
+        // The dominant axis, as [`contain_sideways`] reads it: a trackpad puts
+        // a little of both into every gesture.
+        let sideways = delta.x.abs() > delta.y.abs();
+        if (sideways && axes.horizontal()) || (!sideways && axes.vertical()) {
             cx.stop_propagation();
         }
     })
@@ -395,6 +458,11 @@ fn scrollbar_with_inset(
     div()
         .debug_selector(move || format!("{debug_id}-track"))
         .id(SharedString::from(format!("{id}-track")))
+        // A press on the bar belongs to the bar. Hitboxes in gpui are
+        // paint-order only, so without this the content under the strip takes
+        // the press as well; the wheel still passes, which is what a bar laid
+        // over a pane has to let through.
+        .block_mouse_except_scroll()
         .absolute()
         .top(BAR_INSET)
         .right(BAR_INSET)
@@ -590,6 +658,11 @@ fn transient_with_inset(
     let track = div()
         .debug_selector(move || format!("{debug_id}-track"))
         .id(SharedString::from(format!("{id}-track")))
+        // A press on the bar belongs to the bar. Hitboxes in gpui are
+        // paint-order only, so without this the content under the strip takes
+        // the press as well; the wheel still passes, which is what a bar laid
+        // over a pane has to let through.
+        .block_mouse_except_scroll()
         .absolute()
         .top(BAR_INSET)
         .right(BAR_INSET)
