@@ -79,6 +79,8 @@ export const repo = 'https://github.com/crabtalk/bezel';
 
 export const repoApi = repo.replace('https://github.com/', 'https://api.github.com/repos/');
 
+export const discord = 'https://discord.gg/yGZDYnwbx6';
+
 /** Where a section's implementation lives, for a reader who wants the real thing. */
 export const sourceUrl = (section) => `${repo}/blob/main/${section.source}`;
 

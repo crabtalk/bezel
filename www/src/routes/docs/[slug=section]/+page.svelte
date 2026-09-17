@@ -79,7 +79,7 @@
 		width: 100%;
 		height: 460px;
 		border: 1px solid var(--line);
-		border-radius: 10px;
+		border-radius: var(--radius-panel);
 		background: var(--panel);
 	}
 
@@ -103,7 +103,7 @@
 		cursor: pointer;
 		background: var(--panel);
 		border: 1px solid var(--line);
-		border-radius: 7px;
+		border-radius: var(--radius-control);
 		padding: 6px 12px;
 		color: var(--text);
 	}

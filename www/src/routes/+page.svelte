@@ -1,36 +1,15 @@
 <script>
-	import { siGithub, siX } from 'simple-icons';
+	import { siDiscord, siGithub, siX } from 'simple-icons';
 	import { Check, Copy } from 'lucide-static';
 	import { base } from '$app/paths';
 	import Ascii from '$lib/Ascii.svelte';
 	import Brand from '$lib/Brand.svelte';
 	import Gallery from '$lib/Gallery.svelte';
-	import { docsHome, repo, tagline as description } from '$lib/catalog.js';
+	import { discord, docsHome, repo, tagline as description } from '$lib/catalog.js';
 
 	let expanded = $state(false);
 
 	const author = 'https://x.com/tianyi_gc';
-
-	// What the library is, in its own terms — README and ARCHITECTURE already
-	// argue these. Reasons to use it, not a list of what is in the box.
-	const pillars = [
-		{
-			title: 'Style flows through the environment',
-			body: 'One flat Theme installed as a gpui global and read at paint time — SwiftUI’s @Environment, not a parameter threaded through every call site.'
-		},
-		{
-			title: 'Layers you can take alone',
-			body: 'theme is useful to anyone writing their own gpui components, motion is the animation vocabulary, ui is the views. Each depends only downward.'
-		},
-		{
-			title: 'Extracted, never invented ahead of need',
-			body: 'Every component landed here the day it landed in a real application. The gallery composes each one exactly once, so the documentation cannot drift from the library.'
-		},
-		{
-			title: 'Designed light and dark',
-			body: 'WCAG-verified contrast pairing and oklch colour math, with system appearance switching — both palettes designed, neither derived from the other.'
-		}
-	];
 
 	const jsonLd = {
 		'@context': 'https://schema.org',
@@ -119,17 +98,6 @@
 	</p>
 </section>
 
-<section class="pillars">
-	<div class="grid">
-		{#each pillars as pillar (pillar.title)}
-			<article>
-				<h2>{pillar.title}</h2>
-				<p>{pillar.body}</p>
-			</article>
-		{/each}
-	</div>
-</section>
-
 <footer>
 	<nav class="left">
 		<a href="https://github.com/crabtalk">crabtalk</a>
@@ -138,6 +106,9 @@
 	</nav>
 	<nav class="right">
 		<a href={repo} aria-label="bezel on GitHub"><Brand icon={siGithub} size={15} /></a>
+		<a href={discord} target="_blank" rel="noreferrer" aria-label="bezel on Discord">
+			<Brand icon={siDiscord} size={15} />
+		</a>
 		<a href={author} target="_blank" rel="noreferrer" aria-label="The author on X">
 			<Brand icon={siX} size={14} />
 		</a>
@@ -182,7 +153,7 @@
 		display: inline-flex;
 		align-items: center;
 		border: 1px solid var(--line-strong);
-		border-radius: 6px;
+		border-radius: var(--radius-control);
 		padding: 0 16px;
 		height: 40px;
 		color: var(--text);
@@ -226,7 +197,7 @@
 		margin: 32px 0 0;
 		padding: 10px 12px;
 		border: 1px solid var(--line);
-		border-radius: 8px;
+		border-radius: var(--radius-panel);
 		background: var(--panel);
 		overflow-x: auto;
 	}
@@ -262,13 +233,13 @@
 	.stage {
 		max-width: 1180px;
 		margin: 0 auto;
-		padding: 0 40px 24px;
+		padding: 0 40px 96px;
 	}
 
 	.window {
 		position: relative;
 		border: 1px solid var(--line);
-		border-radius: 12px;
+		border-radius: var(--radius-frame);
 		overflow: hidden;
 		background: var(--panel);
 		box-shadow: 0 40px 90px -30px rgb(0 0 0 / 0.9);
@@ -339,46 +310,6 @@
 		font-weight: 500;
 	}
 
-	/* Spacing lives out here, not on the grid: the grid's background is the rule
-	   colour showing through its own gaps, so padding on it would paint a thick
-	   border instead of leaving room around the box. */
-	.pillars {
-		max-width: 1180px;
-		margin: 0 auto;
-		padding: 80px 40px 128px;
-	}
-
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 1px;
-		background: var(--line);
-		border: 1px solid var(--line);
-		border-radius: 12px;
-		overflow: hidden;
-	}
-
-	/* The rule between panels is the container showing through a 1px gap, so
-	   there is one line between neighbours rather than two borders meeting. */
-	.pillars article {
-		background: var(--bg);
-		padding: 36px 32px;
-	}
-
-	.pillars h2 {
-		font-size: 16px;
-		font-weight: 500;
-		margin: 0 0 10px;
-		letter-spacing: -0.01em;
-	}
-
-	.pillars p {
-		margin: 0;
-		color: var(--muted);
-		font-size: 15px;
-		line-height: 1.65;
-	}
-
 	footer {
 		display: flex;
 		align-items: center;
@@ -433,15 +364,7 @@
 	@media (max-width: 780px) {
 
 		.stage {
-			padding: 0 24px 16px;
-		}
-
-		.pillars {
-			padding: 56px 24px 88px;
-		}
-
-		.grid {
-			grid-template-columns: 1fr;
+			padding: 0 24px 64px;
 		}
 
 		footer {

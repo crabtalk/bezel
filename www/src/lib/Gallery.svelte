@@ -33,7 +33,7 @@
 		max-height: none;
 		padding: 0;
 		border: 1px solid var(--line-strong);
-		border-radius: 12px;
+		border-radius: var(--radius-frame);
 		background: var(--bg);
 		color: var(--text);
 		overflow: hidden;
@@ -73,7 +73,7 @@
 		color: var(--muted);
 		background: none;
 		border: 1px solid var(--line-strong);
-		border-radius: 5px;
+		border-radius: var(--radius-control);
 		padding: 3px 8px;
 	}
 

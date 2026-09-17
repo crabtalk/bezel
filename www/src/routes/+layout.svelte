@@ -1,10 +1,10 @@
 <script>
-	import { siGithub } from 'simple-icons';
+	import { siDiscord, siGithub } from 'simple-icons';
 	import '../app.css';
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import Brand from '$lib/Brand.svelte';
-	import { documented, repo, repoApi } from '$lib/catalog.js';
+	import { discord, documented, repo, repoApi } from '$lib/catalog.js';
 
 	let { children, data } = $props();
 
@@ -90,6 +90,9 @@
 	</nav>
 
 	<nav class="links">
+		<a class="mark" href={discord} target="_blank" rel="noreferrer" aria-label="bezel on Discord">
+			<Brand icon={siDiscord} size={15} />
+		</a>
 		<a class="action" href={repo}>
 			Star
 			<Brand icon={siGithub} size={14} />
@@ -156,6 +159,11 @@
 		font-size: 14px;
 	}
 
+	.mark {
+		display: flex;
+		padding: 4px;
+	}
+
 
 	/* The label names the verb, the mark names the destination — so spelling the
 	   destination out as well would say it twice. */
@@ -167,7 +175,7 @@
 		padding: 0 11px;
 		margin-left: 4px;
 		border: 1px solid var(--line-strong);
-		border-radius: 6px;
+		border-radius: var(--radius-control);
 		color: var(--text);
 	}
 

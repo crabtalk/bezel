@@ -92,7 +92,7 @@
 	li a {
 		display: block;
 		padding: 5px 8px;
-		border-radius: 6px;
+		border-radius: var(--radius-control);
 		color: var(--muted);
 		font-size: 14px;
 	}

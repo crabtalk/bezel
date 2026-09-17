@@ -13,6 +13,10 @@
 	--muted: #a1a1a1;
 	--faint: #6f6f6f;
 	--mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+	--radius-chip: 4px;
+	--radius-control: 6px;
+	--radius-panel: 8px;
+	--radius-frame: 12px;
 	color-scheme: dark;
 }
 
@@ -46,14 +50,14 @@ code {
 	font-size: 0.9em;
 	background: var(--panel);
 	border: 1px solid var(--line);
-	border-radius: 4px;
+	border-radius: var(--radius-chip);
 	padding: 0.1em 0.35em;
 }
 
 pre {
 	background: var(--panel);
 	border: 1px solid var(--line);
-	border-radius: 8px;
+	border-radius: var(--radius-panel);
 	padding: 14px 16px;
 	overflow-x: auto;
 }
@@ -74,7 +78,7 @@ pre {
 	height: 30px;
 	padding: 0;
 	border: 1px solid var(--line-strong);
-	border-radius: 6px;
+	border-radius: var(--radius-control);
 	background: var(--bg);
 	color: var(--muted);
 	cursor: pointer;
