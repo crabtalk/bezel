@@ -227,6 +227,29 @@ pub fn bindings() -> Vec<KeyBinding> {
     bindings
 }
 
+/// What case a field holds its text in.
+///
+/// Applied to every edit rather than to the string on its way out, so what is
+/// painted, what `content()` returns and what a caller stores are one string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Case {
+    /// Whatever was typed.
+    #[default]
+    Mixed,
+    /// Upper, for a field naming something a heading is drawn from.
+    Upper,
+}
+
+impl Case {
+    /// `text` in this case.
+    fn apply(self, text: &str) -> String {
+        match self {
+            Self::Mixed => text.to_owned(),
+            Self::Upper => text.to_uppercase(),
+        }
+    }
+}
+
 /// What shape the field takes.
 ///
 /// Editing is identical across all three — every action works on the content
@@ -281,6 +304,8 @@ pub struct TextField {
     content: SharedString,
     placeholder: SharedString,
     shape: Shape,
+    /// The case every edit is put through — see [`Case`].
+    case: Case,
     selected_range: Range<usize>,
     selection_reversed: bool,
     /// The IME composition range (underlined while composing).
@@ -348,6 +373,7 @@ impl TextField {
             content: "".into(),
             placeholder: "".into(),
             shape: Shape::Line,
+            case: Case::default(),
             selected_range: 0..0,
             selection_reversed: false,
             marked_range: None,
@@ -439,6 +465,22 @@ impl TextField {
         self
     }
 
+    pub fn with_case(mut self, case: Case) -> Self {
+        self.case = case;
+        self
+    }
+
+    /// The case from here on. What the field already holds is left as it is:
+    /// the text came from somewhere else, and a caller switching the case of a
+    /// shared field would otherwise rewrite the name it is showing.
+    pub fn set_case(&mut self, case: Case) {
+        self.case = case;
+    }
+
+    pub fn case(&self) -> Case {
+        self.case
+    }
+
     pub fn shape(&self) -> Shape {
         self.shape
     }
@@ -454,7 +496,10 @@ impl TextField {
 
     /// Replace the content, putting the cursor at the end.
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.content = normalize(&content.into(), self.shape).into();
+        self.content = self
+            .case
+            .apply(&normalize(&content.into(), self.shape))
+            .into();
         // Colours describe text this field no longer holds.
         self.spans.clear();
         // A programmatic reset is not something the user did, so there is
@@ -1408,8 +1453,12 @@ impl EntityInputHandler for TextField {
             },
         );
 
+        // Cased here rather than on the way out: the caret is placed from this
+        // string's length, and a case that changes it (`ß` uppercases to two
+        // bytes) would leave the caret off by the difference.
+        let new_text = self.case.apply(new_text);
         self.content =
-            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
+            (self.content[0..range.start].to_owned() + &new_text + &self.content[range.end..])
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
@@ -1433,13 +1482,16 @@ impl EntityInputHandler for TextField {
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
 
+        // The composing text is cased too, so what an IME is showing is what
+        // committing it will leave behind.
+        let new_text = self.case.apply(new_text);
         self.content =
-            (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
+            (self.content[0..range.start].to_owned() + &new_text + &self.content[range.end..])
                 .into();
         self.marked_range =
             (!new_text.is_empty()).then(|| range.start..range.start + new_text.len());
         self.selected_range =
-            composition_selection(new_text, range.start, new_selected_range_utf16);
+            composition_selection(&new_text, range.start, new_selected_range_utf16);
         self.selection_reversed = false;
 
         self.caret_moved();
