@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.1.19",
+    "date": "2026-09-18",
+    "summary": "A pane names the room its scrollbar sits in, fields hold a case, and nested panes keep the wheel.",
+    "new": [
+      "`Overlay::channel` centres a bar in room the pane reserves beside its content, in place of the strip at the edge; `scroll::rail_fits` says whether a hand-rolled rail has the room to paint.",
+      "A text field holds its text in a `Case`: `with_case`, `set_case` and `case`, applied to every edit rather than to the string on its way out, so what is painted and what `content()` returns are one string.",
+      "`scroll::claiming_pane` and `scroll::contain_wheel` keep a capped pane's wheel to itself, and `floating::layer` gives a floating surface a layer of its own."
+    ],
+    "changed": [
+      "`scroll::BAR_INSET` and `scroll::RAIL_ROOM` are no longer public: a pane names where its bar sits through `Overlay::channel`, and `scroll::rail_fits` answers what `RAIL_ROOM` was read for."
+    ],
+    "fixed": [
+      "A nested pane scrolled past its end no longer carries the wheel into the pane behind it.",
+      "A floating layer occludes what sits under it, and the press that dismisses a menu or popover is swallowed rather than reaching the content behind."
+    ]
+  },
+  {
     "version": "0.1.18",
     "date": "2026-09-16",
     "summary": "Runtime syntax providers, Wasm grammars, and richer text and list controls.",
