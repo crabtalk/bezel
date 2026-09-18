@@ -393,16 +393,8 @@ fn channel_centres_the_thumb_in_the_room_the_pane_reserves(cx: &mut TestAppConte
         let placed = cx.debug_bounds("test-bar-thumb").unwrap();
         let pane = cx.update(|_, cx| host.read(cx).handle.bounds());
         let (far, centre, thickness) = match axis {
-            Axis::Vertical => (
-                pane.right(),
-                placed.center().x,
-                placed.size.width,
-            ),
-            Axis::Horizontal => (
-                pane.bottom(),
-                placed.center().y,
-                placed.size.height,
-            ),
+            Axis::Vertical => (pane.right(), placed.center().x, placed.size.width),
+            Axis::Horizontal => (pane.bottom(), placed.center().y, placed.size.height),
         };
         assert_eq!(far - centre, channel * 0.5, "{axis:?}");
         assert_eq!(
