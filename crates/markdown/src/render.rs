@@ -1210,41 +1210,44 @@ fn range_rects(
 ) -> Vec<Bounds<Pixels>> {
     let mut rects = Vec::new();
     let line_height = layout.line_height();
-    let mut cursor = range.start;
-    // Walk one visual row at a time. A wrapped range has no direct row query,
-    // so the last index still on this row is found by bisection.
-    let mut guard = 0;
-    while cursor < range.end && guard < 256 {
-        guard += 1;
-        let Some(head) = layout.position_for_index(cursor) else {
-            break;
-        };
-        let (row_end, next) = match layout.position_for_index(range.end) {
-            Some(tail) if tail.y == head.y => (range.end, range.end),
-            _ => {
-                let (mut low, mut high) = (cursor, range.end);
-                while high - low > 1 {
-                    let mid = low + (high - low) / 2;
-                    match layout.position_for_index(mid) {
-                        Some(probe) if probe.y == head.y => low = mid,
-                        _ => high = mid,
-                    }
-                }
-                (low, high)
+    let mut origin = layout.bounds().origin;
+    let mut line_start = 0;
+    for line in layout.line_layouts() {
+        let shaped = &line.unwrapped_layout;
+        // Rows come from the wrap boundaries themselves. A boundary index is
+        // both the end of one row and the start of the next, and
+        // `position_for_index` only ever answers with the end — so probing for
+        // a row's start lands one glyph in, and stepping a byte at a time to
+        // get there lands inside a character.
+        let row_ends = line
+            .wrap_boundaries()
+            .iter()
+            .map(|wrap| shaped.runs[wrap.run_ix].glyphs[wrap.glyph_ix].index)
+            .chain([line.len()]);
+        let mut row_start = 0;
+        for (row, row_end) in row_ends.enumerate() {
+            let from = range.start.saturating_sub(line_start).max(row_start);
+            let to = range.end.saturating_sub(line_start).min(row_end);
+            let row_x = shaped.x_for_index(row_start);
+            let (left, right) = (shaped.x_for_index(from), shaped.x_for_index(to));
+            if from < to && right > left {
+                rects.push(Bounds::new(
+                    origin
+                        + point(
+                            left - row_x - px(pad_x),
+                            line_height * row as f32 + px(inset_y),
+                        ),
+                    size(
+                        right - left + px(2.0 * pad_x),
+                        line_height - px(2.0 * inset_y),
+                    ),
+                ));
             }
-        };
-        if let Some(tail) = layout.position_for_index(row_end)
-            && tail.x > head.x
-        {
-            rects.push(Bounds::new(
-                point(head.x - px(pad_x), head.y + px(inset_y)),
-                size(
-                    tail.x - head.x + px(2.0 * pad_x),
-                    line_height - px(2.0 * inset_y),
-                ),
-            ));
+            row_start = row_end;
         }
-        cursor = next.max(cursor + 1);
+        origin.y += line.size(line_height).height;
+        // The newline between two lines is a byte of the text and of neither.
+        line_start += line.len() + 1;
     }
     rects
 }
