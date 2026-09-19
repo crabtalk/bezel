@@ -205,6 +205,7 @@ fn no_edit_sequence_escapes_the_round_trip() {
         "1. one\n2. two",
         "- [ ] task\n- [x] done",
         "> quoted\n\npara `code` tail",
+        "> [!TIP]\n> alert body\n\n> [!NOTE]",
         "para with [link](u) and ![img](i)",
     ];
     const WORDS: &[&str] = &["x", " ", "\n", "a b", "**", "#", "- ", "`", "|", "~~"];

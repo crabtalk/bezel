@@ -11,7 +11,7 @@
 
 use std::ops::Range;
 
-use pulldown_cmark::{Event, Options, Parser, Tag};
+use pulldown_cmark::{Event, Parser, Tag};
 use theme::HighlightKind;
 
 /// The fence tags that mean "this is markdown".
@@ -24,8 +24,6 @@ pub fn is_markdown(language: &str) -> bool {
 
 /// Colour `source` as markdown, in bytes and in document order.
 pub fn spans(source: &str) -> Vec<(Range<usize>, HighlightKind)> {
-    let options =
-        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     let mut map: Vec<Option<HighlightKind>> = vec![None; source.len()];
     let mut paint = |range: Range<usize>, kind: HighlightKind| {
         for slot in &mut map[range.start.min(source.len())..range.end.min(source.len())] {
@@ -33,7 +31,7 @@ pub fn spans(source: &str) -> Vec<(Range<usize>, HighlightKind)> {
         }
     };
 
-    for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
+    for (event, range) in Parser::new_ext(source, crate::parse::OPTIONS).into_offset_iter() {
         match event {
             Event::Start(Tag::Heading { .. }) => paint(range, HighlightKind::Keyword),
             Event::Start(Tag::BlockQuote(_)) => paint(range, HighlightKind::Comment),

@@ -19,7 +19,7 @@ use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
     block,
-    doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, Text},
+    doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, QuoteKind, Text},
     layout::Layout,
     preview,
     select::{Cursor, Selection},
@@ -745,13 +745,22 @@ fn block_element(
             theme,
             cx,
         ),
-        BlockKind::Quote(text) => div()
+        BlockKind::Quote { kind, text } => div()
             .border_l_2()
-            .border_color(theme.border_strong)
+            .border_color(kind.map_or(theme.border_strong, |kind| alert_color(kind, theme)))
             .pl(px(12.0))
             .pr(px(10.0))
             .py(px(2.0))
             .text_color(theme.text_muted)
+            .children(kind.map(|kind| {
+                div()
+                    .pb(px(2.0))
+                    .text_size(px(typography.body.size()))
+                    .line_height(px(typography.body.line_height()))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(alert_color(kind, theme))
+                    .child(kind.label())
+            }))
             .child(text_element(
                 text,
                 typography.body.size(),
@@ -857,6 +866,17 @@ fn checkbox(checked: bool, typography: &Typography, theme: &Theme) -> AnyElement
         .items_center()
         .child(box_)
         .into_any_element()
+}
+
+/// What an alert paints its rule and its label in.
+fn alert_color(kind: QuoteKind, theme: &Theme) -> Hsla {
+    match kind {
+        QuoteKind::Note => theme.accent,
+        QuoteKind::Tip => theme.success,
+        QuoteKind::Important => theme.busy,
+        QuoteKind::Warning => theme.warning,
+        QuoteKind::Caution => theme.danger,
+    }
 }
 
 fn marker_row(

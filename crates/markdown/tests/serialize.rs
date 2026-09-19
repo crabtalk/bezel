@@ -43,6 +43,20 @@ const CANONICAL: &[&str] = &[
     "a #123 reference",
     "1 < 2 & 3 > 0",
     "- a\n\n    child paragraph",
+    "> [!TIP]\n> GFM alerts",
+    "> [!NOTE]\n> GFM alerts",
+    "> [!WARNING]\n> GFM alerts",
+    "> [!CAUTION]\n> GFM alerts",
+    "> [!IMPORTANT]\n> GFM alerts",
+    "> [!TIP]",
+    "> [!TIP]\n> two\n> lines",
+    // The first line of a quote is a line start like any other: what would
+    // open a block there has to keep its backslash.
+    "> \\- item",
+    "> \\# hash",
+    "> \\> angle",
+    "> [!TIP]\n> \\- item",
+    "> \\[!TIP\\]",
 ];
 
 /// Markdown that legitimately gets rewritten — escaping added, nesting
@@ -68,6 +82,15 @@ const NON_CANONICAL: &[&str] = &[
     "1. a\n\n    ```\n    code\n    ```",
     "",
     "\n\n\n",
+    "[!TIP](link)",
+    "![!NOTE](image)",
+    "[!WARNING]",
+    "[!CAUTION] GFM alerts",
+    "> [!IMPORTANT] GFM alerts",
+    "> [!BOGUS]\n> not an alert",
+    "> [!tip]\n> lowercase marker",
+    "> [!TIP]\n> one\n>\n> two",
+    "> [!NOTE]\n> outer\n> > [!TIP]\n> > inner",
 ];
 
 #[test]
@@ -241,6 +264,10 @@ const FRAGMENTS: &[&str] = &[
     "| ragged |",
     "setext",
     "======",
+    "> [!TIP]",
+    "> [!NOTE]",
+    "> [!BOGUS]",
+    "> \\[!TIP\\]",
 ];
 
 struct Rng(u64);
@@ -280,4 +307,65 @@ fn the_fixed_point_holds_for_generated_documents() {
             "case {case} drifted on a second pass"
         );
     }
+}
+
+#[test]
+fn an_alert_is_a_block_kind_rather_than_text() {
+    let doc = parse("> [!TIP]\n> body");
+    assert_eq!(
+        doc.blocks,
+        vec![Block::new(BlockKind::Quote {
+            kind: Some(QuoteKind::Tip),
+            text: Text::plain("body"),
+        })]
+    );
+    assert_eq!(serialize(&doc), "> [!TIP]\n> body");
+}
+
+#[test]
+fn an_alert_marker_is_never_escaped() {
+    // The bug this replaced: `> \[!TIP\]` is a quote holding two brackets on
+    // every reader that knows what an alert is.
+    for source in ["> [!TIP]\n> body", "> [!important]\n> body", "> [!NOTE]"] {
+        assert!(!serialize(&parse(source)).contains('\\'), "{source:?}");
+    }
+}
+
+#[test]
+fn a_marker_that_names_no_alert_stays_text() {
+    let doc = parse("> [!BOGUS]\n> body");
+    assert_eq!(
+        doc.blocks,
+        vec![Block::new(BlockKind::Quote {
+            kind: None,
+            text: Text::plain("[!BOGUS]\nbody"),
+        })]
+    );
+}
+
+#[test]
+fn normalize_keeps_an_alert_with_no_body() {
+    // `Doc::normalize` drops an empty quote because `> ` cannot be written
+    // down. `> [!TIP]` can, so it stays.
+    let mut doc = parse("> [!TIP]");
+    doc.normalize();
+    assert_eq!(serialize(&doc), "> [!TIP]");
+
+    let mut plain = Doc {
+        blocks: vec![Block::new(BlockKind::Quote {
+            kind: None,
+            text: Text::default(),
+        })],
+    };
+    plain.normalize();
+    assert!(plain.blocks.is_empty());
+}
+
+#[test]
+fn a_quotes_paragraphs_each_carry_the_alert() {
+    // The flat model splits a blockquote's paragraphs into one block each, so
+    // the kind rides on both and the rewrite is two alerts.
+    let text = serialize(&parse("> [!TIP]\n> one\n>\n> two"));
+    assert_eq!(text, "> [!TIP]\n> one\n\n> [!TIP]\n> two");
+    assert_eq!(parse(&text), parse(&serialize(&parse(&text))));
 }

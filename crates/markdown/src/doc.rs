@@ -83,7 +83,7 @@ impl Block {
                 | BlockKind::Bullet(text)
                 | BlockKind::Ordered { text, .. }
                 | BlockKind::Task { text, .. }
-                | BlockKind::Quote(text),
+                | BlockKind::Quote { text, .. },
                 Part::Body,
             ) => Some(text),
             (BlockKind::Code { code, .. }, Part::Code) => Some(code),
@@ -104,7 +104,7 @@ impl Block {
                 | BlockKind::Bullet(text)
                 | BlockKind::Ordered { text, .. }
                 | BlockKind::Task { text, .. }
-                | BlockKind::Quote(text),
+                | BlockKind::Quote { text, .. },
                 Part::Body,
             ) => Some(text),
             (BlockKind::Code { code, .. }, Part::Code) => Some(code),
@@ -127,7 +127,7 @@ impl Block {
             | BlockKind::Bullet(_)
             | BlockKind::Ordered { .. }
             | BlockKind::Task { .. }
-            | BlockKind::Quote(_) => vec![Part::Body],
+            | BlockKind::Quote { .. } => vec![Part::Body],
             BlockKind::Code { .. } => vec![Part::Code],
             BlockKind::Image { .. } => vec![Part::Caption],
             BlockKind::Table { header, rows, .. } => {
@@ -201,7 +201,11 @@ pub enum BlockKind {
         checked: bool,
         text: Text,
     },
-    Quote(Text),
+    /// A blockquote. `kind` is the GFM alert it opens with — see [`QuoteKind`].
+    Quote {
+        kind: Option<QuoteKind>,
+        text: Text,
+    },
     /// The code carries a [`Text`] like every other editable region, so one
     /// accessor and one edit path cover the whole document. Its marks are
     /// unreachable rather than forbidden: nothing that writes here creates one.
@@ -239,6 +243,45 @@ pub enum BlockKind {
         rows: Vec<Vec<Text>>,
     },
     Rule,
+}
+
+/// A GFM alert's kind — the `[!NOTE]` marker a blockquote opens with.
+///
+/// Only recognised when the marker is alone on the quote's first line and
+/// names one of these five; anything else stays the text it was written as.
+/// A blockquote holding two paragraphs becomes two [`BlockKind::Quote`] blocks
+/// and each carries the kind, so writing the document back gives two alerts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuoteKind {
+    Note,
+    Tip,
+    Important,
+    Warning,
+    Caution,
+}
+
+impl QuoteKind {
+    /// The marker line, bracket to bracket.
+    pub fn marker(self) -> &'static str {
+        match self {
+            Self::Note => "[!NOTE]",
+            Self::Tip => "[!TIP]",
+            Self::Important => "[!IMPORTANT]",
+            Self::Warning => "[!WARNING]",
+            Self::Caution => "[!CAUTION]",
+        }
+    }
+
+    /// What the alert calls itself where it is painted.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Note => "Note",
+            Self::Tip => "Tip",
+            Self::Important => "Important",
+            Self::Warning => "Warning",
+            Self::Caution => "Caution",
+        }
+    }
 }
 
 /// GFM column alignment.

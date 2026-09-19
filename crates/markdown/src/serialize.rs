@@ -148,9 +148,21 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8, marks: &Marks) {
             let marker = if *checked { "- [x] " } else { "- [ ] " };
             write_marked(out, &pad, marker, text, marks);
         }
-        BlockKind::Quote(text) => {
+        BlockKind::Quote { kind, text } => {
             let prefix = format!("{pad}> ");
-            write_lines(out, &prefix, &prefix, &inline(text, marks));
+            // Rendered before the marker is written: an empty [`Text`] can
+            // still carry a mark, and a marker line stands alone only when
+            // there is nothing at all under it.
+            let body = inline(text, marks);
+            if let Some(kind) = kind {
+                out.push_str(&prefix);
+                out.push_str(kind.marker());
+                if body.is_empty() {
+                    return;
+                }
+                out.push('\n');
+            }
+            write_lines(out, &prefix, &prefix, &body);
         }
         BlockKind::Code { language, code } => {
             let fence = "`".repeat(fence_width(&code.text));
