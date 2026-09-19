@@ -362,7 +362,10 @@ impl Doc {
                 checked: false,
                 text: tail,
             },
-            BlockKind::Quote(_) => BlockKind::Quote(tail),
+            BlockKind::Quote { kind, .. } => BlockKind::Quote {
+                kind: *kind,
+                text: tail,
+            },
             // A heading titles what follows it; what follows is body text.
             _ => BlockKind::Paragraph(tail),
         };
@@ -413,7 +416,7 @@ impl Doc {
         // can be typed in can be typed out.
         let unwrapped = match &block.kind {
             kind if is_marker(kind) => block.text_at(Part::Body).cloned(),
-            BlockKind::Heading { text, .. } | BlockKind::Quote(text) => Some(text.clone()),
+            BlockKind::Heading { text, .. } | BlockKind::Quote { text, .. } => Some(text.clone()),
             BlockKind::Code { code, .. } => Some(code.clone()),
             _ => None,
         };
@@ -1013,7 +1016,7 @@ impl Doc {
                 | BlockKind::Bullet(text)
                 | BlockKind::Ordered { text, .. }
                 | BlockKind::Task { text, .. }
-                | BlockKind::Quote(text) => {
+                | BlockKind::Quote { text, .. } => {
                     *text = crate::parse::normalize(&text.text, &text.marks);
                     text.normalize_marks();
                     if one_line {
@@ -1036,11 +1039,12 @@ impl Doc {
         // A blank paragraph is the empty line an editor leaves behind, and
         // markdown has no way to write one down — blank lines there separate
         // blocks rather than being one. An empty heading or list item is
-        // different: `# ` and `- ` are both real, so those stay.
+        // different: `# ` and `- ` are both real, so those stay. So is an
+        // alert with no body: `> [!TIP]` writes down and reads back.
         self.blocks.retain(|block| {
             !matches!(
                 &block.kind,
-                BlockKind::Paragraph(text) | BlockKind::Quote(text) if text.is_empty()
+                BlockKind::Paragraph(text) | BlockKind::Quote { kind: None, text } if text.is_empty()
             )
         });
         self.repair();
@@ -1179,7 +1183,7 @@ impl Shortcut {
             Self::Bullet => BlockKind::Bullet(text),
             Self::Ordered => BlockKind::Ordered { number: 1, text },
             Self::Task(checked) => BlockKind::Task { checked, text },
-            Self::Quote => BlockKind::Quote(text),
+            Self::Quote => BlockKind::Quote { kind: None, text },
             // Code is literal, so whatever marks the text carried have no
             // meaning inside the fence.
             Self::Code => BlockKind::Code {

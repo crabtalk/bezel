@@ -5,10 +5,11 @@
 //! - a list item's first paragraph becomes its marker block (bullet, ordered,
 //!   task) at one level shallower than the open list count, and anything else
 //!   in that item becomes a child at the list count itself;
-//! - a blockquote's paragraphs each become a [`BlockKind::Quote`]. Being inside
-//!   a quote decides a block's *kind*, never its depth — an indent a blockquote
-//!   contributed could not be reproduced in the output, and the document would
-//!   move every time it was read;
+//! - a blockquote's paragraphs each become a [`BlockKind::Quote`], every one
+//!   of them carrying the GFM alert kind the blockquote opened with. Being
+//!   inside a quote decides a block's *kind*, never its depth — an indent a
+//!   blockquote contributed could not be reproduced in the output, and the
+//!   document would move every time it was read;
 //! - everything else keeps its kind at the open list count.
 //!
 //! Mixed containers therefore flatten: `> - a` yields a bullet and loses the
@@ -22,14 +23,34 @@
 //! consecutively. Each of those is a place where writing the document back out
 //! and reading it again would otherwise land somewhere new.
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    Alignment, BlockQuoteKind, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd,
+};
 use std::ops::Range;
 
 use crate::{
-    doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Text},
+    doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, QuoteKind, Text},
     marks::Marks,
     select::Cursor,
 };
+
+/// The extensions this crate reads. [`crate::source`] colours with the same set.
+pub(crate) const OPTIONS: Options = Options::ENABLE_TABLES
+    .union(Options::ENABLE_STRIKETHROUGH)
+    .union(Options::ENABLE_TASKLISTS)
+    .union(Options::ENABLE_GFM);
+
+impl From<BlockQuoteKind> for QuoteKind {
+    fn from(kind: BlockQuoteKind) -> Self {
+        match kind {
+            BlockQuoteKind::Note => Self::Note,
+            BlockQuoteKind::Tip => Self::Tip,
+            BlockQuoteKind::Important => Self::Important,
+            BlockQuoteKind::Warning => Self::Warning,
+            BlockQuoteKind::Caution => Self::Caution,
+        }
+    }
+}
 
 /// Parse a markdown document.
 pub fn parse(source: &str) -> Doc {
@@ -59,10 +80,8 @@ pub fn parse_with(source: &str, marks: &Marks) -> Doc {
 }
 
 fn parse_plain(source: &str) -> Doc {
-    let options =
-        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     let mut state = ParseState::default();
-    for event in Parser::new_ext(source, options) {
+    for event in Parser::new_ext(source, OPTIONS) {
         state.event(event);
     }
     state.doc.renumber();
@@ -447,13 +466,20 @@ struct TableBuild {
     in_head: bool,
 }
 
+/// An open blockquote, and how many blocks the document held when it opened.
+struct OpenQuote {
+    kind: Option<QuoteKind>,
+    at: usize,
+}
+
 #[derive(Default)]
 struct ParseState {
     doc: Doc,
     builder: TextBuilder,
     /// One entry per open list; `Some` counts an ordered list's next number.
     lists: Vec<Option<u64>>,
-    quote_depth: u8,
+    /// One entry per open blockquote, innermost last.
+    quotes: Vec<OpenQuote>,
     pending_marker: Option<Marker>,
     heading: Option<u8>,
     code: Option<(Option<String>, String)>,
@@ -469,6 +495,11 @@ impl ParseState {
     /// output could reproduce.
     fn indent(&self) -> u8 {
         self.lists.len() as u8
+    }
+
+    /// The alert kind a quoted block inherits — the innermost open blockquote's.
+    fn quote_kind(&self) -> Option<QuoteKind> {
+        self.quotes.last().and_then(|open| open.kind)
     }
 
     /// Append a block, clamping its indent so the document invariant holds
@@ -560,12 +591,13 @@ impl ParseState {
             return;
         }
 
-        if self.quote_depth > 0 {
+        if !self.quotes.is_empty() {
             // The bullet comes first so the quote reads as its child rather
             // than replacing it.
             self.flush_marker();
+            let kind = self.quote_kind();
             let indent = self.indent();
-            self.push(BlockKind::Quote(text), indent);
+            self.push(BlockKind::Quote { kind, text }, indent);
         } else if let Some(marker) = self.pending_marker.take() {
             let indent = self.indent().saturating_sub(1);
             self.push(marker.into_kind(text), indent);
@@ -616,9 +648,13 @@ impl ParseState {
                 self.flush_inline();
                 self.heading = Some(level as u8);
             }
-            Tag::BlockQuote(_) => {
+            Tag::BlockQuote(kind) => {
                 self.flush_inline();
-                self.quote_depth += 1;
+                let at = self.doc.blocks.len();
+                self.quotes.push(OpenQuote {
+                    kind: kind.map(QuoteKind::from),
+                    at,
+                });
             }
             Tag::CodeBlock(kind) => {
                 self.flush_inline();
@@ -717,7 +753,21 @@ impl ParseState {
             // as a quote rather than as a paragraph after it.
             TagEnd::BlockQuote(_) => {
                 self.flush_inline();
-                self.quote_depth = self.quote_depth.saturating_sub(1);
+                // pulldown-cmark takes the marker line out of the text, so a
+                // blockquote that held nothing else arrives here empty.
+                if let Some(open) = self.quotes.pop()
+                    && open.kind.is_some()
+                    && self.doc.blocks.len() == open.at
+                {
+                    let indent = self.indent();
+                    self.push(
+                        BlockKind::Quote {
+                            kind: open.kind,
+                            text: Text::default(),
+                        },
+                        indent,
+                    );
+                }
             }
             TagEnd::CodeBlock => {
                 if let Some((language, code)) = self.code.take() {
@@ -968,10 +1018,8 @@ fn line_end(source: &str, at: usize) -> usize {
 /// The source ranges a delimiter means nothing in: a fence, a code span, raw
 /// HTML, and a link's destination.
 fn literal(source: &str) -> Vec<Range<usize>> {
-    let options =
-        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     let mut out = Vec::new();
-    for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
+    for (event, range) in Parser::new_ext(source, OPTIONS).into_offset_iter() {
         match event {
             Event::Code(_) | Event::Html(_) | Event::InlineHtml(_) => out.push(range),
             Event::Start(Tag::CodeBlock(_)) => out.push(range),

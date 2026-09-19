@@ -128,10 +128,10 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8, marks: &Marks) {
     let pad = INDENT.repeat(indent as usize);
 
     match kind {
-        BlockKind::Paragraph(text) => write_lines(out, &pad, &pad, &inline("", text, marks)),
+        BlockKind::Paragraph(text) => write_lines(out, &pad, &pad, &inline(text, marks)),
         BlockKind::Heading { level, text } => {
             let hashes = "#".repeat((*level).clamp(1, 6) as usize);
-            write_lines(out, &format!("{pad}{hashes} "), &pad, &inline("", text, marks));
+            write_lines(out, &format!("{pad}{hashes} "), &pad, &inline(text, marks));
         }
         // A bullet with no text would be written as a line holding nothing but
         // a dash — and a line of dashes directly under a paragraph is a setext
@@ -148,11 +148,21 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8, marks: &Marks) {
             let marker = if *checked { "- [x] " } else { "- [ ] " };
             write_marked(out, &pad, marker, text, marks);
         }
-        BlockKind::Quote(text) => {
+        BlockKind::Quote { kind, text } => {
             let prefix = format!("{pad}> ");
-            // Passing prefix as a inline text instead of block prefix
-            // to allow detecting GFM alerts accurately.
-            write_lines(out, "", &prefix, &inline(&prefix, text, marks));
+            // Rendered before the marker is written: an empty [`Text`] can
+            // still carry a mark, and a marker line stands alone only when
+            // there is nothing at all under it.
+            let body = inline(text, marks);
+            if let Some(kind) = kind {
+                out.push_str(&prefix);
+                out.push_str(kind.marker());
+                if body.is_empty() {
+                    return;
+                }
+                out.push('\n');
+            }
+            write_lines(out, &prefix, &prefix, &body);
         }
         BlockKind::Code { language, code } => {
             let fence = "`".repeat(fence_width(&code.text));
@@ -226,7 +236,7 @@ fn write_marked(out: &mut String, pad: &str, marker: &str, text: &Text, marks: &
     };
     let first = format!("{pad}{opener}");
     let rest = format!("{pad}{}", " ".repeat(marker.chars().count()));
-    write_lines(out, &first, &rest, &inline("", text, marks));
+    write_lines(out, &first, &rest, &inline(text, marks));
 }
 
 fn write_lines(out: &mut String, first: &str, rest: &str, body: &str) {
@@ -265,7 +275,7 @@ fn write_table(
             line.push(' ');
             if let Some(cell) = cells.get(ix) {
                 // `escape_span` already escapes the pipes.
-                line.push_str(&inline("", cell, marks));
+                line.push_str(&inline(cell, marks));
             }
             line.push_str(" |");
         }
@@ -294,7 +304,7 @@ fn write_table(
 /// Render inline content with its marks. Marks are stored outermost first, so
 /// opening them in order and closing them in reverse reproduces the nesting —
 /// which is what keeps `**_x_**` and `_**x**_` distinct.
-fn inline(prefix: &str, text: &Text, marks: &Marks) -> String {
+fn inline(text: &Text, marks: &Marks) -> String {
     let mut out = String::new();
     let mut open: Vec<usize> = Vec::new();
     let mut started = vec![false; text.marks.len()];
@@ -310,8 +320,6 @@ fn inline(prefix: &str, text: &Text, marks: &Marks) -> String {
         .collect();
     boundaries.sort_unstable();
     boundaries.dedup();
-
-    out.push_str(prefix);
 
     for point in boundaries {
         if point < cursor {
@@ -519,33 +527,7 @@ fn bare_destination(url: &str) -> bool {
 /// of a line in the *output*, not in the slice.
 fn escape_inline(out: &mut String, s: &str, marks: &Marks) {
     let mut line_start = out.is_empty() || out.ends_with('\n');
-
-    // GFM alerts support
-    let mut trimmed = s;
-    if out == "> " {
-        let len = s.len();
-        if len >= 7 {
-            let ascii = s.as_bytes();
-            if ascii[..7].eq_ignore_ascii_case(b"[!TIP]\n") {
-                out.push_str(&s[..7]);
-                trimmed = &trimmed[7..];
-            } else if len >= 8 && ascii[..8].eq_ignore_ascii_case(b"[!NOTE]\n") {
-                out.push_str(&s[..8]);
-                trimmed = &trimmed[8..];
-            } else if len >= 11
-                && (ascii[..11].eq_ignore_ascii_case(b"[!WARNING]\n")
-                    || ascii[..11].eq_ignore_ascii_case(b"[!CAUTION]\n"))
-            {
-                out.push_str(&s[..11]);
-                trimmed = &trimmed[11..];
-            } else if len >= 13 && ascii[..13].eq_ignore_ascii_case(b"[!IMPORTANT]\n") {
-                out.push_str(&s[..13]);
-                trimmed = &trimmed[13..];
-            }
-        }
-    }
-
-    for (ix, line) in trimmed.split('\n').enumerate() {
+    for (ix, line) in s.split('\n').enumerate() {
         if ix > 0 {
             out.push('\n');
             line_start = true;
