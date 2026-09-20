@@ -89,3 +89,13 @@ gpui_web = { package = "bezel-gpui-web", version = "0.3.10" }
 unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(feature, values("cargo-clippy"))',
 ] }
+
+# Panics keep file and line; the DWARF that carries variable names does not
+# survive. Full debuginfo across the dependency graph was the bulk of a 179G
+# target directory, and cargo's fingerprint scan over that tree cost more per
+# invocation than the compile it was checking.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

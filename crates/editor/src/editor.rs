@@ -2194,10 +2194,11 @@ impl Render for Editor {
                                     text_size::resolve(self.text_size, cx)
                                         / theme::base_text_size(),
                                 )),
-                                // Unset: the editor's own press hit-tests
+                                // The editor's own press hit-tests
                                 // `checkbox_bounds`, which is what keeps a
                                 // toggle in the undo history.
-                                on_toggle: None,
+                                toggle: Some(markdown::Toggle::HitTested),
+                                ..Default::default()
                             },
                             window,
                             cx,

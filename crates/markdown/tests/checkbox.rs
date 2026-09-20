@@ -6,34 +6,48 @@ use std::{cell::RefCell, rc::Rc};
 use gpui::{
     App, Context, Render, TestAppContext, VisualTestContext, Window, div, prelude::*, px, size,
 };
-use markdown::{BlockLayouts, Doc, Editing, OnToggle, parse, render_with};
+use markdown::{BlockLayouts, Doc, Editing, OnToggle, Toggle, parse, render_with};
 
 const WIDTH: f32 = 320.0;
 const HEIGHT: f32 = 400.0;
 const SOURCE: &str = "- [ ] open\n- [x] done";
 
+/// What the page asks the box to be.
+#[derive(Clone, Copy)]
+enum Mode {
+    /// No toggle at all — a box that paints and takes nothing.
+    Marker,
+    /// A control whose press the caller resolves against `checkbox_bounds`.
+    HitTested,
+    /// A control the renderer listens to.
+    Handled,
+}
+
 struct Page {
     doc: Doc,
     layouts: BlockLayouts,
-    /// Every block `on_toggle` was called with, in order.
+    /// Every block the toggle was called with, in order.
     toggled: Rc<RefCell<Vec<usize>>>,
-    /// Whether the page hands `on_toggle` in at all — unset is the read-only
-    /// case, where the box is a marker.
-    live: bool,
+    mode: Mode,
 }
 
 impl Render for Page {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let on_toggle = self.live.then(|| {
-            let toggled = self.toggled.clone();
-            Rc::new(move |ix: usize, _: &mut Window, _: &mut App| toggled.borrow_mut().push(ix))
-                as OnToggle
-        });
+        let toggle = match self.mode {
+            Mode::Marker => None,
+            Mode::HitTested => Some(Toggle::HitTested),
+            Mode::Handled => {
+                let toggled = self.toggled.clone();
+                Some(Toggle::Handled(Rc::new(
+                    move |ix: usize, _: &mut Window, _: &mut App| toggled.borrow_mut().push(ix),
+                ) as OnToggle))
+            }
+        };
         div().w(px(WIDTH)).child(render_with(
             &self.doc,
             Editing {
                 layouts: Some(&self.layouts),
-                on_toggle,
+                toggle,
                 ..Editing::default()
             },
             window,
@@ -42,13 +56,13 @@ impl Render for Page {
     }
 }
 
-fn open(live: bool, cx: &mut TestAppContext) -> (gpui::Entity<Page>, VisualTestContext) {
+fn open(mode: Mode, cx: &mut TestAppContext) -> (gpui::Entity<Page>, VisualTestContext) {
     cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
     let window = cx.add_window(|_, _| Page {
         doc: parse(SOURCE),
         layouts: BlockLayouts::default(),
         toggled: Rc::new(RefCell::new(Vec::new())),
-        live,
+        mode,
     });
     let page = window.root(cx).unwrap();
     let visual = VisualTestContext::from_window(window.into(), cx);
@@ -72,7 +86,7 @@ fn box_of(
 
 #[gpui::test]
 fn every_task_records_its_box(cx: &mut TestAppContext) {
-    let (page, mut cx) = open(false, cx);
+    let (page, mut cx) = open(Mode::Marker, cx);
 
     let open_box = box_of(&page, 0, &mut cx);
     let done_box = box_of(&page, 1, &mut cx);
@@ -99,7 +113,7 @@ fn every_task_records_its_box(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn a_press_in_the_box_toggles(cx: &mut TestAppContext) {
-    let (page, mut cx) = open(true, cx);
+    let (page, mut cx) = open(Mode::Handled, cx);
 
     let done = box_of(&page, 1, &mut cx);
     cx.simulate_click(done.center(), gpui::Modifiers::default());
@@ -118,7 +132,7 @@ fn a_press_in_the_box_toggles(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn a_press_beside_the_box_does_not(cx: &mut TestAppContext) {
-    let (page, mut cx) = open(true, cx);
+    let (page, mut cx) = open(Mode::Handled, cx);
 
     let box_ = box_of(&page, 0, &mut cx);
     // The gutter the marker column leaves to the right of the box, which is
@@ -133,8 +147,21 @@ fn a_press_beside_the_box_does_not(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_hit_tested_box_takes_no_press(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(Mode::HitTested, cx);
+
+    let box_ = box_of(&page, 0, &mut cx);
+    cx.simulate_click(box_.center(), gpui::Modifiers::default());
+
+    assert!(
+        toggled(&page, &mut cx).is_empty(),
+        "the press is the caller's to resolve"
+    );
+}
+
+#[gpui::test]
 fn a_read_only_box_is_a_marker(cx: &mut TestAppContext) {
-    let (page, mut cx) = open(false, cx);
+    let (page, mut cx) = open(Mode::Marker, cx);
 
     let box_ = box_of(&page, 0, &mut cx);
     cx.simulate_click(box_.center(), gpui::Modifiers::default());

@@ -181,7 +181,7 @@ impl Render for Document {
                 &doc,
                 markdown::Editing {
                     caption: markdown::Caption::Shown,
-                    on_toggle: Some(on_toggle),
+                    toggle: Some(markdown::Toggle::Handled(on_toggle)),
                     ..Default::default()
                 },
                 window,

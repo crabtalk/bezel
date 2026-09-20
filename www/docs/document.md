@@ -59,10 +59,17 @@ pub fn source_spans(source: &str) -> Vec<(Range<usize>, HighlightKind)>;
 /// editor and a sideways scroller can hold it off the right edge.
 pub fn set_layout(cx: &mut App, layout: Layout);
 
-/// Makes a task block's checkbox a control in a document you render yourself:
-/// the box takes the press, stops it, and hands you the block it belongs to.
-/// `render` and `markdown` leave it unset, and the box paints as a marker.
-pub struct Editing<'a> { pub on_toggle: Option<OnToggle>, /* ... */ }
+/// `toggle` makes a task block's checkbox a control: `Toggle::Handled` has the
+/// box take the press, stop it, and hand you the block it belongs to, and
+/// `Toggle::HitTested` paints it as a control and leaves the press to you.
+/// `copy` is whether a fence paints the button that copies its text. `render`
+/// and `markdown` leave the toggle unset, and the box paints as a marker; a
+/// document with no toggle and `CopyButton::Hidden` holds no listener at all.
+pub struct Editing<'a> {
+    pub toggle: Option<Toggle>,
+    pub copy: CopyButton,
+    /* ... */
+}
 
 // ...
 ```

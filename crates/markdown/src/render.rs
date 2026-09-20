@@ -102,6 +102,19 @@ pub enum Caption {
     Hidden,
 }
 
+/// Whether a fence paints the button that copies its text.
+///
+/// A named choice rather than a `bool`, the way [`Caption`] is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum CopyButton {
+    /// Floating at the top right of the band, on the pointer and off it.
+    #[default]
+    Shown,
+    /// Painted nowhere. A document with this and no [`Editing::toggle`] holds
+    /// no listener at all.
+    Hidden,
+}
+
 /// A range the caller wants washed, and which of the three washes it gets.
 ///
 /// A comment thread is what asks for this, and none of what it *says* is here:
@@ -129,11 +142,29 @@ impl Annotation {
     }
 }
 
-/// Handed the block whose checkbox was clicked — see [`Editing::on_toggle`].
+/// Handed the block whose checkbox was clicked — see [`Toggle::Handled`].
 ///
 /// Shared rather than borrowed: the press listener it is cloned into outlives
 /// the frame that built it.
 pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Who answers a press on a task block's checkbox.
+///
+/// Either variant paints the box as a control — the pointer over it is a hand.
+/// [`Editing::toggle`] left unset paints it as a mark, and the press goes
+/// wherever it would on any other glyph.
+#[derive(Clone)]
+pub enum Toggle {
+    /// The box takes the press, stops it, and calls this with the block it
+    /// belongs to. For a caller holding the [`Doc`] it renders itself.
+    Handled(OnToggle),
+    /// The box takes no press. The caller hit-tests
+    /// [`BlockLayouts::checkbox_bounds`] in its own handler, which is what an
+    /// editor does: the press it swallows is the one that also takes focus and
+    /// closes an open menu, and the toggle belongs in the undo history beside
+    /// the rest of its edits.
+    HitTested,
+}
 
 /// What an editor paints over a document.
 ///
@@ -159,14 +190,11 @@ pub struct Editing<'a> {
     /// [`Typography`] — a caller sizing one document apart from the rest
     /// passes [`Typography::scaled`].
     pub typography: Option<Typography>,
-    /// Makes a task block's checkbox a control: the box takes the press,
-    /// stops it, and calls this with the block it belongs to.
-    ///
-    /// For a caller holding a [`Doc`] it renders itself. An editor leaves this
-    /// unset and hit-tests [`BlockLayouts::checkbox_bounds`] in its own press
-    /// instead, which is what keeps the toggle in the undo history beside the
-    /// rest of its edits.
-    pub on_toggle: Option<OnToggle>,
+    /// Makes a task block's checkbox a control, and says who answers the
+    /// press. `None` paints a mark.
+    pub toggle: Option<Toggle>,
+    /// Whether a fence offers to copy itself.
+    pub copy: CopyButton,
 }
 
 impl Default for Editing<'_> {
@@ -181,7 +209,8 @@ impl Default for Editing<'_> {
             placeholder: None,
             caption: Caption::default(),
             typography: None,
-            on_toggle: None,
+            toggle: None,
+            copy: CopyButton::default(),
         }
     }
 }
@@ -521,7 +550,8 @@ struct Overlay<'a> {
     caption: Caption,
     /// Borrowed so [`Overlay`] stays `Copy` — the clone is made at the one
     /// press listener that needs an owned handle.
-    on_toggle: Option<&'a OnToggle>,
+    toggle: Option<&'a Toggle>,
+    copy: CopyButton,
 }
 
 impl<'a> Overlay<'a> {
@@ -634,7 +664,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         placeholder,
         caption,
         typography,
-        on_toggle,
+        toggle,
+        copy,
     } = editing;
     // Refilled every frame, in paint order — and emptied in *prepaint*, not
     // here. An editor reads last frame's positions while building this frame's
@@ -668,7 +699,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
             annotations,
             placeholder: placeholder.as_ref(),
             caption,
-            on_toggle: on_toggle.as_ref(),
+            toggle: toggle.as_ref(),
+            copy,
         };
         // The block's own box, recorded for a gutter handle and a drop target.
         // A rule and an image hold no text, so a layout would not find them.
@@ -910,16 +942,19 @@ fn checkbox(checked: bool, overlay: Overlay, typography: &Typography, theme: &Th
         .absolute()
         .size_full()
     }));
-    if let Some(toggle) = overlay.on_toggle.cloned() {
-        box_ = box_
-            .cursor_pointer()
-            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                // Stopped, or the press goes on to whatever placed a caret
-                // under it and the toggle reads as a click that moved the
-                // caret as well.
-                cx.stop_propagation();
-                toggle(ix, window, cx);
-            });
+    // The cursor answers to either variant: a box an editor hit-tests is as
+    // pressable as one the renderer listens to, and only the pointer says so.
+    if overlay.toggle.is_some() {
+        box_ = box_.cursor_pointer();
+    }
+    if let Some(Toggle::Handled(toggle)) = overlay.toggle.cloned() {
+        box_ = box_.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            // Stopped, or the press goes on to whatever placed a caret
+            // under it and the toggle reads as a click that moved the
+            // caret as well.
+            cx.stop_propagation();
+            toggle(ix, window, cx);
+        });
     }
 
     div()
@@ -1373,7 +1408,9 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         placeholder: None,
         caption: Caption::default(),
         // The source view is one fence and holds no task block.
-        on_toggle: None,
+        toggle: None,
+        // It paints no band, so there is nowhere for the button to float.
+        copy: CopyButton::Hidden,
     };
     let (underlay, lines) = code_lines(
         Some(crate::source::LANGUAGES[0]),
@@ -1616,7 +1653,10 @@ fn code_block(
                 ),
         )
         .child(body)
-        .child(copy_button(code, ix, theme, window, cx))
+        .children(
+            (overlay.copy == CopyButton::Shown)
+                .then(|| copy_button(code, ix, theme, window, cx)),
+        )
         .into_any_element()
 }
 
