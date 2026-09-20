@@ -588,13 +588,19 @@ fn a_frosted_window_asks_for_the_backdrop_its_platform_has() {
 /// first and not the second, so the two cannot be read off one another.
 #[test]
 fn a_card_frosts_on_the_renderer_and_a_window_on_the_compositor() {
-    assert_eq!(LENSED, cfg!(any(target_os = "macos", target_family = "wasm")));
+    assert_eq!(
+        LENSED,
+        cfg!(any(target_os = "macos", target_family = "wasm"))
+    );
     assert_eq!(Brand::default().glass, LENSED);
     if cfg!(target_os = "windows") {
         assert!(!LENSED, "the DirectX renderer carries no blur primitive");
     }
     if LENSED {
-        assert!(frosted_window(), "a lens implies a backdrop behind the window");
+        assert!(
+            frosted_window(),
+            "a lens implies a backdrop behind the window"
+        );
     }
 }
 
@@ -657,7 +663,9 @@ fn layout_numbers_match_the_reference() {
 fn regular_glass_falls_back_to_an_opaque_tone() {
     for theme in [Theme::dark(), Theme::light()] {
         let spec = SurfaceStyle::Glass(Glass::Regular).spec(&theme);
-        let flat = spec.flat(spec.tint).expect("regular glass covers its backdrop");
+        let flat = spec
+            .flat(spec.tint)
+            .expect("regular glass covers its backdrop");
         assert_eq!(flat.a, 1.0, "nothing reads through where nothing blurs it");
         assert!(
             (flat.l * (1.0 - spec.gain) - spec.tint.l * spec.tint.a).abs() < 1e-6,

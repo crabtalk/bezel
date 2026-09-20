@@ -1654,8 +1654,7 @@ fn code_block(
         )
         .child(body)
         .children(
-            (overlay.copy == CopyButton::Shown)
-                .then(|| copy_button(code, ix, theme, window, cx)),
+            (overlay.copy == CopyButton::Shown).then(|| copy_button(code, ix, theme, window, cx)),
         )
         .into_any_element()
 }

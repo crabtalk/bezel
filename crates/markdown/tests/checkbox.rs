@@ -38,9 +38,11 @@ impl Render for Page {
             Mode::HitTested => Some(Toggle::HitTested),
             Mode::Handled => {
                 let toggled = self.toggled.clone();
-                Some(Toggle::Handled(Rc::new(
-                    move |ix: usize, _: &mut Window, _: &mut App| toggled.borrow_mut().push(ix),
-                ) as OnToggle))
+                Some(Toggle::Handled(
+                    Rc::new(move |ix: usize, _: &mut Window, _: &mut App| {
+                        toggled.borrow_mut().push(ix)
+                    }) as OnToggle,
+                ))
             }
         };
         div().w(px(WIDTH)).child(render_with(
