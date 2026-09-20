@@ -16,6 +16,9 @@
     ],
     "changed": [
       "An unselected `toggle_group_item` washes on hover. A caller that chained its own `.hover(..)` onto one now hits gpui's panic on a second hover — reach for a `group_hover` instead."
+    ],
+    "fixed": [
+      "A surface where no lens runs — Windows, Linux, and macOS with glass off — fills with `SurfaceSpec::flat`, the tone its look settles on, instead of the tint alone. The tint is a coverage over a blur; painted flat it covered nothing, and the text behind a composer read straight through the pill."
     ]
   },
   {

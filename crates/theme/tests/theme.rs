@@ -616,3 +616,41 @@ fn layout_numbers_match_the_reference() {
     assert_eq!(Theme::STATUS_STRIP_HEIGHT, 24.0); // h-6
     assert_eq!(Theme::bubble_radius(), 16.0);
 }
+
+/// What a renderer with no backdrop blur paints in a surface's place. A tint is
+/// a coverage over the blur — dark `Regular`'s is 4% white, which covers
+/// nothing on its own.
+#[test]
+fn regular_glass_falls_back_to_an_opaque_tone() {
+    for theme in [Theme::dark(), Theme::light()] {
+        let spec = SurfaceStyle::Glass(Glass::Regular).spec(&theme);
+        let flat = spec.flat(spec.tint).expect("regular glass covers its backdrop");
+        assert_eq!(flat.a, 1.0, "nothing reads through where nothing blurs it");
+        assert!(
+            (flat.l * (1.0 - spec.gain) - spec.tint.l * spec.tint.a).abs() < 1e-6,
+            "the tone `gain * backdrop + tint` returns unchanged"
+        );
+    }
+}
+
+/// A material's spec is its tone at a coverage already, so the tone comes back.
+#[test]
+fn a_materials_flat_tone_is_the_materials_own() {
+    for theme in [Theme::dark(), Theme::light()] {
+        let spec = SurfaceStyle::Material(Material::Regular).spec(&theme);
+        let flat = spec.flat(spec.tint).expect("a frost covers its backdrop");
+        assert_eq!(flat.a, 1.0);
+        assert!((flat.l - theme.material.tone.l).abs() < 1e-6);
+    }
+}
+
+/// `Clear` brightens what it covers. A line at or above unity meets no backdrop
+/// it returns unchanged, so there is no tone to fall back to.
+#[test]
+fn clear_glass_has_no_flat_tone() {
+    for theme in [Theme::dark(), Theme::light()] {
+        let spec = SurfaceStyle::Glass(Glass::Clear).spec(&theme);
+        assert!(spec.gain >= 1.0);
+        assert_eq!(spec.flat(spec.tint), None);
+    }
+}

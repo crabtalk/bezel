@@ -4257,9 +4257,9 @@ impl Gallery {
                     .when(!ui::surface::lensed(&theme), |el| {
                         el.child(theme.warning_strip(
                             "Liquid glass is macOS only — the lens is a Metal \
-                             primitive. Here it falls back to the backdrop tint: \
-                             the card and its shape, without the refraction at \
-                             the rim.",
+                             primitive. Here it falls back to the tone the look \
+                             settles on: the card and its shape, opaque, without \
+                             the refraction at the rim.",
                         ))
                     })
                     .child(probe)

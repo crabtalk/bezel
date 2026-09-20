@@ -109,8 +109,8 @@ pub trait Surfaced: Styled + IntoElement + Sized {
     /// card's own rounding: the lens dies if any of the three is wrong.
     ///
     /// It clears the card's `bg`, since the lens paints the fill. Where the
-    /// lens cannot run — every renderer but macOS Metal — it paints the frosted
-    /// tint instead, so the surface is never invisible.
+    /// lens cannot run — every renderer but macOS Metal — it paints
+    /// [`SurfaceSpec::flat`] instead, so the surface is never invisible.
     fn surface(mut self, theme: &Theme, style: SurfaceStyle) -> Surface {
         let corners = corners_of(&mut self);
         // The lens paints the fill, so the card's own is dropped here rather
@@ -158,7 +158,7 @@ pub struct Surface {
 const LENSED: bool = cfg!(any(target_os = "macos", target_family = "wasm"));
 
 /// Whether [`Glass::glass_effect`] will actually refract here, or fall back to
-/// the flat backdrop tint. Capability and choice both: the primitive is macOS
+/// [`SurfaceSpec::flat`]. Capability and choice both: the primitive is macOS
 /// Metal's and wgpu's, and components with glass off paint no lens.
 pub fn lensed(theme: &Theme) -> bool {
     LENSED && theme.glass
@@ -239,11 +239,14 @@ impl Element for Surface {
         let corners = self.corners(bounds, window.rem_size());
         // The backdrop-blur primitive is macOS Metal's and wgpu's alone. The
         // surface's fill lives inside it, so anywhere it will not run the fill
-        // is painted here — the look's own tint, so the card degrades to a
-        // surface with the page showing through rather than to an opaque slab.
+        // is painted here — the tone the look settles on, at full coverage.
+        // The tint on its own is a coverage over a blur: painted flat it left
+        // the text behind a composer legible through it (user report).
         if !lensed(theme) {
             let tint = self.tint.unwrap_or(glass.spec.tint);
-            window.paint_quad(fill(bounds, tint).corner_radii(corners));
+            window.paint_quad(
+                fill(bounds, glass.spec.flat(tint).unwrap_or(tint)).corner_radii(corners),
+            );
         }
         if theme.glass {
             let extent = f32::from(bounds.size.width.min(bounds.size.height));
