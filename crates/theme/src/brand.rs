@@ -45,7 +45,7 @@ pub const BASE_COLORS: [(&str, Tint); 5] = [
     ("Slate", Tint::new(257.417, 0.046)),
 ];
 
-/// Whether the window composites translucent — AppKit's vibrancy.
+/// Whether the window composites translucent — AppKit's vibrancy, and Mica.
 ///
 /// Three-valued rather than a bool because the honest answer depends on the
 /// appearance, and the appearance moves under the app: the OS switches at
@@ -73,12 +73,13 @@ impl Vibrancy {
     /// Whether to composite translucent for `appearance`.
     ///
     /// The platform gate rides on [`Vibrancy::Auto`] rather than on the caller:
-    /// off macOS there is no compositor-blur guarantee, and a window that is
-    /// merely transparent shows raw desktop through the sidebar. An app that
-    /// knows its compositor says [`Vibrancy::On`] and gets it.
+    /// it asks for a frost only where the compositor paints one behind the
+    /// window ([`frosted_window`](crate::frosted_window)), since a window that is merely transparent
+    /// shows raw desktop through the sidebar. An app that knows its compositor
+    /// says [`Vibrancy::On`] and gets it anywhere.
     pub fn on(self, appearance: Appearance) -> bool {
         match self {
-            Self::Auto => Theme::VIBRANCY_ALPHA < 1.0 && matches!(appearance, Appearance::Dark),
+            Self::Auto => crate::frosted_window() && matches!(appearance, Appearance::Dark),
             Self::On => true,
             Self::Off => false,
         }
@@ -109,7 +110,9 @@ pub struct Brand {
     /// Whether components paint glass. Separate from [`Self::vibrancy`]:
     /// SwiftUI's material blends within the window, so an opaque window can
     /// still carry glass — which is what a Reduce-transparency setting asks
-    /// for and the system's own does not do.
+    /// for and the system's own does not do. The converse is a platform
+    /// answer: a Mica window carries no glass, since the blur a card lays over
+    /// the content it covers is [`LENSED`](crate::LENSED) and Mica is not.
     pub glass: bool,
 }
 
@@ -123,7 +126,7 @@ impl Default for Brand {
             radius: Theme::BASE_RADIUS,
             vibrancy_alpha: Theme::VIBRANCY_ALPHA,
             vibrancy: Vibrancy::Auto,
-            glass: Theme::VIBRANCY_ALPHA < 1.0,
+            glass: crate::LENSED,
         }
     }
 }

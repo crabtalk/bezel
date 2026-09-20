@@ -89,6 +89,11 @@ impl Theme {
 
     /// How the platform should composite the window behind our paint.
     ///
+    /// Windows takes Mica, which is DWM's own backdrop; `Blurred` there is the
+    /// undocumented accent API's acrylic at a zero tint, which reads as plain
+    /// transparency. Mica tints from the desktop wallpaper rather than from
+    /// the windows behind, so what it carries is not what vibrancy carries.
+    ///
     /// This is a method rather than a constant because it has to be *re-applied* after
     /// every theme swap: gpui's macOS backend tears the `NSVisualEffectView`
     /// out of the hierarchy whenever the value is anything but `Blurred`, and
@@ -96,10 +101,10 @@ impl Theme {
     /// user switches back to dark. See zed's `crates/zed/src/main.rs`, which
     /// runs the same loop on every settings change.
     pub fn window_background_appearance(&self) -> WindowBackgroundAppearance {
-        if self.vibrancy {
-            WindowBackgroundAppearance::Blurred
-        } else {
-            WindowBackgroundAppearance::Opaque
+        match (self.vibrancy, cfg!(target_os = "windows")) {
+            (false, _) => WindowBackgroundAppearance::Opaque,
+            (true, true) => WindowBackgroundAppearance::MicaBackdrop,
+            (true, false) => WindowBackgroundAppearance::Blurred,
         }
     }
 }

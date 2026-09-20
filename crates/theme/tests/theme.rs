@@ -1,4 +1,4 @@
-use gpui::hsla;
+use gpui::{WindowBackgroundAppearance, hsla};
 use theme::*;
 
 fn srgb_u8(c: [f32; 3]) -> [u8; 3] {
@@ -436,7 +436,7 @@ fn faintest_fills_survive_in_both_appearances() {
 /// the overlay can't drift apart.
 #[test]
 fn both_palettes_define_a_frost_and_lights_runs_heavier() {
-    if Theme::VIBRANCY_ALPHA < 1.0 {
+    {
         let (dark, light) = (Theme::dark(), Theme::light());
         assert!(
             dark.vibrancy_tint().a < 1.0,
@@ -454,22 +454,18 @@ fn both_palettes_define_a_frost_and_lights_runs_heavier() {
             light.glass_overlay().a > dark.glass_overlay().a,
             "light floating cards need more coverage over blur for legible rows"
         );
-    } else {
-        assert_eq!(Theme::light().vibrancy_tint().a, 1.0);
-        assert_eq!(Theme::dark().vibrancy_tint().a, 1.0);
     }
 }
 
 /// Which appearances [`Vibrancy::Auto`] actually frosts, which is the whole of
 /// what the three-valued brand decides.
 ///
-/// The platform gate rides on `Auto`: off macOS there is no compositor-blur
-/// guarantee, so `Auto` asks for none anywhere — while an app that knows its
+/// The platform gate rides on `Auto`: it asks for a frost only where the
+/// compositor paints one behind the window — while an app that knows its
 /// compositor still gets one from `On`.
 #[test]
 fn auto_frosts_dark_alone_and_the_named_answers_stand() {
-    let macos = Theme::VIBRANCY_ALPHA < 1.0;
-    assert_eq!(Vibrancy::Auto.on(Appearance::Dark), macos);
+    assert_eq!(Vibrancy::Auto.on(Appearance::Dark), frosted_window());
     assert!(!Vibrancy::Auto.on(Appearance::Light));
 
     for appearance in [Appearance::Dark, Appearance::Light] {
@@ -490,7 +486,7 @@ fn a_brand_asks_for_the_frost_its_palette_was_built_for() {
     let light = Theme::branded(&Brand::default(), Appearance::Light);
     assert!(!light.vibrancy, "light composites opaque");
     let dark = Theme::branded(&Brand::default(), Appearance::Dark);
-    assert_eq!(dark.vibrancy, Theme::VIBRANCY_ALPHA < 1.0);
+    assert_eq!(dark.vibrancy, frosted_window());
 }
 
 /// An input plate has to read as *lifted* in both appearances. Dark does that
@@ -563,6 +559,43 @@ fn appearance_mirror_tracks_installed_theme() {
     assert_eq!(current_appearance(), Appearance::Light);
     set_current_appearance(Appearance::Dark);
     assert_eq!(current_appearance(), Appearance::Dark);
+}
+
+/// What the window asks the compositor for. Windows takes Mica, DWM's own
+/// backdrop; `Blurred` there is the accent API's acrylic at a zero tint, which
+/// leaves the desktop showing through as if nothing were applied.
+#[test]
+fn a_frosted_window_asks_for_the_backdrop_its_platform_has() {
+    let mut theme = Theme::dark();
+
+    theme.vibrancy = false;
+    assert_eq!(
+        theme.window_background_appearance(),
+        WindowBackgroundAppearance::Opaque
+    );
+
+    theme.vibrancy = true;
+    let wanted = if cfg!(target_os = "windows") {
+        WindowBackgroundAppearance::MicaBackdrop
+    } else {
+        WindowBackgroundAppearance::Blurred
+    };
+    assert_eq!(theme.window_background_appearance(), wanted);
+}
+
+/// A window frosts where the compositor has a backdrop to put behind it; a card
+/// frosts where the renderer has the blur primitive. Windows 11 answers the
+/// first and not the second, so the two cannot be read off one another.
+#[test]
+fn a_card_frosts_on_the_renderer_and_a_window_on_the_compositor() {
+    assert_eq!(LENSED, cfg!(any(target_os = "macos", target_family = "wasm")));
+    assert_eq!(Brand::default().glass, LENSED);
+    if cfg!(target_os = "windows") {
+        assert!(!LENSED, "the DirectX renderer carries no blur primitive");
+    }
+    if LENSED {
+        assert!(frosted_window(), "a lens implies a backdrop behind the window");
+    }
 }
 
 #[test]

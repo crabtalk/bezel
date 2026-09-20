@@ -12,10 +12,14 @@
       "`ui::tabs::bar`, `tab` and `close` paint the strip: a row that scrolls once its tabs stop fitting, a label carrying an optional glyph, mark and badge, and a `×` on show or behind the hover.",
       "`tabs::Label::mark` is a glyph beside the name — unsaved work, a running job, something unread. `ui` names none itself, so the category a mark comes from stays the app's to pay for.",
       "Every `tabs::tab` but a `State::Focused` one washes on hover, a `Front` tab in a background pane included. It takes that hover itself, so chaining `.hover(..)` on hits gpui's panic on a second — reach for a `group_hover`.",
-      "`Controls::toggle_group_icon` is a segment carrying a glyph rather than a word, at the height a labelled segment takes."
+      "`Controls::toggle_group_icon` is a segment carrying a glyph rather than a word, at the height a labelled segment takes.",
+      "`theme::frosted_window` is whether the compositor puts a backdrop behind a translucent window, and `theme::LENSED` whether this build carries the backdrop-blur primitive. Windows 11 answers the first and not the second, so an app that reads one for the other gets a card it can see through."
     ],
     "changed": [
-      "An unselected `toggle_group_item` washes on hover. A caller that chained its own `.hover(..)` onto one now hits gpui's panic on a second hover — reach for a `group_hover` instead."
+      "An unselected `toggle_group_item` washes on hover. A caller that chained its own `.hover(..)` onto one now hits gpui's panic on a second hover — reach for a `group_hover` instead.",
+      "`Vibrancy::Auto` frosts a dark window on Windows 11 build 22621 and up, where `Theme::window_background_appearance` asks for Mica rather than the accent API's acrylic — which is applied at a zero tint and reads as plain transparency. Below that build the backdrop call is a no-op, so the build is read at runtime.",
+      "`Theme::VIBRANCY_ALPHA` is 0.80 on every platform. It is the tint's coverage; whether a window frosts at all is now `theme::frosted_window`.",
+      "`Brand::default().glass` follows `theme::LENSED`. A Mica window carries no glass: the backdrop is DWM's and the blur a card lays over the content it covers is the renderer's, which on Windows is DirectX and has no such primitive."
     ],
     "fixed": [
       "A surface where no lens runs — Windows, Linux, and macOS with glass off — fills with `SurfaceSpec::flat`, the tone its look settles on, instead of the tint alone. The tint is a coverage over a blur; painted flat it covered nothing, and the text behind a composer read straight through the pill."

@@ -8,9 +8,9 @@
 //!
 //! The blur is painted first, structurally under the content: inside one layer
 //! the order is blur, then shadow, tint, border, rows, text. It needs
-//! `Window::paint_backdrop_blur` from our gpui fork (macOS Metal only);
-//! elsewhere the primitive is ignored and the glass reads as the theme's
-//! translucent tint over the OS window blur.
+//! `Window::paint_backdrop_blur` from our gpui fork, which the Metal and wgpu
+//! renderers carry and the DirectX one does not; see [`theme::LENSED`]. Where
+//! it is missing the card fills with [`theme::SurfaceSpec::flat`] instead.
 //!
 //! Material and glass are different things — a material has thickness, a glass
 //! has a variant — and they meet only at the numbers they resolve to, which is
@@ -152,16 +152,11 @@ pub struct Surface {
     child: AnyElement,
 }
 
-/// Whether this build has the backdrop-blur primitive behind it. Metal reads it
-/// off the scene, and so does wgpu now that the fork implements it there —
-/// which is why this tracks the gpui in use rather than the platform alone.
-const LENSED: bool = cfg!(any(target_os = "macos", target_family = "wasm"));
-
 /// Whether [`Glass::glass_effect`] will actually refract here, or fall back to
 /// [`SurfaceSpec::flat`]. Capability and choice both: the primitive is macOS
 /// Metal's and wgpu's, and components with glass off paint no lens.
 pub fn lensed(theme: &Theme) -> bool {
-    LENSED && theme.glass
+    theme::LENSED && theme.glass
 }
 
 impl Surface {

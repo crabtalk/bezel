@@ -39,9 +39,12 @@ pub mod appearance;
 mod brand;
 mod color;
 mod paint;
+mod platform;
 mod theme;
 
 pub use brand::{BASE_COLORS, Brand, Tint, Vibrancy, brand, set_brand};
+
+pub use platform::{LENSED, frosted_window};
 
 pub use color::{
     contrast_ratio, flatten, grey, hsl_to_rgb, lightness, mix, neutral, oklch, oklch_to_srgb,
