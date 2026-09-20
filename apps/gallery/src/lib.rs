@@ -460,7 +460,9 @@ const STEPS: [Step; 3] = [
 /// submenus — one of them nested a second level down.
 ///
 /// The accelerators are printed, not bound — `menubar` never dispatches, so
-/// these name shortcuts this app would wire itself.
+/// these name shortcuts this app would wire itself. [`keys::printed`] is what
+/// keeps them the platform's own: a row that reaches the keymap instead wants
+/// [`Item::with_shortcut`].
 fn demo_menus() -> Vec<Menu> {
     vec![
         Menu::new(
@@ -471,13 +473,13 @@ fn demo_menus() -> Vec<Menu> {
                 // never show that column.
                 Item::action("New Window")
                     .with_icon(icons::glyph::FilePlus)
-                    .with_keystroke("⌘N"),
+                    .with_keystroke(keys::printed("secondary-n")),
                 // The described row, and the one that shows what a
                 // description too long for its line does: it clips, and the
                 // tooltip carries the whole of it.
                 Item::action("Open…")
                     .with_icon(icons::glyph::FolderOpen)
-                    .with_keystroke("⌘O")
+                    .with_keystroke(keys::printed("secondary-o"))
                     .with_long_description("Choose a markdown file from this workspace to edit"),
                 Item::submenu(
                     "Open Recent",
@@ -491,29 +493,36 @@ fn demo_menus() -> Vec<Menu> {
                 Item::Separator,
                 Item::action("Save")
                     .with_icon(icons::glyph::Save)
-                    .with_keystroke("⌘S"),
+                    .with_keystroke(keys::printed("secondary-s")),
                 Item::action("Save As…")
                     .with_icon(icons::glyph::Save)
-                    .with_keystroke("⇧⌘S")
+                    .with_keystroke(keys::printed("secondary-shift-s"))
                     .disabled(),
             ],
         ),
         Menu::new(
             "Edit",
             vec![
-                Item::action("Undo").with_keystroke("⌘Z"),
-                Item::action("Redo").with_keystroke("⇧⌘Z").disabled(),
+                Item::action("Undo").with_keystroke(keys::printed("secondary-z")),
+                Item::action("Redo")
+                    .with_keystroke(keys::printed("secondary-shift-z"))
+                    .disabled(),
                 Item::Separator,
-                Item::action("Cut").with_keystroke("⌘X"),
-                Item::action("Copy").with_keystroke("⌘C"),
-                Item::action("Paste").with_keystroke("⌘V"),
+                Item::action("Cut").with_keystroke(keys::printed("secondary-x")),
+                Item::action("Copy").with_keystroke(keys::printed("secondary-c")),
+                Item::action("Paste").with_keystroke(keys::printed("secondary-v")),
             ],
         ),
         Menu::new(
             "View",
             vec![
-                Item::action("Toggle Sidebar").with_keystroke("⌘B"),
-                Item::action("Full Screen").with_keystroke("⌃⌘F"),
+                Item::action("Toggle Sidebar").with_keystroke(keys::printed("secondary-b")),
+                Item::action("Full Screen").with_keystroke(keys::printed(
+                    match cfg!(target_os = "macos") {
+                        true => "ctrl-cmd-f",
+                        false => "f11",
+                    },
+                )),
                 Item::Separator,
                 Item::submenu(
                     "Appearance",
@@ -2909,7 +2918,12 @@ impl Gallery {
                         div()
                             .id("tip")
                             .tooltip(|window, cx| {
-                                Tooltip::with_keystroke("Copy path", "⌘C", window, cx)
+                                Tooltip::with_keystroke(
+                                    "Copy path",
+                                    keys::printed("secondary-c"),
+                                    window,
+                                    cx,
+                                )
                             })
                             .child(theme.button(
                                 "Hover me",

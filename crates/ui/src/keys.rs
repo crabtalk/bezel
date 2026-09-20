@@ -28,7 +28,7 @@
 //! Whichever it does, what is printed follows — that is what the rest of this
 //! module is for.
 
-use gpui::{Action, KeyContext, KeybindingKeystroke, Modifiers, SharedString, Window};
+use gpui::{Action, KeyContext, KeybindingKeystroke, Keystroke, Modifiers, SharedString, Window};
 
 /// The chord bound to `action` for whatever holds focus right now, formatted
 /// for the platform.
@@ -55,6 +55,26 @@ pub fn shortcut_in(action: &dyn Action, context: &str, window: &Window) -> Optio
     key_context.add(context.to_owned());
     let binding = window.highest_precedence_binding_for_action_in_context(action, key_context)?;
     Some(format(binding.keystrokes()))
+}
+
+/// A chord nothing is bound to, written the way this platform writes it.
+///
+/// For a label that names a chord the keymap does not own: a menu describing
+/// another app, a printed cheat sheet, a demo. Where there *is* a binding,
+/// [`shortcut`] is the one to reach for — it cannot drift, and this can.
+///
+/// The syntax is gpui's own, so `secondary-s` is the primary accelerator —
+/// `⌘S` on macOS, `Ctrl+S` elsewhere — while `cmd-s`, `super-s` and `win-s`
+/// all name the platform key itself and print `⌘S` against `Win+S`. Whitespace
+/// separates the keystrokes of a sequence, and one that will not parse is
+/// dropped rather than printed wrong.
+pub fn printed(chord: &str) -> SharedString {
+    let keystrokes = chord
+        .split_whitespace()
+        .filter_map(|keystroke| Keystroke::parse(keystroke).ok())
+        .map(KeybindingKeystroke::from_keystroke)
+        .collect::<Vec<_>>();
+    format(&keystrokes)
 }
 
 /// Format a binding's keystrokes the way the platform writes them.
