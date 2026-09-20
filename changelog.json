@@ -7,6 +7,7 @@
       "A press on a task block's checkbox checks it. `Editor::toggle_task` is the same entry point, one undo step, and it leaves the caret where it was — a press in the gutter beside the box still places one.",
       "`BlockLayouts::checkbox_bounds` is where a task block's box painted, for a host hit-testing its own press.",
       "`Editing::on_toggle` makes the box a control in a document rendered without an editor: the box takes the press and hands over the block it belongs to.",
+      "`markdown::parse_ranges` returns a `ParsedDoc` — the document, and the source range each block was parsed from. The ranges partition the source, so an app can re-serialize the blocks it edited and splice the rest back byte for byte rather than writing the whole file out in canonical form.",
       "`ui::tabs::Strip` is a tab order and the one in front — `open`, `close`, `activate`, `cycle` and `reorder` — with no gpui in it, so what a close hands over to and where a cycle wraps are tested without a window.",
       "`ui::tabs::bar`, `tab` and `close` paint the strip: a row that scrolls once its tabs stop fitting, a label carrying an optional glyph, mark and badge, and a `×` on show or behind the hover.",
       "`tabs::Label::mark` is a glyph beside the name — unsaved work, a running job, something unread. `ui` names none itself, so the category a mark comes from stays the app's to pay for.",

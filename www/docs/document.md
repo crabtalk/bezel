@@ -37,6 +37,12 @@ pub fn serialize_with(doc: &Doc, marks: &Marks) -> String;
 /// The pair a caret crosses on. Both put a sentinel where the caret is, so
 /// neither can drift from the serializer or parser it rides on.
 pub fn parse_at(source: &str, offset: usize, marks: &Marks) -> (Doc, Cursor);
+
+/// `parse`, keeping where each block came from. The ranges partition the
+/// source — first starts at 0, each ends where the next begins, last ends at
+/// `source.len()` — so re-serializing the blocks you edited and splicing
+/// `source[range]` for the rest gives the untouched bytes back exactly.
+pub fn parse_ranges(source: &str) -> ParsedDoc;  // { doc, block_ranges }
 pub fn serialize_at(doc: &Doc, at: Cursor, marks: &Marks) -> (String, usize);
 
 // The gpui-side half the editing surface reads. `set_mark_paint` is paint only
