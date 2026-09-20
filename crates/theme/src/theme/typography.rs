@@ -3,6 +3,10 @@
 //! Sizes measured on macOS 26, 2026-08-31, through
 //! `NSFont.preferredFont(forTextStyle:)`; line heights 2026-09-01, through
 //! `NSLayoutManager.defaultLineHeight(for:)` on the same fonts.
+//!
+//! One ladder on every platform. An app that wants the host's own body — 9pt
+//! Segoe UI is 12px against this 13 — calls [`set_base_text_size`], and every
+//! role and every metric keyed to it moves together.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 

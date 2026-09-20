@@ -19,19 +19,29 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  # Formatting and lints need one platform, not three — they read the same
-  # source everywhere. Linux is the cheapest runner.
+  # Lints read a different source on each platform: a `#[cfg]` arm is invisible
+  # to clippy everywhere it is not compiled, and the platform code is exactly
+  # what nobody runs locally. Windows joins Linux for that reason. macOS does
+  # not — it is what the work is done on, so its arms are linted all day.
+  #
+  # Formatting is one platform's job, and Linux is the cheapest runner.
   check:
-    name: fmt + clippy
-    runs-on: ubuntu-latest
+    name: fmt + clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: sudo .github/scripts/linux-deps
-      - run: cargo fmt --all --check
+      - if: runner.os == 'Linux'
+        run: sudo .github/scripts/linux-deps
+      - if: runner.os == 'Linux'
+        run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets
 
   # macOS is where the glass actually runs; Linux and Windows are the platforms

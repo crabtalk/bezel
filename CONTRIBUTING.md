@@ -133,6 +133,13 @@ cargo clippy --workspace --all-targets
 cargo run -p gallery              # every component, live
 ```
 
+Windows needs the MSVC toolchain — the Visual Studio Build Tools with the
+"Desktop development with C++" workload. `x86_64-pc-windows-msvc` links with
+`link.exe`, and gpui's build script compiles a manifest with `rc.exe`; both
+come from that workload and nothing in the workspace builds without it. Linux
+needs what `.github/scripts/linux-deps` installs: fontconfig, and the headers
+for both display servers, since `gpui_linux` defaults to wayland and x11.
+
 Imports are grouped per crate, which stable rustfmt cannot enforce
 ([rustfmt#4991](https://github.com/rust-lang/rustfmt/issues/4991)) — after
 touching them run `rustfmt +nightly --edition 2024 --config

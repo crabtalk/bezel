@@ -1020,6 +1020,7 @@ dependencies = [
  "libc",
  "unicode-segmentation",
  "web-time",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -307,6 +307,12 @@ pub fn keystroke_bytes(
     if mods.platform {
         return None;
     }
+    // Where there is no Cmd there is no `cmd-c`, and a terminal copies with
+    // `ctrl-shift-c` instead. Not ours either way: `ctrl-c` has to stay SIGINT,
+    // so the shifted pair is the one that falls through to the app.
+    if mods.control && mods.shift && matches!(key, "c" | "v") {
+        return None;
+    }
     if mods.alt {
         // ESC-prefix the same keystroke without alt.
         let inner = keystroke_bytes(

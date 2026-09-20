@@ -51,6 +51,14 @@ web-time.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+# The same two readings on Windows: `GetProcessTimes` and
+# `GetProcessMemoryInfo`.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 # `TestAppContext` and `Window::simulate_next_frame` — a window and a clock
 # without a display, which is what lets frame counts be asserted.

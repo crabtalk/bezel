@@ -425,3 +425,34 @@ fn selection_wash_is_neutral_and_translucent() {
     assert_eq!(terminal_selection_for(Appearance::Dark).l, 1.0);
     assert_eq!(terminal_selection_for(Appearance::Light).l, 0.0);
 }
+
+/// The clipboard pair every terminal off macOS uses. `ctrl-c` is SIGINT and
+/// cannot be it, so the shifted one falls through for the app to bind.
+#[test]
+fn ctrl_shift_c_and_v_are_the_apps() {
+    let ctrl_shift = Modifiers {
+        control: true,
+        shift: true,
+        ..mods()
+    };
+    assert_eq!(keystroke_bytes("c", Some("C"), &ctrl_shift, false), None);
+    assert_eq!(keystroke_bytes("v", Some("V"), &ctrl_shift, false), None);
+    // The unshifted pair is untouched: interrupt, and the literal 0x16.
+    let ctrl = Modifiers {
+        control: true,
+        ..mods()
+    };
+    assert_eq!(
+        keystroke_bytes("c", Some("c"), &ctrl, false),
+        Some(vec![0x03])
+    );
+    assert_eq!(
+        keystroke_bytes("v", Some("v"), &ctrl, false),
+        Some(vec![0x16])
+    );
+    // And a shifted letter that is not one of the two still reaches the PTY.
+    assert_eq!(
+        keystroke_bytes("d", Some("D"), &ctrl_shift, false),
+        Some(vec![0x04])
+    );
+}

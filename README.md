@@ -43,6 +43,9 @@ gpui = { package = "bezel-gpui", version = "0.3" }
 gpui_platform = { package = "bezel-gpui-platform", version = "0.3", features = ["font-kit"] }
 ```
 
+Building on Windows needs the MSVC toolchain, and on Linux the fontconfig and
+wayland/x11 headers — see [CONTRIBUTING](CONTRIBUTING.md#working-on-it).
+
 ## Theme
 
 Most apps want the shipped palette in their own hues. That is a `Brand` — one
