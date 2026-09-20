@@ -19,41 +19,32 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  # Lints read a different source on each platform: a `#[cfg]` arm is invisible
-  # to clippy everywhere it is not compiled, and the platform code is exactly
-  # what nobody runs locally. Windows joins Linux for that reason. macOS does
-  # not — it is what the work is done on, so its arms are linted all day.
-  #
-  # Formatting is one platform's job, and Linux is the cheapest runner.
+  # One platform, the cheapest runner. A `#[cfg]` arm clippy never compiles is
+  # never linted, so the windows-gated code is read by rustc on its own job and
+  # by nothing else — `-D warnings` there is what keeps it honest.
   check:
-    name: fmt + clippy (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    name: fmt + clippy
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - if: runner.os == 'Linux'
-        run: sudo .github/scripts/linux-deps
-      - if: runner.os == 'Linux'
-        run: cargo fmt --all --check
+      - run: sudo .github/scripts/linux-deps
+      - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets
 
-  # macOS is where the glass actually runs; Linux and Windows are the platforms
-  # that have no lens and must still build and pass, which is the case that
-  # broke.
+  # The two platforms nobody here builds on. macOS is the development machine —
+  # it runs the suite before a push, and it is the one place the glass actually
+  # paints — so a runner for it would be re-running what was just run.
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -64,8 +55,8 @@ jobs:
       # nextest builds what it runs, so there is no separate build step; the
       # one platform that lints `--all-targets` covers what a test run misses.
       #
-      # No fail-fast: one platform-specific test hiding the other 297 is not
-      # a report anyone can act on.
+      # No fail-fast: one platform-specific failure hiding the rest of the
+      # suite is not a report anyone can act on.
       - run: cargo nextest run --workspace --no-fail-fast
 
   # The gallery ships to the browser, and wasm fails in ways no native build
