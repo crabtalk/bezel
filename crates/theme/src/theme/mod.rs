@@ -343,6 +343,10 @@ pub struct Theme {
     /// Defaults to the platform's own UI face; point it at your own family
     /// once you have registered that font with the text system.
     pub font_sans: SharedString,
+    /// The family prose is set in — what `markdown` shapes a document's body
+    /// with. Defaults to [`Self::font_sans`]; an app that sets it apart gives
+    /// documents a reading face while the chrome keeps the UI one.
+    pub font_body: SharedString,
     /// Monospace family for code/terminal.
     pub font_mono: SharedString,
 }

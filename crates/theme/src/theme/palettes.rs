@@ -134,6 +134,7 @@ impl Theme {
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),
+            font_body: SYSTEM_SANS.into(),
             font_mono: system_mono().into(),
         }
     }
@@ -273,6 +274,7 @@ impl Theme {
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),
+            font_body: SYSTEM_SANS.into(),
             font_mono: system_mono().into(),
         }
     }

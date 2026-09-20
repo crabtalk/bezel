@@ -1002,7 +1002,7 @@ pub fn flatten_with(
         let mut face = font(if mono {
             theme.font_mono.clone()
         } else {
-            theme.font_sans.clone()
+            theme.font_body.clone()
         });
         face.weight = if bold && base_weight.0 < FontWeight::SEMIBOLD.0 {
             FontWeight::SEMIBOLD
