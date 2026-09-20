@@ -74,12 +74,19 @@ One `key` names both the element and the hover group `Close::OnHover` reads, so 
 
 `State` has three cases because a window can hold several strips. `Resting` is a background tab; `Front` is the tab its own strip is on; `Focused` is the one holding the keyboard. A background pane's front tab still has to say what is under it.
 
-`Label` carries the text, and optionally a leading glyph, an unsaved dot and a trailing badge:
+Every tab but a `Focused` one washes on hover — a `Front` tab in a background pane is still one click from the keyboard. `tab` takes that `hover` itself, and gpui panics on a second, so reach for a `group_hover` rather than chaining one on.
+
+`Label` carries the text, and optionally a leading glyph, a mark and a trailing badge:
 
 ```rust
-Label::new(path.file_name()).with_icon(glyph::File).dirty(buffer.unsaved()).with_badge("#12")
+Label::new(path.file_name())
+    .with_icon(glyph::File)
+    .mark(Icon::glyph(glyph::CircleSmall).solid())
+    .with_badge("#12")
 ```
 
-The dot sits outside the truncating label, so a long name cannot hide it. The badge does not truncate — keep it to a few characters.
+The mark is whatever the tab has to say beside its name — unsaved work, a running job, something unread. The crate names no glyph for it: `ui` carries only the icon categories it paints itself, and Cargo unions features down the graph, so a default here would put a category on the floor of every app that depends on `bezel-ui`. Pass one your app already pays for. It paints at `MARK_SIZE` in the tab's own tone, outside the truncating label so a long name cannot hide it; Lucide's round glyphs are outlines, and `Icon::solid` fills one.
+
+The badge does not truncate — keep it to a few characters.
 
 Drag is the caller's: the payload belongs to the app, and a bar that is itself a drop target is a pane layout's business rather than every strip's.

@@ -173,7 +173,7 @@ pub struct Label {
     text: SharedString,
     icon: Option<Icon>,
     badge: Option<SharedString>,
-    dirty: bool,
+    mark: Option<Icon>,
 }
 
 impl Label {
@@ -197,10 +197,14 @@ impl Label {
         self
     }
 
-    /// Mark unsaved work with a dot. It sits outside the truncating label, so a
-    /// long name cannot hide it.
-    pub fn dirty(mut self, dirty: bool) -> Self {
-        self.dirty = dirty;
+    /// A mark beside the label — unsaved work, a running job, something
+    /// unread.
+    ///
+    /// Painted at [`MARK_SIZE`] in the tab's own tone, outside the truncating
+    /// label so a long name cannot hide it. Lucide's round glyphs are outlines;
+    /// [`Icon::solid`] fills one.
+    pub fn mark(mut self, mark: impl Into<Icon>) -> Self {
+        self.mark = Some(mark.into());
         self
     }
 }
@@ -226,6 +230,10 @@ pub enum Close {
 
 /// How wide one tab grows before its label truncates.
 pub const MAX_WIDTH: f32 = 180.0;
+
+/// The box [`Label::mark`] paints in. Lucide's `circle-small` inks 14 of its 24
+/// units, which puts a solid one at 6px across.
+pub const MARK_SIZE: f32 = 10.0;
 
 /// Gap between tabs.
 const GAP: f32 = 2.0;
@@ -255,9 +263,9 @@ pub fn bar(id: impl Into<ElementId>) -> Stateful<Div> {
 /// `key` names both the element and the hover group [`Close::OnHover`] reads,
 /// so the two are derived from one string rather than written twice.
 ///
-/// A resting tab takes its own `hover`, and gpui panics on a second one: reach
-/// for [`Close::OnHover`]'s group, or a `group_hover` of your own, rather than
-/// chaining `.hover(..)` onto what this returns.
+/// Every tab but a [`State::Focused`] one takes its own `hover`, and gpui panics
+/// on a second one: reach for [`Close::OnHover`]'s group, or a `group_hover` of
+/// your own, rather than chaining `.hover(..)` onto what this returns.
 pub fn tab(
     theme: &Theme,
     key: impl Into<SharedString>,
@@ -294,7 +302,7 @@ pub fn tab(
         .text_color(tint)
         .cursor_pointer()
         .when(state == State::Focused, |el| el.bg(theme.element_active))
-        .when(state == State::Resting, |el| {
+        .when(state != State::Focused, |el| {
             el.hover(move |el| el.bg(wash))
         })
         .children(label.icon.map(|icon| {
@@ -304,7 +312,12 @@ pub fn tab(
                 .text_color(theme.text_muted)
         }))
         .child(div().min_w_0().truncate().child(label.text))
-        .when(label.dirty, |el| el.child(widgets::status_dot(tint)))
+        .children(label.mark.map(|mark| {
+            crate::icons::icon(mark)
+                .size(px(MARK_SIZE))
+                .flex_none()
+                .text_color(tint)
+        }))
         .children(label.badge.map(|badge| {
             div()
                 .flex_none()

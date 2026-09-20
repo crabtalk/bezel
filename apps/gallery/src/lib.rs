@@ -139,6 +139,10 @@ const STRIP_TABS: [(&str, &[u8], bool, &str); 5] = [
     ("README.md", icons::glyph::FileText, false, ""),
 ];
 
+/// What the strip demo marks an unsaved tab with. The glyph is the app's, not
+/// the crate's — `ui` carries only the icon categories it paints itself.
+const STRIP_MARK: &[u8] = icons::glyph::CircleSmall;
+
 /// What the Materials probe's rim slider spans, in points. Wide enough to reach
 /// the dome the lens used to paint over the whole shape.
 const RIM_RANGE: f32 = 32.0;
@@ -3013,7 +3017,11 @@ impl Gallery {
                                     if let Some((_, icon, dirty, badge)) =
                                         STRIP_TABS.iter().find(|(name, ..)| *name == key)
                                     {
-                                        label = label.with_icon(*icon).dirty(*dirty);
+                                        label = label.with_icon(*icon);
+                                        if *dirty {
+                                            label = label
+                                                .mark(icons::Icon::glyph(STRIP_MARK).solid());
+                                        }
                                         if !badge.is_empty() {
                                             label = label.with_badge(*badge);
                                         }

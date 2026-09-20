@@ -1,18 +1,29 @@
 [
   {
-    "version": "0.1.20",
+    "version": "0.1.21",
     "date": "2026-09-20",
-    "summary": "GFM alerts are a quote kind, tabs open and close, and a wrapped row is highlighted from its first glyph.",
+    "summary": "Tabs that open and close, with their order held apart from their paint.",
     "new": [
-      "`markdown::QuoteKind` is the GFM alert a blockquote opens with — `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` and `[!CAUTION]` survive a round trip rather than being escaped to `> \\[!TIP\\]`.",
-      "Typing the last underscore of `__bold__` makes it bold, as the last star of `**bold**` already did.",
       "`ui::tabs::Strip` is a tab order and the one in front — `open`, `close`, `activate`, `cycle` and `reorder` — with no gpui in it, so what a close hands over to and where a cycle wraps are tested without a window.",
-      "`ui::tabs::bar`, `tab` and `close` paint the strip: a row that scrolls once its tabs stop fitting, a label carrying an optional glyph, unsaved dot and badge, and a `×` on show or behind the hover.",
+      "`ui::tabs::bar`, `tab` and `close` paint the strip: a row that scrolls once its tabs stop fitting, a label carrying an optional glyph, mark and badge, and a `×` on show or behind the hover.",
+      "`tabs::Label::mark` is a glyph beside the name — unsaved work, a running job, something unread. `ui` names none itself, so the category a mark comes from stays the app's to pay for.",
+      "Every `tabs::tab` but a `State::Focused` one washes on hover, a `Front` tab in a background pane included. It takes that hover itself, so chaining `.hover(..)` on hits gpui's panic on a second — reach for a `group_hover`.",
       "`Controls::toggle_group_icon` is a segment carrying a glyph rather than a word, at the height a labelled segment takes."
     ],
     "changed": [
-      "`BlockKind::Quote(Text)` is now `BlockKind::Quote { kind, text }`; a plain blockquote is `kind: None`.",
       "An unselected `toggle_group_item` washes on hover. A caller that chained its own `.hover(..)` onto one now hits gpui's panic on a second hover — reach for a `group_hover` instead."
+    ]
+  },
+  {
+    "version": "0.1.20",
+    "date": "2026-09-20",
+    "summary": "GFM alerts are a quote kind, and a wrapped row is highlighted from its first glyph.",
+    "new": [
+      "`markdown::QuoteKind` is the GFM alert a blockquote opens with — `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` and `[!CAUTION]` survive a round trip rather than being escaped to `> \\[!TIP\\]`.",
+      "Typing the last underscore of `__bold__` makes it bold, as the last star of `**bold**` already did."
+    ],
+    "changed": [
+      "`BlockKind::Quote(Text)` is now `BlockKind::Quote { kind, text }`; a plain blockquote is `kind: None`."
     ],
     "fixed": [
       "Every row of a selection across a soft wrap is covered from its first glyph, and so is anything else painted from a byte range — search and comment highlights, inline-code and chip backgrounds.",
