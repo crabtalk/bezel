@@ -361,11 +361,6 @@ impl Render for Menubar {
                 div()
                     .relative()
                     .id(SharedString::from(format!("menubar-title-{menu}")))
-                    // Off macOS this bar is mounted in the window's titlebar,
-                    // which is one `WindowControlArea::Drag`. Without this a
-                    // press on a title drags the window on Windows instead of
-                    // opening the menu.
-                    .occlude()
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(move |bar, _, _, _| {

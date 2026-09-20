@@ -1,16 +1,21 @@
 //! [`titlebar`] — the strip a window with no system titlebar moves itself by.
 //!
-//! Moving the window is three different things. AppKit drags it itself; Linux
-//! is told to with `start_window_move`, on the first *motion* after a press
-//! and never on the press, or the bar swallows every click on the buttons
-//! sitting in it; Windows implements neither and takes a
-//! `WindowControlArea::Drag` instead, which its hit test answers with
-//! `HTCAPTION`.
+//! The strip does not move the window. A [`grip`] in it does, and everything
+//! else in the bar is an ordinary element.
 //!
-//! That last one makes the whole strip a control area, and the platform takes
-//! the first one its hit test lands in — so **an interactive child of the bar
-//! must `.occlude()`**, or a click on it drags the window on Windows.
-//! [`controls`] does.
+//! That split is forced by how the platform asks. Windows answers
+//! `WM_NCHITTEST` out of a flat list of control areas and takes the first one
+//! the pointer falls in, parent before child — so a bar that is itself one
+//! drag area turns every control in it into a window handle, unless each
+//! control blocks the mouse, and blocking the mouse also takes the scroll
+//! wheel from everything behind it. Naming the drag surface instead is what
+//! AppKit does with a drag gesture on a view, and it costs no control
+//! anything.
+//!
+//! Three platforms, three mechanisms, all of them on the grip: AppKit drags by
+//! itself, Linux is told to with `start_window_move` on the first *motion*
+//! after a press rather than on the press, and Windows implements neither and
+//! reads `WindowControlArea::Drag` back out of the hit test.
 //!
 //! The macOS traffic lights need [`Theme::TRAFFIC_LIGHT_INSET`] of leading
 //! room, which is nothing until the window goes full screen and AppKit takes
@@ -24,9 +29,11 @@
 //! see a double-click.
 //!
 //! ```ignore
-//! titlebar::titlebar("titlebar", &self.drag, true, window)
+//! titlebar::titlebar("titlebar", true, window)
 //!     .px(px(8.0))
 //!     .child(/* … */)
+//!     .child(titlebar::grip("titlebar-grip", &self.drag, window))
+//!     .child(titlebar::controls(CaptionSide::Right, window, cx))
 //! ```
 
 use std::{cell::Cell, rc::Rc};
@@ -38,7 +45,7 @@ use gpui::{
 
 use theme::Theme;
 
-/// Whether the press on a [`titlebar`] is still a candidate for a window move.
+/// Whether the press on a [`grip`] is still a candidate for a window move.
 ///
 /// Shaped like [`crate::scroll::FollowState`] and for the same reason: it
 /// mutates through `&self`, so the element carries the whole gesture and the
@@ -46,21 +53,14 @@ use theme::Theme;
 #[derive(Clone, Default)]
 pub struct DragState(Rc<Cell<bool>>);
 
-/// The strip: full width, [`Theme::TITLEBAR_HEIGHT`] tall, dragging its window
-/// and zooming it on a double click.
+/// The strip: full width, [`Theme::TITLEBAR_HEIGHT`] tall, and inert. What it
+/// holds is the caller's, including [`grip`], without which the window has no
+/// handle off macOS.
 ///
 /// `traffic_lights` reserves the leading inset for the macOS buttons — pass it
 /// on the one strip they sit over, and it stands down in full screen, where
 /// they are gone and the gap would be a hole.
-pub fn titlebar(
-    id: impl Into<ElementId>,
-    drag: &DragState,
-    traffic_lights: bool,
-    window: &Window,
-) -> Stateful<Div> {
-    let (armed, disarm, release) = (drag.0.clone(), drag.0.clone(), drag.0.clone());
-    let moving = drag.0.clone();
-    let zoomable = window.window_controls().maximize && window.is_resizable();
+pub fn titlebar(id: impl Into<ElementId>, traffic_lights: bool, window: &Window) -> Stateful<Div> {
     div()
         .id(id)
         .w_full()
@@ -71,28 +71,47 @@ pub fn titlebar(
         .when(traffic_lights && !window.is_fullscreen(), |bar| {
             bar.pl(px(Theme::TRAFFIC_LIGHT_INSET))
         })
+}
+
+/// The bare stretch of a titlebar that drags its window, zooms it on a double
+/// click and opens the desktop's window menu on a right press.
+///
+/// Takes the free space in the bar, so it is the room the content leaves. A
+/// bar whose content fills it has no handle — the window can then only be
+/// moved by its own edges, where the system has any.
+///
+/// Nothing needs to opt out of it: a control beside a grip is not inside it,
+/// and the platform hit test only ever lands in one of them.
+pub fn grip(id: impl Into<ElementId>, drag: &DragState, window: &Window) -> Stateful<Div> {
+    let (armed, disarm, release) = (drag.0.clone(), drag.0.clone(), drag.0.clone());
+    let moving = drag.0.clone();
+    let zoomable = window.window_controls().maximize && window.is_resizable();
+    div()
+        .id(id)
+        .flex_1()
+        .self_stretch()
         .on_mouse_down(MouseButton::Left, move |_, _, _| armed.set(true))
         .on_mouse_up(MouseButton::Left, move |_, _, _| release.set(false))
-        // A press that leaves the bar is not a window move either — without
-        // this the flag survives, and the next stray motion over the bar drags
-        // the window with no button held.
+        // A press that leaves the grip is not a window move either — without
+        // this the flag survives, and the next stray motion over it drags the
+        // window with no button held.
         .on_mouse_down_out(move |_, _, _| disarm.set(false))
         .on_mouse_move(move |_, window, _| {
             if moving.replace(false) {
                 window.start_window_move();
             }
         })
-        // What moves the window on Windows: the area answers `WM_NCHITTEST`
-        // with `HTCAPTION`, and the system drag, the snap and the double click
-        // follow from that. `start_window_move` above is the Linux path and is
-        // not implemented there at all.
+        // What Windows moves by: the area answers `WM_NCHITTEST` with
+        // `HTCAPTION`, and the system drag, the edge snap and the double-click
+        // zoom all follow from that. `start_window_move` above is the Linux
+        // path and is not implemented there at all.
         .window_control_area(WindowControlArea::Drag)
         // The window menu the desktop hangs off its own titlebar, where the
         // compositor says there is one. On the press, which is where a context
         // menu belongs, and a no-op on macOS and on Windows, where the system
         // menu comes from the caption hit test instead.
-        .when(window.window_controls().window_menu, |bar| {
-            bar.on_mouse_down(MouseButton::Right, |event, window, _| {
+        .when(window.window_controls().window_menu, |grip| {
+            grip.on_mouse_down(MouseButton::Right, |event, window, _| {
                 window.show_window_menu(event.position);
             })
         })
@@ -218,11 +237,6 @@ fn caption_button(button: WindowButton, window: &Window, cx: &App) -> Stateful<D
                 .text_color(theme.text),
         )
         .window_control_area(area)
-        // The bar under it is one big `Drag` area, and the platform takes the
-        // first control area its hit test lands in. Occluding is what takes
-        // the bar out of that answer, so the button is a button and not a
-        // handle to drag the window by.
-        .occlude()
         .when(!cfg!(target_os = "windows"), |control| {
             control.on_click(move |_, window, _| match button {
                 WindowButton::Close => window.remove_window(),
