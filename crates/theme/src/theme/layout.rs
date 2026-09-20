@@ -111,6 +111,15 @@ impl Theme {
     /// *moves* the lights with `TitlebarOptions::traffic_light_position` owns
     /// this number too.
     pub const TRAFFIC_LIGHT_INSET: f32 = if cfg!(target_os = "macos") { 78.0 } else { 0.0 };
+    /// One caption button — minimize, maximize, close — where the app paints
+    /// them itself. Windows' own metric; the height is the bar's.
+    pub const CAPTION_BUTTON_WIDTH: f32 = 46.0;
+    /// The band a client-decorated window keeps outside its content: the
+    /// resize target on all four edges, and the room its shadow falls in.
+    ///
+    /// Handed to `Window::set_client_inset`, so the compositor's own resize
+    /// area and the one `bezel::ui::window` hit-tests are the same band.
+    pub const CLIENT_INSET: f32 = 10.0;
     /// Reserved status strip under the content outlet (the reference `h-6`) — the
     /// WorkingIndicator row; reserving it keeps the composer from shifting.
     pub const STATUS_STRIP_HEIGHT: f32 = 24.0;
