@@ -41,7 +41,7 @@ the seam crate, because cargo unions features across a graph: one a dependency
 turns on is one no consumer can turn off. `gpui_platform` is carried under a
 `platform` feature, off by default — a wasm consumer reaching for the browser
 backend and a library opening no window both turn it off. The `geist-*` features
-are one per bundled face, on by default and forwarded to `ui`.
+are one per bundled face, off by default and forwarded to `ui`.
 
 ## Laws
 

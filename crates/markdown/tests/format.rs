@@ -131,3 +131,14 @@ fn a_half_typed_bold_close_is_not_italic() {
     let (open, _, mark) = inline_rule("2 * *x*", 7).unwrap();
     assert_eq!((open, mark), (4..5, Mark::Italic));
 }
+
+#[test]
+fn a_double_underscore_closes_bold() {
+    // Pasting `__x__` gives bold, so typing the last underscore does too.
+    let (open, inner, mark) = inline_rule("__x__", 5).unwrap();
+    assert_eq!((open, inner, mark), (0..2, 2..3, Mark::Bold));
+    // One underscore short of closing, as `**x*` is one star short.
+    assert!(inline_rule("__x_", 4).is_none());
+    // Intraword, so neither delimiter is emphasis.
+    assert!(inline_rule("a__b__", 6).is_none());
+}

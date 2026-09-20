@@ -223,15 +223,7 @@ pub fn scrolls<E: gpui::StatefulInteractiveElement>(el: E, axes: Axes) -> E {
 /// bubbles the list backwards — which is why the pane has already moved by the
 /// time the event stops here.
 pub fn contain_sideways<E: gpui::InteractiveElement>(el: E) -> E {
-    el.on_scroll_wheel(|event, window, cx| {
-        let delta = event.delta.pixel_delta(window.line_height());
-        // The dominant axis, not "any horizontal component": a trackpad puts a
-        // little of both into every gesture, and a mostly-vertical one still
-        // belongs to the page.
-        if delta.x.abs() > delta.y.abs() {
-            cx.stop_propagation();
-        }
-    })
+    contain_wheel(el, Axes::Horizontal)
 }
 
 /// Keep every wheel inside the pane it landed on — `overscroll-behavior:
@@ -249,13 +241,44 @@ pub fn contain_sideways<E: gpui::InteractiveElement>(el: E) -> E {
 pub fn contain_wheel<E: gpui::InteractiveElement>(el: E, axes: Axes) -> E {
     el.on_scroll_wheel(move |event, window, cx| {
         let delta = event.delta.pixel_delta(window.line_height());
-        // The dominant axis, as [`contain_sideways`] reads it: a trackpad puts
-        // a little of both into every gesture.
+        // The dominant axis, not "any horizontal component": a trackpad puts a
+        // little of both into every gesture, and a mostly-vertical one still
+        // belongs to the page.
         let sideways = delta.x.abs() > delta.y.abs();
         if (sideways && axes.horizontal()) || (!sideways && axes.vertical()) {
             cx.stop_propagation();
         }
     })
+}
+
+/// The strip a thumb sits in, placed along `axis` and named for `id`.
+///
+/// A press on the bar belongs to the bar. Hitboxes in gpui are paint-order
+/// only, so without `block_mouse_except_scroll` the content under the strip
+/// takes the press as well; the wheel still passes, which is what a bar laid
+/// over a pane has to let through.
+fn track(id: &SharedString, place: Place, axis: Axis) -> Stateful<Div> {
+    let debug_id = id.clone();
+    let el = div()
+        .debug_selector(move || format!("{debug_id}-track"))
+        .id(SharedString::from(format!("{id}-track")))
+        .block_mouse_except_scroll()
+        .absolute()
+        .flex();
+    match axis {
+        Axis::Vertical => el
+            .top(BAR_INSET)
+            .right(place.near())
+            .bottom(BAR_INSET + place.end)
+            .w(px(TRACK))
+            .justify_center(),
+        Axis::Horizontal => el
+            .left(BAR_INSET)
+            .right(BAR_INSET + place.end)
+            .bottom(place.near())
+            .h(px(TRACK))
+            .items_center(),
+    }
 }
 
 /// Where the thumb sits in a track of `viewport` length, as a range from the
@@ -484,23 +507,8 @@ fn scrollbar_placed(
         release_state.grab.set(None);
     };
 
-    let debug_id = id.clone();
     let thumb_debug_id = id.clone();
-    div()
-        .debug_selector(move || format!("{debug_id}-track"))
-        .id(SharedString::from(format!("{id}-track")))
-        // A press on the bar belongs to the bar. Hitboxes in gpui are
-        // paint-order only, so without this the content under the strip takes
-        // the press as well; the wheel still passes, which is what a bar laid
-        // over a pane has to let through.
-        .block_mouse_except_scroll()
-        .absolute()
-        .top(BAR_INSET)
-        .right(place.near())
-        .bottom(BAR_INSET + end_inset)
-        .w(px(TRACK))
-        .flex()
-        .justify_center()
+    track(&id, place, Axis::Vertical)
         .on_drag_move(move |event, _, cx| {
             drag_state.drag(&track_id, &drag_handle, event, end_inset, cx);
         })
@@ -690,23 +698,8 @@ fn transient_placed(
         release_state.bar.grab.set(None);
     };
 
-    let debug_id = id.clone();
     let thumb_debug_id = id.clone();
-    let track = div()
-        .debug_selector(move || format!("{debug_id}-track"))
-        .id(SharedString::from(format!("{id}-track")))
-        // A press on the bar belongs to the bar. Hitboxes in gpui are
-        // paint-order only, so without this the content under the strip takes
-        // the press as well; the wheel still passes, which is what a bar laid
-        // over a pane has to let through.
-        .block_mouse_except_scroll()
-        .absolute()
-        .top(BAR_INSET)
-        .right(place.near())
-        .bottom(BAR_INSET + end_inset)
-        .w(px(TRACK))
-        .flex()
-        .justify_center()
+    let track = track(&id, place, Axis::Vertical)
         .on_drag_move(move |event, _, cx| {
             drag_state
                 .bar

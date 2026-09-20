@@ -17,7 +17,7 @@
 //! // …then render it: .child(field.clone())
 //! ```
 
-use std::{ops::Range, time::Duration};
+use std::{borrow::Cow, ops::Range, time::Duration};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId,
@@ -241,11 +241,12 @@ pub enum Case {
 }
 
 impl Case {
-    /// `text` in this case.
-    fn apply(self, text: &str) -> String {
+    /// `text` in this case. Borrowed where the case leaves it alone, which
+    /// is the default and every keystroke through it.
+    fn apply(self, text: &str) -> Cow<'_, str> {
         match self {
-            Self::Mixed => text.to_owned(),
-            Self::Upper => text.to_uppercase(),
+            Self::Mixed => Cow::Borrowed(text),
+            Self::Upper => Cow::Owned(text.to_uppercase()),
         }
     }
 }
@@ -496,10 +497,8 @@ impl TextField {
 
     /// Replace the content, putting the cursor at the end.
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.content = self
-            .case
-            .apply(&normalize(&content.into(), self.shape))
-            .into();
+        let normalized = normalize(&content.into(), self.shape);
+        self.content = self.case.apply(&normalized).into_owned().into();
         // Colours describe text this field no longer holds.
         self.spans.clear();
         // A programmatic reset is not something the user did, so there is

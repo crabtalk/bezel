@@ -63,3 +63,20 @@ fn every_wrapped_row_is_covered_from_its_first_glyph(cx: &mut TestAppContext) {
         );
     }
 }
+
+#[gpui::test]
+fn a_row_before_the_range_is_not_painted(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(cx);
+
+    // A selection starting on the last row: every earlier row is skipped, and
+    // the range's start index is past those rows' lengths.
+    let rects = cx.update(|_, cx| {
+        page.read(cx).layouts.rects(Selection::new(
+            Cursor::new(0, Part::Body, LINE.len() - 6),
+            Cursor::new(0, Part::Body, LINE.len()),
+        ))
+    });
+
+    assert_eq!(rects.len(), 1, "one row, the one the selection is on");
+    assert!(rects[0].origin.y > px(0.0), "and it is not the first row");
+}

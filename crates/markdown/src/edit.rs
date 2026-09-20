@@ -1236,6 +1236,7 @@ pub fn inline_rule(text: &str, caret: usize) -> Option<(Range<usize>, Range<usiz
     // Longest first — `**` is bold, and only what is left of it is italic.
     for (delimiter, mark) in [
         ("**", Mark::Bold),
+        ("__", Mark::Bold),
         ("~~", Mark::Strike),
         ("`", Mark::Code),
         ("_", Mark::Italic),
@@ -1249,8 +1250,8 @@ pub fn inline_rule(text: &str, caret: usize) -> Option<(Range<usize>, Range<usiz
         };
         // `**bold*` is one keystroke from closing. Reading its second opening
         // star as italic's spends it, and the star still to come then finds no
-        // `**` to close.
-        if delimiter == "*" && text[..open].ends_with('*') {
+        // `**` to close. The same holds for `__bold_`.
+        if matches!(delimiter, "*" | "_") && text[..open].ends_with(delimiter) {
             continue;
         }
         let inner = open + delimiter.len()..closes.len();
@@ -1266,7 +1267,7 @@ pub fn inline_rule(text: &str, caret: usize) -> Option<(Range<usize>, Range<usiz
         }
         // An underscore inside a word is not emphasis in CommonMark, which is
         // the only reason `snake_case_names` survive being typed.
-        if delimiter == "_"
+        if delimiter.starts_with('_')
             && text[..open]
                 .chars()
                 .next_back()
