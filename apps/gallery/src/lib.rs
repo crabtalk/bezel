@@ -53,9 +53,14 @@ actions!(
         ToggleFullScreen,
         CloseOverlay,
         ToggleFpsOverlay,
-        ResetFrameOverlayStats
+        ResetFrameOverlayStats,
+        Quit
     ]
 );
+
+/// Whether this build owns the window's menus. macOS has the system bar, and
+/// a browser tab has no window to quit.
+const APP_MENUBAR: bool = !cfg!(any(target_os = "macos", target_family = "wasm"));
 
 /// Every keymap this view needs, in one call.
 ///
@@ -89,7 +94,10 @@ pub fn init(cx: &mut App) {
     // A pattern is an app: the composer page binds its own keys.
     patterns::agent::init(cx);
     cx.bind_keys([
+        #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-k", OpenPalette, None),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-k", OpenPalette, None),
         // Scoped to this page's context, so it never shadows the escape a
         // menu, a combobox or the document editor binds inside its own.
         KeyBinding::new("escape", CloseOverlay, Some("Gallery")),
@@ -956,6 +964,12 @@ pub struct Gallery {
     date: Entity<Calendar>,
     /// And the menubar, which holds which menu is down.
     menubar: Entity<Menubar>,
+    /// The app's own menus, mounted in the nav where the platform has no menu
+    /// bar of its own. A second entity rather than a second mount of the one
+    /// above: two bars showing one open-menu state would open together.
+    app_menus: Entity<Menubar>,
+    /// Whether a press on the nav is still a candidate for a window move.
+    drag: titlebar::DragState,
     /// What it last reported. The bar keeps no selection — a menu item is an
     /// action, not a value — so the host is where the answer lands.
     last_menu_item: Option<SharedString>,
@@ -1146,8 +1160,36 @@ impl Gallery {
         })
         .detach();
 
+        // The two rows `cx.set_menus` gives macOS, for the platforms it is not
+        // called on. Printed off the keymap, so the chord is the bound one.
+        let app_menus = cx.new(|cx| {
+            Menubar::new(
+                vec![
+                    Menu::new("bezel", vec![Item::action("Quit")]),
+                    Menu::new("Window", vec![Item::action("Toggle Full Screen")]),
+                ],
+                cx,
+            )
+        });
+        cx.subscribe(&app_menus, |_, bar, event, cx| {
+            let MenubarEvent::Selected { menu, path } = event;
+            let Some(Item::Action { label, .. }) = bar.read(cx).menus()[*menu].at(path) else {
+                return;
+            };
+            // Through the keymap rather than run here, so the menu and the
+            // chord reach the same handler.
+            match label.as_ref() {
+                "Quit" => cx.dispatch_action(&Quit),
+                "Toggle Full Screen" => cx.dispatch_action(&ToggleFullScreen),
+                _ => {}
+            }
+        })
+        .detach();
+
         Self {
             menubar,
+            app_menus,
+            drag: titlebar::DragState::default(),
             last_menu_item: None,
             search: cx.new(|cx| TextField::new(cx).with_placeholder("Search components…")),
             filled: cx.new(|cx| {
@@ -1591,134 +1633,167 @@ impl Gallery {
     /// The top nav: the kind of thing you are browsing, and the appearance
     /// switch. Everything here is global — per-page detail belongs in
     /// [`Self::header`].
-    fn nav(&self, theme: &Theme, compact: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn nav(
+        &self,
+        theme: &Theme,
+        compact: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let current = self.tab;
         let dark = matches!(theme.appearance, theme::Appearance::Dark);
-        div()
-            .flex_none()
-            .h(px(Theme::HEADER_HEIGHT))
-            .pl(px(if compact {
-                COMPACT_NAV_PAD - NAV_ITEM_PAD
-            } else {
-                RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD
-            }))
-            .pr(px(CARD_PAD))
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(18.0))
-            .when(compact, |strip| {
-                strip.child(
-                    div()
-                        .id("drawer-toggle")
-                        .p(px(NAV_ITEM_PAD))
-                        .cursor_pointer()
-                        .on_click(cx.listener(|view, _, _, cx| view.open_drawer(cx)))
-                        .child(
-                            icons::icon(icons::glyph::PanelLeft)
-                                .size(px(15.0))
-                                .text_color(theme.text_muted),
-                        ),
-                )
-            })
-            // Takes the free space, which is what pushes the trailing controls
-            // to the far edge — and once there is none left the tabs scroll
-            // under them rather than shoving them off the window.
-            .child(
+        // This strip *is* the window's titlebar — the traffic lights are
+        // painted over it, and off macOS it carries the caption cluster and
+        // the menus.
+        //
+        // Only off macOS is it a `titlebar`, though: this window leaves
+        // `app_owns_titlebar_drag` false, so AppKit is already moving it by
+        // the top edge, and asking for the drag a second time would be two
+        // answers to one press. `false` for the traffic lights because the
+        // padding below already clears them.
+        match APP_MENUBAR {
+            true => titlebar::titlebar("gallery-nav", &self.drag, false, window),
+            false => div().id("gallery-nav"),
+        }
+        .flex_none()
+        .h(px(Theme::HEADER_HEIGHT))
+        .pl(px(if compact {
+            COMPACT_NAV_PAD - NAV_ITEM_PAD
+        } else {
+            RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD
+        }))
+        .pr(px(if APP_MENUBAR { 0.0 } else { CARD_PAD }))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(18.0))
+        // Wherever the desktop puts them. Empty on macOS, and empty on the
+        // side a GNOME layout leaves bare.
+        .when(APP_MENUBAR, |strip| {
+            strip
+                .child(titlebar::controls(titlebar::CaptionSide::Left, window, cx))
+                // What `cx.set_menus` mounts in the system bar on macOS.
+                .child(self.app_menus.clone())
+        })
+        .when(compact, |strip| {
+            strip.child(
                 div()
-                    .id("nav-tabs")
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(18.0))
-                    .when(compact, |strip| scroll::scrolls(strip, Axes::Horizontal))
-                    .children(TABS.iter().enumerate().map(|(index, tab)| {
-                        let selected = index == current;
-                        let mut item = div()
-                            .id(SharedString::from(format!("nav-{}", tab.title)))
-                            .flex_none()
-                            .p(px(NAV_ITEM_PAD))
-                            .text_style(TextStyle::Body)
-                            .cursor_pointer()
-                            .on_click(cx.listener(move |view, _, _, cx| {
-                                view.open(index, view.selected[index], cx);
-                            }))
-                            .child(SharedString::from(tab.title));
-                        item = if selected {
-                            item.font_weight(gpui::FontWeight::MEDIUM)
-                                .text_color(theme.text)
-                        } else {
-                            item.text_color(theme.text_muted)
-                        };
-                        item.into_any_element()
-                    })),
-            )
-            // The frame meter, on any page rather than only the one that
-            // documents it: what a window costs is a property of what you are
-            // looking at, so it has to follow you around to be worth reading.
-            // Except where it cannot be read — the panel it opens is dragged,
-            // and a drag on a touch screen is a pan.
-            .when(!compact, |strip| {
-                strip.child(
-                    div()
-                        .id("stats-toggle")
-                        .p(px(4.0))
-                        .cursor_pointer()
-                        .on_click(cx.listener(|view, _, _, cx| {
-                            view.show_stats(!view.stats_shown, cx);
-                        }))
-                        .child(icons::icon(icons::glyph::Cpu).size(px(15.0)).text_color(
-                            if self.stats_shown {
-                                theme.text
-                            } else {
-                                theme.text_faint
-                            },
-                        )),
-                )
-            })
-            // One button carrying the appearance it is already in, not three
-            // segments and not a switch: the glyph says which of two you are
-            // looking at, so a track and a second icon only say it again.
-            //
-            // It reads the *resolved* appearance rather than the mode, so it
-            // shows what is actually on screen while the app is still following
-            // the OS — and the first press is what pins it. Returning to
-            // `System` is `set_mode`, a settings-level action rather than a
-            // nav-level one.
-            .child(
-                div()
-                    .id("appearance")
+                    .id("drawer-toggle")
+                    .occlude()
                     .p(px(NAV_ITEM_PAD))
                     .cursor_pointer()
-                    .on_click(cx.listener(move |view, _, _, cx| {
-                        appearance::set_mode(
-                            if dark {
-                                AppearanceMode::Light
-                            } else {
-                                AppearanceMode::Dark
-                            },
-                            cx,
-                        );
-                        // The probe's knobs are a look's numbers, and the two
-                        // appearances do not share them: carrying dark's over
-                        // paints light with dark's material and reads as the
-                        // theme being broken.
-                        view.probe_spec = view.probe_look(cx);
-                        cx.notify();
-                    }))
+                    .on_click(cx.listener(|view, _, _, cx| view.open_drawer(cx)))
                     .child(
-                        icons::icon(if dark {
-                            icons::glyph::Moon
-                        } else {
-                            icons::glyph::Sun
-                        })
-                        .size(px(15.0))
-                        .text_color(theme.text_muted),
+                        icons::icon(icons::glyph::PanelLeft)
+                            .size(px(15.0))
+                            .text_color(theme.text_muted),
                     ),
             )
-            .into_any_element()
+        })
+        // Takes the free space, which is what pushes the trailing controls
+        // to the far edge — and once there is none left the tabs scroll
+        // under them rather than shoving them off the window.
+        .child(
+            div()
+                .id("nav-tabs")
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(18.0))
+                .when(compact, |strip| scroll::scrolls(strip, Axes::Horizontal))
+                .children(TABS.iter().enumerate().map(|(index, tab)| {
+                    let selected = index == current;
+                    let mut item = div()
+                        .id(SharedString::from(format!("nav-{}", tab.title)))
+                        .occlude()
+                        .flex_none()
+                        .p(px(NAV_ITEM_PAD))
+                        .text_style(TextStyle::Body)
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |view, _, _, cx| {
+                            view.open(index, view.selected[index], cx);
+                        }))
+                        .child(SharedString::from(tab.title));
+                    item = if selected {
+                        item.font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.text)
+                    } else {
+                        item.text_color(theme.text_muted)
+                    };
+                    item.into_any_element()
+                })),
+        )
+        // The frame meter, on any page rather than only the one that
+        // documents it: what a window costs is a property of what you are
+        // looking at, so it has to follow you around to be worth reading.
+        // Except where it cannot be read — the panel it opens is dragged,
+        // and a drag on a touch screen is a pan.
+        .when(!compact, |strip| {
+            strip.child(
+                div()
+                    .id("stats-toggle")
+                    .occlude()
+                    .p(px(4.0))
+                    .cursor_pointer()
+                    .on_click(cx.listener(|view, _, _, cx| {
+                        view.show_stats(!view.stats_shown, cx);
+                    }))
+                    .child(icons::icon(icons::glyph::Cpu).size(px(15.0)).text_color(
+                        if self.stats_shown {
+                            theme.text
+                        } else {
+                            theme.text_faint
+                        },
+                    )),
+            )
+        })
+        // One button carrying the appearance it is already in, not three
+        // segments and not a switch: the glyph says which of two you are
+        // looking at, so a track and a second icon only say it again.
+        //
+        // It reads the *resolved* appearance rather than the mode, so it
+        // shows what is actually on screen while the app is still following
+        // the OS — and the first press is what pins it. Returning to
+        // `System` is `set_mode`, a settings-level action rather than a
+        // nav-level one.
+        .child(
+            div()
+                .id("appearance")
+                .occlude()
+                .p(px(NAV_ITEM_PAD))
+                .cursor_pointer()
+                .on_click(cx.listener(move |view, _, _, cx| {
+                    appearance::set_mode(
+                        if dark {
+                            AppearanceMode::Light
+                        } else {
+                            AppearanceMode::Dark
+                        },
+                        cx,
+                    );
+                    // The probe's knobs are a look's numbers, and the two
+                    // appearances do not share them: carrying dark's over
+                    // paints light with dark's material and reads as the
+                    // theme being broken.
+                    view.probe_spec = view.probe_look(cx);
+                    cx.notify();
+                }))
+                .child(
+                    icons::icon(if dark {
+                        icons::glyph::Moon
+                    } else {
+                        icons::glyph::Sun
+                    })
+                    .size(px(15.0))
+                    .text_color(theme.text_muted),
+                ),
+        )
+        .when(APP_MENUBAR, |strip| {
+            strip.child(titlebar::controls(titlebar::CaptionSide::Right, window, cx))
+        })
+        .into_any_element()
     }
 
     /// The bar over the pane: what you are looking at, and where it is written.
@@ -5425,7 +5500,7 @@ impl Render for Gallery {
                 .flex()
                 .flex_col()
                 .size_full()
-                .child(self.nav(&theme, compact, cx))
+                .child(self.nav(&theme, compact, window, cx))
                 .child(
                     div()
                         .flex_1()
@@ -5463,7 +5538,7 @@ impl Render for Gallery {
 
         // Traversal goes on the root so `tab` works wherever focus happens to
         // be, rather than only inside whatever claimed it.
-        focus::traversal(div())
+        let root = focus::traversal(div())
             .id("gallery-scroll")
             .key_context("Gallery")
             .track_focus(&self.focus_handle)
@@ -5699,6 +5774,11 @@ impl Render for Gallery {
                             },
                         ))),
                 )
-            })
+            });
+
+        // Border, corners, shadow and resize edges, for the desktops that hand
+        // the window over undecorated. Everywhere else this is the root back
+        // unchanged.
+        ui::window::frame(root, window, cx)
     }
 }

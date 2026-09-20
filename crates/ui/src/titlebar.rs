@@ -1,15 +1,22 @@
 //! [`titlebar`] — the strip a window with no system titlebar moves itself by.
 //!
-//! Two platform facts it exists to carry. The window is moved with
-//! `Window::start_window_move` on the first *motion* after a press, never on
-//! the press: a bar that moved on mouse-down would swallow every click on the
-//! buttons sitting in it. And the macOS traffic lights need
-//! [`Theme::TRAFFIC_LIGHT_INSET`] of leading room, which is nothing until the
-//! window goes full screen and AppKit takes them away.
+//! Moving the window is three different things. AppKit drags it itself; Linux
+//! is told to with `start_window_move`, on the first *motion* after a press
+//! and never on the press, or the bar swallows every click on the buttons
+//! sitting in it; Windows implements neither and takes a
+//! `WindowControlArea::Drag` instead, which its hit test answers with
+//! `HTCAPTION`.
 //!
-//! Off macOS the buttons are the app's to paint: [`controls`] is the cluster,
-//! and it goes in this strip. The frame around it — border, corners, shadow,
-//! resize edges — is [`crate::window::frame`].
+//! That last one makes the whole strip a control area, and the platform takes
+//! the first one its hit test lands in — so **an interactive child of the bar
+//! must `.occlude()`**, or a click on it drags the window on Windows.
+//! [`controls`] does.
+//!
+//! The macOS traffic lights need [`Theme::TRAFFIC_LIGHT_INSET`] of leading
+//! room, which is nothing until the window goes full screen and AppKit takes
+//! them away. Off macOS the buttons are the app's to paint: [`controls`] is
+//! the cluster, and the frame around it — border, corners, shadow, resize
+//! edges — is [`crate::window::frame`].
 //!
 //! The window it belongs to opens with `appears_transparent: true` and
 //! **`app_owns_titlebar_drag: true`** — the second one stops AppKit from
@@ -25,8 +32,8 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    App, Div, ElementId, HitboxBehavior, MAX_BUTTONS_PER_SIDE, MouseButton, Stateful, Window,
-    WindowButton, WindowButtonLayout, WindowControlArea, canvas, div, prelude::*, px,
+    App, Div, ElementId, MAX_BUTTONS_PER_SIDE, MouseButton, Stateful, Window, WindowButton,
+    WindowButtonLayout, WindowControlArea, div, prelude::*, px,
 };
 
 use theme::Theme;
@@ -53,6 +60,7 @@ pub fn titlebar(
 ) -> Stateful<Div> {
     let (armed, disarm, release) = (drag.0.clone(), drag.0.clone(), drag.0.clone());
     let moving = drag.0.clone();
+    let zoomable = window.window_controls().maximize && window.is_resizable();
     div()
         .id(id)
         .w_full()
@@ -74,18 +82,31 @@ pub fn titlebar(
                 window.start_window_move();
             }
         })
-        .on_click(|click, window, _| {
-            // The window menu the desktop hangs off its own titlebar. A no-op
-            // on macOS and on Windows, where the system menu comes from the
-            // caption hit test instead.
-            if click.is_right_click() {
-                window.show_window_menu(click.position());
-                return;
-            }
-            // The system's own gesture, whatever the user set it to — zoom,
-            // minimise or nothing. A no-op off macOS.
+        // What moves the window on Windows: the area answers `WM_NCHITTEST`
+        // with `HTCAPTION`, and the system drag, the snap and the double click
+        // follow from that. `start_window_move` above is the Linux path and is
+        // not implemented there at all.
+        .window_control_area(WindowControlArea::Drag)
+        // The window menu the desktop hangs off its own titlebar, where the
+        // compositor says there is one. On the press, which is where a context
+        // menu belongs, and a no-op on macOS and on Windows, where the system
+        // menu comes from the caption hit test instead.
+        .when(window.window_controls().window_menu, |bar| {
+            bar.on_mouse_down(MouseButton::Right, |event, window, _| {
+                window.show_window_menu(event.position);
+            })
+        })
+        .on_click(move |click, window, _| {
             if click.click_count() == 2 {
-                window.titlebar_double_click();
+                // macOS runs whatever the user set the gesture to — zoom,
+                // minimise or nothing — and Windows zooms from `HTCAPTION`
+                // without being asked. Linux has neither, and only where the
+                // window can be zoomed at all.
+                match cfg!(any(target_os = "linux", target_os = "freebsd")) {
+                    true if zoomable => window.zoom_window(),
+                    true => {}
+                    false => window.titlebar_double_click(),
+                }
             }
         })
 }
@@ -196,14 +217,12 @@ fn caption_button(button: WindowButton, window: &Window, cx: &App) -> Stateful<D
                 .size(px(CAPTION_GLYPH))
                 .text_color(theme.text),
         )
-        .child(
-            canvas(
-                |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
-                move |_, hitbox, window, _| window.insert_window_control_hitbox(area, hitbox),
-            )
-            .absolute()
-            .size_full(),
-        )
+        .window_control_area(area)
+        // The bar under it is one big `Drag` area, and the platform takes the
+        // first control area its hit test lands in. Occluding is what takes
+        // the bar out of that answer, so the button is a button and not a
+        // handle to drag the window by.
+        .occlude()
         .when(!cfg!(target_os = "windows"), |control| {
             control.on_click(move |_, window, _| match button {
                 WindowButton::Close => window.remove_window(),
