@@ -1,7 +1,7 @@
 [
   {
     "version": "0.1.21",
-    "date": "2026-09-20",
+    "date": "2026-09-21",
     "summary": "A checkbox you can click, and tabs that open and close with their order held apart from their paint.",
     "new": [
       "A press on a task block's checkbox checks it. `Editor::toggle_task` is the same entry point, one undo step, and it leaves the caret where it was — a press in the gutter beside the box still places one.",
