@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 # Native too: the `catalog` bin reads the same `TABS` the browser renders, which
 # is the whole point — one catalog behind the rail and the website's sidebar.
 [dependencies]
-gallery = { path = "../gallery" }
+gallery.workspace = true
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 theme.workspace = true

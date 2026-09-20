@@ -48,6 +48,9 @@ syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.1.20" 
 syntax-std = { package = "bezel-syntax-std", path = "crates/syntax-std", version = "0.1.20" }
 terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.1.20" }
 canvas = { package = "bezel-canvas", path = "crates/canvas", version = "0.1.20" }
+# An app rather than a library: `apps/web` renders the same catalog, and
+# nothing publishes it.
+gallery = { path = "apps/gallery" }
 
 # crates-io
 libc = "0.2"
