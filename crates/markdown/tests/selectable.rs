@@ -131,8 +131,7 @@ fn a_drag_off_the_text_keeps_extending_the_selection(cx: &mut gpui::TestAppConte
                                 view.dragging = true;
                             }
                             selectable::Pointer::Move(cursor) => {
-                                view.selection =
-                                    view.selection.map(|had| had.extend_to(cursor));
+                                view.selection = view.selection.map(|had| had.extend_to(cursor));
                             }
                             selectable::Pointer::Up => view.dragging = false,
                         }

@@ -3019,8 +3019,8 @@ impl Gallery {
                                     {
                                         label = label.with_icon(*icon);
                                         if *dirty {
-                                            label = label
-                                                .mark(icons::Icon::glyph(STRIP_MARK).solid());
+                                            label =
+                                                label.mark(icons::Icon::glyph(STRIP_MARK).solid());
                                         }
                                         if !badge.is_empty() {
                                             label = label.with_badge(*badge);
