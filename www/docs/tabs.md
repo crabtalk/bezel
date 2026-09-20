@@ -15,6 +15,8 @@ theme.tab_bar().children(TABS.iter().enumerate().map(|(index, label)| {
 
 Which panel a tab shows is the caller's: `tab_bar` is a strip, not a container that swallows its content.
 
+For tabs that open and close rather than switching between sections of one page, see [tab strip](/docs/tab-strip).
+
 ## API
 
 ```rust

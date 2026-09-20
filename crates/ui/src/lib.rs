@@ -37,6 +37,7 @@ pub mod stack;
 pub mod stats;
 pub mod surface;
 pub mod table;
+pub mod tabs;
 pub mod titlebar;
 pub mod tooltip;
 pub mod tree;

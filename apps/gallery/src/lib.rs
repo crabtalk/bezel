@@ -36,7 +36,7 @@ use ui::{
     stats::{self, Stats},
     surface::Surfaced as _,
     table::{self, Column, Sort, Width},
-    titlebar,
+    tabs, titlebar,
     tooltip::Tooltip,
     tree::{self, Direction, Move},
     widgets,
@@ -127,6 +127,17 @@ pub const COMMANDS: [&str; 8] = [
 ];
 
 const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
+
+/// What the tab-strip demo can open — label, glyph, whether it carries the
+/// unsaved dot, and its trailing badge if it has one. The `+` opens them in
+/// this order.
+const STRIP_TABS: [(&str, &[u8], bool, &str); 5] = [
+    ("Review", icons::glyph::GitCompare, false, "12"),
+    ("Terminal", icons::glyph::Terminal, false, ""),
+    ("main.rs", icons::glyph::File, true, ""),
+    ("theme.rs", icons::glyph::File, false, ""),
+    ("README.md", icons::glyph::FileText, false, ""),
+];
 
 /// What the Materials probe's rim slider spans, in points. Wide enough to reach
 /// the dome the lens used to paint over the whole shape.
@@ -811,6 +822,7 @@ pub const COMPONENTS: &[Group] = &[
                 "crates/ui/src/widgets/scaffolding.rs",
             ),
             section("tabs", "Tabs", "crates/ui/src/widgets/layout.rs"),
+            section("tab-strip", "Tab strip", "crates/ui/src/tabs.rs"),
             section("nav-row", "Nav row", "crates/ui/src/widgets/layout.rs"),
             section(
                 "collapsible",
@@ -971,6 +983,9 @@ pub struct Gallery {
     switched: [bool; 2],
     level: f32,
     tab_choice: usize,
+    /// The tab-strip demo's open tabs, in order, with one of them in front.
+    /// What each opens is [`STRIP_TABS`].
+    strip: tabs::Strip<&'static str>,
     nav_choice: usize,
     titlebar_drag: titlebar::DragState,
     /// Scroll position and thumb-grab for every scrolling surface here. gpui
@@ -1220,6 +1235,7 @@ impl Gallery {
             switched: [true, false],
             level: 0.5,
             tab_choice: 0,
+            strip: STRIP_TABS[..3].iter().map(|(name, ..)| *name).collect(),
             nav_choice: 0,
             titlebar_drag: titlebar::DragState::default(),
             tab: 2,
@@ -2900,6 +2916,131 @@ impl Gallery {
                                 .into_any_element()
                             }),
                     ),
+                )
+                .into_any_element(),
+
+            "tab-strip" => section
+                .child(hint(
+                    &theme,
+                    "Open things rather than sections: each tab closes, the front \
+                     one carries the wash, and the strip scrolls sideways once the \
+                     tabs stop fitting. The order and the front are a \
+                     `tabs::Strip`; what a tab opens is the app's.",
+                ))
+                .child(
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(6.0))
+                        .child(
+                            tabs::bar("demo-strip").children(self.strip.tabs().iter().map(
+                                |open| {
+                                    let key = *open;
+                                    let front = self.strip.active() == Some(&key);
+                                    let mut label = tabs::Label::new(key);
+                                    if let Some((_, icon, dirty, badge)) =
+                                        STRIP_TABS.iter().find(|(name, ..)| *name == key)
+                                    {
+                                        label = label.with_icon(*icon).dirty(*dirty);
+                                        if !badge.is_empty() {
+                                            label = label.with_badge(*badge);
+                                        }
+                                    }
+                                    tabs::tab(
+                                        &theme,
+                                        key,
+                                        label,
+                                        match front {
+                                            true => tabs::State::Focused,
+                                            false => tabs::State::Resting,
+                                        },
+                                    )
+                                    .on_click(cx.listener(move |view, _, _, cx| {
+                                        view.strip.activate(&key);
+                                        cx.notify();
+                                    }))
+                                    .child(
+                                        tabs::close(&theme, key, tabs::Close::OnHover).on_click(
+                                            cx.listener(move |view, _, _, cx| {
+                                                cx.stop_propagation();
+                                                view.strip.close(&key);
+                                                cx.notify();
+                                            }),
+                                        ),
+                                    )
+                                },
+                            )),
+                        )
+                        .child(
+                            theme
+                                .ghost("strip-add")
+                                .flex_none()
+                                .p(px(4.0))
+                                .tooltip(|window, cx| Tooltip::text("Open a tab", window, cx))
+                                .child(
+                                    icons::icon(icons::glyph::Plus)
+                                        .size(px(14.0))
+                                        .text_color(theme.text_muted),
+                                )
+                                .on_click(cx.listener(|view, _, _, cx| {
+                                    if let Some((next, ..)) = STRIP_TABS
+                                        .iter()
+                                        .find(|(name, ..)| !view.strip.contains(name))
+                                    {
+                                        view.strip.open(next);
+                                        cx.notify();
+                                    }
+                                })),
+                        )
+                        .child(div().flex_1())
+                        .children([-1isize, 1].map(|step| {
+                            theme
+                                .ghost(SharedString::from(format!("strip-cycle-{step}")))
+                                .flex_none()
+                                .p(px(4.0))
+                                .tooltip(move |window, cx| {
+                                    Tooltip::text(
+                                        match step {
+                                            1 => "Next tab",
+                                            _ => "Previous tab",
+                                        },
+                                        window,
+                                        cx,
+                                    )
+                                })
+                                .child(
+                                    icons::icon(match step {
+                                        1 => icons::glyph::ChevronRight,
+                                        _ => icons::glyph::ChevronLeft,
+                                    })
+                                    .size(px(14.0))
+                                    .text_color(theme.text_muted),
+                                )
+                                .on_click(cx.listener(move |view, _, _, cx| {
+                                    view.strip.cycle(step);
+                                    cx.notify();
+                                }))
+                        })),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .h(px(120.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(Theme::panel_radius()))
+                        .border_1()
+                        .border_color(theme.border)
+                        .text_style(TextStyle::Callout)
+                        .text_color(theme.text_muted)
+                        .child(match self.strip.active() {
+                            Some(open) => SharedString::from(format!("{open} is in front")),
+                            None => SharedString::from("Nothing open"),
+                        }),
                 )
                 .into_any_element(),
 
