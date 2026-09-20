@@ -205,7 +205,37 @@ fn cpu_time() -> Option<Duration> {
     Some(spent(usage.ru_utime) + spent(usage.ru_stime))
 }
 
-#[cfg(not(unix))]
+/// The same two figures, from the kernel's own counters. `FILETIME` counts
+/// 100-nanosecond ticks, and the two the process has not used are zero rather
+/// than absent.
+#[cfg(target_os = "windows")]
+fn cpu_time() -> Option<Duration> {
+    use windows_sys::Win32::{Foundation::FILETIME, System::Threading};
+
+    let zero = || FILETIME {
+        dwLowDateTime: 0,
+        dwHighDateTime: 0,
+    };
+    let (mut created, mut exited, mut kernel, mut user) = (zero(), zero(), zero(), zero());
+    // SAFETY: the four are written only on success, and the pseudo handle
+    // `GetCurrentProcess` returns needs no close.
+    let read = unsafe {
+        Threading::GetProcessTimes(
+            Threading::GetCurrentProcess(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
+    };
+    if read == 0 {
+        return None;
+    }
+    let ticks = |time: FILETIME| ((time.dwHighDateTime as u64) << 32) | time.dwLowDateTime as u64;
+    Some(Duration::from_nanos((ticks(kernel) + ticks(user)) * 100))
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
 fn cpu_time() -> Option<Duration> {
     None
 }
@@ -236,7 +266,26 @@ fn memory() -> Option<u64> {
     Some(info.resident_size)
 }
 
-#[cfg(not(target_os = "macos"))]
+/// The working set — what Task Manager prints in its Memory column, and the
+/// closest Windows has to a resident size.
+#[cfg(target_os = "windows")]
+fn memory() -> Option<u64> {
+    use windows_sys::Win32::System::{ProcessStatus, Threading};
+
+    let mut counters = unsafe { std::mem::zeroed::<ProcessStatus::PROCESS_MEMORY_COUNTERS>() };
+    counters.cb = size_of::<ProcessStatus::PROCESS_MEMORY_COUNTERS>() as u32;
+    // SAFETY: the struct is filled only on success, and says its own size.
+    let read = unsafe {
+        ProcessStatus::GetProcessMemoryInfo(
+            Threading::GetCurrentProcess(),
+            &mut counters,
+            counters.cb,
+        )
+    };
+    (read != 0).then_some(counters.WorkingSetSize as u64)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn memory() -> Option<u64> {
     None
 }

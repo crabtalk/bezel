@@ -301,7 +301,11 @@ fn system_mono() -> &'static str {
     } else if cfg!(target_os = "macos") {
         ".AppleSystemUIFontMonospaced"
     } else if cfg!(target_os = "windows") {
-        "Consolas"
+        // Ships with Windows 11 and with Terminal. Nothing names a second
+        // choice behind it — `font_name_with_fallbacks` resolves the dot-names
+        // and nothing else — so a system without it gets whatever DirectWrite
+        // substitutes.
+        "Cascadia Mono"
     } else {
         "DejaVu Sans Mono"
     }

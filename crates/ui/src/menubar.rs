@@ -23,10 +23,10 @@
 //! ui::menubar::init(cx);   // once, at startup
 //! let bar = cx.new(|cx| Menubar::new(vec![
 //!     Menu::new("File", vec![
-//!         Item::action("New Window").with_keystroke("⌘N"),
+//!         Item::action("New Window").with_shortcut(&NewWindow, window),
 //!         Item::submenu("Open Recent", vec![Item::action("bezel.md")]),
 //!         Item::Separator,
-//!         Item::action("Close").with_keystroke("⌘W").disabled(),
+//!         Item::action("Close").with_keystroke(keys::printed("secondary-w")).disabled(),
 //!     ]),
 //! ], cx));
 //! cx.subscribe(&bar, |_, bar, event, cx| match event {

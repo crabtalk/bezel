@@ -1,7 +1,30 @@
 [
   {
+    "version": "0.1.22",
+    "date": "2026-09-21",
+    "summary": "The window chrome a platform without a titlebar hands over: a frame where the compositor draws none, caption buttons where the desktop puts them, and a bar that drags by its grip.",
+    "new": [
+      "`ui::window::frame` wraps an app's root in the frame its window owes — a border, `Theme::surface_radius` corners, a shadow, and a `Theme::CLIENT_INSET` band that resizes from all eight directions. It reads `Window::window_decorations` per frame: under `Decorations::Server` the child comes back untouched, which is macOS, Windows, X11 and KDE. GNOME's Wayland session has never implemented `xdg-decoration` and answers `Client` whatever was asked for, and that is the case this paints. An edge `tiling` reports flush keeps its square corner and gives up its band.",
+      "`ui::window::resize_edge` is which edge a press resizes, or `None` for a press on the content. The corners take their `inset` square and the edges take what is left between them, so the hitboxes the frame lays down need no order between them.",
+      "`titlebar::controls` is the caption cluster off macOS — minimize, maximize or restore, and close. Call it at both ends of the bar with `CaptionSide` and the desktop decides which end fills: `App::button_layout` reads GNOME's `gtk-decoration-layout`, and a platform reporting no layout puts the three on the right. Empty in full screen, and short whatever `Window::window_controls` says the compositor refuses.",
+      "`titlebar::grip` is the bare stretch of a bar that moves its window, zooms it on a double click and opens the desktop's window menu on a right press. It takes the free space the content leaves.",
+      "`keys::printed` writes a chord nothing is bound to the way the platform writes it — `secondary-s` is `⌘S` against `Ctrl+S`, while `cmd-s`, `super-s` and `win-s` name the platform key itself and print `⌘S` against `Win+S`. For a label naming a chord the keymap does not own; where there is a binding, `keys::shortcut` cannot drift and this can.",
+      "`Theme::CLIENT_INSET` is the band a client-decorated window keeps outside its content, and `Theme::CAPTION_BUTTON_WIDTH` one caption button.",
+      "`ui::stats` reads CPU time and memory on Windows, through `GetProcessTimes` and `GetProcessMemoryInfo`. Both were blank there."
+    ],
+    "changed": [
+      "`titlebar::titlebar` no longer moves the window and no longer takes a `DragState` — put a `titlebar::grip` in the bar and give it the state instead. The bar used to be one `WindowControlArea::Drag`, which is how Windows answers `WM_NCHITTEST`, and the platform takes the first control area the pointer falls in: every interactive child then had to `occlude()` to stay clickable, and occluding takes the scroll wheel from everything behind it. Naming the drag surface costs the controls nothing.",
+      "The default mono face on Windows is Cascadia Mono, which ships with Windows 11 and with Terminal, in place of Consolas.",
+      "`ctrl-y` redoes off macOS, beside `ctrl-shift-z`, in both the text field and the editor keymaps.",
+      "`bezel-ui` turns on a fourth `bezel-icons` category, `shapes`, for the square a caption button maximizes with. Cargo unions features, so it is the floor for anything depending on `ui`."
+    ],
+    "fixed": [
+      "`ctrl-shift-c` in a terminal view no longer sends `ETX`. It was reaching the control-byte table, so copying interrupted the foreground process; it and `ctrl-shift-v` now fall through for the app to bind, and `ctrl-c` stays SIGINT."
+    ]
+  },
+  {
     "version": "0.1.21",
-    "date": "2026-09-20",
+    "date": "2026-09-21",
     "summary": "A checkbox you can click, and tabs that open and close with their order held apart from their paint.",
     "new": [
       "A press on a task block's checkbox checks it. `Editor::toggle_task` is the same entry point, one undo step, and it leaves the caret where it was — a press in the gutter beside the box still places one.",

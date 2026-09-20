@@ -53,9 +53,14 @@ actions!(
         ToggleFullScreen,
         CloseOverlay,
         ToggleFpsOverlay,
-        ResetFrameOverlayStats
+        ResetFrameOverlayStats,
+        Quit
     ]
 );
+
+/// Whether this build owns the window's menus. macOS has the system bar, and
+/// a browser tab has no window to quit.
+const APP_MENUBAR: bool = !cfg!(any(target_os = "macos", target_family = "wasm"));
 
 /// Every keymap this view needs, in one call.
 ///
@@ -89,7 +94,10 @@ pub fn init(cx: &mut App) {
     // A pattern is an app: the composer page binds its own keys.
     patterns::agent::init(cx);
     cx.bind_keys([
+        #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-k", OpenPalette, None),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new("ctrl-k", OpenPalette, None),
         // Scoped to this page's context, so it never shadows the escape a
         // menu, a combobox or the document editor binds inside its own.
         KeyBinding::new("escape", CloseOverlay, Some("Gallery")),
@@ -460,7 +468,9 @@ const STEPS: [Step; 3] = [
 /// submenus — one of them nested a second level down.
 ///
 /// The accelerators are printed, not bound — `menubar` never dispatches, so
-/// these name shortcuts this app would wire itself.
+/// these name shortcuts this app would wire itself. [`keys::printed`] is what
+/// keeps them the platform's own: a row that reaches the keymap instead wants
+/// [`Item::with_shortcut`].
 fn demo_menus() -> Vec<Menu> {
     vec![
         Menu::new(
@@ -471,13 +481,13 @@ fn demo_menus() -> Vec<Menu> {
                 // never show that column.
                 Item::action("New Window")
                     .with_icon(icons::glyph::FilePlus)
-                    .with_keystroke("⌘N"),
+                    .with_keystroke(keys::printed("secondary-n")),
                 // The described row, and the one that shows what a
                 // description too long for its line does: it clips, and the
                 // tooltip carries the whole of it.
                 Item::action("Open…")
                     .with_icon(icons::glyph::FolderOpen)
-                    .with_keystroke("⌘O")
+                    .with_keystroke(keys::printed("secondary-o"))
                     .with_long_description("Choose a markdown file from this workspace to edit"),
                 Item::submenu(
                     "Open Recent",
@@ -491,29 +501,36 @@ fn demo_menus() -> Vec<Menu> {
                 Item::Separator,
                 Item::action("Save")
                     .with_icon(icons::glyph::Save)
-                    .with_keystroke("⌘S"),
+                    .with_keystroke(keys::printed("secondary-s")),
                 Item::action("Save As…")
                     .with_icon(icons::glyph::Save)
-                    .with_keystroke("⇧⌘S")
+                    .with_keystroke(keys::printed("secondary-shift-s"))
                     .disabled(),
             ],
         ),
         Menu::new(
             "Edit",
             vec![
-                Item::action("Undo").with_keystroke("⌘Z"),
-                Item::action("Redo").with_keystroke("⇧⌘Z").disabled(),
+                Item::action("Undo").with_keystroke(keys::printed("secondary-z")),
+                Item::action("Redo")
+                    .with_keystroke(keys::printed("secondary-shift-z"))
+                    .disabled(),
                 Item::Separator,
-                Item::action("Cut").with_keystroke("⌘X"),
-                Item::action("Copy").with_keystroke("⌘C"),
-                Item::action("Paste").with_keystroke("⌘V"),
+                Item::action("Cut").with_keystroke(keys::printed("secondary-x")),
+                Item::action("Copy").with_keystroke(keys::printed("secondary-c")),
+                Item::action("Paste").with_keystroke(keys::printed("secondary-v")),
             ],
         ),
         Menu::new(
             "View",
             vec![
-                Item::action("Toggle Sidebar").with_keystroke("⌘B"),
-                Item::action("Full Screen").with_keystroke("⌃⌘F"),
+                Item::action("Toggle Sidebar").with_keystroke(keys::printed("secondary-b")),
+                Item::action("Full Screen").with_keystroke(keys::printed(
+                    match cfg!(target_os = "macos") {
+                        true => "ctrl-cmd-f",
+                        false => "f11",
+                    },
+                )),
                 Item::Separator,
                 Item::submenu(
                     "Appearance",
@@ -947,6 +964,12 @@ pub struct Gallery {
     date: Entity<Calendar>,
     /// And the menubar, which holds which menu is down.
     menubar: Entity<Menubar>,
+    /// The app's own menus, mounted in the nav where the platform has no menu
+    /// bar of its own. A second entity rather than a second mount of the one
+    /// above: two bars showing one open-menu state would open together.
+    app_menus: Entity<Menubar>,
+    /// Whether a press on the nav is still a candidate for a window move.
+    drag: titlebar::DragState,
     /// What it last reported. The bar keeps no selection — a menu item is an
     /// action, not a value — so the host is where the answer lands.
     last_menu_item: Option<SharedString>,
@@ -1137,8 +1160,36 @@ impl Gallery {
         })
         .detach();
 
+        // The two rows `cx.set_menus` gives macOS, for the platforms it is not
+        // called on. Printed off the keymap, so the chord is the bound one.
+        let app_menus = cx.new(|cx| {
+            Menubar::new(
+                vec![
+                    Menu::new("bezel", vec![Item::action("Quit")]),
+                    Menu::new("Window", vec![Item::action("Toggle Full Screen")]),
+                ],
+                cx,
+            )
+        });
+        cx.subscribe(&app_menus, |_, bar, event, cx| {
+            let MenubarEvent::Selected { menu, path } = event;
+            let Some(Item::Action { label, .. }) = bar.read(cx).menus()[*menu].at(path) else {
+                return;
+            };
+            // Through the keymap rather than run here, so the menu and the
+            // chord reach the same handler.
+            match label.as_ref() {
+                "Quit" => cx.dispatch_action(&Quit),
+                "Toggle Full Screen" => cx.dispatch_action(&ToggleFullScreen),
+                _ => {}
+            }
+        })
+        .detach();
+
         Self {
             menubar,
+            app_menus,
+            drag: titlebar::DragState::default(),
             last_menu_item: None,
             search: cx.new(|cx| TextField::new(cx).with_placeholder("Search components…")),
             filled: cx.new(|cx| {
@@ -1582,10 +1633,20 @@ impl Gallery {
     /// The top nav: the kind of thing you are browsing, and the appearance
     /// switch. Everything here is global — per-page detail belongs in
     /// [`Self::header`].
-    fn nav(&self, theme: &Theme, compact: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn nav(
+        &self,
+        theme: &Theme,
+        compact: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let current = self.tab;
         let dark = matches!(theme.appearance, theme::Appearance::Dark);
-        div()
+        // This strip *is* the window's titlebar — the traffic lights are
+        // painted over it, and off macOS it carries the caption cluster, the
+        // menus and the grip the window is moved by. `false` for the traffic
+        // lights because the padding below already clears them.
+        titlebar::titlebar("gallery-nav", false, window)
             .flex_none()
             .h(px(Theme::HEADER_HEIGHT))
             .pl(px(if compact {
@@ -1593,11 +1654,19 @@ impl Gallery {
             } else {
                 RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD
             }))
-            .pr(px(CARD_PAD))
+            .pr(px(if APP_MENUBAR { 0.0 } else { CARD_PAD }))
             .flex()
             .flex_row()
             .items_center()
             .gap(px(18.0))
+            // Wherever the desktop puts them. Empty on macOS, and empty on the
+            // side a GNOME layout leaves bare.
+            .when(APP_MENUBAR, |strip| {
+                strip
+                    .child(titlebar::controls(titlebar::CaptionSide::Left, window, cx))
+                    // What `cx.set_menus` mounts in the system bar on macOS.
+                    .child(self.app_menus.clone())
+            })
             .when(compact, |strip| {
                 strip.child(
                     div()
@@ -1644,7 +1713,13 @@ impl Gallery {
                             item.text_color(theme.text_muted)
                         };
                         item.into_any_element()
-                    })),
+                    }))
+                    // The stretch past the last tab is what moves the window,
+                    // inside the strip rather than beside it so a compact window
+                    // gives it up to the tabs instead of to a gap.
+                    .when(APP_MENUBAR, |strip| {
+                        strip.child(titlebar::grip("nav-grip", &self.drag, window))
+                    }),
             )
             // The frame meter, on any page rather than only the one that
             // documents it: what a window costs is a property of what you are
@@ -1709,6 +1784,9 @@ impl Gallery {
                         .text_color(theme.text_muted),
                     ),
             )
+            .when(APP_MENUBAR, |strip| {
+                strip.child(titlebar::controls(titlebar::CaptionSide::Right, window, cx))
+            })
             .into_any_element()
     }
 
@@ -2909,7 +2987,12 @@ impl Gallery {
                         div()
                             .id("tip")
                             .tooltip(|window, cx| {
-                                Tooltip::with_keystroke("Copy path", "⌘C", window, cx)
+                                Tooltip::with_keystroke(
+                                    "Copy path",
+                                    keys::printed("secondary-c"),
+                                    window,
+                                    cx,
+                                )
                             })
                             .child(theme.button(
                                 "Hover me",
@@ -3215,47 +3298,48 @@ impl Gallery {
                 section
                     .child(hint(
                         &theme,
-                        "Drag either strip to move the window; double-click to \
-                         zoom it. The move starts on the first motion after the \
-                         press, which is what leaves the button in the bar its \
-                         own click.",
+                        "Drag the bare stretch of either strip to move the \
+                         window; double-click it to zoom. That stretch is a \
+                         grip, and it is the only part that drags — which is \
+                         what leaves the button beside it its own click. The \
+                         move starts on the first motion after the press.",
                     ))
                     .child(
                         frame(div()).child(
-                            titlebar::titlebar(
-                                "titlebar-lights",
-                                &self.titlebar_drag,
-                                true,
-                                window,
-                            )
-                            .pr(px(8.0))
-                            .child(caption("Traffic lights cleared"))
-                            .child(pressable(
-                                {
-                                    let hover = theme.element_hover;
-                                    control_bar::bar_button(
-                                        icons::glyph::Search,
-                                        24.0,
-                                        theme.text_muted,
-                                    )
-                                    .hover(move |s| s.bg(hover))
-                                },
-                                "titlebar-search",
-                                cx,
-                                |view, cx| view.press("Search", cx),
-                            )),
+                            titlebar::titlebar("titlebar-lights", true, window)
+                                .pr(px(8.0))
+                                .child(caption("Traffic lights cleared"))
+                                .child(titlebar::grip(
+                                    "titlebar-lights-grip",
+                                    &self.titlebar_drag,
+                                    window,
+                                ))
+                                .child(pressable(
+                                    {
+                                        let hover = theme.element_hover;
+                                        control_bar::bar_button(
+                                            icons::glyph::Search,
+                                            24.0,
+                                            theme.text_muted,
+                                        )
+                                        .hover(move |s| s.bg(hover))
+                                    },
+                                    "titlebar-search",
+                                    cx,
+                                    |view, cx| view.press("Search", cx),
+                                )),
                         ),
                     )
                     .child(
                         frame(div()).child(
-                            titlebar::titlebar(
-                                "titlebar-plain",
-                                &self.titlebar_drag,
-                                false,
-                                window,
-                            )
-                            .px(px(8.0))
-                            .child(caption("A pane with no lights over it")),
+                            titlebar::titlebar("titlebar-plain", false, window)
+                                .px(px(8.0))
+                                .child(caption("A pane with no lights over it"))
+                                .child(titlebar::grip(
+                                    "titlebar-plain-grip",
+                                    &self.titlebar_drag,
+                                    window,
+                                )),
                         ),
                     )
                     .when_some(self.last_pressed.clone(), |page, label| {
@@ -5411,7 +5495,7 @@ impl Render for Gallery {
                 .flex()
                 .flex_col()
                 .size_full()
-                .child(self.nav(&theme, compact, cx))
+                .child(self.nav(&theme, compact, window, cx))
                 .child(
                     div()
                         .flex_1()
@@ -5449,7 +5533,7 @@ impl Render for Gallery {
 
         // Traversal goes on the root so `tab` works wherever focus happens to
         // be, rather than only inside whatever claimed it.
-        focus::traversal(div())
+        let root = focus::traversal(div())
             .id("gallery-scroll")
             .key_context("Gallery")
             .track_focus(&self.focus_handle)
@@ -5685,6 +5769,11 @@ impl Render for Gallery {
                             },
                         ))),
                 )
-            })
+            });
+
+        // Border, corners, shadow and resize edges, for the desktops that hand
+        // the window over undecorated. Everywhere else this is the root back
+        // unchanged.
+        ui::window::frame(root, window, cx)
     }
 }

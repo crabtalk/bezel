@@ -303,10 +303,14 @@ impl Render for RibbonDemo {
             .font_family(theme.font_mono.clone())
             .text_style(TextStyle::Caption2)
             .text_color(theme.text_faint)
-            .child(match formatting.fenceable {
-                true => "⌘E fences",
-                false => "⌘E is inline code",
-            });
+            .child(format!(
+                "{} {}",
+                ui::keys::printed("secondary-e"),
+                match formatting.fenceable {
+                    true => "fences",
+                    false => "is inline code",
+                }
+            ));
 
         let modes = [("Blocks", Mode::Blocks), ("Markdown", Mode::Source)];
         let toggle = theme.toggle_group().children(modes.map(|(label, to)| {

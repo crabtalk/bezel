@@ -117,7 +117,8 @@ pub fn bindings() -> Vec<KeyBinding> {
     //
     // The emacs kill ring is unbound for the same reason and stays unbuilt with
     // it: `ctrl-w`, `alt-w` and `ctrl-y` collide with `cmd-x`, `cmd-c`, `cmd-v`
-    // and `cmd-w`, so a kill deletes and `cmd-x` is how text travels.
+    // and `cmd-w`, so a kill deletes and `cmd-x` is how text travels. Off
+    // macOS `ctrl-y` is redo, which is the chord Windows reaches for.
 
     #[cfg(target_os = "macos")]
     bindings.extend([
@@ -173,6 +174,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-v", Paste, ctx),
         KeyBinding::new("ctrl-z", Undo, ctx),
         KeyBinding::new("ctrl-shift-z", Redo, ctx),
+        KeyBinding::new("ctrl-y", Redo, ctx),
         KeyBinding::new("ctrl-b", ToggleBold, ctx),
         KeyBinding::new("ctrl-i", ToggleItalic, ctx),
         KeyBinding::new("ctrl-e", ToggleCode, ctx),

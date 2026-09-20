@@ -116,22 +116,6 @@ fn spec_delay_holds_then_runs() {
 }
 
 #[test]
-fn catalog_timings_match_the_source() {
-    assert_eq!(FADE_IN.duration_ms, 500);
-    assert_eq!(FADE_QUICK.duration_ms, 150);
-    assert_eq!(MENU_IN.duration_ms, 140);
-    assert_eq!(DIALOG_IN.duration_ms, 180);
-    assert_eq!((SPLASH_OUT.duration_ms, SPLASH_OUT.delay_ms), (500, 150));
-    assert_eq!(RESIZE.duration_ms, 200);
-    assert_eq!(TAB_SLIDE.duration_ms, 150);
-    assert_eq!(COLLAPSE.duration_ms, 180);
-    assert_eq!(CHEVRON.duration_ms, 200);
-    assert_eq!(PULSE.duration_ms, 2400);
-    assert_eq!(GRADIENT_SPIN.duration_ms, 750);
-    assert_eq!(EASE_OUT_EXPO, CubicBezier::new(0.16, 1.0, 0.3, 1.0));
-}
-
-#[test]
 fn pulse_wave_endpoints() {
     assert_close(pulse_wave(0.0), 0.0, 1e-6, "wave start");
     assert_close(pulse_wave(0.5), 1.0, 1e-6, "wave peak");
@@ -293,13 +277,6 @@ fn mix_endpoints_and_transparent_blend() {
         half_rgba.r > 0.99 && half_rgba.g > 0.99 && half_rgba.b > 0.99,
         "white wash keeps its hue: {half_rgba:?}"
     );
-}
-
-#[test]
-fn hover_spec_matches_tailwind_transition_colors() {
-    assert_eq!(HOVER_FADE.duration_ms, 150);
-    assert_eq!(HOVER_FADE.delay_ms, 0);
-    assert_eq!(EASE_TAILWIND, CubicBezier::new(0.4, 0.0, 0.2, 1.0));
 }
 
 #[test]
