@@ -1234,11 +1234,8 @@ fn range_rects(
     let mut line_start = 0;
     for line in layout.line_layouts() {
         let shaped = &line.unwrapped_layout;
-        // Rows come from the wrap boundaries themselves. A boundary index is
-        // both the end of one row and the start of the next, and
-        // `position_for_index` only ever answers with the end — so probing for
-        // a row's start lands one glyph in, and stepping a byte at a time to
-        // get there lands inside a character.
+        // A wrap boundary index is both the end of one row and the start of
+        // the next.
         let row_ends = line
             .wrap_boundaries()
             .iter()
@@ -1246,7 +1243,10 @@ fn range_rects(
             .chain([line.len()]);
         let mut row_start = 0;
         for (row, row_end) in row_ends.enumerate() {
-            let from = range.start.saturating_sub(line_start).max(row_start);
+            let from = range
+                .start
+                .saturating_sub(line_start)
+                .clamp(row_start, row_end);
             let to = range.end.saturating_sub(line_start).min(row_end);
             let row_x = shaped.x_for_index(row_start);
             let (left, right) = (shaped.x_for_index(from), shaped.x_for_index(to));
