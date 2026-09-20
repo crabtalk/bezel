@@ -42,6 +42,7 @@ pub mod titlebar;
 pub mod tooltip;
 pub mod tree;
 pub mod widgets;
+pub mod window;
 
 /// Embedded UI fonts — Geist and Geist Mono (variable), © Vercel Inc.,
 /// licensed under the SIL Open Font License 1.1 (https://openfontlicense.org).
