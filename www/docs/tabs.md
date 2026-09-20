@@ -15,7 +15,23 @@ theme.tab_bar().children(TABS.iter().enumerate().map(|(index, label)| {
 
 Which panel a tab shows is the caller's: `tab_bar` is a strip, not a container that swallows its content.
 
-For tabs that open and close rather than switching between sections of one page, see [tab strip](/docs/tab-strip).
+This one switches between sections of one page, over a set fixed at compile time. Tabs that open and close are [tab strip](/docs/tab-strip); picking a *value* out of a fixed set is [toggle group](/docs/toggle-group).
+
+## Keys
+
+Nothing is bound here. `focus::focusable` puts each tab in the tab order, gives it the ring, and dispatches `Activate` on `enter` / `space`. `←` / `→` arrive as `focus::Decrement` and `focus::Increment` — the pair bezel dispatches for a focused control holding a value, which for a strip is which tab is open:
+
+```rust
+pressable(focus::focusable(&theme, &self.tabs[index], theme.tab(label, self.tab == index)), ..)
+    .on_action(cx.listener(move |view, _: &focus::Decrement, window, cx| {
+        view.open(index as isize - 1, window, cx)
+    }))
+    .on_action(cx.listener(move |view, _: &focus::Increment, window, cx| {
+        view.open(index as isize + 1, window, cx)
+    }))
+```
+
+Move the focus with the selection, or the next arrow starts from the tab you left.
 
 ## API
 

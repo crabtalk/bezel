@@ -185,6 +185,13 @@ pub trait Layout: ThemeExt {
     }
 
     /// Tab strip: a hairline-underlined row that tabs sit on.
+    ///
+    /// Switches between sections of one page, over a set fixed at compile
+    /// time. Tabs that open and close are [`crate::tabs`].
+    ///
+    /// Keys are the caller's, through [`crate::focus`]: `focusable` puts each
+    /// tab in the tab order and gives it `enter`/`space`, and `Decrement` /
+    /// `Increment` arrive on ← / → for whichever tab holds focus.
     fn tab_bar(&self) -> Div {
         let theme = self.theme();
         div()

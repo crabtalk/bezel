@@ -921,6 +921,8 @@ pub struct Gallery {
     palette: Option<Entity<CommandPalette>>,
     last_command: Option<SharedString>,
     segment: usize,
+    /// Which glyph segment the icon-only toggle group is on.
+    segment_view: usize,
     expanded: bool,
     /// Which step rows are showing their output.
     step_open: [bool; 3],
@@ -964,6 +966,7 @@ pub struct Gallery {
     radios: [gpui::FocusHandle; 2],
     switches: [gpui::FocusHandle; 2],
     segments: [gpui::FocusHandle; 3],
+    segments_view: [gpui::FocusHandle; 2],
     slider: gpui::FocusHandle,
     /// The composer's knobs, and which of its three files is showing. What they
     /// are *set to* is the brand global — the page keeps no palette.
@@ -1167,6 +1170,7 @@ impl Gallery {
             palette: None,
             last_command: None,
             segment: 0,
+            segment_view: 0,
             expanded: true,
             step_open: [false; 3],
             // Arrives mid-run, which is the state the auto-follow is for.
@@ -1184,6 +1188,7 @@ impl Gallery {
             radios: [cx.focus_handle(), cx.focus_handle()],
             switches: [cx.focus_handle(), cx.focus_handle()],
             segments: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+            segments_view: [cx.focus_handle(), cx.focus_handle()],
             slider: cx.focus_handle(),
             brand_knobs: std::array::from_fn(|_| cx.focus_handle()),
             probe_knobs: std::array::from_fn(|_| cx.focus_handle()),
@@ -2007,6 +2012,16 @@ impl Gallery {
             .into_any_element()
     }
 
+    /// Open the tab strip's `at`, wrapping at both ends, and take the focus
+    /// with it.
+    fn open_tab(&mut self, at: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let count = self.tab_strip.len() as isize;
+        let at = at.rem_euclid(count) as usize;
+        self.tab_choice = at;
+        window.focus(&self.tab_strip[at], cx);
+        cx.notify();
+    }
+
     /// Put `held` in front of `before` — where the drift demo's drop lands.
     /// The list is the app's, the way a board's cards are: bezel reports where
     /// the pointer let go and arranges nothing itself.
@@ -2703,6 +2718,39 @@ impl Gallery {
                             }),
                     ),
                 )
+                .child(hint(
+                    &theme,
+                    "A segment can carry a glyph instead of a word, for a control \
+                     with no room for one. The tooltip is the caller's — a glyph \
+                     nobody recognises says nothing without it.",
+                ))
+                .child(
+                    theme.toggle_group().children(
+                        [
+                            (icons::glyph::SquareKanban, "Lanes"),
+                            (icons::glyph::LayoutList, "List"),
+                        ]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, (glyph, label))| {
+                            pressable(
+                                focus::focusable(
+                                    &theme,
+                                    &self.segments_view[index],
+                                    theme.toggle_group_icon(glyph, self.segment_view == index),
+                                ),
+                                SharedString::from(format!("segment-view-{index}")),
+                                cx,
+                                move |view, cx| {
+                                    view.segment_view = index;
+                                    cx.notify();
+                                },
+                            )
+                            .tooltip(move |window, cx| Tooltip::text(label, window, cx))
+                            .into_any_element()
+                        }),
+                    ),
+                )
                 .into_any_element(),
 
             "collapsible" => {
@@ -2893,7 +2941,13 @@ impl Gallery {
                 .into_any_element(),
 
             "tabs" => section
-                .child(hint(&theme, "space or enter opens the focused tab."))
+                .child(hint(
+                    &theme,
+                    "Sections of one page, not things that open and close — see \
+                     Tab strip for those. Tab walks the strip, space or enter \
+                     opens the focused tab, and ← / → move the selection and \
+                     carry the focus with it.",
+                ))
                 .child(
                     theme.tab_bar().children(
                         ["Components", "Tokens", "Motion"]
@@ -2913,6 +2967,21 @@ impl Gallery {
                                         cx.notify();
                                     },
                                 )
+                                // bezel binds ← / → to `Decrement`/`Increment`
+                                // for a focused control holding a *value*, and
+                                // a strip's value is which tab is open. The
+                                // focus goes with the selection, or the next
+                                // arrow starts from the tab you left.
+                                .on_action(cx.listener(
+                                    move |view, _: &focus::Decrement, window, cx| {
+                                        view.open_tab(index as isize - 1, window, cx);
+                                    },
+                                ))
+                                .on_action(cx.listener(
+                                    move |view, _: &focus::Increment, window, cx| {
+                                        view.open_tab(index as isize + 1, window, cx);
+                                    },
+                                ))
                                 .into_any_element()
                             }),
                     ),
