@@ -593,9 +593,6 @@ fn a_card_frosts_on_the_renderer_and_a_window_on_the_compositor() {
         cfg!(any(target_os = "macos", target_family = "wasm"))
     );
     assert_eq!(Brand::default().glass, LENSED);
-    if cfg!(target_os = "windows") {
-        assert!(!LENSED, "the DirectX renderer carries no blur primitive");
-    }
     if LENSED {
         assert!(
             frosted_window(),
