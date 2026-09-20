@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.1.20",
+    "date": "2026-09-20",
+    "summary": "GFM alerts are a quote kind, and a wrapped row is highlighted from its first glyph.",
+    "new": [
+      "`markdown::QuoteKind` is the GFM alert a blockquote opens with — `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` and `[!CAUTION]` survive a round trip rather than being escaped to `> \\[!TIP\\]`.",
+      "Typing the last underscore of `__bold__` makes it bold, as the last star of `**bold**` already did."
+    ],
+    "changed": [
+      "`BlockKind::Quote(Text)` is now `BlockKind::Quote { kind, text }`; a plain blockquote is `kind: None`."
+    ],
+    "fixed": [
+      "Every row of a selection across a soft wrap is covered from its first glyph, and so is anything else painted from a byte range — search and comment highlights, inline-code and chip backgrounds.",
+      "Typing `**bold**` one key at a time no longer goes italic at `**bold*`, leaving a stray star behind."
+    ]
+  },
+  {
     "version": "0.1.19",
     "date": "2026-09-18",
     "summary": "A pane names the room its scrollbar sits in, fields hold a case, and nested panes keep the wheel.",
