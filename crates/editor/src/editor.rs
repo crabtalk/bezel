@@ -1702,6 +1702,48 @@ impl Editor {
             vec![]
         });
     }
+
+    /// Check or uncheck the task block at `ix`. Does nothing to a block that
+    /// is not one.
+    ///
+    /// An edit like any other: one undo step, and the caret stays where it
+    /// was, so toggling a box across the document does not move whatever is
+    /// being typed.
+    pub fn toggle_task(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if !self.blocks() {
+            return;
+        }
+        let checked = match self.doc.blocks.get(ix).map(|block| &block.kind) {
+            Some(BlockKind::Task { checked, .. }) => !checked,
+            _ => return,
+        };
+        self.edit(EditKind::Structure, cx, |this| {
+            if let Some(BlockKind::Task { checked: at, .. }) =
+                this.doc.blocks.get_mut(ix).map(|block| &mut block.kind)
+            {
+                *at = checked;
+            }
+            vec![]
+        });
+        // Every other edit is made at the caret and owes it a reveal. This one
+        // is made where a press landed, and the caret can be pages away: the
+        // reveal `edit` asked for would scroll the box being checked off the
+        // screen.
+        self.reveal = false;
+    }
+
+    /// The task block whose checkbox `at` landed in, in window coordinates.
+    ///
+    /// The box that painted rather than the marker column: a press in the
+    /// gutter beside it is a press on the row, and still places a caret.
+    fn checkbox_at(&self, at: gpui::Point<gpui::Pixels>) -> Option<usize> {
+        let ix = self.layouts.block_at(at)?;
+        self.layouts
+            .checkbox_bounds(ix)
+            .is_some_and(|bounds| bounds.contains(&at))
+            .then_some(ix)
+    }
+
     /// The paragraph a document ending in a fence, a table, a rule or an image
     /// has no other way to grow: a fence swallows Enter, a cell and a caption
     /// have nowhere to put one, and a rule holds no caret at all. `false` when
@@ -1850,6 +1892,13 @@ impl Render for Editor {
                     ui::popover::close_popup(this, cx, |this| &mut this.language_menu);
                     this.pasted = None;
                     this.focus_handle.clone().focus(window, cx);
+                    // Ahead of the hit test, and returning without one: the
+                    // box is a control, and a caret dropped into the row
+                    // behind it would move the caret on every check.
+                    if let Some(ix) = this.checkbox_at(event.position) {
+                        this.toggle_task(ix, cx);
+                        return;
+                    }
                     if this.tail_click(event.position, cx) {
                         return;
                     }
@@ -2145,6 +2194,10 @@ impl Render for Editor {
                                     text_size::resolve(self.text_size, cx)
                                         / theme::base_text_size(),
                                 )),
+                                // Unset: the editor's own press hit-tests
+                                // `checkbox_bounds`, which is what keeps a
+                                // toggle in the undo history.
+                                on_toggle: None,
                             },
                             window,
                             cx,

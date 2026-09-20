@@ -53,6 +53,11 @@ pub fn source_spans(source: &str) -> Vec<(Range<usize>, HighlightKind)>;
 /// editor and a sideways scroller can hold it off the right edge.
 pub fn set_layout(cx: &mut App, layout: Layout);
 
+/// Makes a task block's checkbox a control in a document you render yourself:
+/// the box takes the press, stops it, and hands you the block it belongs to.
+/// `render` and `markdown` leave it unset, and the box paints as a marker.
+pub struct Editing<'a> { pub on_toggle: Option<OnToggle>, /* ... */ }
+
 // ...
 ```
 

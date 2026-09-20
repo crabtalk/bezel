@@ -898,3 +898,59 @@ fn platform_ranges_use_utf16_for_chinese_and_emoji(cx: &mut TestAppContext) {
         })
         .unwrap();
 }
+
+#[gpui::test]
+fn a_press_on_a_checkbox_toggles_it_and_leaves_the_caret(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("- [ ] open\n- [x] done", cx);
+    let caret = head(&editor, &mut cx);
+
+    let box_ = cx
+        .update(|_, cx| editor.read(cx).layouts().checkbox_bounds(0))
+        .expect("the first checkbox painted");
+    cx.simulate_click(box_.center(), gpui::Modifiers::default());
+
+    assert_eq!(
+        source(&editor, &mut cx),
+        "- [x] open\n- [x] done",
+        "the unchecked box checked"
+    );
+    assert_eq!(head(&editor, &mut cx), caret, "and the caret stayed put");
+
+    let box_ = cx
+        .update(|_, cx| editor.read(cx).layouts().checkbox_bounds(1))
+        .expect("the second checkbox painted");
+    cx.simulate_click(box_.center(), gpui::Modifiers::default());
+    assert_eq!(
+        source(&editor, &mut cx),
+        "- [x] open\n- [ ] done",
+        "and the checked one unchecked"
+    );
+
+    cx.simulate_keystrokes(&format!("{PRIMARY}-z"));
+    assert_eq!(
+        source(&editor, &mut cx),
+        "- [x] open\n- [x] done",
+        "one toggle is one undo step"
+    );
+}
+
+#[gpui::test]
+fn a_press_beside_a_checkbox_places_a_caret(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("- [ ] open\n- [x] done", cx);
+
+    let box_ = cx
+        .update(|_, cx| editor.read(cx).layouts().checkbox_bounds(1))
+        .expect("the second checkbox painted");
+    // The gutter between the box and the text, which belongs to the row.
+    cx.simulate_click(
+        gpui::point(box_.origin.x + box_.size.width + px(3.0), box_.center().y),
+        gpui::Modifiers::default(),
+    );
+
+    assert_eq!(
+        source(&editor, &mut cx),
+        "- [ ] open\n- [x] done",
+        "nothing toggled"
+    );
+    assert_eq!(head(&editor, &mut cx).block, 1, "the caret moved there");
+}

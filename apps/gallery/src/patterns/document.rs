@@ -1,7 +1,7 @@
 //! The document pattern — a reader, and the screen `markdown` exists for.
 //!
 //! Nothing here is library code. The reader is an outline, a scroll area and a
-//! toggle; the only calls into the library are [`markdown::render`] and
+//! toggle; the only calls into the library are [`markdown::render_with`] and
 //! [`markdown::serialize`]. Copy this file.
 //!
 //! Editing is the `editor` pattern next door, which is a different screen with
@@ -17,6 +17,10 @@
 //! model, and it is the same reason the editor's Enter and Backspace are list
 //! operations rather than restructures.
 //!
+//! **A checkbox is a control without an editor.** The reader owns the `Doc`,
+//! so [`markdown::Editing::on_toggle`] is all a click needs: flip the block
+//! and notify. The Source segment then shows the `- [x]` it wrote.
+//!
 //! **Source view is the round trip.** The Source segment does not show the
 //! string this file holds — it shows `serialize(&doc)`, the document written
 //! back out. It matches the original byte for byte, which is what makes an
@@ -26,7 +30,11 @@
 //! Like the other patterns it is an entity: a screen owns a screen's worth of
 //! state, and its host holds one field.
 
-use gpui::{Context, ElementId, Render, ScrollHandle, SharedString, Window, div, prelude::*, px};
+use std::rc::Rc;
+
+use gpui::{
+    App, Context, ElementId, Render, ScrollHandle, SharedString, Window, div, prelude::*, px,
+};
 use markdown::{BlockKind, Doc};
 use theme::{TextStyle, Theme, Typeset};
 use ui::scroll::{self, Axes};
@@ -153,8 +161,32 @@ impl Render for Document {
                     .child(title)
             }));
 
+        // A click on a checkbox comes back here with the block it landed on.
+        // The reader holds the document, so the toggle is a field and a
+        // notify — there is no editor in this screen at all.
+        let this = cx.entity();
+        let on_toggle: markdown::OnToggle = Rc::new(move |ix, _, cx: &mut App| {
+            this.update(cx, |this, cx| {
+                if let Some(BlockKind::Task { checked, .. }) =
+                    this.doc.blocks.get_mut(ix).map(|block| &mut block.kind)
+                {
+                    *checked = !*checked;
+                    cx.notify();
+                }
+            });
+        });
+
         let body = match self.view {
-            View::Read => markdown::render(&doc, markdown::Caption::Shown, window, cx),
+            View::Read => markdown::render_with(
+                &doc,
+                markdown::Editing {
+                    caption: markdown::Caption::Shown,
+                    on_toggle: Some(on_toggle),
+                    ..Default::default()
+                },
+                window,
+                cx,
+            ),
             // The document written back out, not the constant above it.
             View::Source => div()
                 .font_family(theme.font_mono.clone())
