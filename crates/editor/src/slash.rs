@@ -60,7 +60,13 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
                 text: text(),
             },
         ),
-        ("Quote".into(), BlockKind::Quote(text())),
+        (
+            "Quote".into(),
+            BlockKind::Quote {
+                kind: None,
+                text: text(),
+            },
+        ),
         (
             "Code".into(),
             BlockKind::Code {
