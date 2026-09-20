@@ -31,10 +31,16 @@ geist-weights = ["geist-sans"]
 
 [dependencies]
 theme.workspace = true
-# Three categories cover every glyph the components paint — disclosure
-# chevrons and sort arrows, the check and alert marks, the search field. Cargo
-# unions features, so these three are the floor for anything depending on `ui`.
-icons = { workspace = true, features = ["arrows", "notifications", "text"] }
+# Four categories cover every glyph the components paint — disclosure chevrons
+# and sort arrows, the check and alert marks, the search field, and the square
+# a caption button maximises with. Cargo unions features, so these four are the
+# floor for anything depending on `ui`.
+icons = { workspace = true, features = [
+    "arrows",
+    "notifications",
+    "shapes",
+    "text",
+] }
 motion.workspace = true
 gpui.workspace = true
 unicode-segmentation = "1"
