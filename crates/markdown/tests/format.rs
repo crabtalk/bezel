@@ -120,3 +120,14 @@ fn bold_wins_over_italic_at_the_same_spot() {
     let (_, _, mark) = inline_rule("**x**", 5).unwrap();
     assert_eq!(mark, Mark::Bold, "`**` is bold, not two italics");
 }
+
+#[test]
+fn a_half_typed_bold_close_is_not_italic() {
+    // One star short of closing: firing here eats an opening star, and the
+    // second closing star then has no `**` left to close.
+    assert!(inline_rule("**x*", 4).is_none());
+    assert!(inline_rule("say **x*", 8).is_none());
+    // The star before an opener that is its own is just text.
+    let (open, _, mark) = inline_rule("2 * *x*", 7).unwrap();
+    assert_eq!((open, mark), (4..5, Mark::Italic));
+}

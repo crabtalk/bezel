@@ -1247,6 +1247,12 @@ pub fn inline_rule(text: &str, caret: usize) -> Option<(Range<usize>, Range<usiz
         let Some(open) = closes.rfind(delimiter) else {
             continue;
         };
+        // `**bold*` is one keystroke from closing. Reading its second opening
+        // star as italic's spends it, and the star still to come then finds no
+        // `**` to close.
+        if delimiter == "*" && text[..open].ends_with('*') {
+            continue;
+        }
         let inner = open + delimiter.len()..closes.len();
         let Some(body) = text.get(inner.clone()).filter(|body| !body.is_empty()) else {
             continue;
