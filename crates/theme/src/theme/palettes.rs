@@ -61,8 +61,8 @@ impl Theme {
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
-            vibrancy: Self::VIBRANCY_ALPHA < 1.0,
-            glass: Self::VIBRANCY_ALPHA < 1.0,
+            vibrancy: crate::frosted_window(),
+            glass: crate::LENSED,
             // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
             // one tone across all five thicknesses (49.8 down to 45.3), and the
             // sigma does not move with them. The rim is bezel's, not Apple's —
@@ -134,6 +134,7 @@ impl Theme {
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),
+            font_body: SYSTEM_SANS.into(),
             font_mono: system_mono().into(),
         }
     }
@@ -215,8 +216,8 @@ impl Theme {
             diff_del: color::oklch(0.577, 0.245, 27.325),  // red-600
             diff_hunk_bg: hsla(0.6, 0.35, 0.35, 0.07),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
-            vibrancy: Self::VIBRANCY_ALPHA < 1.0,
-            glass: Self::VIBRANCY_ALPHA < 1.0,
+            vibrancy: crate::frosted_window(),
+            glass: crate::LENSED,
             // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The
             // material is not a tone-flip of dark: `regular` keeps its opacity
             // (86%) and swaps a 19% grey base for a 97% white one, which is why
@@ -273,6 +274,7 @@ impl Theme {
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),
+            font_body: SYSTEM_SANS.into(),
             font_mono: system_mono().into(),
         }
     }

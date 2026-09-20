@@ -5,8 +5,8 @@
 
 use crate::{BlockLayouts, Cursor, Doc, Editing, Selection, render_with};
 use gpui::{
-    AnyElement, Context, CursorStyle, ElementId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    Window, div, prelude::*,
+    AnyElement, Context, CursorStyle, DispatchPhase, ElementId, MouseButton, MouseDownEvent,
+    MouseMoveEvent, Window, canvas, div, prelude::*,
 };
 use std::rc::Rc;
 
@@ -24,11 +24,18 @@ pub enum Pointer {
 ///
 /// `dragging` is the caller's: a move only extends a selection that a press
 /// started, and which item that press landed in is not something one block of
-/// text can know.
+/// text can know. It has to be `true` for at most one block at a time — a
+/// block that is told it is dragging follows the pointer over the whole
+/// window, so two of them would both extend on every move.
 ///
 /// Releasing is answered twice over — on the text and off it — because a drag
 /// that ends past the edge of a paragraph is the ordinary way to select to the
-/// end of one.
+/// end of one. Moves are read the same way: `on_mouse_move` is delivered only
+/// while the pointer is over this element's hitbox, so a drag off the text —
+/// or under something painted over it — would otherwise stop extending where
+/// it crossed the edge. [`BlockLayouts::hit`] resolves a point outside the
+/// text to the nearest line, which is what makes the off-hitbox move
+/// answerable at all.
 #[expect(
     clippy::too_many_arguments,
     reason = "a document, its selection, and a gesture"
@@ -62,10 +69,30 @@ pub fn render<V: 'static>(
                 }
             }),
         )
-        .on_mouse_move(cx.listener(move |view, event: &MouseMoveEvent, _, cx| {
-            if dragging && let Some(cursor) = at_move.hit(event.position) {
-                moved(view, Pointer::Move(cursor), cx);
-            }
+        // Registered in the paint phase, from a canvas that occupies nothing:
+        // a window listener is the only one that hears a move the hitbox does
+        // not cover, and `Window::on_mouse_event` may only be called there.
+        .children(dragging.then(|| {
+            let view = cx.entity();
+            canvas(
+                |_, _, _| (),
+                move |_, _, window, _| {
+                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                        if phase != DispatchPhase::Bubble
+                            || event.pressed_button != Some(MouseButton::Left)
+                        {
+                            return;
+                        }
+                        if let Some(cursor) = at_move.hit(event.position) {
+                            view.update(cx, |view, cx| {
+                                moved(view, Pointer::Move(cursor), cx);
+                            });
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .size_0()
         }))
         .on_mouse_up(
             MouseButton::Left,

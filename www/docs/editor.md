@@ -85,6 +85,10 @@ impl Editor {
 
     pub fn set_block(&mut self, ix: usize, kind: BlockKind, cx: &mut Context<Self>);
 
+    /// Check or uncheck a task block. A press on the box already calls this;
+    /// the caret does not move, and one toggle is one undo step.
+    pub fn toggle_task(&mut self, ix: usize, cx: &mut Context<Self>);
+
     // The trigger is yours to place, name and bind. `EditorEvent::ModeChanged`
     // hears about a switch you did not make.
     pub fn mode(&self) -> Mode;
@@ -104,8 +108,8 @@ impl Editor {
     pub fn with_undo_limit(self, limit: usize) -> Self;
 
     /// Where everything landed last frame — `block_bounds`, `picture_bounds`,
-    /// `language_bounds`, `hit`, and `rects(selection)` for the painted rows
-    /// of a range.
+    /// `language_bounds`, `checkbox_bounds`, `hit`, and `rects(selection)` for
+    /// the painted rows of a range.
     pub fn layouts(&self) -> &BlockLayouts;
 
     // ...

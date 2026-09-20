@@ -3,6 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/bezel.svg?style=flat-square)](https://crates.io/crates/bezel)
 [![license](https://img.shields.io/crates/l/bezel.svg?style=flat-square)](LICENSE)
 [![gpui](https://img.shields.io/crates/v/bezel-gpui.svg?style=flat-square&label=gpui)](https://crates.io/crates/bezel-gpui)
+[![discord](https://img.shields.io/discord/1481168707391852659?style=flat-square&label=discord&logo=discord&logoColor=white&color=5865F2)](https://discord.com/invite/yGZDYnwbx6)
 
 > [!NOTE]
 > Bezel is developing fast, with frequent releases and version bumps.

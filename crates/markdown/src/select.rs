@@ -279,6 +279,12 @@ pub struct Selection {
     pub head: Cursor,
 }
 
+impl From<Cursor> for Selection {
+    fn from(cursor: Cursor) -> Self {
+        Self::at(cursor)
+    }
+}
+
 impl Selection {
     /// A collapsed selection — a plain caret.
     pub fn at(cursor: Cursor) -> Self {

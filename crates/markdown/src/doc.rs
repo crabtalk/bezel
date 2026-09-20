@@ -63,6 +63,12 @@ pub struct Block {
     pub indent: u8,
 }
 
+impl From<BlockKind> for Block {
+    fn from(kind: BlockKind) -> Self {
+        Self::new(kind)
+    }
+}
+
 impl Block {
     pub fn new(kind: BlockKind) -> Self {
         Self { kind, indent: 0 }
@@ -309,6 +315,18 @@ pub struct Text {
     pub text: String,
     /// Outermost first. Ranges may overlap and may be identical.
     pub marks: Vec<MarkSpan>,
+}
+
+impl From<&str> for Text {
+    fn from(text: &str) -> Self {
+        Self::plain(text)
+    }
+}
+
+impl From<String> for Text {
+    fn from(text: String) -> Self {
+        Self::plain(text)
+    }
 }
 
 impl Text {

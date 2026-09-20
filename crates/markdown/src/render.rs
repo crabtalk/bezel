@@ -11,9 +11,9 @@ use std::{cell::RefCell, ops::Range, rc::Rc};
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
-    InteractiveText, ObjectFit, Pixels, Point, SharedString, StrikethroughStyle, StyledImage as _,
-    StyledText, TextLayout, TextRun, UnderlineStyle, Window, canvas, div, font, img, point,
-    prelude::*, px, quad, size,
+    InteractiveText, MouseButton, ObjectFit, Pixels, Point, SharedString, StrikethroughStyle,
+    StyledImage as _, StyledText, TextLayout, TextRun, UnderlineStyle, Window, canvas, div, font,
+    img, point, prelude::*, px, quad, size,
 };
 use theme::{TextStyle, Theme, Typeset};
 
@@ -102,6 +102,19 @@ pub enum Caption {
     Hidden,
 }
 
+/// Whether a fence paints the button that copies its text.
+///
+/// A named choice rather than a `bool`, the way [`Caption`] is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum CopyButton {
+    /// Floating at the top right of the band, on the pointer and off it.
+    #[default]
+    Shown,
+    /// Painted nowhere. A document with this and no [`Editing::toggle`] holds
+    /// no listener at all.
+    Hidden,
+}
+
 /// A range the caller wants washed, and which of the three washes it gets.
 ///
 /// A comment thread is what asks for this, and none of what it *says* is here:
@@ -129,6 +142,30 @@ impl Annotation {
     }
 }
 
+/// Handed the block whose checkbox was clicked — see [`Toggle::Handled`].
+///
+/// Shared rather than borrowed: the press listener it is cloned into outlives
+/// the frame that built it.
+pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Who answers a press on a task block's checkbox.
+///
+/// Either variant paints the box as a control — the pointer over it is a hand.
+/// [`Editing::toggle`] left unset paints it as a mark, and the press goes
+/// wherever it would on any other glyph.
+#[derive(Clone)]
+pub enum Toggle {
+    /// The box takes the press, stops it, and calls this with the block it
+    /// belongs to. For a caller holding the [`Doc`] it renders itself.
+    Handled(OnToggle),
+    /// The box takes no press. The caller hit-tests
+    /// [`BlockLayouts::checkbox_bounds`] in its own handler, which is what an
+    /// editor does: the press it swallows is the one that also takes focus and
+    /// closes an open menu, and the toggle belongs in the undo history beside
+    /// the rest of its edits.
+    HitTested,
+}
+
 /// What an editor paints over a document.
 ///
 /// One value rather than six parameters, and the reason it is public: the
@@ -153,6 +190,11 @@ pub struct Editing<'a> {
     /// [`Typography`] — a caller sizing one document apart from the rest
     /// passes [`Typography::scaled`].
     pub typography: Option<Typography>,
+    /// Makes a task block's checkbox a control, and says who answers the
+    /// press. `None` paints a mark.
+    pub toggle: Option<Toggle>,
+    /// Whether a fence offers to copy itself.
+    pub copy: CopyButton,
 }
 
 impl Default for Editing<'_> {
@@ -167,6 +209,8 @@ impl Default for Editing<'_> {
             placeholder: None,
             caption: Caption::default(),
             typography: None,
+            toggle: None,
+            copy: CopyButton::default(),
         }
     }
 }
@@ -193,6 +237,9 @@ struct Frames {
     /// full column and carries the caption, and a resize handle belongs on the
     /// edge of the picture itself.
     pictures: Vec<(usize, Bounds<Pixels>)>,
+    /// A task block's checkbox, which is not its marker column: the column is
+    /// gutter either side of the box, and a click there places a caret.
+    checkboxes: Vec<(usize, Bounds<Pixels>)>,
 }
 
 /// One shaped run and the slice of its part it covers.
@@ -436,6 +483,18 @@ impl BlockLayouts {
             .map(|(_, bounds)| *bounds)
     }
 
+    /// Where a task block's checkbox painted, which is the box itself and not
+    /// the marker column it sits in — a press outside it is a press on the
+    /// gutter, and belongs to whatever handles one.
+    pub fn checkbox_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
+        self.0
+            .borrow()
+            .checkboxes
+            .iter()
+            .find(|(block, _)| *block == ix)
+            .map(|(_, bounds)| *bounds)
+    }
+
     fn record(&self, block: usize, part: Part, range: Range<usize>, layout: TextLayout) {
         self.0.borrow_mut().texts.push(Painted {
             block,
@@ -457,12 +516,17 @@ impl BlockLayouts {
         self.0.borrow_mut().pictures.push((ix, bounds));
     }
 
+    fn record_checkbox(&self, ix: usize, bounds: Bounds<Pixels>) {
+        self.0.borrow_mut().checkboxes.push((ix, bounds));
+    }
+
     fn clear(&self) {
         let mut frames = self.0.borrow_mut();
         frames.texts.clear();
         frames.blocks.clear();
         frames.languages.clear();
         frames.pictures.clear();
+        frames.checkboxes.clear();
     }
 }
 
@@ -484,6 +548,10 @@ struct Overlay<'a> {
     /// only thing that knows where that text sits, so the string comes to it.
     placeholder: Option<&'a SharedString>,
     caption: Caption,
+    /// Borrowed so [`Overlay`] stays `Copy` — the clone is made at the one
+    /// press listener that needs an owned handle.
+    toggle: Option<&'a Toggle>,
+    copy: CopyButton,
 }
 
 impl<'a> Overlay<'a> {
@@ -596,6 +664,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         placeholder,
         caption,
         typography,
+        toggle,
+        copy,
     } = editing;
     // Refilled every frame, in paint order — and emptied in *prepaint*, not
     // here. An editor reads last frame's positions while building this frame's
@@ -629,6 +699,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
             annotations,
             placeholder: placeholder.as_ref(),
             caption,
+            toggle: toggle.as_ref(),
+            copy,
         };
         // The block's own box, recorded for a gutter handle and a drop target.
         // A rule and an image hold no text, so a layout would not find them.
@@ -738,7 +810,7 @@ fn block_element(
             cx,
         ),
         BlockKind::Task { checked, text } => marker_row(
-            checkbox(*checked, typography, theme),
+            checkbox(*checked, overlay, typography, theme),
             text,
             body,
             typography,
@@ -839,8 +911,10 @@ fn disc(typography: &Typography, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-fn checkbox(checked: bool, typography: &Typography, theme: &Theme) -> AnyElement {
+fn checkbox(checked: bool, overlay: Overlay, typography: &Typography, theme: &Theme) -> AnyElement {
+    let ix = overlay.block;
     let mut box_ = div()
+        .relative()
         .w(px(13.0))
         .h(px(13.0))
         .rounded(px(3.5))
@@ -857,6 +931,31 @@ fn checkbox(checked: bool, typography: &Typography, theme: &Theme) -> AnyElement
     } else {
         box_.border_color(theme.border_strong)
     };
+    // The box's own bounds rather than the marker column's: a caller hit-tests
+    // these to tell a toggle from a caret placed in the gutter beside it.
+    box_ = box_.children(overlay.layouts.map(|layouts| {
+        let layouts = layouts.clone();
+        canvas(
+            move |bounds, _, _| layouts.record_checkbox(ix, bounds),
+            |_, _, _, _| (),
+        )
+        .absolute()
+        .size_full()
+    }));
+    // The cursor answers to either variant: a box an editor hit-tests is as
+    // pressable as one the renderer listens to, and only the pointer says so.
+    if overlay.toggle.is_some() {
+        box_ = box_.cursor_pointer();
+    }
+    if let Some(Toggle::Handled(toggle)) = overlay.toggle.cloned() {
+        box_ = box_.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            // Stopped, or the press goes on to whatever placed a caret
+            // under it and the toggle reads as a click that moved the
+            // caret as well.
+            cx.stop_propagation();
+            toggle(ix, window, cx);
+        });
+    }
 
     div()
         .flex_none()
@@ -1002,7 +1101,7 @@ pub fn flatten_with(
         let mut face = font(if mono {
             theme.font_mono.clone()
         } else {
-            theme.font_sans.clone()
+            theme.font_body.clone()
         });
         face.weight = if bold && base_weight.0 < FontWeight::SEMIBOLD.0 {
             FontWeight::SEMIBOLD
@@ -1308,6 +1407,10 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         annotations,
         placeholder: None,
         caption: Caption::default(),
+        // The source view is one fence and holds no task block.
+        toggle: None,
+        // It paints no band, so there is nowhere for the button to float.
+        copy: CopyButton::Hidden,
     };
     let (underlay, lines) = code_lines(
         Some(crate::source::LANGUAGES[0]),
@@ -1550,7 +1653,9 @@ fn code_block(
                 ),
         )
         .child(body)
-        .child(copy_button(code, ix, theme, window, cx))
+        .children(
+            (overlay.copy == CopyButton::Shown).then(|| copy_button(code, ix, theme, window, cx)),
+        )
         .into_any_element()
 }
 

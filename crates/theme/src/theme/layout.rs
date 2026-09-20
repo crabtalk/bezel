@@ -94,14 +94,9 @@ impl Theme {
     /// MATERIAL, which pre-darkens the blur; a bare backdrop blur has no such
     /// layer, so ours runs heavier to land on the same perceived tone.
     ///
-    /// Opaque off macOS: Linux and Windows get no compositor-blur guarantee,
-    /// and a merely transparent window would show raw desktop through the
-    /// sidebar. An app that knows its compositor sets the brand field anyway.
-    pub const VIBRANCY_ALPHA: f32 = if cfg!(any(target_os = "macos", target_family = "wasm")) {
-        0.80
-    } else {
-        1.0
-    };
+    /// A coverage, not a switch: whether a window frosts at all is
+    /// [`frosted_window`](crate::frosted_window).
+    pub const VIBRANCY_ALPHA: f32 = 0.80;
     /// Main-panel header height (the reference `h-11`) — in-card headers (changes pane).
     pub const HEADER_HEIGHT: f32 = 44.0;
     /// The unified window titlebar (traffic lights + cluster + tabs). Content

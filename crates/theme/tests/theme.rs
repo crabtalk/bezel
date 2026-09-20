@@ -1,4 +1,4 @@
-use gpui::hsla;
+use gpui::{WindowBackgroundAppearance, hsla};
 use theme::*;
 
 fn srgb_u8(c: [f32; 3]) -> [u8; 3] {
@@ -436,7 +436,7 @@ fn faintest_fills_survive_in_both_appearances() {
 /// the overlay can't drift apart.
 #[test]
 fn both_palettes_define_a_frost_and_lights_runs_heavier() {
-    if Theme::VIBRANCY_ALPHA < 1.0 {
+    {
         let (dark, light) = (Theme::dark(), Theme::light());
         assert!(
             dark.vibrancy_tint().a < 1.0,
@@ -454,22 +454,18 @@ fn both_palettes_define_a_frost_and_lights_runs_heavier() {
             light.glass_overlay().a > dark.glass_overlay().a,
             "light floating cards need more coverage over blur for legible rows"
         );
-    } else {
-        assert_eq!(Theme::light().vibrancy_tint().a, 1.0);
-        assert_eq!(Theme::dark().vibrancy_tint().a, 1.0);
     }
 }
 
 /// Which appearances [`Vibrancy::Auto`] actually frosts, which is the whole of
 /// what the three-valued brand decides.
 ///
-/// The platform gate rides on `Auto`: off macOS there is no compositor-blur
-/// guarantee, so `Auto` asks for none anywhere — while an app that knows its
+/// The platform gate rides on `Auto`: it asks for a frost only where the
+/// compositor paints one behind the window — while an app that knows its
 /// compositor still gets one from `On`.
 #[test]
 fn auto_frosts_dark_alone_and_the_named_answers_stand() {
-    let macos = Theme::VIBRANCY_ALPHA < 1.0;
-    assert_eq!(Vibrancy::Auto.on(Appearance::Dark), macos);
+    assert_eq!(Vibrancy::Auto.on(Appearance::Dark), frosted_window());
     assert!(!Vibrancy::Auto.on(Appearance::Light));
 
     for appearance in [Appearance::Dark, Appearance::Light] {
@@ -490,7 +486,7 @@ fn a_brand_asks_for_the_frost_its_palette_was_built_for() {
     let light = Theme::branded(&Brand::default(), Appearance::Light);
     assert!(!light.vibrancy, "light composites opaque");
     let dark = Theme::branded(&Brand::default(), Appearance::Dark);
-    assert_eq!(dark.vibrancy, Theme::VIBRANCY_ALPHA < 1.0);
+    assert_eq!(dark.vibrancy, frosted_window());
 }
 
 /// An input plate has to read as *lifted* in both appearances. Dark does that
@@ -565,6 +561,46 @@ fn appearance_mirror_tracks_installed_theme() {
     assert_eq!(current_appearance(), Appearance::Dark);
 }
 
+/// What the window asks the compositor for. Windows takes Mica, DWM's own
+/// backdrop; `Blurred` there is the accent API's acrylic at a zero tint, which
+/// leaves the desktop showing through as if nothing were applied.
+#[test]
+fn a_frosted_window_asks_for_the_backdrop_its_platform_has() {
+    let mut theme = Theme::dark();
+
+    theme.vibrancy = false;
+    assert_eq!(
+        theme.window_background_appearance(),
+        WindowBackgroundAppearance::Opaque
+    );
+
+    theme.vibrancy = true;
+    let wanted = if cfg!(target_os = "windows") {
+        WindowBackgroundAppearance::MicaBackdrop
+    } else {
+        WindowBackgroundAppearance::Blurred
+    };
+    assert_eq!(theme.window_background_appearance(), wanted);
+}
+
+/// A window frosts where the compositor has a backdrop to put behind it; a card
+/// frosts where the renderer has the blur primitive. Windows 11 answers the
+/// first and not the second, so the two cannot be read off one another.
+#[test]
+fn a_card_frosts_on_the_renderer_and_a_window_on_the_compositor() {
+    assert_eq!(
+        LENSED,
+        cfg!(any(target_os = "macos", target_family = "wasm"))
+    );
+    assert_eq!(Brand::default().glass, LENSED);
+    if LENSED {
+        assert!(
+            frosted_window(),
+            "a lens implies a backdrop behind the window"
+        );
+    }
+}
+
 #[test]
 fn window_appearance_maps_onto_ours() {
     use gpui::WindowAppearance as W;
@@ -615,4 +651,44 @@ fn layout_numbers_match_the_reference() {
     assert_eq!(Theme::HEADER_HEIGHT, 44.0); // h-11
     assert_eq!(Theme::STATUS_STRIP_HEIGHT, 24.0); // h-6
     assert_eq!(Theme::bubble_radius(), 16.0);
+}
+
+/// What a renderer with no backdrop blur paints in a surface's place. A tint is
+/// a coverage over the blur — dark `Regular`'s is 4% white, which covers
+/// nothing on its own.
+#[test]
+fn regular_glass_falls_back_to_an_opaque_tone() {
+    for theme in [Theme::dark(), Theme::light()] {
+        let spec = SurfaceStyle::Glass(Glass::Regular).spec(&theme);
+        let flat = spec
+            .flat(spec.tint)
+            .expect("regular glass covers its backdrop");
+        assert_eq!(flat.a, 1.0, "nothing reads through where nothing blurs it");
+        assert!(
+            (flat.l * (1.0 - spec.gain) - spec.tint.l * spec.tint.a).abs() < 1e-6,
+            "the tone `gain * backdrop + tint` returns unchanged"
+        );
+    }
+}
+
+/// A material's spec is its tone at a coverage already, so the tone comes back.
+#[test]
+fn a_materials_flat_tone_is_the_materials_own() {
+    for theme in [Theme::dark(), Theme::light()] {
+        let spec = SurfaceStyle::Material(Material::Regular).spec(&theme);
+        let flat = spec.flat(spec.tint).expect("a frost covers its backdrop");
+        assert_eq!(flat.a, 1.0);
+        assert!((flat.l - theme.material.tone.l).abs() < 1e-6);
+    }
+}
+
+/// `Clear` brightens what it covers. A line at or above unity meets no backdrop
+/// it returns unchanged, so there is no tone to fall back to.
+#[test]
+fn clear_glass_has_no_flat_tone() {
+    for theme in [Theme::dark(), Theme::light()] {
+        let spec = SurfaceStyle::Glass(Glass::Clear).spec(&theme);
+        assert!(spec.gain >= 1.0);
+        assert_eq!(spec.flat(spec.tint), None);
+    }
 }

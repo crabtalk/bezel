@@ -57,6 +57,68 @@ pub fn parse(source: &str) -> Doc {
     parse_plain(source)
 }
 
+/// A parse, and where in the source each block came from.
+pub struct ParsedDoc {
+    pub doc: Doc,
+    /// One range per `doc.blocks` entry, in document order.
+    ///
+    /// The ranges partition the source: the first starts at 0, each one ends
+    /// where the next begins, and the last ends at `source.len()`. Splicing
+    /// them back in order reproduces the source byte for byte.
+    ///
+    /// A block the source spells inside another's bytes — the empty bullet of
+    /// `- ![](cover.png)` — takes an empty range. The one per entry holds
+    /// either way.
+    pub block_ranges: Vec<Range<usize>>,
+}
+
+/// [`parse`], keeping the source range each block was parsed from.
+pub fn parse_ranges(source: &str) -> ParsedDoc {
+    let (doc, starts) = parse_spanned(source);
+    ParsedDoc {
+        block_ranges: ranges(&starts, source.len()),
+        doc,
+    }
+}
+
+impl From<&str> for Doc {
+    fn from(source: &str) -> Self {
+        parse(source)
+    }
+}
+
+impl From<&str> for ParsedDoc {
+    fn from(source: &str) -> Self {
+        parse_ranges(source)
+    }
+}
+
+impl From<(&str, &Marks)> for Doc {
+    fn from((source, marks): (&str, &Marks)) -> Self {
+        parse_with(source, marks)
+    }
+}
+
+/// Block starts, in document order, to one range each.
+///
+/// Each block runs to where the next one starts, so the partition is the
+/// shape of the loop rather than something the parser has to get right: the
+/// first range opens at 0, the last closes at `len`, and a start that arrives
+/// behind the one before it takes an empty range instead of a backwards one.
+fn ranges(starts: &[usize], len: usize) -> Vec<Range<usize>> {
+    let mut out = Vec::with_capacity(starts.len());
+    let mut at = 0;
+    for &start in starts.iter().skip(1) {
+        let start = start.clamp(at, len);
+        out.push(at..start);
+        at = start;
+    }
+    if !starts.is_empty() {
+        out.push(at..len);
+    }
+    out
+}
+
 /// [`parse`] with the app's own marks — see [`crate::Marks`].
 ///
 /// Registered delimiters are lifted out of the source *before* CommonMark sees
@@ -80,12 +142,20 @@ pub fn parse_with(source: &str, marks: &Marks) -> Doc {
 }
 
 fn parse_plain(source: &str) -> Doc {
+    parse_spanned(source).0
+}
+
+/// The parse every entry point runs, with the offset each block started at.
+///
+/// `renumber` rewrites numbers and adds no block, so the starts stay one per
+/// block — the invariant [`ParsedDoc::block_ranges`] rests on.
+fn parse_spanned(source: &str) -> (Doc, Vec<usize>) {
     let mut state = ParseState::default();
-    for event in Parser::new_ext(source, OPTIONS) {
-        state.event(event);
+    for (event, range) in Parser::new_ext(source, OPTIONS).into_offset_iter() {
+        state.event(event, range);
     }
     state.doc.renumber();
-    state.doc
+    (state.doc, state.starts)
 }
 
 /// Accumulates one run of inline content and the marks over it.
@@ -484,6 +554,15 @@ struct ParseState {
     heading: Option<u8>,
     code: Option<(Option<String>, String)>,
     table: Option<TableBuild>,
+    /// The event being handled. What a block that owns no inline run — an
+    /// empty marker, a rule — is placed from.
+    at: Range<usize>,
+    /// Where the run being accumulated started: the first event since the last
+    /// block was pushed. A paragraph is pushed by whatever *follows* it, so
+    /// the event in hand at that point is the next block's, not this one's.
+    span: Option<usize>,
+    /// Where each block started, in the order they were pushed.
+    starts: Vec<usize>,
 }
 
 impl ParseState {
@@ -505,6 +584,7 @@ impl ParseState {
     /// Append a block, clamping its indent so the document invariant holds
     /// (first block at 0, never more than one deeper than its predecessor).
     fn push(&mut self, kind: BlockKind, indent: u8) {
+        self.starts.push(self.span.take().unwrap_or(self.at.start));
         let max = self.doc.blocks.last().map_or(0, |b| b.indent + 1);
         self.doc.blocks.push(Block {
             kind,
@@ -607,7 +687,14 @@ impl ParseState {
         }
     }
 
-    fn event(&mut self, event: Event<'_>) {
+    fn event(&mut self, event: Event<'_>, range: Range<usize>) {
+        // An `End` carries the range of the whole element it closes, which for
+        // a list or a quote opens well before the block that just went in.
+        // Only something that starts content can start a run.
+        if !matches!(event, Event::End(_)) {
+            self.span.get_or_insert(range.start);
+        }
+        self.at = range;
         match event {
             Event::Start(tag) => self.start(tag),
             Event::End(tag) => self.end(tag),

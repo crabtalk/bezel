@@ -60,7 +60,7 @@ A link with a line to itself is a card; chip and embed have no shorthand, so the
 | | |
 | --- | --- |
 | nesting | Four spaces per level, **list nesting only**. `> - a` flattens to the bullet it reads as; a list inside a quote inside a list does not survive. |
-| normalized on parse | Edge whitespace, blank lines at block edges, headings and table cells flattened to one line, ordered runs renumbered. |
+| normalized on parse | Edge whitespace, blank lines at block edges, headings and table cells flattened to one line, ordered runs renumbered. `parse_ranges` gives the source range each block came from, for an app that would rather splice the blocks it did not edit than write the whole file back in canonical form. |
 | escaping | Only at the start of a line, where the character would mean something — escape `#` everywhere and `#123` becomes `\#123`, which no reader matches. |
 | HTML | Arrives as the text it spells and is written back escaped. |
 | not carried | Footnotes and reference-style definitions. A setext heading is read and written back as `#`. |

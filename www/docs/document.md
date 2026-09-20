@@ -37,6 +37,12 @@ pub fn serialize_with(doc: &Doc, marks: &Marks) -> String;
 /// The pair a caret crosses on. Both put a sentinel where the caret is, so
 /// neither can drift from the serializer or parser it rides on.
 pub fn parse_at(source: &str, offset: usize, marks: &Marks) -> (Doc, Cursor);
+
+/// `parse`, keeping where each block came from. The ranges partition the
+/// source — first starts at 0, each ends where the next begins, last ends at
+/// `source.len()` — so re-serializing the blocks you edited and splicing
+/// `source[range]` for the rest gives the untouched bytes back exactly.
+pub fn parse_ranges(source: &str) -> ParsedDoc;  // { doc, block_ranges }
 pub fn serialize_at(doc: &Doc, at: Cursor, marks: &Marks) -> (String, usize);
 
 // The gpui-side half the editing surface reads. `set_mark_paint` is paint only
@@ -52,6 +58,18 @@ pub fn source_spans(source: &str) -> Vec<(Range<usize>, HighlightKind)>;
 /// A long fence line wraps by default, since the caret reads a fence in the
 /// editor and a sideways scroller can hold it off the right edge.
 pub fn set_layout(cx: &mut App, layout: Layout);
+
+/// `toggle` makes a task block's checkbox a control: `Toggle::Handled` has the
+/// box take the press, stop it, and hand you the block it belongs to, and
+/// `Toggle::HitTested` paints it as a control and leaves the press to you.
+/// `copy` is whether a fence paints the button that copies its text. `render`
+/// and `markdown` leave the toggle unset, and the box paints as a marker; a
+/// document with no toggle and `CopyButton::Hidden` holds no listener at all.
+pub struct Editing<'a> {
+    pub toggle: Option<Toggle>,
+    pub copy: CopyButton,
+    /* ... */
+}
 
 // ...
 ```

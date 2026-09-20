@@ -7,6 +7,7 @@
 
 use crate::stack;
 use gpui::{App, Axis, Div, DragMoveEvent, ElementId, SharedString, div, prelude::*, px};
+use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 /// The drag payload of a [`Controls::slider`], carrying the id of the slider
@@ -249,28 +250,64 @@ pub trait Controls: ThemeExt {
     /// track's own — the two alphas stack, which is what makes it read — and
     /// the rest are bare, so exactly one is pressed.
     fn toggle_group_item(&self, label: impl Into<SharedString>, selected: bool) -> Div {
-        let theme = self.theme();
-        let mut item = div()
+        segment(self.theme(), selected)
             .px(px(10.0))
             .py(px(4.0))
-            // Concentric with the track: 9 - 2 = 7.
-            .rounded(px(Theme::inset_radius(
-                TOGGLE_GROUP_RADIUS,
-                TOGGLE_GROUP_PAD,
-            )))
-            .border_1()
-            .border_color(crate::widgets::RING_SLOT)
-            .text_style(TextStyle::Callout)
-            .cursor_pointer()
-            .child(label.into());
-        item = if selected {
-            item.bg(theme.element_active)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(theme.text)
-        } else {
-            item.text_color(theme.text_muted)
-        };
-        item
+            .child(label.into())
+    }
+
+    /// A segment carrying a glyph rather than a word, for a control with no
+    /// room for one — a view switcher on a board, a density picker in a
+    /// toolbar. It comes out 24×24, the height a labelled segment takes.
+    ///
+    /// The tooltip is the caller's, and a glyph nobody recognises says nothing
+    /// without one.
+    fn toggle_group_icon(&self, icon: impl Into<Icon>, selected: bool) -> Div {
+        let theme = self.theme();
+        // Built here rather than taken, the way `control_bar::bar_button` does
+        // it: gpui reads an svg's colour off that element's own style, so a
+        // colour set on the segment would not reach the glyph.
+        segment(theme, selected)
+            .p(px(5.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                crate::icons::icon(icon)
+                    .size(px(14.0))
+                    .text_color(match selected {
+                        true => theme.text,
+                        false => theme.text_muted,
+                    }),
+            )
+    }
+}
+
+/// What a segment looks like in each of its two states, before whatever it
+/// carries. Padding is the caller's: a word and a glyph reach the same height
+/// by different insets.
+///
+/// An unselected segment takes its own `hover`, and gpui panics on a second
+/// one — reach for a `group_hover` rather than chaining `.hover(..)` on.
+fn segment(theme: &Theme, selected: bool) -> Div {
+    let wash = theme.element_hover;
+    let item = div()
+        // Concentric with the track: 9 - 2 = 7.
+        .rounded(px(Theme::inset_radius(
+            TOGGLE_GROUP_RADIUS,
+            TOGGLE_GROUP_PAD,
+        )))
+        .border_1()
+        .border_color(crate::widgets::RING_SLOT)
+        .text_style(TextStyle::Callout)
+        .cursor_pointer();
+    if selected {
+        item.bg(theme.element_active)
+            .font_weight(gpui::FontWeight::MEDIUM)
+            .text_color(theme.text)
+    } else {
+        item.text_color(theme.text_muted)
+            .hover(move |el| el.bg(wash))
     }
 }
 

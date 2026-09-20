@@ -143,6 +143,24 @@ pub struct SurfaceSpec {
     pub shadow: bool,
 }
 
+impl SurfaceSpec {
+    /// The one backdrop this surface returns unchanged — `tint / (1 - gain)`,
+    /// opaque. What a renderer with no backdrop blur paints in its place: the
+    /// tint alone is a coverage over a blur, and with no blur under it the
+    /// backdrop reads through as itself.
+    ///
+    /// `None` where the line has no such point — a `gain` of 1 or above
+    /// brightens whatever it covers, and a `tint` carrying more light than the
+    /// surface covers exceeds white.
+    ///
+    /// `tint` is [`Self::tint`] unless a caller substituted its own.
+    pub fn flat(&self, tint: Hsla) -> Option<Hsla> {
+        let coverage = 1.0 - self.gain;
+        let l = tint.l * tint.a / coverage;
+        (coverage > 0.0 && l <= 1.0).then_some(Hsla { l, a: 1.0, ..tint })
+    }
+}
+
 impl SurfaceStyle {
     /// The numbers this style resolves to against a theme.
     pub fn spec(self, theme: &Theme) -> SurfaceSpec {
@@ -343,6 +361,10 @@ pub struct Theme {
     /// Defaults to the platform's own UI face; point it at your own family
     /// once you have registered that font with the text system.
     pub font_sans: SharedString,
+    /// The family prose is set in — what `markdown` shapes a document's body
+    /// with. Defaults to [`Self::font_sans`]; an app that sets it apart gives
+    /// documents a reading face while the chrome keeps the UI one.
+    pub font_body: SharedString,
     /// Monospace family for code/terminal.
     pub font_mono: SharedString,
 }
