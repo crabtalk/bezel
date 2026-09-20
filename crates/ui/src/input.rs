@@ -222,6 +222,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-delete", DeleteWordRight, ctx),
         KeyBinding::new("ctrl-z", Undo, ctx),
         KeyBinding::new("ctrl-shift-z", Redo, ctx),
+        KeyBinding::new("ctrl-y", Redo, ctx),
     ]);
 
     bindings
