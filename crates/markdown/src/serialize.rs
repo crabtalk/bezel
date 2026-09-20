@@ -26,6 +26,12 @@ pub fn serialize(doc: &Doc) -> String {
     serialize_with(doc, &Marks::default())
 }
 
+impl From<&Doc> for String {
+    fn from(doc: &Doc) -> Self {
+        serialize(doc)
+    }
+}
+
 /// [`serialize`] with the app's own marks — see [`crate::Marks`].
 pub fn serialize_with(doc: &Doc, marks: &Marks) -> String {
     let mut out = String::new();

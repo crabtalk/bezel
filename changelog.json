@@ -12,6 +12,7 @@
       "`ui::tabs::bar`, `tab` and `close` paint the strip: a row that scrolls once its tabs stop fitting, a label carrying an optional glyph, mark and badge, and a `×` on show or behind the hover.",
       "`tabs::Label::mark` is a glyph beside the name — unsaved work, a running job, something unread. `ui` names none itself, so the category a mark comes from stays the app's to pay for.",
       "Every `tabs::tab` but a `State::Focused` one washes on hover, a `Front` tab in a background pane included. It takes that hover itself, so chaining `.hover(..)` on hits gpui's panic on a second — reach for a `group_hover`.",
+      "A `&str` converts to a `Doc` or a `ParsedDoc`, `(source, &marks)` to a `Doc`, a `&Doc` to a `String`, a `BlockKind` to a `Block` at the left margin, a `String` or `&str` to unmarked `Text`, and a `Cursor` to the collapsed `Selection` around it. Each is the `From` for the call it already had — `parse`, `parse_with`, `parse_ranges`, `serialize`, `Block::new`, `Text::plain`, `Selection::at`. Serializing with marks has no `From`: `String` is foreign and a tuple is not a local type.",
       "`Controls::toggle_group_icon` is a segment carrying a glyph rather than a word, at the height a labelled segment takes.",
       "`theme::frosted_window` is whether the compositor puts a backdrop behind a translucent window, and `theme::LENSED` whether this build carries the backdrop-blur primitive. Windows 11 answers the first and not the second, so an app that reads one for the other gets a card it can see through."
     ],

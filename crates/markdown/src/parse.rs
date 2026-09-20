@@ -81,6 +81,24 @@ pub fn parse_ranges(source: &str) -> ParsedDoc {
     }
 }
 
+impl From<&str> for Doc {
+    fn from(source: &str) -> Self {
+        parse(source)
+    }
+}
+
+impl From<&str> for ParsedDoc {
+    fn from(source: &str) -> Self {
+        parse_ranges(source)
+    }
+}
+
+impl From<(&str, &Marks)> for Doc {
+    fn from((source, marks): (&str, &Marks)) -> Self {
+        parse_with(source, marks)
+    }
+}
+
 /// Block starts, in document order, to one range each.
 ///
 /// Each block runs to where the next one starts, so the partition is the
