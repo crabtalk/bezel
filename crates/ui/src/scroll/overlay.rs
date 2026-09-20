@@ -231,22 +231,7 @@ fn horizontal(
         window.refresh();
     };
     let hover_state = state.clone();
-    let debug_id = id.clone();
-    let track = div()
-        .debug_selector(move || format!("{debug_id}-track"))
-        .id(SharedString::from(format!("{id}-track")))
-        // A press on the bar belongs to the bar. Hitboxes in gpui are
-        // paint-order only, so without this the content under the strip takes
-        // the press as well; the wheel still passes, which is what a bar laid
-        // over a pane has to let through.
-        .block_mouse_except_scroll()
-        .absolute()
-        .left(scroll::BAR_INSET)
-        .right(scroll::BAR_INSET + end_inset)
-        .bottom(place.near())
-        .h(px(scroll::TRACK))
-        .flex()
-        .items_center()
+    let track = scroll::track(&id, place, Axis::Horizontal)
         .on_hover(move |hovered, window, _| {
             let mut held = hover_state.get();
             held.hovered = *hovered;
