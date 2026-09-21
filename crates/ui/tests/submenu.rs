@@ -8,10 +8,11 @@
 //! element tree states. So this drives the pointer at it and asks what it hit.
 
 use gpui::{
-    Focusable, Modifiers, MouseButton, Point, TestAppContext, VisualTestContext, point, px, size,
+    Focusable, Modifiers, MouseButton, Point, TestAppContext, VisualTestContext, div, point,
+    prelude::*, px, size,
 };
 use ui::{
-    menu::Item,
+    menu::{self, Item},
     menubar::{self, Menu, Menubar},
 };
 
@@ -164,4 +165,143 @@ fn the_arrows_walk_into_the_panel_and_back_out(cx: &mut TestAppContext) {
     assert_eq!(cursor(&bar, &mut cx), (vec![], Some(RECENT)));
     cx.simulate_keystrokes("escape");
     assert!(cx.update(|_, cx| bar.read(cx).open_menu().is_none()));
+}
+
+// ---------------------------------------------------------------------------
+// Flipping at the window edge
+// ---------------------------------------------------------------------------
+
+/// A card pinned to the window's right edge with its submenus already down.
+/// The bar cannot set this up — its titles are all on the left — so this drives
+/// [`ui::menu::card`] directly, which is the shape any host mounts it in.
+struct Pinned {
+    items: Vec<Item>,
+    cursor: menu::Cursor,
+    /// The row the pointer last landed on, recorded rather than acted on: the
+    /// open chain has to hold still while the sweeps below walk across it.
+    hit: Option<Vec<usize>>,
+}
+
+/// `New · Recent › (More › (bezel.md) · Clear)`, every submenu row first in its
+/// panel so all three levels line up on one y.
+fn nested() -> Vec<Item> {
+    vec![
+        Item::action("New Window"),
+        Item::submenu(
+            "Open Recent",
+            vec![
+                Item::submenu("More", vec![Item::action("bezel.md")]),
+                Item::action("Clear Menu"),
+            ],
+        ),
+    ]
+}
+
+impl gpui::Render for Pinned {
+    fn render(&mut self, _window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = theme::Theme::of(cx).clone();
+        div()
+            .size_full()
+            .flex()
+            .justify_end()
+            .items_start()
+            .child(menu::card(
+                &theme,
+                "pinned",
+                &self.items,
+                &self.cursor,
+                cx,
+                |view: &mut Self, hit, _, _| {
+                    if let menu::Hit::Point(path) = hit {
+                        view.hit = Some(path);
+                    }
+                },
+            ))
+    }
+}
+
+/// A drawn window holding [`nested`] at the right edge, opened down `open`.
+fn pinned(cx: &mut TestAppContext, open: &[usize]) -> (gpui::Entity<Pinned>, VisualTestContext) {
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let window = cx.add_window(|_, _| {
+        let items = nested();
+        let mut cursor = menu::Cursor::default();
+        cursor.point_at(&items, open);
+        Pinned {
+            items,
+            cursor,
+            hit: None,
+        }
+    });
+    let view = window.root(cx).unwrap();
+    let visual = VisualTestContext::from_window(window.into(), cx);
+    visual.simulate_resize(size(WIDTH, HEIGHT));
+    visual.run_until_parked();
+    (view, visual)
+}
+
+/// The row under `at`, or `None` where nothing answers.
+fn row_at(
+    view: &gpui::Entity<Pinned>,
+    cx: &mut VisualTestContext,
+    at: Point<gpui::Pixels>,
+) -> Option<Vec<usize>> {
+    cx.update(|_, cx| view.update(cx, |view, _| view.hit = None));
+    move_to(cx, at);
+    cx.update(|_, cx| view.read(cx).hit.clone())
+}
+
+/// The leftmost x at `y` that answers with `path`.
+fn sweep_x(
+    view: &gpui::Entity<Pinned>,
+    cx: &mut VisualTestContext,
+    y: gpui::Pixels,
+    path: &[usize],
+) -> Option<gpui::Pixels> {
+    (0..(f32::from(WIDTH) / SWEEP) as usize).find_map(|step| {
+        let x = px(step as f32 * SWEEP);
+        (row_at(view, cx, point(x, y)).as_deref() == Some(path)).then_some(x)
+    })
+}
+
+/// The y the submenu row sits at, found by walking down the pinned card.
+fn pinned_row_y(view: &gpui::Entity<Pinned>, cx: &mut VisualTestContext) -> gpui::Pixels {
+    let x = WIDTH - px(24.0);
+    for step in 0..(f32::from(HEIGHT) / SWEEP) as usize {
+        let y = px(step as f32 * SWEEP);
+        if row_at(view, cx, point(x, y)).as_deref() == Some(&[RECENT][..]) {
+            return y;
+        }
+    }
+    panic!("never found the submenu row by sweeping the pinned card");
+}
+
+#[gpui::test]
+fn a_panel_with_no_room_to_its_right_opens_leftward(cx: &mut TestAppContext) {
+    let (view, mut cx) = pinned(cx, &[RECENT]);
+    let y = pinned_row_y(&view, &mut cx);
+
+    let row = sweep_x(&view, &mut cx, y, &[RECENT]).expect("no submenu row in the pinned card");
+    let panel = sweep_x(&view, &mut cx, y, &[RECENT, 0]).expect("the panel answered nowhere");
+    assert!(
+        panel < row,
+        "the panel opened at the window edge ({panel}) instead of flipping to the card's left ({row})"
+    );
+}
+
+#[gpui::test]
+fn a_flipped_chain_keeps_going_the_same_way(cx: &mut TestAppContext) {
+    let (view, mut cx) = pinned(cx, &[RECENT, 0]);
+    let y = pinned_row_y(&view, &mut cx);
+
+    // The second panel has room to the right of the first — that room is the
+    // card the first one flipped away from, and opening back into it would
+    // bury the menu under its own parent.
+    let first = sweep_x(&view, &mut cx, y, &[RECENT, 0]).expect("the first panel answered nowhere");
+    let second =
+        sweep_x(&view, &mut cx, y, &[RECENT, 0, 0]).expect("the second panel answered nowhere");
+    assert!(
+        second < first,
+        "the second panel opened back across its parent ({second} is right of {first})"
+    );
 }

@@ -62,6 +62,8 @@ menu::card(&theme, "file-menu", &items, &self.cursor, cx, |view, hit, _, cx| mat
 
 One cursor, both devices: the pointer moves the cursor rather than lighting a row of its own, so an open submenu can only hang off the row that is live. Hover, click and `right` all arrive as `Hit::Point`.
 
+A panel opens to the right of the card it hangs on, or to its left where the window has no room on the right. Every panel of one open chain takes the side the first one took.
+
 ## API
 
 ```rust

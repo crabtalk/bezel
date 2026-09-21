@@ -452,6 +452,7 @@ pub fn card<V: 'static>(
         id: id.into(),
         panels: 1 + open_depth(items, cursor.open()),
         outside: Rc::new(Cell::new((None, 0))),
+        chain: popover::Chain::default(),
         on: Rc::new(on),
     };
     tree.panel(theme, items, cursor, 0, &[], cx)
@@ -473,6 +474,8 @@ struct Tree<V: 'static> {
     /// with where it landed. A press outside *all* of them is the one that
     /// dismisses, and no panel alone can tell.
     outside: Rc<Cell<(Option<Point<Pixels>>, usize)>>,
+    /// Which way the open panels are stepping across the window.
+    chain: popover::Chain,
     on: Reporter<V>,
 }
 
@@ -589,6 +592,7 @@ impl<V: 'static> Tree<V> {
                             parent.relative().child(popover::anchored_submenu(
                                 SharedString::from(format!("{id}-panel")),
                                 panel,
+                                &self.chain,
                             ))
                         },
                     )
