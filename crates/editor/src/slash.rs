@@ -12,7 +12,7 @@ use gpui::{ScrollHandle, SharedString};
 use motion::Painter;
 use ui::{popover::Filter, scroll::TransientState};
 
-use markdown::{Align, BlockKind, Cursor, Text};
+use markdown::{Align, BlockKind, Cursor, QuoteKind, Text};
 
 /// Every block the menu offers, and what each makes.
 ///
@@ -68,6 +68,41 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
             },
         ),
         (
+            "Quote (Note)".into(),
+            BlockKind::Quote {
+                kind: Some(QuoteKind::Note),
+                text: text(),
+            },
+        ),
+        (
+            "Quote (Tip)".into(),
+            BlockKind::Quote {
+                kind: Some(QuoteKind::Tip),
+                text: text(),
+            },
+        ),
+        (
+            "Quote (Important)".into(),
+            BlockKind::Quote {
+                kind: Some(QuoteKind::Important),
+                text: text(),
+            },
+        ),
+        (
+            "Quote (Warning)".into(),
+            BlockKind::Quote {
+                kind: Some(QuoteKind::Warning),
+                text: text(),
+            },
+        ),
+        (
+            "Quote (Caution)".into(),
+            BlockKind::Quote {
+                kind: Some(QuoteKind::Caution),
+                text: text(),
+            },
+        ),
+        (
             "Code".into(),
             BlockKind::Code {
                 language: None,
@@ -110,6 +145,7 @@ pub fn label(kind: &BlockKind) -> Option<SharedString> {
 fn same(row: &BlockKind, kind: &BlockKind) -> bool {
     match (row, kind) {
         (BlockKind::Heading { level: a, .. }, BlockKind::Heading { level: b, .. }) => a == b,
+        (BlockKind::Quote { kind: a, .. }, BlockKind::Quote { kind: b, .. }) => a == b,
         (row, kind) => std::mem::discriminant(row) == std::mem::discriminant(kind),
     }
 }

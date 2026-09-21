@@ -339,8 +339,9 @@ fn subtract(span: MarkSpan, range: &Range<usize>, mark: &Mark) -> Vec<MarkSpan> 
 impl Doc {
     /// Split block `ix` at byte offset `at`, returning the new block's index.
     ///
-    /// The tail keeps the block's kind so Enter in a list makes another item —
-    /// except for a heading, where the body that follows a title is body text.
+    /// The tail keeps the block's kind where a continued Enter means "another of
+    /// these" — a list item, for example. A heading titles what follows, and a
+    /// quote's following block is plain body text rather than another quote.
     pub fn split(&mut self, ix: usize, at: usize) -> usize {
         if ix >= self.blocks.len() {
             return ix;
@@ -362,11 +363,8 @@ impl Doc {
                 checked: false,
                 text: tail,
             },
-            BlockKind::Quote { kind, .. } => BlockKind::Quote {
-                kind: *kind,
-                text: tail,
-            },
-            // A heading titles what follows it; what follows is body text.
+            // A heading titles what follows it, and a quote does not force the
+            // following block to stay quoted.
             _ => BlockKind::Paragraph(tail),
         };
         self.blocks.insert(ix + 1, Block::at(kind, indent));

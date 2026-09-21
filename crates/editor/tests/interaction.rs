@@ -99,6 +99,84 @@ fn enter_splits_and_backspace_merges(cx: &mut TestAppContext) {
     );
 }
 
+#[gpui::test]
+fn shift_enter_inserts_a_soft_newline(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("hello", cx);
+    cx.simulate_keystrokes("right right shift-enter");
+    assert_eq!(source(&editor, &mut cx), "he\nllo");
+}
+
+#[gpui::test]
+fn ctrl_enter_inserts_a_paragraph_after_the_current_block(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("one\n\ntwo", cx);
+    cx.simulate_keystrokes("end ctrl-enter");
+    cx.simulate_input("middle");
+    assert_eq!(source(&editor, &mut cx), "one\n\nmiddle\n\ntwo");
+}
+
+#[gpui::test]
+fn enter_after_a_quote_opens_plain_text(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("> quote", cx);
+    cx.simulate_keystrokes("end enter");
+    cx.simulate_input("plain");
+    assert_eq!(source(&editor, &mut cx), "> quote\n\nplain");
+}
+
+#[gpui::test]
+fn typing_an_alert_marker_after_quote_shortcut_promotes_it(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    cx.simulate_input("> ");
+    cx.simulate_input("[!NOTE]");
+    cx.simulate_keystrokes("shift-enter");
+    cx.simulate_input("body");
+    assert_eq!(source(&editor, &mut cx), "> [!NOTE]\n> body");
+}
+
+#[gpui::test]
+fn the_slash_menu_offers_every_gfm_alert_quote(cx: &mut TestAppContext) {
+    for (query, expected) in [
+        ("note", "> [!NOTE]"),
+        ("tip", "> [!TIP]"),
+        ("important", "> [!IMPORTANT]"),
+        ("warning", "> [!WARNING]"),
+        ("caution", "> [!CAUTION]"),
+    ] {
+        let (editor, _window, mut cx) = open_with("", cx);
+        cx.simulate_input("/");
+        cx.simulate_input(query);
+        cx.simulate_keystrokes("enter");
+        assert_eq!(
+            source(&editor, &mut cx),
+            expected,
+            "{query} picked the right alert"
+        );
+    }
+}
+
+#[gpui::test]
+fn home_stays_on_the_softbreak_line(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("ab\ncd", cx);
+    cx.simulate_keystrokes("right right right home");
+    cx.simulate_input("X");
+    assert_eq!(source(&editor, &mut cx), "ab\nXcd");
+}
+
+#[gpui::test]
+fn end_stays_on_the_softbreak_line(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("ab\ncd", cx);
+    cx.simulate_keystrokes("end");
+    cx.simulate_input("X");
+    assert_eq!(source(&editor, &mut cx), "abX\ncd");
+}
+
+#[gpui::test]
+fn down_moves_to_the_second_softbreak_line(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("ab\ncd", cx);
+    cx.simulate_keystrokes("down");
+    cx.simulate_input("X");
+    assert_eq!(source(&editor, &mut cx), "ab\nXcd");
+}
+
 /// The bug: `Down` hit-tested a point one line below the caret, and the gap
 /// between two blocks belongs to no run — so the nearest run was the one being
 /// *left*, and the caret went sideways instead of down.
