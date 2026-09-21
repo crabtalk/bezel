@@ -460,10 +460,7 @@ impl Store {
                 }
                 (None, self.reply(&command, id, None))
             }
-            Action::Other(_) => (
-                None,
-                self.reply(&command, id, Some("ENOTSUPPORTED:action")),
-            ),
+            Action::Other(_) => (None, self.reply(&command, id, Some("ENOTSUPPORTED:action"))),
             Action::Transmit | Action::Display => self.transmit(command, id),
         }
     }
@@ -584,9 +581,8 @@ fn png_size(bytes: &[u8]) -> Option<(u32, u32)> {
     if !bytes.starts_with(SIGNATURE) || bytes.len() < 24 || &bytes[12..16] != b"IHDR" {
         return None;
     }
-    let number = |at: usize| -> Option<u32> {
-        Some(u32::from_be_bytes(bytes[at..at + 4].try_into().ok()?))
-    };
+    let number =
+        |at: usize| -> Option<u32> { Some(u32::from_be_bytes(bytes[at..at + 4].try_into().ok()?)) };
     Some((number(16)?, number(20)?))
 }
 

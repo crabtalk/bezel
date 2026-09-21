@@ -1,5 +1,28 @@
 [
   {
+    "version": "0.1.23",
+    "date": "2026-09-21",
+    "summary": "Images on the grid where a client sends them, a menu panel that picks the side with room, and a result list with a bottom.",
+    "new": [
+      "`terminal::kitty` is the graphics protocol, taken off the stream ahead of the parser. `vte` routes an APC run into a discard state and offers `Perform` no hook to catch it, so `kitty::Scanner` splits those runs out first and hands the rest on to `alacritty_terminal` unchanged, in order. It holds its state across feeds, since a pty read ends wherever the kernel filled the buffer.",
+      "`kitty::Store` assembles a chunked transmission under its id and holds 64 images of up to 64 MiB each, oldest dropped. `a=t`, `a=T`, `a=q` and `a=d` by id or all; `f=24`, `f=32` and `f=100`. Direct transmission only — a file, a temp file, shared memory and `o=z` compression are answered `ENOTSUPPORTED` rather than left unanswered, which is what keeps a client from waiting on a reply that never comes. `q=1` and `q=2` are read off the chunk that stated the transmission's keys, not the one that ended it.",
+      "`Emulator::placements` is where the images on the visible grid sit, in cells. Each anchors on a private-use zerowidth char written onto its top-left cell, so it rides the grid's own scroll, scrollback and reflow: `alacritty_terminal` exposes no absolute line number and no scroll callback, and a side table keyed by line drifts the first time output scrolls. `Emulator::set_cell_size` is what turns an image's pixels into rows and columns, and an image that arrives before the first frame is stored unplaced until one does. `Emulator::selection_text` drops the anchors, so copying across an image pastes no character nobody can see.",
+      "`view::Images` decodes what the store holds into the BGRA frames gpui paints and caches them across frames, keyed by the client's id; `GridSnapshot::images` carries them to `TerminalElement`, which paints each over the cell backgrounds and under the glyphs — where kitty puts an image of the default z-index.",
+      "`scroll::Beyond` is what lies past a drifting pane's edge, and so whether a pointer carried out there is still aiming at the pane. `Nothing` holds full speed for as long as the pointer is outside, which is a board that fills the window; `Neighbour` stops at the edge, because what the pointer is over now belongs to somebody else. `scroll::pane_velocity` is the ramp for both axes on its own, above `drift_velocity`.",
+      "`scroll::Viewport::track_scroll` hands a viewport a `ScrollHandle` of the caller's — what `ScrollHandle::scroll_to_item` needs to reach one of its children. Left unset the viewport keeps a handle of its own, as before.",
+      "A searchable picker's result list shows twelve rows and scrolls past that, so a palette over hundreds of commands opens the same size as one over twenty. The query line stays above the scroller, since it is what the rows are an answer to. The arrows scroll the highlighted row into view — following the selection rather than leading it, so a wheel stays the reader's — and a new query returns the list to the top. `CommandPalette` and `Combobox` both.",
+      "`popover::submenu::place` fits a panel beside a rectangle rather than around gpui's point: a submenu opens to the right of the card it hangs on, or to its left where the window has no room on the right, and slides vertically the way every menu does. `popover::Chain` is the side one open tree settled on, shared by every panel in it — a panel that had to flip is one whose children have no room to the right either, and a deeper panel deciding alone would open back across its parent."
+    ],
+    "changed": [
+      "`scroll::drift` takes a `scroll::Beyond`. Pass `Beyond::Nothing` for what it did before.",
+      "`GridSnapshot` carries an `images` field. A host that never shows graphics adds `images: Vec::new()`; one that does holds a `view::Images` beside its emulator, calls `Emulator::set_cell_size` from the grid hook with the metrics it is handed, and fills the field from `Images::placed`.",
+      "`popover::anchored_submenu` takes the open menu's `popover::Chain` and mounts on a row that is `relative()` — the row is what it measures the parent card's edges from. `menu::card` passes its own, one per render; a caller driving panels by hand holds one the same way."
+    ],
+    "fixed": [
+      "A submenu near the window's right edge no longer opens across the card that dropped it. gpui's `anchored` fits a layer to the window around a point, and the point here was the parent card's own right edge: snapping slid the panel left over the card, and `SwitchAnchor` mirrored it about that edge onto almost exactly the same place. A submenu has to clear a rectangle, which is what `popover::submenu::place` works from."
+    ]
+  },
+  {
     "version": "0.1.22",
     "date": "2026-09-21",
     "summary": "The window chrome a platform without a titlebar hands over: a frame where the compositor draws none, caption buttons where the desktop puts them, and a bar that drags by its grip.",

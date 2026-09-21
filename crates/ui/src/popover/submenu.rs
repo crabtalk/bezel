@@ -206,8 +206,13 @@ impl Element for Panel {
         let origin = match self.anchor.get() {
             Some(anchor) => {
                 let margin = px(SNAP) + window.client_inset().unwrap_or(Pixels::ZERO);
-                let (origin, side) =
-                    place(anchor, size, window.viewport_size(), margin, self.chain.0.get());
+                let (origin, side) = place(
+                    anchor,
+                    size,
+                    window.viewport_size(),
+                    margin,
+                    self.chain.0.get(),
+                );
                 self.chain.0.set(side);
                 origin
             }

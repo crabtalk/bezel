@@ -46,7 +46,8 @@ use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
     Animation, AnimationExt, App, Axis, Bounds, Div, DragMoveEvent, ElementId, Empty, MouseButton,
-    Pixels, Point, ScrollHandle, SharedString, Stateful, Window, canvas, div, point, prelude::*, px,
+    Pixels, Point, ScrollHandle, SharedString, Stateful, Window, canvas, div, point, prelude::*,
+    px,
 };
 
 use motion::Painter;

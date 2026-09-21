@@ -69,10 +69,7 @@ fn passed(scanner: &mut Scanner, bytes: &[u8]) -> Vec<u8> {
 fn text_either_side_of_a_command_passes_through() {
     let mut scanner = Scanner::new();
     let mut stream = b"before".to_vec();
-    stream.extend(apc(&format!(
-        "a=t,f=32,s=1,v=1,i=1;{}",
-        base64(&pixel())
-    )));
+    stream.extend(apc(&format!("a=t,f=32,s=1,v=1,i=1;{}", base64(&pixel()))));
     stream.extend_from_slice(b"after");
     assert_eq!(passed(&mut scanner, &stream), b"beforeafter");
 }
@@ -141,10 +138,7 @@ fn a_bel_terminates_a_run_as_well_as_st() {
 #[test]
 fn a_transmitted_image_is_held_under_its_id() {
     let mut emulator = Emulator::new(20, 5);
-    emulator.feed(&apc(&format!(
-        "a=t,f=32,s=1,v=1,i=9;{}",
-        base64(&pixel())
-    )));
+    emulator.feed(&apc(&format!("a=t,f=32,s=1,v=1,i=9;{}", base64(&pixel()))));
     let image = emulator.graphics().get(9).expect("no image under id 9");
     assert_eq!(image.format, Format::Rgba);
     assert_eq!((image.width, image.height), (1, 1));
@@ -177,10 +171,7 @@ fn a_raw_payload_shorter_than_its_dimensions_is_refused() {
     let mut emulator = Emulator::new(20, 5);
     // Four pixels claimed, one sent: the paint that believed it would read
     // past the end of the buffer.
-    let reply = emulator.feed(&apc(&format!(
-        "a=t,f=32,s=2,v=2,i=5;{}",
-        base64(&pixel())
-    )));
+    let reply = emulator.feed(&apc(&format!("a=t,f=32,s=2,v=2,i=5;{}", base64(&pixel()))));
     assert!(emulator.graphics().get(5).is_none());
     assert_eq!(reply, b"\x1b_Gi=5;EINVAL:dimensions\x1b\\");
 }
@@ -202,10 +193,7 @@ fn a_png_carries_its_own_dimensions() {
 #[test]
 fn a_transmission_is_acknowledged_on_the_pty() {
     let mut emulator = Emulator::new(20, 5);
-    let reply = emulator.feed(&apc(&format!(
-        "a=t,f=32,s=1,v=1,i=2;{}",
-        base64(&pixel())
-    )));
+    let reply = emulator.feed(&apc(&format!("a=t,f=32,s=1,v=1,i=2;{}", base64(&pixel()))));
     assert_eq!(reply, b"\x1b_Gi=2;OK\x1b\\");
 }
 
@@ -228,10 +216,16 @@ fn quiet_asked_for_on_the_first_chunk_holds_to_the_last() {
     let bytes = base64(&pixel());
     let (head, tail) = bytes.split_at(4);
     let reply = emulator.feed(&apc(&format!("a=T,f=32,s=1,v=1,i=9,q=2,m=1;{head}")));
-    assert!(reply.is_empty(), "a chunk mid-transmission answered: {reply:?}");
+    assert!(
+        reply.is_empty(),
+        "a chunk mid-transmission answered: {reply:?}"
+    );
     let reply = emulator.feed(&apc(&format!("m=0;{tail}")));
     assert!(reply.is_empty(), "the closing chunk answered: {reply:?}");
-    assert!(emulator.graphics().get(9).is_some(), "the image was dropped");
+    assert!(
+        emulator.graphics().get(9).is_some(),
+        "the image was dropped"
+    );
 }
 
 #[test]
@@ -292,10 +286,7 @@ fn delete_takes_one_id_or_all_of_them() {
 fn a_command_leaves_the_grid_exactly_as_it_found_it() {
     let mut emulator = Emulator::new(20, 5);
     let mut stream = b"one\r\n".to_vec();
-    stream.extend(apc(&format!(
-        "a=T,f=32,s=1,v=1,i=1;{}",
-        base64(&pixel())
-    )));
+    stream.extend(apc(&format!("a=T,f=32,s=1,v=1,i=1;{}", base64(&pixel()))));
     stream.extend_from_slice(b"two");
     emulator.feed(&stream);
 
@@ -431,7 +422,9 @@ fn an_anchor_never_reaches_the_clipboard() {
     emulator.update_selection(end, Side::Right);
     let text = emulator.selection_text().unwrap_or_default();
     assert!(
-        !text.chars().any(|ch| ('\u{F0000}'..'\u{FFFFD}').contains(&ch)),
+        !text
+            .chars()
+            .any(|ch| ('\u{F0000}'..'\u{FFFFD}').contains(&ch)),
         "a private-use anchor was copied: {text:?}"
     );
     assert!(text.contains("text"));
@@ -458,10 +451,7 @@ fn a_placed_image_decodes_to_the_channel_order_gpui_paints() {
     let mut emulator = placed_emulator(20, 6);
     // One opaque red pixel and one opaque blue one, sent as RGBA.
     let pixels = [0xff, 0x00, 0x00, 0xff, 0x00, 0x00, 0xff, 0xff];
-    emulator.feed(&apc(&format!(
-        "a=T,f=32,s=2,v=1,i=1;{}",
-        base64(&pixels)
-    )));
+    emulator.feed(&apc(&format!("a=T,f=32,s=2,v=1,i=1;{}", base64(&pixels))));
 
     let mut images = Images::new();
     let placed = images.placed(&emulator);
@@ -524,12 +514,17 @@ struct Painted {
 }
 
 impl gpui::Render for Painted {
-    fn render(&mut self, _: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
         let this = cx.entity();
         terminal::view::TerminalElement::new(
             move |geometry, cx| {
                 this.update(cx, |this, _| {
-                    this.emulator.set_cell_size(geometry.cell_w, geometry.line_h);
+                    this.emulator
+                        .set_cell_size(geometry.cell_w, geometry.line_h);
                     let images = this.images.placed(&this.emulator);
                     this.painted.set(images.len());
                     Some(terminal::view::GridSnapshot {

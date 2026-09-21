@@ -198,7 +198,11 @@ fn nested() -> Vec<Item> {
 }
 
 impl gpui::Render for Pinned {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl IntoElement {
         let theme = theme::Theme::of(cx).clone();
         div()
             .size_full()
