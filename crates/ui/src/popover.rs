@@ -11,6 +11,9 @@
 //! classification) lives in free functions with unit tests; the elements only
 //! feed them measurements/events.
 
+pub mod submenu;
+pub use submenu::Chain;
+
 use crate::{icons, stack};
 use gpui::{
     Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
@@ -526,6 +529,20 @@ pub fn classify_key(key: &str, cmd: bool, ctrl: bool) -> MenuKey {
 /// its rows' radius. Change it and the rows follow.
 pub(crate) const MENU_PAD: f32 = 4.0;
 
+/// The gap a floating layer keeps from the window edge once it has run out of
+/// room and is snapped back inside it.
+pub(crate) const SNAP: f32 = 8.0;
+
+/// A [`menu_row`]'s padding above and below its line box. Named because a
+/// list that caps itself at a row count has to know how tall a row is.
+pub(crate) const MENU_ROW_PAD_Y: f32 = 6.0;
+
+/// How tall a one-line [`menu_row`] paints. Derived rather than stored: the
+/// two would drift, and it moves with the reader's text size.
+pub(crate) fn menu_row_height() -> f32 {
+    TextStyle::Body.painted_line_height() + 2.0 * MENU_ROW_PAD_Y
+}
+
 pub fn popover_card(theme: &Theme) -> gpui::Div {
     let card = div()
         .rounded(px(Theme::surface_radius()))
@@ -624,7 +641,7 @@ fn menu_layer(
     .child(content);
     let mut layer = gpui::anchored()
         .anchor(anchor)
-        .snap_to_window_with_margin(px(8.0));
+        .snap_to_window_with_margin(px(SNAP));
     if let Some(position) = position {
         layer = layer.position(position);
     }
@@ -678,24 +695,20 @@ pub fn anchored_menu_below_gap(
         .into_any_element()
 }
 
-/// The panel a [`crate::menu::Item::Submenu`] row drops: pinned to the row's
-/// top-right and pulled back by the card's own inset, so the child's first row
-/// lines up with the row that opened it and the two cards touch. No gap on
-/// purpose — a strip of nothing between them is a strip the pointer crosses on
-/// its way in, and it would land on a sibling row and close what it was
-/// reaching for. Near the right edge the layer snaps rather than flipping;
-/// gpui's `anchored` picks no sides.
+/// The panel a [`crate::menu::Item::Submenu`] row drops, mounted on that row —
+/// which must be `relative()`. Its first row lines up with the row that opened
+/// it, and the two cards touch on whichever side [`submenu::place`] put it.
+/// `chain` is the open menu's, shared by every panel in it.
 ///
 /// No `closing`: a submenu is held open by the cursor, and the cursor is
 /// cleared before the menu it hangs in begins its own exit.
-pub fn anchored_submenu(id: impl Into<SharedString>, content: AnyElement) -> AnyElement {
-    div()
-        .absolute()
-        .top(px(-MENU_PAD))
-        .right(px(-MENU_PAD))
-        .size_0()
-        .child(menu_layer(id, content, None, Anchor::TopLeft, None, 0.0))
-        .into_any_element()
+pub fn anchored_submenu(
+    id: impl Into<SharedString>,
+    content: AnyElement,
+    chain: &Chain,
+) -> AnyElement {
+    let content = div().occlude().child(material_menu(content));
+    submenu::layer(menu_motion(id.into(), None, content), chain)
 }
 
 /// [`anchored_menu`] opening UPWARD from the trigger (composer pickers, the
@@ -1027,7 +1040,7 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
         .items_center()
         .gap(px(10.0))
         .px(px(8.0))
-        .py(px(6.0))
+        .py(px(MENU_ROW_PAD_Y))
         // Concentric with the card it sits in rather than a radius of its own:
         // 12 − 4 = 8, which is where the crate's most-repeated corner value
         // came from all along.

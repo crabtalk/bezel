@@ -23,6 +23,9 @@ workspace = true
 alacritty_terminal.workspace = true
 theme.workspace = true
 gpui.workspace = true
+# Decodes a kitty graphics payload into the BGRA frame gpui paints. The same
+# crate gpui decodes its own images with, so the pinned version is shared.
+image = "0.25"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

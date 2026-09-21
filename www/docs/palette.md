@@ -41,3 +41,5 @@ pub enum PaletteEvent { Selected(usize), Dismissed }
 Keys are `up`/`down`, `ctrl-p`/`ctrl-n`, `enter` and `escape`, scoped to the palette's context — which wraps the query field's, so typing still reaches it. `popover::Filter` is the ranking underneath, shared with `Combobox`: prefix matches first, then substring, stable within each rank.
 
 Mounting is the caller's — usually centred over a scrim, for which `popover::modal_glass` is the frame. Only text changes re-rank; moving the query caret preserves the highlighted command.
+
+Twelve commands show at once and the rest scroll, so a palette over hundreds of them opens the same size as one over twenty. The query line stays above the scroller, the arrows keep the highlighted command in view, and a new query returns the list to the top.

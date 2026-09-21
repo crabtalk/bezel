@@ -15,6 +15,7 @@ impl Render for Grid {
             move |grid, _| {
                 geometry.set(Some(grid));
                 Some(GridSnapshot {
+                    images: Vec::new(),
                     lines: Vec::new(),
                     cursor: None,
                 })
