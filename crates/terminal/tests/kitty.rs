@@ -223,6 +223,18 @@ fn quiet_silences_the_acknowledgement() {
 }
 
 #[test]
+fn quiet_asked_for_on_the_first_chunk_holds_to_the_last() {
+    let mut emulator = Emulator::new(20, 5);
+    let bytes = base64(&pixel());
+    let (head, tail) = bytes.split_at(4);
+    let reply = emulator.feed(&apc(&format!("a=T,f=32,s=1,v=1,i=9,q=2,m=1;{head}")));
+    assert!(reply.is_empty(), "a chunk mid-transmission answered: {reply:?}");
+    let reply = emulator.feed(&apc(&format!("m=0;{tail}")));
+    assert!(reply.is_empty(), "the closing chunk answered: {reply:?}");
+    assert!(emulator.graphics().get(9).is_some(), "the image was dropped");
+}
+
+#[test]
 fn a_transfer_this_cannot_make_says_so_rather_than_going_quiet() {
     let mut emulator = Emulator::new(20, 5);
     // A file transfer names a path to open, which is a platform and security

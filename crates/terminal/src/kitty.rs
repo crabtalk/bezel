@@ -500,6 +500,12 @@ impl Store {
                 ..command.clone()
             },
         };
+        // Kitty states a transmission's control keys on its first chunk, and
+        // the chunk that ends it carries `m=0` and little else. `held` is
+        // where those keys live, so the silence the client asked for is read
+        // from there rather than from the chunk in hand.
+        let mut command = command;
+        command.quiet = command.quiet.max(held.quiet);
         if held.payload.len() + command.payload.len() > MAX_IMAGE {
             return (None, self.reply(&command, id, Some("EFBIG:payload")));
         }
