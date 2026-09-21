@@ -478,14 +478,13 @@ impl BlockLayouts {
     fn record(&self, block: usize, part: Part, range: Range<usize>, layout: TextLayout) {
         let mut frames = self.0.borrow_mut();
         let painted = frames.texts.len();
-        let rows_layout = layout.clone();
+        record_rows(&mut frames.rows, painted, block, part, &range, &layout);
         frames.texts.push(Painted {
             block,
             part,
-            range: range.clone(),
+            range,
             layout,
         });
-        record_rows(&mut frames.rows, painted, block, part, &range, &rows_layout);
     }
 
     fn record_block(&self, ix: usize, bounds: Bounds<Pixels>) {
