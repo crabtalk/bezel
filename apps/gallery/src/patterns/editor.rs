@@ -43,7 +43,8 @@ const SOURCE: &str = r#"# Notes
 
 Select any of this and the toolbar appears. **Bold**, _italic_ and `code` are one keystroke or one button away, and they are the same call underneath.
 
-- Type `/` on an empty line for the block menu
+- Type `/` on an empty line for the block menu — every GFM alert is in it, under `/note`, `/tip`, `/important`, `/warning` and `/caution`
+- Ctrl+Enter opens a plain paragraph under the block the caret is in, whatever Enter would have done there
 - Paste a URL on an empty line for a card, or into a sentence for a chip
 - Hover a block and drag its handle to reorder it
 - Everything on the right is what a save would write
@@ -54,6 +55,9 @@ Select any of this and the toolbar appears. **Bold**, _italic_ and `code` are on
 Drag a picture in from the desktop and it lands where the line says it will. `/image` makes an empty one that asks for a URL.
 
 > Shift+Enter inserts a line break inside a block, here and in Notion both. This paragraph is one long line in the source, so it wraps to the pane instead.
+
+> [!TIP]
+> An alert is a quote whose first line names one. Type `> ` and then `[!TIP]` and the marker becomes the block.
 
 A fence the app knows how to paint is a block of its own — put the caret in it to get the source back.
 

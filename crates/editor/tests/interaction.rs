@@ -170,6 +170,16 @@ fn a_marker_typed_above_a_body_promotes_and_keeps_it(cx: &mut TestAppContext) {
     assert_eq!(source(&editor, &mut cx), "> [!NOTE]\n> Xbody");
 }
 
+/// Ctrl+Enter asks for a paragraph after *this* block, so in the middle of a
+/// list that is where it goes and the list is two lists.
+#[gpui::test]
+fn ctrl_enter_inside_a_list_breaks_it_in_two(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("- one\n- two", cx);
+    cx.simulate_keystrokes("end ctrl-enter");
+    cx.simulate_input("mid");
+    assert_eq!(source(&editor, &mut cx), "- one\n\nmid\n\n- two");
+}
+
 #[gpui::test]
 fn typing_an_alert_marker_after_quote_shortcut_promotes_it(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("", cx);
