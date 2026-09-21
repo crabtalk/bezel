@@ -227,6 +227,7 @@ pub struct BlockLayouts(Rc<RefCell<Frames>>);
 #[derive(Default)]
 struct Frames {
     texts: Vec<Painted>,
+    rows: Vec<PaintedRow>,
     /// Each block's whole box, which a text layout does not give: a rule and
     /// an image hold no text at all, and a gutter handle still has to find them.
     blocks: Vec<(usize, Bounds<Pixels>)>,
@@ -255,6 +256,14 @@ struct Painted {
     layout: TextLayout,
 }
 
+struct PaintedRow {
+    painted: usize,
+    block: usize,
+    part: Part,
+    range: Range<usize>,
+    bounds: Bounds<Pixels>,
+}
+
 impl BlockLayouts {
     /// The position under `point`.
     ///
@@ -262,30 +271,20 @@ impl BlockLayouts {
     /// beside a line — or below the last one — still lands somewhere useful
     /// rather than doing nothing.
     pub fn hit(&self, point: Point<Pixels>) -> Option<Cursor> {
-        let entries = &self.0.borrow().texts;
-        let cursor = |painted: &Painted| {
-            let (Ok(offset) | Err(offset)) = painted.layout.index_for_position(point);
-            Cursor::new(
-                painted.block,
-                painted.part,
-                painted.range.start + offset.min(painted.range.len()),
-            )
-        };
-        if let Some(painted) = entries
-            .iter()
-            .find(|painted| painted.layout.bounds().contains(&point))
-        {
-            return Some(cursor(painted));
+        let frames = self.0.borrow();
+        if let Some(row) = frames.rows.iter().find(|row| row.bounds.contains(&point)) {
+            return Some(cursor_in_row(&frames, row, point.x));
         }
-        entries
+        frames
+            .rows
             .iter()
-            .min_by_key(|painted| {
-                let bounds = painted.layout.bounds();
+            .min_by_key(|row| {
+                let bounds = row.bounds;
                 let above = (bounds.origin.y - point.y).abs();
                 let below = (bounds.origin.y + bounds.size.height - point.y).abs();
                 f32::from(above.min(below)) as i64
             })
-            .map(cursor)
+            .map(|row| cursor_in_row(&frames, row, point.x))
     }
 
     /// Where a position painted last frame, and how tall its line is.
@@ -294,8 +293,8 @@ impl BlockLayouts {
     /// a wrapped row and a hard newline are the same case and neither needs
     /// counting — the rule `ui::TextField` arrived at.
     pub fn position(&self, at: Cursor) -> Option<(Point<Pixels>, Pixels)> {
-        let entries = &self.0.borrow().texts;
-        let painted = entries.iter().find(|painted| {
+        let frames = self.0.borrow();
+        let painted = frames.texts.iter().find(|painted| {
             painted.block == at.block
                 && painted.part == at.part
                 && painted.range.start <= at.offset
@@ -358,46 +357,27 @@ impl BlockLayouts {
         from: Point<Pixels>,
         down: bool,
     ) -> Option<(Cursor, Pixels)> {
-        let entries = &self.0.borrow().texts;
-        let ix = entries.iter().position(|painted| {
-            painted.block == at.block
-                && painted.part == at.part
-                && painted.range.start <= at.offset
-                && at.offset <= painted.range.end
-        })?;
-        let here = &entries[ix];
-        let line = here.layout.line_height();
-        let index_at = |painted: &Painted, y: Pixels| {
-            let (Ok(offset) | Err(offset)) = painted.layout.index_for_position(point(from.x, y));
-            (
-                Cursor::new(
-                    painted.block,
-                    painted.part,
-                    painted.range.start + offset.min(painted.range.len()),
-                ),
-                y,
-            )
-        };
-
-        // A wrapped paragraph is one run holding several rows, so try to stay
-        // inside it before looking for a neighbour.
-        let bounds = here.layout.bounds();
-        let target = if down { from.y + line } else { from.y - line };
-        if target >= bounds.origin.y && target < bounds.origin.y + bounds.size.height {
-            return Some(index_at(here, target));
-        }
-
+        let frames = self.0.borrow();
+        let ix = frames
+            .rows
+            .iter()
+            .position(|row| {
+                row.block == at.block
+                    && row.part == at.part
+                    && row_contains(row, at.offset)
+                    && row.bounds.origin.y <= from.y
+                    && from.y < row.bounds.origin.y + row.bounds.size.height
+            })
+            .or_else(|| {
+                frames.rows.iter().position(|row| {
+                    row.block == at.block && row.part == at.part && row_contains(row, at.offset)
+                })
+            })?;
         let next = match down {
-            true => entries.get(ix + 1)?,
-            false => entries.get(ix.checked_sub(1)?)?,
+            true => frames.rows.get(ix + 1)?,
+            false => frames.rows.get(ix.checked_sub(1)?)?,
         };
-        // Enter the neighbour on the row facing the one just left.
-        let bounds = next.layout.bounds();
-        let row = match down {
-            true => bounds.origin.y,
-            false => bounds.origin.y + bounds.size.height - next.layout.line_height(),
-        };
-        Some(index_at(next, row))
+        Some((cursor_in_row(&frames, next, from.x), next.bounds.origin.y))
     }
 
     /// Whether `point` is inside painted text.
@@ -496,12 +476,16 @@ impl BlockLayouts {
     }
 
     fn record(&self, block: usize, part: Part, range: Range<usize>, layout: TextLayout) {
-        self.0.borrow_mut().texts.push(Painted {
+        let mut frames = self.0.borrow_mut();
+        let painted = frames.texts.len();
+        let rows_layout = layout.clone();
+        frames.texts.push(Painted {
             block,
             part,
-            range,
+            range: range.clone(),
             layout,
         });
+        record_rows(&mut frames.rows, painted, block, part, &range, &rows_layout);
     }
 
     fn record_block(&self, ix: usize, bounds: Bounds<Pixels>) {
@@ -523,10 +507,64 @@ impl BlockLayouts {
     fn clear(&self) {
         let mut frames = self.0.borrow_mut();
         frames.texts.clear();
+        frames.rows.clear();
         frames.blocks.clear();
         frames.languages.clear();
         frames.pictures.clear();
         frames.checkboxes.clear();
+    }
+}
+
+fn row_contains(row: &PaintedRow, offset: usize) -> bool {
+    row.range.start <= offset && offset <= row.range.end
+}
+
+fn cursor_in_row(frames: &Frames, row: &PaintedRow, x: Pixels) -> Cursor {
+    let painted = &frames.texts[row.painted];
+    let y = row.bounds.origin.y + row.bounds.size.height / 2.0;
+    let (Ok(offset) | Err(offset)) = painted.layout.index_for_position(point(x, y));
+    Cursor::new(
+        painted.block,
+        painted.part,
+        painted.range.start + offset.min(painted.range.len()),
+    )
+}
+
+fn record_rows(
+    rows: &mut Vec<PaintedRow>,
+    painted: usize,
+    block: usize,
+    part: Part,
+    range: &Range<usize>,
+    layout: &TextLayout,
+) {
+    let line_height = layout.line_height();
+    let bounds = layout.bounds();
+    let mut origin = bounds.origin;
+    let mut line_start = range.start;
+    for line in layout.line_layouts() {
+        let shaped = &line.unwrapped_layout;
+        let row_ends = line
+            .wrap_boundaries()
+            .iter()
+            .map(|wrap| shaped.runs[wrap.run_ix].glyphs[wrap.glyph_ix].index)
+            .chain([line.len()]);
+        let mut row_start = 0;
+        for (row, row_end) in row_ends.enumerate() {
+            rows.push(PaintedRow {
+                painted,
+                block,
+                part,
+                range: line_start + row_start..line_start + row_end,
+                bounds: Bounds::new(
+                    origin + point(px(0.0), line_height * row as f32),
+                    size(bounds.size.width, line_height),
+                ),
+            });
+            row_start = row_end;
+        }
+        origin.y += line.size(line_height).height;
+        line_start += line.len() + 1;
     }
 }
 

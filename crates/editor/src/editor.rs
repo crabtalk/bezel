@@ -39,11 +39,11 @@ pub(crate) mod menu;
 pub use keys::init;
 use keys::{
     Backspace, Copy, Cut, DecreaseTextSize, Delete, DeleteToHome, DeleteWordLeft, DeleteWordRight,
-    Dismiss, Down, DuplicateBlock, End, Home, IncreaseTextSize, Indent, KillLine, Left,
-    MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock, ResetTextSize, Right, SelectAll,
-    SelectDown, SelectEnd, SelectHome, SelectLeft, SelectRight, SelectUp, SelectWordLeft,
-    SelectWordRight, SplitBlock, ToggleBold, ToggleCode, ToggleItalic, ToggleStrike, Undo, Up,
-    WordLeft, WordRight,
+    Dismiss, Down, DuplicateBlock, End, Home, IncreaseTextSize, Indent, InsertParagraph, KillLine,
+    Left, MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock, ResetTextSize, Right,
+    SelectAll, SelectDown, SelectEnd, SelectHome, SelectLeft, SelectRight, SelectUp,
+    SelectWordLeft, SelectWordRight, SoftBreak, SplitBlock, ToggleBold, ToggleCode, ToggleItalic,
+    ToggleStrike, Undo, Up, WordLeft, WordRight,
 };
 
 pub const CONTEXT: &str = "BezelEditor";
@@ -208,6 +208,34 @@ fn ensure_block(doc: &mut Doc) -> bool {
     doc.blocks
         .push(Block::new(BlockKind::Paragraph(Text::default())));
     true
+}
+
+fn line_home(at: Cursor, doc: &Doc) -> Cursor {
+    let Some(text) = doc
+        .blocks
+        .get(at.block)
+        .and_then(|block| block.text_at(at.part))
+    else {
+        return at.home();
+    };
+    Cursor {
+        offset: ui::input::line_start(&text.text, at.offset.min(text.text.len())),
+        ..at
+    }
+}
+
+fn line_end(at: Cursor, doc: &Doc) -> Cursor {
+    let Some(text) = doc
+        .blocks
+        .get(at.block)
+        .and_then(|block| block.text_at(at.part))
+    else {
+        return at.end(doc);
+    };
+    Cursor {
+        offset: ui::input::line_end(&text.text, at.offset.min(text.text.len())),
+        ..at
+    }
 }
 
 /// The document a source view is edited as: one fence holding the markdown.
@@ -1007,6 +1035,7 @@ impl Editor {
             let splice = this.doc.replace(this.selection, typed);
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             this.apply_shortcut();
+            this.promote_quote_marker();
             this.apply_inline_rule();
             this.track_slash(text, painter);
             vec![Delta::Spliced(splice)]
@@ -1222,8 +1251,50 @@ impl Editor {
         self.history.interrupt();
     }
 
+    /// Promote a quote whose whole first line is a GFM alert marker into the
+    /// alert block kind the parser would have produced from the same markdown.
+    fn promote_quote_marker(&mut self) {
+        let at = self.cursor();
+        let Some(block) = self.doc.blocks.get(at.block) else {
+            return;
+        };
+        let Some(text) = block.text_at(Part::Body) else {
+            return;
+        };
+        let kind = match &block.kind {
+            BlockKind::Quote { kind: None, .. } => Self::quote_marker(&text.text),
+            _ => None,
+        };
+        let Some(kind) = kind else {
+            return;
+        };
+        if let Some(BlockKind::Quote { kind: into, text }) = self
+            .doc
+            .blocks
+            .get_mut(at.block)
+            .map(|block| &mut block.kind)
+        {
+            *into = Some(kind);
+            *text = Text::default();
+        }
+        self.selection = Selection::at(Cursor::new(at.block, Part::Body, 0).clamp(&self.doc));
+        self.history.interrupt();
+    }
+
     fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
         self.delete_back(cx);
+    }
+
+    fn quote_marker(text: &str) -> Option<markdown::QuoteKind> {
+        [
+            markdown::QuoteKind::Note,
+            markdown::QuoteKind::Tip,
+            markdown::QuoteKind::Important,
+            markdown::QuoteKind::Warning,
+            markdown::QuoteKind::Caution,
+        ]
+        .into_iter()
+        .find(|kind| text.eq_ignore_ascii_case(kind.marker()))
     }
 
     /// Delete backwards: the selection if there is one, otherwise the character
@@ -1341,6 +1412,38 @@ impl Editor {
                 blocks: 1,
             }));
             deltas
+        });
+    }
+
+    /// Shift+Enter. In prose it keeps the caret in the block and inserts a
+    /// literal newline; the places markdown itself keeps to one line still do.
+    fn soft_break(&mut self, _: &SoftBreak, _: &mut Window, cx: &mut Context<Self>) {
+        match self.cursor().part {
+            Part::Body | Part::Code => self.insert("\n", cx),
+            Part::Caption | Part::Cell { .. } => {}
+        }
+    }
+
+    /// Ctrl+Enter. Open a plain paragraph after the current block's whole
+    /// subtree and leave the current block's text untouched.
+    fn insert_paragraph(&mut self, _: &InsertParagraph, _: &mut Window, cx: &mut Context<Self>) {
+        if !self.blocks() {
+            return;
+        }
+        self.edit(EditKind::Structure, cx, |this| {
+            let at = this.cursor().block;
+            let insert_at = this.doc.subtree(at).end;
+            let indent = this.doc.blocks.get(at).map_or(0, |block| block.indent);
+            this.doc.blocks.insert(
+                insert_at,
+                Block::at(BlockKind::Paragraph(Text::default()), indent),
+            );
+            this.doc.repair();
+            this.selection = Selection::at(Cursor::new(insert_at, Part::Body, 0).clamp(&this.doc));
+            vec![Delta::Opened {
+                at: insert_at,
+                count: 1,
+            }]
         });
     }
 
@@ -2047,6 +2150,8 @@ impl Render for Editor {
                 this.delete_to(false, |at, _| at.home(), cx)
             }))
             .on_action(cx.listener(Self::split_block))
+            .on_action(cx.listener(Self::soft_break))
+            .on_action(cx.listener(Self::insert_paragraph))
             .on_action(cx.listener(Self::indent))
             .on_action(cx.listener(Self::increase_text_size))
             .on_action(cx.listener(Self::decrease_text_size))
@@ -2105,10 +2210,8 @@ impl Render for Editor {
             .on_action(cx.listener(|this, _: &Right, _, cx| this.moved(false, Cursor::right, cx)))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.vertical(false, false, cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
-            .on_action(
-                cx.listener(|this, _: &Home, _, cx| this.moved(false, |at, _| at.home(), cx)),
-            )
-            .on_action(cx.listener(|this, _: &End, _, cx| this.moved(false, Cursor::end, cx)))
+            .on_action(cx.listener(|this, _: &Home, _, cx| this.moved(false, line_home, cx)))
+            .on_action(cx.listener(|this, _: &End, _, cx| this.moved(false, line_end, cx)))
             .on_action(
                 cx.listener(|this, _: &WordLeft, _, cx| this.moved(false, Cursor::word_left, cx)),
             )
@@ -2123,10 +2226,8 @@ impl Render for Editor {
             )
             .on_action(cx.listener(|this, _: &SelectUp, _, cx| this.vertical(false, true, cx)))
             .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.vertical(true, true, cx)))
-            .on_action(
-                cx.listener(|this, _: &SelectHome, _, cx| this.moved(true, |at, _| at.home(), cx)),
-            )
-            .on_action(cx.listener(|this, _: &SelectEnd, _, cx| this.moved(true, Cursor::end, cx)))
+            .on_action(cx.listener(|this, _: &SelectHome, _, cx| this.moved(true, line_home, cx)))
+            .on_action(cx.listener(|this, _: &SelectEnd, _, cx| this.moved(true, line_end, cx)))
             .on_action(cx.listener(|this, _: &SelectWordLeft, _, cx| {
                 this.moved(true, Cursor::word_left, cx)
             }))

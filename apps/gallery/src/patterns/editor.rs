@@ -53,7 +53,7 @@ Select any of this and the toolbar appears. **Bold**, _italic_ and `code` are on
 
 Drag a picture in from the desktop and it lands where the line says it will. `/image` makes an empty one that asks for a URL.
 
-> A newline inside a block is a line break, here and in Notion both. This paragraph is one long line in the source, so it wraps to the pane instead.
+> Shift+Enter inserts a line break inside a block, here and in Notion both. This paragraph is one long line in the source, so it wraps to the pane instead.
 
 A fence the app knows how to paint is a block of its own — put the caret in it to get the source back.
 
