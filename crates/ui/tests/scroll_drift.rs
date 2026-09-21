@@ -1,8 +1,9 @@
-use gpui::{Pixels, px};
+use gpui::{Bounds, Pixels, Point, point, px, size};
 
 use ui::scroll::*;
 
-/// A pane with room either side of both edge strips.
+/// A pane with room either side of both edge strips, and the window's left
+/// half when one has a neighbour.
 const START: Pixels = px(0.0);
 const END: Pixels = px(600.0);
 
@@ -58,4 +59,56 @@ fn nothing_to_drift_in_is_never_drifting() {
     // The frame before layout has run, and a pane laid out backwards.
     assert_eq!(drift_velocity(px(0.0), px(0.0), px(0.0)), 0.0);
     assert_eq!(drift_velocity(px(10.0), px(600.0), px(0.0)), 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// What the pane's edge gives onto
+// ---------------------------------------------------------------------------
+
+/// A pane occupying the left half of a window, with another beside it.
+fn pane() -> Bounds<Pixels> {
+    Bounds {
+        origin: point(START, px(0.0)),
+        size: size(END - START, px(400.0)),
+    }
+}
+
+/// Along the pane's own row, `into` pixels past its right edge.
+fn past(into: f32) -> Point<Pixels> {
+    point(END + px(into), px(200.0))
+}
+
+#[test]
+fn a_pointer_past_the_edge_holds_a_pane_that_owns_it() {
+    let velocity = pane_velocity(pane(), past(40.0), Axes::Horizontal, Beyond::Nothing);
+    assert_eq!(velocity.x, -DRIFT_SPEED);
+}
+
+#[test]
+fn a_pointer_that_has_left_for_a_neighbour_drifts_nothing() {
+    // The pane would otherwise scroll for the rest of the gesture: past the
+    // edge is full speed, and the cross-axis guard cannot help — a left/right
+    // split puts the neighbour at the same y.
+    let velocity = pane_velocity(pane(), past(40.0), Axes::Horizontal, Beyond::Neighbour);
+    assert_eq!(velocity, point(0.0, 0.0));
+}
+
+#[test]
+fn the_edge_strip_itself_reads_the_same_either_way() {
+    // Only the pointer that has actually left is in question; inside the pane
+    // the two agree, so the hand-over costs no drift on the way out.
+    let inside = point(END - DRIFT_EDGE / 2.0, px(200.0));
+    assert_eq!(
+        pane_velocity(pane(), inside, Axes::Horizontal, Beyond::Neighbour),
+        pane_velocity(pane(), inside, Axes::Horizontal, Beyond::Nothing)
+    );
+}
+
+#[test]
+fn a_pointer_in_another_row_is_not_aiming_here() {
+    // Across the axis, with no neighbour anywhere: every lane of a board would
+    // drift together on a drag that is only near one of them.
+    let below = point(START + px(10.0), px(900.0));
+    let velocity = pane_velocity(pane(), below, Axes::Horizontal, Beyond::Nothing);
+    assert_eq!(velocity, point(0.0, 0.0));
 }

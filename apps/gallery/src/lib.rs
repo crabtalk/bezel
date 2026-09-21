@@ -4763,6 +4763,9 @@ impl Gallery {
                                 &self.drift_scroll,
                                 &self.drift,
                                 Axes::Horizontal,
+                                // The page past the strip takes no chips, so a
+                                // pointer carried out there is still aiming here.
+                                scroll::Beyond::Nothing,
                             )),
                     )
                     .into_any_element()

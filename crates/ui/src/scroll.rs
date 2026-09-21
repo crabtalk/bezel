@@ -45,8 +45,8 @@ pub use overlay::{Overlay, Viewport, Visibility, set_visibility, visibility};
 use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
-    Animation, AnimationExt, App, Axis, Div, DragMoveEvent, ElementId, Empty, MouseButton, Pixels,
-    Point, ScrollHandle, SharedString, Stateful, Window, canvas, div, point, prelude::*, px,
+    Animation, AnimationExt, App, Axis, Bounds, Div, DragMoveEvent, ElementId, Empty, MouseButton,
+    Pixels, Point, ScrollHandle, SharedString, Stateful, Window, canvas, div, point, prelude::*, px,
 };
 
 use motion::Painter;
@@ -1054,6 +1054,43 @@ pub fn drift_velocity(pointer: Pixels, start: Pixels, end: Pixels) -> f32 {
     }
 }
 
+/// What lies past a drifting pane's edge, and so whether a pointer that has
+/// crossed it is still aiming at the pane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Beyond {
+    /// Nothing the drag could be meant for — a board that fills the window.
+    /// The pane holds at full speed for as long as the pointer is out there.
+    Nothing,
+    /// Another surface. The pane stops the moment the pointer leaves it,
+    /// whichever edge it left by.
+    Neighbour,
+}
+
+/// How fast a pane of `bounds` drifts with the pointer at `pointer`, one
+/// [`drift_velocity`] per axis [`Axes`] names.
+///
+/// Across an axis the pointer must be within the pane: without that, every
+/// lane of a board would drift together on a drag that is only near one of
+/// them. Along it, `beyond` decides.
+pub fn pane_velocity(
+    bounds: Bounds<Pixels>,
+    pointer: Point<Pixels>,
+    axes: Axes,
+    beyond: Beyond,
+) -> Point<f32> {
+    if beyond == Beyond::Neighbour && !bounds.contains(&pointer) {
+        return point(0.0, 0.0);
+    }
+    let mut velocity = point(0.0, 0.0);
+    if axes.horizontal() && (bounds.top()..=bounds.bottom()).contains(&pointer.y) {
+        velocity.x = drift_velocity(pointer.x, bounds.left(), bounds.right());
+    }
+    if axes.vertical() && (bounds.left()..=bounds.right()).contains(&pointer.x) {
+        velocity.y = drift_velocity(pointer.y, bounds.top(), bounds.bottom());
+    }
+    velocity
+}
+
 /// What one drifting pane remembers between frames.
 #[derive(Clone, Copy, Default)]
 struct Drift {
@@ -1109,7 +1146,7 @@ impl DriftState {
 /// ```ignore
 /// div().relative()
 ///     .child(scroll::pane("board", Axes::Horizontal).size_full().track_scroll(&self.scroll).child(lanes))
-///     .child(scroll::drift(&self.scroll, &self.drift, Axes::Horizontal))
+///     .child(scroll::drift(&self.scroll, &self.drift, Axes::Horizontal, Beyond::Nothing))
 /// ```
 ///
 /// Without it a board is only as wide as the window: a card cannot be carried
@@ -1121,15 +1158,20 @@ impl DriftState {
 /// is over. The drag going away is the signal instead, and it arrives however
 /// the drag ended.
 ///
-/// Across the axis the pointer must be *within* the pane, or every lane on a
-/// board would drift together on one that is only near one of them. Along it,
-/// past the edge still counts — see [`drift_velocity`].
+/// `beyond` is what the pane's edge gives onto, and decides whether a pointer
+/// carried past it still drives the pane — see [`Beyond`] and
+/// [`pane_velocity`].
 ///
 /// Not motion in the [`motion`] sense and not reduced with it: nothing here
 /// animates a property, the pane is being scrolled by a gesture the same way a
 /// wheel scrolls it, and a reader who cannot reach the far lane has no gesture
 /// left to make.
-pub fn drift(handle: &ScrollHandle, state: &DriftState, axes: Axes) -> gpui::AnyElement {
+pub fn drift(
+    handle: &ScrollHandle,
+    state: &DriftState,
+    axes: Axes,
+    beyond: Beyond,
+) -> gpui::AnyElement {
     let handle = handle.clone();
     let state = state.clone();
     canvas(
@@ -1141,17 +1183,11 @@ pub fn drift(handle: &ScrollHandle, state: &DriftState, axes: Axes) -> gpui::Any
                 return;
             };
 
-            let bounds = handle.bounds();
-            let mut velocity = point(0.0, 0.0);
-            if axes.horizontal() && (bounds.top()..=bounds.bottom()).contains(&pointer.y) {
-                velocity.x = drift_velocity(pointer.x, bounds.left(), bounds.right());
-            }
-            if axes.vertical() && (bounds.left()..=bounds.right()).contains(&pointer.x) {
-                velocity.y = drift_velocity(pointer.y, bounds.top(), bounds.bottom());
-            }
-            // Aimed here but nowhere near an edge. The clock stops with it, so
-            // a drag wandering back to the edge a second later starts a fresh
-            // drift rather than travelling the second it stood still.
+            let velocity = pane_velocity(handle.bounds(), pointer, axes, beyond);
+            // Aimed here but nowhere near an edge, or gone off to a
+            // neighbour. The clock stops with it, so a drag wandering back to
+            // the edge a second later starts a fresh drift rather than
+            // travelling the second it stood still.
             if velocity.x == 0.0 && velocity.y == 0.0 {
                 state.0.set(Drift {
                     aim: Some(pointer),
