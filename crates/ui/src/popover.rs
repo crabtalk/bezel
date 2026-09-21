@@ -771,6 +771,23 @@ pub fn anchored_menu_above_end(
         .into_any_element()
 }
 
+/// [`anchored_menu_below`] right-aligned to the trigger's right edge — a row
+/// whose menu is opened from a control at its end, so the card drops from that
+/// control and opens inward rather than off the trigger's far side.
+pub fn anchored_menu_below_end(
+    id: impl Into<SharedString>,
+    content: AnyElement,
+    closing: Option<web_time::Instant>,
+) -> AnyElement {
+    div()
+        .absolute()
+        .bottom_0()
+        .right_0()
+        .size_0()
+        .child(menu_layer(id, content, closing, Anchor::TopRight, None, 6.0))
+        .into_any_element()
+}
+
 /// A floating menu at an explicit window position (context menus). Occludes
 /// like [`anchored_menu`] so row clicks never reach elements underneath.
 pub fn menu_at(
