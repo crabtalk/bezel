@@ -1034,11 +1034,14 @@ impl Editor {
             }
             let splice = this.doc.replace(this.selection, typed);
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
-            this.apply_shortcut();
-            this.promote_quote_marker();
+            let shortcut = this.apply_shortcut();
+            let promoted = this.promote_quote_marker();
             this.apply_inline_rule();
             this.track_slash(text, painter);
-            vec![Delta::Spliced(splice)]
+            std::iter::once(Delta::Spliced(splice))
+                .chain(shortcut)
+                .chain(promoted)
+                .collect()
         });
     }
 
@@ -1219,26 +1222,19 @@ impl Editor {
     /// Runs after every insertion rather than only on space, because the
     /// vocabulary includes prefixes that end in one (`- [ ] `) and prefixes
     /// that do not (```` ``` ````).
-    fn apply_shortcut(&mut self) {
+    fn apply_shortcut(&mut self) -> Option<Delta> {
         let at = self.cursor();
         // A prefix is block syntax; inside a code fence or a table cell it is
         // the literal text the author typed.
         if at.part != Part::Body {
-            return;
+            return None;
         }
-        let Some(block) = self.doc.blocks.get(at.block) else {
-            return;
-        };
-        let Some(text) = block.text_at(Part::Body) else {
-            return;
-        };
+        let text = self.doc.blocks.get(at.block)?.text_at(Part::Body)?;
         // Only from the very start of a block, and only up to the caret: a
         // `- ` typed in the middle of a sentence is a hyphen.
-        let Some((hit, len)) = shortcut(&text.text) else {
-            return;
-        };
+        let (hit, len) = shortcut(&text.text)?;
         if at.offset < len {
-            return;
+            return None;
         }
         // Strip the prefix, then turn the block — the same two steps the slash
         // menu takes, so a `## ` and a menu pick land in one place.
@@ -1249,36 +1245,55 @@ impl Editor {
         // The transformation is its own step: undo after typing `## Title`
         // should give back the heading, not the paragraph before the hashes.
         self.history.interrupt();
+        Some(Self::cut_prefix(at, len))
     }
 
-    /// Promote a quote whose whole first line is a GFM alert marker into the
-    /// alert block kind the parser would have produced from the same markdown.
-    fn promote_quote_marker(&mut self) {
+    /// Promote a quote whose first line is a GFM alert marker into the alert
+    /// block kind the parser would have produced from the same markdown.
+    ///
+    /// The marker line goes the way a block shortcut's prefix does, so what was
+    /// written under it stays as the alert's body.
+    fn promote_quote_marker(&mut self) -> Option<Delta> {
         let at = self.cursor();
-        let Some(block) = self.doc.blocks.get(at.block) else {
-            return;
-        };
-        let Some(text) = block.text_at(Part::Body) else {
-            return;
-        };
-        let kind = match &block.kind {
-            BlockKind::Quote { kind: None, .. } => Self::quote_marker(&text.text),
-            _ => None,
-        };
-        let Some(kind) = kind else {
-            return;
-        };
-        if let Some(BlockKind::Quote { kind: into, text }) = self
-            .doc
-            .blocks
-            .get_mut(at.block)
-            .map(|block| &mut block.kind)
-        {
-            *into = Some(kind);
-            *text = Text::default();
+        if at.part != Part::Body {
+            return None;
         }
-        self.selection = Selection::at(Cursor::new(at.block, Part::Body, 0).clamp(&self.doc));
+        let block = self.doc.blocks.get(at.block)?;
+        if !matches!(block.kind, BlockKind::Quote { kind: None, .. }) {
+            return None;
+        }
+        let text = &block.text_at(Part::Body)?.text;
+        let first = text.split('\n').next().unwrap_or_default();
+        let kind = Self::quote_marker(first)?;
+        // The marker line, and the break after it where a body follows.
+        let len = first.len() + usize::from(text.len() > first.len());
+        self.doc.edit_at(at, |text| text.remove(0..len));
+        self.doc.set_kind(
+            at.block,
+            BlockKind::Quote {
+                kind: Some(kind),
+                text: Text::default(),
+            },
+        );
+        self.selection = Selection::at(
+            Cursor::new(at.block, Part::Body, at.offset.saturating_sub(len)).clamp(&self.doc),
+        );
         self.history.interrupt();
+        Some(Self::cut_prefix(at, len))
+    }
+
+    /// The delta for `len` bytes taken off the front of `at`'s body — what an
+    /// anchor sitting in that block has to move through.
+    fn cut_prefix(at: Cursor, len: usize) -> Delta {
+        let start = Cursor::new(at.block, Part::Body, 0);
+        Delta::Spliced(Splice {
+            removed: Selection {
+                anchor: start,
+                head: Cursor::new(at.block, Part::Body, len),
+            },
+            caret: start,
+            blocks: 0,
+        })
     }
 
     fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
@@ -1362,15 +1377,23 @@ impl Editor {
         });
     }
 
+    /// Whether an open menu answered Enter itself.
+    ///
+    /// Every Enter chord asks first, or picking a block would also edit the one
+    /// it is turning — and a chord the menu never sees leaves it open over a
+    /// query the caret has walked away from.
+    fn menu_took_enter(&mut self, cx: &mut Context<Self>) -> bool {
+        if let Some(choice) = self.pasted.as_ref().map(link::Paste::choice) {
+            self.confirm_paste(choice, cx);
+            return true;
+        }
+        self.confirm_slash(None, cx)
+    }
+
     /// Enter. In a body it splits the block; in a code fence it is a newline,
     /// which is the whole reason a fence is worth typing into.
     fn split_block(&mut self, _: &SplitBlock, window: &mut Window, cx: &mut Context<Self>) {
-        // A menu owns Enter while it is open, or picking a block would also
-        // split the one it is turning.
-        if let Some(choice) = self.pasted.as_ref().map(link::Paste::choice) {
-            return self.confirm_paste(choice, cx);
-        }
-        if self.confirm_slash(None, cx) {
+        if self.menu_took_enter(cx) {
             return;
         }
         let at = self.cursor();
@@ -1418,6 +1441,9 @@ impl Editor {
     /// Shift+Enter. In prose it keeps the caret in the block and inserts a
     /// literal newline; the places markdown itself keeps to one line still do.
     fn soft_break(&mut self, _: &SoftBreak, _: &mut Window, cx: &mut Context<Self>) {
+        if self.menu_took_enter(cx) {
+            return;
+        }
         match self.cursor().part {
             Part::Body | Part::Code => self.insert("\n", cx),
             Part::Caption | Part::Cell { .. } => {}
@@ -1427,6 +1453,9 @@ impl Editor {
     /// Ctrl+Enter. Open a plain paragraph after the current block's whole
     /// subtree and leave the current block's text untouched.
     fn insert_paragraph(&mut self, _: &InsertParagraph, _: &mut Window, cx: &mut Context<Self>) {
+        if self.menu_took_enter(cx) {
+            return;
+        }
         if !self.blocks() {
             return;
         }

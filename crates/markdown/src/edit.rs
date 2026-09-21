@@ -340,8 +340,9 @@ impl Doc {
     /// Split block `ix` at byte offset `at`, returning the new block's index.
     ///
     /// The tail keeps the block's kind where a continued Enter means "another of
-    /// these" — a list item, for example. A heading titles what follows, and a
-    /// quote's following block is plain body text rather than another quote.
+    /// these" — a list item, for example. A heading titles what follows. A
+    /// quote keeps its kind while the tail still holds text; split at the end
+    /// of one and what opens is plain body text.
     pub fn split(&mut self, ix: usize, at: usize) -> usize {
         if ix >= self.blocks.len() {
             return ix;
@@ -363,8 +364,10 @@ impl Doc {
                 checked: false,
                 text: tail,
             },
-            // A heading titles what follows it, and a quote does not force the
-            // following block to stay quoted.
+            BlockKind::Quote { kind, .. } if !tail.text.is_empty() => BlockKind::Quote {
+                kind: *kind,
+                text: tail,
+            },
             _ => BlockKind::Paragraph(tail),
         };
         self.blocks.insert(ix + 1, Block::at(kind, indent));
