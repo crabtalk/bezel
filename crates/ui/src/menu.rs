@@ -707,7 +707,7 @@ fn disabled_row(theme: &Theme) -> gpui::Div {
         .items_center()
         .gap(px(10.0))
         .px(px(8.0))
-        .py(px(6.0))
+        .py(px(popover::MENU_ROW_PAD_Y))
         // The disabled twin of `popover::menu_row`, in the same card — so it
         // takes its corners from the same rule rather than a matching literal.
         .rounded(px(Theme::inset_radius(

@@ -79,6 +79,7 @@ pub struct Viewport {
     content: Stateful<Div>,
     axis: Axis,
     fill: bool,
+    handle: Option<ScrollHandle>,
 }
 
 impl Viewport {
@@ -88,6 +89,7 @@ impl Viewport {
             content,
             axis,
             fill: false,
+            handle: None,
         }
     }
 
@@ -96,16 +98,30 @@ impl Viewport {
         self.fill = true;
         self
     }
+
+    /// Scroll it from outside — what a caller needs to ask
+    /// [`gpui::ScrollHandle::scroll_to_item`] for one of its children. Left
+    /// unset, the viewport keeps a handle of its own that nothing else can
+    /// reach.
+    pub fn track_scroll(mut self, handle: &ScrollHandle) -> Self {
+        self.handle = Some(handle.clone());
+        self
+    }
 }
 
 impl RenderOnce for Viewport {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let state = window.use_keyed_state(
-            SharedString::from(format!("{}-handle", self.id)),
-            cx,
-            |_, _| ScrollHandle::new(),
-        );
-        let handle = state.read(cx).clone();
+        let handle = match self.handle {
+            Some(handle) => handle,
+            None => window
+                .use_keyed_state(
+                    SharedString::from(format!("{}-handle", self.id)),
+                    cx,
+                    |_, _| ScrollHandle::new(),
+                )
+                .read(cx)
+                .clone(),
+        };
         let axes = match self.axis {
             Axis::Vertical => scroll::Axes::Vertical,
             Axis::Horizontal => scroll::Axes::Horizontal,

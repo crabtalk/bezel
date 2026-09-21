@@ -533,6 +533,16 @@ pub(crate) const MENU_PAD: f32 = 4.0;
 /// room and is snapped back inside it.
 pub(crate) const SNAP: f32 = 8.0;
 
+/// A [`menu_row`]'s padding above and below its line box. Named because a
+/// list that caps itself at a row count has to know how tall a row is.
+pub(crate) const MENU_ROW_PAD_Y: f32 = 6.0;
+
+/// How tall a one-line [`menu_row`] paints. Derived rather than stored: the
+/// two would drift, and it moves with the reader's text size.
+pub(crate) fn menu_row_height() -> f32 {
+    TextStyle::Body.painted_line_height() + 2.0 * MENU_ROW_PAD_Y
+}
+
 pub fn popover_card(theme: &Theme) -> gpui::Div {
     let card = div()
         .rounded(px(Theme::surface_radius()))
@@ -1030,7 +1040,7 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
         .items_center()
         .gap(px(10.0))
         .px(px(8.0))
-        .py(px(6.0))
+        .py(px(MENU_ROW_PAD_Y))
         // Concentric with the card it sits in rather than a radius of its own:
         // 12 − 4 = 8, which is where the crate's most-repeated corner value
         // came from all along.
