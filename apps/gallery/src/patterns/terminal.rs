@@ -15,7 +15,7 @@ use gpui::{Context, Render, SharedString, Subscription, Task, Window, div, prelu
 use std::time::Duration;
 use terminal::{
     emulator::Emulator,
-    view::{GridSnapshot, TerminalElement, terminal_panel_bg},
+    view::{GridSnapshot, Images, TerminalElement, terminal_panel_bg},
 };
 use theme::{TextStyle, Theme, Typeset, hairline};
 
@@ -102,6 +102,9 @@ const SCRIPT: &[(&[u8], u64)] = &[
 
 pub struct Terminal {
     emulator: Emulator,
+    /// Decoded kitty images, cached across frames beside the emulator that
+    /// holds the bytes they came from.
+    images: Images,
     /// The script with cumulative arrival times (ms).
     script: Vec<(&'static [u8], u64)>,
     /// Playback position, advanced one [`TICK_MS`] per tick that actually
@@ -132,6 +135,7 @@ impl Terminal {
         };
         Self {
             emulator: Emulator::new(80, 24),
+            images: Images::new(),
             script,
             elapsed: 0,
             fed: 0,
@@ -181,6 +185,7 @@ impl Terminal {
                 let cols = self.emulator.cols() as u16;
                 let rows = self.emulator.rows() as u16;
                 self.emulator = Emulator::new(cols, rows);
+                self.images = Images::new();
                 self.fed = 0;
                 self.scrolled = false;
                 self.elapsed = 0;
@@ -248,9 +253,14 @@ impl Render for Terminal {
                     {
                         this.emulator.resize(geometry.cols, geometry.rows);
                     }
+                    // The measured cell is what sizes a kitty image in rows
+                    // and columns, and only this callback has it.
+                    this.emulator
+                        .set_cell_size(geometry.cell_w, geometry.line_h);
                     Some(GridSnapshot {
                         lines: this.emulator.lines(),
                         cursor: this.emulator.cursor(),
+                        images: this.images.placed(&this.emulator),
                     })
                 })
             },

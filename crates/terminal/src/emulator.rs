@@ -16,9 +16,13 @@
 //! - `Term::new` takes any `grid::Dimensions` impl — [`GridSize`] here.
 //! - Query responses (DSR/DA/…) surface as `Event::PtyWrite` on the listener;
 //!   [`Emulator::feed`] returns them so the host can write them back.
+//! - Kitty graphics never reach the parser at all — `vte` discards APC runs
+//!   with no hook to catch them — so [`crate::kitty::Scanner`] takes them off
+//!   the stream first and [`Emulator::feed`] hands the rest on unchanged.
 
 use std::{cell::RefCell, rc::Rc};
 
+use crate::kitty::{self, Segment};
 use alacritty_terminal::{
     event::{Event, EventListener},
     grid::{Dimensions, Scroll},
@@ -141,6 +145,40 @@ impl CellSnapshot {
     }
 }
 
+/// Where an image sits on the grid: its top-left cell in viewport
+/// coordinates, and how many cells it covers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Placement {
+    pub row: usize,
+    pub col: usize,
+    pub cols: u16,
+    pub rows: u16,
+    /// The [`kitty::Store`] id of the image to paint here.
+    pub image: u32,
+}
+
+/// The private-use codepoint a placement is anchored with, plus its id.
+///
+/// The anchor is a zerowidth char written onto the image's top-left cell,
+/// because the grid is the only thing that keeps an association on its text:
+/// `alacritty_terminal` exposes no absolute line number and no scroll
+/// callback, so a side table keyed by line drifts the first time output
+/// scrolls. A cell carried into history and back, or rewrapped by a resize,
+/// carries its zerowidth chars with it — which is how the same crate keeps an
+/// OSC 8 hyperlink on its text.
+const ANCHOR: u32 = 0xF_0000;
+/// Plane 15 ends at `U+FFFFD`, which is the ceiling on live placements.
+const ANCHOR_MAX: u32 = 0xF_FFFD - ANCHOR;
+
+/// What a placement holds that the grid cannot: its size, and which image it
+/// shows. Its *position* is the anchored cell.
+#[derive(Debug, Clone, Copy)]
+struct Placed {
+    image: u32,
+    cols: u16,
+    rows: u16,
+}
+
 /// Cursor position in viewport coordinates (row 0 = top of the visible grid).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CursorSnapshot {
@@ -168,6 +206,19 @@ pub struct Emulator {
     capture: EventCapture,
     title: Option<String>,
     bell: bool,
+    /// Splits graphics commands off the stream ahead of the parser. Held
+    /// across feeds: a pty read ends wherever the kernel filled the buffer,
+    /// which is as likely to be inside an escape as anywhere else.
+    scanner: kitty::Scanner,
+    graphics: kitty::Store,
+    /// Live placements by anchor id. The grid holds where each one is; this
+    /// holds what it is.
+    placed: std::collections::HashMap<u32, Placed>,
+    next_anchor: u32,
+    /// One cell in pixels, which is what turns an image's pixel size into the
+    /// rows it covers. The view measures it from the font every frame and the
+    /// host hands it over; until then an image has no size the grid can use.
+    cell: Option<(f32, f32)>,
 }
 
 impl Emulator {
@@ -184,14 +235,46 @@ impl Emulator {
             capture,
             title: None,
             bell: false,
+            scanner: kitty::Scanner::new(),
+            graphics: kitty::Store::new(),
+            placed: std::collections::HashMap::new(),
+            next_anchor: 0,
+            cell: None,
+        }
+    }
+
+    /// The pixel size of one cell, measured by the view. An image arriving
+    /// before the first frame has nothing to size itself against and is stored
+    /// without being placed.
+    pub fn set_cell_size(&mut self, width: f32, height: f32) {
+        if width > 0.0 && height > 0.0 {
+            self.cell = Some((width, height));
         }
     }
 
     /// Advance the state machine over decoded PTY output. Returns bytes the
-    /// terminal wants written back to the PTY (DSR/DA query responses etc.).
+    /// terminal wants written back to the PTY (DSR/DA query responses,
+    /// graphics acknowledgements).
+    ///
+    /// Graphics commands are answered where they sit in the stream; everything
+    /// else is answered once the whole read has been folded in, which is the
+    /// order `Term` raises its events in.
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
-        self.parser.advance(&mut self.term, bytes);
         let mut responses = Vec::new();
+        for segment in self.scanner.feed(bytes) {
+            match segment {
+                Segment::Text(text) => self.parser.advance(&mut self.term, text),
+                Segment::Graphics(command) => {
+                    let (landed, reply) = self.graphics.apply(command);
+                    if let Some(reply) = reply {
+                        responses.extend(reply.bytes());
+                    }
+                    if let Some(image) = landed {
+                        self.place(image);
+                    }
+                }
+            }
+        }
         for event in self.capture.events.borrow_mut().drain(..) {
             match event {
                 Event::PtyWrite(text) => responses.extend_from_slice(text.as_bytes()),
@@ -202,6 +285,73 @@ impl Emulator {
             }
         }
         responses
+    }
+
+    /// The images the client has sent, by id.
+    pub fn graphics(&self) -> &kitty::Store {
+        &self.graphics
+    }
+
+    /// Put `image` on the grid at the cursor and move the cursor past it.
+    ///
+    /// The rows it covers are reserved by feeding that many linefeeds through
+    /// the parser rather than by moving the cursor directly: a linefeed at the
+    /// bottom of the screen scrolls, which is what pushes the image's own
+    /// anchor into history at the same moment its text would have gone.
+    fn place(&mut self, image: u32) {
+        let Some((cell_w, cell_h)) = self.cell else {
+            return;
+        };
+        let Some((width, height)) = self.graphics.get(image).and_then(kitty::Image::size) else {
+            return;
+        };
+        let cols = ((width as f32 / cell_w).ceil() as usize).clamp(1, self.cols()) as u16;
+        let rows = ((height as f32 / cell_h).ceil() as usize).clamp(1, self.rows()) as u16;
+
+        let anchor = self.next_anchor % ANCHOR_MAX;
+        self.next_anchor = anchor.wrapping_add(1);
+        // The id is reused once the ring wraps, so whatever wore it last stops
+        // being a placement before the new one starts.
+        self.placed.remove(&anchor);
+        let Some(mark) = char::from_u32(ANCHOR + anchor) else {
+            return;
+        };
+
+        let cursor = self.term.grid().cursor.point;
+        self.term.grid_mut()[cursor.line][cursor.column].push_zerowidth(mark);
+        self.placed.insert(anchor, Placed { image, cols, rows });
+        for _ in 0..rows {
+            self.parser.advance(&mut self.term, b"\n");
+        }
+    }
+
+    /// Every image on the visible grid, found by the anchors the cells carry.
+    ///
+    /// Walked per frame rather than cached: the anchor moves with its cell,
+    /// and nothing tells us when. A placement whose cell was overwritten is
+    /// simply not found, which is what a program clearing the screen means.
+    pub fn placements(&self) -> Vec<Placement> {
+        let mut out = Vec::new();
+        let offset = self.display_offset() as i32;
+        let grid = self.term.grid();
+        for row in 0..self.rows() {
+            let line = Line(row as i32 - offset);
+            for col in 0..self.cols() {
+                for &mark in grid[line][Column(col)].zerowidth().unwrap_or(&[]) {
+                    let anchor = (mark as u32).wrapping_sub(ANCHOR);
+                    if let Some(placed) = self.placed.get(&anchor) {
+                        out.push(Placement {
+                            row,
+                            col,
+                            cols: placed.cols,
+                            rows: placed.rows,
+                            image: placed.image,
+                        });
+                    }
+                }
+            }
+        }
+        out
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -297,7 +447,13 @@ impl Emulator {
     /// The selected text, or `None` when there is no selection or it covers
     /// nothing (a click without a drag leaves an empty one behind).
     pub fn selection_text(&self) -> Option<String> {
-        self.term.selection_to_string().filter(|s| !s.is_empty())
+        self.term
+            .selection_to_string()
+            // `selection_to_string` folds a cell's zerowidth chars into the
+            // text, anchors included. Copying across an image would otherwise
+            // paste a private-use character nobody can see.
+            .map(|text| text.replace(|ch: char| is_anchor(ch), ""))
+            .filter(|s| !s.is_empty())
     }
 
     /// Whether a non-empty selection is active — drives the copy action and
@@ -393,6 +549,11 @@ impl Emulator {
         }
         text
     }
+}
+
+/// Whether `ch` is one of the private-use codepoints a placement anchors with.
+fn is_anchor(ch: char) -> bool {
+    (ANCHOR..ANCHOR + ANCHOR_MAX).contains(&(ch as u32))
 }
 
 impl std::fmt::Debug for Emulator {

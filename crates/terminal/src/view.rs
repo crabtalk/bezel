@@ -21,7 +21,9 @@ use gpui::{
 
 use theme::{Appearance, Theme};
 
-use crate::emulator::{CellColor, CellSnapshot, CursorSnapshot, Side};
+use std::{collections::HashMap, sync::Arc};
+
+use crate::emulator::{CellColor, CellSnapshot, CursorSnapshot, Emulator, Side};
 
 /// Terminal font metrics (mono).
 pub const TERM_FONT_SIZE: f32 = 13.0;
@@ -461,6 +463,96 @@ impl InputCoalescer {
 pub struct GridSnapshot {
     pub lines: Vec<Vec<CellSnapshot>>,
     pub cursor: Option<CursorSnapshot>,
+    /// Kitty graphics on the visible grid. Empty for a terminal that has
+    /// never been sent one, which is every terminal until something is.
+    pub images: Vec<PlacedImage>,
+}
+
+/// An image on the grid, decoded and placed in cells.
+#[derive(Clone)]
+pub struct PlacedImage {
+    pub row: usize,
+    pub col: usize,
+    pub cols: u16,
+    pub rows: u16,
+    pub image: Arc<gpui::RenderImage>,
+}
+
+/// Decoded kitty images, held beside the [`Emulator`] whose store they came
+/// from.
+///
+/// The cache is the point: a placement is resolved every frame, and decoding a
+/// PNG per frame per image would cost more than painting the grid. Keyed by
+/// the client's image id, and emptied of whatever the emulator no longer
+/// holds.
+#[derive(Default)]
+pub struct Images {
+    decoded: HashMap<u32, Option<Arc<gpui::RenderImage>>>,
+}
+
+impl Images {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The emulator's visible placements, each with its decoded image. Call it
+    /// once per frame from the grid hook; images that fail to decode are
+    /// dropped rather than painted as a hole.
+    pub fn placed(&mut self, emulator: &Emulator) -> Vec<PlacedImage> {
+        let placements = emulator.placements();
+        if placements.is_empty() {
+            self.decoded.clear();
+            return Vec::new();
+        }
+        self.decoded
+            .retain(|id, _| emulator.graphics().get(*id).is_some());
+        placements
+            .into_iter()
+            .filter_map(|placement| {
+                let decoded = self
+                    .decoded
+                    .entry(placement.image)
+                    .or_insert_with(|| decode(emulator.graphics().get(placement.image)?))
+                    .clone()?;
+                Some(PlacedImage {
+                    row: placement.row,
+                    col: placement.col,
+                    cols: placement.cols,
+                    rows: placement.rows,
+                    image: decoded,
+                })
+            })
+            .collect()
+    }
+}
+
+/// One kitty image as the frame gpui paints: BGRA, which is what
+/// [`gpui::RenderImage`] holds and what gpui's own decoder converts to.
+fn decode(image: &crate::kitty::Image) -> Option<Arc<gpui::RenderImage>> {
+    use crate::kitty::Format;
+    let mut buffer = match image.format {
+        Format::Png => image::load_from_memory(&image.bytes).ok()?.to_rgba8(),
+        Format::Rgb | Format::Rgba => {
+            let (width, height) = image.size()?;
+            let pixels = (width as usize).checked_mul(height as usize)?;
+            let mut rgba = Vec::with_capacity(pixels * 4);
+            match image.format {
+                Format::Rgb => {
+                    for pixel in image.bytes.as_chunks::<3>().0.iter().take(pixels) {
+                        rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 0xff]);
+                    }
+                }
+                _ => rgba.extend_from_slice(&image.bytes[..(pixels * 4).min(image.bytes.len())]),
+            }
+            image::RgbaImage::from_raw(width, height, rgba)?
+        }
+    };
+    for pixel in buffer.as_chunks_mut::<4>().0 {
+        pixel.swap(0, 2);
+    }
+    Some(Arc::new(gpui::RenderImage::new([image::Frame::new(
+        buffer,
+    )])))
 }
 
 /// Where the grid landed this frame, in window coordinates.
@@ -524,6 +616,8 @@ impl TerminalElement {
 
 pub struct TerminalPrepaint {
     bg_quads: Vec<PaintQuad>,
+    /// Each visible image and the rectangle of cells it covers.
+    images: Vec<(Bounds<Pixels>, Arc<gpui::RenderImage>)>,
     /// Selection wash. Painted after [`Self::bg_quads`] and before the glyphs:
     /// it has to tint a cell's own background rather than replace it, and it
     /// must not wash out the text it is highlighting.
@@ -626,12 +720,31 @@ impl gpui::Element for TerminalElement {
         let Some(snapshot) = snapshot else {
             return TerminalPrepaint {
                 bg_quads: Vec::new(),
+                images: Vec::new(),
                 sel_quads: Vec::new(),
                 lines: Vec::new(),
                 cell_w,
                 cursor: None,
             };
         };
+
+        // Cells to pixels, at the metrics this frame measured — the same
+        // arithmetic the cursor quad uses, so an image sits on the grid rather
+        // than near it.
+        let images = snapshot
+            .images
+            .iter()
+            .map(|placed| {
+                let rect = Bounds::new(
+                    point(
+                        origin.x + cell_w * placed.col as f32,
+                        origin.y + line_h * placed.row as f32,
+                    ),
+                    size(cell_w * placed.cols as f32, line_h * placed.rows as f32),
+                );
+                (rect, placed.image.clone())
+            })
+            .collect();
 
         let mut bg_quads = Vec::new();
         let mut sel_quads = Vec::new();
@@ -707,6 +820,7 @@ impl gpui::Element for TerminalElement {
 
         TerminalPrepaint {
             bg_quads,
+            images,
             sel_quads,
             lines,
             cell_w,
@@ -735,6 +849,12 @@ impl gpui::Element for TerminalElement {
             }
             for quad in prepaint.sel_quads.drain(..) {
                 window.paint_quad(quad);
+            }
+            // Over the cell backgrounds and under the glyphs, which is where
+            // kitty puts an image of the default z-index. The cells an image
+            // covers are blank anyway: placing one reserves its rows.
+            for (rect, data) in prepaint.images.drain(..) {
+                let _ = window.paint_image(rect, rect, gpui::Corners::default(), data, 0, false);
             }
             let cell_w = prepaint.cell_w;
             for (ix, segments) in prepaint.lines.iter().enumerate() {

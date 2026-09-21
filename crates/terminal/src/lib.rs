@@ -5,4 +5,5 @@
 //! machine and the paint, nothing else.
 
 pub mod emulator;
+pub mod kitty;
 pub mod view;

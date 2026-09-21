@@ -995,6 +995,7 @@ dependencies = [
  "alacritty_terminal",
  "bezel-gpui",
  "bezel-theme",
+ "image",
 ]
 
 [[package]]
@@ -3312,6 +3313,7 @@ dependencies = [
  "qoi",
  "ravif",
  "rayon",
+ "rgb",
  "tiff",
  "zune-core",
  "zune-jpeg",
