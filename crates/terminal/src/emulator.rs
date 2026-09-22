@@ -19,8 +19,12 @@
 //! - Kitty graphics never reach the parser at all — `vte` discards APC runs
 //!   with no hook to catch them — so [`crate::kitty::Scanner`] takes them off
 //!   the stream first and [`Emulator::feed`] hands the rest on unchanged.
+//! - `vte` buffers a synchronized update (mode 2026) and replays it at ESU.
+//!   Graphics leave the stream before that buffer, so a replay lands an image
+//!   under text written after it. [`NoSync`] turns the buffering off and the
+//!   frame is held here instead: see [`Emulator::render_hold`].
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use crate::kitty::{self, Segment};
 use alacritty_terminal::{
@@ -29,7 +33,7 @@ use alacritty_terminal::{
     index::{Column, Line, Point},
     selection::{Selection, SelectionRange},
     term::{Config, Term, TermMode, cell::Flags},
-    vte::ansi::{Color as AnsiColor, CursorShape, NamedColor, Processor, Rgb as AnsiRgb},
+    vte::ansi::{Color as AnsiColor, CursorShape, NamedColor, Processor, Rgb as AnsiRgb, Timeout},
 };
 
 /// Grid coordinates and selection granularity, re-exported so the host and view
@@ -186,6 +190,42 @@ pub struct CursorSnapshot {
     pub col: usize,
 }
 
+/// How long a [render hold](Emulator::render_hold) may last before the host
+/// releases it. Matches the ceiling `vte` puts on its own buffering.
+pub const HOLD_TIMEOUT: Duration = Duration::from_millis(150);
+
+/// Turns off `vte`'s synchronized-update buffering.
+///
+/// `Processor::advance` diverts bytes into a buffer while `pending_timeout` is
+/// true and replays them at ESU. Reporting no pending timeout keeps every byte
+/// on the one path, so text and graphics reach the grid in the order the
+/// program wrote them.
+#[derive(Debug, Default)]
+pub struct NoSync;
+
+impl Timeout for NoSync {
+    fn set_timeout(&mut self, _: Duration) {}
+
+    fn clear_timeout(&mut self) {}
+
+    fn pending_timeout(&self) -> bool {
+        false
+    }
+}
+
+/// The grid as it stood when a render hold began.
+///
+/// Nothing after the sequence that began the hold had been folded in yet, so
+/// this is the frame the program means to leave on screen.
+struct Held {
+    lines: Vec<Vec<CellSnapshot>>,
+    /// The scrollback offset the rows were read at, which is what maps a row
+    /// back to a grid line when the live selection is stamped over them.
+    offset: usize,
+    cursor: Option<CursorSnapshot>,
+    placements: Vec<Placement>,
+}
+
 /// Captures `Term` callbacks. Interior-mutable because `EventListener::send_event`
 /// takes `&self`; single-threaded (the emulator lives inside a gpui entity).
 #[derive(Default, Clone)]
@@ -202,7 +242,7 @@ impl EventListener for EventCapture {
 /// The emulator: a pure fold of PTY bytes into a renderable grid.
 pub struct Emulator {
     term: Term<EventCapture>,
-    parser: Processor,
+    parser: Processor<NoSync>,
     capture: EventCapture,
     title: Option<String>,
     bell: bool,
@@ -219,6 +259,8 @@ pub struct Emulator {
     /// rows it covers. The view measures it from the font every frame and the
     /// host hands it over; until then an image has no size the grid can use.
     cell: Option<(f32, f32)>,
+    /// The frame served while a render hold is on.
+    held: Option<Held>,
 }
 
 impl Emulator {
@@ -240,6 +282,7 @@ impl Emulator {
             placed: std::collections::HashMap::new(),
             next_anchor: 0,
             cell: None,
+            held: None,
         }
     }
 
@@ -259,6 +302,9 @@ impl Emulator {
     /// Graphics commands are answered where they sit in the stream; everything
     /// else is answered once the whole read has been folded in, which is the
     /// order `Term` raises its events in.
+    ///
+    /// Mode 2026 is acted on where it sits too: the frame the program wants
+    /// left on screen is the grid as it stands when the mode goes on.
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
         let mut responses = Vec::new();
         for segment in self.scanner.feed(bytes) {
@@ -269,10 +315,12 @@ impl Emulator {
                     if let Some(reply) = reply {
                         responses.extend(reply.bytes());
                     }
-                    if let Some(image) = landed {
-                        self.place(image);
+                    if let Some(display) = landed {
+                        self.place(display);
                     }
                 }
+                Segment::Sync(true) => self.hold(),
+                Segment::Sync(false) => self.held = None,
             }
         }
         for event in self.capture.events.borrow_mut().drain(..) {
@@ -292,21 +340,34 @@ impl Emulator {
         &self.graphics
     }
 
-    /// Put `image` on the grid at the cursor and move the cursor past it.
+    /// Put an image on the grid at the cursor, and move the cursor past it
+    /// unless the command said not to.
     ///
     /// The rows it covers are reserved by feeding that many linefeeds through
     /// the parser rather than by moving the cursor directly: a linefeed at the
     /// bottom of the screen scrolls, which is what pushes the image's own
     /// anchor into history at the same moment its text would have gone.
-    fn place(&mut self, image: u32) {
+    /// `C=1` reserves nothing, so the image covers whatever is drawn under it.
+    fn place(&mut self, display: kitty::Display) {
+        let image = display.image;
         let Some((cell_w, cell_h)) = self.cell else {
             return;
         };
         let Some((width, height)) = self.graphics.get(image).and_then(kitty::Image::size) else {
             return;
         };
-        let cols = ((width as f32 / cell_w).ceil() as usize).clamp(1, self.cols()) as u16;
-        let rows = ((height as f32 / cell_h).ceil() as usize).clamp(1, self.rows()) as u16;
+        // `c` and `r` state the extent outright. Without them it comes from
+        // the image's pixels against the measured cell.
+        let cols = match display.columns {
+            0 => (width as f32 / cell_w).ceil() as usize,
+            columns => columns as usize,
+        }
+        .clamp(1, self.cols()) as u16;
+        let rows = match display.rows {
+            0 => (height as f32 / cell_h).ceil() as usize,
+            rows => rows as usize,
+        }
+        .clamp(1, self.rows()) as u16;
 
         let anchor = self.next_anchor % ANCHOR_MAX;
         self.next_anchor = anchor.wrapping_add(1);
@@ -320,8 +381,10 @@ impl Emulator {
         let cursor = self.term.grid().cursor.point;
         self.term.grid_mut()[cursor.line][cursor.column].push_zerowidth(mark);
         self.placed.insert(anchor, Placed { image, cols, rows });
-        for _ in 0..rows {
-            self.parser.advance(&mut self.term, b"\n");
+        if display.cursor_movement == kitty::CursorMovement::After {
+            for _ in 0..rows {
+                self.parser.advance(&mut self.term, b"\n");
+            }
         }
     }
 
@@ -331,6 +394,13 @@ impl Emulator {
     /// and nothing tells us when. A placement whose cell was overwritten is
     /// simply not found, which is what a program clearing the screen means.
     pub fn placements(&self) -> Vec<Placement> {
+        match &self.held {
+            Some(held) => held.placements.clone(),
+            None => self.live_placements(),
+        }
+    }
+
+    fn live_placements(&self) -> Vec<Placement> {
         let mut out = Vec::new();
         let offset = self.display_offset() as i32;
         let grid = self.term.grid();
@@ -355,7 +425,42 @@ impl Emulator {
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
+        self.held = None;
         self.term.resize(GridSize::new(cols, rows));
+    }
+
+    // ---- render hold ----
+
+    /// Whether the running program has asked for the screen to stop updating
+    /// (mode 2026). While this is true, [`Emulator::lines`], [`Emulator::line`],
+    /// [`Emulator::cursor`] and [`Emulator::placements`] serve the frame the
+    /// grid held when the hold began; everything else stays live.
+    ///
+    /// Nothing here ends a hold on its own: the emulator has no clock. A host
+    /// that does not release a stuck hold within [`HOLD_TIMEOUT`] shows an
+    /// unfinished frame for as long as the program leaves the mode on.
+    /// [`Emulator::resize`] ends one.
+    pub fn render_hold(&self) -> bool {
+        self.held.is_some()
+    }
+
+    /// End a hold the program never ended.
+    pub fn release_hold(&mut self) {
+        self.held = None;
+    }
+
+    /// Capture the frame a hold begins on. A hold already on stays on its own
+    /// frame: setting the mode twice is one hold.
+    fn hold(&mut self) {
+        if self.held.is_some() {
+            return;
+        }
+        self.held = Some(Held {
+            lines: self.live_lines(),
+            offset: self.display_offset(),
+            cursor: self.live_cursor(),
+            placements: self.live_placements(),
+        });
     }
 
     pub fn cols(&self) -> usize {
@@ -471,7 +576,35 @@ impl Emulator {
 
     /// Snapshot one viewport row (0 = top) honoring the scrollback offset.
     pub fn line(&self, viewport_row: usize) -> Vec<CellSnapshot> {
-        self.line_inner(viewport_row, self.selection_range())
+        let selection = self.selection_range();
+        let Some(held) = &self.held else {
+            return self.line_inner(viewport_row, selection);
+        };
+        held.lines
+            .get(viewport_row)
+            .map(|cells| self.reselect(held, viewport_row, cells, selection))
+            .unwrap_or_default()
+    }
+
+    /// A held row with `selected` recomputed against the live selection. A
+    /// hold stops output, not the pointer.
+    fn reselect(
+        &self,
+        held: &Held,
+        viewport_row: usize,
+        cells: &[CellSnapshot],
+        selection: Option<SelectionRange>,
+    ) -> Vec<CellSnapshot> {
+        let line = Line(viewport_row as i32 - held.offset as i32);
+        cells
+            .iter()
+            .enumerate()
+            .map(|(col, cell)| CellSnapshot {
+                selected: selection
+                    .is_some_and(|range| range.contains(Point::new(line, Column(col)))),
+                ..*cell
+            })
+            .collect()
     }
 
     /// The shared body of [`Self::line`], taking the selection range as an
@@ -513,6 +646,18 @@ impl Emulator {
     /// All viewport rows, top to bottom.
     pub fn lines(&self) -> Vec<Vec<CellSnapshot>> {
         let selection = self.selection_range();
+        let Some(held) = &self.held else {
+            return self.live_lines();
+        };
+        held.lines
+            .iter()
+            .enumerate()
+            .map(|(row, cells)| self.reselect(held, row, cells, selection))
+            .collect()
+    }
+
+    fn live_lines(&self) -> Vec<Vec<CellSnapshot>> {
+        let selection = self.selection_range();
         (0..self.rows())
             .map(|r| self.line_inner(r, selection))
             .collect()
@@ -520,6 +665,13 @@ impl Emulator {
 
     /// Cursor in viewport coordinates; `None` when hidden or scrolled out.
     pub fn cursor(&self) -> Option<CursorSnapshot> {
+        match &self.held {
+            Some(held) => held.cursor,
+            None => self.live_cursor(),
+        }
+    }
+
+    fn live_cursor(&self) -> Option<CursorSnapshot> {
         let content = self.term.renderable_content();
         if content.cursor.shape == CursorShape::Hidden {
             return None;

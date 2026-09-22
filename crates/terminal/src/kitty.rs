@@ -43,6 +43,10 @@ pub enum Segment<'a> {
     Text(&'a [u8]),
     /// A complete graphics command, terminator stripped.
     Graphics(Command),
+    /// Mode 2026 turning on (`true`) or off (`false`), reported where it sits
+    /// in the stream. The bytes themselves stay in the `Text` run around it,
+    /// so the parser still sees the sequence it always saw.
+    Sync(bool),
 }
 
 /// Where a [`Scanner`] is in the stream between calls. A pty read ends
@@ -75,6 +79,8 @@ enum State {
 pub struct Scanner {
     state: State,
     run: Vec<u8>,
+    /// Bytes of a BSU/ESU run matched so far.
+    sync: usize,
 }
 
 impl Scanner {
@@ -97,16 +103,24 @@ impl Scanner {
             let byte = bytes[at];
             match self.state {
                 State::Text => {
-                    if byte == ESC {
-                        push_text(&mut out, &bytes[text..at]);
-                        self.state = State::Escape;
-                    }
+                    let sync = self.sync_step(byte);
                     at += 1;
+                    if byte == ESC {
+                        push_text(&mut out, &bytes[text..at - 1]);
+                        self.state = State::Escape;
+                    } else if let Some(hold) = sync {
+                        push_text(&mut out, &bytes[text..at]);
+                        out.push(Segment::Sync(hold));
+                        text = at;
+                    }
                 }
                 State::Escape => {
                     self.state = match byte {
                         APC => {
                             at += 1;
+                            // The `ESC` that opened this run counts toward a
+                            // BSU/ESU match that the payload cannot finish.
+                            self.sync = 0;
                             State::Apc
                         }
                         // Not ours. The `ESC` was swallowed by the branch
@@ -177,6 +191,29 @@ impl Scanner {
         out
     }
 
+    /// Feed one pass-through byte to the BSU/ESU matcher, answering when one
+    /// of the two just completed.
+    ///
+    /// They are fixed eight-byte strings and matched as such. `vte` finds them
+    /// in its own buffer the same way, so a stream it reads as a synchronized
+    /// update is a stream this reports.
+    fn sync_step(&mut self, byte: u8) -> Option<bool> {
+        if self.sync < SYNC_PREFIX.len() {
+            self.sync = if byte == SYNC_PREFIX[self.sync] {
+                self.sync + 1
+            } else {
+                usize::from(byte == SYNC_PREFIX[0])
+            };
+            return None;
+        }
+        self.sync = usize::from(byte == SYNC_PREFIX[0]);
+        match byte {
+            b'h' => Some(true),
+            b'l' => Some(false),
+            _ => None,
+        }
+    }
+
     /// End the run being accumulated, keeping it only if it parses.
     fn finish(&mut self, out: &mut Vec<Segment<'_>>) {
         self.state = State::Text;
@@ -189,6 +226,9 @@ impl Scanner {
         }
     }
 }
+
+/// Everything but the final `h`/`l` of `CSI ? 2026 h` and `CSI ? 2026 l`.
+const SYNC_PREFIX: &[u8] = b"\x1b[?2026";
 
 const ESC: u8 = 0x1b;
 const ESC_BYTES: [u8; 1] = [ESC];
@@ -234,6 +274,17 @@ pub enum Format {
     Png,
 }
 
+/// Whether a display leaves the cursor where it found it — kitty's `C` key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorMovement {
+    /// `C=0`: the cursor ends past the image, scrolling the screen when the
+    /// image runs off the bottom.
+    #[default]
+    After,
+    /// `C=1`: neither the cursor nor the screen moves.
+    None,
+}
+
 /// A parsed graphics command: its keys, and the payload already un-base64'd.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Command {
@@ -247,6 +298,12 @@ pub struct Command {
     /// `s`, `v`: the pixel dimensions a raw payload cannot state for itself.
     pub width: u32,
     pub height: u32,
+    /// `c`, `r`: the cell extent the image is to be drawn across. Zero is
+    /// unset, which leaves the extent to the image's own pixels.
+    pub columns: u32,
+    pub rows: u32,
+    /// `C`: whether the cursor moves past the image.
+    pub cursor_movement: CursorMovement,
     /// `q`: 1 suppresses success replies, 2 suppresses failures too.
     pub quiet: u8,
     /// `d`: what a delete is aimed at. `a`/`A` for everything, `i`/`I` for one
@@ -269,6 +326,9 @@ impl Default for Command {
             more: false,
             width: 0,
             height: 0,
+            columns: 0,
+            rows: 0,
+            cursor_movement: CursorMovement::After,
             quiet: 0,
             delete: 'a',
             medium: 'd',
@@ -325,6 +385,14 @@ impl Command {
                 b'm' => command.more = number() == Some(1),
                 b's' => command.width = number().unwrap_or(0),
                 b'v' => command.height = number().unwrap_or(0),
+                b'c' => command.columns = number().unwrap_or(0),
+                b'r' => command.rows = number().unwrap_or(0),
+                b'C' => {
+                    command.cursor_movement = match number() {
+                        Some(1) => CursorMovement::None,
+                        _ => CursorMovement::After,
+                    }
+                }
                 b'q' => command.quiet = number().unwrap_or(0).min(u8::MAX as u32) as u8,
                 b'd' => command.delete = letter().unwrap_or('a'),
                 b't' => command.medium = letter().unwrap_or('d'),
@@ -382,6 +450,20 @@ pub struct Image {
     pub bytes: Vec<u8>,
 }
 
+/// An image put on the screen, and the keys that say how.
+///
+/// The extent and the cursor rule belong to the placement rather than to the
+/// stored image: the same image displayed twice can cover a different number
+/// of cells each time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Display {
+    pub image: u32,
+    /// `c`, `r`, zero when unset.
+    pub columns: u32,
+    pub rows: u32,
+    pub cursor_movement: CursorMovement,
+}
+
 /// What a command asks the terminal to say back, if anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
@@ -434,9 +516,9 @@ impl Store {
     /// `None` when it asked for silence, and always `None` for a chunk that is
     /// not the last — an answer per chunk would be an answer per 4096 bytes.
     ///
-    /// Answers whether an image landed, and under which id: a `Display` that
-    /// stored one is what the emulator turns into a placement.
-    pub fn apply(&mut self, command: Command) -> (Option<u32>, Option<Reply>) {
+    /// Answers with the [`Display`] an `a=T` resolved to, which is what the
+    /// emulator turns into a placement.
+    pub fn apply(&mut self, command: Command) -> (Option<Display>, Option<Reply>) {
         let id = match command.id {
             0 => self.pending.as_ref().map_or(0, |(id, _)| *id),
             id => id,
@@ -465,7 +547,7 @@ impl Store {
         }
     }
 
-    fn transmit(&mut self, command: Command, id: u32) -> (Option<u32>, Option<Reply>) {
+    fn transmit(&mut self, command: Command, id: u32) -> (Option<Display>, Option<Reply>) {
         if command.compressed {
             self.pending = None;
             return (
@@ -508,9 +590,15 @@ impl Store {
         }
         held.payload.extend_from_slice(&command.payload);
         // The action lives on the first chunk in kitty's own client, and on
-        // the last in others. Either is a display.
+        // the last in others. Either is a display, and the display keys ride
+        // whichever chunk carries it.
         if command.action == Action::Display {
             held.action = Action::Display;
+        }
+        held.columns = held.columns.max(command.columns);
+        held.rows = held.rows.max(command.rows);
+        if command.cursor_movement == CursorMovement::None {
+            held.cursor_movement = CursorMovement::None;
         }
         if command.more {
             self.pending = Some((id, held));
@@ -530,7 +618,12 @@ impl Store {
             return (None, self.reply(&command, id, Some("EINVAL:dimensions")));
         }
         self.insert(id, image);
-        let landed = (held.action == Action::Display).then_some(id);
+        let landed = (held.action == Action::Display).then_some(Display {
+            image: id,
+            columns: held.columns,
+            rows: held.rows,
+            cursor_movement: held.cursor_movement,
+        });
         (landed, self.reply(&command, id, None))
     }
 

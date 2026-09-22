@@ -313,3 +313,67 @@ fn utf8_split_across_feeds_reassembles() {
     e.feed(&bytes[1..]);
     assert_eq!(e.row_text(0), "é");
 }
+
+// ---------------------------------------------------------------------------
+// Render hold
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_synchronized_update_holds_the_frame_it_began_on() {
+    let mut e = emu(20, 5);
+    e.feed(b"before\r\n");
+    e.feed(b"\x1b[?2026h");
+    assert!(e.render_hold());
+
+    e.feed(b"during");
+    assert_eq!(e.row_text(1), "", "the held frame moved");
+    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 1, col: 0 }));
+
+    e.feed(b"\x1b[?2026l");
+    assert!(!e.render_hold());
+    assert_eq!(e.row_text(1), "during");
+    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 1, col: 6 }));
+}
+
+#[test]
+fn a_second_bsu_does_not_recapture_the_frame() {
+    let mut e = emu(20, 5);
+    e.feed(b"\x1b[?2026hone");
+    e.feed(b"\x1b[?2026h");
+    assert_eq!(e.row_text(0), "", "the second BSU recaptured the frame");
+}
+
+#[test]
+fn a_hold_the_program_never_ends_is_the_hosts_to_release() {
+    let mut e = emu(20, 5);
+    e.feed(b"\x1b[?2026hstuck");
+    assert!(e.render_hold());
+    assert_eq!(e.row_text(0), "");
+
+    e.release_hold();
+    assert!(!e.render_hold());
+    assert_eq!(e.row_text(0), "stuck");
+}
+
+#[test]
+fn a_resize_ends_a_hold() {
+    let mut e = emu(20, 5);
+    e.feed(b"\x1b[?2026h");
+    e.resize(30, 6);
+    assert!(!e.render_hold());
+}
+
+#[test]
+fn a_selection_made_during_a_hold_still_washes() {
+    let mut e = emu(20, 5);
+    e.feed(b"hello");
+    e.feed(b"\x1b[?2026h");
+
+    let from = e.grid_point(0, 0);
+    let to = e.grid_point(0, 4);
+    e.start_selection(SelectionType::Simple, from, Side::Left);
+    e.update_selection(to, Side::Right);
+
+    assert!(e.line(0)[0].selected);
+    assert_eq!(e.selection_text().as_deref(), Some("hello"));
+}
