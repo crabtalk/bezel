@@ -122,6 +122,64 @@ fn enter_after_a_quote_opens_plain_text(cx: &mut TestAppContext) {
     assert_eq!(source(&editor, &mut cx), "> quote\n\nplain");
 }
 
+/// Leaving a quote is what Enter at the *end* of one means. In the middle of a
+/// sentence it is still a split, and half a quote is not plain text.
+#[gpui::test]
+fn enter_inside_a_quote_keeps_both_halves_quoted(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("> hello world", cx);
+    cx.simulate_keystrokes("home right right right right right enter");
+    assert_eq!(source(&editor, &mut cx), "> hello\n\n> world");
+}
+
+#[gpui::test]
+fn enter_inside_an_alert_keeps_the_alert(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("> [!NOTE]\n> hello world", cx);
+    cx.simulate_keystrokes("home right right right right right enter");
+    assert_eq!(
+        source(&editor, &mut cx),
+        "> [!NOTE]\n> hello\n\n> [!NOTE]\n> world"
+    );
+}
+
+#[gpui::test]
+fn the_slash_menu_owns_every_enter_chord(cx: &mut TestAppContext) {
+    for chord in ["enter", "shift-enter", "ctrl-enter"] {
+        let (editor, _window, mut cx) = open_with("", cx);
+        cx.simulate_input("/note");
+        cx.simulate_keystrokes(chord);
+        assert_eq!(
+            source(&editor, &mut cx),
+            "> [!NOTE]",
+            "{chord} picked from the menu instead of editing under it"
+        );
+    }
+}
+
+/// The marker is a first line, not the whole quote: what is already written
+/// under it becomes the alert's body rather than going away with the marker.
+#[gpui::test]
+fn a_marker_typed_above_a_body_promotes_and_keeps_it(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    cx.simulate_input("> ");
+    cx.simulate_input("body");
+    cx.simulate_keystrokes("home");
+    cx.simulate_input("[!NOTE]");
+    cx.simulate_keystrokes("shift-enter");
+    assert_eq!(source(&editor, &mut cx), "> [!NOTE]\n> body");
+    cx.simulate_input("X");
+    assert_eq!(source(&editor, &mut cx), "> [!NOTE]\n> Xbody");
+}
+
+/// Ctrl+Enter asks for a paragraph after *this* block, so in the middle of a
+/// list that is where it goes and the list is two lists.
+#[gpui::test]
+fn ctrl_enter_inside_a_list_breaks_it_in_two(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("- one\n- two", cx);
+    cx.simulate_keystrokes("end ctrl-enter");
+    cx.simulate_input("mid");
+    assert_eq!(source(&editor, &mut cx), "- one\n\nmid\n\n- two");
+}
+
 #[gpui::test]
 fn typing_an_alert_marker_after_quote_shortcut_promotes_it(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("", cx);
@@ -1031,4 +1089,23 @@ fn a_press_beside_a_checkbox_places_a_caret(cx: &mut TestAppContext) {
         "nothing toggled"
     );
     assert_eq!(head(&editor, &mut cx).block, 1, "the caret moved there");
+}
+
+/// The mirror of Enter at the end of a quote: at its start the quote goes down
+/// whole, and what opens above it is plain text.
+#[gpui::test]
+fn enter_at_the_start_of_an_alert_opens_plain_text_above(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("> [!NOTE]\n> body", cx);
+    cx.simulate_keystrokes("home enter up");
+    cx.simulate_input("above");
+    assert_eq!(source(&editor, &mut cx), "above\n\n> [!NOTE]\n> body");
+}
+
+/// `> [!TIP]` with nothing under it is a document markdown writes down and
+/// reads back, and Enter in one has nothing to push down.
+#[gpui::test]
+fn enter_in_an_empty_alert_keeps_it(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("> [!TIP]", cx);
+    cx.simulate_keystrokes("enter");
+    assert_eq!(source(&editor, &mut cx), "> [!TIP]");
 }

@@ -74,9 +74,9 @@ pub fn menu_heading(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div;
 pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div;
 pub fn divider() -> gpui::Div;
 
-/// Pins to the trigger's top-left. `_below` for dropdowns, `_above` and
-/// `_above_end` near the window's bottom and right edges — gpui does not flip
-/// sides for you.
+/// Pins to the trigger's top-left. `_below` for dropdowns, `_above` near the
+/// window's bottom edge, and `_below_end` and `_above_end` right-aligned to the
+/// trigger for a control at a row's end — gpui does not flip sides for you.
 pub fn anchored_menu(
     id: impl Into<SharedString>,
     content: AnyElement,
