@@ -377,3 +377,47 @@ fn a_selection_made_during_a_hold_still_washes() {
     assert!(e.line(0)[0].selected);
     assert_eq!(e.selection_text().as_deref(), Some("hello"));
 }
+
+// ---------------------------------------------------------------------------
+// Mouse modes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tracking_follows_the_last_mode_set() {
+    let mut e = emu(20, 5);
+    assert_eq!(e.mouse_mode().tracking, MouseTracking::Off);
+
+    e.feed(b"\x1b[?1000h");
+    assert_eq!(e.mouse_mode().tracking, MouseTracking::Click);
+    e.feed(b"\x1b[?1002h");
+    assert_eq!(e.mouse_mode().tracking, MouseTracking::Drag);
+    e.feed(b"\x1b[?1003h");
+    assert_eq!(e.mouse_mode().tracking, MouseTracking::Motion);
+    e.feed(b"\x1b[?1003l");
+    assert_eq!(e.mouse_mode().tracking, MouseTracking::Off);
+}
+
+#[test]
+fn an_encoding_outlives_the_tracking_it_was_set_beside() {
+    let mut e = emu(20, 5);
+    e.feed(b"\x1b[?1000h\x1b[?1006h");
+    assert!(e.mouse_mode().sgr);
+    assert!(!e.mouse_mode().utf8);
+
+    e.feed(b"\x1b[?1000l");
+    assert_eq!(e.mouse_mode().tracking, MouseTracking::Off);
+    assert!(e.mouse_mode().sgr);
+}
+
+#[test]
+fn the_alternate_screen_travels_with_the_scroll_mode() {
+    let mut e = emu(20, 5);
+    // Alternate scroll is on out of the box, which is what xterm does.
+    assert!(e.mouse_mode().alternate_scroll);
+    assert!(!e.mouse_mode().alt_screen);
+
+    e.feed(b"\x1b[?1049h");
+    assert!(e.mouse_mode().alt_screen);
+    e.feed(b"\x1b[?1049l");
+    assert!(!e.mouse_mode().alt_screen);
+}

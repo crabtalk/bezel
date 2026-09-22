@@ -456,3 +456,227 @@ fn ctrl_shift_c_and_v_are_the_apps() {
         Some(vec![0x04])
     );
 }
+
+// ---------------------------------------------------------------------------
+// Pointer → bytes
+// ---------------------------------------------------------------------------
+
+use terminal::emulator::{MouseMode, MouseTracking};
+
+fn tracking(tracking: MouseTracking) -> MouseMode {
+    MouseMode {
+        tracking,
+        ..MouseMode::default()
+    }
+}
+
+fn sgr(tracking: MouseTracking) -> MouseMode {
+    MouseMode {
+        sgr: true,
+        ..self::tracking(tracking)
+    }
+}
+
+#[test]
+fn a_pointer_nobody_asked_about_stays_the_users() {
+    let off = tracking(MouseTracking::Off);
+    for action in [
+        MouseAction::Press(MouseButton::Left),
+        MouseAction::Release(MouseButton::Left),
+        MouseAction::Motion(Some(MouseButton::Left)),
+    ] {
+        assert_eq!(mouse_bytes(action, 0, 0, &mods(), off), None, "{action:?}");
+    }
+}
+
+#[test]
+fn clicks_report_in_the_original_encoding() {
+    let mode = tracking(MouseTracking::Click);
+    // Button 0 and both coordinates carry a 32 offset, and the coordinates are
+    // one-based on top of it.
+    assert_eq!(
+        mouse_bytes(MouseAction::Press(MouseButton::Left), 0, 0, &mods(), mode),
+        Some(b"\x1b[M \x21\x21".to_vec())
+    );
+    assert_eq!(
+        mouse_bytes(MouseAction::Press(MouseButton::Right), 2, 4, &mods(), mode),
+        Some(b"\x1b[M\x22\x25\x23".to_vec())
+    );
+    // Every release is button 3: the encoding cannot say which came up.
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Release(MouseButton::Right),
+            0,
+            0,
+            &mods(),
+            mode
+        ),
+        Some(b"\x1b[M\x23\x21\x21".to_vec())
+    );
+}
+
+#[test]
+fn sgr_names_the_button_that_came_up() {
+    let mode = sgr(MouseTracking::Click);
+    assert_eq!(
+        mouse_bytes(MouseAction::Press(MouseButton::Right), 3, 9, &mods(), mode),
+        Some(b"\x1b[<2;10;4M".to_vec())
+    );
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Release(MouseButton::Right),
+            3,
+            9,
+            &mods(),
+            mode
+        ),
+        Some(b"\x1b[<2;10;4m".to_vec())
+    );
+}
+
+#[test]
+fn alt_and_control_travel_on_a_report() {
+    let mode = sgr(MouseTracking::Click);
+    let alt_ctrl = Modifiers {
+        alt: true,
+        control: true,
+        ..mods()
+    };
+    assert_eq!(
+        mouse_bytes(MouseAction::Press(MouseButton::Left), 0, 0, &alt_ctrl, mode),
+        Some(b"\x1b[<24;1;1M".to_vec())
+    );
+}
+
+#[test]
+fn shift_takes_the_pointer_back_from_the_program() {
+    let shift = Modifiers {
+        shift: true,
+        ..mods()
+    };
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Press(MouseButton::Left),
+            0,
+            0,
+            &shift,
+            sgr(MouseTracking::Motion)
+        ),
+        None
+    );
+}
+
+#[test]
+fn drag_reports_a_held_button_and_motion_reports_everything() {
+    let drag = sgr(MouseTracking::Drag);
+    let motion = sgr(MouseTracking::Motion);
+    let held = MouseAction::Motion(Some(MouseButton::Left));
+    let bare = MouseAction::Motion(None);
+
+    // 32 marks a report as motion; a bare move is button 3, "none".
+    assert_eq!(
+        mouse_bytes(held, 1, 1, &mods(), drag),
+        Some(b"\x1b[<32;2;2M".to_vec())
+    );
+    assert_eq!(mouse_bytes(bare, 1, 1, &mods(), drag), None);
+    assert_eq!(
+        mouse_bytes(bare, 1, 1, &mods(), motion),
+        Some(b"\x1b[<35;2;2M".to_vec())
+    );
+    // Click tracking reports neither.
+    assert_eq!(
+        mouse_bytes(held, 1, 1, &mods(), sgr(MouseTracking::Click)),
+        None
+    );
+}
+
+#[test]
+fn a_wheel_reports_once_per_line() {
+    let mode = sgr(MouseTracking::Click);
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Scroll { up: true, lines: 2 },
+            0,
+            0,
+            &mods(),
+            mode
+        ),
+        Some(b"\x1b[<64;1;1M\x1b[<64;1;1M".to_vec())
+    );
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Scroll {
+                up: false,
+                lines: 1
+            },
+            0,
+            0,
+            &mods(),
+            mode
+        ),
+        Some(b"\x1b[<65;1;1M".to_vec())
+    );
+}
+
+#[test]
+fn alternate_scroll_sends_arrows_only_on_the_alternate_screen() {
+    let wheel = MouseAction::Scroll { up: true, lines: 2 };
+    let alt = MouseMode {
+        alternate_scroll: true,
+        alt_screen: true,
+        ..tracking(MouseTracking::Off)
+    };
+    assert_eq!(
+        mouse_bytes(wheel, 0, 0, &mods(), alt),
+        Some(b"\x1b[A\x1b[A".to_vec())
+    );
+    // DECCKM switches them to SS3, the same as the arrow keys themselves.
+    assert_eq!(
+        mouse_bytes(
+            wheel,
+            0,
+            0,
+            &mods(),
+            MouseMode {
+                app_cursor: true,
+                ..alt
+            }
+        ),
+        Some(b"\x1bOA\x1bOA".to_vec())
+    );
+    // On the primary screen the wheel is the scrollback's.
+    assert_eq!(
+        mouse_bytes(
+            wheel,
+            0,
+            0,
+            &mods(),
+            MouseMode {
+                alt_screen: false,
+                ..alt
+            }
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_cell_the_encoding_cannot_name_is_not_reported() {
+    let mode = tracking(MouseTracking::Click);
+    let press = MouseAction::Press(MouseButton::Left);
+    // The original encoding spends one byte per coordinate, so it stops at 223.
+    assert!(mouse_bytes(press, 0, 222, &mods(), mode).is_some());
+    assert_eq!(mouse_bytes(press, 0, 223, &mods(), mode), None);
+
+    // `1005` spends two, and SGR spends as many as the number needs.
+    let utf8 = MouseMode { utf8: true, ..mode };
+    assert_eq!(
+        mouse_bytes(press, 0, 223, &mods(), utf8),
+        Some("\x1b[M \u{100}!".as_bytes().to_vec())
+    );
+    assert_eq!(mouse_bytes(press, 0, 2015, &mods(), utf8), None);
+    assert_eq!(
+        mouse_bytes(press, 0, 2015, &mods(), sgr(MouseTracking::Click)),
+        Some(b"\x1b[<0;2016;1M".to_vec())
+    );
+}

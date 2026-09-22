@@ -23,7 +23,9 @@ use theme::{Appearance, Theme};
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::emulator::{CellColor, CellSnapshot, CursorSnapshot, Emulator, Side};
+use crate::emulator::{
+    CellColor, CellSnapshot, CursorSnapshot, Emulator, MouseMode, MouseTracking, Side,
+};
 
 /// Terminal font metrics (mono).
 pub const TERM_FONT_SIZE: f32 = 13.0;
@@ -425,6 +427,151 @@ pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
     } else {
         sanitized.into_bytes()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pointer → bytes
+// ---------------------------------------------------------------------------
+
+/// A pointer button, in the order the protocol numbers them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseButton {
+    Left,
+    Middle,
+    Right,
+}
+
+/// What the pointer did, in the vocabulary a report is written in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseAction {
+    Press(MouseButton),
+    Release(MouseButton),
+    /// The button held through the move, or `None` for a bare move.
+    Motion(Option<MouseButton>),
+    /// A wheel gesture, already resolved to whole lines.
+    Scroll {
+        up: bool,
+        lines: usize,
+    },
+}
+
+/// Encode a pointer event as PTY bytes. `None` means the event is the user's —
+/// the host should run its own selection or scrollback instead.
+///
+/// `row` and `col` are viewport cells, which is what [`cell_at`] answers.
+/// Holding shift always answers `None`: it is how a user reaches the selection
+/// under a program that has taken the pointer, and it costs that program the
+/// shift modifier on every report.
+pub fn mouse_bytes(
+    action: MouseAction,
+    row: usize,
+    col: usize,
+    mods: &Modifiers,
+    mode: MouseMode,
+) -> Option<Vec<u8>> {
+    if mods.shift {
+        return None;
+    }
+    match action {
+        MouseAction::Scroll { up, lines } if mode.tracking == MouseTracking::Off => {
+            // The alternate screen has no scrollback to move through, so a
+            // wheel there drives whatever the arrow keys drive.
+            let arrows = (mode.alternate_scroll && mode.alt_screen).then(|| {
+                let one: &[u8] = match (up, mode.app_cursor) {
+                    (true, false) => b"\x1b[A",
+                    (true, true) => b"\x1bOA",
+                    (false, false) => b"\x1b[B",
+                    (false, true) => b"\x1bOB",
+                };
+                one.repeat(lines)
+            })?;
+            (!arrows.is_empty()).then_some(arrows)
+        }
+        MouseAction::Scroll { up, lines } => {
+            let mut out = Vec::new();
+            for _ in 0..lines {
+                out.extend(report(
+                    MouseAction::Scroll { up, lines: 1 },
+                    row,
+                    col,
+                    mods,
+                    mode,
+                )?);
+            }
+            (!out.is_empty()).then_some(out)
+        }
+        MouseAction::Motion(held) => {
+            let wanted = match mode.tracking {
+                MouseTracking::Motion => true,
+                MouseTracking::Drag => held.is_some(),
+                MouseTracking::Off | MouseTracking::Click => false,
+            };
+            wanted.then(|| report(action, row, col, mods, mode))?
+        }
+        _ if mode.tracking == MouseTracking::Off => None,
+        _ => report(action, row, col, mods, mode),
+    }
+}
+
+/// One report. `None` for a cell the chosen encoding has no room to name.
+fn report(
+    action: MouseAction,
+    row: usize,
+    col: usize,
+    mods: &Modifiers,
+    mode: MouseMode,
+) -> Option<Vec<u8>> {
+    let number = |button| match button {
+        MouseButton::Left => 0u32,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+    };
+    // Alt and control travel on every report; shift never does, having been
+    // spent on the selection override.
+    let modifiers = u32::from(mods.alt) * 8 + u32::from(mods.control) * 16;
+    let (button, released) = match action {
+        MouseAction::Press(button) => (number(button), false),
+        MouseAction::Release(button) => (number(button), true),
+        // 3 is "no button", which is what a bare move reports moving.
+        MouseAction::Motion(held) => (held.map_or(3, number) + 32, false),
+        MouseAction::Scroll { up, .. } => (if up { 64 } else { 65 }, false),
+    };
+
+    if mode.sgr {
+        let final_byte = if released { 'm' } else { 'M' };
+        return Some(
+            format!(
+                "\x1b[<{};{};{}{final_byte}",
+                button + modifiers,
+                col + 1,
+                row + 1
+            )
+            .into_bytes(),
+        );
+    }
+
+    // The original encoding numbers every release 3: there is no room in it to
+    // say which button came up.
+    let button = if released { 3 } else { button };
+    let mut out = b"\x1b[M".to_vec();
+    out.push(32 + (button + modifiers) as u8);
+    for coordinate in [col, row] {
+        let value = coordinate as u32 + 33;
+        if mode.utf8 {
+            // Two UTF-8 bytes, which is as far as `1005` reaches.
+            if value > 0x7ff {
+                return None;
+            }
+            let mut buffer = [0u8; 4];
+            out.extend_from_slice(char::from_u32(value)?.encode_utf8(&mut buffer).as_bytes());
+        } else {
+            if value > 0xff {
+                return None;
+            }
+            out.push(value as u8);
+        }
+    }
+    Some(out)
 }
 
 // ---------------------------------------------------------------------------

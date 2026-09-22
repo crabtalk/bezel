@@ -190,6 +190,39 @@ pub struct CursorSnapshot {
     pub col: usize,
 }
 
+/// Which pointer events the running program asked to be told about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MouseTracking {
+    /// The pointer is the user's: selection and scrollback.
+    #[default]
+    Off,
+    /// `1000`: presses and releases.
+    Click,
+    /// `1002`: and motion while a button is held.
+    Drag,
+    /// `1003`: and motion with no button held.
+    Motion,
+}
+
+/// How to report the pointer to the running program.
+///
+/// Handed to [`crate::view::mouse_bytes`], which is what turns a pointer event
+/// into the bytes the program is waiting for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MouseMode {
+    pub tracking: MouseTracking,
+    /// `1006`: SGR coordinates, which carry a grid past 223 columns.
+    pub sgr: bool,
+    /// `1005`: UTF-8 coordinates.
+    pub utf8: bool,
+    /// `1007`: a wheel tick on the alternate screen sends arrow keys.
+    pub alternate_scroll: bool,
+    /// Whether the alternate screen is up.
+    pub alt_screen: bool,
+    /// DECCKM, which decides whether those arrow keys are CSI or SS3.
+    pub app_cursor: bool,
+}
+
 /// How long a [render hold](Emulator::render_hold) may last before the host
 /// releases it. Matches the ceiling `vte` puts on its own buffering.
 pub const HOLD_TIMEOUT: Duration = Duration::from_millis(150);
@@ -484,6 +517,30 @@ impl Emulator {
     /// Arrow keys should send SS3 (`ESC O A`) instead of CSI.
     pub fn app_cursor_mode(&self) -> bool {
         self.term.mode().contains(TermMode::APP_CURSOR)
+    }
+
+    /// What the running program wants done with the pointer.
+    pub fn mouse_mode(&self) -> MouseMode {
+        let mode = self.term.mode();
+        // `Term` clears the other two whenever it sets one of these, so the
+        // order here only decides what a program setting several would get.
+        let tracking = if mode.contains(TermMode::MOUSE_MOTION) {
+            MouseTracking::Motion
+        } else if mode.contains(TermMode::MOUSE_DRAG) {
+            MouseTracking::Drag
+        } else if mode.contains(TermMode::MOUSE_REPORT_CLICK) {
+            MouseTracking::Click
+        } else {
+            MouseTracking::Off
+        };
+        MouseMode {
+            tracking,
+            sgr: mode.contains(TermMode::SGR_MOUSE),
+            utf8: mode.contains(TermMode::UTF8_MOUSE),
+            alternate_scroll: mode.contains(TermMode::ALTERNATE_SCROLL),
+            alt_screen: mode.contains(TermMode::ALT_SCREEN),
+            app_cursor: mode.contains(TermMode::APP_CURSOR),
+        }
     }
 
     /// Pastes should be wrapped in `ESC [200~` / `ESC [201~`.
