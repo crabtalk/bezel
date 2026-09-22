@@ -1090,3 +1090,22 @@ fn a_press_beside_a_checkbox_places_a_caret(cx: &mut TestAppContext) {
     );
     assert_eq!(head(&editor, &mut cx).block, 1, "the caret moved there");
 }
+
+/// The mirror of Enter at the end of a quote: at its start the quote goes down
+/// whole, and what opens above it is plain text.
+#[gpui::test]
+fn enter_at_the_start_of_an_alert_opens_plain_text_above(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("> [!NOTE]\n> body", cx);
+    cx.simulate_keystrokes("home enter up");
+    cx.simulate_input("above");
+    assert_eq!(source(&editor, &mut cx), "above\n\n> [!NOTE]\n> body");
+}
+
+/// `> [!TIP]` with nothing under it is a document markdown writes down and
+/// reads back, and Enter in one has nothing to push down.
+#[gpui::test]
+fn enter_in_an_empty_alert_keeps_it(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("> [!TIP]", cx);
+    cx.simulate_keystrokes("enter");
+    assert_eq!(source(&editor, &mut cx), "> [!TIP]");
+}

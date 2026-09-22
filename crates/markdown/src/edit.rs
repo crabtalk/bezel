@@ -341,8 +341,9 @@ impl Doc {
     ///
     /// The tail keeps the block's kind where a continued Enter means "another of
     /// these" — a list item, for example. A heading titles what follows. A
-    /// quote keeps its kind while the tail still holds text; split at the end
-    /// of one and what opens is plain body text.
+    /// quote keeps its kind on whichever side still holds text: split at the
+    /// end of one and what opens below is plain body text, split at its start
+    /// and what opens above is.
     pub fn split(&mut self, ix: usize, at: usize) -> usize {
         if ix >= self.blocks.len() {
             return ix;
@@ -370,6 +371,15 @@ impl Doc {
             },
             _ => BlockKind::Paragraph(tail),
         };
+        // A quote that pushed all its text down keeps none of its own: an
+        // alert's marker written twice is two alerts, the first one empty.
+        if matches!(kind, BlockKind::Quote { .. })
+            && self.blocks[ix]
+                .text_at(Part::Body)
+                .is_none_or(|text| text.text.is_empty())
+        {
+            self.blocks[ix].kind = BlockKind::Paragraph(Text::default());
+        }
         self.blocks.insert(ix + 1, Block::at(kind, indent));
         self.repair();
         ix + 1

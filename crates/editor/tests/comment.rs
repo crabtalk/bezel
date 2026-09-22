@@ -242,3 +242,47 @@ fn a_click_finds_the_comment_under_it(cx: &mut TestAppContext) {
         "a point on the range answers with its thread"
     );
 }
+
+/// A block shortcut puts its prefix in and takes it back out. Only the second
+/// half of that is a mutation nothing typed, and an anchor that maps through
+/// one and not the other lands that many bytes down the line.
+#[gpui::test]
+fn a_block_shortcut_takes_its_prefix_back_off_the_anchor(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    anchor(&editor, &mut cx, ONE, at(0, 0));
+    cx.simulate_input("## ");
+    assert_eq!(
+        anchored(&editor, &mut cx),
+        ONE,
+        "the hashes went in and came out; the word they turned into a heading did not move"
+    );
+}
+
+/// The marker line an alert is promoted from goes the same way.
+#[gpui::test]
+fn promoting_an_alert_takes_its_marker_off_the_anchor(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    anchor(&editor, &mut cx, ONE, at(0, 0));
+    cx.simulate_input("> ");
+    cx.simulate_input("[!NOTE]");
+    cx.simulate_keystrokes("shift-enter");
+    assert_eq!(
+        anchored(&editor, &mut cx),
+        ONE,
+        "the marker and its break left the body they were written above"
+    );
+}
+
+/// An inline rule is the third mutation the author does not type: `**x**` goes
+/// in and four delimiters come out.
+#[gpui::test]
+fn an_inline_rule_takes_its_delimiters_off_the_anchor(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    anchor(&editor, &mut cx, ONE, at(0, 0));
+    cx.simulate_input("**x**");
+    assert_eq!(
+        anchored(&editor, &mut cx),
+        (0, 7, 10),
+        "one bold letter is what is left ahead of the word"
+    );
+}

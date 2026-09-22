@@ -1036,11 +1036,12 @@ impl Editor {
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             let shortcut = this.apply_shortcut();
             let promoted = this.promote_quote_marker();
-            this.apply_inline_rule();
+            let inline = this.apply_inline_rule();
             this.track_slash(text, painter);
             std::iter::once(Delta::Spliced(splice))
                 .chain(shortcut)
                 .chain(promoted)
+                .chain(inline)
                 .collect()
         });
     }
@@ -1133,12 +1134,12 @@ impl Editor {
     ///
     /// Runs after the insertion, on the text as it now stands, so a paste and a
     /// keystroke reach it the same way.
-    fn apply_inline_rule(&mut self) {
+    fn apply_inline_rule(&mut self) -> Vec<Delta> {
         let at = self.cursor();
         // Code is literal to its closing fence, and a caption holds no mark a
         // `![...]` could spell.
         if matches!(at.part, Part::Code | Part::Caption) {
-            return;
+            return Vec::new();
         }
         let Some(text) = self
             .doc
@@ -1146,12 +1147,13 @@ impl Editor {
             .get(at.block)
             .and_then(|block| block.text_at(at.part))
         else {
-            return;
+            return Vec::new();
         };
         let Some((open, inner, mark)) = edit::inline_rule(&text.text, at.offset) else {
-            return;
+            return Vec::new();
         };
         let width = open.len();
+        let (opening, closing) = (open.clone(), inner.end..at.offset);
         self.doc.edit_at(at, |text| {
             // The closing delimiter first — taking the opening one would move
             // every offset after it.
@@ -1161,6 +1163,9 @@ impl Editor {
         });
         self.selection =
             Selection::at(Cursor::new(at.block, at.part, at.offset - 2 * width).clamp(&self.doc));
+        // In the order the two removals went. The opening delimiter is ahead of
+        // the closing one, so taking that one first left its offsets standing.
+        vec![Self::taken(at, closing), Self::taken(at, opening)]
     }
 
     /// Add `mark` over the selection, or take it away if the whole selection
@@ -1245,7 +1250,7 @@ impl Editor {
         // The transformation is its own step: undo after typing `## Title`
         // should give back the heading, not the paragraph before the hashes.
         self.history.interrupt();
-        Some(Self::cut_prefix(at, len))
+        Some(Self::taken(at, 0..len))
     }
 
     /// Promote a quote whose first line is a GFM alert marker into the alert
@@ -1279,17 +1284,17 @@ impl Editor {
             Cursor::new(at.block, Part::Body, at.offset.saturating_sub(len)).clamp(&self.doc),
         );
         self.history.interrupt();
-        Some(Self::cut_prefix(at, len))
+        Some(Self::taken(at, 0..len))
     }
 
-    /// The delta for `len` bytes taken off the front of `at`'s body — what an
-    /// anchor sitting in that block has to move through.
-    fn cut_prefix(at: Cursor, len: usize) -> Delta {
-        let start = Cursor::new(at.block, Part::Body, 0);
+    /// The delta for `range` taken out of the text `at` is in — what an anchor
+    /// sitting in that text has to move through.
+    fn taken(at: Cursor, range: Range<usize>) -> Delta {
+        let start = Cursor::new(at.block, at.part, range.start);
         Delta::Spliced(Splice {
             removed: Selection {
                 anchor: start,
-                head: Cursor::new(at.block, Part::Body, len),
+                head: Cursor::new(at.block, at.part, range.end),
             },
             caret: start,
             blocks: 0,

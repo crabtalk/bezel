@@ -784,7 +784,14 @@ pub fn anchored_menu_below_end(
         .bottom_0()
         .right_0()
         .size_0()
-        .child(menu_layer(id, content, closing, Anchor::TopRight, None, 6.0))
+        .child(menu_layer(
+            id,
+            content,
+            closing,
+            Anchor::TopRight,
+            None,
+            6.0,
+        ))
         .into_any_element()
 }
 

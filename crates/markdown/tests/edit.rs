@@ -340,3 +340,37 @@ fn marks_at_a_caret_are_the_ones_the_next_character_would_join() {
     assert!(doc.marks(at(0)).is_empty(), "and never the start of one");
     assert!(doc.marks(at(8)).is_empty(), "nor past it");
 }
+
+#[test]
+fn enter_at_the_start_of_an_alert_leaves_plain_text_above_it() {
+    let mut doc = parse("> [!NOTE]\n> body");
+    doc.split(0, 0);
+    assert!(
+        matches!(doc.blocks[0].kind, BlockKind::Paragraph(_)),
+        "the marker would otherwise be written twice, once over nothing"
+    );
+    assert!(matches!(
+        doc.blocks[1].kind,
+        BlockKind::Quote {
+            kind: Some(QuoteKind::Note),
+            ..
+        }
+    ));
+    assert_eq!(text_of(&doc, 1).text, "body");
+}
+
+#[test]
+fn enter_in_an_alert_with_no_body_keeps_the_alert() {
+    let mut doc = parse("> [!TIP]");
+    doc.split(0, 0);
+    assert!(
+        matches!(
+            doc.blocks[0].kind,
+            BlockKind::Quote {
+                kind: Some(QuoteKind::Tip),
+                ..
+            }
+        ),
+        "nothing moved down, so nothing was left behind"
+    );
+}
