@@ -690,3 +690,69 @@ fn an_image_inside_a_synchronized_frame_lands_after_the_frames_text() {
     assert_eq!(placements.len(), 1, "{placements:?}");
     assert_eq!((placements[0].row, placements[0].col), (1, 0));
 }
+
+// ---------------------------------------------------------------------------
+// Anchors under a redraw
+// ---------------------------------------------------------------------------
+
+#[test]
+fn text_over_the_left_of_an_image_leaves_it_where_it_was() {
+    let mut emulator = placed_emulator(20, 10);
+    // Six cells wide, drawn at the cursor and leaving it there.
+    emulator.feed(&display_keys(1, 60, 20, ",C=1"));
+    // The program writes over the image's first two cells.
+    emulator.feed(b"ab");
+
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 1, "{placements:?}");
+    assert_eq!(
+        (placements[0].row, placements[0].col),
+        (0, 0),
+        "the surviving anchors forgot where the left edge was"
+    );
+}
+
+#[test]
+fn text_over_the_whole_top_row_takes_the_image_with_it() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+    emulator.feed(b"abc");
+    assert!(emulator.placements().is_empty());
+}
+
+#[test]
+fn displaying_an_image_again_replaces_the_placement_it_had() {
+    let mut emulator = placed_emulator(20, 10);
+    for _ in 0..5 {
+        emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+    }
+
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 1, "{placements:?}");
+    assert_eq!(placements[0].image, 1);
+}
+
+#[test]
+fn an_image_redrawn_somewhere_else_leaves_no_ghost() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+    emulator.feed(b"\x1b[3;5H");
+    emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 1, "{placements:?}");
+    assert_eq!((placements[0].row, placements[0].col), (2, 4));
+}
+
+#[test]
+fn two_images_side_by_side_keep_their_own_edges() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+    emulator.feed(b"\x1b[1;7H");
+    emulator.feed(&display_keys(2, 30, 20, ",C=1"));
+
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 2, "{placements:?}");
+    assert_eq!((placements[0].image, placements[0].col), (1, 0));
+    assert_eq!((placements[1].image, placements[1].col), (2, 6));
+}

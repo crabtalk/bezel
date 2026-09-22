@@ -174,6 +174,16 @@ const ANCHOR: u32 = 0xF_0000;
 /// Plane 15 ends at `U+FFFFD`, which is the ceiling on live placements.
 const ANCHOR_MAX: u32 = 0xF_FFFD - ANCHOR;
 
+/// The codepoint written beside an anchor, plus which of the placement's
+/// columns the cell is.
+///
+/// Every cell of a placement's top row carries the pair, so text over the
+/// image's left edge still leaves cells that know where that edge was. Plane
+/// 16, which keeps [`ANCHOR`]'s own range whole.
+const ANCHOR_COLUMN: u32 = 0x10_0000;
+/// Columns of a top row that carry one.
+const ANCHOR_COLUMN_MAX: u32 = 256;
+
 /// What a placement holds that the grid cannot: its size, and which image it
 /// shows. Its *position* is the anchored cell.
 #[derive(Debug, Clone, Copy)]
@@ -379,8 +389,12 @@ impl Emulator {
     /// The rows it covers are reserved by feeding that many linefeeds through
     /// the parser rather than by moving the cursor directly: a linefeed at the
     /// bottom of the screen scrolls, which is what pushes the image's own
-    /// anchor into history at the same moment its text would have gone.
+    /// anchors into history at the same moment its text would have gone.
     /// `C=1` reserves nothing, so the image covers whatever is drawn under it.
+    ///
+    /// Displaying an image takes its earlier placements off the grid. A
+    /// program redrawing a frame sends the same image every frame, and each
+    /// one would otherwise be a placement of its own.
     fn place(&mut self, display: kitty::Display) {
         let image = display.image;
         let Some((cell_w, cell_h)) = self.cell else {
@@ -402,17 +416,35 @@ impl Emulator {
         }
         .clamp(1, self.rows()) as u16;
 
+        self.placed.retain(|_, placed| placed.image != image);
         let anchor = self.next_anchor % ANCHOR_MAX;
         self.next_anchor = anchor.wrapping_add(1);
         // The id is reused once the ring wraps, so whatever wore it last stops
         // being a placement before the new one starts.
         self.placed.remove(&anchor);
-        let Some(mark) = char::from_u32(ANCHOR + anchor) else {
-            return;
-        };
 
         let cursor = self.term.grid().cursor.point;
-        self.term.grid_mut()[cursor.line][cursor.column].push_zerowidth(mark);
+        let width = (cols as usize)
+            .min(ANCHOR_COLUMN_MAX as usize)
+            .min(self.cols() - cursor.column.0);
+        for offset in 0..width {
+            let cell = &mut self.term.grid_mut()[cursor.line][Column(cursor.column.0 + offset)];
+            // A cell only ever gains zerowidth chars, so one anchored again
+            // without being written to in between would collect a pair per
+            // redraw. Clearing takes this cell's underline color and hyperlink
+            // with it.
+            if cell
+                .zerowidth()
+                .is_some_and(|marks| marks.iter().any(|&mark| is_anchor(mark)))
+            {
+                cell.extra = None;
+            }
+            for mark in [ANCHOR + anchor, ANCHOR_COLUMN + offset as u32] {
+                if let Some(mark) = char::from_u32(mark) {
+                    cell.push_zerowidth(mark);
+                }
+            }
+        }
         self.placed.insert(anchor, Placed { image, cols, rows });
         if display.cursor_movement == kitty::CursorMovement::After {
             for _ in 0..rows {
@@ -423,9 +455,11 @@ impl Emulator {
 
     /// Every image on the visible grid, found by the anchors the cells carry.
     ///
-    /// Walked per frame rather than cached: the anchor moves with its cell,
-    /// and nothing tells us when. A placement whose cell was overwritten is
-    /// simply not found, which is what a program clearing the screen means.
+    /// Walked per frame rather than cached: an anchor moves with its cell, and
+    /// nothing tells us when. Each placement is taken from the first of its
+    /// anchors the walk reaches, whose own column is what puts the image's
+    /// left edge back; a placement with no anchor left is one whose whole top
+    /// row was overwritten, which is what clearing the screen does to it.
     pub fn placements(&self) -> Vec<Placement> {
         match &self.held {
             Some(held) => held.placements.clone(),
@@ -434,27 +468,48 @@ impl Emulator {
     }
 
     fn live_placements(&self) -> Vec<Placement> {
-        let mut out = Vec::new();
+        let mut out: Vec<(u32, Placement)> = Vec::new();
         let offset = self.display_offset() as i32;
         let grid = self.term.grid();
         for row in 0..self.rows() {
             let line = Line(row as i32 - offset);
             for col in 0..self.cols() {
-                for &mark in grid[line][Column(col)].zerowidth().unwrap_or(&[]) {
-                    let anchor = (mark as u32).wrapping_sub(ANCHOR);
-                    if let Some(placed) = self.placed.get(&anchor) {
-                        out.push(Placement {
-                            row,
-                            col,
-                            cols: placed.cols,
-                            rows: placed.rows,
-                            image: placed.image,
-                        });
-                    }
+                let marks = grid[line][Column(col)].zerowidth().unwrap_or(&[]);
+                let anchor = marks.iter().find_map(|&mark| {
+                    let index = (mark as u32).wrapping_sub(ANCHOR);
+                    (index < ANCHOR_MAX).then_some(index)
+                });
+                let Some(anchor) = anchor else {
+                    continue;
+                };
+                let Some(placed) = self.placed.get(&anchor) else {
+                    continue;
+                };
+                if out.iter().any(|(seen, _)| *seen == anchor) {
+                    continue;
                 }
+                // A cell whose column mark was lost still holds the image; it
+                // can only say the left edge is here.
+                let within = marks
+                    .iter()
+                    .find_map(|&mark| {
+                        let index = (mark as u32).wrapping_sub(ANCHOR_COLUMN);
+                        (index < ANCHOR_COLUMN_MAX).then_some(index as usize)
+                    })
+                    .unwrap_or(0);
+                out.push((
+                    anchor,
+                    Placement {
+                        row,
+                        col: col.saturating_sub(within),
+                        cols: placed.cols,
+                        rows: placed.rows,
+                        image: placed.image,
+                    },
+                ));
             }
         }
-        out
+        out.into_iter().map(|(_, placement)| placement).collect()
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -760,9 +815,12 @@ impl Emulator {
     }
 }
 
-/// Whether `ch` is one of the private-use codepoints a placement anchors with.
+/// Whether `ch` is one of the private-use codepoints a placement anchors with:
+/// either half of the pair.
 fn is_anchor(ch: char) -> bool {
-    (ANCHOR..ANCHOR + ANCHOR_MAX).contains(&(ch as u32))
+    let ch = ch as u32;
+    (ANCHOR..ANCHOR + ANCHOR_MAX).contains(&ch)
+        || (ANCHOR_COLUMN..ANCHOR_COLUMN + ANCHOR_COLUMN_MAX).contains(&ch)
 }
 
 impl std::fmt::Debug for Emulator {

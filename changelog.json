@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.1.24",
+    "date": "2026-09-22",
+    "summary": "The pointer reported to the programs that ask for it, a frame held whole through a synchronized update, and kitty images that stay where they were put.",
+    "new": [
+      "`Emulator::mouse_mode` is what the running program wants done with the pointer — `MouseTracking` for `1000`, `1002` and `1003`, the `1006` and `1005` encodings, `1007` alternate scroll, and the alternate screen and DECCKM those last two read. `view::mouse_bytes` turns a `MouseAction` and a cell into the report the program is waiting for, and answers `None` where the event is the user's, which is the host's signal to run its own selection or scrollback instead. SGR names the button that came up and carries a grid past 223 columns; the original encoding numbers every release 3 and declines a cell it cannot name rather than reporting the wrong one. Alt and control travel on a report, and shift never does: it is how a user reaches the selection under a program holding the pointer.",
+      "`Emulator::render_hold` is a program asking for the screen to stop updating (mode 2026). While it is on, `lines`, `line`, `cursor` and `placements` serve the grid as it stood when the mode went on — the frame the program means to leave on screen, since nothing after the sequence that began the hold had been folded in yet. A selection made during one still washes, because a hold stops output rather than the pointer. The emulator has no clock and never ends a hold itself: `Emulator::release_hold` and `emulator::HOLD_TIMEOUT` are what a host arms so a program that dies mid-frame cannot freeze the grid. A resize ends one.",
+      "`kitty::Display` carries a display command's `c`, `r` and `C` keys, which is what `Store::apply` now answers an `a=T` with. `c` and `r` state the cell extent outright in place of the image's own pixels against the measured cell, and `C=1` reserves no rows and moves no cursor — an image drawn over whatever is already there, which is what a program positioning its own frame wants."
+    ],
+    "changed": [
+      "`kitty::Store::apply` answers `Option<kitty::Display>` in place of `Option<u32>`. The image id is `Display::image`.",
+      "A placement anchors every cell of its top row rather than only its top-left, so text written over the left of an image leaves it where it was instead of taking it off the grid. Displaying an image takes its earlier placements with it, which is what keeps a program redrawing a frame to one placement per image."
+    ],
+    "fixed": [
+      "A kitty image inside a synchronized update no longer lands under the frame's own text. `vte` buffers mode 2026 and replays it at ESU, and graphics leave the stream ahead of that buffer, so the image was placed against the cursor the frame had not moved yet and the replay then wrote over its anchor. `emulator::NoSync` turns the buffering off — every byte now reaches the grid in the order the program wrote it — and the frame is held in the emulator instead."
+    ]
+  },
+  {
     "version": "0.1.23",
     "date": "2026-09-21",
     "summary": "Images on the grid where a client sends them, a menu panel that picks the side with room, and a result list with a bottom.",
