@@ -407,6 +407,8 @@ pub struct Emulator {
     /// Relative placements by image and placement id. They sit nowhere on
     /// the grid either: each frame finds them from their parent.
     relatives: std::collections::HashMap<(u32, u32), Relative>,
+    /// Whether DA1 is answered with sixel support in it.
+    advertise_sixel: bool,
     /// An iTerm2 file arriving in parts: its arguments, and its bytes so far.
     multipart: Option<(Vec<u8>, Vec<u8>)>,
     /// One cell in pixels, which is what turns an image's pixel size into the
@@ -442,6 +444,7 @@ impl Emulator {
             virtuals: std::collections::HashMap::new(),
             relatives: std::collections::HashMap::new(),
             multipart: None,
+            advertise_sixel: false,
             cell: None,
             held: None,
         }
@@ -521,9 +524,8 @@ impl Emulator {
         let window = self.window_size();
         for event in self.capture.events.borrow_mut().drain(..) {
             match event {
-                // `Term` answers DA1 as a VT102. Programs look for sixel
-                // support (4) in that answer before sending an image.
-                Event::PtyWrite(text) if text == "\x1b[?6c" => {
+                // `Term` answers DA1 as a VT102.
+                Event::PtyWrite(text) if self.advertise_sixel && text == "\x1b[?6c" => {
                     responses.extend_from_slice(b"\x1b[?62;4;22c")
                 }
                 Event::PtyWrite(text) => responses.extend_from_slice(text.as_bytes()),
@@ -555,6 +557,14 @@ impl Emulator {
     /// The images the client has sent, by id.
     pub fn graphics(&self) -> &kitty::Store {
         &self.graphics
+    }
+
+    /// Answer DA1 as a VT220 with sixel graphics (`CSI ? 62 ; 4 ; 22 c`)
+    /// rather than as a VT102 (`CSI ? 6 c`). Off until a host turns it on.
+    /// Programs read attribute 4 in that answer to decide whether to send
+    /// sixel images; they are shown either way.
+    pub fn set_advertise_sixel(&mut self, advertise: bool) {
+        self.advertise_sixel = advertise;
     }
 
     /// See [`kitty::Store::set_local_media`].

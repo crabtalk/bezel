@@ -2001,8 +2001,10 @@ fn an_hls_register_turns_the_dec_hue_wheel() {
 }
 
 #[test]
-fn the_primary_attributes_advertise_sixel() {
+fn the_primary_attributes_advertise_sixel_once_asked_to() {
     let mut emulator = Emulator::new(20, 5);
+    assert_eq!(emulator.feed(b"\x1b[c"), b"\x1b[?6c");
+    emulator.set_advertise_sixel(true);
     assert_eq!(emulator.feed(b"\x1b[c"), b"\x1b[?62;4;22c");
 }
 
