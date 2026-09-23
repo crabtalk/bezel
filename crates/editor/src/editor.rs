@@ -39,11 +39,11 @@ pub(crate) mod menu;
 pub use keys::init;
 use keys::{
     Backspace, Copy, Cut, DecreaseTextSize, Delete, DeleteToHome, DeleteWordLeft, DeleteWordRight,
-    Dismiss, Down, DuplicateBlock, End, Home, IncreaseTextSize, Indent, InsertParagraph, KillLine,
-    Left, MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock, ResetTextSize, Right,
-    SelectAll, SelectDown, SelectEnd, SelectHome, SelectLeft, SelectRight, SelectUp,
-    SelectWordLeft, SelectWordRight, SoftBreak, SplitBlock, ToggleBold, ToggleCode, ToggleItalic,
-    ToggleStrike, Undo, Up, WordLeft, WordRight,
+    Dismiss, DocumentEnd, DocumentStart, Down, DuplicateBlock, End, Home, IncreaseTextSize, Indent,
+    InsertParagraph, KillLine, Left, MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock,
+    ResetTextSize, Right, SelectAll, SelectDocumentEnd, SelectDocumentStart, SelectDown, SelectEnd,
+    SelectHome, SelectLeft, SelectRight, SelectUp, SelectWordLeft, SelectWordRight, SoftBreak,
+    SplitBlock, ToggleBold, ToggleCode, ToggleItalic, ToggleStrike, Undo, Up, WordLeft, WordRight,
 };
 
 pub const CONTEXT: &str = "BezelEditor";
@@ -339,15 +339,8 @@ pub struct Editor {
     /// Where the gutter handle was placed this frame, so the frame after can
     /// tell whether the block moved out from under it.
     handle_at: Option<gpui::Point<gpui::Pixels>>,
-    /// The point vertical motion is trying to keep. Held across a run of
-    /// up/down so walking through a short line and out the other side returns
-    /// to the column you started in, and dropped by anything horizontal —
-    /// which is every other way the caret moves.
-    ///
-    /// The *row* is held as well as the column because an offset at a soft
-    /// wrap belongs to two rows and answers with the first, so a caret that
-    /// derived its own row would step down into the same one forever.
-    goal: Option<gpui::Point<gpui::Pixels>>,
+    /// The column and row held across consecutive vertical moves.
+    goal: Option<VerticalGoal>,
     /// The size the app set this document in, in points, or `None` to follow
     /// the app's own text size. Absolute rather than a factor over the ladder,
     /// so moving the interface size leaves a document set to 16pt at 16pt.
@@ -355,6 +348,13 @@ pub struct Editor {
     /// What the chords move is the shared adjustment on top of this; the base
     /// itself is the app's alone.
     text_size: Option<f32>,
+}
+
+#[derive(Clone, Copy)]
+struct VerticalGoal {
+    x: gpui::Pixels,
+    /// Relative to the caret's painted position so scrolling cannot change the row.
+    row_from_caret: gpui::Pixels,
 }
 
 impl Editor {
@@ -642,11 +642,11 @@ impl Editor {
             .collect()
     }
 
-    /// The caret moved: drop the blink so the next render starts a fresh one.
-    /// Without the reset it would blink through your own typing, which reads as
-    /// a dropped keystroke.
+    /// A new caret position restarts its blink and ends any vertical run.
+    /// Vertical motion records its next goal after moving the caret.
     fn caret_moved(&mut self) {
         self.blink = None;
+        self.goal = None;
     }
 
     /// Blink the caret for as long as the document holds focus.
@@ -686,9 +686,6 @@ impl Editor {
     ) {
         let head = to(self.selection.head, &self.doc).clamp(&self.doc);
         self.head_to(head, extend);
-        // Every horizontal motion drops the goal; the two vertical ones put it
-        // back after calling this.
-        self.goal = None;
         cx.notify();
     }
 
@@ -817,11 +814,19 @@ impl Editor {
                 cx,
             );
         };
-        let from = self.goal.unwrap_or(at);
+        let from = self
+            .goal
+            .map_or(at, |goal| gpui::point(goal.x, at.y + goal.row_from_caret));
         match self.layouts.step_row(head, from, down) {
             Some((to, row)) => {
                 self.head_to(to.clamp(&self.doc), extend);
-                self.goal = Some(gpui::point(from.x, row));
+                self.goal = self
+                    .layouts
+                    .position(self.cursor())
+                    .map(|(caret, _)| VerticalGoal {
+                        x: from.x,
+                        row_from_caret: row - caret.y,
+                    });
             }
             // Off the top is the start of the document and off the bottom is
             // its end, which is what every native field does.
@@ -842,7 +847,6 @@ impl Editor {
                     head.up(&self.doc)
                 };
                 self.head_to(to.clamp(&self.doc), extend);
-                self.goal = Some(from);
             }
         }
         cx.notify();
@@ -1539,6 +1543,7 @@ impl Editor {
     fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
         self.selection = Selection::all(&self.doc);
         self.history.interrupt();
+        self.caret_moved();
         cx.notify();
     }
 
@@ -1754,6 +1759,7 @@ impl Editor {
     fn restore(&mut self, step: crate::history::Step, cx: &mut Context<Self>) {
         self.doc = step.doc;
         self.selection = step.selection.clamp(&self.doc);
+        self.caret_moved();
         self.anchors = step.anchors;
         if step.mode != self.mode {
             self.mode = step.mode;
@@ -2246,6 +2252,12 @@ impl Render for Editor {
             .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
             .on_action(cx.listener(|this, _: &Home, _, cx| this.moved(false, line_home, cx)))
             .on_action(cx.listener(|this, _: &End, _, cx| this.moved(false, line_end, cx)))
+            .on_action(cx.listener(|this, _: &DocumentStart, _, cx| {
+                this.moved(false, |_, doc| Selection::all(doc).anchor, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DocumentEnd, _, cx| {
+                this.moved(false, |_, doc| Selection::all(doc).head, cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &WordLeft, _, cx| this.moved(false, Cursor::word_left, cx)),
             )
@@ -2262,6 +2274,12 @@ impl Render for Editor {
             .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.vertical(true, true, cx)))
             .on_action(cx.listener(|this, _: &SelectHome, _, cx| this.moved(true, line_home, cx)))
             .on_action(cx.listener(|this, _: &SelectEnd, _, cx| this.moved(true, line_end, cx)))
+            .on_action(cx.listener(|this, _: &SelectDocumentStart, _, cx| {
+                this.moved(true, |_, doc| Selection::all(doc).anchor, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SelectDocumentEnd, _, cx| {
+                this.moved(true, |_, doc| Selection::all(doc).head, cx)
+            }))
             .on_action(cx.listener(|this, _: &SelectWordLeft, _, cx| {
                 this.moved(true, Cursor::word_left, cx)
             }))

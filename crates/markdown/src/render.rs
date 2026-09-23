@@ -262,6 +262,8 @@ struct PaintedRow {
     part: Part,
     range: Range<usize>,
     bounds: Bounds<Pixels>,
+    line_start: usize,
+    wrapped_row: usize,
 }
 
 impl BlockLayouts {
@@ -273,7 +275,7 @@ impl BlockLayouts {
     pub fn hit(&self, point: Point<Pixels>) -> Option<Cursor> {
         let frames = self.0.borrow();
         if let Some(row) = frames.rows.iter().find(|row| row.bounds.contains(&point)) {
-            return Some(cursor_in_row(&frames, row, point.x));
+            return cursor_in_row(&frames, row, point.x);
         }
         frames
             .rows
@@ -284,7 +286,7 @@ impl BlockLayouts {
                 let below = (bounds.origin.y + bounds.size.height - point.y).abs();
                 f32::from(above.min(below)) as i64
             })
-            .map(|row| cursor_in_row(&frames, row, point.x))
+            .and_then(|row| cursor_in_row(&frames, row, point.x))
     }
 
     /// Where a position painted last frame, and how tall its line is.
@@ -377,7 +379,7 @@ impl BlockLayouts {
             true => frames.rows.get(ix + 1)?,
             false => frames.rows.get(ix.checked_sub(1)?)?,
         };
-        Some((cursor_in_row(&frames, next, from.x), next.bounds.origin.y))
+        Some((cursor_in_row(&frames, next, from.x)?, next.bounds.origin.y))
     }
 
     /// Whether `point` is inside painted text.
@@ -518,15 +520,22 @@ fn row_contains(row: &PaintedRow, offset: usize) -> bool {
     row.range.start <= offset && offset <= row.range.end
 }
 
-fn cursor_in_row(frames: &Frames, row: &PaintedRow, x: Pixels) -> Cursor {
+fn cursor_in_row(frames: &Frames, row: &PaintedRow, x: Pixels) -> Option<Cursor> {
     let painted = &frames.texts[row.painted];
-    let y = row.bounds.origin.y + row.bounds.size.height / 2.0;
-    let (Ok(offset) | Err(offset)) = painted.layout.index_for_position(point(x, y));
-    Cursor::new(
-        painted.block,
-        painted.part,
-        painted.range.start + offset.min(painted.range.len()),
-    )
+    let line = painted
+        .layout
+        .line_layout_for_index(row.line_start - painted.range.start)?;
+    let height = row.bounds.size.height;
+    let local = point(
+        x - row.bounds.origin.x,
+        height * (row.wrapped_row as f32 + 0.5),
+    );
+    let (Ok(offset) | Err(offset)) = line.closest_index_for_position(local, height);
+    Some(Cursor::new(
+        row.block,
+        row.part,
+        (row.line_start + offset).min(row.range.end),
+    ))
 }
 
 fn record_rows(
@@ -559,6 +568,8 @@ fn record_rows(
                     origin + point(px(0.0), line_height * row as f32),
                     size(bounds.size.width, line_height),
                 ),
+                line_start,
+                wrapped_row: row,
             });
             row_start = row_end;
         }

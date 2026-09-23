@@ -16,8 +16,9 @@ use std::sync::Mutex;
 
 use editor::{Editor, ImageStore, Source};
 use gpui::{
-    App, ClipboardEntry, ClipboardItem, ClipboardString, Entity, EntityId, ExternalPaths,
-    Focusable, TestAppContext, VisualTestContext, WindowHandle, px, size,
+    App, ClipboardEntry, ClipboardItem, ClipboardString, Context, Entity, EntityId, ExternalPaths,
+    Focusable, Render, ScrollHandle, TestAppContext, VisualTestContext, Window, WindowHandle,
+    point, prelude::*, px, size,
 };
 
 const SOURCE: &str = "# Title\n\nA paragraph long enough that it has to wrap more than once inside the pane it is painted into, which is what makes it worth testing.\n\n- first\n- second\n\n> a quote";
@@ -53,6 +54,48 @@ fn open_with(
     // fills the layouts every position here resolves against.
     visual.run_until_parked();
     (editor, window, visual)
+}
+
+struct ScrollingEditor {
+    editor: Entity<Editor>,
+    scroll: ScrollHandle,
+}
+
+impl Render for ScrollingEditor {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        ui::scroll::pane("editor-test", ui::scroll::Axes::Vertical)
+            .size_full()
+            .track_scroll(&self.scroll)
+            .child(self.editor.clone())
+    }
+}
+
+fn open_scrolling_with(
+    source: &str,
+    cx: &mut TestAppContext,
+) -> (Entity<Editor>, VisualTestContext) {
+    cx.update(|cx| {
+        theme::Theme::install(theme::Appearance::Dark, cx);
+        editor::init(cx);
+    });
+    let window = cx.add_window(|_, cx| {
+        let scroll = ScrollHandle::new();
+        let editor = cx.new({
+            let scroll = scroll.clone();
+            |cx| Editor::new(source, cx).with_scroll(scroll)
+        });
+        ScrollingEditor { editor, scroll }
+    });
+    let host = window.root(cx).unwrap();
+    let editor = cx.update(|cx| host.read(cx).editor.clone());
+    let mut visual = VisualTestContext::from_window(window.into(), cx);
+    visual.simulate_resize(size(px(360.0), px(70.0)));
+    visual.update(|window, cx| {
+        let handle = editor.read(cx).focus_handle(cx);
+        window.focus(&handle, cx);
+    });
+    visual.run_until_parked();
+    (editor, visual)
 }
 
 fn head(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> markdown::Cursor {
@@ -288,6 +331,78 @@ fn up_retraces_the_path_down(cx: &mut TestAppContext) {
         start,
         "the goal column is held across the whole run"
     );
+}
+
+#[gpui::test]
+fn vertical_motion_keeps_its_row_while_scrolling(cx: &mut TestAppContext) {
+    let source = "word ".repeat(100);
+    let (editor, mut cx) = open_scrolling_with(&source, cx);
+    cx.simulate_keystrokes("down down");
+    let before = head(&editor, &mut cx);
+    let before_y = cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        editor
+            .layouts()
+            .position(editor.selection().head)
+            .unwrap()
+            .0
+            .y
+    });
+    cx.simulate_event(gpui::ScrollWheelEvent {
+        position: point(px(100.0), px(35.0)),
+        delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-35.0))),
+        modifiers: Default::default(),
+        touch_phase: gpui::TouchPhase::Moved,
+    });
+    cx.run_until_parked();
+    let after_y = cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        editor
+            .layouts()
+            .position(editor.selection().head)
+            .unwrap()
+            .0
+            .y
+    });
+    assert_ne!(before_y, after_y, "the test must scroll the painted rows");
+    cx.simulate_keystrokes("down");
+    assert!(head(&editor, &mut cx) > before);
+}
+
+#[gpui::test]
+fn typing_after_vertical_motion_sets_a_new_goal_column(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("abcdefghij\nx\nabcdefghij", cx);
+    cx.simulate_keystrokes("right right right right right right right down");
+    assert_eq!(head(&editor, &mut cx).offset, 12);
+    cx.simulate_input("y");
+    assert_eq!(source(&editor, &mut cx), "abcdefghij\nxy\nabcdefghij");
+    assert_eq!(head(&editor, &mut cx).offset, 13);
+    cx.simulate_keystrokes("down");
+    assert_eq!(head(&editor, &mut cx).offset, 16);
+}
+
+#[gpui::test]
+fn vertical_motion_chooses_the_nearest_column(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("xy\nabcdefghij", cx);
+    cx.simulate_keystrokes("right right down");
+    assert_eq!(head(&editor, &mut cx).offset, 5);
+}
+
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn command_arrows_move_and_select_to_document_ends(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("first\n\nsecond\n\nthird", cx);
+    cx.simulate_keystrokes("cmd-down");
+    assert_eq!(head(&editor, &mut cx).block, 2);
+    assert_eq!(head(&editor, &mut cx).offset, 5);
+    cx.simulate_keystrokes("cmd-up");
+    assert_eq!(head(&editor, &mut cx).block, 0);
+    assert_eq!(head(&editor, &mut cx).offset, 0);
+    cx.simulate_keystrokes("cmd-shift-down");
+    let selection = cx.update(|_, cx| editor.read(cx).selection());
+    assert_eq!(selection.anchor.block, 0);
+    assert_eq!(selection.head.block, 2);
+    assert_eq!(selection.head.offset, 5);
 }
 
 /// The bug: `render_with_selection` emptied the recorded layouts during *render*
