@@ -820,8 +820,35 @@ pub struct PlacedImage {
     pub image: Arc<gpui::RenderImage>,
     /// Which of [`Self::image`]'s frames to paint.
     pub frame_index: usize,
-    /// A later frame is due: the grid wants painting again.
-    pub animating: bool,
+    /// When the next frame of an animation is due, if one is.
+    pub next_frame: Option<Instant>,
+    /// Shared by every image one [`Images`] resolved: the element arms one
+    /// repaint at a time through it.
+    pub wake: Wake,
+}
+
+/// The one repaint an [`Images`] has asked for, shared with the element that
+/// paints its snapshot.
+#[derive(Clone, Default)]
+pub struct Wake(std::rc::Rc<std::cell::Cell<Option<Instant>>>);
+
+impl Wake {
+    /// Claim a repaint at `due`. `false` when one is already armed for then or
+    /// sooner.
+    fn arm(&self, due: Instant) -> bool {
+        if self.0.get().is_some_and(|armed| armed <= due) {
+            return false;
+        }
+        self.0.set(Some(due));
+        true
+    }
+
+    /// The repaint armed for `due` has fired.
+    fn fired(&self, due: Instant) {
+        if self.0.get() == Some(due) {
+            self.0.set(None);
+        }
+    }
 }
 
 /// Decoded kitty images, held beside the [`Emulator`] whose store they came
@@ -837,6 +864,7 @@ pub struct Images {
     /// decoded at.
     decoded: HashMap<u32, (u64, Option<Arc<gpui::RenderImage>>)>,
     clocks: HashMap<u32, Clock>,
+    wake: Wake,
 }
 
 /// Where an animation's playback has got to.
@@ -874,7 +902,7 @@ impl Images {
         let graphics = emulator.graphics();
         self.decoded.retain(|id, _| graphics.get(*id).is_some());
         self.clocks.retain(|id, _| graphics.get(*id).is_some());
-        let mut frames: HashMap<u32, (usize, bool)> = HashMap::new();
+        let mut frames: HashMap<u32, (usize, Option<Instant>)> = HashMap::new();
         placements
             .into_iter()
             .filter_map(|placement| {
@@ -885,7 +913,7 @@ impl Images {
                         .insert(placement.image, (image.revision, decode(image)));
                 }
                 let decoded = self.decoded.get(&placement.image)?.1.clone()?;
-                let (frame_index, animating) = *frames
+                let (frame_index, next_frame) = *frames
                     .entry(placement.image)
                     .or_insert_with(|| self.frame(placement.image, image, now));
                 Some(PlacedImage {
@@ -899,14 +927,20 @@ impl Images {
                     id: placement.image,
                     image: decoded,
                     frame_index,
-                    animating,
+                    next_frame,
+                    wake: self.wake.clone(),
                 })
             })
             .collect()
     }
 
-    /// The frame an image shows at `now`, and whether a later one is due.
-    fn frame(&mut self, id: u32, image: &crate::kitty::Image, now: Instant) -> (usize, bool) {
+    /// The frame an image shows at `now`, and when the next one is due.
+    fn frame(
+        &mut self,
+        id: u32,
+        image: &crate::kitty::Image,
+        now: Instant,
+    ) -> (usize, Option<Instant>) {
         use crate::kitty::AnimationState;
         let animation = image.animation;
         let count = image.frame_count();
@@ -929,7 +963,7 @@ impl Images {
             || count == 1
             || (0..count).all(|frame| gap(frame).is_zero())
         {
-            return (clock.frame, false);
+            return (clock.frame, None);
         }
         // A frame arriving while a loading animation waits at the end is
         // picked up where it waited. A clock more than 10,000 frames behind is
@@ -938,16 +972,16 @@ impl Images {
             let gap = gap(clock.frame);
             let due = clock.shown_at + gap;
             if !gap.is_zero() && now < due {
-                return (clock.frame, true);
+                return (clock.frame, Some(due));
             }
             let mut next = clock.frame + 1;
             if next == count {
                 if animation.state == AnimationState::Loading {
                     clock.waiting = true;
-                    return (clock.frame, false);
+                    return (clock.frame, None);
                 }
                 if animation.loops != 0 && clock.loops + 1 >= animation.loops {
-                    return (clock.frame, false);
+                    return (clock.frame, None);
                 }
                 clock.loops += 1;
                 next = 0;
@@ -962,7 +996,7 @@ impl Images {
             };
         }
         clock.shown_at = now;
-        (clock.frame, true)
+        (clock.frame, Some(now))
     }
 }
 
@@ -1192,8 +1226,23 @@ impl gpui::Element for TerminalElement {
             };
         };
 
-        if snapshot.images.iter().any(|placed| placed.animating) {
-            window.request_animation_frame();
+        let next = snapshot
+            .images
+            .iter()
+            .filter_map(|placed| Some((placed.next_frame?, &placed.wake)))
+            .min_by_key(|(due, _)| *due);
+        if let Some((due, wake)) = next
+            && wake.arm(due)
+        {
+            let wake = wake.clone();
+            let view = window.current_view();
+            let delay = due.saturating_duration_since(Instant::now());
+            cx.spawn(async move |cx| {
+                cx.background_executor().timer(delay).await;
+                wake.fired(due);
+                cx.update(|cx| cx.notify(view));
+            })
+            .detach();
         }
         // Cells to pixels, at the metrics this frame measured — the same
         // arithmetic the cursor quad uses, so an image sits on the grid rather

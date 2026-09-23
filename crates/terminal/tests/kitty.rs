@@ -1818,7 +1818,7 @@ fn frame_at(
     at: std::time::Instant,
 ) -> (usize, bool) {
     let placed = images.placed_at(emulator, at);
-    (placed[0].frame_index, placed[0].animating)
+    (placed[0].frame_index, placed[0].next_frame.is_some())
 }
 
 #[test]
