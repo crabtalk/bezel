@@ -421,3 +421,63 @@ fn the_alternate_screen_travels_with_the_scroll_mode() {
     e.feed(b"\x1b[?1049l");
     assert!(!e.mouse_mode().alt_screen);
 }
+
+// ---------------------------------------------------------------------------
+// Kitty keyboard protocol
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_terminal_starts_with_no_keyboard_enhancements() {
+    let e = emu(20, 5);
+    assert!(!e.keyboard_mode().enhanced());
+    assert_eq!(e.keyboard_mode(), KeyboardMode::default());
+}
+
+#[test]
+fn pushing_and_popping_flags_moves_the_keyboard_mode() {
+    let mut e = emu(20, 5);
+    // Flag 1 alone, which is what a program asks for first.
+    e.feed(b"\x1b[>1u");
+    assert!(e.keyboard_mode().disambiguate);
+    assert!(!e.keyboard_mode().event_types);
+
+    // 1 | 2 | 16.
+    e.feed(b"\x1b[>19u");
+    let mode = e.keyboard_mode();
+    assert!(mode.disambiguate && mode.event_types && mode.associated_text);
+    assert!(!mode.all_as_escapes);
+
+    e.feed(b"\x1b[<u");
+    assert!(e.keyboard_mode().disambiguate);
+    assert!(!e.keyboard_mode().event_types);
+    e.feed(b"\x1b[<u");
+    assert!(!e.keyboard_mode().enhanced());
+}
+
+#[test]
+fn the_flags_query_answers_what_the_program_pushed() {
+    let mut e = emu(20, 5);
+    // A terminal without the protocol answers nothing at all, which is how a
+    // program tells there is none to use.
+    assert_eq!(e.feed(b"\x1b[?u"), b"\x1b[?0u".to_vec());
+
+    e.feed(b"\x1b[>5u");
+    assert_eq!(e.feed(b"\x1b[?u"), b"\x1b[?5u".to_vec());
+}
+
+#[test]
+fn the_alternate_screen_keeps_a_keyboard_mode_of_its_own() {
+    let mut e = emu(20, 5);
+    e.feed(b"\x1b[>1u");
+    e.feed(b"\x1b[?1049h");
+    assert!(
+        !e.keyboard_mode().disambiguate,
+        "the alternate screen inherited the primary screen's flags"
+    );
+
+    e.feed(b"\x1b[?1049l");
+    assert!(
+        e.keyboard_mode().disambiguate,
+        "the primary screen lost its flags"
+    );
+}

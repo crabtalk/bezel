@@ -200,6 +200,35 @@ pub struct CursorSnapshot {
     pub col: usize,
 }
 
+/// Which kitty keyboard protocol enhancements the running program turned on.
+///
+/// `alacritty_terminal` keeps the mode stack, the alternate-screen swap and
+/// the `CSI ? u` query reply; this is that state read back out for
+/// [`crate::view::keystroke_bytes`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct KeyboardMode {
+    /// Flag 1: `Esc` and the control and alt combos take a form of their own.
+    pub disambiguate: bool,
+    /// Flag 2: presses, repeats and releases are told apart.
+    pub event_types: bool,
+    /// Flag 4: a report carries the key the layout would have produced.
+    pub alternate_keys: bool,
+    /// Flag 8: every key is an escape code, printable or not.
+    pub all_as_escapes: bool,
+    /// Flag 16: a report carries the text the key produced.
+    pub associated_text: bool,
+    /// DECCKM, which moves the unmodified arrows and home/end to SS3.
+    pub app_cursor: bool,
+}
+
+impl KeyboardMode {
+    /// Whether any enhancement is on, which is what takes a key off its legacy
+    /// encoding.
+    pub fn enhanced(&self) -> bool {
+        self.disambiguate || self.event_types || self.all_as_escapes
+    }
+}
+
 /// Which pointer events the running program asked to be told about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MouseTracking {
@@ -311,6 +340,10 @@ impl Emulator {
         let capture = EventCapture::default();
         let config = Config {
             scrolling_history: SCROLLBACK_LINES,
+            // Answers the `CSI ? u` query and keeps the mode stack. A program
+            // reads the answer to decide whether to use the protocol at all,
+            // so this and the encoder in `view` are one feature.
+            kitty_keyboard: true,
             ..Config::default()
         };
         let term = Term::new(config, &GridSize::new(cols, rows), capture.clone());
@@ -572,6 +605,19 @@ impl Emulator {
     /// Arrow keys should send SS3 (`ESC O A`) instead of CSI.
     pub fn app_cursor_mode(&self) -> bool {
         self.term.mode().contains(TermMode::APP_CURSOR)
+    }
+
+    /// What the running program wants done with the keyboard.
+    pub fn keyboard_mode(&self) -> KeyboardMode {
+        let mode = self.term.mode();
+        KeyboardMode {
+            disambiguate: mode.contains(TermMode::DISAMBIGUATE_ESC_CODES),
+            event_types: mode.contains(TermMode::REPORT_EVENT_TYPES),
+            alternate_keys: mode.contains(TermMode::REPORT_ALTERNATE_KEYS),
+            all_as_escapes: mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC),
+            associated_text: mode.contains(TermMode::REPORT_ASSOCIATED_TEXT),
+            app_cursor: mode.contains(TermMode::APP_CURSOR),
+        }
     }
 
     /// What the running program wants done with the pointer.

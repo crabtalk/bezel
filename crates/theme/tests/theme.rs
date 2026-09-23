@@ -679,7 +679,9 @@ fn regular_glass_falls_back_to_an_opaque_tone() {
 fn light_glass_flattens_to_a_white_panel() {
     let theme = Theme::light();
     let spec = SurfaceStyle::Glass(Glass::Regular).spec(&theme);
-    let flat = spec.flat(spec.tint).expect("regular glass covers its backdrop");
+    let flat = spec
+        .flat(spec.tint)
+        .expect("regular glass covers its backdrop");
     assert!(flat.l > 0.95, "light flattens to {}", flat.l);
 }
 
