@@ -329,6 +329,10 @@ pub struct Image {
     pub animation: Animation,
     /// Bumped whenever a frame's pixels change.
     pub revision: u64,
+    /// The [`Self::revision`] each frame's pixels last changed at, the first
+    /// frame's first. Distinct across an image's frames. Shorter than the
+    /// frames where a frame has never changed; a missing one is zero.
+    pub frame_revisions: Vec<u64>,
 }
 
 /// How an animation plays — kitty's `a=a`.
@@ -860,8 +864,8 @@ impl Store {
         } else {
             image.frames.push(canvas.bytes);
             image.gaps.push(gap.unwrap_or(DEFAULT_GAP));
+            image.stamp(image.frames.len());
         }
-        image.revision += 1;
         Ok(())
     }
 
@@ -933,7 +937,6 @@ impl Store {
         let replace = command.cursor_movement == CursorMovement::None;
         draw(&mut canvas, target.x, target.y, &over, source, replace);
         image.set_frame(onto - 1, canvas.bytes);
-        image.revision += 1;
         Ok(())
     }
 
@@ -955,6 +958,9 @@ impl Store {
         }
         if frame < image.gaps.len() {
             image.gaps.remove(frame);
+        }
+        if frame < image.frame_revisions.len() {
+            image.frame_revisions.remove(frame);
         }
         let animation = &mut image.animation;
         if animation.current > image.frames.len() {
@@ -1008,6 +1014,7 @@ impl Image {
             gaps: Vec::new(),
             animation: Animation::default(),
             revision: 0,
+            frame_revisions: Vec::new(),
         }
     }
 
@@ -1057,6 +1064,16 @@ impl Image {
             0 => self.bytes = bytes,
             index => self.frames[index - 1] = bytes,
         }
+        self.stamp(index);
+    }
+
+    /// Frame `index`'s pixels changed.
+    fn stamp(&mut self, index: usize) {
+        self.revision += 1;
+        if self.frame_revisions.len() <= index {
+            self.frame_revisions.resize(index + 1, 0);
+        }
+        self.frame_revisions[index] = self.revision;
     }
 
     /// The image's pixel dimensions: the ones the client stated, or the ones a

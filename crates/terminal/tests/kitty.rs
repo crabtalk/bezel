@@ -1890,11 +1890,35 @@ fn a_loading_animation_waits_at_the_end_for_more_frames() {
 }
 
 #[test]
-fn every_frame_reaches_the_paint() {
+fn each_frame_reaches_the_paint_as_its_own_picture() {
+    use std::time::Duration;
     let emulator = playing("s=3");
     let mut images = terminal::view::Images::new();
-    let placed = images.placed_at(&emulator, std::time::Instant::now());
-    assert_eq!(placed[0].image.frame_count(), 3);
+    let start = std::time::Instant::now();
+    let first = images.placed_at(&emulator, start)[0].image.clone();
+    let second = images.placed_at(&emulator, start + Duration::from_millis(150))[0]
+        .image
+        .clone();
+    assert!(!std::sync::Arc::ptr_eq(&first, &second));
+    // Frame two starts blue, which gpui holds as BGRA.
+    assert_eq!(
+        second.as_bytes(0).map(|bytes| bytes[..4].to_vec()),
+        Some(vec![0xff, 0, 0, 0xff])
+    );
+}
+
+#[test]
+fn a_new_frame_leaves_the_decoded_ones_alone() {
+    let mut emulator = playing("s=1");
+    let mut images = terminal::view::Images::new();
+    let now = std::time::Instant::now();
+    let before = images.placed_at(&emulator, now)[0].image.clone();
+    emulator.feed(&one_pixel_frame(",z=100", BLUE));
+    let after = images.placed_at(&emulator, now)[0].image.clone();
+    assert!(
+        std::sync::Arc::ptr_eq(&before, &after),
+        "the first frame was decoded again"
+    );
 }
 
 // ---------------------------------------------------------------------------

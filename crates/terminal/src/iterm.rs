@@ -127,7 +127,10 @@ fn gif(bytes: &[u8]) -> Option<Image> {
         return None;
     }
     let first = frames.remove(0);
+    let count = 1 + frames.len() as u64;
     Some(Image {
+        revision: count,
+        frame_revisions: (0..count).collect(),
         frames: frames.into_iter().map(|frame| frame.into_raw()).collect(),
         gaps,
         animation: Animation {

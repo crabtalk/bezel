@@ -817,8 +817,9 @@ pub struct PlacedImage {
     pub z: i32,
     /// The kitty image id, which orders images of equal `z`.
     pub id: u32,
+    /// The frame to paint.
     pub image: Arc<gpui::RenderImage>,
-    /// Which of [`Self::image`]'s frames to paint.
+    /// Which of the image's frames [`Self::image`] is, 0-based.
     pub frame_index: usize,
     /// When the next frame of an animation is due, if one is.
     pub next_frame: Option<Instant>,
@@ -852,19 +853,22 @@ impl Wake {
 }
 
 /// Decoded kitty images, held beside the [`Emulator`] whose store they came
-/// from, and the clocks of the ones that animate.
-///
-/// The cache is the point: a placement is resolved every frame, and decoding a
-/// PNG per frame per image would cost more than painting the grid. Keyed by
-/// the client's image id, and emptied of whatever the emulator no longer
-/// holds.
+/// from, and the clocks of the ones that animate. Keyed by the client's image
+/// id, and emptied of whatever the emulator no longer holds.
 #[derive(Default)]
 pub struct Images {
-    /// Each image decoded, and the [`crate::kitty::Image::revision`] it was
-    /// decoded at.
-    decoded: HashMap<u32, (u64, Option<Arc<gpui::RenderImage>>)>,
+    decoded: HashMap<u32, Decoded>,
     clocks: HashMap<u32, Clock>,
     wake: Wake,
+}
+
+/// One image's frames, each decoded on its own.
+struct Decoded {
+    /// The [`crate::kitty::Image::revision`] this is current to.
+    revision: u64,
+    /// Each frame with the [`crate::kitty::Image::frame_revisions`] entry it
+    /// was decoded at. Empty for an image that did not decode.
+    frames: Vec<(u64, Arc<gpui::RenderImage>)>,
 }
 
 /// Where an animation's playback has got to.
@@ -907,15 +911,19 @@ impl Images {
             .into_iter()
             .filter_map(|placement| {
                 let image = graphics.get(placement.image)?;
-                let cached = self.decoded.get(&placement.image);
-                if cached.is_none_or(|(revision, _)| *revision != image.revision) {
-                    self.decoded
-                        .insert(placement.image, (image.revision, decode(image)));
+                let stale = self
+                    .decoded
+                    .get(&placement.image)
+                    .is_none_or(|decoded| decoded.revision != image.revision);
+                if stale {
+                    let old = self.decoded.remove(&placement.image);
+                    self.decoded.insert(placement.image, decode(image, old));
                 }
-                let decoded = self.decoded.get(&placement.image)?.1.clone()?;
                 let (frame_index, next_frame) = *frames
                     .entry(placement.image)
                     .or_insert_with(|| self.frame(placement.image, image, now));
+                let decoded = self.decoded.get(&placement.image)?;
+                let decoded = decoded.frames.get(frame_index)?.1.clone();
                 Some(PlacedImage {
                     row: placement.row,
                     col: placement.col,
@@ -1000,26 +1008,48 @@ impl Images {
     }
 }
 
-/// One kitty image as the frames gpui paints: BGRA, which is what
-/// [`gpui::RenderImage`] holds and what gpui's own decoder converts to.
-fn decode(image: &crate::kitty::Image) -> Option<Arc<gpui::RenderImage>> {
-    let first = crate::pixels::Rgba::decode(image.format, image.width, image.height, &image.bytes)?;
-    let first = image::RgbaImage::from_raw(first.width, first.height, first.bytes)?;
-    let (width, height) = first.dimensions();
-    let mut frames = vec![first];
-    for bytes in &image.frames {
-        frames.push(image::RgbaImage::from_raw(width, height, bytes.clone())?);
-    }
-    let frames: Vec<image::Frame> = frames
-        .into_iter()
-        .map(|mut buffer| {
-            for pixel in buffer.as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
-            image::Frame::new(buffer)
+/// An image's frames as gpui paints them, keeping from `old` every frame whose
+/// revision has not moved.
+fn decode(image: &crate::kitty::Image, old: Option<Decoded>) -> Decoded {
+    let mut kept: HashMap<u64, Arc<gpui::RenderImage>> = old
+        .map(|old| old.frames.into_iter().collect())
+        .unwrap_or_default();
+    let frames = (0..image.frame_count())
+        .map(|index| {
+            let revision = image.frame_revisions.get(index).copied().unwrap_or(0);
+            let frame = match kept.remove(&revision) {
+                Some(frame) => frame,
+                None => decode_frame(image, index)?,
+            };
+            Some((revision, frame))
         })
-        .collect();
-    Some(Arc::new(gpui::RenderImage::new(frames)))
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default();
+    Decoded {
+        revision: image.revision,
+        frames,
+    }
+}
+
+/// One frame as the picture gpui paints: BGRA, which is what
+/// [`gpui::RenderImage`] holds and what gpui's own decoder converts to.
+fn decode_frame(image: &crate::kitty::Image, index: usize) -> Option<Arc<gpui::RenderImage>> {
+    let mut buffer = match index {
+        0 => {
+            let first =
+                crate::pixels::Rgba::decode(image.format, image.width, image.height, &image.bytes)?;
+            image::RgbaImage::from_raw(first.width, first.height, first.bytes)?
+        }
+        index => {
+            image::RgbaImage::from_raw(image.width, image.height, image.frame(index)?.to_vec())?
+        }
+    };
+    for pixel in buffer.as_chunks_mut::<4>().0 {
+        pixel.swap(0, 2);
+    }
+    Some(Arc::new(gpui::RenderImage::new([image::Frame::new(
+        buffer,
+    )])))
 }
 
 /// Where the grid landed this frame, in window coordinates.
@@ -1108,7 +1138,6 @@ struct Painted {
     clip: Bounds<Pixels>,
     /// The whole image, positioned so its source rectangle fills the frame.
     whole: Bounds<Pixels>,
-    frame_index: usize,
     image: Arc<gpui::RenderImage>,
 }
 
@@ -1281,7 +1310,6 @@ impl gpui::Element for TerminalElement {
                     size(cell_w * placed.cols as f32, line_h * placed.rows as f32),
                 );
                 Painted {
-                    frame_index: placed.frame_index,
                     layer: Layer::of(placed.z),
                     order: (placed.z, placed.id),
                     clip: frame.intersect(&cells),
@@ -1398,7 +1426,7 @@ impl gpui::Element for TerminalElement {
                         painted.whole,
                         gpui::Corners::default(),
                         painted.image.clone(),
-                        painted.frame_index,
+                        0,
                         false,
                     );
                 }
