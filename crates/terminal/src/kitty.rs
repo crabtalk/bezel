@@ -1152,7 +1152,10 @@ impl Store {
             (id, _) => id,
         };
         match command.action {
-            Action::Query => (None, self.reply(&command, id, None)),
+            Action::Query => {
+                let outcome = self.query(&command);
+                (None, self.reply_to(&command, id, outcome))
+            }
             Action::Place => {
                 if !self.images.contains_key(&id) {
                     return (None, self.reply(&command, id, Some("ENOENT:image")));
@@ -1215,28 +1218,60 @@ impl Store {
         self.reply(command, id, outcome.err())
     }
 
+    /// Why a transmission is refused before any of it is read: a compression
+    /// or a medium not carried out.
+    fn refused(&self, command: &Command) -> Option<&'static str> {
+        if command
+            .compression
+            .is_some_and(|compression| compression != 'z')
+        {
+            return Some("ENOTSUPPORTED:compression");
+        }
+        match command.medium {
+            'd' => None,
+            'f' | 't' | 's' if self.local_media => None,
+            'f' | 't' | 's' => Some("ENOTSUPPORTED:medium"),
+            _ => Some("EINVAL:medium"),
+        }
+    }
+
+    /// `a=q`: whether the same keys and payload would transmit, storing
+    /// nothing. A named medium is read — and a temporary file deleted — as it
+    /// would be. A query carrying no payload is a bare probe and answered yes.
+    fn query(&self, command: &Command) -> Result<(), &'static str> {
+        if let Some(refused) = self.refused(command) {
+            return Err(refused);
+        }
+        if command.medium == 'd' && command.payload.is_empty() {
+            return Ok(());
+        }
+        let bytes = load(command, command.payload.clone())?;
+        let size = match command.format {
+            Format::Png => png_size(&bytes),
+            _ => Some((command.width, command.height)),
+        };
+        let image = Image {
+            format: command.format,
+            width: command.width,
+            height: command.height,
+            bytes,
+            frames: Vec::new(),
+            gaps: Vec::new(),
+            animation: Animation::default(),
+            revision: 0,
+        };
+        match size {
+            Some(_) if image.format == Format::Png || raw_fits(&image) => Ok(()),
+            _ => Err("EINVAL:dimensions"),
+        }
+    }
+
     fn transmit(&mut self, command: Command, id: u32) -> (Option<Effect>, Option<Reply>) {
         if command.action == Action::Frame && !self.images.contains_key(&id) {
             self.pending = None;
             return (None, self.reply(&command, id, Some("ENOENT:image")));
         }
-        if command
-            .compression
-            .is_some_and(|compression| compression != 'z')
-        {
-            self.pending = None;
-            return (
-                None,
-                self.reply(&command, id, Some("ENOTSUPPORTED:compression")),
-            );
-        }
-        let refused = match command.medium {
-            'd' => None,
-            'f' | 't' | 's' if self.local_media => None,
-            'f' | 't' | 's' => Some("ENOTSUPPORTED:medium"),
-            _ => Some("EINVAL:medium"),
-        };
-        if let Some(refused) = refused {
+        if let Some(refused) = self.refused(&command) {
             self.pending = None;
             return (None, self.reply(&command, id, Some(refused)));
         }
@@ -1313,33 +1348,11 @@ impl Store {
         if held.payload.is_empty() {
             return (None, self.reply(&command, id, Some("EINVAL:empty")));
         }
-        if held.medium != 'd' {
-            let span = crate::media::Span {
-                offset: held.read_offset as u64,
-                len: held.read_size as u64,
-            };
-            held.payload = match crate::media::read(held.medium, &held.payload, span, MAX_IMAGE) {
-                Ok(bytes) => bytes,
-                Err(_) => {
-                    return (
-                        None,
-                        self.reply(&command, id, Some("EBADF:Failed to read image file")),
-                    );
-                }
-            };
-        }
-        // The chunks are one zlib stream between them, so it is inflated
-        // whole, and held to the same ceiling as an uncompressed payload.
-        if held.compression == Some('z') {
-            use miniz_oxide::inflate::{TINFLStatus, decompress_to_vec_zlib_with_limit};
-            held.payload = match decompress_to_vec_zlib_with_limit(&held.payload, MAX_IMAGE) {
-                Ok(inflated) => inflated,
-                Err(error) if error.status == TINFLStatus::HasMoreOutput => {
-                    return (None, self.reply(&command, id, Some("EFBIG:payload")));
-                }
-                Err(_) => return (None, self.reply(&command, id, Some("EINVAL:compression"))),
-            };
-        }
+        let payload = std::mem::take(&mut held.payload);
+        held.payload = match load(&held, payload) {
+            Ok(payload) => payload,
+            Err(error) => return (None, self.reply(&command, id, Some(error))),
+        };
         if held.action == Action::Frame {
             let outcome = self.frame(id, &held);
             return (None, self.reply_to(&command, id, outcome));
@@ -1623,6 +1636,34 @@ impl Image {
             _ => (self.width > 0 && self.height > 0).then_some((self.width, self.height)),
         }
     }
+}
+
+/// A transmission's bytes, read from the medium its `payload` names and
+/// inflated.
+fn load(command: &Command, payload: Vec<u8>) -> Result<Vec<u8>, &'static str> {
+    let mut payload = if command.medium == 'd' {
+        payload
+    } else {
+        let span = crate::media::Span {
+            offset: command.read_offset as u64,
+            len: command.read_size as u64,
+        };
+        crate::media::read(command.medium, &payload, span, MAX_IMAGE)
+            .map_err(|_| "EBADF:Failed to read image file")?
+    };
+    // The chunks are one zlib stream between them, so it is inflated whole,
+    // and held to the same ceiling as an uncompressed payload.
+    if command.compression == Some('z') {
+        use miniz_oxide::inflate::{TINFLStatus, decompress_to_vec_zlib_with_limit};
+        payload = match decompress_to_vec_zlib_with_limit(&payload, MAX_IMAGE) {
+            Ok(inflated) => inflated,
+            Err(error) if error.status == TINFLStatus::HasMoreOutput => {
+                return Err("EFBIG:payload");
+            }
+            Err(_) => return Err("EINVAL:compression"),
+        };
+    }
+    Ok(payload)
 }
 
 /// A PNG's dimensions, off the `IHDR` that opens every one of them: 8 bytes of

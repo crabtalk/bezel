@@ -2162,3 +2162,61 @@ fn an_animated_gif_plays() {
         terminal::kitty::AnimationState::Running
     );
 }
+
+// ---------------------------------------------------------------------------
+// Queries
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_bare_query_is_answered_yes() {
+    let mut emulator = Emulator::new(20, 5);
+    assert_eq!(emulator.feed(&apc("a=q,i=31")), b"\x1b_Gi=31;OK\x1b\\");
+}
+
+#[test]
+fn a_query_answers_what_the_transmission_would_and_stores_nothing() {
+    let mut emulator = Emulator::new(20, 5);
+    let reply = emulator.feed(&apc(&format!("a=q,f=32,s=1,v=1,i=31;{}", base64(&pixel()))));
+    assert_eq!(reply, b"\x1b_Gi=31;OK\x1b\\");
+    let reply = emulator.feed(&apc(&format!("a=q,f=32,s=2,v=2,i=31;{}", base64(&pixel()))));
+    assert_eq!(reply, b"\x1b_Gi=31;EINVAL:dimensions\x1b\\");
+    let reply = emulator.feed(&apc(&format!(
+        "a=q,f=32,s=1,v=1,o=z,i=31;{}",
+        base64(&pixel())
+    )));
+    assert_eq!(reply, b"\x1b_Gi=31;EINVAL:compression\x1b\\");
+    assert!(emulator.graphics().is_empty());
+}
+
+#[test]
+fn a_query_for_a_named_medium_says_whether_it_is_read() {
+    let path = temp_file("query", &pixel());
+    let keys = "a=q,f=32,s=1,v=1,t=f,i=31";
+
+    let mut emulator = Emulator::new(20, 5);
+    assert_eq!(
+        emulator.feed(&named(keys, path.to_str().unwrap())),
+        b"\x1b_Gi=31;ENOTSUPPORTED:medium\x1b\\"
+    );
+
+    let mut emulator = local_emulator();
+    assert_eq!(
+        emulator.feed(&named(keys, path.to_str().unwrap())),
+        b"\x1b_Gi=31;OK\x1b\\"
+    );
+    assert_eq!(
+        emulator.feed(&named(keys, "/nonexistent/bezel/image")),
+        b"\x1b_Gi=31;EBADF:Failed to read image file\x1b\\"
+    );
+    assert!(emulator.graphics().is_empty());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn a_query_by_temporary_file_deletes_it_as_a_transmission_would() {
+    let path = temp_file("tty-graphics-protocol-query", &pixel());
+    let mut emulator = local_emulator();
+    let reply = emulator.feed(&named("a=q,f=32,s=1,v=1,t=t,i=31", path.to_str().unwrap()));
+    assert_eq!(reply, b"\x1b_Gi=31;OK\x1b\\");
+    assert!(!path.exists());
+}
