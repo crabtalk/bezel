@@ -805,6 +805,7 @@ pub struct GridSnapshot {
 
 /// An image on the grid, decoded and placed in cells.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct PlacedImage {
     pub row: usize,
     pub col: usize,

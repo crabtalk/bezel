@@ -18,7 +18,7 @@
 //! - Query responses (DSR/DA/…) surface as `Event::PtyWrite` on the listener;
 //!   [`Emulator::feed`] returns them so the host can write them back.
 //! - Kitty graphics never reach the parser at all — `vte` discards APC runs
-//!   with no hook to catch them — so [`crate::kitty::Scanner`] takes them off
+//!   with no hook to catch them — so [`crate::scanner::Scanner`] takes them off
 //!   the stream first and [`Emulator::feed`] hands the rest on unchanged. A
 //!   sixel image's data goes the same way: `vte` hands a DCS to handlers
 //!   `Term` leaves empty.
@@ -29,7 +29,8 @@
 
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-use crate::kitty::{self, Segment};
+use crate::kitty;
+use crate::scanner::{Iterm, Scanner, Segment};
 use alacritty_terminal::{
     event::{Event, EventListener, WindowSize},
     grid::{Dimensions, Scroll},
@@ -155,6 +156,7 @@ impl CellSnapshot {
 /// Where an image sits on the grid: its top-left cell in viewport
 /// coordinates, and how many cells it covers.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct Placement {
     pub row: usize,
     pub col: usize,
@@ -393,7 +395,7 @@ pub struct Emulator {
     /// Splits graphics commands off the stream ahead of the parser. Held
     /// across feeds: a pty read ends wherever the kernel filled the buffer,
     /// which is as likely to be inside an escape as anywhere else.
-    scanner: kitty::Scanner,
+    scanner: Scanner,
     graphics: kitty::Store,
     /// Live placements by anchor id. The grid holds where each one is; this
     /// holds what it is.
@@ -433,7 +435,7 @@ impl Emulator {
             capture,
             title: None,
             bell: false,
-            scanner: kitty::Scanner::new(),
+            scanner: Scanner::new(),
             graphics: kitty::Store::new(),
             placed: std::collections::HashMap::new(),
             next_anchor: 0,
@@ -611,13 +613,13 @@ impl Emulator {
     }
 
     /// An iTerm2 file command: a whole file, or a part of one.
-    fn iterm(&mut self, command: kitty::Iterm) {
+    fn iterm(&mut self, command: Iterm) {
         match command {
-            kitty::Iterm::File { args, payload } => {
+            Iterm::File { args, payload } => {
                 self.iterm_show(&args, &kitty::decode(&payload));
             }
-            kitty::Iterm::Begin { args } => self.multipart = Some((args, Vec::new())),
-            kitty::Iterm::Part(payload) => {
+            Iterm::Begin { args } => self.multipart = Some((args, Vec::new())),
+            Iterm::Part(payload) => {
                 let Some((_, bytes)) = &mut self.multipart else {
                     return;
                 };
@@ -626,7 +628,7 @@ impl Emulator {
                     self.multipart = None;
                 }
             }
-            kitty::Iterm::End => {
+            Iterm::End => {
                 if let Some((args, bytes)) = self.multipart.take() {
                     self.iterm_show(&args, &bytes);
                 }

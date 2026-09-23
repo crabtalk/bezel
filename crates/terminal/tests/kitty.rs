@@ -4,7 +4,8 @@
 
 use terminal::{
     emulator::{CursorSnapshot, Emulator},
-    kitty::{Format, Scanner, Segment},
+    kitty::Format,
+    scanner::{Iterm, Scanner, Segment},
 };
 
 /// `ESC _ G` … `ESC \` around a body.
@@ -2040,7 +2041,7 @@ fn the_scanner_takes_a_files_payload_and_leaves_the_parser_its_arguments() {
         .collect();
     assert_eq!(
         files,
-        vec![terminal::kitty::Iterm::File {
+        vec![Iterm::File {
             args: b"inline=1".to_vec(),
             payload: base64(b"abc").into_bytes()
         }]

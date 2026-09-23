@@ -9,6 +9,7 @@ mod iterm;
 pub mod kitty;
 mod media;
 mod pixels;
-pub mod placeholder;
+mod placeholder;
+pub mod scanner;
 mod sixel;
 pub mod view;
