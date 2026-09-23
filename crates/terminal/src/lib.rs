@@ -7,5 +7,6 @@
 pub mod emulator;
 pub mod kitty;
 mod media;
+mod pixels;
 pub mod placeholder;
 pub mod view;

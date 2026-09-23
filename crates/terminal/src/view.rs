@@ -22,7 +22,11 @@ use gpui::{
 
 use theme::{Appearance, Theme};
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use crate::emulator::{
     CellColor, CellSnapshot, CursorSnapshot, Emulator, Frame, KeyboardMode, MouseMode,
@@ -813,10 +817,14 @@ pub struct PlacedImage {
     /// The kitty image id, which orders images of equal `z`.
     pub id: u32,
     pub image: Arc<gpui::RenderImage>,
+    /// Which of [`Self::image`]'s frames to paint.
+    pub frame_index: usize,
+    /// A later frame is due: the grid wants painting again.
+    pub animating: bool,
 }
 
 /// Decoded kitty images, held beside the [`Emulator`] whose store they came
-/// from.
+/// from, and the clocks of the ones that animate.
 ///
 /// The cache is the point: a placement is resolved every frame, and decoding a
 /// PNG per frame per image would cost more than painting the grid. Keyed by
@@ -824,7 +832,22 @@ pub struct PlacedImage {
 /// holds.
 #[derive(Default)]
 pub struct Images {
-    decoded: HashMap<u32, Option<Arc<gpui::RenderImage>>>,
+    /// Each image decoded, and the [`crate::kitty::Image::revision`] it was
+    /// decoded at.
+    decoded: HashMap<u32, (u64, Option<Arc<gpui::RenderImage>>)>,
+    clocks: HashMap<u32, Clock>,
+}
+
+/// Where an animation's playback has got to.
+#[derive(Debug, Clone, Copy)]
+struct Clock {
+    /// The [`crate::kitty::Animation::revision`] playback started at.
+    revision: u64,
+    frame: usize,
+    shown_at: Instant,
+    loops: u32,
+    /// Held on the last frame of a loading animation, for one to follow.
+    waiting: bool,
 }
 
 impl Images {
@@ -836,21 +859,34 @@ impl Images {
     /// once per frame from the grid hook; images that fail to decode are
     /// dropped rather than painted as a hole.
     pub fn placed(&mut self, emulator: &Emulator) -> Vec<PlacedImage> {
+        self.placed_at(emulator, Instant::now())
+    }
+
+    /// [`Self::placed`] at `now`, which is what picks each animation's frame.
+    pub fn placed_at(&mut self, emulator: &Emulator, now: Instant) -> Vec<PlacedImage> {
         let placements = emulator.placements();
         if placements.is_empty() {
             self.decoded.clear();
+            self.clocks.clear();
             return Vec::new();
         }
-        self.decoded
-            .retain(|id, _| emulator.graphics().get(*id).is_some());
+        let graphics = emulator.graphics();
+        self.decoded.retain(|id, _| graphics.get(*id).is_some());
+        self.clocks.retain(|id, _| graphics.get(*id).is_some());
+        let mut frames: HashMap<u32, (usize, bool)> = HashMap::new();
         placements
             .into_iter()
             .filter_map(|placement| {
-                let decoded = self
-                    .decoded
+                let image = graphics.get(placement.image)?;
+                let cached = self.decoded.get(&placement.image);
+                if cached.is_none_or(|(revision, _)| *revision != image.revision) {
+                    self.decoded
+                        .insert(placement.image, (image.revision, decode(image)));
+                }
+                let decoded = self.decoded.get(&placement.image)?.1.clone()?;
+                let (frame_index, animating) = *frames
                     .entry(placement.image)
-                    .or_insert_with(|| decode(emulator.graphics().get(placement.image)?))
-                    .clone()?;
+                    .or_insert_with(|| self.frame(placement.image, image, now));
                 Some(PlacedImage {
                     row: placement.row,
                     col: placement.col,
@@ -861,17 +897,79 @@ impl Images {
                     z: placement.z,
                     id: placement.image,
                     image: decoded,
+                    frame_index,
+                    animating,
                 })
             })
             .collect()
     }
+
+    /// The frame an image shows at `now`, and whether a later one is due.
+    fn frame(&mut self, id: u32, image: &crate::kitty::Image, now: Instant) -> (usize, bool) {
+        use crate::kitty::AnimationState;
+        let animation = image.animation;
+        let count = image.frame_count();
+        let start = Clock {
+            revision: animation.revision,
+            frame: animation.current,
+            shown_at: now,
+            loops: 0,
+            waiting: false,
+        };
+        let clock = self.clocks.entry(id).or_insert(start);
+        if clock.revision != animation.revision {
+            *clock = start;
+        }
+        clock.frame = clock.frame.min(count - 1);
+        let gap = |frame: usize| {
+            Duration::from_millis(image.gaps.get(frame).copied().unwrap_or(0) as u64)
+        };
+        if animation.state == AnimationState::Stopped
+            || count == 1
+            || (0..count).all(|frame| gap(frame).is_zero())
+        {
+            return (clock.frame, false);
+        }
+        // Stepped rather than computed, so a frame arriving while the
+        // animation waits at the end is picked up where it waited. A clock far
+        // behind — a window that went unpainted — is brought up to now.
+        for _ in 0..10_000 {
+            let gap = gap(clock.frame);
+            let due = clock.shown_at + gap;
+            if !gap.is_zero() && now < due {
+                return (clock.frame, true);
+            }
+            let mut next = clock.frame + 1;
+            if next == count {
+                if animation.state == AnimationState::Loading {
+                    clock.waiting = true;
+                    return (clock.frame, false);
+                }
+                if animation.loops != 0 && clock.loops + 1 >= animation.loops {
+                    return (clock.frame, false);
+                }
+                clock.loops += 1;
+                next = 0;
+            }
+            clock.frame = next;
+            // A frame that arrived during a wait is shown from now, not from
+            // when the wait began.
+            clock.shown_at = if std::mem::take(&mut clock.waiting) {
+                now
+            } else {
+                due
+            };
+        }
+        clock.shown_at = now;
+        (clock.frame, true)
+    }
 }
 
-/// One kitty image as the frame gpui paints: BGRA, which is what
+/// One kitty image as the frames gpui paints: BGRA, which is what
 /// [`gpui::RenderImage`] holds and what gpui's own decoder converts to.
 fn decode(image: &crate::kitty::Image) -> Option<Arc<gpui::RenderImage>> {
     use crate::kitty::Format;
-    let mut buffer = match image.format {
+    let first = match image.format {
         Format::Png => image::load_from_memory(&image.bytes).ok()?.to_rgba8(),
         Format::Rgb | Format::Rgba => {
             let (width, height) = image.size()?;
@@ -888,12 +986,21 @@ fn decode(image: &crate::kitty::Image) -> Option<Arc<gpui::RenderImage>> {
             image::RgbaImage::from_raw(width, height, rgba)?
         }
     };
-    for pixel in buffer.as_chunks_mut::<4>().0 {
-        pixel.swap(0, 2);
+    let (width, height) = first.dimensions();
+    let mut frames = vec![first];
+    for bytes in &image.frames {
+        frames.push(image::RgbaImage::from_raw(width, height, bytes.clone())?);
     }
-    Some(Arc::new(gpui::RenderImage::new([image::Frame::new(
-        buffer,
-    )])))
+    let frames: Vec<image::Frame> = frames
+        .into_iter()
+        .map(|mut buffer| {
+            for pixel in buffer.as_chunks_mut::<4>().0 {
+                pixel.swap(0, 2);
+            }
+            image::Frame::new(buffer)
+        })
+        .collect();
+    Some(Arc::new(gpui::RenderImage::new(frames)))
 }
 
 /// Where the grid landed this frame, in window coordinates.
@@ -982,6 +1089,7 @@ struct Painted {
     clip: Bounds<Pixels>,
     /// The whole image, positioned so its source rectangle fills the frame.
     whole: Bounds<Pixels>,
+    frame_index: usize,
     image: Arc<gpui::RenderImage>,
 }
 
@@ -1099,6 +1207,9 @@ impl gpui::Element for TerminalElement {
             };
         };
 
+        if snapshot.images.iter().any(|placed| placed.animating) {
+            window.request_animation_frame();
+        }
         // Cells to pixels, at the metrics this frame measured — the same
         // arithmetic the cursor quad uses, so an image sits on the grid rather
         // than near it.
@@ -1136,6 +1247,7 @@ impl gpui::Element for TerminalElement {
                     size(cell_w * placed.cols as f32, line_h * placed.rows as f32),
                 );
                 Painted {
+                    frame_index: placed.frame_index,
                     layer: Layer::of(placed.z),
                     order: (placed.z, placed.id),
                     clip: frame.intersect(&cells),
@@ -1252,7 +1364,7 @@ impl gpui::Element for TerminalElement {
                         painted.whole,
                         gpui::Corners::default(),
                         painted.image.clone(),
-                        0,
+                        painted.frame_index,
                         false,
                     );
                 }

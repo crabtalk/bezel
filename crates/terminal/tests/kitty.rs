@@ -294,11 +294,11 @@ fn a_lower_case_delete_keeps_the_data() {
 }
 
 #[test]
-fn an_animation_delete_is_refused() {
+fn an_unknown_delete_is_refused() {
     let mut emulator = Emulator::new(20, 5);
     assert_eq!(
-        emulator.feed(&apc("a=d,d=f,i=1")),
-        b"\x1b_Gi=1;ENOTSUPPORTED:delete\x1b\\"
+        emulator.feed(&apc("a=d,d=k,i=1")),
+        b"\x1b_Gi=1;EINVAL:delete\x1b\\"
     );
 }
 
@@ -1629,4 +1629,269 @@ fn a_virtual_parent_is_where_its_placeholders_are() {
     emulator.feed(&apc("a=p,i=2,p=5,P=42,H=1,V=2"));
     let relative: Vec<_> = at(&emulator).into_iter().filter(|p| p.0 == 2).collect();
     assert_eq!(relative, vec![(2, 3, 5)]);
+}
+
+// ---------------------------------------------------------------------------
+// Animation
+// ---------------------------------------------------------------------------
+
+const RED: [u8; 4] = [0xff, 0, 0, 0xff];
+const BLUE: [u8; 4] = [0, 0, 0xff, 0xff];
+const CLEAR: [u8; 4] = [0, 0, 0, 0];
+
+/// A 2x1 RGBA image under id 1, both pixels red.
+fn animated() -> Emulator {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&apc(&format!(
+        "a=t,f=32,s=2,v=1,i=1;{}",
+        base64(&[RED, RED].concat())
+    )));
+    emulator
+}
+
+fn frame_bytes(emulator: &Emulator, index: usize) -> Vec<u8> {
+    emulator
+        .graphics()
+        .get(1)
+        .and_then(|image| image.frame(index))
+        .unwrap_or_default()
+        .to_vec()
+}
+
+/// `a=f` with `keys`, carrying one RGBA pixel.
+fn one_pixel_frame(keys: &str, pixel: [u8; 4]) -> Vec<u8> {
+    apc(&format!("a=f,i=1,f=32,s=1,v=1{keys};{}", base64(&pixel)))
+}
+
+#[test]
+fn a_frame_lands_on_a_blank_canvas_by_default() {
+    let mut emulator = animated();
+    let reply = emulator.feed(&one_pixel_frame(",x=1", BLUE));
+    assert_eq!(reply, b"\x1b_Gi=1;OK\x1b\\");
+    let image = emulator.graphics().get(1).unwrap();
+    assert_eq!(image.frame_count(), 2);
+    assert_eq!(
+        image.gaps,
+        vec![0, 40],
+        "the root has no gap, a new frame the default"
+    );
+    assert_eq!(frame_bytes(&emulator, 1), [CLEAR, BLUE].concat());
+}
+
+#[test]
+fn a_frame_can_start_from_another_or_from_a_color() {
+    let mut emulator = animated();
+    emulator.feed(&one_pixel_frame(",c=1", BLUE));
+    assert_eq!(frame_bytes(&emulator, 1), [BLUE, RED].concat());
+
+    // 0x00ff00ff: opaque green.
+    emulator.feed(&one_pixel_frame(",Y=16711935,x=1", BLUE));
+    assert_eq!(
+        frame_bytes(&emulator, 2),
+        [[0, 0xff, 0, 0xff], BLUE].concat()
+    );
+}
+
+#[test]
+fn a_frame_edit_draws_over_the_frame_it_names() {
+    let mut emulator = animated();
+    emulator.feed(&one_pixel_frame(",r=1,x=1,z=100", BLUE));
+    let image = emulator.graphics().get(1).unwrap();
+    assert_eq!(image.frame_count(), 1, "an edit made a frame");
+    assert_eq!(image.gaps, vec![100]);
+    assert_eq!(frame_bytes(&emulator, 0), [RED, BLUE].concat());
+}
+
+#[test]
+fn a_translucent_frame_blends_unless_told_to_replace() {
+    let half_blue = [0, 0, 0xff, 0x80];
+    let mut emulator = animated();
+    emulator.feed(&one_pixel_frame(",r=1", half_blue));
+    let blended = frame_bytes(&emulator, 0);
+    assert_eq!(blended[3], 0xff, "blending onto opaque stays opaque");
+    assert!(blended[0] > 0 && blended[2] > 0, "{blended:?}");
+
+    let mut emulator = animated();
+    emulator.feed(&one_pixel_frame(",r=1,X=1", half_blue));
+    assert_eq!(&frame_bytes(&emulator, 0)[..4], &half_blue);
+}
+
+#[test]
+fn a_frame_for_an_image_that_is_not_there_is_refused() {
+    let mut emulator = animated();
+    assert_eq!(
+        emulator.feed(&apc(&format!("a=f,i=9,f=32,s=1,v=1;{}", base64(&BLUE)))),
+        b"\x1b_Gi=9;ENOENT:image\x1b\\"
+    );
+    let reply = emulator.feed(&apc(&format!(
+        "a=f,i=1,f=32,s=3,v=1;{}",
+        base64(&[BLUE; 3].concat())
+    )));
+    assert_eq!(reply, b"\x1b_Gi=1;EINVAL:frame larger than the image\x1b\\");
+}
+
+#[test]
+fn the_control_command_sets_state_frame_loops_and_gaps() {
+    use terminal::kitty::AnimationState;
+    let mut emulator = animated();
+    emulator.feed(&one_pixel_frame("", BLUE));
+    emulator.feed(&apc("a=a,i=1,s=3,c=2,v=3,r=1,z=25"));
+    let image = emulator.graphics().get(1).unwrap();
+    assert_eq!(image.animation.state, AnimationState::Running);
+    assert_eq!(image.animation.current, 1);
+    assert_eq!(image.animation.loops, 2);
+    assert_eq!(image.gaps, vec![25, 40]);
+
+    emulator.feed(&apc("a=a,i=1,s=1,r=2,z=-1"));
+    let image = emulator.graphics().get(1).unwrap();
+    assert_eq!(image.animation.state, AnimationState::Stopped);
+    assert_eq!(image.gaps, vec![25, 0], "a negative gap is gapless");
+}
+
+#[test]
+fn composing_copies_a_rectangle_between_frames() {
+    let mut emulator = animated();
+    emulator.feed(&one_pixel_frame("", BLUE));
+    // Frame 2's left pixel onto frame 1's right one, replacing.
+    let reply = emulator.feed(&apc("a=c,i=1,r=2,c=1,w=1,h=1,x=1,C=1"));
+    assert_eq!(reply, b"\x1b_Gi=1;OK\x1b\\");
+    assert_eq!(frame_bytes(&emulator, 0), [RED, BLUE].concat());
+}
+
+#[test]
+fn composing_refuses_what_it_cannot_do() {
+    let mut emulator = animated();
+    assert_eq!(
+        emulator.feed(&apc("a=c,i=1,r=1,c=3")),
+        b"\x1b_Gi=1;ENOENT:frame\x1b\\"
+    );
+    emulator.feed(&one_pixel_frame("", BLUE));
+    assert_eq!(
+        emulator.feed(&apc("a=c,i=1,r=2,c=1,w=2,h=1,x=1")),
+        b"\x1b_Gi=1;EINVAL:rectangle out of bounds\x1b\\"
+    );
+    assert_eq!(
+        emulator.feed(&apc("a=c,i=1,r=1,c=1,w=2,h=1")),
+        b"\x1b_Gi=1;EINVAL:rectangles overlap\x1b\\"
+    );
+}
+
+#[test]
+fn deleting_a_frame_moves_the_rest_up() {
+    let mut emulator = animated();
+    emulator.feed(&one_pixel_frame("", BLUE));
+    emulator.feed(&one_pixel_frame(",c=1", BLUE));
+    emulator.feed(&apc("a=d,d=f,i=1"));
+    let image = emulator.graphics().get(1).unwrap();
+    assert_eq!(image.frame_count(), 2);
+    assert_eq!(
+        frame_bytes(&emulator, 0),
+        [BLUE, CLEAR].concat(),
+        "the second frame is the root now"
+    );
+
+    emulator.feed(&apc("a=d,d=f,i=1,r=2"));
+    assert_eq!(emulator.graphics().get(1).unwrap().frame_count(), 1);
+    // `F` on the one frame left frees the image.
+    emulator.feed(&apc("a=d,d=F,i=1"));
+    assert!(emulator.graphics().get(1).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Playback
+// ---------------------------------------------------------------------------
+
+/// A placed 2x1 image with three frames, 100ms each, in `state`.
+fn playing(control: &str) -> Emulator {
+    let mut emulator = animated();
+    emulator.feed(&apc("a=p,i=1,C=1"));
+    emulator.feed(&one_pixel_frame(",z=100", BLUE));
+    emulator.feed(&one_pixel_frame(",z=100", BLUE));
+    emulator.feed(&apc(&format!("a=a,i=1,r=1,z=100,{control}")));
+    emulator
+}
+
+fn frame_at(
+    images: &mut terminal::view::Images,
+    emulator: &Emulator,
+    at: std::time::Instant,
+) -> (usize, bool) {
+    let placed = images.placed_at(emulator, at);
+    (placed[0].frame_index, placed[0].animating)
+}
+
+#[test]
+fn a_stopped_animation_shows_its_current_frame() {
+    let emulator = playing("c=2");
+    let mut images = terminal::view::Images::new();
+    let start = std::time::Instant::now();
+    assert_eq!(frame_at(&mut images, &emulator, start), (1, false));
+    assert_eq!(
+        frame_at(
+            &mut images,
+            &emulator,
+            start + std::time::Duration::from_secs(5)
+        ),
+        (1, false)
+    );
+}
+
+#[test]
+fn a_running_animation_steps_by_its_gaps_and_loops() {
+    use std::time::Duration;
+    let emulator = playing("s=3");
+    let mut images = terminal::view::Images::new();
+    let start = std::time::Instant::now();
+    assert_eq!(frame_at(&mut images, &emulator, start), (0, true));
+    assert_eq!(
+        frame_at(&mut images, &emulator, start + Duration::from_millis(150)),
+        (1, true)
+    );
+    assert_eq!(
+        frame_at(&mut images, &emulator, start + Duration::from_millis(250)),
+        (2, true)
+    );
+    assert_eq!(
+        frame_at(&mut images, &emulator, start + Duration::from_millis(350)),
+        (0, true)
+    );
+}
+
+#[test]
+fn a_limited_animation_stops_on_its_last_frame() {
+    use std::time::Duration;
+    // `v=2`: one loop, and then it stops.
+    let emulator = playing("s=3,v=2");
+    let mut images = terminal::view::Images::new();
+    let start = std::time::Instant::now();
+    frame_at(&mut images, &emulator, start);
+    assert_eq!(
+        frame_at(&mut images, &emulator, start + Duration::from_secs(5)),
+        (2, false)
+    );
+}
+
+#[test]
+fn a_loading_animation_waits_at_the_end_for_more_frames() {
+    use std::time::Duration;
+    let mut emulator = playing("s=2");
+    let mut images = terminal::view::Images::new();
+    let start = std::time::Instant::now();
+    frame_at(&mut images, &emulator, start);
+    assert_eq!(
+        frame_at(&mut images, &emulator, start + Duration::from_secs(5)),
+        (2, false)
+    );
+
+    emulator.feed(&one_pixel_frame(",z=100", BLUE));
+    let later = start + Duration::from_secs(5) + Duration::from_millis(10);
+    assert_eq!(frame_at(&mut images, &emulator, later), (3, true));
+}
+
+#[test]
+fn every_frame_reaches_the_paint() {
+    let emulator = playing("s=3");
+    let mut images = terminal::view::Images::new();
+    let placed = images.placed_at(&emulator, std::time::Instant::now());
+    assert_eq!(placed[0].image.frame_count(), 3);
 }

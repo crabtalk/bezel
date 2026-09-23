@@ -12,7 +12,8 @@
 //! arrives is the state the preceding text left behind.
 //!
 //! What lands here is the transmission half of the protocol — the bytes of an
-//! image, assembled and stored under its id. Placements — where an image goes
+//! image, assembled and stored under its id, and an animation's frames drawn
+//! over each other as they arrive. Placements — where an image goes
 //! on the grid, and which of them a delete takes off it — are the emulator's,
 //! and painting is the view's.
 
@@ -294,7 +295,13 @@ pub enum Action {
     /// `a=d`: take placements off the screen, and with an upper-case `d`
     /// their images' data too.
     Delete,
-    /// `a=f`, `a=c`, `a=a`: parsed so the run is still consumed rather than
+    /// `a=f`: add a frame to an image, or draw over one it has.
+    Frame,
+    /// `a=a`: set an animation's state, current frame, loops or gaps.
+    Animate,
+    /// `a=c`: copy a rectangle of one frame onto another.
+    Compose,
+    /// Any other letter: parsed so the run is still consumed rather than
     /// printed, and answered as unsupported.
     Other(char),
 }
@@ -462,6 +469,9 @@ impl Command {
                         Some('q') => Action::Query,
                         Some('p') => Action::Place,
                         Some('d') => Action::Delete,
+                        Some('f') => Action::Frame,
+                        Some('a') => Action::Animate,
+                        Some('c') => Action::Compose,
                         Some(other) => Action::Other(other),
                         None => continue,
                     }
@@ -544,11 +554,12 @@ fn decode(bytes: &[u8]) -> Vec<u8> {
 // Store
 // ---------------------------------------------------------------------------
 
-/// An image the client sent, still in the bytes it sent.
+/// An image the client sent, still in the bytes it sent until it becomes an
+/// animation.
 ///
-/// Decoding is the view's: it is the half that needs a gpui image and a
-/// display, and holding a decoded frame here would put one in the emulator's
-/// test harness as well.
+/// Decoding a still image is the view's. The first frame command decodes one
+/// here, into [`Format::Rgba`], because frames are drawn over each other's
+/// pixels as they arrive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
     pub format: Format,
@@ -556,8 +567,49 @@ pub struct Image {
     /// carries its own.
     pub width: u32,
     pub height: u32,
+    /// The first frame.
     pub bytes: Vec<u8>,
+    /// Every frame after the first, RGBA at the image's size. Empty for a
+    /// still image.
+    pub frames: Vec<Vec<u8>>,
+    /// Each frame's gap in milliseconds, the first frame's first. Zero is a
+    /// gapless frame, skipped over. Empty until a frame command sets one.
+    pub gaps: Vec<u32>,
+    pub animation: Animation,
+    /// Bumped whenever a frame's pixels change.
+    pub revision: u64,
 }
+
+/// How an animation plays — kitty's `a=a`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Animation {
+    pub state: AnimationState,
+    /// The frame shown while stopped and the one a run starts from, 0-based.
+    pub current: usize,
+    /// Loops to play before stopping on the last frame. Zero plays forever.
+    pub loops: u32,
+    /// Bumped whenever the state, the current frame or the loop count is
+    /// set, each of which starts playback over from [`Self::current`].
+    pub revision: u64,
+}
+
+/// kitty's `s` on `a=a`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AnimationState {
+    /// `s=1`, and where every image starts.
+    #[default]
+    Stopped,
+    /// `s=2`: play, and wait at the last frame for more rather than loop.
+    Loading,
+    /// `s=3`: play, looping.
+    Running,
+}
+
+/// The gap a new frame gets when its command names none.
+const DEFAULT_GAP: u32 = 40;
+
+/// The most the frames after the first may hold, across every image.
+const MAX_FRAME_BYTES: usize = 320 << 20;
 
 /// An image put on the screen, and the keys that say how.
 ///
@@ -792,7 +844,8 @@ impl Store {
                     'z' => Target::Z(command.z),
                     'r' => Target::Range(command.x, command.y),
                     'f' => {
-                        return (None, self.reply(&command, id, Some("ENOTSUPPORTED:delete")));
+                        let outcome = self.delete_frame(&command, id);
+                        return (None, self.reply_to(&command, id, outcome));
                     }
                     _ => return (None, self.reply(&command, id, Some("EINVAL:delete"))),
                 };
@@ -803,11 +856,33 @@ impl Store {
                 (Some(Effect::Delete(delete)), self.reply(&command, id, None))
             }
             Action::Other(_) => (None, self.reply(&command, id, Some("ENOTSUPPORTED:action"))),
-            Action::Transmit | Action::Display => self.transmit(command, id),
+            Action::Animate => {
+                let outcome = self.animate(&command, id);
+                (None, self.reply_to(&command, id, outcome))
+            }
+            Action::Compose => {
+                let outcome = self.compose(&command, id);
+                (None, self.reply_to(&command, id, outcome))
+            }
+            Action::Transmit | Action::Display | Action::Frame => self.transmit(command, id),
         }
     }
 
+    /// [`Self::reply`] for an outcome.
+    fn reply_to(
+        &self,
+        command: &Command,
+        id: u32,
+        outcome: Result<(), &'static str>,
+    ) -> Option<Reply> {
+        self.reply(command, id, outcome.err())
+    }
+
     fn transmit(&mut self, command: Command, id: u32) -> (Option<Effect>, Option<Reply>) {
+        if command.action == Action::Frame && !self.images.contains_key(&id) {
+            self.pending = None;
+            return (None, self.reply(&command, id, Some("ENOENT:image")));
+        }
         if command
             .compression
             .is_some_and(|compression| compression != 'z')
@@ -928,12 +1003,20 @@ impl Store {
                 Err(_) => return (None, self.reply(&command, id, Some("EINVAL:compression"))),
             };
         }
+        if held.action == Action::Frame {
+            let outcome = self.frame(id, &held);
+            return (None, self.reply_to(&command, id, outcome));
+        }
         let display = (held.action == Action::Display).then(|| Display::of(id, &held));
         let image = Image {
             format: held.format,
             width: held.width,
             height: held.height,
             bytes: held.payload,
+            frames: Vec::new(),
+            gaps: Vec::new(),
+            animation: Animation::default(),
+            revision: 0,
         };
         if !matches!(image.format, Format::Png) && !raw_fits(&image) {
             return (None, self.reply(&command, id, Some("EINVAL:dimensions")));
@@ -943,6 +1026,177 @@ impl Store {
             self.numbers.insert(held.number, id);
         }
         (display.map(Effect::Display), self.reply(&command, id, None))
+    }
+
+    /// `a=f`: draw a frame's data over a new frame or an existing one.
+    fn frame(&mut self, id: u32, command: &Command) -> Result<(), &'static str> {
+        use crate::pixels::{Rect, Rgba, draw};
+        let data = Rgba::decode(
+            command.format,
+            command.width,
+            command.height,
+            &command.payload,
+        )
+        .ok_or("EINVAL:frame data")?;
+        let held: usize = self
+            .images
+            .values()
+            .flat_map(|image| &image.frames)
+            .map(Vec::len)
+            .sum();
+        let image = self.images.get_mut(&id).ok_or("ENOENT:image")?;
+        image.ensure_rgba()?;
+        if data.width > image.width || data.height > image.height {
+            return Err("EINVAL:frame larger than the image");
+        }
+        let count = image.frame_count();
+        let edit = command.rows as usize;
+        let mut canvas = if (1..=count).contains(&edit) {
+            image.rgba(edit - 1)
+        } else if command.columns != 0 {
+            let base = command.columns as usize;
+            if base > count {
+                return Err("EINVAL:no such base frame");
+            }
+            image.rgba(base - 1)
+        } else {
+            Rgba::filled(image.width, image.height, command.offset_y)
+        };
+        if !(1..=count).contains(&edit) && held + canvas.bytes.len() > MAX_FRAME_BYTES {
+            return Err("ENOSPC:frames");
+        }
+        let whole = Rect {
+            x: 0,
+            y: 0,
+            width: data.width,
+            height: data.height,
+        };
+        draw(
+            &mut canvas,
+            command.x,
+            command.y,
+            &data,
+            whole,
+            command.offset_x == 1,
+        );
+        let gap = match command.z {
+            z if z > 0 => Some(z as u32),
+            z if z < 0 => Some(0),
+            _ => None,
+        };
+        if (1..=count).contains(&edit) {
+            image.set_frame(edit - 1, canvas.bytes);
+            if let Some(gap) = gap {
+                image.gaps[edit - 1] = gap;
+            }
+        } else {
+            image.frames.push(canvas.bytes);
+            image.gaps.push(gap.unwrap_or(DEFAULT_GAP));
+        }
+        image.revision += 1;
+        Ok(())
+    }
+
+    /// `a=a`.
+    fn animate(&mut self, command: &Command, id: u32) -> Result<(), &'static str> {
+        let image = self.images.get_mut(&id).ok_or("ENOENT:image")?;
+        let count = image.frame_count();
+        if image.gaps.is_empty() {
+            image.gaps.push(0);
+        }
+        let frame = command.rows as usize;
+        if (1..=count).contains(&frame) && command.z != 0 {
+            image.gaps[frame - 1] = command.z.max(0) as u32;
+        }
+        let animation = &mut image.animation;
+        let current = command.columns as usize;
+        if (1..=count).contains(&current) {
+            animation.current = current - 1;
+            animation.revision += 1;
+        }
+        // `s` and `v` arrive in the fields `a=t` reads as a size.
+        let state = match command.width {
+            1 => Some(AnimationState::Stopped),
+            2 => Some(AnimationState::Loading),
+            3 => Some(AnimationState::Running),
+            _ => None,
+        };
+        if let Some(state) = state {
+            animation.state = state;
+            animation.revision += 1;
+        }
+        if command.height != 0 {
+            animation.loops = command.height - 1;
+            animation.revision += 1;
+        }
+        Ok(())
+    }
+
+    /// `a=c`: frame `r`'s pixels in a rectangle onto frame `c`'s.
+    fn compose(&mut self, command: &Command, id: u32) -> Result<(), &'static str> {
+        use crate::pixels::{Rect, draw};
+        let image = self.images.get_mut(&id).ok_or("ENOENT:image")?;
+        let count = image.frame_count();
+        let (from, onto) = (command.rows as usize, command.columns as usize);
+        if !(1..=count).contains(&from) || !(1..=count).contains(&onto) {
+            return Err("ENOENT:frame");
+        }
+        image.ensure_rgba()?;
+        let size = |value: u32, whole: u32| if value == 0 { whole } else { value };
+        let source = Rect {
+            x: command.offset_x,
+            y: command.offset_y,
+            width: size(command.source_width, image.width),
+            height: size(command.source_height, image.height),
+        };
+        let target = Rect {
+            x: command.x,
+            y: command.y,
+            ..source
+        };
+        if !source.within(image.width, image.height) || !target.within(image.width, image.height) {
+            return Err("EINVAL:rectangle out of bounds");
+        }
+        if from == onto && source.overlaps(&target) {
+            return Err("EINVAL:rectangles overlap");
+        }
+        let over = image.rgba(from - 1);
+        let mut canvas = image.rgba(onto - 1);
+        let replace = command.cursor_movement == CursorMovement::None;
+        draw(&mut canvas, target.x, target.y, &over, source, replace);
+        image.set_frame(onto - 1, canvas.bytes);
+        image.revision += 1;
+        Ok(())
+    }
+
+    /// `d=f`: delete frame `r`, the first when it is zero. `d=F` on an image
+    /// with one frame frees the image.
+    fn delete_frame(&mut self, command: &Command, id: u32) -> Result<(), &'static str> {
+        let image = self.images.get_mut(&id).ok_or("ENOENT:image")?;
+        if image.frames.is_empty() {
+            if command.delete == 'F' {
+                self.remove(id);
+            }
+            return Ok(());
+        }
+        let frame = (command.rows as usize).clamp(1, image.frame_count()) - 1;
+        if frame == 0 {
+            image.bytes = image.frames.remove(0);
+        } else {
+            image.frames.remove(frame - 1);
+        }
+        if frame < image.gaps.len() {
+            image.gaps.remove(frame);
+        }
+        let animation = &mut image.animation;
+        if animation.current > image.frames.len() {
+            animation.current = image.frames.len();
+        } else if frame < animation.current {
+            animation.current -= 1;
+        }
+        animation.revision += 1;
+        image.revision += 1;
+        Ok(())
     }
 
     fn insert(&mut self, id: u32, image: Image) {
@@ -975,6 +1229,54 @@ impl Store {
 }
 
 impl Image {
+    /// How many frames it has, the first included.
+    pub fn frame_count(&self) -> usize {
+        1 + self.frames.len()
+    }
+
+    /// Frame `index`'s bytes, 0-based.
+    pub fn frame(&self, index: usize) -> Option<&[u8]> {
+        match index {
+            0 => Some(&self.bytes),
+            index => self.frames.get(index - 1).map(Vec::as_slice),
+        }
+    }
+
+    /// Decode the first frame into RGBA, once, and give it its gap.
+    fn ensure_rgba(&mut self) -> Result<(), &'static str> {
+        if self.gaps.is_empty() {
+            self.gaps.push(0);
+        }
+        if self.format == Format::Rgba && !self.frames.is_empty() {
+            return Ok(());
+        }
+        let rgba = crate::pixels::Rgba::decode(self.format, self.width, self.height, &self.bytes)
+            .ok_or("EINVAL:image data")?;
+        self.format = Format::Rgba;
+        self.width = rgba.width;
+        self.height = rgba.height;
+        self.bytes = rgba.bytes;
+        Ok(())
+    }
+
+    /// Frame `index` as a buffer to draw on. Only called once
+    /// [`Self::ensure_rgba`] has made every frame RGBA.
+    fn rgba(&self, index: usize) -> crate::pixels::Rgba {
+        crate::pixels::Rgba {
+            width: self.width,
+            height: self.height,
+            bytes: self.frame(index).unwrap_or_default().to_vec(),
+            opaque: false,
+        }
+    }
+
+    fn set_frame(&mut self, index: usize, bytes: Vec<u8>) {
+        match index {
+            0 => self.bytes = bytes,
+            index => self.frames[index - 1] = bytes,
+        }
+    }
+
     /// The image's pixel dimensions: the ones the client stated, or the ones a
     /// PNG states for itself. `None` for a PNG too short or too malformed to
     /// say, which is a payload nothing will decode either.
