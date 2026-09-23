@@ -25,7 +25,8 @@ use theme::{Appearance, Theme};
 use std::{collections::HashMap, sync::Arc};
 
 use crate::emulator::{
-    CellColor, CellSnapshot, CursorSnapshot, Emulator, KeyboardMode, MouseMode, MouseTracking, Side,
+    CellColor, CellSnapshot, CursorSnapshot, Emulator, Frame, KeyboardMode, MouseMode,
+    MouseTracking, Side, Source,
 };
 
 /// Terminal font metrics (mono).
@@ -805,6 +806,12 @@ pub struct PlacedImage {
     pub col: usize,
     pub cols: u16,
     pub rows: u16,
+    /// The emulator's [`crate::emulator::Placement::frame`].
+    pub frame: Frame,
+    pub source: Source,
+    pub z: i32,
+    /// The kitty image id, which orders images of equal `z`.
+    pub id: u32,
     pub image: Arc<gpui::RenderImage>,
 }
 
@@ -849,6 +856,10 @@ impl Images {
                     col: placement.col,
                     cols: placement.cols,
                     rows: placement.rows,
+                    frame: placement.frame,
+                    source: placement.source,
+                    z: placement.z,
+                    id: placement.image,
                     image: decoded,
                 })
             })
@@ -944,10 +955,40 @@ impl TerminalElement {
     }
 }
 
+/// Which pass of the grid's paint an image goes in, by its z-index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Layer {
+    UnderBackgrounds,
+    UnderText,
+    OverText,
+}
+
+impl Layer {
+    fn of(z: i32) -> Self {
+        match z {
+            z if z < i32::MIN / 2 => Layer::UnderBackgrounds,
+            z if z < 0 => Layer::UnderText,
+            _ => Layer::OverText,
+        }
+    }
+}
+
+/// An image as prepaint resolved it.
+struct Painted {
+    layer: Layer,
+    /// `(z, id)`: lower paints first.
+    order: (i32, u32),
+    /// The clip, which is the placement's frame.
+    frame: Bounds<Pixels>,
+    /// The whole image, positioned so its source rectangle fills the frame.
+    whole: Bounds<Pixels>,
+    image: Arc<gpui::RenderImage>,
+}
+
 pub struct TerminalPrepaint {
     bg_quads: Vec<PaintQuad>,
-    /// Each visible image and the rectangle of cells it covers.
-    images: Vec<(Bounds<Pixels>, Arc<gpui::RenderImage>)>,
+    /// Each visible image, in paint order.
+    images: Vec<Painted>,
     /// Selection wash. Painted after [`Self::bg_quads`] and before the glyphs:
     /// it has to tint a cell's own background rather than replace it, and it
     /// must not wash out the text it is highlighting.
@@ -1061,20 +1102,42 @@ impl gpui::Element for TerminalElement {
         // Cells to pixels, at the metrics this frame measured — the same
         // arithmetic the cursor quad uses, so an image sits on the grid rather
         // than near it.
-        let images = snapshot
+        let mut images: Vec<Painted> = snapshot
             .images
             .iter()
             .map(|placed| {
-                let rect = Bounds::new(
+                let frame = Bounds::new(
                     point(
-                        origin.x + cell_w * placed.col as f32,
-                        origin.y + line_h * placed.row as f32,
+                        origin.x + cell_w * (placed.col as f32 + placed.frame.x),
+                        origin.y + line_h * (placed.row as f32 + placed.frame.y),
                     ),
-                    size(cell_w * placed.cols as f32, line_h * placed.rows as f32),
+                    size(cell_w * placed.frame.width, line_h * placed.frame.height),
                 );
-                (rect, placed.image.clone())
+                // The whole image at the scale that maps the source onto the
+                // frame; the frame is the clip.
+                let scale_x = frame.size.width / placed.source.width as f32;
+                let scale_y = frame.size.height / placed.source.height as f32;
+                let natural = placed.image.size(0);
+                let whole = Bounds::new(
+                    point(
+                        frame.origin.x - scale_x * placed.source.x as f32,
+                        frame.origin.y - scale_y * placed.source.y as f32,
+                    ),
+                    size(
+                        scale_x * natural.width.0 as f32,
+                        scale_y * natural.height.0 as f32,
+                    ),
+                );
+                Painted {
+                    layer: Layer::of(placed.z),
+                    order: (placed.z, placed.id),
+                    frame,
+                    whole,
+                    image: placed.image.clone(),
+                }
             })
             .collect();
+        images.sort_by_key(|painted| painted.order);
 
         let mut bg_quads = Vec::new();
         let mut sel_quads = Vec::new();
@@ -1174,18 +1237,27 @@ impl gpui::Element for TerminalElement {
             bounds.top() + px(TERM_PADDING),
         );
         window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
+            let images = std::mem::take(&mut prepaint.images);
+            let paint_layer = |layer: Layer, window: &mut Window| {
+                for painted in images.iter().filter(|painted| painted.layer == layer) {
+                    let _ = window.paint_image(
+                        painted.frame,
+                        painted.whole,
+                        gpui::Corners::default(),
+                        painted.image.clone(),
+                        0,
+                        false,
+                    );
+                }
+            };
+            paint_layer(Layer::UnderBackgrounds, window);
             for quad in prepaint.bg_quads.drain(..) {
                 window.paint_quad(quad);
             }
             for quad in prepaint.sel_quads.drain(..) {
                 window.paint_quad(quad);
             }
-            // Over the cell backgrounds and under the glyphs, which is where
-            // kitty puts an image of the default z-index. The cells an image
-            // covers are blank anyway: placing one reserves its rows.
-            for (rect, data) in prepaint.images.drain(..) {
-                let _ = window.paint_image(rect, rect, gpui::Corners::default(), data, 0, false);
-            }
+            paint_layer(Layer::UnderText, window);
             let cell_w = prepaint.cell_w;
             for (ix, segments) in prepaint.lines.iter().enumerate() {
                 let y = origin.y + line_h * ix as f32;
@@ -1200,6 +1272,7 @@ impl gpui::Element for TerminalElement {
                     );
                 }
             }
+            paint_layer(Layer::OverText, window);
             if let Some(cursor) = prepaint.cursor.take() {
                 window.paint_quad(cursor);
             }

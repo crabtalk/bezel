@@ -343,10 +343,18 @@ pub struct Command {
     /// unset, which leaves the extent to the image's own pixels.
     pub columns: u32,
     pub rows: u32,
-    /// `x`, `y`: the cell a delete by position names, 1-based, or the id
-    /// range of `d=r`.
+    /// `x`, `y`: on a display, the source rectangle's top-left in the
+    /// image's pixels. On a delete, the 1-based cell a delete by position
+    /// names, or the id range of `d=r`.
     pub x: u32,
     pub y: u32,
+    /// `w`, `h`: the source rectangle's size in pixels. Zero runs to the
+    /// image's edge.
+    pub source_width: u32,
+    pub source_height: u32,
+    /// `X`, `Y`: where in its top-left cell the image starts, in pixels.
+    pub offset_x: u32,
+    pub offset_y: u32,
     /// `z`: the placement's z-index.
     pub z: i32,
     /// `C`: whether the cursor moves past the image.
@@ -379,6 +387,10 @@ impl Default for Command {
             rows: 0,
             x: 0,
             y: 0,
+            source_width: 0,
+            source_height: 0,
+            offset_x: 0,
+            offset_y: 0,
             z: 0,
             cursor_movement: CursorMovement::After,
             quiet: 0,
@@ -439,6 +451,10 @@ impl Command {
                 b'p' => command.placement = number().unwrap_or(0),
                 b'x' => command.x = number().unwrap_or(0),
                 b'y' => command.y = number().unwrap_or(0),
+                b'w' => command.source_width = number().unwrap_or(0),
+                b'h' => command.source_height = number().unwrap_or(0),
+                b'X' => command.offset_x = number().unwrap_or(0),
+                b'Y' => command.offset_y = number().unwrap_or(0),
                 b'z' => {
                     command.z = std::str::from_utf8(value)
                         .ok()
@@ -526,8 +542,36 @@ pub struct Display {
     /// `c`, `r`, zero when unset.
     pub columns: u32,
     pub rows: u32,
+    /// `x`, `y`, `w`, `h`, as the command carried them.
+    pub source_x: u32,
+    pub source_y: u32,
+    pub source_width: u32,
+    pub source_height: u32,
+    /// `X`, `Y`, as the command carried them.
+    pub offset_x: u32,
+    pub offset_y: u32,
     pub z: i32,
     pub cursor_movement: CursorMovement,
+}
+
+impl Display {
+    /// The display keys a command carried, for the image `image`.
+    fn of(image: u32, command: &Command) -> Self {
+        Self {
+            image,
+            placement: command.placement,
+            columns: command.columns,
+            rows: command.rows,
+            source_x: command.x,
+            source_y: command.y,
+            source_width: command.source_width,
+            source_height: command.source_height,
+            offset_x: command.offset_x,
+            offset_y: command.offset_y,
+            z: command.z,
+            cursor_movement: command.cursor_movement,
+        }
+    }
 }
 
 /// A delete, which names placements, and placements are the emulator's.
@@ -670,14 +714,7 @@ impl Store {
                 if !self.images.contains_key(&id) {
                     return (None, self.reply(&command, id, Some("ENOENT:image")));
                 }
-                let display = Display {
-                    image: id,
-                    placement: command.placement,
-                    columns: command.columns,
-                    rows: command.rows,
-                    z: command.z,
-                    cursor_movement: command.cursor_movement,
-                };
+                let display = Display::of(id, &command);
                 (
                     Some(Effect::Display(display)),
                     self.reply(&command, id, None),
@@ -767,6 +804,12 @@ impl Store {
         held.columns = held.columns.max(command.columns);
         held.rows = held.rows.max(command.rows);
         held.placement = held.placement.max(command.placement);
+        held.x = held.x.max(command.x);
+        held.y = held.y.max(command.y);
+        held.source_width = held.source_width.max(command.source_width);
+        held.source_height = held.source_height.max(command.source_height);
+        held.offset_x = held.offset_x.max(command.offset_x);
+        held.offset_y = held.offset_y.max(command.offset_y);
         held.number = held.number.max(command.number);
         if command.z != 0 {
             held.z = command.z;
@@ -785,6 +828,7 @@ impl Store {
         if held.payload.is_empty() {
             return (None, self.reply(&command, id, Some("EINVAL:empty")));
         }
+        let display = (held.action == Action::Display).then(|| Display::of(id, &held));
         let image = Image {
             format: held.format,
             width: held.width,
@@ -798,15 +842,7 @@ impl Store {
         if held.number != 0 {
             self.numbers.insert(held.number, id);
         }
-        let landed = (held.action == Action::Display).then_some(Effect::Display(Display {
-            image: id,
-            placement: held.placement,
-            columns: held.columns,
-            rows: held.rows,
-            z: held.z,
-            cursor_movement: held.cursor_movement,
-        }));
-        (landed, self.reply(&command, id, None))
+        (display.map(Effect::Display), self.reply(&command, id, None))
     }
 
     fn insert(&mut self, id: u32, image: Image) {

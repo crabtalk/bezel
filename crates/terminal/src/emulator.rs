@@ -151,7 +151,7 @@ impl CellSnapshot {
 
 /// Where an image sits on the grid: its top-left cell in viewport
 /// coordinates, and how many cells it covers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {
     pub row: usize,
     pub col: usize,
@@ -159,6 +159,33 @@ pub struct Placement {
     pub rows: u16,
     /// The [`kitty::Store`] id of the image to paint here.
     pub image: u32,
+    /// Where the picture is drawn, in cells from the placement's top-left
+    /// cell. It can run past `cols` and `rows`, which are clamped to the grid.
+    pub frame: Frame,
+    /// The part of the image drawn into [`Self::frame`].
+    pub source: Source,
+    /// Negative is under the text, and below `i32::MIN / 2` under
+    /// non-default cell backgrounds too. Zero and up is over the text.
+    pub z: i32,
+}
+
+/// A rectangle in cells, fractional where an offset or a letterbox puts an
+/// edge inside one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Frame {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// A rectangle in an image's pixels, inside the image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Source {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// The private-use codepoint a placement is anchored with, plus its id.
@@ -193,6 +220,8 @@ struct Placed {
     placement: u32,
     cols: u16,
     rows: u16,
+    frame: Frame,
+    source: Source,
     z: i32,
 }
 
@@ -475,18 +504,63 @@ impl Emulator {
         let Some((width, height)) = self.graphics.get(image).and_then(kitty::Image::size) else {
             return;
         };
-        // `c` and `r` state the extent outright. Without them it comes from
-        // the image's pixels against the measured cell.
-        let cols = match display.columns {
-            0 => (width as f32 / cell_w).ceil() as usize,
-            columns => columns as usize,
+        let x = display.source_x.min(width);
+        let y = display.source_y.min(height);
+        let source = Source {
+            x,
+            y,
+            width: match display.source_width {
+                0 => width - x,
+                w => w.min(width - x),
+            },
+            height: match display.source_height {
+                0 => height - y,
+                h => h.min(height - y),
+            },
+        };
+        if source.width == 0 || source.height == 0 {
+            return;
         }
-        .clamp(1, self.cols()) as u16;
-        let rows = match display.rows {
-            0 => (height as f32 / cell_h).ceil() as usize,
-            rows => rows as usize,
-        }
-        .clamp(1, self.rows()) as u16;
+        let (source_w, source_h) = (source.width as f32, source.height as f32);
+        let offset_x = (display.offset_x as f32).min(cell_w - 1.0).max(0.0);
+        let offset_y = (display.offset_y as f32).min(cell_h - 1.0).max(0.0);
+        // The frame in pixels, and the cells it covers. Unscaled without `c`
+        // and `r`; one of them scales the other by the source's aspect; both
+        // fit the source inside the box they make, centred. The offset counts
+        // toward the cells only when neither is given.
+        let (cols, rows, frame) = match (display.columns, display.rows) {
+            (0, 0) => (
+                ((offset_x + source_w) / cell_w).ceil(),
+                ((offset_y + source_h) / cell_h).ceil(),
+                (offset_x, offset_y, source_w, source_h),
+            ),
+            (c, 0) => {
+                let w = c as f32 * cell_w;
+                let h = w * source_h / source_w;
+                (c as f32, (h / cell_h).ceil(), (offset_x, offset_y, w, h))
+            }
+            (0, r) => {
+                let h = r as f32 * cell_h;
+                let w = h * source_w / source_h;
+                ((w / cell_w).ceil(), r as f32, (offset_x, offset_y, w, h))
+            }
+            (c, r) => {
+                let (box_w, box_h) = (c as f32 * cell_w, r as f32 * cell_h);
+                let scale = (box_w / source_w).min(box_h / source_h);
+                let (w, h) = (source_w * scale, source_h * scale);
+                let x = offset_x + (box_w - w) / 2.0;
+                let y = offset_y + (box_h - h) / 2.0;
+                (c as f32, r as f32, (x, y, w, h))
+            }
+        };
+        let cols = (cols as usize).clamp(1, self.cols()) as u16;
+        let rows = (rows as usize).clamp(1, self.rows()) as u16;
+        let frame = Frame {
+            x: frame.0 / cell_w,
+            y: frame.1 / cell_h,
+            width: frame.2 / cell_w,
+            height: frame.3 / cell_h,
+        };
 
         self.placed
             .retain(|_, placed| placed.image != image || placed.placement != display.placement);
@@ -504,13 +578,32 @@ impl Emulator {
             let cell = &mut self.term.grid_mut()[cursor.line][Column(cursor.column.0 + offset)];
             // A cell only ever gains zerowidth chars, so one anchored again
             // without being written to in between would collect a pair per
-            // redraw. Clearing takes this cell's underline color and hyperlink
-            // with it.
+            // redraw. Rebuilt from the marks still worth keeping — the pairs
+            // of placements still live — which takes this cell's underline
+            // color and hyperlink with it.
             if cell
                 .zerowidth()
                 .is_some_and(|marks| marks.iter().any(|&mark| is_anchor(mark)))
             {
+                let marks = cell.zerowidth().unwrap_or(&[]);
+                let mut kept: Vec<char> = marks
+                    .iter()
+                    .copied()
+                    .filter(|&mark| !is_anchor(mark))
+                    .collect();
+                for (live, column) in anchor_pairs(marks) {
+                    if !self.placed.contains_key(&live) {
+                        continue;
+                    }
+                    kept.extend(char::from_u32(ANCHOR + live));
+                    kept.extend(
+                        column.and_then(|column| char::from_u32(ANCHOR_COLUMN + column as u32)),
+                    );
+                }
                 cell.extra = None;
+                for mark in kept {
+                    cell.push_zerowidth(mark);
+                }
             }
             for mark in [ANCHOR + anchor, ANCHOR_COLUMN + offset as u32] {
                 if let Some(mark) = char::from_u32(mark) {
@@ -525,6 +618,8 @@ impl Emulator {
                 placement: display.placement,
                 cols,
                 rows,
+                frame,
+                source,
                 z: display.z,
             },
         );
@@ -565,38 +660,30 @@ impl Emulator {
             let line = Line(row as i32 - offset);
             for col in 0..self.cols() {
                 let marks = grid[line][Column(col)].zerowidth().unwrap_or(&[]);
-                let anchor = marks.iter().find_map(|&mark| {
-                    let index = (mark as u32).wrapping_sub(ANCHOR);
-                    (index < ANCHOR_MAX).then_some(index)
-                });
-                let Some(anchor) = anchor else {
-                    continue;
-                };
-                let Some(placed) = self.placed.get(&anchor) else {
-                    continue;
-                };
-                if out.iter().any(|(seen, _)| *seen == anchor) {
-                    continue;
+                for (anchor, within) in anchor_pairs(marks) {
+                    let Some(placed) = self.placed.get(&anchor) else {
+                        continue;
+                    };
+                    if out.iter().any(|(seen, _)| *seen == anchor) {
+                        continue;
+                    }
+                    // A cell whose column mark was lost still holds the image;
+                    // it can only say the left edge is here.
+                    let within = within.unwrap_or(0);
+                    out.push((
+                        anchor,
+                        Placement {
+                            row,
+                            col: col.saturating_sub(within),
+                            cols: placed.cols,
+                            rows: placed.rows,
+                            image: placed.image,
+                            frame: placed.frame,
+                            source: placed.source,
+                            z: placed.z,
+                        },
+                    ));
                 }
-                // A cell whose column mark was lost still holds the image; it
-                // can only say the left edge is here.
-                let within = marks
-                    .iter()
-                    .find_map(|&mark| {
-                        let index = (mark as u32).wrapping_sub(ANCHOR_COLUMN);
-                        (index < ANCHOR_COLUMN_MAX).then_some(index as usize)
-                    })
-                    .unwrap_or(0);
-                out.push((
-                    anchor,
-                    Placement {
-                        row,
-                        col: col.saturating_sub(within),
-                        cols: placed.cols,
-                        rows: placed.rows,
-                        image: placed.image,
-                    },
-                ));
             }
         }
         out
@@ -643,13 +730,10 @@ impl Emulator {
                 let cursor = self.term.grid().cursor.point;
                 self.scan(0)
                     .into_iter()
-                    .filter(|(anchor, p)| match target {
+                    .filter(|(_, p)| match target {
                         Target::Cursor => covers(p, cursor.column.0 as u32, cursor.line.0 as u32),
                         Target::Cell { col, row, z } => {
-                            covers(p, col, row)
-                                && z.is_none_or(|z| {
-                                    self.placed.get(anchor).is_some_and(|p| p.z == z)
-                                })
+                            covers(p, col, row) && z.is_none_or(|z| p.z == z)
                         }
                         Target::Column(col) => {
                             (p.col..p.col + p.cols as usize).contains(&(col as usize))
@@ -995,6 +1079,22 @@ impl Emulator {
         }
         text
     }
+}
+
+/// The anchors in a cell's zerowidth marks, each with the column mark written
+/// straight after it.
+fn anchor_pairs(marks: &[char]) -> impl Iterator<Item = (u32, Option<usize>)> + '_ {
+    marks.iter().enumerate().filter_map(|(at, &mark)| {
+        let anchor = (mark as u32).wrapping_sub(ANCHOR);
+        if anchor >= ANCHOR_MAX {
+            return None;
+        }
+        let column = marks.get(at + 1).and_then(|&next| {
+            let index = (next as u32).wrapping_sub(ANCHOR_COLUMN);
+            (index < ANCHOR_COLUMN_MAX).then_some(index as usize)
+        });
+        Some((anchor, column))
+    })
 }
 
 /// Whether `ch` is one of the private-use codepoints a placement anchors with:

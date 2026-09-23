@@ -1033,3 +1033,90 @@ fn an_id_and_a_number_together_are_refused() {
     assert_eq!(reply, b"\x1b_Gi=1,I=2;EINVAL:i and I\x1b\\");
     assert!(emulator.graphics().is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Source rectangle, offsets, fit and z
+// ---------------------------------------------------------------------------
+
+fn frame(placement: &terminal::emulator::Placement) -> (f32, f32, f32, f32) {
+    let frame = placement.frame;
+    (frame.x, frame.y, frame.width, frame.height)
+}
+
+#[test]
+fn a_source_rectangle_draws_that_part_alone() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 60, 40, ",x=10,y=20,w=20,h=20,C=1"));
+    let placement = emulator.placements()[0];
+    let source = placement.source;
+    assert_eq!(
+        (source.x, source.y, source.width, source.height),
+        (10, 20, 20, 20)
+    );
+    assert_eq!((placement.cols, placement.rows), (2, 1));
+    assert_eq!(frame(&placement), (0.0, 0.0, 2.0, 1.0));
+}
+
+#[test]
+fn a_source_rectangle_is_cut_to_the_image() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 30, 20, ",x=20,w=50,C=1"));
+    let source = emulator.placements()[0].source;
+    assert_eq!(
+        (source.x, source.y, source.width, source.height),
+        (20, 0, 10, 20)
+    );
+}
+
+#[test]
+fn an_offset_moves_the_picture_inside_its_first_cell() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 10, 20, ",X=5,Y=10,C=1"));
+    let placement = emulator.placements()[0];
+    // The offset pushes the picture into a second column and a second row.
+    assert_eq!((placement.cols, placement.rows), (2, 2));
+    assert_eq!(frame(&placement), (0.5, 0.5, 1.0, 1.0));
+
+    // An offset past the cell stops at its last pixel.
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 10, 20, ",X=50,C=1"));
+    assert_eq!(emulator.placements()[0].frame.x, 0.9);
+}
+
+#[test]
+fn one_of_columns_and_rows_keeps_the_aspect() {
+    let mut emulator = placed_emulator(20, 10);
+    // 20x40 across four 10px columns is 40x80: four 20px rows.
+    emulator.feed(&display_keys(1, 20, 40, ",c=4,C=1"));
+    let placement = emulator.placements()[0];
+    assert_eq!((placement.cols, placement.rows), (4, 4));
+    assert_eq!(frame(&placement), (0.0, 0.0, 4.0, 4.0));
+
+    let mut emulator = placed_emulator(20, 10);
+    // 20x40 down one 20px row is 10x20: one column.
+    emulator.feed(&display_keys(1, 20, 40, ",r=1,C=1"));
+    let placement = emulator.placements()[0];
+    assert_eq!((placement.cols, placement.rows), (1, 1));
+    assert_eq!(frame(&placement), (0.0, 0.0, 1.0, 1.0));
+}
+
+#[test]
+fn both_columns_and_rows_letterbox_the_picture() {
+    let mut emulator = placed_emulator(20, 10);
+    // A square into a 60x40 box: 40x40, centred, so 10px in from the left.
+    emulator.feed(&display_keys(1, 20, 20, ",c=6,r=2,C=1"));
+    let placement = emulator.placements()[0];
+    assert_eq!((placement.cols, placement.rows), (6, 2));
+    assert_eq!(frame(&placement), (1.0, 0.0, 4.0, 2.0));
+}
+
+#[test]
+fn a_placement_carries_its_z_index() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 10, 20, ",z=-1,C=1"));
+    assert_eq!(emulator.placements()[0].z, -1);
+    emulator.feed(&apc("a=p,i=1,p=2,z=-1073741825,C=1"));
+    let mut zs: Vec<i32> = emulator.placements().iter().map(|p| p.z).collect();
+    zs.sort();
+    assert_eq!(zs, vec![-1073741825, -1]);
+}
