@@ -930,9 +930,9 @@ impl Images {
         {
             return (clock.frame, false);
         }
-        // Stepped rather than computed, so a frame arriving while the
-        // animation waits at the end is picked up where it waited. A clock far
-        // behind — a window that went unpainted — is brought up to now.
+        // A frame arriving while a loading animation waits at the end is
+        // picked up where it waited. A clock more than 10,000 frames behind is
+        // brought up to now.
         for _ in 0..10_000 {
             let gap = gap(clock.frame);
             let due = clock.shown_at + gap;

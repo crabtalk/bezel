@@ -35,7 +35,6 @@ const VT340: [(u32, u32, u32); 16] = [
 /// The image `data` draws. `None` for one that draws nothing, or one past
 /// [`MAX_SIDE`] or [`MAX_BYTES`].
 pub fn decode(data: &[u8]) -> Option<Rgba> {
-    // Measured first, so the buffer is allocated once.
     let mut width = 0u32;
     let mut height = 0u32;
     let raster = walk(data, |x, y, _| {

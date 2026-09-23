@@ -877,9 +877,8 @@ pub(crate) fn decode(bytes: &[u8]) -> Vec<u8> {
 /// An image the client sent, still in the bytes it sent until it becomes an
 /// animation.
 ///
-/// Decoding a still image is the view's. The first frame command decodes one
-/// here, into [`Format::Rgba`], because frames are drawn over each other's
-/// pixels as they arrive.
+/// The first frame command on an image decodes it here, into
+/// [`Format::Rgba`]. A still image is decoded by the view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
     pub format: Format,
