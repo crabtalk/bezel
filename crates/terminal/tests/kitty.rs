@@ -1348,3 +1348,152 @@ fn a_virtual_placement_keeps_its_image_from_being_freed() {
     emulator.feed(&apc("a=d,d=C"));
     assert!(emulator.graphics().get(42).is_some());
 }
+
+// ---------------------------------------------------------------------------
+// Named mediums
+// ---------------------------------------------------------------------------
+
+/// A file under the temp directory holding `bytes`, named so no two tests
+/// share one.
+fn temp_file(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("bezel-{}-{tag}", std::process::id()));
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+fn local_emulator() -> Emulator {
+    let mut emulator = Emulator::new(20, 5);
+    emulator.set_local_media(true);
+    emulator
+}
+
+fn named(keys: &str, name: &str) -> Vec<u8> {
+    apc(&format!("{keys};{}", base64(name.as_bytes())))
+}
+
+const UNREADABLE: &[u8] = b"\x1b_Gi=1;EBADF:Failed to read image file\x1b\\";
+
+#[test]
+fn a_named_medium_is_refused_until_the_host_allows_it() {
+    let path = temp_file("refused", &pixel());
+    let mut emulator = Emulator::new(20, 5);
+    let reply = emulator.feed(&named("a=t,f=32,s=1,v=1,t=f,i=1", path.to_str().unwrap()));
+    assert_eq!(reply, b"\x1b_Gi=1;ENOTSUPPORTED:medium\x1b\\");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn a_file_is_read_and_left_where_it_was() {
+    let path = temp_file("file", &pixel());
+    let mut emulator = local_emulator();
+    let reply = emulator.feed(&named("a=t,f=32,s=1,v=1,t=f,i=1", path.to_str().unwrap()));
+    assert_eq!(reply, b"\x1b_Gi=1;OK\x1b\\");
+    assert_eq!(
+        emulator.graphics().get(1).map(|image| &image.bytes),
+        Some(&pixel())
+    );
+    assert!(path.exists());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn an_offset_and_size_read_part_of_a_file() {
+    let mut bytes = vec![9u8; 3];
+    bytes.extend(pixel());
+    bytes.extend([9u8; 5]);
+    let path = temp_file("span", &bytes);
+    let mut emulator = local_emulator();
+    emulator.feed(&named(
+        "a=t,f=32,s=1,v=1,t=f,O=3,S=4,i=1",
+        path.to_str().unwrap(),
+    ));
+    assert_eq!(
+        emulator.graphics().get(1).map(|image| &image.bytes),
+        Some(&pixel())
+    );
+
+    // A size past the end of the file is a short read.
+    let reply = emulator.feed(&named(
+        "a=t,f=32,s=1,v=1,t=f,O=10,S=4,i=1",
+        path.to_str().unwrap(),
+    ));
+    assert_eq!(reply, UNREADABLE);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn a_temporary_file_is_deleted_only_when_it_says_it_may_be() {
+    let marked = temp_file("tty-graphics-protocol-a", &pixel());
+    let mut emulator = local_emulator();
+    emulator.feed(&named("a=t,f=32,s=1,v=1,t=t,i=1", marked.to_str().unwrap()));
+    assert!(emulator.graphics().get(1).is_some());
+    assert!(
+        !marked.exists(),
+        "a marked temporary file outlived its read"
+    );
+
+    let unmarked = temp_file("unmarked", &pixel());
+    emulator.feed(&named(
+        "a=t,f=32,s=1,v=1,t=t,i=2",
+        unmarked.to_str().unwrap(),
+    ));
+    assert!(emulator.graphics().get(2).is_some());
+    assert!(unmarked.exists(), "a file without the marker was deleted");
+    std::fs::remove_file(unmarked).unwrap();
+}
+
+#[test]
+fn every_unreadable_name_gets_the_same_answer() {
+    let mut emulator = local_emulator();
+    let dir = std::env::temp_dir();
+    for name in [
+        "/nonexistent/bezel/image",
+        dir.to_str().unwrap(),
+        "/dev/null",
+        "relative/path",
+    ] {
+        let reply = emulator.feed(&named("a=t,f=32,s=1,v=1,t=f,i=1", name));
+        assert_eq!(reply, UNREADABLE, "{name}");
+    }
+    assert!(emulator.graphics().is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_shared_memory_object_is_read_and_unlinked() {
+    use std::ffi::CString;
+
+    let name = format!("/bezel-{}", std::process::id());
+    let c_name = CString::new(name.clone()).unwrap();
+    let bytes = pixel();
+    // SAFETY: plain libc calls on a name this test owns.
+    unsafe {
+        let fd = libc::shm_open(c_name.as_ptr(), libc::O_CREAT | libc::O_RDWR, 0o600);
+        assert!(fd >= 0, "shm_open failed");
+        assert_eq!(libc::ftruncate(fd, bytes.len() as libc::off_t), 0);
+        let map = libc::mmap(
+            std::ptr::null_mut(),
+            bytes.len(),
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_SHARED,
+            fd,
+            0,
+        );
+        assert_ne!(map, libc::MAP_FAILED);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), map as *mut u8, bytes.len());
+        libc::munmap(map, bytes.len());
+        libc::close(fd);
+    }
+
+    let mut emulator = local_emulator();
+    // macOS rounds the object up to a page, so the size says where it ends.
+    let reply = emulator.feed(&named("a=t,f=32,s=1,v=1,t=s,S=4,i=1", &name));
+    assert_eq!(reply, b"\x1b_Gi=1;OK\x1b\\");
+    assert_eq!(
+        emulator.graphics().get(1).map(|image| &image.bytes),
+        Some(&bytes)
+    );
+    // SAFETY: as above.
+    let reopened = unsafe { libc::shm_open(c_name.as_ptr(), libc::O_RDONLY, 0) };
+    assert!(reopened < 0, "the object was not unlinked");
+}

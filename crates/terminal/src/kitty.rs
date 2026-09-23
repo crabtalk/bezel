@@ -367,9 +367,14 @@ pub struct Command {
     /// `d`: what a delete is aimed at; an uppercase letter also frees the
     /// data of the images left with no placement.
     pub delete: char,
-    /// `t`: where the bytes are. Only `d` — inline — is read; a file or
-    /// shared-memory transfer is a path this does not open.
+    /// `t`: where the bytes are. `d` carries them inline; `f`, `t` and `s`
+    /// name a file, a temporary file or a shared memory object, read only
+    /// once [`Store::set_local_media`] allows it.
     pub medium: char,
+    /// `O`, `S`: where in a named medium the bytes start, and how many to
+    /// read. A size of zero reads to the end.
+    pub read_offset: u32,
+    pub read_size: u32,
     /// `o`: payload compression, `None` when there is none. Only `z`, zlib,
     /// is carried out.
     pub compression: Option<char>,
@@ -401,6 +406,8 @@ impl Default for Command {
             quiet: 0,
             delete: 'a',
             medium: 'd',
+            read_offset: 0,
+            read_size: 0,
             compression: None,
             payload: Vec::new(),
         }
@@ -481,6 +488,8 @@ impl Command {
                 b'q' => command.quiet = number().unwrap_or(0).min(u8::MAX as u32) as u8,
                 b'd' => command.delete = letter().unwrap_or('a'),
                 b't' => command.medium = letter().unwrap_or('d'),
+                b'O' => command.read_offset = number().unwrap_or(0),
+                b'S' => command.read_size = number().unwrap_or(0),
                 b'o' => command.compression = letter(),
                 _ => {}
             }
@@ -663,6 +672,8 @@ pub struct Store {
     next_id: u32,
     /// Image numbers to the id of the newest image transmitted under each.
     numbers: HashMap<u32, u32>,
+    /// Whether `t=f`, `t=t` and `t=s` are read.
+    local_media: bool,
 }
 
 impl Store {
@@ -680,6 +691,13 @@ impl Store {
 
     pub fn is_empty(&self) -> bool {
         self.images.is_empty()
+    }
+
+    /// Read the files and shared memory objects a transmission names. Off
+    /// until a host turns it on. The paths are resolved on this machine,
+    /// whichever machine the program sending them runs on.
+    pub fn set_local_media(&mut self, allow: bool) {
+        self.local_media = allow;
     }
 
     /// Free one image's data.
@@ -773,9 +791,15 @@ impl Store {
                 self.reply(&command, id, Some("ENOTSUPPORTED:compression")),
             );
         }
-        if command.medium != 'd' {
+        let refused = match command.medium {
+            'd' => None,
+            'f' | 't' | 's' if self.local_media => None,
+            'f' | 't' | 's' => Some("ENOTSUPPORTED:medium"),
+            _ => Some("EINVAL:medium"),
+        };
+        if let Some(refused) = refused {
             self.pending = None;
-            return (None, self.reply(&command, id, Some("ENOTSUPPORTED:medium")));
+            return (None, self.reply(&command, id, Some(refused)));
         }
         // An id of its own for a client that sent none, so everything in the
         // store can be named — by a delete, or by the placement this becomes.
@@ -840,6 +864,21 @@ impl Store {
 
         if held.payload.is_empty() {
             return (None, self.reply(&command, id, Some("EINVAL:empty")));
+        }
+        if held.medium != 'd' {
+            let span = crate::media::Span {
+                offset: held.read_offset as u64,
+                len: held.read_size as u64,
+            };
+            held.payload = match crate::media::read(held.medium, &held.payload, span, MAX_IMAGE) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    return (
+                        None,
+                        self.reply(&command, id, Some("EBADF:Failed to read image file")),
+                    );
+                }
+            };
         }
         // The chunks are one zlib stream between them, so it is inflated
         // whole, and held to the same ceiling as an uncompressed payload.

@@ -2,8 +2,9 @@
 //! `Processor` wrapped as a pure state machine.
 //!
 //! Bytes in ([`Emulator::feed`]), grid snapshots out ([`Emulator::line`],
-//! [`Emulator::cursor`]). No I/O, no timers, no gpui: the host owns the PTY and
-//! scheduling, the view owns paint. That split makes the whole escape-sequence
+//! [`Emulator::cursor`]). No timers, no gpui, and no I/O but the graphics
+//! files [`Emulator::set_local_media`] lets a program name: the host owns the
+//! PTY and scheduling, the view owns paint. That split makes the whole escape-sequence
 //! surface unit-testable with scripted byte strings.
 //!
 //! Selection lives here too ([`Emulator::start_selection`] and friends) rather
@@ -497,6 +498,11 @@ impl Emulator {
     /// The images the client has sent, by id.
     pub fn graphics(&self) -> &kitty::Store {
         &self.graphics
+    }
+
+    /// See [`kitty::Store::set_local_media`].
+    pub fn set_local_media(&mut self, allow: bool) {
+        self.graphics.set_local_media(allow);
     }
 
     /// Put an image on the grid at the cursor, and move the cursor past it

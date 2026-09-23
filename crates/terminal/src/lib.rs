@@ -6,5 +6,6 @@
 
 pub mod emulator;
 pub mod kitty;
+mod media;
 pub mod placeholder;
 pub mod view;

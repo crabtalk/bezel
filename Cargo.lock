@@ -980,6 +980,7 @@ dependencies = [
  "bezel-gpui",
  "bezel-theme",
  "image",
+ "libc",
  "miniz_oxide",
 ]
 
