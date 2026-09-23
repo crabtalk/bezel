@@ -260,7 +260,7 @@ fn only_the_last_chunk_is_answered() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn delete_takes_one_id_or_all_of_them() {
+fn an_upper_case_delete_frees_one_id_or_all_of_them() {
     let mut emulator = Emulator::new(20, 5);
     for id in 1..=3 {
         emulator.feed(&apc(&format!(
@@ -270,12 +270,36 @@ fn delete_takes_one_id_or_all_of_them() {
     }
     assert_eq!(emulator.graphics().len(), 3);
 
-    emulator.feed(&apc("a=d,d=i,i=2"));
+    emulator.feed(&apc("a=d,d=I,i=2"));
     assert_eq!(emulator.graphics().len(), 2);
     assert!(emulator.graphics().get(2).is_none());
 
-    emulator.feed(&apc("a=d,d=a"));
+    emulator.feed(&apc("a=d,d=A"));
     assert!(emulator.graphics().is_empty());
+}
+
+#[test]
+fn a_lower_case_delete_keeps_the_data() {
+    let mut emulator = placed_emulator(20, 5);
+    emulator.feed(&display_keys(1, 10, 20, ",C=1"));
+    emulator.feed(&apc("a=d,d=i,i=1"));
+    assert!(emulator.placements().is_empty());
+    assert!(emulator.graphics().get(1).is_some());
+
+    emulator.feed(&apc("a=p,i=1,C=1"));
+    assert_eq!(emulator.placements().len(), 1);
+    emulator.feed(&apc("a=d,d=a"));
+    assert!(emulator.placements().is_empty());
+    assert!(emulator.graphics().get(1).is_some());
+}
+
+#[test]
+fn an_animation_delete_is_refused() {
+    let mut emulator = Emulator::new(20, 5);
+    assert_eq!(
+        emulator.feed(&apc("a=d,d=f,i=1")),
+        b"\x1b_Gi=1;ENOTSUPPORTED:delete\x1b\\"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -801,4 +825,211 @@ fn two_images_side_by_side_keep_their_own_edges() {
     assert_eq!(placements.len(), 2, "{placements:?}");
     assert_eq!((placements[0].image, placements[0].col), (1, 0));
     assert_eq!((placements[1].image, placements[1].col), (2, 6));
+}
+
+// ---------------------------------------------------------------------------
+// Placements by id
+// ---------------------------------------------------------------------------
+
+/// `a=t` for an RGBA image of `width` by `height` pixels, placed nowhere.
+fn transmit(id: u32, width: u32, height: u32) -> Vec<u8> {
+    let pixels = vec![0xffu8; (width * height * 4) as usize];
+    apc(&format!(
+        "a=t,f=32,s={width},v={height},i={id};{}",
+        base64(&pixels)
+    ))
+}
+
+fn at(emulator: &Emulator) -> Vec<(u32, usize, usize)> {
+    let mut out: Vec<_> = emulator
+        .placements()
+        .iter()
+        .map(|p| (p.image, p.row, p.col))
+        .collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn a_stored_image_is_placed_at_the_cursor() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&transmit(1, 30, 40));
+    assert!(emulator.placements().is_empty());
+
+    emulator.feed(b"\x1b[3;5H");
+    let reply = emulator.feed(&apc("a=p,i=1,p=7"));
+    assert_eq!(reply, b"\x1b_Gi=1,p=7;OK\x1b\\");
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 1, "{placements:?}");
+    assert_eq!((placements[0].row, placements[0].col), (2, 4));
+    assert_eq!((placements[0].cols, placements[0].rows), (3, 2));
+    // `C` is the placement's, as it is on `a=T`.
+    assert_eq!(emulator.cursor().map(|c| c.row), Some(4));
+}
+
+#[test]
+fn placing_an_image_nobody_sent_is_refused() {
+    let mut emulator = placed_emulator(20, 10);
+    assert_eq!(
+        emulator.feed(&apc("a=p,i=4")),
+        b"\x1b_Gi=4;ENOENT:image\x1b\\"
+    );
+    assert!(emulator.placements().is_empty());
+}
+
+#[test]
+fn one_image_holds_a_placement_per_placement_id() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&transmit(1, 10, 20));
+    emulator.feed(&apc("a=p,i=1,p=1,C=1"));
+    emulator.feed(b"\x1b[1;5H");
+    emulator.feed(&apc("a=p,i=1,p=2,C=1"));
+    assert_eq!(at(&emulator), vec![(1, 0, 0), (1, 0, 4)]);
+
+    // The same pair again moves that placement rather than adding one.
+    emulator.feed(b"\x1b[4;9H");
+    emulator.feed(&apc("a=p,i=1,p=1,C=1"));
+    assert_eq!(at(&emulator), vec![(1, 0, 4), (1, 3, 8)]);
+}
+
+#[test]
+fn a_display_carries_its_placement_id() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 10, 20, ",p=3,C=1"));
+    emulator.feed(b"\x1b[1;5H");
+    emulator.feed(&apc("a=p,i=1,p=4,C=1"));
+    emulator.feed(&apc("a=d,d=i,i=1,p=3"));
+    assert_eq!(at(&emulator), vec![(1, 0, 4)]);
+}
+
+#[test]
+fn a_delete_by_placement_id_takes_that_one_alone() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&transmit(1, 10, 20));
+    emulator.feed(&apc("a=p,i=1,p=1,C=1"));
+    emulator.feed(b"\x1b[1;5H");
+    emulator.feed(&apc("a=p,i=1,p=2,C=1"));
+
+    emulator.feed(&apc("a=d,d=I,i=1,p=1"));
+    assert_eq!(at(&emulator), vec![(1, 0, 4)]);
+    assert!(
+        emulator.graphics().get(1).is_some(),
+        "freed while a placement still shows it"
+    );
+    emulator.feed(&apc("a=d,d=I,i=1,p=2"));
+    assert!(emulator.placements().is_empty());
+    assert!(emulator.graphics().get(1).is_none());
+}
+
+/// Three 2x1 images on row 0 at columns 0, 4 and 8, the last at `z=5`.
+fn row_of_three() -> Emulator {
+    let mut emulator = placed_emulator(20, 10);
+    for (id, col) in [(1, 1), (2, 5), (3, 9)] {
+        emulator.feed(&transmit(id, 20, 20));
+        emulator.feed(format!("\x1b[1;{col}H").as_bytes());
+        let z = if id == 3 { ",z=5" } else { "" };
+        emulator.feed(&apc(&format!("a=p,i={id},C=1{z}")));
+    }
+    emulator
+}
+
+#[test]
+fn deletes_by_position_take_what_covers_it() {
+    let mut emulator = row_of_three();
+    emulator.feed(b"\x1b[1;2H");
+    emulator.feed(&apc("a=d,d=c"));
+    assert_eq!(at(&emulator), vec![(2, 0, 4), (3, 0, 8)]);
+
+    let mut emulator = row_of_three();
+    emulator.feed(&apc("a=d,d=p,x=6,y=1"));
+    assert_eq!(at(&emulator), vec![(1, 0, 0), (3, 0, 8)]);
+
+    let mut emulator = row_of_three();
+    emulator.feed(&apc("a=d,d=q,x=10,y=1,z=4"));
+    assert_eq!(at(&emulator).len(), 3, "a z the placement lacks matched");
+    emulator.feed(&apc("a=d,d=q,x=10,y=1,z=5"));
+    assert_eq!(at(&emulator), vec![(1, 0, 0), (2, 0, 4)]);
+
+    let mut emulator = row_of_three();
+    emulator.feed(&apc("a=d,d=x,x=2"));
+    assert_eq!(at(&emulator), vec![(2, 0, 4), (3, 0, 8)]);
+
+    let mut emulator = row_of_three();
+    emulator.feed(&apc("a=d,d=y,y=2"));
+    assert_eq!(at(&emulator).len(), 3, "row 2 holds nothing");
+    emulator.feed(&apc("a=d,d=y,y=1"));
+    assert!(emulator.placements().is_empty());
+}
+
+#[test]
+fn deletes_by_z_and_by_id_range() {
+    let mut emulator = row_of_three();
+    emulator.feed(&apc("a=d,d=z,z=5"));
+    assert_eq!(at(&emulator), vec![(1, 0, 0), (2, 0, 4)]);
+
+    let mut emulator = row_of_three();
+    emulator.feed(&apc("a=d,d=R,x=2,y=3"));
+    assert_eq!(at(&emulator), vec![(1, 0, 0)]);
+    assert!(emulator.graphics().get(1).is_some());
+    assert!(emulator.graphics().get(2).is_none());
+    assert!(emulator.graphics().get(3).is_none());
+}
+
+#[test]
+fn a_position_delete_frees_only_what_it_left_unplaced() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&transmit(1, 10, 20));
+    emulator.feed(&apc("a=p,i=1,p=1,C=1"));
+    emulator.feed(b"\x1b[1;5H");
+    emulator.feed(&apc("a=p,i=1,p=2,C=1"));
+
+    emulator.feed(&apc("a=d,d=X,x=1"));
+    assert!(emulator.graphics().get(1).is_some());
+    emulator.feed(&apc("a=d,d=X,x=5"));
+    assert!(emulator.graphics().get(1).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Image numbers
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_transmission_by_number_is_answered_with_the_id_it_got() {
+    let mut emulator = placed_emulator(20, 10);
+    let reply = emulator.feed(&apc(&format!("a=t,f=32,s=1,v=1,I=13;{}", base64(&pixel()))));
+    let reply = String::from_utf8(reply).unwrap();
+    let id: u32 = reply
+        .strip_prefix("\x1b_Gi=")
+        .and_then(|rest| rest.strip_suffix(",I=13;OK\x1b\\"))
+        .and_then(|id| id.parse().ok())
+        .unwrap_or_else(|| panic!("{reply:?}"));
+    assert!(emulator.graphics().get(id).is_some());
+
+    emulator.feed(&apc("a=p,I=13,C=1"));
+    assert_eq!(emulator.placements().first().map(|p| p.image), Some(id));
+
+    emulator.feed(&apc("a=d,d=N,I=13"));
+    assert!(emulator.placements().is_empty());
+    assert!(emulator.graphics().get(id).is_none());
+}
+
+#[test]
+fn a_number_names_the_newest_image_sent_under_it() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&apc(&format!("a=t,f=32,s=1,v=1,I=2;{}", base64(&pixel()))));
+    emulator.feed(&apc(&format!("a=t,f=32,s=1,v=1,I=2;{}", base64(&pixel()))));
+    assert_eq!(emulator.graphics().len(), 2);
+    emulator.feed(&apc("a=d,d=N,I=2"));
+    assert_eq!(emulator.graphics().len(), 1);
+}
+
+#[test]
+fn an_id_and_a_number_together_are_refused() {
+    let mut emulator = placed_emulator(20, 10);
+    let reply = emulator.feed(&apc(&format!(
+        "a=t,f=32,s=1,v=1,i=1,I=2;{}",
+        base64(&pixel())
+    )));
+    assert_eq!(reply, b"\x1b_Gi=1,I=2;EINVAL:i and I\x1b\\");
+    assert!(emulator.graphics().is_empty());
 }

@@ -12,8 +12,9 @@
 //! arrives is the state the preceding text left behind.
 //!
 //! What lands here is the transmission half of the protocol — the bytes of an
-//! image, assembled and stored under its id. Where an image goes on the grid
-//! is the emulator's, and painting it is the view's.
+//! image, assembled and stored under its id. Placements — where an image goes
+//! on the grid, and which of them a delete takes off it — are the emulator's,
+//! and painting is the view's.
 
 use std::collections::HashMap;
 
@@ -288,10 +289,13 @@ pub enum Action {
     Display,
     /// `a=q`: answer whether this would have worked, storing nothing.
     Query,
-    /// `a=d`: take images off the screen, and their data with them.
+    /// `a=p`: put an image already held on the screen at the cursor.
+    Place,
+    /// `a=d`: take placements off the screen, and with an upper-case `d`
+    /// their images' data too.
     Delete,
-    /// `a=p`, `a=f`, `a=c`, `a=a`: parsed so the run is still consumed rather
-    /// than printed, and answered as unsupported.
+    /// `a=f`, `a=c`, `a=a`: parsed so the run is still consumed rather than
+    /// printed, and answered as unsupported.
     Other(char),
 }
 
@@ -325,6 +329,11 @@ pub struct Command {
     /// `i`: the id the client filed the image under. Zero means unset, which
     /// is how kitty spells "the terminal picks one".
     pub id: u32,
+    /// `I`: an image number, which names the newest image transmitted under
+    /// it. Zero is unset. A command carrying both `i` and `I` is refused.
+    pub number: u32,
+    /// `p`: the placement id. Zero is unset.
+    pub placement: u32,
     /// `m=1`: more chunks follow.
     pub more: bool,
     /// `s`, `v`: the pixel dimensions a raw payload cannot state for itself.
@@ -334,12 +343,18 @@ pub struct Command {
     /// unset, which leaves the extent to the image's own pixels.
     pub columns: u32,
     pub rows: u32,
+    /// `x`, `y`: the cell a delete by position names, 1-based, or the id
+    /// range of `d=r`.
+    pub x: u32,
+    pub y: u32,
+    /// `z`: the placement's z-index.
+    pub z: i32,
     /// `C`: whether the cursor moves past the image.
     pub cursor_movement: CursorMovement,
     /// `q`: 1 suppresses success replies, 2 suppresses failures too.
     pub quiet: u8,
-    /// `d`: what a delete is aimed at. `a`/`A` for everything, `i`/`I` for one
-    /// id; an uppercase letter also frees the data.
+    /// `d`: what a delete is aimed at; an uppercase letter also frees the
+    /// data of the images left with no placement.
     pub delete: char,
     /// `t`: where the bytes are. Only `d` — inline — is read; a file or
     /// shared-memory transfer is a path this does not open.
@@ -355,11 +370,16 @@ impl Default for Command {
             action: Action::Transmit,
             format: Format::Rgba,
             id: 0,
+            number: 0,
+            placement: 0,
             more: false,
             width: 0,
             height: 0,
             columns: 0,
             rows: 0,
+            x: 0,
+            y: 0,
+            z: 0,
             cursor_movement: CursorMovement::After,
             quiet: 0,
             delete: 'a',
@@ -400,6 +420,7 @@ impl Command {
                         Some('t') => Action::Transmit,
                         Some('T') => Action::Display,
                         Some('q') => Action::Query,
+                        Some('p') => Action::Place,
                         Some('d') => Action::Delete,
                         Some(other) => Action::Other(other),
                         None => continue,
@@ -414,6 +435,16 @@ impl Command {
                     }
                 }
                 b'i' => command.id = number().unwrap_or(0),
+                b'I' => command.number = number().unwrap_or(0),
+                b'p' => command.placement = number().unwrap_or(0),
+                b'x' => command.x = number().unwrap_or(0),
+                b'y' => command.y = number().unwrap_or(0),
+                b'z' => {
+                    command.z = std::str::from_utf8(value)
+                        .ok()
+                        .and_then(|value| value.parse::<i32>().ok())
+                        .unwrap_or(0)
+                }
                 b'm' => command.more = number() == Some(1),
                 b's' => command.width = number().unwrap_or(0),
                 b'v' => command.height = number().unwrap_or(0),
@@ -490,27 +521,79 @@ pub struct Image {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Display {
     pub image: u32,
+    /// `p`, zero when unset.
+    pub placement: u32,
     /// `c`, `r`, zero when unset.
     pub columns: u32,
     pub rows: u32,
+    pub z: i32,
     pub cursor_movement: CursorMovement,
+}
+
+/// A delete, which names placements, and placements are the emulator's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Delete {
+    pub target: Target,
+    /// An upper-case `d`: the images whose placements this removes lose their
+    /// data too, once no placement of theirs is left.
+    pub free: bool,
+}
+
+/// Which placements a [`Delete`] removes. Cells are 0-based screen
+/// coordinates, already converted from the protocol's 1-based ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// `d=a`: every placement on the screen.
+    All,
+    /// `d=i`, `d=n`: an image's placements, or the one with this placement
+    /// id when it is not zero.
+    Image { id: u32, placement: u32 },
+    /// `d=c`: the placements covering the cursor's cell.
+    Cursor,
+    /// `d=p`, and `d=q` when `z` is set: the placements covering a cell.
+    Cell { col: u32, row: u32, z: Option<i32> },
+    /// `d=x`: the placements crossing a column.
+    Column(u32),
+    /// `d=y`: the placements crossing a row.
+    Row(u32),
+    /// `d=z`: the placements with this z-index.
+    Z(i32),
+    /// `d=r`: the placements of every image id in the range, inclusive.
+    Range(u32, u32),
+}
+
+/// What the emulator has to carry out after the store has done its part.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Effect {
+    Display(Display),
+    Delete(Delete),
 }
 
 /// What a command asks the terminal to say back, if anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Reply {
-    Ok(u32),
-    Error(u32, &'static str),
+pub struct Reply {
+    pub id: u32,
+    /// The `I` the command carried, echoed so a client that transmitted by
+    /// number can match the answer. Zero when it carried none.
+    pub number: u32,
+    /// The `p` the command carried. Zero when it carried none.
+    pub placement: u32,
+    /// `None` is `OK`.
+    pub error: Option<&'static str>,
 }
 
 impl Reply {
     /// The bytes of the reply, as an APC of its own.
     pub fn bytes(&self) -> Vec<u8> {
-        let (id, body) = match self {
-            Reply::Ok(id) => (id, "OK".to_string()),
-            Reply::Error(id, message) => (id, (*message).to_string()),
-        };
-        format!("\x1b_Gi={id};{body}\x1b\\").into_bytes()
+        let mut keys = format!("i={}", self.id);
+        if self.number != 0 {
+            keys.push_str(&format!(",I={}", self.number));
+        }
+        if self.placement != 0 {
+            keys.push_str(&format!(",p={}", self.placement));
+        }
+        let body = self.error.unwrap_or("OK");
+        format!("\x1b_G{keys};{body}\x1b\\").into_bytes()
     }
 }
 
@@ -525,6 +608,8 @@ pub struct Store {
     /// before the first ends.
     pending: Option<(u32, Command)>,
     next_id: u32,
+    /// Image numbers to the id of the newest image transmitted under each.
+    numbers: HashMap<u32, u32>,
 }
 
 impl Store {
@@ -544,42 +629,94 @@ impl Store {
         self.images.is_empty()
     }
 
+    /// Free one image's data.
+    pub(crate) fn remove(&mut self, id: u32) {
+        self.images.remove(&id);
+        self.order.retain(|held| *held != id);
+        self.numbers.retain(|_, held| *held != id);
+    }
+
+    /// Free every image's data.
+    pub(crate) fn clear(&mut self) {
+        self.images.clear();
+        self.order.clear();
+        self.numbers.clear();
+    }
+
     /// Carry out one command. The reply is what the client asked to hear:
     /// `None` when it asked for silence, and always `None` for a chunk that is
     /// not the last — an answer per chunk would be an answer per 4096 bytes.
     ///
-    /// Answers with the [`Display`] an `a=T` resolved to, which is what the
-    /// emulator turns into a placement.
-    pub fn apply(&mut self, command: Command) -> (Option<Display>, Option<Reply>) {
-        let id = match command.id {
-            0 => self.pending.as_ref().map_or(0, |(id, _)| *id),
-            id => id,
+    /// Answers with the [`Effect`] the emulator carries out: the placement an
+    /// `a=T` or `a=p` resolved to, or the placements a delete names.
+    pub fn apply(&mut self, command: Command) -> (Option<Effect>, Option<Reply>) {
+        if command.id != 0 && command.number != 0 {
+            return (
+                None,
+                self.reply(&command, command.id, Some("EINVAL:i and I")),
+            );
+        }
+        let id = match (command.id, command.number) {
+            (0, 0) => self.pending.as_ref().map_or(0, |(id, _)| *id),
+            // A transmission by number files a new image; anything else names
+            // the newest one filed under it.
+            (0, _) if matches!(command.action, Action::Transmit | Action::Display) => 0,
+            (0, number) => self.numbers.get(&number).copied().unwrap_or(0),
+            (id, _) => id,
         };
         match command.action {
             Action::Query => (None, self.reply(&command, id, None)),
-            Action::Delete => {
-                match command.delete {
-                    'a' | 'A' => {
-                        self.images.clear();
-                        self.order.clear();
-                    }
-                    'i' | 'I' => {
-                        self.images.remove(&id);
-                        self.order.retain(|held| *held != id);
-                    }
-                    // Deleting by position, by cursor or by z-index: what
-                    // those name is a placement, and placements are the
-                    // emulator's.
-                    _ => {}
+            Action::Place => {
+                if !self.images.contains_key(&id) {
+                    return (None, self.reply(&command, id, Some("ENOENT:image")));
                 }
-                (None, self.reply(&command, id, None))
+                let display = Display {
+                    image: id,
+                    placement: command.placement,
+                    columns: command.columns,
+                    rows: command.rows,
+                    z: command.z,
+                    cursor_movement: command.cursor_movement,
+                };
+                (
+                    Some(Effect::Display(display)),
+                    self.reply(&command, id, None),
+                )
+            }
+            Action::Delete => {
+                let target = match command.delete.to_ascii_lowercase() {
+                    'a' => Target::All,
+                    'i' | 'n' => Target::Image {
+                        id,
+                        placement: command.placement,
+                    },
+                    'c' => Target::Cursor,
+                    'p' | 'q' => Target::Cell {
+                        col: command.x.saturating_sub(1),
+                        row: command.y.saturating_sub(1),
+                        z: (command.delete.eq_ignore_ascii_case(&'q')).then_some(command.z),
+                    },
+                    'x' => Target::Column(command.x.saturating_sub(1)),
+                    'y' => Target::Row(command.y.saturating_sub(1)),
+                    'z' => Target::Z(command.z),
+                    'r' => Target::Range(command.x, command.y),
+                    'f' => {
+                        return (None, self.reply(&command, id, Some("ENOTSUPPORTED:delete")));
+                    }
+                    _ => return (None, self.reply(&command, id, Some("EINVAL:delete"))),
+                };
+                let delete = Delete {
+                    target,
+                    free: command.delete.is_ascii_uppercase(),
+                };
+                (Some(Effect::Delete(delete)), self.reply(&command, id, None))
             }
             Action::Other(_) => (None, self.reply(&command, id, Some("ENOTSUPPORTED:action"))),
             Action::Transmit | Action::Display => self.transmit(command, id),
         }
     }
 
-    fn transmit(&mut self, command: Command, id: u32) -> (Option<Display>, Option<Reply>) {
+    fn transmit(&mut self, command: Command, id: u32) -> (Option<Effect>, Option<Reply>) {
         if command.compressed {
             self.pending = None;
             return (
@@ -629,6 +766,11 @@ impl Store {
         }
         held.columns = held.columns.max(command.columns);
         held.rows = held.rows.max(command.rows);
+        held.placement = held.placement.max(command.placement);
+        held.number = held.number.max(command.number);
+        if command.z != 0 {
+            held.z = command.z;
+        }
         if command.cursor_movement == CursorMovement::None {
             held.cursor_movement = CursorMovement::None;
         }
@@ -636,6 +778,9 @@ impl Store {
             self.pending = Some((id, held));
             return (None, None);
         }
+        // The closing chunk carries none of the keys a reply echoes.
+        command.number = held.number;
+        command.placement = held.placement;
 
         if held.payload.is_empty() {
             return (None, self.reply(&command, id, Some("EINVAL:empty")));
@@ -650,12 +795,17 @@ impl Store {
             return (None, self.reply(&command, id, Some("EINVAL:dimensions")));
         }
         self.insert(id, image);
-        let landed = (held.action == Action::Display).then_some(Display {
+        if held.number != 0 {
+            self.numbers.insert(held.number, id);
+        }
+        let landed = (held.action == Action::Display).then_some(Effect::Display(Display {
             image: id,
+            placement: held.placement,
             columns: held.columns,
             rows: held.rows,
+            z: held.z,
             cursor_movement: held.cursor_movement,
-        });
+        }));
         (landed, self.reply(&command, id, None))
     }
 
@@ -664,8 +814,8 @@ impl Store {
             self.order.push(id);
         }
         while self.order.len() > MAX_IMAGES {
-            let oldest = self.order.remove(0);
-            self.images.remove(&oldest);
+            let oldest = self.order[0];
+            self.remove(oldest);
         }
     }
 
@@ -673,10 +823,16 @@ impl Store {
     /// transmission with no id to name is not answered either: kitty's reply
     /// grammar has nowhere to put the answer.
     fn reply(&self, command: &Command, id: u32, error: Option<&'static str>) -> Option<Reply> {
+        let reply = Reply {
+            id,
+            number: command.number,
+            placement: command.placement,
+            error,
+        };
         match error {
-            Some(error) if command.quiet < 2 => Some(Reply::Error(id, error)),
+            Some(_) if command.quiet < 2 => Some(reply),
             Some(_) => None,
-            None if command.quiet < 1 && id != 0 => Some(Reply::Ok(id)),
+            None if command.quiet < 1 && id != 0 => Some(reply),
             None => None,
         }
     }

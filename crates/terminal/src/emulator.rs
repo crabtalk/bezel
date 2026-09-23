@@ -189,8 +189,11 @@ const ANCHOR_COLUMN_MAX: u32 = 256;
 #[derive(Debug, Clone, Copy)]
 struct Placed {
     image: u32,
+    /// The client's placement id, zero when it named none.
+    placement: u32,
     cols: u16,
     rows: u16,
+    z: i32,
 }
 
 /// Cursor position in viewport coordinates (row 0 = top of the visible grid).
@@ -393,12 +396,14 @@ impl Emulator {
                     self.drain_events(&mut responses);
                 }
                 Segment::Graphics(command) => {
-                    let (landed, reply) = self.graphics.apply(command);
+                    let (effect, reply) = self.graphics.apply(command);
                     if let Some(reply) = reply {
                         responses.extend(reply.bytes());
                     }
-                    if let Some(display) = landed {
-                        self.place(display);
+                    match effect {
+                        Some(kitty::Effect::Display(display)) => self.place(display),
+                        Some(kitty::Effect::Delete(delete)) => self.delete(delete),
+                        None => {}
                     }
                 }
                 Segment::Sync(true) => self.hold(),
@@ -459,9 +464,9 @@ impl Emulator {
     /// anchors into history at the same moment its text would have gone.
     /// `C=1` reserves nothing, so the image covers whatever is drawn under it.
     ///
-    /// Displaying an image takes its earlier placements off the grid. A
-    /// program redrawing a frame sends the same image every frame, and each
-    /// one would otherwise be a placement of its own.
+    /// A placement replaces the one the image already has under the same
+    /// placement id, zero included: an image placed with no `p` has at most
+    /// one placement.
     fn place(&mut self, display: kitty::Display) {
         let image = display.image;
         let Some((cell_w, cell_h)) = self.cell else {
@@ -483,7 +488,8 @@ impl Emulator {
         }
         .clamp(1, self.rows()) as u16;
 
-        self.placed.retain(|_, placed| placed.image != image);
+        self.placed
+            .retain(|_, placed| placed.image != image || placed.placement != display.placement);
         let anchor = self.next_anchor % ANCHOR_MAX;
         self.next_anchor = anchor.wrapping_add(1);
         // The id is reused once the ring wraps, so whatever wore it last stops
@@ -512,7 +518,16 @@ impl Emulator {
                 }
             }
         }
-        self.placed.insert(anchor, Placed { image, cols, rows });
+        self.placed.insert(
+            anchor,
+            Placed {
+                image,
+                placement: display.placement,
+                cols,
+                rows,
+                z: display.z,
+            },
+        );
         if display.cursor_movement == kitty::CursorMovement::After {
             for _ in 0..rows {
                 self.parser.advance(&mut self.term, b"\n");
@@ -535,8 +550,16 @@ impl Emulator {
     }
 
     fn live_placements(&self) -> Vec<Placement> {
+        self.scan(self.display_offset() as i32)
+            .into_iter()
+            .map(|(_, placement)| placement)
+            .collect()
+    }
+
+    /// The placements on the rows `offset` lines above the bottom of the
+    /// screen, by anchor id. Zero is the screen the cursor moves on.
+    fn scan(&self, offset: i32) -> Vec<(u32, Placement)> {
         let mut out: Vec<(u32, Placement)> = Vec::new();
-        let offset = self.display_offset() as i32;
         let grid = self.term.grid();
         for row in 0..self.rows() {
             let line = Line(row as i32 - offset);
@@ -576,7 +599,86 @@ impl Emulator {
                 ));
             }
         }
-        out.into_iter().map(|(_, placement)| placement).collect()
+        out
+    }
+
+    /// Take the placements a delete names off the grid, and with an
+    /// upper-case one, free the data of each image it leaves with none.
+    ///
+    /// The ones named by position — every target but an image id, a range of
+    /// them and a z-index — are looked for on the screen alone, not in
+    /// history.
+    fn delete(&mut self, delete: kitty::Delete) {
+        use kitty::Target;
+        if delete.target == Target::All && delete.free {
+            self.placed.clear();
+            self.graphics.clear();
+            return;
+        }
+        let covers = |p: &Placement, col: u32, row: u32| {
+            let (col, row) = (col as usize, row as usize);
+            (p.col..p.col + p.cols as usize).contains(&col)
+                && (p.row..p.row + p.rows as usize).contains(&row)
+        };
+        let doomed: Vec<u32> = match delete.target {
+            Target::Image { id, placement } => self
+                .placed
+                .iter()
+                .filter(|(_, p)| p.image == id && (placement == 0 || p.placement == placement))
+                .map(|(&anchor, _)| anchor)
+                .collect(),
+            Target::Range(low, high) => self
+                .placed
+                .iter()
+                .filter(|(_, p)| (low..=high).contains(&p.image))
+                .map(|(&anchor, _)| anchor)
+                .collect(),
+            Target::Z(z) => self
+                .placed
+                .iter()
+                .filter(|(_, p)| p.z == z)
+                .map(|(&anchor, _)| anchor)
+                .collect(),
+            target => {
+                let cursor = self.term.grid().cursor.point;
+                self.scan(0)
+                    .into_iter()
+                    .filter(|(anchor, p)| match target {
+                        Target::Cursor => covers(p, cursor.column.0 as u32, cursor.line.0 as u32),
+                        Target::Cell { col, row, z } => {
+                            covers(p, col, row)
+                                && z.is_none_or(|z| {
+                                    self.placed.get(anchor).is_some_and(|p| p.z == z)
+                                })
+                        }
+                        Target::Column(col) => {
+                            (p.col..p.col + p.cols as usize).contains(&(col as usize))
+                        }
+                        Target::Row(row) => {
+                            (p.row..p.row + p.rows as usize).contains(&(row as usize))
+                        }
+                        _ => true,
+                    })
+                    .map(|(anchor, _)| anchor)
+                    .collect()
+            }
+        };
+        let mut touched: Vec<u32> = doomed
+            .iter()
+            .filter_map(|anchor| self.placed.remove(anchor))
+            .map(|placed| placed.image)
+            .collect();
+        if !delete.free {
+            return;
+        }
+        if let Target::Image { id, .. } = delete.target {
+            touched.push(id);
+        }
+        for image in touched {
+            if !self.placed.values().any(|placed| placed.image == image) {
+                self.graphics.remove(image);
+            }
+        }
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
