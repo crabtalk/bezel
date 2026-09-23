@@ -1214,3 +1214,137 @@ fn a_payload_that_inflates_past_the_ceiling_is_refused() {
     assert_eq!(reply, b"\x1b_Gi=7;EFBIG:payload\x1b\\");
     assert!(emulator.graphics().is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Unicode placeholders
+// ---------------------------------------------------------------------------
+
+/// The diacritics for 0, 1 and 2.
+const D: [char; 3] = ['\u{0305}', '\u{030D}', '\u{030E}'];
+const P: char = '\u{10EEEE}';
+
+/// A 20x40 image under id 42 with a 2x2 virtual placement: one cell per
+/// 10x20 quarter.
+fn virtual_emulator() -> Emulator {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&transmit(42, 20, 40));
+    emulator.feed(&apc("a=p,U=1,i=42,c=2,r=2,q=2"));
+    emulator
+}
+
+fn pieces(emulator: &Emulator) -> Vec<(usize, usize, u16, f32, f32)> {
+    let mut out: Vec<_> = emulator
+        .placements()
+        .iter()
+        .map(|p| (p.row, p.col, p.cols, p.frame.x, p.frame.y))
+        .collect();
+    out.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    out
+}
+
+#[test]
+fn a_virtual_placement_puts_nothing_on_the_grid() {
+    let emulator = virtual_emulator();
+    assert!(emulator.placements().is_empty());
+    assert_eq!(emulator.cursor().map(|c| (c.row, c.col)), Some((0, 0)));
+}
+
+#[test]
+fn placeholder_cells_show_their_slices() {
+    let mut emulator = virtual_emulator();
+    let text = format!(
+        "\x1b[38;5;42m{P}{}{}{P}{}{}\x1b[39m\r\n\x1b[38;5;42m{P}{}{}{P}{}{}\x1b[39m",
+        D[0], D[0], D[0], D[1], D[1], D[0], D[1], D[1]
+    );
+    emulator.feed(text.as_bytes());
+    // One run per row, each drawing the whole frame shifted by its row.
+    assert_eq!(
+        pieces(&emulator),
+        vec![(0, 0, 2, 0.0, 0.0), (1, 0, 2, 0.0, -1.0)]
+    );
+    assert!(emulator.placements().iter().all(|p| p.image == 42));
+    // The placeholder never reaches the glyphs.
+    assert_eq!(emulator.row_text(0), "");
+}
+
+#[test]
+fn a_cell_without_marks_continues_the_one_to_its_left() {
+    let mut emulator = virtual_emulator();
+    let text = format!("\x1b[38;5;42m{P}{}{P}\r\n{P}{}{P}\x1b[39m", D[0], D[1]);
+    emulator.feed(text.as_bytes());
+    assert_eq!(
+        pieces(&emulator),
+        vec![(0, 0, 2, 0.0, 0.0), (1, 0, 2, 0.0, -1.0)]
+    );
+}
+
+#[test]
+fn a_slice_starts_where_its_column_says() {
+    let mut emulator = virtual_emulator();
+    // The right-hand column alone, drawn at the left edge of the screen.
+    let text = format!("\x1b[38;5;42m{P}{}{}\x1b[39m", D[0], D[1]);
+    emulator.feed(text.as_bytes());
+    assert_eq!(pieces(&emulator), vec![(0, 0, 1, -1.0, 0.0)]);
+}
+
+#[test]
+fn a_third_mark_is_the_high_byte_of_the_id() {
+    let mut emulator = placed_emulator(20, 10);
+    let id = 42 + (2 << 24);
+    emulator.feed(&transmit(id, 10, 20));
+    emulator.feed(&apc(&format!("a=p,U=1,i={id},c=1,r=1,q=2")));
+    let text = format!("\x1b[38;5;42m{P}{}{}{}\x1b[39m", D[0], D[0], D[2]);
+    emulator.feed(text.as_bytes());
+    assert_eq!(emulator.placements().first().map(|p| p.image), Some(id));
+}
+
+#[test]
+fn the_underline_color_picks_the_placement() {
+    let mut emulator = virtual_emulator();
+    // A second virtual placement of the same image, two cells by one.
+    emulator.feed(&apc("a=p,U=1,i=42,p=7,c=2,r=1,q=2"));
+    let text = format!("\x1b[38;5;42;58;5;7m{P}{}{}\x1b[m", D[0], D[0]);
+    emulator.feed(text.as_bytes());
+    let frame = emulator.placements()[0].frame;
+    // The 20x20 box pillarboxes the 10x20 fit half a cell in from the left.
+    assert_eq!(
+        (frame.x, frame.y, frame.width, frame.height),
+        (0.5, 0.0, 1.0, 1.0)
+    );
+}
+
+#[test]
+fn a_cell_naming_no_placement_is_not_drawn() {
+    let mut emulator = virtual_emulator();
+    let text = format!("\x1b[38;5;41m{P}{}{}\x1b[39m", D[0], D[0]);
+    emulator.feed(text.as_bytes());
+    assert!(emulator.placements().is_empty());
+}
+
+#[test]
+fn only_deletes_by_image_reach_a_virtual_placement() {
+    let mut emulator = virtual_emulator();
+    let text = format!("\x1b[38;5;42m{P}{}{}\x1b[39m", D[0], D[0]);
+    emulator.feed(text.as_bytes());
+    emulator.feed(&apc("a=d,d=a"));
+    emulator.feed(&apc("a=d,d=p,x=1,y=1"));
+    assert_eq!(emulator.placements().len(), 1);
+
+    emulator.feed(&apc("a=d,d=I,i=42"));
+    assert!(emulator.placements().is_empty());
+    assert!(emulator.graphics().get(42).is_none());
+}
+
+#[test]
+fn a_virtual_placement_keeps_its_image_from_being_freed() {
+    let mut emulator = virtual_emulator();
+    emulator.feed(&apc("a=p,i=42,C=1"));
+    emulator.feed(&apc("a=d,d=A"));
+    // `A` frees everything, virtual or not.
+    assert!(emulator.graphics().get(42).is_none());
+
+    let mut emulator = virtual_emulator();
+    emulator.feed(&apc("a=p,i=42,C=1"));
+    emulator.feed(&apc("a=d,d=C"));
+    assert!(emulator.graphics().get(42).is_some());
+}

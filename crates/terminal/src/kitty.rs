@@ -359,6 +359,9 @@ pub struct Command {
     pub z: i32,
     /// `C`: whether the cursor moves past the image.
     pub cursor_movement: CursorMovement,
+    /// `U=1`: the placement is virtual, shown only where the text holds
+    /// [`crate::placeholder::PLACEHOLDER`] cells naming it.
+    pub unicode: bool,
     /// `q`: 1 suppresses success replies, 2 suppresses failures too.
     pub quiet: u8,
     /// `d`: what a delete is aimed at; an uppercase letter also frees the
@@ -394,6 +397,7 @@ impl Default for Command {
             offset_y: 0,
             z: 0,
             cursor_movement: CursorMovement::After,
+            unicode: false,
             quiet: 0,
             delete: 'a',
             medium: 'd',
@@ -473,6 +477,7 @@ impl Command {
                         _ => CursorMovement::After,
                     }
                 }
+                b'U' => command.unicode = number() == Some(1),
                 b'q' => command.quiet = number().unwrap_or(0).min(u8::MAX as u32) as u8,
                 b'd' => command.delete = letter().unwrap_or('a'),
                 b't' => command.medium = letter().unwrap_or('d'),
@@ -553,6 +558,8 @@ pub struct Display {
     pub offset_y: u32,
     pub z: i32,
     pub cursor_movement: CursorMovement,
+    /// `U=1`.
+    pub unicode: bool,
 }
 
 impl Display {
@@ -571,6 +578,7 @@ impl Display {
             offset_y: command.offset_y,
             z: command.z,
             cursor_movement: command.cursor_movement,
+            unicode: command.unicode,
         }
     }
 }
@@ -821,6 +829,7 @@ impl Store {
         if command.cursor_movement == CursorMovement::None {
             held.cursor_movement = CursorMovement::None;
         }
+        held.unicode |= command.unicode;
         if command.more {
             self.pending = Some((id, held));
             return (None, None);

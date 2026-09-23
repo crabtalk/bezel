@@ -160,7 +160,7 @@ pub struct Placement {
     /// The [`kitty::Store`] id of the image to paint here.
     pub image: u32,
     /// Where the picture is drawn, in cells from the placement's top-left
-    /// cell. It can run past `cols` and `rows`, which are clamped to the grid.
+    /// cell. It can run past the placement's own cells, which paint clips to.
     pub frame: Frame,
     /// The part of the image drawn into [`Self::frame`].
     pub source: Source,
@@ -218,6 +218,17 @@ struct Placed {
     image: u32,
     /// The client's placement id, zero when it named none.
     placement: u32,
+    cols: u16,
+    rows: u16,
+    frame: Frame,
+    source: Source,
+    z: i32,
+}
+
+/// A virtual placement: the box of `cols` by `rows` cells its placeholders
+/// tile, and where the picture sits in it.
+#[derive(Debug, Clone, Copy)]
+struct Virtual {
     cols: u16,
     rows: u16,
     frame: Frame,
@@ -359,6 +370,9 @@ pub struct Emulator {
     /// holds what it is.
     placed: std::collections::HashMap<u32, Placed>,
     next_anchor: u32,
+    /// Virtual placements (`U=1`) by image and placement id. They sit nowhere
+    /// on the grid: placeholder cells name them.
+    virtuals: std::collections::HashMap<(u32, u32), Virtual>,
     /// One cell in pixels, which is what turns an image's pixel size into the
     /// rows it covers. The view measures it from the font every frame and the
     /// host hands it over; until then an image has no size the grid can use.
@@ -389,6 +403,7 @@ impl Emulator {
             graphics: kitty::Store::new(),
             placed: std::collections::HashMap::new(),
             next_anchor: 0,
+            virtuals: std::collections::HashMap::new(),
             cell: None,
             held: None,
         }
@@ -498,12 +513,35 @@ impl Emulator {
     /// one placement.
     fn place(&mut self, display: kitty::Display) {
         let image = display.image;
-        let Some((cell_w, cell_h)) = self.cell else {
+        let Some((cols, rows, frame, source)) = self.extent(&display) else {
             return;
         };
-        let Some((width, height)) = self.graphics.get(image).and_then(kitty::Image::size) else {
+        if display.unicode {
+            let virtual_ = Virtual {
+                cols: cols.max(1.0).min(u16::MAX as f32) as u16,
+                rows: rows.max(1.0).min(u16::MAX as f32) as u16,
+                frame,
+                source,
+                z: display.z,
+            };
+            self.virtuals.insert((image, display.placement), virtual_);
             return;
-        };
+        }
+        let cols = (cols as usize).clamp(1, self.cols()) as u16;
+        let rows = (rows as usize).clamp(1, self.rows()) as u16;
+
+        self.anchor(display, cols, rows, frame, source);
+    }
+
+    /// The cells a display covers, unclamped, with its frame and source.
+    /// `None` until a cell has been measured, and for an image with nothing
+    /// to show.
+    fn extent(&self, display: &kitty::Display) -> Option<(f32, f32, Frame, Source)> {
+        let (cell_w, cell_h) = self.cell?;
+        let (width, height) = self
+            .graphics
+            .get(display.image)
+            .and_then(kitty::Image::size)?;
         let x = display.source_x.min(width);
         let y = display.source_y.min(height);
         let source = Source {
@@ -519,7 +557,7 @@ impl Emulator {
             },
         };
         if source.width == 0 || source.height == 0 {
-            return;
+            return None;
         }
         let (source_w, source_h) = (source.width as f32, source.height as f32);
         let offset_x = (display.offset_x as f32).min(cell_w - 1.0).max(0.0);
@@ -553,15 +591,26 @@ impl Emulator {
                 (c as f32, r as f32, (x, y, w, h))
             }
         };
-        let cols = (cols as usize).clamp(1, self.cols()) as u16;
-        let rows = (rows as usize).clamp(1, self.rows()) as u16;
         let frame = Frame {
             x: frame.0 / cell_w,
             y: frame.1 / cell_h,
             width: frame.2 / cell_w,
             height: frame.3 / cell_h,
         };
+        Some((cols, rows, frame, source))
+    }
 
+    /// Write a placement's anchors at the cursor, and move the cursor past it
+    /// unless the display said not to.
+    fn anchor(
+        &mut self,
+        display: kitty::Display,
+        cols: u16,
+        rows: u16,
+        frame: Frame,
+        source: Source,
+    ) {
+        let image = display.image;
         self.placed
             .retain(|_, placed| placed.image != image || placed.placement != display.placement);
         let anchor = self.next_anchor % ANCHOR_MAX;
@@ -645,10 +694,85 @@ impl Emulator {
     }
 
     fn live_placements(&self) -> Vec<Placement> {
-        self.scan(self.display_offset() as i32)
+        let offset = self.display_offset() as i32;
+        let mut out: Vec<Placement> = self
+            .scan(offset)
             .into_iter()
             .map(|(_, placement)| placement)
-            .collect()
+            .collect();
+        if !self.virtuals.is_empty() {
+            out.extend(self.placeholders(offset));
+        }
+        out
+    }
+
+    /// The slices of virtual placements the visible placeholder cells show,
+    /// one per run of cells that continue each other along a row.
+    ///
+    /// A cell naming no placement id shows the image's virtual placement with
+    /// the lowest id. A cell outside its placement's box shows nothing.
+    fn placeholders(&self, offset: i32) -> Vec<Placement> {
+        let mut out: Vec<Placement> = Vec::new();
+        let grid = self.term.grid();
+        for row in 0..self.rows() {
+            let line = Line(row as i32 - offset);
+            let mut decoder = crate::placeholder::RowDecoder::default();
+            // The run being grown: the key it was resolved to, the slot of its
+            // last cell, and its index in `out`.
+            let mut run: Option<((u32, u32), crate::placeholder::Slot, usize)> = None;
+            for col in 0..self.cols() {
+                let Some(slot) = decoder.cell(&grid[line][Column(col)]) else {
+                    run = None;
+                    continue;
+                };
+                let key = match slot.placement {
+                    0 => self
+                        .virtuals
+                        .keys()
+                        .filter(|(image, _)| *image == slot.image)
+                        .min()
+                        .copied(),
+                    placement => {
+                        Some((slot.image, placement)).filter(|key| self.virtuals.contains_key(key))
+                    }
+                };
+                let Some((key, virtual_)) =
+                    key.and_then(|key| Some((key, self.virtuals.get(&key)?)))
+                else {
+                    run = None;
+                    continue;
+                };
+                if slot.row >= virtual_.rows as u32 || slot.col >= virtual_.cols as u32 {
+                    run = None;
+                    continue;
+                }
+                if let Some((run_key, last, at)) = &mut run
+                    && *run_key == key
+                    && last.row == slot.row
+                    && last.col + 1 == slot.col
+                {
+                    out[*at].cols += 1;
+                    *last = slot;
+                    continue;
+                }
+                run = Some((key, slot, out.len()));
+                out.push(Placement {
+                    row,
+                    col,
+                    cols: 1,
+                    rows: 1,
+                    image: key.0,
+                    frame: Frame {
+                        x: virtual_.frame.x - slot.col as f32,
+                        y: virtual_.frame.y - slot.row as f32,
+                        ..virtual_.frame
+                    },
+                    source: virtual_.source,
+                    z: virtual_.z,
+                });
+            }
+        }
+        out
     }
 
     /// The placements on the rows `offset` lines above the bottom of the
@@ -747,11 +871,32 @@ impl Emulator {
                     .collect()
             }
         };
-        let mut touched: Vec<u32> = doomed
-            .iter()
-            .filter_map(|anchor| self.placed.remove(anchor))
-            .map(|placed| placed.image)
-            .collect();
+        // Only the deletes that name images reach a virtual placement: the
+        // rest name positions, and a virtual placement has none.
+        let mut touched: Vec<u32> = Vec::new();
+        match delete.target {
+            Target::Image { id, placement } => self.virtuals.retain(|&(image, p), _| {
+                let hit = image == id && (placement == 0 || p == placement);
+                if hit {
+                    touched.push(image);
+                }
+                !hit
+            }),
+            Target::Range(low, high) => self.virtuals.retain(|&(image, _), _| {
+                let hit = (low..=high).contains(&image);
+                if hit {
+                    touched.push(image);
+                }
+                !hit
+            }),
+            _ => {}
+        }
+        touched.extend(
+            doomed
+                .iter()
+                .filter_map(|anchor| self.placed.remove(anchor))
+                .map(|placed| placed.image),
+        );
         if !delete.free {
             return;
         }
@@ -759,7 +904,9 @@ impl Emulator {
             touched.push(id);
         }
         for image in touched {
-            if !self.placed.values().any(|placed| placed.image == image) {
+            let placed = self.placed.values().any(|placed| placed.image == image)
+                || self.virtuals.keys().any(|&(held, _)| held == image);
+            if !placed {
                 self.graphics.remove(image);
             }
         }
@@ -1001,7 +1148,11 @@ impl Emulator {
             .map(|col| {
                 let cell = &row[Column(col)];
                 CellSnapshot {
-                    ch: cell.c,
+                    // Stands for an image; the glyph itself is never drawn.
+                    ch: match cell.c {
+                        crate::placeholder::PLACEHOLDER => ' ',
+                        ch => ch,
+                    },
                     fg: map_color(cell.fg),
                     bg: map_color(cell.bg),
                     bold: cell.flags.intersects(Flags::BOLD),

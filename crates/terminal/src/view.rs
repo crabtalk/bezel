@@ -978,8 +978,8 @@ struct Painted {
     layer: Layer,
     /// `(z, id)`: lower paints first.
     order: (i32, u32),
-    /// The clip, which is the placement's frame.
-    frame: Bounds<Pixels>,
+    /// The placement's frame, cut to its own cells.
+    clip: Bounds<Pixels>,
     /// The whole image, positioned so its source rectangle fills the frame.
     whole: Bounds<Pixels>,
     image: Arc<gpui::RenderImage>,
@@ -1128,10 +1128,17 @@ impl gpui::Element for TerminalElement {
                         scale_y * natural.height.0 as f32,
                     ),
                 );
+                let cells = Bounds::new(
+                    point(
+                        origin.x + cell_w * placed.col as f32,
+                        origin.y + line_h * placed.row as f32,
+                    ),
+                    size(cell_w * placed.cols as f32, line_h * placed.rows as f32),
+                );
                 Painted {
                     layer: Layer::of(placed.z),
                     order: (placed.z, placed.id),
-                    frame,
+                    clip: frame.intersect(&cells),
                     whole,
                     image: placed.image.clone(),
                 }
@@ -1241,7 +1248,7 @@ impl gpui::Element for TerminalElement {
             let paint_layer = |layer: Layer, window: &mut Window| {
                 for painted in images.iter().filter(|painted| painted.layer == layer) {
                     let _ = window.paint_image(
-                        painted.frame,
+                        painted.clip,
                         painted.whole,
                         gpui::Corners::default(),
                         painted.image.clone(),
