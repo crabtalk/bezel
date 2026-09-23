@@ -1120,3 +1120,97 @@ fn a_placement_carries_its_z_index() {
     zs.sort();
     assert_eq!(zs, vec![-1073741825, -1]);
 }
+
+// ---------------------------------------------------------------------------
+// Compression
+// ---------------------------------------------------------------------------
+
+fn zlib(bytes: &[u8]) -> Vec<u8> {
+    miniz_oxide::deflate::compress_to_vec_zlib(bytes, 6)
+}
+
+/// `keys` over a payload sent in 4096-byte base64 chunks, the way a client
+/// sends one too big for a single run.
+fn chunked(keys: &str, payload: &[u8]) -> Vec<u8> {
+    let encoded = base64(payload);
+    let pieces: Vec<&str> = encoded
+        .as_bytes()
+        .chunks(4096)
+        .map(|piece| std::str::from_utf8(piece).unwrap())
+        .collect();
+    let mut out = Vec::new();
+    for (at, piece) in pieces.iter().enumerate() {
+        let more = u8::from(at + 1 < pieces.len());
+        let head = if at == 0 {
+            format!("{keys},")
+        } else {
+            String::new()
+        };
+        out.extend(apc(&format!("{head}m={more};{piece}")));
+    }
+    out
+}
+
+#[test]
+fn a_zlib_payload_is_held_inflated() {
+    let mut emulator = Emulator::new(20, 5);
+    let reply = emulator.feed(&apc(&format!(
+        "a=t,f=32,s=1,v=1,o=z,i=3;{}",
+        base64(&zlib(&pixel()))
+    )));
+    assert_eq!(reply, b"\x1b_Gi=3;OK\x1b\\");
+    assert_eq!(
+        emulator.graphics().get(3).map(|image| &image.bytes),
+        Some(&pixel())
+    );
+}
+
+#[test]
+fn a_zlib_stream_split_across_chunks_is_inflated_whole() {
+    let mut emulator = Emulator::new(20, 5);
+    // Noise, so the stream stays long enough to need several chunks.
+    let mut seed = 1u32;
+    let pixels: Vec<u8> = (0..64 * 64 * 4)
+        .map(|_| {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (seed >> 16) as u8
+        })
+        .collect();
+    let compressed = zlib(&pixels);
+    assert!(base64(&compressed).len() > 4096, "one chunk proves nothing");
+    emulator.feed(&chunked("a=t,f=32,s=64,v=64,o=z,i=4", &compressed));
+    assert_eq!(
+        emulator.graphics().get(4).map(|image| &image.bytes),
+        Some(&pixels)
+    );
+}
+
+#[test]
+fn a_payload_that_does_not_inflate_is_refused() {
+    let mut emulator = Emulator::new(20, 5);
+    let reply = emulator.feed(&apc(&format!(
+        "a=t,f=32,s=1,v=1,o=z,i=5;{}",
+        base64(&pixel())
+    )));
+    assert_eq!(reply, b"\x1b_Gi=5;EINVAL:compression\x1b\\");
+    assert!(emulator.graphics().is_empty());
+}
+
+#[test]
+fn an_unknown_compression_is_refused() {
+    let mut emulator = Emulator::new(20, 5);
+    let reply = emulator.feed(&apc(&format!(
+        "a=t,f=32,s=1,v=1,o=x,i=6;{}",
+        base64(&pixel())
+    )));
+    assert_eq!(reply, b"\x1b_Gi=6;ENOTSUPPORTED:compression\x1b\\");
+}
+
+#[test]
+fn a_payload_that_inflates_past_the_ceiling_is_refused() {
+    let mut emulator = Emulator::new(20, 5);
+    let compressed = zlib(&vec![0u8; (64 << 20) + 1]);
+    let reply = emulator.feed(&chunked("a=t,f=32,s=4097,v=4096,o=z,i=7", &compressed));
+    assert_eq!(reply, b"\x1b_Gi=7;EFBIG:payload\x1b\\");
+    assert!(emulator.graphics().is_empty());
+}

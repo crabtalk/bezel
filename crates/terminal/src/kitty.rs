@@ -367,8 +367,9 @@ pub struct Command {
     /// `t`: where the bytes are. Only `d` — inline — is read; a file or
     /// shared-memory transfer is a path this does not open.
     pub medium: char,
-    /// `o`: payload compression. Only `None` is carried out.
-    pub compressed: bool,
+    /// `o`: payload compression, `None` when there is none. Only `z`, zlib,
+    /// is carried out.
+    pub compression: Option<char>,
     pub payload: Vec<u8>,
 }
 
@@ -396,7 +397,7 @@ impl Default for Command {
             quiet: 0,
             delete: 'a',
             medium: 'd',
-            compressed: false,
+            compression: None,
             payload: Vec::new(),
         }
     }
@@ -475,7 +476,7 @@ impl Command {
                 b'q' => command.quiet = number().unwrap_or(0).min(u8::MAX as u32) as u8,
                 b'd' => command.delete = letter().unwrap_or('a'),
                 b't' => command.medium = letter().unwrap_or('d'),
-                b'o' => command.compressed = letter().is_some(),
+                b'o' => command.compression = letter(),
                 _ => {}
             }
         }
@@ -754,7 +755,10 @@ impl Store {
     }
 
     fn transmit(&mut self, command: Command, id: u32) -> (Option<Effect>, Option<Reply>) {
-        if command.compressed {
+        if command
+            .compression
+            .is_some_and(|compression| compression != 'z')
+        {
             self.pending = None;
             return (
                 None,
@@ -827,6 +831,18 @@ impl Store {
 
         if held.payload.is_empty() {
             return (None, self.reply(&command, id, Some("EINVAL:empty")));
+        }
+        // The chunks are one zlib stream between them, so it is inflated
+        // whole, and held to the same ceiling as an uncompressed payload.
+        if held.compression == Some('z') {
+            use miniz_oxide::inflate::{TINFLStatus, decompress_to_vec_zlib_with_limit};
+            held.payload = match decompress_to_vec_zlib_with_limit(&held.payload, MAX_IMAGE) {
+                Ok(inflated) => inflated,
+                Err(error) if error.status == TINFLStatus::HasMoreOutput => {
+                    return (None, self.reply(&command, id, Some("EFBIG:payload")));
+                }
+                Err(_) => return (None, self.reply(&command, id, Some("EINVAL:compression"))),
+            };
         }
         let display = (held.action == Action::Display).then(|| Display::of(id, &held));
         let image = Image {
