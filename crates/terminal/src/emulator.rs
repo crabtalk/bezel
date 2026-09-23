@@ -237,6 +237,32 @@ struct Virtual {
     z: i32,
 }
 
+/// A placement positioned off another one: `offset` cells from its parent's
+/// top-left cell.
+#[derive(Debug, Clone, Copy)]
+struct Relative {
+    parent: (u32, u32),
+    offset: (i32, i32),
+    cols: u16,
+    rows: u16,
+    frame: Frame,
+    source: Source,
+    z: i32,
+}
+
+/// What [`Emulator::locate`] found.
+struct Located {
+    /// Anchored placements, by anchor id.
+    anchored: Vec<(u32, Placement)>,
+    /// Slices of virtual placements, by the placement each shows.
+    pieces: Vec<((u32, u32), Placement)>,
+    /// Relative placements, by image and placement id.
+    relatives: Vec<((u32, u32), Placement)>,
+}
+
+/// The longest chain of relative placements, counting the one being made.
+const MAX_RELATIVE_DEPTH: usize = 8;
+
 /// Cursor position in viewport coordinates (row 0 = top of the visible grid).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CursorSnapshot {
@@ -374,6 +400,9 @@ pub struct Emulator {
     /// Virtual placements (`U=1`) by image and placement id. They sit nowhere
     /// on the grid: placeholder cells name them.
     virtuals: std::collections::HashMap<(u32, u32), Virtual>,
+    /// Relative placements by image and placement id. They sit nowhere on
+    /// the grid either: each frame finds them from their parent.
+    relatives: std::collections::HashMap<(u32, u32), Relative>,
     /// One cell in pixels, which is what turns an image's pixel size into the
     /// rows it covers. The view measures it from the font every frame and the
     /// host hands it over; until then an image has no size the grid can use.
@@ -405,6 +434,7 @@ impl Emulator {
             placed: std::collections::HashMap::new(),
             next_anchor: 0,
             virtuals: std::collections::HashMap::new(),
+            relatives: std::collections::HashMap::new(),
             cell: None,
             held: None,
         }
@@ -442,13 +472,26 @@ impl Emulator {
                 }
                 Segment::Graphics(command) => {
                     let (effect, reply) = self.graphics.apply(command);
+                    let reply = match effect {
+                        Some(kitty::Effect::Display(display)) => match self.place(display) {
+                            Ok(()) => reply,
+                            // The store said yes to what it could see; the
+                            // placement is refused on what only the grid knows.
+                            Err(error) => (display.quiet < 2).then(|| kitty::Reply {
+                                id: display.image,
+                                number: reply.as_ref().map_or(0, |reply| reply.number),
+                                placement: display.placement,
+                                error: Some(error),
+                            }),
+                        },
+                        Some(kitty::Effect::Delete(delete)) => {
+                            self.delete(delete);
+                            reply
+                        }
+                        None => reply,
+                    };
                     if let Some(reply) = reply {
                         responses.extend(reply.bytes());
-                    }
-                    match effect {
-                        Some(kitty::Effect::Display(display)) => self.place(display),
-                        Some(kitty::Effect::Delete(delete)) => self.delete(delete),
-                        None => {}
                     }
                 }
                 Segment::Sync(true) => self.hold(),
@@ -517,11 +560,16 @@ impl Emulator {
     /// A placement replaces the one the image already has under the same
     /// placement id, zero included: an image placed with no `p` has at most
     /// one placement.
-    fn place(&mut self, display: kitty::Display) {
+    fn place(&mut self, display: kitty::Display) -> Result<(), &'static str> {
         let image = display.image;
+        let key = (image, display.placement);
+        if display.parent_image != 0 {
+            return self.relate(display);
+        }
         let Some((cols, rows, frame, source)) = self.extent(&display) else {
-            return;
+            return Ok(());
         };
+        self.relatives.remove(&key);
         if display.unicode {
             let virtual_ = Virtual {
                 cols: cols.max(1.0).min(u16::MAX as f32) as u16,
@@ -530,13 +578,79 @@ impl Emulator {
                 source,
                 z: display.z,
             };
-            self.virtuals.insert((image, display.placement), virtual_);
-            return;
+            self.virtuals.insert(key, virtual_);
+            return Ok(());
         }
         let cols = (cols as usize).clamp(1, self.cols()) as u16;
         let rows = (rows as usize).clamp(1, self.rows()) as u16;
 
         self.anchor(display, cols, rows, frame, source);
+        Ok(())
+    }
+
+    /// Hang a placement off the parent its `P` and `Q` name. The cursor stays
+    /// where it is, whatever `C` says.
+    fn relate(&mut self, display: kitty::Display) -> Result<(), &'static str> {
+        let key = (display.image, display.placement);
+        let parent = (display.parent_image, display.parent_placement);
+        if display.unicode {
+            return Err("EINVAL:a virtual placement cannot be relative");
+        }
+        if !self.exists(parent) {
+            return Err("ENOPARENT");
+        }
+        let mut depth = 1;
+        let mut at = parent;
+        loop {
+            if at == key {
+                return Err("ECYCLE");
+            }
+            match self.relatives.get(&at) {
+                Some(relative) => {
+                    depth += 1;
+                    at = relative.parent;
+                }
+                None => break,
+            }
+        }
+        if depth > MAX_RELATIVE_DEPTH {
+            return Err("ETOODEEP");
+        }
+        let Some((cols, rows, frame, source)) = self.extent(&display) else {
+            return Ok(());
+        };
+        self.placed
+            .retain(|_, placed| (placed.image, placed.placement) != key);
+        self.virtuals.remove(&key);
+        self.relatives.insert(
+            key,
+            Relative {
+                parent,
+                offset: (display.parent_offset_x, display.parent_offset_y),
+                cols: cols.clamp(1.0, u16::MAX as f32) as u16,
+                rows: rows.clamp(1.0, u16::MAX as f32) as u16,
+                frame,
+                source,
+                z: display.z,
+            },
+        );
+        Ok(())
+    }
+
+    /// Whether any placement, of any kind, goes by `key`.
+    fn exists(&self, key: (u32, u32)) -> bool {
+        self.placed
+            .values()
+            .any(|placed| (placed.image, placed.placement) == key)
+            || self.virtuals.contains_key(&key)
+            || self.relatives.contains_key(&key)
+    }
+
+    /// Whether any placement, of any kind, shows `image`.
+    fn shown(&self, image: u32) -> bool {
+        self.placed.values().any(|placed| placed.image == image)
+            || self.virtuals.keys().any(|&(held, _)| held == image)
+            || self.relatives.keys().any(|&(held, _)| held == image)
     }
 
     /// The cells a display covers, unclamped, with its frame and source.
@@ -700,16 +814,90 @@ impl Emulator {
     }
 
     fn live_placements(&self) -> Vec<Placement> {
-        let offset = self.display_offset() as i32;
-        let mut out: Vec<Placement> = self
-            .scan(offset)
-            .into_iter()
-            .map(|(_, placement)| placement)
-            .collect();
-        if !self.virtuals.is_empty() {
-            out.extend(self.placeholders(offset));
-        }
+        let located = self.locate(self.display_offset() as i32);
+        let mut out: Vec<Placement> = located.anchored.into_iter().map(|(_, p)| p).collect();
+        out.extend(located.pieces.into_iter().map(|(_, p)| p));
+        out.extend(located.relatives.into_iter().map(|(_, p)| p));
         out
+    }
+
+    /// Every placement on the rows `offset` lines above the bottom of the
+    /// screen, each with what names it.
+    ///
+    /// A relative placement sits where its parent is found on those rows, so
+    /// one whose parent is off them is not found either. A virtual parent is
+    /// at the least row and least column of the placeholder cells showing it.
+    fn locate(&self, offset: i32) -> Located {
+        let anchored = self.scan(offset);
+        let pieces = if self.virtuals.is_empty() {
+            Vec::new()
+        } else {
+            self.placeholders(offset)
+        };
+        let mut relatives = Vec::new();
+        if !self.relatives.is_empty() {
+            let mut at: std::collections::HashMap<(u32, u32), (i64, i64)> =
+                std::collections::HashMap::new();
+            for (anchor, p) in &anchored {
+                if let Some(placed) = self.placed.get(anchor) {
+                    at.insert(
+                        (placed.image, placed.placement),
+                        (p.row as i64, p.col as i64),
+                    );
+                }
+            }
+            for (key, p) in &pieces {
+                let spot = at.entry(*key).or_insert((p.row as i64, p.col as i64));
+                *spot = (spot.0.min(p.row as i64), spot.1.min(p.col as i64));
+            }
+            for (&key, relative) in &self.relatives {
+                let Some((row, col)) = self.relative_spot(key, &at) else {
+                    continue;
+                };
+                if row < 0 || col < 0 || row >= self.rows() as i64 || col >= self.cols() as i64 {
+                    continue;
+                }
+                relatives.push((
+                    key,
+                    Placement {
+                        row: row as usize,
+                        col: col as usize,
+                        cols: relative.cols,
+                        rows: relative.rows,
+                        image: key.0,
+                        frame: relative.frame,
+                        source: relative.source,
+                        z: relative.z,
+                    },
+                ));
+            }
+        }
+        Located {
+            anchored,
+            pieces,
+            relatives,
+        }
+    }
+
+    /// Where a relative placement's top-left cell is, walking its chain up
+    /// to a parent found on the grid.
+    fn relative_spot(
+        &self,
+        key: (u32, u32),
+        at: &std::collections::HashMap<(u32, u32), (i64, i64)>,
+    ) -> Option<(i64, i64)> {
+        let mut row = 0;
+        let mut col = 0;
+        let mut key = key;
+        for _ in 0..=MAX_RELATIVE_DEPTH {
+            let Some(relative) = self.relatives.get(&key) else {
+                return at.get(&key).map(|&(r, c)| (r + row, c + col));
+            };
+            row += relative.offset.1 as i64;
+            col += relative.offset.0 as i64;
+            key = relative.parent;
+        }
+        None
     }
 
     /// The slices of virtual placements the visible placeholder cells show,
@@ -717,8 +905,8 @@ impl Emulator {
     ///
     /// A cell naming no placement id shows the image's virtual placement with
     /// the lowest id. A cell outside its placement's box shows nothing.
-    fn placeholders(&self, offset: i32) -> Vec<Placement> {
-        let mut out: Vec<Placement> = Vec::new();
+    fn placeholders(&self, offset: i32) -> Vec<((u32, u32), Placement)> {
+        let mut out: Vec<((u32, u32), Placement)> = Vec::new();
         let grid = self.term.grid();
         for row in 0..self.rows() {
             let line = Line(row as i32 - offset);
@@ -757,25 +945,28 @@ impl Emulator {
                     && last.row == slot.row
                     && last.col + 1 == slot.col
                 {
-                    out[*at].cols += 1;
+                    out[*at].1.cols += 1;
                     *last = slot;
                     continue;
                 }
                 run = Some((key, slot, out.len()));
-                out.push(Placement {
-                    row,
-                    col,
-                    cols: 1,
-                    rows: 1,
-                    image: key.0,
-                    frame: Frame {
-                        x: virtual_.frame.x - slot.col as f32,
-                        y: virtual_.frame.y - slot.row as f32,
-                        ..virtual_.frame
+                out.push((
+                    key,
+                    Placement {
+                        row,
+                        col,
+                        cols: 1,
+                        rows: 1,
+                        image: key.0,
+                        frame: Frame {
+                            x: virtual_.frame.x - slot.col as f32,
+                            y: virtual_.frame.y - slot.row as f32,
+                            ..virtual_.frame
+                        },
+                        source: virtual_.source,
+                        z: virtual_.z,
                     },
-                    source: virtual_.source,
-                    z: virtual_.z,
-                });
+                ));
             }
         }
         out
@@ -829,6 +1020,7 @@ impl Emulator {
         use kitty::Target;
         if delete.target == Target::All && delete.free {
             self.placed.clear();
+            self.relatives.clear();
             self.graphics.clear();
             return;
         }
@@ -837,72 +1029,100 @@ impl Emulator {
             (p.col..p.col + p.cols as usize).contains(&col)
                 && (p.row..p.row + p.rows as usize).contains(&row)
         };
-        let doomed: Vec<u32> = match delete.target {
-            Target::Image { id, placement } => self
-                .placed
-                .iter()
-                .filter(|(_, p)| p.image == id && (placement == 0 || p.placement == placement))
-                .map(|(&anchor, _)| anchor)
-                .collect(),
-            Target::Range(low, high) => self
-                .placed
-                .iter()
-                .filter(|(_, p)| (low..=high).contains(&p.image))
-                .map(|(&anchor, _)| anchor)
-                .collect(),
-            Target::Z(z) => self
-                .placed
-                .iter()
-                .filter(|(_, p)| p.z == z)
-                .map(|(&anchor, _)| anchor)
-                .collect(),
-            target => {
-                let cursor = self.term.grid().cursor.point;
-                self.scan(0)
-                    .into_iter()
-                    .filter(|(_, p)| match target {
-                        Target::Cursor => covers(p, cursor.column.0 as u32, cursor.line.0 as u32),
-                        Target::Cell { col, row, z } => {
-                            covers(p, col, row) && z.is_none_or(|z| p.z == z)
-                        }
-                        Target::Column(col) => {
-                            (p.col..p.col + p.cols as usize).contains(&(col as usize))
-                        }
-                        Target::Row(row) => {
-                            (p.row..p.row + p.rows as usize).contains(&(row as usize))
-                        }
-                        _ => true,
-                    })
-                    .map(|(anchor, _)| anchor)
-                    .collect()
-            }
+        // Which keys a delete names: an image id and placement, a range of
+        // ids, or a z-index. `None` for the deletes that name positions.
+        let names = |image: u32, placement: u32, z: i32| match delete.target {
+            Target::Image { id, placement: p } => Some(image == id && (p == 0 || placement == p)),
+            Target::Range(low, high) => Some((low..=high).contains(&image)),
+            Target::Z(want) => Some(z == want),
+            _ => None,
         };
-        // Only the deletes that name images reach a virtual placement: the
-        // rest name positions, and a virtual placement has none.
+        let by_name = matches!(
+            delete.target,
+            Target::Image { .. } | Target::Range(..) | Target::Z(_)
+        );
+        let mut anchors: Vec<u32> = Vec::new();
+        let mut keys: Vec<(u32, u32)> = Vec::new();
+        if by_name {
+            anchors.extend(
+                self.placed
+                    .iter()
+                    .filter(|(_, p)| names(p.image, p.placement, p.z) == Some(true))
+                    .map(|(&anchor, _)| anchor),
+            );
+            keys.extend(
+                self.relatives
+                    .iter()
+                    .filter(|(key, r)| names(key.0, key.1, r.z) == Some(true))
+                    .map(|(&key, _)| key),
+            );
+        } else {
+            let cursor = self.term.grid().cursor.point;
+            let hit = |p: &Placement| match delete.target {
+                Target::Cursor => covers(p, cursor.column.0 as u32, cursor.line.0 as u32),
+                Target::Cell { col, row, z } => covers(p, col, row) && z.is_none_or(|z| p.z == z),
+                Target::Column(col) => (p.col..p.col + p.cols as usize).contains(&(col as usize)),
+                Target::Row(row) => (p.row..p.row + p.rows as usize).contains(&(row as usize)),
+                _ => true,
+            };
+            let located = self.locate(0);
+            anchors.extend(
+                located
+                    .anchored
+                    .iter()
+                    .filter(|(_, p)| hit(p))
+                    .map(|(a, _)| *a),
+            );
+            keys.extend(
+                located
+                    .relatives
+                    .iter()
+                    .filter(|(_, p)| hit(p))
+                    .map(|(k, _)| *k),
+            );
+        }
         let mut touched: Vec<u32> = Vec::new();
-        match delete.target {
-            Target::Image { id, placement } => self.virtuals.retain(|&(image, p), _| {
-                let hit = image == id && (placement == 0 || p == placement);
+        // A virtual placement has no position, so only the deletes that name
+        // images reach one — and a z-index is not one of those.
+        if !matches!(delete.target, Target::Z(_)) && by_name {
+            self.virtuals.retain(|&(image, placement), _| {
+                let hit = names(image, placement, 0) == Some(true);
                 if hit {
                     touched.push(image);
                 }
                 !hit
-            }),
-            Target::Range(low, high) => self.virtuals.retain(|&(image, _), _| {
-                let hit = (low..=high).contains(&image);
-                if hit {
-                    touched.push(image);
-                }
-                !hit
-            }),
-            _ => {}
+            });
         }
         touched.extend(
-            doomed
+            anchors
                 .iter()
                 .filter_map(|anchor| self.placed.remove(anchor))
                 .map(|placed| placed.image),
         );
+        for key in keys {
+            if self.relatives.remove(&key).is_some() {
+                touched.push(key.0);
+            }
+        }
+        // A relative placement goes with its parent, and an image left with
+        // no placement by that goes too, whatever the case of `d`.
+        loop {
+            let orphans: Vec<(u32, u32)> = self
+                .relatives
+                .iter()
+                .filter(|(_, relative)| !self.exists(relative.parent))
+                .map(|(&key, _)| key)
+                .collect();
+            if orphans.is_empty() {
+                break;
+            }
+            for key in orphans {
+                self.relatives.remove(&key);
+                if !self.shown(key.0) {
+                    self.graphics.remove(key.0);
+                }
+            }
+        }
         if !delete.free {
             return;
         }
@@ -910,9 +1130,7 @@ impl Emulator {
             touched.push(id);
         }
         for image in touched {
-            let placed = self.placed.values().any(|placed| placed.image == image)
-                || self.virtuals.keys().any(|&(held, _)| held == image);
-            if !placed {
+            if !self.shown(image) {
                 self.graphics.remove(image);
             }
         }

@@ -359,6 +359,13 @@ pub struct Command {
     pub z: i32,
     /// `C`: whether the cursor moves past the image.
     pub cursor_movement: CursorMovement,
+    /// `P`, `Q`: the image and placement a relative placement hangs off.
+    /// A `P` of zero is no parent.
+    pub parent_image: u32,
+    pub parent_placement: u32,
+    /// `H`, `V`: a relative placement's offset from its parent, in cells.
+    pub parent_offset_x: i32,
+    pub parent_offset_y: i32,
     /// `U=1`: the placement is virtual, shown only where the text holds
     /// [`crate::placeholder::PLACEHOLDER`] cells naming it.
     pub unicode: bool,
@@ -402,6 +409,10 @@ impl Default for Command {
             offset_y: 0,
             z: 0,
             cursor_movement: CursorMovement::After,
+            parent_image: 0,
+            parent_placement: 0,
+            parent_offset_x: 0,
+            parent_offset_y: 0,
             unicode: false,
             quiet: 0,
             delete: 'a',
@@ -438,6 +449,11 @@ impl Command {
                     .and_then(|value| value.parse::<u32>().ok())
             };
             let letter = || value.first().map(|&byte| byte as char);
+            let signed = || {
+                std::str::from_utf8(value)
+                    .ok()
+                    .and_then(|value| value.parse::<i32>().ok())
+            };
             match key {
                 b'a' => {
                     command.action = match letter() {
@@ -467,12 +483,7 @@ impl Command {
                 b'h' => command.source_height = number().unwrap_or(0),
                 b'X' => command.offset_x = number().unwrap_or(0),
                 b'Y' => command.offset_y = number().unwrap_or(0),
-                b'z' => {
-                    command.z = std::str::from_utf8(value)
-                        .ok()
-                        .and_then(|value| value.parse::<i32>().ok())
-                        .unwrap_or(0)
-                }
+                b'z' => command.z = signed().unwrap_or(0),
                 b'm' => command.more = number() == Some(1),
                 b's' => command.width = number().unwrap_or(0),
                 b'v' => command.height = number().unwrap_or(0),
@@ -485,6 +496,10 @@ impl Command {
                     }
                 }
                 b'U' => command.unicode = number() == Some(1),
+                b'P' => command.parent_image = number().unwrap_or(0),
+                b'Q' => command.parent_placement = number().unwrap_or(0),
+                b'H' => command.parent_offset_x = signed().unwrap_or(0),
+                b'V' => command.parent_offset_y = signed().unwrap_or(0),
                 b'q' => command.quiet = number().unwrap_or(0).min(u8::MAX as u32) as u8,
                 b'd' => command.delete = letter().unwrap_or('a'),
                 b't' => command.medium = letter().unwrap_or('d'),
@@ -569,6 +584,13 @@ pub struct Display {
     pub cursor_movement: CursorMovement,
     /// `U=1`.
     pub unicode: bool,
+    /// `P`, `Q`, `H`, `V`, as the command carried them.
+    pub parent_image: u32,
+    pub parent_placement: u32,
+    pub parent_offset_x: i32,
+    pub parent_offset_y: i32,
+    /// `q`, for the errors only the emulator can find.
+    pub quiet: u8,
 }
 
 impl Display {
@@ -588,6 +610,11 @@ impl Display {
             z: command.z,
             cursor_movement: command.cursor_movement,
             unicode: command.unicode,
+            parent_image: command.parent_image,
+            parent_placement: command.parent_placement,
+            parent_offset_x: command.parent_offset_x,
+            parent_offset_y: command.parent_offset_y,
+            quiet: command.quiet,
         }
     }
 }
@@ -827,6 +854,7 @@ impl Store {
         // from there rather than from the chunk in hand.
         let mut command = command;
         command.quiet = command.quiet.max(held.quiet);
+        held.quiet = command.quiet;
         if held.payload.len() + command.payload.len() > MAX_IMAGE {
             return (None, self.reply(&command, id, Some("EFBIG:payload")));
         }
@@ -854,6 +882,14 @@ impl Store {
             held.cursor_movement = CursorMovement::None;
         }
         held.unicode |= command.unicode;
+        held.parent_image = held.parent_image.max(command.parent_image);
+        held.parent_placement = held.parent_placement.max(command.parent_placement);
+        if command.parent_offset_x != 0 {
+            held.parent_offset_x = command.parent_offset_x;
+        }
+        if command.parent_offset_y != 0 {
+            held.parent_offset_y = command.parent_offset_y;
+        }
         if command.more {
             self.pending = Some((id, held));
             return (None, None);

@@ -1497,3 +1497,136 @@ fn a_shared_memory_object_is_read_and_unlinked() {
     let reopened = unsafe { libc::shm_open(c_name.as_ptr(), libc::O_RDONLY, 0) };
     assert!(reopened < 0, "the object was not unlinked");
 }
+
+// ---------------------------------------------------------------------------
+// Relative placements
+// ---------------------------------------------------------------------------
+
+/// Image 1 placed at row 2, column 3 under placement id 1, and image 2 held
+/// to hang off it.
+fn parented() -> Emulator {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&transmit(1, 10, 20));
+    emulator.feed(&transmit(2, 10, 20));
+    emulator.feed(b"\x1b[3;4H");
+    emulator.feed(&apc("a=p,i=1,p=1,C=1"));
+    emulator
+}
+
+#[test]
+fn a_relative_placement_sits_off_its_parent() {
+    let mut emulator = parented();
+    let reply = emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=1,H=4,V=-1"));
+    assert_eq!(reply, b"\x1b_Gi=2,p=5;OK\x1b\\");
+    assert_eq!(at(&emulator), vec![(1, 2, 3), (2, 1, 7)]);
+    // No `C=1`, and still the cursor stays put.
+    assert_eq!(emulator.cursor().map(|c| (c.row, c.col)), Some((2, 3)));
+}
+
+#[test]
+fn a_relative_placement_moves_with_its_parent() {
+    let mut emulator = parented();
+    emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=1,H=1"));
+    emulator.feed(b"\x1b[10;1H\n\n");
+    assert_eq!(at(&emulator), vec![(1, 0, 3), (2, 0, 4)]);
+}
+
+#[test]
+fn a_relative_placement_follows_a_chain() {
+    let mut emulator = parented();
+    emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=1,H=1"));
+    emulator.feed(&apc("a=p,i=2,p=6,P=2,Q=5,V=1"));
+    assert_eq!(at(&emulator), vec![(1, 2, 3), (2, 2, 4), (2, 3, 4)]);
+}
+
+#[test]
+fn a_parent_that_is_not_there_is_refused() {
+    let mut emulator = parented();
+    let reply = emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=9"));
+    assert_eq!(reply, b"\x1b_Gi=2,p=5;ENOPARENT\x1b\\");
+    assert_eq!(emulator.placements().len(), 1);
+}
+
+#[test]
+fn a_cycle_is_refused() {
+    let mut emulator = parented();
+    emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=1"));
+    emulator.feed(&apc("a=p,i=2,p=6,P=2,Q=5"));
+    let reply = emulator.feed(&apc("a=p,i=1,p=1,P=2,Q=6"));
+    assert_eq!(reply, b"\x1b_Gi=1,p=1;ECYCLE\x1b\\");
+}
+
+#[test]
+fn a_chain_past_eight_is_refused() {
+    let mut emulator = parented();
+    for p in 2..=9 {
+        let reply = emulator.feed(&apc(&format!(
+            "a=p,i=2,p={p},P={},Q={}",
+            if p == 2 { 1 } else { 2 },
+            p - 1
+        )));
+        assert_eq!(
+            reply,
+            format!("\x1b_Gi=2,p={p};OK\x1b\\").into_bytes(),
+            "p={p}"
+        );
+    }
+    let reply = emulator.feed(&apc("a=p,i=2,p=10,P=2,Q=9"));
+    assert_eq!(reply, b"\x1b_Gi=2,p=10;ETOODEEP\x1b\\");
+}
+
+#[test]
+fn a_virtual_placement_cannot_be_relative() {
+    let mut emulator = parented();
+    let reply = emulator.feed(&apc("a=p,U=1,i=2,p=5,P=1,Q=1"));
+    assert_eq!(
+        reply,
+        b"\x1b_Gi=2,p=5;EINVAL:a virtual placement cannot be relative\x1b\\"
+    );
+}
+
+#[test]
+fn a_quiet_command_is_refused_quietly() {
+    let mut emulator = parented();
+    assert!(emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=9,q=2")).is_empty());
+    // `q=1` silences a success, not a refusal.
+    assert_eq!(
+        emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=9,q=1")),
+        b"\x1b_Gi=2,p=5;ENOPARENT\x1b\\"
+    );
+}
+
+#[test]
+fn deleting_a_parent_takes_its_relatives_and_their_images() {
+    let mut emulator = parented();
+    emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=1,H=2"));
+    emulator.feed(&apc("a=d,d=i,i=1,p=1"));
+    assert!(emulator.placements().is_empty());
+    assert!(
+        emulator.graphics().get(1).is_some(),
+        "a lower-case delete freed the parent's image"
+    );
+    assert!(
+        emulator.graphics().get(2).is_none(),
+        "the relative's image outlived its last placement"
+    );
+}
+
+#[test]
+fn a_delete_by_position_finds_a_relative_where_it_sits() {
+    let mut emulator = parented();
+    emulator.feed(&apc("a=p,i=2,p=5,P=1,Q=1,H=5"));
+    emulator.feed(&apc("a=d,d=p,x=9,y=3"));
+    assert_eq!(at(&emulator), vec![(1, 2, 3)]);
+}
+
+#[test]
+fn a_virtual_parent_is_where_its_placeholders_are() {
+    let mut emulator = virtual_emulator();
+    emulator.feed(&transmit(2, 10, 20));
+    let text = format!("\x1b[2;5H\x1b[38;5;42m{P}{}{}{P}\x1b[39m", D[0], D[0]);
+    emulator.feed(text.as_bytes());
+    emulator.feed(&apc("a=p,i=2,p=5,P=42,H=1,V=2"));
+    let relative: Vec<_> = at(&emulator).into_iter().filter(|p| p.0 == 2).collect();
+    assert_eq!(relative, vec![(2, 3, 5)]);
+}
