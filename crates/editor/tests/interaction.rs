@@ -405,6 +405,17 @@ fn command_arrows_move_and_select_to_document_ends(cx: &mut TestAppContext) {
     assert_eq!(selection.head.offset, 5);
 }
 
+/// Off either end there is no row to step to, and the column survives the
+/// trip: coming back lands where the walk started, not under the end.
+#[gpui::test]
+fn the_goal_column_survives_both_ends(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("abcdefghij\nabcdefghij\nabcdefghij", cx);
+    cx.simulate_keystrokes("right right right right right down down down up");
+    assert_eq!(head(&editor, &mut cx).offset, 16);
+    cx.simulate_keystrokes("down up up up down");
+    assert_eq!(head(&editor, &mut cx).offset, 16);
+}
+
 /// The bug: `render_with_selection` emptied the recorded layouts during *render*
 /// and the menu read them after, so it never found the caret and never opened.
 /// An open menu owns Enter, so what Enter *did* is the observable proof that
