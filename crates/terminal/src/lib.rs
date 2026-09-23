@@ -9,4 +9,5 @@ pub mod kitty;
 mod media;
 mod pixels;
 pub mod placeholder;
+mod sixel;
 pub mod view;

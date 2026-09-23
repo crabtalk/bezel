@@ -179,7 +179,7 @@ fn replies_leave_in_the_order_their_queries_arrived() {
     let responses = e.feed(b"\x1b[14t\x1b[16t\x1b[6n\x1b[16t\x1b[c");
     assert_eq!(
         String::from_utf8_lossy(&responses),
-        "\x1b[4;384;640t\x1b[6;16;8t\x1b[1;1R\x1b[6;16;8t\x1b[?6c"
+        "\x1b[4;384;640t\x1b[6;16;8t\x1b[1;1R\x1b[6;16;8t\x1b[?62;4;22c"
     );
 }
 

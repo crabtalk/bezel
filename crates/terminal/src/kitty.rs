@@ -54,6 +54,10 @@ pub enum Segment<'a> {
     /// nothing downstream of the parser can answer it. Its bytes stay in the
     /// `Text` run around it.
     CellSizeQuery,
+    /// A sixel image's data: what sits between `DCS P1;P2;P3 q` and `ST`.
+    /// The parser is handed the DCS with its data taken out, so it leaves the
+    /// sequence in the state it would have.
+    Sixel(Vec<u8>),
 }
 
 /// Where a [`Scanner`] is in the stream between calls. A pty read ends
@@ -75,7 +79,24 @@ enum State {
     Overrun,
     /// [`State::Overrun`] having just seen an `ESC`.
     OverrunEscape,
+    /// After `ESC P`, reading a DCS's parameters to learn whether it is a
+    /// sixel image. They pass through to the parser either way.
+    DcsHeader,
+    /// Inside a sixel image's data, accumulating.
+    Sixel,
+    /// [`State::Sixel`] having just seen an `ESC`.
+    SixelEscape,
+    /// Inside sixel data too long to keep: swallowed to its terminator.
+    SixelOverrun,
+    /// [`State::SixelOverrun`] having just seen an `ESC`.
+    SixelOverrunEscape,
 }
+
+/// The most sixel data one image may carry before it is abandoned.
+const MAX_SIXEL: usize = 32 << 20;
+
+/// The longest DCS parameter string read while deciding on a sixel image.
+const MAX_DCS_HEADER: usize = 64;
 
 /// Splits graphics commands out of the pty stream.
 ///
@@ -138,6 +159,14 @@ impl Scanner {
                             self.cell_query = 0;
                             State::Apc
                         }
+                        DCS => {
+                            at += 1;
+                            self.sync = 0;
+                            self.cell_query = 0;
+                            self.run.clear();
+                            out.push(Segment::Text(&DCS_BYTES));
+                            State::DcsHeader
+                        }
                         // Not ours. The `ESC` was swallowed by the branch
                         // above, so it is handed back on its own and the byte
                         // after it starts the next run.
@@ -180,6 +209,86 @@ impl Scanner {
                     }
                     text = at;
                 }
+                State::DcsHeader => match byte {
+                    b'0'..=b'9' | b';' if self.run.len() < MAX_DCS_HEADER => {
+                        self.run.push(byte);
+                        at += 1;
+                    }
+                    b'q' => {
+                        at += 1;
+                        push_text(&mut out, &bytes[text..at]);
+                        text = at;
+                        self.run.clear();
+                        self.state = State::Sixel;
+                    }
+                    // Not a sixel image: the rest of it is the parser's.
+                    _ => {
+                        self.run.clear();
+                        self.state = State::Text;
+                    }
+                },
+                State::Sixel | State::SixelEscape => {
+                    if self.state == State::SixelEscape {
+                        // The parser leaves its DCS before the image lands,
+                        // so the rows the image reserves reach the grid.
+                        out.push(Segment::Text(&ST_BYTES));
+                        out.push(Segment::Sixel(std::mem::take(&mut self.run)));
+                        self.state = State::Text;
+                        if byte == ST {
+                            at += 1;
+                        } else {
+                            // An escape ends a DCS, and this one starts
+                            // whatever comes next.
+                            out.push(Segment::Text(&ESC_BYTES));
+                        }
+                        text = at;
+                        continue;
+                    }
+                    match byte {
+                        ESC => self.state = State::SixelEscape,
+                        // CAN and SUB abandon the sequence. The parser is
+                        // handed the byte, which ends the DCS it holds.
+                        CAN | SUB => {
+                            self.run.clear();
+                            self.state = State::Text;
+                            text = at;
+                            continue;
+                        }
+                        _ => self.run.push(byte),
+                    }
+                    at += 1;
+                    text = at;
+                    if self.run.len() > MAX_SIXEL {
+                        self.run.clear();
+                        if self.state == State::Sixel {
+                            self.state = State::SixelOverrun;
+                        }
+                    }
+                }
+                State::SixelOverrun | State::SixelOverrunEscape => {
+                    if self.state == State::SixelOverrunEscape {
+                        self.state = State::Text;
+                        if byte == ST {
+                            at += 1;
+                            out.push(Segment::Text(&ST_BYTES));
+                        } else {
+                            out.push(Segment::Text(&ESC_BYTES));
+                        }
+                        text = at;
+                        continue;
+                    }
+                    match byte {
+                        ESC => self.state = State::SixelOverrunEscape,
+                        CAN | SUB => {
+                            self.state = State::Text;
+                            text = at;
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    at += 1;
+                    text = at;
+                }
                 State::Overrun | State::OverrunEscape => {
                     if self.state == State::OverrunEscape {
                         self.state = State::Overrun;
@@ -200,7 +309,7 @@ impl Scanner {
                 }
             }
         }
-        if matches!(self.state, State::Text) {
+        if matches!(self.state, State::Text | State::DcsHeader) {
             push_text(&mut out, &bytes[text..]);
         }
         out
@@ -267,6 +376,11 @@ const CELL_SIZE_QUERY: &[u8] = b"\x1b[16t";
 const ESC: u8 = 0x1b;
 const ESC_BYTES: [u8; 1] = [ESC];
 const APC: u8 = b'_';
+const DCS: u8 = b'P';
+const DCS_BYTES: [u8; 2] = [ESC, DCS];
+const ST_BYTES: [u8; 2] = [ESC, b'\\'];
+const CAN: u8 = 0x18;
+const SUB: u8 = 0x1a;
 const ST: u8 = b'\\';
 const BEL: u8 = 0x07;
 
@@ -646,6 +760,11 @@ pub struct Display {
 }
 
 impl Display {
+    /// `image` at the cursor, with every key at its default.
+    pub(crate) fn at_cursor(image: u32) -> Self {
+        Self::of(image, &Command::default())
+    }
+
     /// The display keys a command carried, for the image `image`.
     fn of(image: u32, command: &Command) -> Self {
         Self {
@@ -777,6 +896,15 @@ impl Store {
     /// whichever machine the program sending them runs on.
     pub fn set_local_media(&mut self, allow: bool) {
         self.local_media = allow;
+    }
+
+    /// Hold an image that arrived by some other protocol, under an id of its
+    /// own.
+    pub(crate) fn hold(&mut self, image: Image) -> u32 {
+        self.next_id = self.next_id.wrapping_add(1).max(1);
+        let id = self.next_id;
+        self.insert(id, image);
+        id
     }
 
     /// Free one image's data.

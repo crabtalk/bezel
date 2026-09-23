@@ -19,7 +19,9 @@
 //!   [`Emulator::feed`] returns them so the host can write them back.
 //! - Kitty graphics never reach the parser at all — `vte` discards APC runs
 //!   with no hook to catch them — so [`crate::kitty::Scanner`] takes them off
-//!   the stream first and [`Emulator::feed`] hands the rest on unchanged.
+//!   the stream first and [`Emulator::feed`] hands the rest on unchanged. A
+//!   sixel image's data goes the same way: `vte` hands a DCS to handlers
+//!   `Term` leaves empty.
 //! - `vte` buffers a synchronized update (mode 2026) and replays it at ESU.
 //!   Graphics leave the stream before that buffer, so a replay lands an image
 //!   under text written after it. [`NoSync`] turns the buffering off and the
@@ -496,6 +498,7 @@ impl Emulator {
                 }
                 Segment::Sync(true) => self.hold(),
                 Segment::Sync(false) => self.held = None,
+                Segment::Sixel(data) => self.sixel(&data),
                 Segment::CellSizeQuery => {
                     if let Some(size) = self.window_size() {
                         let reply = format!("\x1b[6;{};{}t", size.cell_height, size.cell_width);
@@ -512,6 +515,11 @@ impl Emulator {
         let window = self.window_size();
         for event in self.capture.events.borrow_mut().drain(..) {
             match event {
+                // `Term` answers DA1 as a VT102. Programs look for sixel
+                // support (4) in that answer before sending an image.
+                Event::PtyWrite(text) if text == "\x1b[?6c" => {
+                    responses.extend_from_slice(b"\x1b[?62;4;22c")
+                }
                 Event::PtyWrite(text) => responses.extend_from_slice(text.as_bytes()),
                 Event::TextAreaSizeRequest(reply) => {
                     if let Some(window) = window {
@@ -586,6 +594,25 @@ impl Emulator {
 
         self.anchor(display, cols, rows, frame, source);
         Ok(())
+    }
+
+    /// Show a sixel image at the cursor, the way `a=T` shows one.
+    fn sixel(&mut self, data: &[u8]) {
+        let Some(rgba) = crate::sixel::decode(data) else {
+            return;
+        };
+        let image = kitty::Image {
+            format: kitty::Format::Rgba,
+            width: rgba.width,
+            height: rgba.height,
+            bytes: rgba.bytes,
+            frames: Vec::new(),
+            gaps: Vec::new(),
+            animation: kitty::Animation::default(),
+            revision: 0,
+        };
+        let id = self.graphics.hold(image);
+        let _ = self.place(kitty::Display::at_cursor(id));
     }
 
     /// Hang a placement off the parent its `P` and `Q` name. The cursor stays
