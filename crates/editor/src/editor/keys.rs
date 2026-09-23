@@ -201,6 +201,10 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-right", WordRight, ctx),
         KeyBinding::new("ctrl-shift-left", SelectWordLeft, ctx),
         KeyBinding::new("ctrl-shift-right", SelectWordRight, ctx),
+        KeyBinding::new("ctrl-home", DocumentStart, ctx),
+        KeyBinding::new("ctrl-end", DocumentEnd, ctx),
+        KeyBinding::new("ctrl-shift-home", SelectDocumentStart, ctx),
+        KeyBinding::new("ctrl-shift-end", SelectDocumentEnd, ctx),
         KeyBinding::new("ctrl-backspace", DeleteWordLeft, ctx),
         KeyBinding::new("ctrl-delete", DeleteWordRight, ctx),
         // `ctrl-k` stays free here: GTK entries kill the line with it, Windows
