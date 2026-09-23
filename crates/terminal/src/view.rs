@@ -968,24 +968,8 @@ impl Images {
 /// One kitty image as the frames gpui paints: BGRA, which is what
 /// [`gpui::RenderImage`] holds and what gpui's own decoder converts to.
 fn decode(image: &crate::kitty::Image) -> Option<Arc<gpui::RenderImage>> {
-    use crate::kitty::Format;
-    let first = match image.format {
-        Format::Png => image::load_from_memory(&image.bytes).ok()?.to_rgba8(),
-        Format::Rgb | Format::Rgba => {
-            let (width, height) = image.size()?;
-            let pixels = (width as usize).checked_mul(height as usize)?;
-            let mut rgba = Vec::with_capacity(pixels * 4);
-            match image.format {
-                Format::Rgb => {
-                    for pixel in image.bytes.as_chunks::<3>().0.iter().take(pixels) {
-                        rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 0xff]);
-                    }
-                }
-                _ => rgba.extend_from_slice(&image.bytes[..(pixels * 4).min(image.bytes.len())]),
-            }
-            image::RgbaImage::from_raw(width, height, rgba)?
-        }
-    };
+    let first = crate::pixels::Rgba::decode(image.format, image.width, image.height, &image.bytes)?;
+    let first = image::RgbaImage::from_raw(first.width, first.height, first.bytes)?;
     let (width, height) = first.dimensions();
     let mut frames = vec![first];
     for bytes in &image.frames {

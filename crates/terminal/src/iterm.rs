@@ -92,16 +92,12 @@ pub fn image(bytes: &[u8]) -> Option<Image> {
         return Some(animated);
     }
     let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
-    Some(Image {
-        format: Format::Rgba,
-        width: rgba.width(),
-        height: rgba.height(),
-        bytes: rgba.into_raw(),
-        frames: Vec::new(),
-        gaps: Vec::new(),
-        animation: Animation::default(),
-        revision: 0,
-    })
+    Some(Image::still(
+        Format::Rgba,
+        rgba.width(),
+        rgba.height(),
+        rgba.into_raw(),
+    ))
 }
 
 /// A GIF of more than one frame, every frame composed to the full canvas.
@@ -132,16 +128,17 @@ fn gif(bytes: &[u8]) -> Option<Image> {
     }
     let first = frames.remove(0);
     Some(Image {
-        format: Format::Rgba,
-        width: first.width(),
-        height: first.height(),
-        bytes: first.into_raw(),
         frames: frames.into_iter().map(|frame| frame.into_raw()).collect(),
         gaps,
         animation: Animation {
             state: AnimationState::Running,
             ..Animation::default()
         },
-        revision: 0,
+        ..Image::still(
+            Format::Rgba,
+            first.width(),
+            first.height(),
+            first.into_raw(),
+        )
     })
 }

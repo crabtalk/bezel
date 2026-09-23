@@ -1250,16 +1250,7 @@ impl Store {
             Format::Png => png_size(&bytes),
             _ => Some((command.width, command.height)),
         };
-        let image = Image {
-            format: command.format,
-            width: command.width,
-            height: command.height,
-            bytes,
-            frames: Vec::new(),
-            gaps: Vec::new(),
-            animation: Animation::default(),
-            revision: 0,
-        };
+        let image = Image::still(command.format, command.width, command.height, bytes);
         match size {
             Some(_) if image.format == Format::Png || raw_fits(&image) => Ok(()),
             _ => Err("EINVAL:dimensions"),
@@ -1358,16 +1349,7 @@ impl Store {
             return (None, self.reply_to(&command, id, outcome));
         }
         let display = (held.action == Action::Display).then(|| Display::of(id, &held));
-        let image = Image {
-            format: held.format,
-            width: held.width,
-            height: held.height,
-            bytes: held.payload,
-            frames: Vec::new(),
-            gaps: Vec::new(),
-            animation: Animation::default(),
-            revision: 0,
-        };
+        let image = Image::still(held.format, held.width, held.height, held.payload);
         if !matches!(image.format, Format::Png) && !raw_fits(&image) {
             return (None, self.reply(&command, id, Some("EINVAL:dimensions")));
         }
@@ -1579,6 +1561,20 @@ impl Store {
 }
 
 impl Image {
+    /// An image of one frame.
+    pub fn still(format: Format, width: u32, height: u32, bytes: Vec<u8>) -> Self {
+        Self {
+            format,
+            width,
+            height,
+            bytes,
+            frames: Vec::new(),
+            gaps: Vec::new(),
+            animation: Animation::default(),
+            revision: 0,
+        }
+    }
+
     /// How many frames it has, the first included.
     pub fn frame_count(&self) -> usize {
         1 + self.frames.len()

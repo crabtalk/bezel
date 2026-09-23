@@ -605,16 +605,7 @@ impl Emulator {
         let Some(rgba) = crate::sixel::decode(data) else {
             return;
         };
-        let image = kitty::Image {
-            format: kitty::Format::Rgba,
-            width: rgba.width,
-            height: rgba.height,
-            bytes: rgba.bytes,
-            frames: Vec::new(),
-            gaps: Vec::new(),
-            animation: kitty::Animation::default(),
-            revision: 0,
-        };
+        let image = kitty::Image::still(kitty::Format::Rgba, rgba.width, rgba.height, rgba.bytes);
         let id = self.graphics.hold(image);
         let _ = self.place(kitty::Display::at_cursor(id));
     }
