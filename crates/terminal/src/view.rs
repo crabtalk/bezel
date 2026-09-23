@@ -15,15 +15,18 @@
 //!   cursor block.
 
 use gpui::{
-    App, Bounds, GlobalElementId, Hsla, LayoutId, Modifiers, PaintQuad, Pixels, Point, ShapedLine,
-    SharedString, Style, TextRun, Window, fill, font, outline, point, px, relative, size,
+    App, Bounds, GlobalElementId, Hsla, KeyLayout, LayoutId, Modifiers, PaintQuad, Pixels, Point,
+    ShapedLine, SharedString, Style, TextRun, Window, fill, font, outline, point, px, relative,
+    size,
 };
 
 use theme::{Appearance, Theme};
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::emulator::{CellColor, CellSnapshot, CursorSnapshot, Emulator, Side};
+use crate::emulator::{
+    CellColor, CellSnapshot, CursorSnapshot, Emulator, KeyboardMode, MouseMode, MouseTracking, Side,
+};
 
 /// Terminal font metrics (mono).
 pub const TERM_FONT_SIZE: f32 = 13.0;
@@ -294,15 +297,34 @@ pub fn cell_at(x: f32, y: f32, cell_w: f32, line_h: f32, cols: usize, rows: usiz
 // Keyboard → bytes
 // ---------------------------------------------------------------------------
 
+/// Whether a key was pressed, held down, or let go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KeyEvent {
+    #[default]
+    Press,
+    Repeat,
+    Release,
+}
+
 /// Encode a keystroke as PTY bytes. `None` means "not ours" — the event should
 /// fall through (e.g. the platform-primary shortcuts that drive app actions).
 ///
-/// `app_cursor` switches arrows/home/end from CSI to SS3 per DECCKM.
+/// A repeat or a release only encodes under the kitty keyboard protocol's
+/// event-types flag; there is no legacy sequence that says either.
+///
+/// `layout` is what gpui reports for the key that was pressed, where it
+/// reports one. gpui folds a shifted key into `key` for everything but `a`-`z`
+/// and clears `Modifiers::shift` with it, so `shift-1` arrives as `!` with no
+/// shift held; the kitty encoding states the unshifted key and the shift bit
+/// in separate parameters, and reads both from here. The legacy encoding
+/// below wants the folded key and uses `key`.
 pub fn keystroke_bytes(
     key: &str,
     key_char: Option<&str>,
+    layout: Option<&KeyLayout>,
     mods: &Modifiers,
-    app_cursor: bool,
+    mode: KeyboardMode,
+    event: KeyEvent,
 ) -> Option<Vec<u8>> {
     // Platform-primary combos (Cmd on macOS, the super key elsewhere) belong to
     // the app keymap, never the PTY.
@@ -315,16 +337,37 @@ pub fn keystroke_bytes(
     if mods.control && mods.shift && matches!(key, "c" | "v") {
         return None;
     }
+    let reportable = mode.event_types && !matches!(event, KeyEvent::Press);
+    if !matches!(event, KeyEvent::Press) && !reportable {
+        return None;
+    }
+    // The protocol takes a key off its legacy encoding when the program asked
+    // for every key, when the key is `Esc`, when control or alt is held, or
+    // when the event itself is what has to be said.
+    if mode.enhanced()
+        && (mode.all_as_escapes || key == "escape" || mods.control || mods.alt || reportable)
+        && let Some(bytes) = kitty_bytes(key, key_char, layout, mods, mode, event)
+    {
+        return Some(bytes);
+    }
+    // Arrows, editing and function keys carry their modifiers as a CSI
+    // parameter. Everything below this is a key that has no parameter to put
+    // one in, and folds the modifier into the bytes instead.
+    if let Some(bytes) = named_bytes(key, mods, mode.app_cursor) {
+        return Some(bytes);
+    }
     if mods.alt {
         // ESC-prefix the same keystroke without alt.
         let inner = keystroke_bytes(
             key,
             key_char,
+            layout,
             &Modifiers {
                 alt: false,
                 ..*mods
             },
-            app_cursor,
+            mode,
+            event,
         )?;
         let mut out = vec![0x1b];
         out.extend(inner);
@@ -334,13 +377,6 @@ pub fn keystroke_bytes(
         return control_bytes(key);
     }
 
-    let seq = |csi: &[u8], ss3: &[u8]| {
-        Some(if app_cursor {
-            ss3.to_vec()
-        } else {
-            csi.to_vec()
-        })
-    };
     match key {
         "enter" => Some(b"\r".to_vec()),
         "backspace" => Some(vec![0x7f]),
@@ -351,28 +387,6 @@ pub fn keystroke_bytes(
         }),
         "escape" => Some(vec![0x1b]),
         "space" => Some(b" ".to_vec()),
-        "up" => seq(b"\x1b[A", b"\x1bOA"),
-        "down" => seq(b"\x1b[B", b"\x1bOB"),
-        "right" => seq(b"\x1b[C", b"\x1bOC"),
-        "left" => seq(b"\x1b[D", b"\x1bOD"),
-        "home" => seq(b"\x1b[H", b"\x1bOH"),
-        "end" => seq(b"\x1b[F", b"\x1bOF"),
-        "insert" => Some(b"\x1b[2~".to_vec()),
-        "delete" => Some(b"\x1b[3~".to_vec()),
-        "pageup" => Some(b"\x1b[5~".to_vec()),
-        "pagedown" => Some(b"\x1b[6~".to_vec()),
-        "f1" => Some(b"\x1bOP".to_vec()),
-        "f2" => Some(b"\x1bOQ".to_vec()),
-        "f3" => Some(b"\x1bOR".to_vec()),
-        "f4" => Some(b"\x1bOS".to_vec()),
-        "f5" => Some(b"\x1b[15~".to_vec()),
-        "f6" => Some(b"\x1b[17~".to_vec()),
-        "f7" => Some(b"\x1b[18~".to_vec()),
-        "f8" => Some(b"\x1b[19~".to_vec()),
-        "f9" => Some(b"\x1b[20~".to_vec()),
-        "f10" => Some(b"\x1b[21~".to_vec()),
-        "f11" => Some(b"\x1b[23~".to_vec()),
-        "f12" => Some(b"\x1b[24~".to_vec()),
         _ => {
             // Printable: prefer the typed character (IME/shift-aware).
             let text = key_char.filter(|c| !c.is_empty()).or({
@@ -386,6 +400,177 @@ pub fn keystroke_bytes(
             Some(text.as_bytes().to_vec())
         }
     }
+}
+
+/// A key's kitty code and the byte its sequence ends with.
+///
+/// The protocol's functional key definitions, as far as the key names gpui
+/// hands us reach: the keypad cluster and the bare modifier keys arrive as
+/// neither, so neither is reported. `f3` is `13~` rather than the `1;<mod>R`
+/// its legacy form would give, which would be read as a cursor position
+/// report.
+fn kitty_key(key: &str, layout: Option<&KeyLayout>) -> Option<(u32, u8)> {
+    Some(match key {
+        "escape" => (27, b'u'),
+        "enter" => (13, b'u'),
+        "tab" => (9, b'u'),
+        "backspace" => (127, b'u'),
+        "insert" => (2, b'~'),
+        "delete" => (3, b'~'),
+        "left" => (1, b'D'),
+        "right" => (1, b'C'),
+        "up" => (1, b'A'),
+        "down" => (1, b'B'),
+        "pageup" => (5, b'~'),
+        "pagedown" => (6, b'~'),
+        "home" => (1, b'H'),
+        "end" => (1, b'F'),
+        "f1" => (1, b'P'),
+        "f2" => (1, b'Q'),
+        "f3" => (13, b'~'),
+        "f4" => (1, b'S'),
+        "f5" => (15, b'~'),
+        "f6" => (17, b'~'),
+        "f7" => (18, b'~'),
+        "f8" => (19, b'~'),
+        "f9" => (20, b'~'),
+        "f10" => (21, b'~'),
+        "f11" => (23, b'~'),
+        "f12" => (24, b'~'),
+        "space" => (32, b'u'),
+        _ => {
+            // A text key is its own unshifted codepoint, which is what
+            // `layout` carries: `key` holds the shifted one, `!` where the
+            // protocol asks for `1`. Without a layout the key name is all
+            // there is.
+            let name = layout.map_or(key, |layout| layout.unshifted.as_str());
+            let mut chars = name.chars();
+            let (first, rest) = (chars.next()?, chars.next());
+            if rest.is_some() {
+                return None;
+            }
+            (first as u32, b'u')
+        }
+    })
+}
+
+/// `CSI <number>[:<shifted>] ; <modifiers>[:<event>] [; <text>] <final>`,
+/// leaving out every parameter the protocol allows to be left out.
+fn kitty_bytes(
+    key: &str,
+    key_char: Option<&str>,
+    layout: Option<&KeyLayout>,
+    mods: &Modifiers,
+    mode: KeyboardMode,
+    event: KeyEvent,
+) -> Option<Vec<u8>> {
+    let (number, final_byte) = kitty_key(key, layout)?;
+    // Shift reaches the report through the layout where gpui folded it out of
+    // the modifiers.
+    let shift = mods.shift || layout.is_some_and(|layout| layout.shift);
+    let modifier = modifier_parameter(&Modifiers { shift, ..*mods }).unwrap_or(1);
+    let event = match event {
+        KeyEvent::Press => 1,
+        KeyEvent::Repeat => 2,
+        KeyEvent::Release => 3,
+    };
+    // Text rides along only where the program asked for it, and a release
+    // produces none.
+    let text = key_char
+        .filter(|_| mode.associated_text && event != 3)
+        .filter(|text| !text.is_empty() && !text.chars().any(|ch| ch.is_control()));
+
+    // Flag 4's shifted key, which the protocol carries only where shift is in
+    // the modifiers.
+    let shifted = layout
+        .filter(|_| mode.alternate_keys && shift)
+        .and_then(|layout| layout.shifted.as_deref())
+        .and_then(|shifted| shifted.chars().next())
+        .map(|shifted| shifted as u32);
+
+    let mut out = format!("\x1b[{number}");
+    if let Some(shifted) = shifted {
+        out.push_str(&format!(":{shifted}"));
+    }
+    if modifier > 1 || event > 1 || text.is_some() {
+        out.push_str(&format!(";{modifier}"));
+        if event > 1 {
+            out.push_str(&format!(":{event}"));
+        }
+    }
+    if let Some(text) = text {
+        out.push(';');
+        let codepoints: Vec<String> = text.chars().map(|ch| (ch as u32).to_string()).collect();
+        out.push_str(&codepoints.join(":"));
+    }
+    out.push(final_byte as char);
+    Some(out.into_bytes())
+}
+
+/// A key that states its modifiers as a CSI parameter, and where the parameter
+/// goes.
+enum Named {
+    /// `CSI 1 ; <modifier> <letter>` — the arrows, home and end, and F1 to F4.
+    Letter(u8),
+    /// `CSI <number> ; <modifier> ~` — the editing keys and F5 up.
+    Tilde(u8),
+}
+
+/// Encode a key that carries its modifiers as a CSI parameter. `None` for a
+/// key that is not one of those.
+///
+/// A held modifier rules out the SS3 form, which has nowhere to put the
+/// parameter: `ctrl-left` is `CSI 1;5D` whatever DECCKM is set to.
+fn named_bytes(key: &str, mods: &Modifiers, app_cursor: bool) -> Option<Vec<u8>> {
+    let named = match key {
+        "up" => Named::Letter(b'A'),
+        "down" => Named::Letter(b'B'),
+        "right" => Named::Letter(b'C'),
+        "left" => Named::Letter(b'D'),
+        "home" => Named::Letter(b'H'),
+        "end" => Named::Letter(b'F'),
+        "f1" => Named::Letter(b'P'),
+        "f2" => Named::Letter(b'Q'),
+        "f3" => Named::Letter(b'R'),
+        "f4" => Named::Letter(b'S'),
+        "insert" => Named::Tilde(2),
+        "delete" => Named::Tilde(3),
+        "pageup" => Named::Tilde(5),
+        "pagedown" => Named::Tilde(6),
+        "f5" => Named::Tilde(15),
+        "f6" => Named::Tilde(17),
+        "f7" => Named::Tilde(18),
+        "f8" => Named::Tilde(19),
+        "f9" => Named::Tilde(20),
+        "f10" => Named::Tilde(21),
+        "f11" => Named::Tilde(23),
+        "f12" => Named::Tilde(24),
+        _ => return None,
+    };
+    Some(match (named, modifier_parameter(mods)) {
+        // DECCKM moves the arrows and home/end to SS3. F1 to F4 are SS3
+        // whatever it says.
+        (Named::Letter(letter), None) => {
+            let introducer = if app_cursor || matches!(letter, b'P'..=b'S') {
+                b'O'
+            } else {
+                b'['
+            };
+            vec![0x1b, introducer, letter]
+        }
+        (Named::Letter(letter), Some(modifier)) => {
+            format!("\x1b[1;{modifier}{}", letter as char).into_bytes()
+        }
+        (Named::Tilde(number), None) => format!("\x1b[{number}~").into_bytes(),
+        (Named::Tilde(number), Some(modifier)) => format!("\x1b[{number};{modifier}~").into_bytes(),
+    })
+}
+
+/// The `1 + bits` parameter a modified key states: shift 1, alt 2, control 4.
+/// `None` where nothing is held, which is the key's own plain form.
+fn modifier_parameter(mods: &Modifiers) -> Option<u8> {
+    let bits = u8::from(mods.shift) + u8::from(mods.alt) * 2 + u8::from(mods.control) * 4;
+    (bits != 0).then_some(bits + 1)
 }
 
 /// Ctrl-key encoding (caret notation).
@@ -425,6 +610,151 @@ pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
     } else {
         sanitized.into_bytes()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pointer → bytes
+// ---------------------------------------------------------------------------
+
+/// A pointer button, in the order the protocol numbers them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseButton {
+    Left,
+    Middle,
+    Right,
+}
+
+/// What the pointer did, in the vocabulary a report is written in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseAction {
+    Press(MouseButton),
+    Release(MouseButton),
+    /// The button held through the move, or `None` for a bare move.
+    Motion(Option<MouseButton>),
+    /// A wheel gesture, already resolved to whole lines.
+    Scroll {
+        up: bool,
+        lines: usize,
+    },
+}
+
+/// Encode a pointer event as PTY bytes. `None` means the event is the user's —
+/// the host should run its own selection or scrollback instead.
+///
+/// `row` and `col` are viewport cells, which is what [`cell_at`] answers.
+/// Holding shift always answers `None`: it is how a user reaches the selection
+/// under a program that has taken the pointer, and it costs that program the
+/// shift modifier on every report.
+pub fn mouse_bytes(
+    action: MouseAction,
+    row: usize,
+    col: usize,
+    mods: &Modifiers,
+    mode: MouseMode,
+) -> Option<Vec<u8>> {
+    if mods.shift {
+        return None;
+    }
+    match action {
+        MouseAction::Scroll { up, lines } if mode.tracking == MouseTracking::Off => {
+            // The alternate screen has no scrollback to move through, so a
+            // wheel there drives whatever the arrow keys drive.
+            let arrows = (mode.alternate_scroll && mode.alt_screen).then(|| {
+                let one: &[u8] = match (up, mode.app_cursor) {
+                    (true, false) => b"\x1b[A",
+                    (true, true) => b"\x1bOA",
+                    (false, false) => b"\x1b[B",
+                    (false, true) => b"\x1bOB",
+                };
+                one.repeat(lines)
+            })?;
+            (!arrows.is_empty()).then_some(arrows)
+        }
+        MouseAction::Scroll { up, lines } => {
+            let mut out = Vec::new();
+            for _ in 0..lines {
+                out.extend(report(
+                    MouseAction::Scroll { up, lines: 1 },
+                    row,
+                    col,
+                    mods,
+                    mode,
+                )?);
+            }
+            (!out.is_empty()).then_some(out)
+        }
+        MouseAction::Motion(held) => {
+            let wanted = match mode.tracking {
+                MouseTracking::Motion => true,
+                MouseTracking::Drag => held.is_some(),
+                MouseTracking::Off | MouseTracking::Click => false,
+            };
+            wanted.then(|| report(action, row, col, mods, mode))?
+        }
+        _ if mode.tracking == MouseTracking::Off => None,
+        _ => report(action, row, col, mods, mode),
+    }
+}
+
+/// One report. `None` for a cell the chosen encoding has no room to name.
+fn report(
+    action: MouseAction,
+    row: usize,
+    col: usize,
+    mods: &Modifiers,
+    mode: MouseMode,
+) -> Option<Vec<u8>> {
+    let number = |button| match button {
+        MouseButton::Left => 0u32,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+    };
+    // Alt and control travel on every report; shift never does, having been
+    // spent on the selection override.
+    let modifiers = u32::from(mods.alt) * 8 + u32::from(mods.control) * 16;
+    let (button, released) = match action {
+        MouseAction::Press(button) => (number(button), false),
+        MouseAction::Release(button) => (number(button), true),
+        // 3 is "no button", which is what a bare move reports moving.
+        MouseAction::Motion(held) => (held.map_or(3, number) + 32, false),
+        MouseAction::Scroll { up, .. } => (if up { 64 } else { 65 }, false),
+    };
+
+    if mode.sgr {
+        let final_byte = if released { 'm' } else { 'M' };
+        return Some(
+            format!(
+                "\x1b[<{};{};{}{final_byte}",
+                button + modifiers,
+                col + 1,
+                row + 1
+            )
+            .into_bytes(),
+        );
+    }
+
+    // The original encoding numbers every release 3: there is no room in it to
+    // say which button came up.
+    let button = if released { 3 } else { button };
+    let mut out = b"\x1b[M".to_vec();
+    out.push(32 + (button + modifiers) as u8);
+    for coordinate in [col, row] {
+        let value = coordinate as u32 + 33;
+        if mode.utf8 {
+            // Two UTF-8 bytes, which is as far as `1005` reaches.
+            if value > 0x7ff {
+                return None;
+            }
+            let mut buffer = [0u8; 4];
+            out.extend_from_slice(char::from_u32(value)?.encode_utf8(&mut buffer).as_bytes());
+        } else {
+            if value > 0xff {
+                return None;
+            }
+            out.push(value as u8);
+        }
+    }
+    Some(out)
 }
 
 // ---------------------------------------------------------------------------

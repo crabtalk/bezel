@@ -237,15 +237,21 @@ impl Theme {
                 edge_width: 1.0,
                 edge_aa: 0.5,
             },
-            // Measured 2026-08-31, same instrument as dark. Light `regular`
-            // is very nearly a white sheet — 84% of the output is tint — so
-            // the little backdrop that survives is pushed much harder to keep
-            // its colour: saturation 4.27 against dark's 2.55, each within 0.1
-            // over four hues. Rim and lit edge are dark's, unmeasured here.
+            // The real material measured 2026-08-31, same instrument as dark:
+            // gain 0.139, tint white at 214/255, saturation 4.27 (within 0.1
+            // over four hues). 84% of its output is tint.
+            //
+            // Shipped off that pair since 2026-09-23: a third of the tint
+            // traded for the backdrop it was covering, holding the product
+            // `tint.a / (1 - gain)` that [`SurfaceSpec::flat`] reads, so a
+            // build with no lens keeps the white panel it had. Saturation
+            // comes down with it — 4.27 was fit at 13.9% transmission and
+            // oversaturates at 40%. Rim and lit edge are dark's, unmeasured
+            // here.
             glass_regular: SurfaceSpec {
-                gain: 0.139,
-                saturation: 4.27,
-                tint: gpui::hsla(0.0, 0.0, 1.0, 214.0 / 255.0),
+                gain: 0.40,
+                saturation: 2.2,
+                tint: gpui::hsla(0.0, 0.0, 1.0, 150.0 / 255.0),
                 blur: 8.9,
                 rim: 18.75,
                 reach: 47.0,

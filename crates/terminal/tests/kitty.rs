@@ -3,7 +3,7 @@
 //! same way the escapes do.
 
 use terminal::{
-    emulator::Emulator,
+    emulator::{CursorSnapshot, Emulator},
     kitty::{Format, Scanner, Segment},
 };
 
@@ -53,7 +53,7 @@ fn passed(scanner: &mut Scanner, bytes: &[u8]) -> Vec<u8> {
         .iter()
         .filter_map(|segment| match segment {
             Segment::Text(text) => Some(*text),
-            Segment::Graphics(_) => None,
+            Segment::Graphics(_) | Segment::Sync(_) => None,
         })
         .fold(Vec::new(), |mut out, text| {
             out.extend_from_slice(text);
@@ -312,9 +312,14 @@ fn placed_emulator(cols: u16, rows: u16) -> Emulator {
 
 /// `a=T` for an RGBA image of `width` by `height` pixels.
 fn display(id: u32, width: u32, height: u32) -> Vec<u8> {
+    display_keys(id, width, height, "")
+}
+
+/// [`display`] with `keys` folded in ahead of the payload.
+fn display_keys(id: u32, width: u32, height: u32, keys: &str) -> Vec<u8> {
     let pixels = vec![0xffu8; (width * height * 4) as usize];
     apc(&format!(
-        "a=T,f=32,s={width},v={height},i={id};{}",
+        "a=T,f=32,s={width},v={height},i={id}{keys};{}",
         base64(&pixels)
     ))
 }
@@ -569,4 +574,185 @@ fn an_image_reaches_the_paint(cx: &mut gpui::TestAppContext) {
     });
     cx.run_until_parked();
     assert_eq!(painted.get(), 1, "the image never reached a frame");
+}
+
+// ---------------------------------------------------------------------------
+// Display keys
+// ---------------------------------------------------------------------------
+
+#[test]
+fn columns_and_rows_set_the_extent_the_pixels_would_have() {
+    let mut emulator = placed_emulator(20, 10);
+    // 25x40 pixels over 10x20 cells is three columns by two rows.
+    emulator.feed(&display_keys(1, 25, 40, ",c=6,r=4"));
+
+    let placement = emulator.placements()[0];
+    assert_eq!((placement.cols, placement.rows), (6, 4));
+}
+
+#[test]
+fn an_extent_wider_than_the_grid_is_clamped_to_it() {
+    let mut emulator = placed_emulator(20, 10);
+    // `C=1` so the clamped row count is not immediately scrolled away by the
+    // linefeeds that would reserve it.
+    emulator.feed(&display_keys(1, 10, 20, ",c=99,r=99,C=1"));
+
+    let placement = emulator.placements()[0];
+    assert_eq!((placement.cols, placement.rows), (20, 10));
+}
+
+#[test]
+fn no_cursor_movement_reserves_nothing_and_moves_nothing() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(b"ab");
+    // Two rows tall: without `C=1` the cursor would end up on row 2.
+    emulator.feed(&display_keys(1, 10, 40, ",C=1"));
+
+    assert_eq!(emulator.cursor(), Some(CursorSnapshot { row: 0, col: 2 }));
+    let placement = emulator.placements()[0];
+    assert_eq!((placement.row, placement.col), (0, 2));
+    assert_eq!((placement.cols, placement.rows), (1, 2));
+
+    // The rows under it were never reserved, so a program drawing there draws
+    // under the image rather than below it.
+    emulator.feed(b"\x1b[2;1Hunder");
+    assert_eq!(emulator.row_text(1), "under");
+    assert_eq!(emulator.placements().len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Synchronized output
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_scanner_reports_mode_2026_and_still_passes_its_bytes_on() {
+    let mut scanner = Scanner::new();
+    let input = b"a\x1b[?2026hb\x1b[?2026lc";
+    let segments = scanner.feed(input);
+
+    let holds: Vec<bool> = segments
+        .iter()
+        .filter_map(|segment| match segment {
+            Segment::Sync(hold) => Some(*hold),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(holds, vec![true, false]);
+
+    let text: Vec<u8> = segments
+        .iter()
+        .filter_map(|segment| match segment {
+            Segment::Text(text) => Some(*text),
+            _ => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    assert_eq!(text, input);
+}
+
+#[test]
+fn a_mode_2026_run_split_across_reads_is_one_edge() {
+    let mut scanner = Scanner::new();
+    assert!(!scanner.feed(b"\x1b[?20").iter().any(is_sync));
+    assert!(scanner.feed(b"26h").iter().any(is_sync));
+}
+
+#[test]
+fn a_mode_2026_query_is_not_an_edge() {
+    let mut scanner = Scanner::new();
+    assert!(!scanner.feed(b"\x1b[?2026$p").iter().any(is_sync));
+}
+
+#[test]
+fn a_graphics_payload_cannot_finish_a_mode_2026_run() {
+    let mut scanner = Scanner::new();
+    // The `ESC` opening the APC would otherwise count as the first byte of a
+    // BSU, leaving the rest to be completed by whatever follows the run.
+    assert!(!scanner.feed(b"\x1b_Ga=q\x1b\\[?2026h").iter().any(is_sync));
+}
+
+fn is_sync(segment: &Segment<'_>) -> bool {
+    matches!(segment, Segment::Sync(_))
+}
+
+#[test]
+fn an_image_inside_a_synchronized_frame_lands_after_the_frames_text() {
+    let mut emulator = placed_emulator(20, 10);
+    // One frame: home the cursor, clear, write a header, then display an
+    // image on the row below it.
+    emulator.feed(b"\x1b[?2026h\x1b[H\x1b[2Jheader\r\n");
+    emulator.feed(&display(1, 10, 20));
+    emulator.feed(b"\x1b[?2026l");
+
+    assert_eq!(emulator.row_text(0), "header");
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 1, "{placements:?}");
+    assert_eq!((placements[0].row, placements[0].col), (1, 0));
+}
+
+// ---------------------------------------------------------------------------
+// Anchors under a redraw
+// ---------------------------------------------------------------------------
+
+#[test]
+fn text_over_the_left_of_an_image_leaves_it_where_it_was() {
+    let mut emulator = placed_emulator(20, 10);
+    // Six cells wide, drawn at the cursor and leaving it there.
+    emulator.feed(&display_keys(1, 60, 20, ",C=1"));
+    // The program writes over the image's first two cells.
+    emulator.feed(b"ab");
+
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 1, "{placements:?}");
+    assert_eq!(
+        (placements[0].row, placements[0].col),
+        (0, 0),
+        "the surviving anchors forgot where the left edge was"
+    );
+}
+
+#[test]
+fn text_over_the_whole_top_row_takes_the_image_with_it() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+    emulator.feed(b"abc");
+    assert!(emulator.placements().is_empty());
+}
+
+#[test]
+fn displaying_an_image_again_replaces_the_placement_it_had() {
+    let mut emulator = placed_emulator(20, 10);
+    for _ in 0..5 {
+        emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+    }
+
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 1, "{placements:?}");
+    assert_eq!(placements[0].image, 1);
+}
+
+#[test]
+fn an_image_redrawn_somewhere_else_leaves_no_ghost() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+    emulator.feed(b"\x1b[3;5H");
+    emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 1, "{placements:?}");
+    assert_eq!((placements[0].row, placements[0].col), (2, 4));
+}
+
+#[test]
+fn two_images_side_by_side_keep_their_own_edges() {
+    let mut emulator = placed_emulator(20, 10);
+    emulator.feed(&display_keys(1, 30, 20, ",C=1"));
+    emulator.feed(b"\x1b[1;7H");
+    emulator.feed(&display_keys(2, 30, 20, ",C=1"));
+
+    let placements = emulator.placements();
+    assert_eq!(placements.len(), 2, "{placements:?}");
+    assert_eq!((placements[0].image, placements[0].col), (1, 0));
+    assert_eq!((placements[1].image, placements[1].col), (2, 6));
 }

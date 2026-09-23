@@ -1,4 +1,14 @@
-use gpui::Modifiers;
+use gpui::{KeyLayout, Modifiers};
+
+use terminal::emulator::KeyboardMode;
+
+/// A keyboard with no protocol enhancements, only DECCKM.
+fn legacy(app_cursor: bool) -> KeyboardMode {
+    KeyboardMode {
+        app_cursor,
+        ..KeyboardMode::default()
+    }
+}
 
 use terminal::{emulator::Side, view::*};
 use theme::Appearance;
@@ -10,75 +20,131 @@ fn mods() -> Modifiers {
 #[test]
 fn printables_prefer_key_char() {
     assert_eq!(
-        keystroke_bytes("a", Some("a"), &mods(), false),
+        keystroke_bytes(
+            "a",
+            Some("a"),
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
         Some(b"a".to_vec())
     );
     assert_eq!(
         keystroke_bytes(
             "a",
             Some("A"),
+            None,
             &Modifiers {
                 shift: true,
                 ..mods()
             },
-            false
+            legacy(false),
+            KeyEvent::Press
         ),
         Some(b"A".to_vec())
     );
     // Multi-byte characters pass through as UTF-8.
     assert_eq!(
-        keystroke_bytes("e", Some("é"), &mods(), false),
+        keystroke_bytes(
+            "e",
+            Some("é"),
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
         Some("é".as_bytes().to_vec())
     );
     // Named single-char keys fall back to the key name.
     assert_eq!(
-        keystroke_bytes("/", None, &mods(), false),
+        keystroke_bytes("/", None, None, &mods(), legacy(false), KeyEvent::Press),
         Some(b"/".to_vec())
     );
     // Unknown multi-char keys are not ours.
-    assert_eq!(keystroke_bytes("capslock", None, &mods(), false), None);
+    assert_eq!(
+        keystroke_bytes(
+            "capslock",
+            None,
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
+        None
+    );
 }
 
 #[test]
 fn control_keys_and_sequences() {
     assert_eq!(
-        keystroke_bytes("enter", None, &mods(), false),
+        keystroke_bytes("enter", None, None, &mods(), legacy(false), KeyEvent::Press),
         Some(b"\r".to_vec())
     );
     assert_eq!(
-        keystroke_bytes("backspace", None, &mods(), false),
+        keystroke_bytes(
+            "backspace",
+            None,
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
         Some(vec![0x7f])
     );
     assert_eq!(
-        keystroke_bytes("tab", None, &mods(), false),
+        keystroke_bytes("tab", None, None, &mods(), legacy(false), KeyEvent::Press),
         Some(b"\t".to_vec())
     );
     assert_eq!(
         keystroke_bytes(
             "tab",
             None,
+            None,
             &Modifiers {
                 shift: true,
                 ..mods()
             },
-            false
+            legacy(false),
+            KeyEvent::Press
         ),
         Some(b"\x1b[Z".to_vec())
     );
     assert_eq!(
-        keystroke_bytes("escape", None, &mods(), false),
+        keystroke_bytes(
+            "escape",
+            None,
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
         Some(vec![0x1b])
     );
     assert_eq!(
-        keystroke_bytes("delete", None, &mods(), false),
+        keystroke_bytes(
+            "delete",
+            None,
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
         Some(b"\x1b[3~".to_vec())
     );
     assert_eq!(
-        keystroke_bytes("pageup", None, &mods(), false),
+        keystroke_bytes(
+            "pageup",
+            None,
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
         Some(b"\x1b[5~".to_vec())
     );
     assert_eq!(
-        keystroke_bytes("f5", None, &mods(), false),
+        keystroke_bytes("f5", None, None, &mods(), legacy(false), KeyEvent::Press),
         Some(b"\x1b[15~".to_vec())
     );
 }
@@ -86,19 +152,19 @@ fn control_keys_and_sequences() {
 #[test]
 fn arrows_respect_app_cursor_mode() {
     assert_eq!(
-        keystroke_bytes("up", None, &mods(), false),
+        keystroke_bytes("up", None, None, &mods(), legacy(false), KeyEvent::Press),
         Some(b"\x1b[A".to_vec())
     );
     assert_eq!(
-        keystroke_bytes("up", None, &mods(), true),
+        keystroke_bytes("up", None, None, &mods(), legacy(true), KeyEvent::Press),
         Some(b"\x1bOA".to_vec())
     );
     assert_eq!(
-        keystroke_bytes("home", None, &mods(), false),
+        keystroke_bytes("home", None, None, &mods(), legacy(false), KeyEvent::Press),
         Some(b"\x1b[H".to_vec())
     );
     assert_eq!(
-        keystroke_bytes("end", None, &mods(), true),
+        keystroke_bytes("end", None, None, &mods(), legacy(true), KeyEvent::Press),
         Some(b"\x1bOF".to_vec())
     );
 }
@@ -110,18 +176,30 @@ fn ctrl_combos_map_to_control_bytes() {
         ..mods()
     };
     assert_eq!(
-        keystroke_bytes("c", Some("c"), &ctrl, false),
+        keystroke_bytes("c", Some("c"), None, &ctrl, legacy(false), KeyEvent::Press),
         Some(vec![0x03])
     );
-    assert_eq!(keystroke_bytes("z", None, &ctrl, false), Some(vec![0x1a]));
     assert_eq!(
-        keystroke_bytes("space", None, &ctrl, false),
+        keystroke_bytes("z", None, None, &ctrl, legacy(false), KeyEvent::Press),
+        Some(vec![0x1a])
+    );
+    assert_eq!(
+        keystroke_bytes("space", None, None, &ctrl, legacy(false), KeyEvent::Press),
         Some(vec![0x00])
     );
-    assert_eq!(keystroke_bytes("[", None, &ctrl, false), Some(vec![0x1b]));
-    assert_eq!(keystroke_bytes("_", None, &ctrl, false), Some(vec![0x1f]));
+    assert_eq!(
+        keystroke_bytes("[", None, None, &ctrl, legacy(false), KeyEvent::Press),
+        Some(vec![0x1b])
+    );
+    assert_eq!(
+        keystroke_bytes("_", None, None, &ctrl, legacy(false), KeyEvent::Press),
+        Some(vec![0x1f])
+    );
     // Ctrl+1 has no caret encoding — not ours.
-    assert_eq!(keystroke_bytes("1", Some("1"), &ctrl, false), None);
+    assert_eq!(
+        keystroke_bytes("1", Some("1"), None, &ctrl, legacy(false), KeyEvent::Press),
+        None
+    );
 }
 
 #[test]
@@ -131,7 +209,7 @@ fn alt_prefixes_escape() {
         ..mods()
     };
     assert_eq!(
-        keystroke_bytes("b", Some("b"), &alt, false),
+        keystroke_bytes("b", Some("b"), None, &alt, legacy(false), KeyEvent::Press),
         Some(vec![0x1b, b'b'])
     );
     let alt_ctrl = Modifiers {
@@ -140,7 +218,7 @@ fn alt_prefixes_escape() {
         ..mods()
     };
     assert_eq!(
-        keystroke_bytes("c", None, &alt_ctrl, false),
+        keystroke_bytes("c", None, None, &alt_ctrl, legacy(false), KeyEvent::Press),
         Some(vec![0x1b, 0x03])
     );
 }
@@ -151,8 +229,14 @@ fn platform_primary_combos_fall_through() {
         platform: true,
         ..mods()
     };
-    assert_eq!(keystroke_bytes("j", Some("j"), &cmd, false), None);
-    assert_eq!(keystroke_bytes("enter", None, &cmd, false), None);
+    assert_eq!(
+        keystroke_bytes("j", Some("j"), None, &cmd, legacy(false), KeyEvent::Press),
+        None
+    );
+    assert_eq!(
+        keystroke_bytes("enter", None, None, &cmd, legacy(false), KeyEvent::Press),
+        None
+    );
 }
 
 #[test]
@@ -435,24 +519,848 @@ fn ctrl_shift_c_and_v_are_the_apps() {
         shift: true,
         ..mods()
     };
-    assert_eq!(keystroke_bytes("c", Some("C"), &ctrl_shift, false), None);
-    assert_eq!(keystroke_bytes("v", Some("V"), &ctrl_shift, false), None);
+    assert_eq!(
+        keystroke_bytes(
+            "c",
+            Some("C"),
+            None,
+            &ctrl_shift,
+            legacy(false),
+            KeyEvent::Press
+        ),
+        None
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "v",
+            Some("V"),
+            None,
+            &ctrl_shift,
+            legacy(false),
+            KeyEvent::Press
+        ),
+        None
+    );
     // The unshifted pair is untouched: interrupt, and the literal 0x16.
     let ctrl = Modifiers {
         control: true,
         ..mods()
     };
     assert_eq!(
-        keystroke_bytes("c", Some("c"), &ctrl, false),
+        keystroke_bytes("c", Some("c"), None, &ctrl, legacy(false), KeyEvent::Press),
         Some(vec![0x03])
     );
     assert_eq!(
-        keystroke_bytes("v", Some("v"), &ctrl, false),
+        keystroke_bytes("v", Some("v"), None, &ctrl, legacy(false), KeyEvent::Press),
         Some(vec![0x16])
     );
     // And a shifted letter that is not one of the two still reaches the PTY.
     assert_eq!(
-        keystroke_bytes("d", Some("D"), &ctrl_shift, false),
+        keystroke_bytes(
+            "d",
+            Some("D"),
+            None,
+            &ctrl_shift,
+            legacy(false),
+            KeyEvent::Press
+        ),
         Some(vec![0x04])
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Pointer → bytes
+// ---------------------------------------------------------------------------
+
+use terminal::emulator::{MouseMode, MouseTracking};
+
+fn tracking(tracking: MouseTracking) -> MouseMode {
+    MouseMode {
+        tracking,
+        ..MouseMode::default()
+    }
+}
+
+fn sgr(tracking: MouseTracking) -> MouseMode {
+    MouseMode {
+        sgr: true,
+        ..self::tracking(tracking)
+    }
+}
+
+#[test]
+fn a_pointer_nobody_asked_about_stays_the_users() {
+    let off = tracking(MouseTracking::Off);
+    for action in [
+        MouseAction::Press(MouseButton::Left),
+        MouseAction::Release(MouseButton::Left),
+        MouseAction::Motion(Some(MouseButton::Left)),
+    ] {
+        assert_eq!(mouse_bytes(action, 0, 0, &mods(), off), None, "{action:?}");
+    }
+}
+
+#[test]
+fn clicks_report_in_the_original_encoding() {
+    let mode = tracking(MouseTracking::Click);
+    // Button 0 and both coordinates carry a 32 offset, and the coordinates are
+    // one-based on top of it.
+    assert_eq!(
+        mouse_bytes(MouseAction::Press(MouseButton::Left), 0, 0, &mods(), mode),
+        Some(b"\x1b[M \x21\x21".to_vec())
+    );
+    assert_eq!(
+        mouse_bytes(MouseAction::Press(MouseButton::Right), 2, 4, &mods(), mode),
+        Some(b"\x1b[M\x22\x25\x23".to_vec())
+    );
+    // Every release is button 3: the encoding cannot say which came up.
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Release(MouseButton::Right),
+            0,
+            0,
+            &mods(),
+            mode
+        ),
+        Some(b"\x1b[M\x23\x21\x21".to_vec())
+    );
+}
+
+#[test]
+fn sgr_names_the_button_that_came_up() {
+    let mode = sgr(MouseTracking::Click);
+    assert_eq!(
+        mouse_bytes(MouseAction::Press(MouseButton::Right), 3, 9, &mods(), mode),
+        Some(b"\x1b[<2;10;4M".to_vec())
+    );
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Release(MouseButton::Right),
+            3,
+            9,
+            &mods(),
+            mode
+        ),
+        Some(b"\x1b[<2;10;4m".to_vec())
+    );
+}
+
+#[test]
+fn alt_and_control_travel_on_a_report() {
+    let mode = sgr(MouseTracking::Click);
+    let alt_ctrl = Modifiers {
+        alt: true,
+        control: true,
+        ..mods()
+    };
+    assert_eq!(
+        mouse_bytes(MouseAction::Press(MouseButton::Left), 0, 0, &alt_ctrl, mode),
+        Some(b"\x1b[<24;1;1M".to_vec())
+    );
+}
+
+#[test]
+fn shift_takes_the_pointer_back_from_the_program() {
+    let shift = Modifiers {
+        shift: true,
+        ..mods()
+    };
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Press(MouseButton::Left),
+            0,
+            0,
+            &shift,
+            sgr(MouseTracking::Motion)
+        ),
+        None
+    );
+}
+
+#[test]
+fn drag_reports_a_held_button_and_motion_reports_everything() {
+    let drag = sgr(MouseTracking::Drag);
+    let motion = sgr(MouseTracking::Motion);
+    let held = MouseAction::Motion(Some(MouseButton::Left));
+    let bare = MouseAction::Motion(None);
+
+    // 32 marks a report as motion; a bare move is button 3, "none".
+    assert_eq!(
+        mouse_bytes(held, 1, 1, &mods(), drag),
+        Some(b"\x1b[<32;2;2M".to_vec())
+    );
+    assert_eq!(mouse_bytes(bare, 1, 1, &mods(), drag), None);
+    assert_eq!(
+        mouse_bytes(bare, 1, 1, &mods(), motion),
+        Some(b"\x1b[<35;2;2M".to_vec())
+    );
+    // Click tracking reports neither.
+    assert_eq!(
+        mouse_bytes(held, 1, 1, &mods(), sgr(MouseTracking::Click)),
+        None
+    );
+}
+
+#[test]
+fn a_wheel_reports_once_per_line() {
+    let mode = sgr(MouseTracking::Click);
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Scroll { up: true, lines: 2 },
+            0,
+            0,
+            &mods(),
+            mode
+        ),
+        Some(b"\x1b[<64;1;1M\x1b[<64;1;1M".to_vec())
+    );
+    assert_eq!(
+        mouse_bytes(
+            MouseAction::Scroll {
+                up: false,
+                lines: 1
+            },
+            0,
+            0,
+            &mods(),
+            mode
+        ),
+        Some(b"\x1b[<65;1;1M".to_vec())
+    );
+}
+
+#[test]
+fn alternate_scroll_sends_arrows_only_on_the_alternate_screen() {
+    let wheel = MouseAction::Scroll { up: true, lines: 2 };
+    let alt = MouseMode {
+        alternate_scroll: true,
+        alt_screen: true,
+        ..tracking(MouseTracking::Off)
+    };
+    assert_eq!(
+        mouse_bytes(wheel, 0, 0, &mods(), alt),
+        Some(b"\x1b[A\x1b[A".to_vec())
+    );
+    // DECCKM switches them to SS3, the same as the arrow keys themselves.
+    assert_eq!(
+        mouse_bytes(
+            wheel,
+            0,
+            0,
+            &mods(),
+            MouseMode {
+                app_cursor: true,
+                ..alt
+            }
+        ),
+        Some(b"\x1bOA\x1bOA".to_vec())
+    );
+    // On the primary screen the wheel is the scrollback's.
+    assert_eq!(
+        mouse_bytes(
+            wheel,
+            0,
+            0,
+            &mods(),
+            MouseMode {
+                alt_screen: false,
+                ..alt
+            }
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_cell_the_encoding_cannot_name_is_not_reported() {
+    let mode = tracking(MouseTracking::Click);
+    let press = MouseAction::Press(MouseButton::Left);
+    // The original encoding spends one byte per coordinate, so it stops at 223.
+    assert!(mouse_bytes(press, 0, 222, &mods(), mode).is_some());
+    assert_eq!(mouse_bytes(press, 0, 223, &mods(), mode), None);
+
+    // `1005` spends two, and SGR spends as many as the number needs.
+    let utf8 = MouseMode { utf8: true, ..mode };
+    assert_eq!(
+        mouse_bytes(press, 0, 223, &mods(), utf8),
+        Some("\x1b[M \u{100}!".as_bytes().to_vec())
+    );
+    assert_eq!(mouse_bytes(press, 0, 2015, &mods(), utf8), None);
+    assert_eq!(
+        mouse_bytes(press, 0, 2015, &mods(), sgr(MouseTracking::Click)),
+        Some(b"\x1b[<0;2016;1M".to_vec())
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Modified named keys
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_modifier_turns_a_named_key_into_its_parameter_form() {
+    let ctrl = Modifiers {
+        control: true,
+        ..mods()
+    };
+    let shift = Modifiers {
+        shift: true,
+        ..mods()
+    };
+    let alt = Modifiers {
+        alt: true,
+        ..mods()
+    };
+
+    // 1 + shift 1 + alt 2 + control 4.
+    assert_eq!(
+        keystroke_bytes("left", None, None, &ctrl, legacy(false), KeyEvent::Press),
+        Some(b"\x1b[1;5D".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("left", None, None, &shift, legacy(false), KeyEvent::Press),
+        Some(b"\x1b[1;2D".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("left", None, None, &alt, legacy(false), KeyEvent::Press),
+        Some(b"\x1b[1;3D".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "right",
+            None,
+            None,
+            &Modifiers {
+                control: true,
+                shift: true,
+                ..mods()
+            },
+            legacy(false),
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[1;6C".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "up",
+            None,
+            None,
+            &Modifiers {
+                control: true,
+                shift: true,
+                alt: true,
+                ..mods()
+            },
+            legacy(false),
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[1;8A".to_vec())
+    );
+}
+
+#[test]
+fn a_modified_arrow_ignores_app_cursor_mode() {
+    let ctrl = Modifiers {
+        control: true,
+        ..mods()
+    };
+    // SS3 has nowhere to put the parameter, so DECCKM does not apply.
+    assert_eq!(
+        keystroke_bytes("left", None, None, &ctrl, legacy(true), KeyEvent::Press),
+        Some(b"\x1b[1;5D".to_vec())
+    );
+    // Unmodified, it still follows DECCKM.
+    assert_eq!(
+        keystroke_bytes("left", None, None, &mods(), legacy(true), KeyEvent::Press),
+        Some(b"\x1bOD".to_vec())
+    );
+}
+
+#[test]
+fn the_editing_keys_put_the_parameter_before_the_tilde() {
+    let ctrl = Modifiers {
+        control: true,
+        ..mods()
+    };
+    assert_eq!(
+        keystroke_bytes("delete", None, None, &ctrl, legacy(false), KeyEvent::Press),
+        Some(b"\x1b[3;5~".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "pageup",
+            None,
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[5~".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("f5", None, None, &ctrl, legacy(false), KeyEvent::Press),
+        Some(b"\x1b[15;5~".to_vec())
+    );
+}
+
+#[test]
+fn f1_to_f4_are_ss3_until_a_modifier_is_held() {
+    assert_eq!(
+        keystroke_bytes("f1", None, None, &mods(), legacy(false), KeyEvent::Press),
+        Some(b"\x1bOP".to_vec())
+    );
+    // Even with DECCKM off, which only ever governed the arrows.
+    assert_eq!(
+        keystroke_bytes("f4", None, None, &mods(), legacy(true), KeyEvent::Press),
+        Some(b"\x1bOS".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "f1",
+            None,
+            None,
+            &Modifiers {
+                shift: true,
+                ..mods()
+            },
+            legacy(false),
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[1;2P".to_vec())
+    );
+}
+
+#[test]
+fn keys_with_no_parameter_still_fold_their_modifier_in() {
+    // Alt keeps escaping, and ctrl keeps its caret byte: neither key has a CSI
+    // form to carry a parameter.
+    assert_eq!(
+        keystroke_bytes(
+            "enter",
+            None,
+            None,
+            &Modifiers {
+                alt: true,
+                ..mods()
+            },
+            legacy(false),
+            KeyEvent::Press
+        ),
+        Some(vec![0x1b, b'\r'])
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "backspace",
+            None,
+            None,
+            &Modifiers {
+                control: true,
+                ..mods()
+            },
+            legacy(false),
+            KeyEvent::Press
+        ),
+        Some(vec![0x08])
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "tab",
+            None,
+            None,
+            &Modifiers {
+                shift: true,
+                ..mods()
+            },
+            legacy(false),
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[Z".to_vec())
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Kitty keyboard protocol
+// ---------------------------------------------------------------------------
+
+/// Flag 1 on its own, which is what a program asks for first.
+fn disambiguate() -> KeyboardMode {
+    KeyboardMode {
+        disambiguate: true,
+        ..KeyboardMode::default()
+    }
+}
+
+fn ctrl() -> Modifiers {
+    Modifiers {
+        control: true,
+        ..mods()
+    }
+}
+
+#[test]
+fn disambiguate_takes_escape_and_the_control_and_alt_combos() {
+    let mode = disambiguate();
+    assert_eq!(
+        keystroke_bytes("escape", None, None, &mods(), mode, KeyEvent::Press),
+        Some(b"\x1b[27u".to_vec())
+    );
+    // 99 is `c`, and 5 is control.
+    assert_eq!(
+        keystroke_bytes("c", Some("c"), None, &ctrl(), mode, KeyEvent::Press),
+        Some(b"\x1b[99;5u".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "b",
+            Some("b"),
+            None,
+            &Modifiers {
+                alt: true,
+                ..mods()
+            },
+            mode,
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[98;3u".to_vec())
+    );
+}
+
+#[test]
+fn disambiguate_leaves_everything_else_on_its_legacy_encoding() {
+    let mode = disambiguate();
+    // Text keys stay text, shifted or not.
+    assert_eq!(
+        keystroke_bytes("a", Some("a"), None, &mods(), mode, KeyEvent::Press),
+        Some(b"a".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "a",
+            Some("A"),
+            None,
+            &Modifiers {
+                shift: true,
+                ..mods()
+            },
+            mode,
+            KeyEvent::Press
+        ),
+        Some(b"A".to_vec())
+    );
+    // Enter, tab and backspace are legacy until every key is an escape code.
+    assert_eq!(
+        keystroke_bytes("enter", None, None, &mods(), mode, KeyEvent::Press),
+        Some(b"\r".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("tab", None, None, &mods(), mode, KeyEvent::Press),
+        Some(b"\t".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("backspace", None, None, &mods(), mode, KeyEvent::Press),
+        Some(vec![0x7f])
+    );
+    // An unmodified arrow is what it always was.
+    assert_eq!(
+        keystroke_bytes("left", None, None, &mods(), mode, KeyEvent::Press),
+        Some(b"\x1b[D".to_vec())
+    );
+}
+
+#[test]
+fn a_functional_key_encodes_the_same_either_side_of_the_protocol() {
+    // The table's entry for an arrow is its legacy form, so control-left is the
+    // same bytes with the protocol on as off.
+    assert_eq!(
+        keystroke_bytes("left", None, None, &ctrl(), disambiguate(), KeyEvent::Press),
+        Some(b"\x1b[1;5D".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("left", None, None, &ctrl(), legacy(false), KeyEvent::Press),
+        Some(b"\x1b[1;5D".to_vec())
+    );
+}
+
+#[test]
+fn f3_moves_off_the_final_byte_a_cursor_report_uses() {
+    // Legacy control-F3 is `CSI 1;5R`, which is a cursor position report.
+    assert_eq!(
+        keystroke_bytes("f3", None, None, &ctrl(), legacy(false), KeyEvent::Press),
+        Some(b"\x1b[1;5R".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("f3", None, None, &ctrl(), disambiguate(), KeyEvent::Press),
+        Some(b"\x1b[13;5~".to_vec())
+    );
+}
+
+#[test]
+fn reporting_every_key_takes_the_text_keys_too() {
+    let mode = KeyboardMode {
+        all_as_escapes: true,
+        ..disambiguate()
+    };
+    assert_eq!(
+        keystroke_bytes("a", Some("a"), None, &mods(), mode, KeyEvent::Press),
+        Some(b"\x1b[97u".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("enter", None, None, &mods(), mode, KeyEvent::Press),
+        Some(b"\x1b[13u".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("tab", None, None, &mods(), mode, KeyEvent::Press),
+        Some(b"\x1b[9u".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("space", Some(" "), None, &mods(), mode, KeyEvent::Press),
+        Some(b"\x1b[32u".to_vec())
+    );
+}
+
+#[test]
+fn an_event_type_is_a_subparameter_of_the_modifier() {
+    let mode = KeyboardMode {
+        event_types: true,
+        ..disambiguate()
+    };
+    // No modifier still writes the 1, because the event has to hang off it.
+    assert_eq!(
+        keystroke_bytes("a", Some("a"), None, &mods(), mode, KeyEvent::Release),
+        Some(b"\x1b[97;1:3u".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("a", Some("a"), None, &mods(), mode, KeyEvent::Repeat),
+        Some(b"\x1b[97;1:2u".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("left", None, None, &ctrl(), mode, KeyEvent::Release),
+        Some(b"\x1b[1;5:3D".to_vec())
+    );
+    // A press is the default and says nothing.
+    assert_eq!(
+        keystroke_bytes("a", Some("a"), None, &mods(), mode, KeyEvent::Press),
+        Some(b"a".to_vec())
+    );
+}
+
+#[test]
+fn a_release_says_nothing_until_the_program_asks_for_events() {
+    assert_eq!(
+        keystroke_bytes(
+            "a",
+            Some("a"),
+            None,
+            &mods(),
+            disambiguate(),
+            KeyEvent::Release
+        ),
+        None
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "a",
+            Some("a"),
+            None,
+            &mods(),
+            legacy(false),
+            KeyEvent::Repeat
+        ),
+        None
+    );
+}
+
+#[test]
+fn associated_text_rides_the_third_parameter() {
+    let mode = KeyboardMode {
+        all_as_escapes: true,
+        associated_text: true,
+        ..disambiguate()
+    };
+    assert_eq!(
+        keystroke_bytes("a", Some("a"), None, &mods(), mode, KeyEvent::Press),
+        Some(b"\x1b[97;1;97u".to_vec())
+    );
+    // The shifted text is what the key produced; the code stays the base key.
+    assert_eq!(
+        keystroke_bytes(
+            "a",
+            Some("A"),
+            None,
+            &Modifiers {
+                shift: true,
+                ..mods()
+            },
+            mode,
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[97;2;65u".to_vec())
+    );
+    // A key that produces none carries none.
+    assert_eq!(
+        keystroke_bytes("left", None, None, &mods(), mode, KeyEvent::Press),
+        Some(b"\x1b[1D".to_vec())
+    );
+}
+
+#[test]
+fn the_copy_and_paste_pair_still_falls_through_under_the_protocol() {
+    let ctrl_shift = Modifiers {
+        control: true,
+        shift: true,
+        ..mods()
+    };
+    assert_eq!(
+        keystroke_bytes(
+            "c",
+            Some("c"),
+            None,
+            &ctrl_shift,
+            disambiguate(),
+            KeyEvent::Press
+        ),
+        None
+    );
+}
+
+/// What gpui reports for a shifted key that is not `a`-`z`: the shifted key in
+/// `Keystroke::key`, the pair and the bit out here.
+fn folded(unshifted: &str, shifted: &str) -> KeyLayout {
+    KeyLayout {
+        unshifted: unshifted.into(),
+        shifted: Some(shifted.into()),
+        shift: true,
+    }
+}
+
+#[test]
+fn a_folded_shift_reaches_the_report_through_the_layout() {
+    let mode = KeyboardMode {
+        all_as_escapes: true,
+        ..disambiguate()
+    };
+    // 49 is `1` and 2 is shift: the key gpui hands over is `!` with no
+    // modifier at all.
+    assert_eq!(
+        keystroke_bytes(
+            "!",
+            Some("!"),
+            Some(&folded("1", "!")),
+            &mods(),
+            mode,
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[49;2u".to_vec())
+    );
+    // Control is the modifier gpui keeps, and shift the one only the layout
+    // has: 1 + 4, and 1 for the protocol's own offset.
+    assert_eq!(
+        keystroke_bytes(
+            "!",
+            None,
+            Some(&folded("1", "!")),
+            &ctrl(),
+            disambiguate(),
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[49;6u".to_vec())
+    );
+    // `a`-`z` keep their shift, and the layout says the same thing twice.
+    assert_eq!(
+        keystroke_bytes(
+            "a",
+            Some("A"),
+            Some(&folded("a", "A")),
+            &Modifiers {
+                shift: true,
+                ..mods()
+            },
+            mode,
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[97;2u".to_vec())
+    );
+}
+
+#[test]
+fn the_shifted_key_rides_the_first_parameter() {
+    let mode = KeyboardMode {
+        alternate_keys: true,
+        all_as_escapes: true,
+        ..disambiguate()
+    };
+    // 33 is `!`, the key shift produced.
+    assert_eq!(
+        keystroke_bytes(
+            "!",
+            Some("!"),
+            Some(&folded("1", "!")),
+            &mods(),
+            mode,
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[49:33;2u".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "a",
+            Some("A"),
+            Some(&folded("a", "A")),
+            &Modifiers {
+                shift: true,
+                ..mods()
+            },
+            mode,
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[97:65;2u".to_vec())
+    );
+    // Unshifted, the key the layout would have given under shift is not the
+    // one that was pressed.
+    assert_eq!(
+        keystroke_bytes(
+            "1",
+            Some("1"),
+            Some(&KeyLayout {
+                unshifted: "1".into(),
+                shifted: Some("!".into()),
+                shift: false,
+            }),
+            &mods(),
+            mode,
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[49u".to_vec())
+    );
+    // The flag is what turns it on: the same press without it carries the key
+    // alone.
+    assert_eq!(
+        keystroke_bytes(
+            "!",
+            Some("!"),
+            Some(&folded("1", "!")),
+            &mods(),
+            KeyboardMode {
+                all_as_escapes: true,
+                ..disambiguate()
+            },
+            KeyEvent::Press
+        ),
+        Some(b"\x1b[49;2u".to_vec())
+    );
+}
+
+#[test]
+fn a_folded_shift_leaves_the_legacy_encoding_alone() {
+    // The legacy path writes the text that was typed, which is the folded key.
+    assert_eq!(
+        keystroke_bytes(
+            "!",
+            Some("!"),
+            Some(&folded("1", "!")),
+            &mods(),
+            legacy(false),
+            KeyEvent::Press
+        ),
+        Some(b"!".to_vec())
     );
 }
