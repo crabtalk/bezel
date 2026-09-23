@@ -1,7 +1,7 @@
 [
   {
     "version": "0.1.24",
-    "date": "2026-09-22",
+    "date": "2026-09-23",
     "summary": "The pointer reported to the programs that ask for it, a frame held whole through a synchronized update, and kitty images that stay where they were put.",
     "new": [
       "`Emulator::mouse_mode` is what the running program wants done with the pointer — `MouseTracking` for `1000`, `1002` and `1003`, the `1006` and `1005` encodings, `1007` alternate scroll, and the alternate screen and DECCKM those last two read. `view::mouse_bytes` turns a `MouseAction` and a cell into the report the program is waiting for, and answers `None` where the event is the user's, which is the host's signal to run its own selection or scrollback instead. SGR names the button that came up and carries a grid past 223 columns; the original encoding numbers every release 3 and declines a cell it cannot name rather than reporting the wrong one. Alt and control travel on a report, and shift never does: it is how a user reaches the selection under a program holding the pointer.",
@@ -16,6 +16,7 @@
       "bezel-gpui 0.3.11, which is the release that reports `KeyLayout`."
     ],
     "fixed": [
+      "Light glass shows the backdrop it refracts. Light `glass_regular` was the measured material verbatim — gain 0.139 under a white tint at 214/255, which is 84% tint — and over a real blur a popover read as a white sheet with whatever sat behind it ghosting through. It now trades a third of that tint for gain (0.40 at 150/255), holding the `tint.a / (1 - gain)` product `SurfaceSpec::flat` reads so a build with no lens keeps the white panel it had; saturation comes down to 2.2 with it, 4.27 having been fit at 13.9% transmission. `Theme::glass_overlay` and `Theme::card_glass_bg` cover 0.55 and 0.60 in light where they covered 0.85.",
       "A kitty image inside a synchronized update no longer lands under the frame's own text. `vte` buffers mode 2026 and replays it at ESU, and graphics leave the stream ahead of that buffer, so the image was placed against the cursor the frame had not moved yet and the replay then wrote over its anchor. `emulator::NoSync` turns the buffering off — every byte now reaches the grid in the order the program wrote it — and the frame is held in the emulator instead.",
       "A named key held with a modifier now states it as a CSI parameter: `ctrl-left` is `CSI 1;5D` and `shift-delete` is `CSI 3;2~`. Ctrl with a named key used to encode nothing at all, since caret notation has no byte for one, and shift with an arrow sent the arrow alone. A modifier also rules out the SS3 form, which has nowhere to put the parameter, so a modified arrow is CSI whatever DECCKM is set to."
     ]
