@@ -317,6 +317,12 @@ pub fn keystroke_bytes(
     if mods.control && mods.shift && matches!(key, "c" | "v") {
         return None;
     }
+    // Arrows, editing and function keys carry their modifiers as a CSI
+    // parameter. Everything below this is a key that has no parameter to put
+    // one in, and folds the modifier into the bytes instead.
+    if let Some(bytes) = named_bytes(key, mods, app_cursor) {
+        return Some(bytes);
+    }
     if mods.alt {
         // ESC-prefix the same keystroke without alt.
         let inner = keystroke_bytes(
@@ -336,13 +342,6 @@ pub fn keystroke_bytes(
         return control_bytes(key);
     }
 
-    let seq = |csi: &[u8], ss3: &[u8]| {
-        Some(if app_cursor {
-            ss3.to_vec()
-        } else {
-            csi.to_vec()
-        })
-    };
     match key {
         "enter" => Some(b"\r".to_vec()),
         "backspace" => Some(vec![0x7f]),
@@ -353,28 +352,6 @@ pub fn keystroke_bytes(
         }),
         "escape" => Some(vec![0x1b]),
         "space" => Some(b" ".to_vec()),
-        "up" => seq(b"\x1b[A", b"\x1bOA"),
-        "down" => seq(b"\x1b[B", b"\x1bOB"),
-        "right" => seq(b"\x1b[C", b"\x1bOC"),
-        "left" => seq(b"\x1b[D", b"\x1bOD"),
-        "home" => seq(b"\x1b[H", b"\x1bOH"),
-        "end" => seq(b"\x1b[F", b"\x1bOF"),
-        "insert" => Some(b"\x1b[2~".to_vec()),
-        "delete" => Some(b"\x1b[3~".to_vec()),
-        "pageup" => Some(b"\x1b[5~".to_vec()),
-        "pagedown" => Some(b"\x1b[6~".to_vec()),
-        "f1" => Some(b"\x1bOP".to_vec()),
-        "f2" => Some(b"\x1bOQ".to_vec()),
-        "f3" => Some(b"\x1bOR".to_vec()),
-        "f4" => Some(b"\x1bOS".to_vec()),
-        "f5" => Some(b"\x1b[15~".to_vec()),
-        "f6" => Some(b"\x1b[17~".to_vec()),
-        "f7" => Some(b"\x1b[18~".to_vec()),
-        "f8" => Some(b"\x1b[19~".to_vec()),
-        "f9" => Some(b"\x1b[20~".to_vec()),
-        "f10" => Some(b"\x1b[21~".to_vec()),
-        "f11" => Some(b"\x1b[23~".to_vec()),
-        "f12" => Some(b"\x1b[24~".to_vec()),
         _ => {
             // Printable: prefer the typed character (IME/shift-aware).
             let text = key_char.filter(|c| !c.is_empty()).or({
@@ -388,6 +365,72 @@ pub fn keystroke_bytes(
             Some(text.as_bytes().to_vec())
         }
     }
+}
+
+/// A key that states its modifiers as a CSI parameter, and where the parameter
+/// goes.
+enum Named {
+    /// `CSI 1 ; <modifier> <letter>` — the arrows, home and end, and F1 to F4.
+    Letter(u8),
+    /// `CSI <number> ; <modifier> ~` — the editing keys and F5 up.
+    Tilde(u8),
+}
+
+/// Encode a key that carries its modifiers as a CSI parameter. `None` for a
+/// key that is not one of those.
+///
+/// A held modifier rules out the SS3 form, which has nowhere to put the
+/// parameter: `ctrl-left` is `CSI 1;5D` whatever DECCKM is set to.
+fn named_bytes(key: &str, mods: &Modifiers, app_cursor: bool) -> Option<Vec<u8>> {
+    let named = match key {
+        "up" => Named::Letter(b'A'),
+        "down" => Named::Letter(b'B'),
+        "right" => Named::Letter(b'C'),
+        "left" => Named::Letter(b'D'),
+        "home" => Named::Letter(b'H'),
+        "end" => Named::Letter(b'F'),
+        "f1" => Named::Letter(b'P'),
+        "f2" => Named::Letter(b'Q'),
+        "f3" => Named::Letter(b'R'),
+        "f4" => Named::Letter(b'S'),
+        "insert" => Named::Tilde(2),
+        "delete" => Named::Tilde(3),
+        "pageup" => Named::Tilde(5),
+        "pagedown" => Named::Tilde(6),
+        "f5" => Named::Tilde(15),
+        "f6" => Named::Tilde(17),
+        "f7" => Named::Tilde(18),
+        "f8" => Named::Tilde(19),
+        "f9" => Named::Tilde(20),
+        "f10" => Named::Tilde(21),
+        "f11" => Named::Tilde(23),
+        "f12" => Named::Tilde(24),
+        _ => return None,
+    };
+    Some(match (named, modifier_parameter(mods)) {
+        // DECCKM moves the arrows and home/end to SS3. F1 to F4 are SS3
+        // whatever it says.
+        (Named::Letter(letter), None) => {
+            let introducer = if app_cursor || matches!(letter, b'P'..=b'S') {
+                b'O'
+            } else {
+                b'['
+            };
+            vec![0x1b, introducer, letter]
+        }
+        (Named::Letter(letter), Some(modifier)) => {
+            format!("\x1b[1;{modifier}{}", letter as char).into_bytes()
+        }
+        (Named::Tilde(number), None) => format!("\x1b[{number}~").into_bytes(),
+        (Named::Tilde(number), Some(modifier)) => format!("\x1b[{number};{modifier}~").into_bytes(),
+    })
+}
+
+/// The `1 + bits` parameter a modified key states: shift 1, alt 2, control 4.
+/// `None` where nothing is held, which is the key's own plain form.
+fn modifier_parameter(mods: &Modifiers) -> Option<u8> {
+    let bits = u8::from(mods.shift) + u8::from(mods.alt) * 2 + u8::from(mods.control) * 4;
+    (bits != 0).then_some(bits + 1)
 }
 
 /// Ctrl-key encoding (caret notation).

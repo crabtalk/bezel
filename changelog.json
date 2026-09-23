@@ -13,7 +13,8 @@
       "A placement anchors every cell of its top row rather than only its top-left, so text written over the left of an image leaves it where it was instead of taking it off the grid. Displaying an image takes its earlier placements with it, which is what keeps a program redrawing a frame to one placement per image."
     ],
     "fixed": [
-      "A kitty image inside a synchronized update no longer lands under the frame's own text. `vte` buffers mode 2026 and replays it at ESU, and graphics leave the stream ahead of that buffer, so the image was placed against the cursor the frame had not moved yet and the replay then wrote over its anchor. `emulator::NoSync` turns the buffering off — every byte now reaches the grid in the order the program wrote it — and the frame is held in the emulator instead."
+      "A kitty image inside a synchronized update no longer lands under the frame's own text. `vte` buffers mode 2026 and replays it at ESU, and graphics leave the stream ahead of that buffer, so the image was placed against the cursor the frame had not moved yet and the replay then wrote over its anchor. `emulator::NoSync` turns the buffering off — every byte now reaches the grid in the order the program wrote it — and the frame is held in the emulator instead.",
+      "A named key held with a modifier now states it as a CSI parameter: `ctrl-left` is `CSI 1;5D` and `shift-delete` is `CSI 3;2~`. Ctrl with a named key used to encode nothing at all, since caret notation has no byte for one, and shift with an arrow sent the arrow alone. A modifier also rules out the SS3 form, which has nowhere to put the parameter, so a modified arrow is CSI whatever DECCKM is set to."
     ]
   },
   {

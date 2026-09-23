@@ -680,3 +680,169 @@ fn a_cell_the_encoding_cannot_name_is_not_reported() {
         Some(b"\x1b[<0;2016;1M".to_vec())
     );
 }
+
+// ---------------------------------------------------------------------------
+// Modified named keys
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_modifier_turns_a_named_key_into_its_parameter_form() {
+    let ctrl = Modifiers {
+        control: true,
+        ..mods()
+    };
+    let shift = Modifiers {
+        shift: true,
+        ..mods()
+    };
+    let alt = Modifiers {
+        alt: true,
+        ..mods()
+    };
+
+    // 1 + shift 1 + alt 2 + control 4.
+    assert_eq!(
+        keystroke_bytes("left", None, &ctrl, false),
+        Some(b"\x1b[1;5D".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("left", None, &shift, false),
+        Some(b"\x1b[1;2D".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("left", None, &alt, false),
+        Some(b"\x1b[1;3D".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "right",
+            None,
+            &Modifiers {
+                control: true,
+                shift: true,
+                ..mods()
+            },
+            false
+        ),
+        Some(b"\x1b[1;6C".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "up",
+            None,
+            &Modifiers {
+                control: true,
+                shift: true,
+                alt: true,
+                ..mods()
+            },
+            false
+        ),
+        Some(b"\x1b[1;8A".to_vec())
+    );
+}
+
+#[test]
+fn a_modified_arrow_ignores_app_cursor_mode() {
+    let ctrl = Modifiers {
+        control: true,
+        ..mods()
+    };
+    // SS3 has nowhere to put the parameter, so DECCKM does not apply.
+    assert_eq!(
+        keystroke_bytes("left", None, &ctrl, true),
+        Some(b"\x1b[1;5D".to_vec())
+    );
+    // Unmodified, it still follows DECCKM.
+    assert_eq!(
+        keystroke_bytes("left", None, &mods(), true),
+        Some(b"\x1bOD".to_vec())
+    );
+}
+
+#[test]
+fn the_editing_keys_put_the_parameter_before_the_tilde() {
+    let ctrl = Modifiers {
+        control: true,
+        ..mods()
+    };
+    assert_eq!(
+        keystroke_bytes("delete", None, &ctrl, false),
+        Some(b"\x1b[3;5~".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("pageup", None, &mods(), false),
+        Some(b"\x1b[5~".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes("f5", None, &ctrl, false),
+        Some(b"\x1b[15;5~".to_vec())
+    );
+}
+
+#[test]
+fn f1_to_f4_are_ss3_until_a_modifier_is_held() {
+    assert_eq!(
+        keystroke_bytes("f1", None, &mods(), false),
+        Some(b"\x1bOP".to_vec())
+    );
+    // Even with DECCKM off, which only ever governed the arrows.
+    assert_eq!(
+        keystroke_bytes("f4", None, &mods(), true),
+        Some(b"\x1bOS".to_vec())
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "f1",
+            None,
+            &Modifiers {
+                shift: true,
+                ..mods()
+            },
+            false
+        ),
+        Some(b"\x1b[1;2P".to_vec())
+    );
+}
+
+#[test]
+fn keys_with_no_parameter_still_fold_their_modifier_in() {
+    // Alt keeps escaping, and ctrl keeps its caret byte: neither key has a CSI
+    // form to carry a parameter.
+    assert_eq!(
+        keystroke_bytes(
+            "enter",
+            None,
+            &Modifiers {
+                alt: true,
+                ..mods()
+            },
+            false
+        ),
+        Some(vec![0x1b, b'\r'])
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "backspace",
+            None,
+            &Modifiers {
+                control: true,
+                ..mods()
+            },
+            false
+        ),
+        Some(vec![0x08])
+    );
+    assert_eq!(
+        keystroke_bytes(
+            "tab",
+            None,
+            &Modifiers {
+                shift: true,
+                ..mods()
+            },
+            false
+        ),
+        Some(b"\x1b[Z".to_vec())
+    );
+}
