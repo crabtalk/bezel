@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.1.25",
+    "date": "2026-09-23",
+    "summary": "A window that closes without taking the app with it, and the document ends in reach off macOS.",
+    "new": [
+      "`ctrl-home` and `ctrl-end` move the caret to the start and end of the document on Windows and Linux, and `ctrl-shift-home` and `ctrl-shift-end` select to them."
+    ],
+    "changed": [
+      "bezel-gpui 0.3.12."
+    ],
+    "fixed": [
+      "Closing a window on macOS no longer crashes the app. zed-industries/zed#64143 drops the accessibility adapter when a window is dropped, which restores the content view's class and discards the KVO subclass AppKit's touch bar finder installed to observe `nextResponder`; the finder then removed that observation during the next display-cycle flush and raised `NSRangeException`. bezel-gpui 0.3.12 flushes the display cycle before dropping the adapter.",
+      "The goal column survives a trip to either end of the document: moving up from the first line or down from the last and then back returns the caret to the column it came from."
+    ]
+  },
+  {
     "version": "0.1.24",
     "date": "2026-09-23",
     "summary": "The pointer reported to the programs that ask for it, a frame held whole through a synchronized update, and kitty images that stay where they were put.",
