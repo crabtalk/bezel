@@ -388,21 +388,38 @@ fn vertical_motion_chooses_the_nearest_column(cx: &mut TestAppContext) {
     assert_eq!(head(&editor, &mut cx).offset, 5);
 }
 
+/// Document start, document end and select-to-end, as each keymap spells them.
 #[cfg(target_os = "macos")]
+const DOCUMENT_ENDS: [&str; 3] = ["cmd-up", "cmd-down", "cmd-shift-down"];
+#[cfg(not(target_os = "macos"))]
+const DOCUMENT_ENDS: [&str; 3] = ["ctrl-home", "ctrl-end", "ctrl-shift-end"];
+
 #[gpui::test]
-fn command_arrows_move_and_select_to_document_ends(cx: &mut TestAppContext) {
+fn chords_move_and_select_to_document_ends(cx: &mut TestAppContext) {
+    let [start, end, select_end] = DOCUMENT_ENDS;
     let (editor, _window, mut cx) = open_with("first\n\nsecond\n\nthird", cx);
-    cx.simulate_keystrokes("cmd-down");
+    cx.simulate_keystrokes(end);
     assert_eq!(head(&editor, &mut cx).block, 2);
     assert_eq!(head(&editor, &mut cx).offset, 5);
-    cx.simulate_keystrokes("cmd-up");
+    cx.simulate_keystrokes(start);
     assert_eq!(head(&editor, &mut cx).block, 0);
     assert_eq!(head(&editor, &mut cx).offset, 0);
-    cx.simulate_keystrokes("cmd-shift-down");
+    cx.simulate_keystrokes(select_end);
     let selection = cx.update(|_, cx| editor.read(cx).selection());
     assert_eq!(selection.anchor.block, 0);
     assert_eq!(selection.head.block, 2);
     assert_eq!(selection.head.offset, 5);
+}
+
+/// Off either end there is no row to step to, and the column survives the
+/// trip: coming back lands where the walk started, not under the end.
+#[gpui::test]
+fn the_goal_column_survives_both_ends(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("abcdefghij\nabcdefghij\nabcdefghij", cx);
+    cx.simulate_keystrokes("right right right right right down down down up");
+    assert_eq!(head(&editor, &mut cx).offset, 16);
+    cx.simulate_keystrokes("down up up up down");
+    assert_eq!(head(&editor, &mut cx).offset, 16);
 }
 
 /// The bug: `render_with_selection` emptied the recorded layouts during *render*

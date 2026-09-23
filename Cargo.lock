@@ -560,7 +560,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bezel"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-agent",
  "bezel-gpui",
@@ -573,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-agent"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-blocks"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-canvas"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-editor",
  "bezel-gpui",
@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-editor"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "bezel-markdown",
@@ -616,9 +616,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92f000f2f81e5b58cc197cff2322ec77bfda6c718776bfc8d75978c88a770e66"
+checksum = "e5f8d4ce56f7e39785e6edba6b168c47e6d058b2a4391b5b6d87a0ec482b4647"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -689,9 +689,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-apple"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b37361078347dc2cd855cf160448d4b8360225057053b04cf83b5246a8a6329"
+checksum = "a64df95d7cea415304539e1e1b884336614932ad0d7bf11a1cae89dbc4d2794d"
 dependencies = [
  "anyhow",
  "bezel-gpui",
@@ -713,9 +713,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-linux"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d611013f1bb3b3efbf76059a50dcc7f764dc5bf11a19e4925f88b51fb9b07f63"
+checksum = "acd55c9b6416d5245c9082c9b1d1fc562528b1699818852c7d87fafd78207d7c"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -742,9 +742,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-macos"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2094755a6d38a54c381b575b25ff53a89884825896d2715ae12f747e9c1a6a28"
+checksum = "47a202cc7517f5d6259b9ef14f475ff92e55567c677e0165837750e9f5832151"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -789,9 +789,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-macros"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e885786d0c1e193605c9c0afdbf58c3006a93e795da65cde912a7a10f0d08a37"
+checksum = "1b8dcba08a9a7a00fe30a4f6dcc39e584e3c4ae329545989f4cbe0fb1af480a0"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -801,9 +801,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-platform"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "add637ed850e1f8c314a9811894f6f23807a79e58bb03c93d6569bd0828f42bf"
+checksum = "181364ddf02305f6cfd11d30023b199cc54deec7b71f4552b3a1e0a06967ea8e"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-linux",
@@ -816,9 +816,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-shared-string"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e36cae509d1280e1bc10ebe638de830319aa33ecd1d5070ef58858a02d747455"
+checksum = "6b15a020729b824b35b131beaff85b29794957792dee00b28afbe8fc7a54157b"
 dependencies = [
  "schemars",
  "serde",
@@ -827,9 +827,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-util"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0411a0a54ceaf06d32251f10239e701655b859f25f2e8842b3da3056d2d22a69"
+checksum = "d576eafe79c97857ae95362ab156c1449214063d02521553d2c264d8add51deb"
 dependencies = [
  "anyhow",
  "log",
@@ -838,9 +838,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-web"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adc99c6f0f8382199e7bd4f7e7bc376bec884d2e2c1f23bb18b359c31ad42e8c"
+checksum = "117755a9589d4de4b126e0a0b05051c50b84c720e791092b794dffbb630ef4c2"
 dependencies = [
  "anyhow",
  "bezel-gpui",
@@ -866,9 +866,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-wgpu"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e843e4fa611526f1a0203fdead473492e831a7a3ea2a00f53c42373ecd826a3e"
+checksum = "a1f7c58525926fc017eee8d3507409d1b500efea57f01c6d732b7b2a73e77f96"
 dependencies = [
  "anyhow",
  "bezel-gpui",
@@ -892,9 +892,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-gpui-windows"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11e92de2345bad7ff7abb5b9ab7daa9746f34a9607ceee7c779354e55e07e1df"
+checksum = "ffa004dc506fc7134783e670d7a1428c2262f84cd06cbb578ada10b64756fb4d"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -921,7 +921,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-icons"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "usvg",
@@ -929,7 +929,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-markdown"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -939,7 +939,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-motion"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -948,7 +948,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-syntax"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-theme",
  "tree-sitter",
@@ -960,7 +960,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-syntax-std"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-syntax",
  "tree-sitter-bash",
@@ -974,7 +974,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-terminal"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "alacritty_terminal",
  "bezel-gpui",
@@ -984,7 +984,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-theme"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "objc",
@@ -996,7 +996,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-ui"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "bezel-icons",
@@ -1010,9 +1010,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-collections"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fa8c19f692063419ca8327a9c6773ad717116bd8ac71eb4bbf238804503aa14"
+checksum = "c3d79a36931d1d3820793eb8bd2b3c075209c244f76ad6fc3217f513b83006b0"
 dependencies = [
  "bezel-gpui-util",
  "indexmap",
@@ -1021,9 +1021,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-derive-refineable"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbd15f35addab0f576606bdd9e179254e36bc34b2cfd12bcabf1fcad4bf744b0"
+checksum = "f7f7fc56f12e0ee7bf8d820be5e1d0839d681ff596a893d389081bf517ae31bb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1032,9 +1032,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-http-client"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ec08199a8ceba9062a8454be5ee96656a91f28b67ccc96518fd63ca13264e43"
+checksum = "59f3d0787a6fc0dba70712e513b7518a5fcd131b378138f816054514d950b8da"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -1053,9 +1053,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-http-client-tls"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61d19390af1dbf53b549133bc34f3064d024670331f2e80d5bd85b0b8936527d"
+checksum = "acaceb91371237c4932a3c04af1fe4c29ad5d87b266e49e8dafff5b4ca88d004"
 dependencies = [
  "log",
  "rustls",
@@ -1065,9 +1065,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-perf"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c50847a219bc39769f7e0cee510ef4196407df7970406a5bd122997e6f625e6f"
+checksum = "6fea607cd7f8bd97bfc5511636bb1004b6e6054aaec5c5e93dc9e45d3fc1ac98"
 dependencies = [
  "bezel-zed-collections",
  "serde",
@@ -1076,18 +1076,18 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-refineable"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43760d11629aa287ed7288cc4ca7912fbe64c7e4b6db6352ce8d35caedbd4b9f"
+checksum = "1fdd807420a6a7397914da27564860d80ce3493b39c5368902dba8c55a905a29"
 dependencies = [
  "bezel-zed-derive-refineable",
 ]
 
 [[package]]
 name = "bezel-zed-reqwest-client"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "522f38997082768b6193a8e5a6aa0d656096637c25c448d37cc1e2541696cc5d"
+checksum = "677de8e073ccb3fe02fd4c343b97f260b05bbe2ac1b1215a56868aca59eabbbd"
 dependencies = [
  "anyhow",
  "bezel-gpui-util",
@@ -1103,9 +1103,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-scheduler"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61895ab7cef2ffa7312ac56ddb54407b1a5a9c6941fbfc3a775beb1e31fda366"
+checksum = "07c0f63d9ddd616217e39e47ae530b85960a401d08bf478b8c21ac62d5f68218"
 dependencies = [
  "async-task",
  "backtrace",
@@ -1119,9 +1119,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-sum-tree"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ca19e012cc74627579b047f7592a10dfe3fea4c219551619e6e9f530a94a5e2"
+checksum = "58500291f9b6048b6ef23621952638b3feeb1eb3aa8603ba575ba8fb9c3b5231"
 dependencies = [
  "bezel-zed-ztracing",
  "heapless",
@@ -1132,9 +1132,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-util-macros"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cba75ee8f9d9d8bdf12b64e7f98542c202e7598967c28f2c0fe45764db37cdd"
+checksum = "e48de51c9ae216b9fcc14071aa903df4c66f136bf01756c882ae3c54ef8ae02d"
 dependencies = [
  "bezel-zed-perf",
  "quote",
@@ -1143,9 +1143,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-zlog"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ba35394ab033116075a4de4351b7e86d03d3f883b24ae0f337a36ee550aea4c"
+checksum = "e071f12e59bbbac2f4540f28422426e9b7519e94dcf204bad0050ecba72873b7"
 dependencies = [
  "anyhow",
  "bezel-zed-collections",
@@ -1155,9 +1155,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-ztracing"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "758748c6c0909fb89ab4d01b58995a75051374eb4dc2532a263b27480030525d"
+checksum = "f40d829ab5c35e2a309e6bfcaf1fd3c2f19f0b6ce4d4de91a46e6270a421a688"
 dependencies = [
  "bezel-zed-zlog",
  "bezel-zed-ztracing-macro",
@@ -1167,9 +1167,9 @@ dependencies = [
 
 [[package]]
 name = "bezel-zed-ztracing-macro"
-version = "0.3.11+zed.ba42ab"
+version = "0.3.12+zed.ba42ab"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "702615fa32d0cc5158bd46eb76a014fe59ab10ad2fdcd9819be006c0743ccf94"
+checksum = "de2ded714064605cba3af206516cb9979417bd80b402549cb6b5d8693b8d6ee8"
 
 [[package]]
 name = "bindgen"
@@ -2698,7 +2698,7 @@ dependencies = [
 
 [[package]]
 name = "gallery"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-agent",
  "bezel-blocks",
@@ -2988,7 +2988,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hello"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel",
  "bezel-gpui",
@@ -4512,7 +4512,7 @@ dependencies = [
 
 [[package]]
 name = "parity"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-platform",
@@ -7503,7 +7503,7 @@ dependencies = [
 
 [[package]]
 name = "web"
-version = "0.1.24"
+version = "0.1.25"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-web",

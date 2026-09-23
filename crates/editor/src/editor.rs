@@ -847,6 +847,12 @@ impl Editor {
                     head.up(&self.doc)
                 };
                 self.head_to(to.clamp(&self.doc), extend);
+                // The column outlives the trip to either end, so coming back
+                // retraces the path.
+                self.goal = Some(VerticalGoal {
+                    x: from.x,
+                    row_from_caret: gpui::Pixels::ZERO,
+                });
             }
         }
         cx.notify();
