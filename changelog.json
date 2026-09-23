@@ -2,15 +2,18 @@
   {
     "version": "0.1.25",
     "date": "2026-09-23",
-    "summary": "A window that closes without taking the app with it, and the document ends in reach off macOS.",
+    "summary": "A window that closes without taking the app with it, a caret that holds its column through a scroll, and a key for either end of the document.",
     "new": [
-      "`ctrl-home` and `ctrl-end` move the caret to the start and end of the document on Windows and Linux, and `ctrl-shift-home` and `ctrl-shift-end` select to them."
+      "The editor moves the caret to the start and end of the document with `cmd-up` and `cmd-down` on macOS and `ctrl-home` and `ctrl-end` elsewhere, and selects to them with shift held. The actions are `DocumentStart`, `DocumentEnd`, `SelectDocumentStart` and `SelectDocumentEnd`."
     ],
     "changed": [
       "bezel-gpui 0.3.12."
     ],
     "fixed": [
       "Closing a window on macOS no longer crashes the app. zed-industries/zed#64143 drops the accessibility adapter when a window is dropped, which restores the content view's class and discards the KVO subclass AppKit's touch bar finder installed to observe `nextResponder`; the finder then removed that observation during the next display-cycle flush and raised `NSRangeException`. bezel-gpui 0.3.12 flushes the display cycle before dropping the adapter.",
+      "Up and down keep the caret on its row when the move scrolls the editor. The row a run of vertical moves holds is measured from the caret rather than the window, so a scroll between two presses no longer sends the next one to the wrong line.",
+      "Up and down land on the painted position nearest the column they started in, on the row they were aiming for. A soft-wrapped line is hit tested one row at a time rather than as a whole paragraph at the row's middle.",
+      "Typing, select all, undo and redo end a run of vertical moves, so the next up or down starts from where the caret is rather than a column held from before.",
       "The goal column survives a trip to either end of the document: moving up from the first line or down from the last and then back returns the caret to the column it came from."
     ]
   },
