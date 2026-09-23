@@ -254,14 +254,17 @@ struct Relative {
     z: i32,
 }
 
+/// Placements found on the grid, each with what names it.
+type Found<K> = Vec<(K, Placement)>;
+
 /// What [`Emulator::locate`] found.
 struct Located {
     /// Anchored placements, by anchor id.
-    anchored: Vec<(u32, Placement)>,
+    anchored: Found<u32>,
     /// Slices of virtual placements, by the placement each shows.
-    pieces: Vec<((u32, u32), Placement)>,
+    pieces: Found<(u32, u32)>,
     /// Relative placements, by image and placement id.
-    relatives: Vec<((u32, u32), Placement)>,
+    relatives: Found<(u32, u32)>,
 }
 
 /// The longest chain of relative placements, counting the one being made.
@@ -909,12 +912,7 @@ impl Emulator {
     /// one whose parent is off them is not found either. A virtual parent is
     /// at the least row and least column of the placeholder cells showing it.
     fn locate(&self, offset: i32) -> Located {
-        let anchored = self.scan(offset);
-        let pieces = if self.virtuals.is_empty() {
-            Vec::new()
-        } else {
-            self.placeholders(offset)
-        };
+        let (anchored, pieces) = self.scan(offset);
         let mut relatives = Vec::new();
         if !self.relatives.is_empty() {
             let mut at: std::collections::HashMap<(u32, u32), (i64, i64)> =
@@ -981,57 +979,71 @@ impl Emulator {
         None
     }
 
-    /// The slices of virtual placements the visible placeholder cells show,
-    /// one per run of cells that continue each other along a row.
-    ///
-    /// A cell naming no placement id shows the image's virtual placement with
-    /// the lowest id. A cell outside its placement's box shows nothing.
-    fn placeholders(&self, offset: i32) -> Vec<((u32, u32), Placement)> {
-        let mut out: Vec<((u32, u32), Placement)> = Vec::new();
+    /// The placements on the rows `offset` lines above the bottom of the
+    /// screen, in one walk of their cells: anchored ones by anchor id, and the
+    /// slices of virtual placements that placeholder cells show, one per run
+    /// of cells that continue each other along a row. Zero is the screen the
+    /// cursor moves on.
+    fn scan(&self, offset: i32) -> (Found<u32>, Found<(u32, u32)>) {
+        let mut anchored: Vec<(u32, Placement)> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut pieces: Vec<((u32, u32), Placement)> = Vec::new();
         let grid = self.term.grid();
         for row in 0..self.rows() {
             let line = Line(row as i32 - offset);
-            let mut decoder = crate::placeholder::RowDecoder::default();
+            let mut decoder =
+                (!self.virtuals.is_empty()).then(crate::placeholder::RowDecoder::default);
             // The run being grown: the key it was resolved to, the slot of its
-            // last cell, and its index in `out`.
+            // last cell, and its index in `pieces`.
             let mut run: Option<((u32, u32), crate::placeholder::Slot, usize)> = None;
             for col in 0..self.cols() {
-                let Some(slot) = decoder.cell(&grid[line][Column(col)]) else {
-                    run = None;
-                    continue;
-                };
-                let key = match slot.placement {
-                    0 => self
-                        .virtuals
-                        .keys()
-                        .filter(|(image, _)| *image == slot.image)
-                        .min()
-                        .copied(),
-                    placement => {
-                        Some((slot.image, placement)).filter(|key| self.virtuals.contains_key(key))
+                let cell = &grid[line][Column(col)];
+                let marks = cell.zerowidth().unwrap_or(&[]);
+                for (anchor, within) in anchor_pairs(marks) {
+                    let Some(placed) = self.placed.get(&anchor) else {
+                        continue;
+                    };
+                    if !seen.insert(anchor) {
+                        continue;
                     }
-                };
-                let Some((key, virtual_)) =
-                    key.and_then(|key| Some((key, self.virtuals.get(&key)?)))
-                else {
-                    run = None;
-                    continue;
-                };
-                if slot.row >= virtual_.rows as u32 || slot.col >= virtual_.cols as u32 {
-                    run = None;
-                    continue;
+                    // A cell whose column mark was lost still holds the image;
+                    // it can only say the left edge is here.
+                    let within = within.unwrap_or(0);
+                    anchored.push((
+                        anchor,
+                        Placement {
+                            row,
+                            col: col.saturating_sub(within),
+                            cols: placed.cols,
+                            rows: placed.rows,
+                            image: placed.image,
+                            frame: placed.frame,
+                            source: placed.source,
+                            z: placed.z,
+                        },
+                    ));
                 }
+                let Some(decoder) = decoder.as_mut() else {
+                    continue;
+                };
+                let shown = decoder
+                    .cell(cell)
+                    .and_then(|slot| self.shown_by(slot).map(|(key, v)| (slot, key, v)));
+                let Some((slot, key, virtual_)) = shown else {
+                    run = None;
+                    continue;
+                };
                 if let Some((run_key, last, at)) = &mut run
                     && *run_key == key
                     && last.row == slot.row
                     && last.col + 1 == slot.col
                 {
-                    out[*at].1.cols += 1;
+                    pieces[*at].1.cols += 1;
                     *last = slot;
                     continue;
                 }
-                run = Some((key, slot, out.len()));
-                out.push((
+                run = Some((key, slot, pieces.len()));
+                pieces.push((
                     key,
                     Placement {
                         row,
@@ -1050,45 +1062,25 @@ impl Emulator {
                 ));
             }
         }
-        out
+        (anchored, pieces)
     }
 
-    /// The placements on the rows `offset` lines above the bottom of the
-    /// screen, by anchor id. Zero is the screen the cursor moves on.
-    fn scan(&self, offset: i32) -> Vec<(u32, Placement)> {
-        let mut out: Vec<(u32, Placement)> = Vec::new();
-        let grid = self.term.grid();
-        for row in 0..self.rows() {
-            let line = Line(row as i32 - offset);
-            for col in 0..self.cols() {
-                let marks = grid[line][Column(col)].zerowidth().unwrap_or(&[]);
-                for (anchor, within) in anchor_pairs(marks) {
-                    let Some(placed) = self.placed.get(&anchor) else {
-                        continue;
-                    };
-                    if out.iter().any(|(seen, _)| *seen == anchor) {
-                        continue;
-                    }
-                    // A cell whose column mark was lost still holds the image;
-                    // it can only say the left edge is here.
-                    let within = within.unwrap_or(0);
-                    out.push((
-                        anchor,
-                        Placement {
-                            row,
-                            col: col.saturating_sub(within),
-                            cols: placed.cols,
-                            rows: placed.rows,
-                            image: placed.image,
-                            frame: placed.frame,
-                            source: placed.source,
-                            z: placed.z,
-                        },
-                    ));
-                }
-            }
-        }
-        out
+    /// The virtual placement a placeholder cell shows, and its key. A cell
+    /// naming no placement id shows the image's virtual placement with the
+    /// lowest id. A cell outside its placement's box shows nothing.
+    fn shown_by(&self, slot: crate::placeholder::Slot) -> Option<((u32, u32), &Virtual)> {
+        let key = match slot.placement {
+            0 => self
+                .virtuals
+                .keys()
+                .filter(|(image, _)| *image == slot.image)
+                .min()
+                .copied()?,
+            placement => (slot.image, placement),
+        };
+        let virtual_ = self.virtuals.get(&key)?;
+        (slot.row < virtual_.rows as u32 && slot.col < virtual_.cols as u32)
+            .then_some((key, virtual_))
     }
 
     /// Take the placements a delete names off the grid, and with an
