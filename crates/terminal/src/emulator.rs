@@ -28,7 +28,7 @@ use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use crate::kitty::{self, Segment};
 use alacritty_terminal::{
-    event::{Event, EventListener},
+    event::{Event, EventListener, WindowSize},
     grid::{Dimensions, Scroll},
     index::{Column, Line, Point},
     selection::{Selection, SelectionRange},
@@ -375,17 +375,23 @@ impl Emulator {
     /// terminal wants written back to the PTY (DSR/DA query responses,
     /// graphics acknowledgements).
     ///
-    /// Graphics commands are answered where they sit in the stream; everything
-    /// else is answered once the whole read has been folded in, which is the
-    /// order `Term` raises its events in.
+    /// Replies leave in the order their queries arrived. A program probing
+    /// with several queries and a `CSI c` behind them reads the DA answer as
+    /// the end of the replies it will get.
     ///
     /// Mode 2026 is acted on where it sits too: the frame the program wants
     /// left on screen is the grid as it stands when the mode goes on.
+    ///
+    /// `CSI 14 t` and `CSI 16 t` go unanswered until
+    /// [`Emulator::set_cell_size`] has been called.
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
         let mut responses = Vec::new();
         for segment in self.scanner.feed(bytes) {
             match segment {
-                Segment::Text(text) => self.parser.advance(&mut self.term, text),
+                Segment::Text(text) => {
+                    self.parser.advance(&mut self.term, text);
+                    self.drain_events(&mut responses);
+                }
                 Segment::Graphics(command) => {
                     let (landed, reply) = self.graphics.apply(command);
                     if let Some(reply) = reply {
@@ -397,18 +403,46 @@ impl Emulator {
                 }
                 Segment::Sync(true) => self.hold(),
                 Segment::Sync(false) => self.held = None,
+                Segment::CellSizeQuery => {
+                    if let Some(size) = self.window_size() {
+                        let reply = format!("\x1b[6;{};{}t", size.cell_height, size.cell_width);
+                        responses.extend_from_slice(reply.as_bytes());
+                    }
+                }
             }
         }
+        responses
+    }
+
+    /// Act on what `Term` raised while the parser ran.
+    fn drain_events(&mut self, responses: &mut Vec<u8>) {
+        let window = self.window_size();
         for event in self.capture.events.borrow_mut().drain(..) {
             match event {
                 Event::PtyWrite(text) => responses.extend_from_slice(text.as_bytes()),
+                Event::TextAreaSizeRequest(reply) => {
+                    if let Some(window) = window {
+                        responses.extend_from_slice(reply(window).as_bytes());
+                    }
+                }
                 Event::Title(title) => self.title = Some(title),
                 Event::ResetTitle => self.title = None,
                 Event::Bell => self.bell = true,
                 _ => {}
             }
         }
-        responses
+    }
+
+    /// The grid and its cell in whole pixels, which is what the size reports
+    /// carry. `None` until the view has measured a cell.
+    fn window_size(&self) -> Option<WindowSize> {
+        let (width, height) = self.cell?;
+        Some(WindowSize {
+            num_lines: self.term.screen_lines() as u16,
+            num_cols: self.term.columns() as u16,
+            cell_width: width.round() as u16,
+            cell_height: height.round() as u16,
+        })
     }
 
     /// The images the client has sent, by id.

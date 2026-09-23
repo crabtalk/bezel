@@ -53,7 +53,7 @@ fn passed(scanner: &mut Scanner, bytes: &[u8]) -> Vec<u8> {
         .iter()
         .filter_map(|segment| match segment {
             Segment::Text(text) => Some(*text),
-            Segment::Graphics(_) | Segment::Sync(_) => None,
+            Segment::Graphics(_) | Segment::Sync(_) | Segment::CellSizeQuery => None,
         })
         .fold(Vec::new(), |mut out, text| {
             out.extend_from_slice(text);
@@ -670,6 +670,52 @@ fn a_graphics_payload_cannot_finish_a_mode_2026_run() {
     // The `ESC` opening the APC would otherwise count as the first byte of a
     // BSU, leaving the rest to be completed by whatever follows the run.
     assert!(!scanner.feed(b"\x1b_Ga=q\x1b\\[?2026h").iter().any(is_sync));
+}
+
+#[test]
+fn the_scanner_reports_a_cell_size_query_and_still_passes_its_bytes_on() {
+    let mut scanner = Scanner::new();
+    let input = b"a\x1b[16tb";
+    let segments = scanner.feed(input);
+    assert_eq!(
+        segments
+            .iter()
+            .filter(|s| matches!(s, Segment::CellSizeQuery))
+            .count(),
+        1
+    );
+    let text: Vec<u8> = segments
+        .iter()
+        .filter_map(|segment| match segment {
+            Segment::Text(text) => Some(*text),
+            _ => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    assert_eq!(text, input);
+}
+
+#[test]
+fn a_cell_size_query_split_across_reads_is_one_query() {
+    let mut scanner = Scanner::new();
+    assert!(!scanner.feed(b"\x1b[1").iter().any(is_cell_size_query));
+    assert!(scanner.feed(b"6t").iter().any(is_cell_size_query));
+}
+
+#[test]
+fn other_window_ops_are_not_a_cell_size_query() {
+    let mut scanner = Scanner::new();
+    assert!(
+        !scanner
+            .feed(b"\x1b[14t\x1b[18t\x1b[16;1t\x1b[116t")
+            .iter()
+            .any(is_cell_size_query)
+    );
+}
+
+fn is_cell_size_query(segment: &Segment<'_>) -> bool {
+    matches!(segment, Segment::CellSizeQuery)
 }
 
 fn is_sync(segment: &Segment<'_>) -> bool {

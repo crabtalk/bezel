@@ -47,6 +47,11 @@ pub enum Segment<'a> {
     /// in the stream. The bytes themselves stay in the `Text` run around it,
     /// so the parser still sees the sequence it always saw.
     Sync(bool),
+    /// `CSI 16 t`, asking for the cell size in pixels, reported where it sits
+    /// in the stream. `vte` drops the sequence without a `Handler` call, so
+    /// nothing downstream of the parser can answer it. Its bytes stay in the
+    /// `Text` run around it.
+    CellSizeQuery,
 }
 
 /// Where a [`Scanner`] is in the stream between calls. A pty read ends
@@ -81,6 +86,8 @@ pub struct Scanner {
     run: Vec<u8>,
     /// Bytes of a BSU/ESU run matched so far.
     sync: usize,
+    /// Bytes of a `CSI 16 t` matched so far.
+    cell_query: usize,
 }
 
 impl Scanner {
@@ -104,6 +111,7 @@ impl Scanner {
             match self.state {
                 State::Text => {
                     let sync = self.sync_step(byte);
+                    let cell_query = self.cell_query_step(byte);
                     at += 1;
                     if byte == ESC {
                         push_text(&mut out, &bytes[text..at - 1]);
@@ -111,6 +119,10 @@ impl Scanner {
                     } else if let Some(hold) = sync {
                         push_text(&mut out, &bytes[text..at]);
                         out.push(Segment::Sync(hold));
+                        text = at;
+                    } else if cell_query {
+                        push_text(&mut out, &bytes[text..at]);
+                        out.push(Segment::CellSizeQuery);
                         text = at;
                     }
                 }
@@ -121,6 +133,7 @@ impl Scanner {
                             // The `ESC` that opened this run counts toward a
                             // BSU/ESU match that the payload cannot finish.
                             self.sync = 0;
+                            self.cell_query = 0;
                             State::Apc
                         }
                         // Not ours. The `ESC` was swallowed by the branch
@@ -214,6 +227,22 @@ impl Scanner {
         }
     }
 
+    /// Feed one pass-through byte to the `CSI 16 t` matcher, answering whether
+    /// it just completed. A fixed string, matched the way [`Self::sync_step`]
+    /// matches BSU/ESU.
+    fn cell_query_step(&mut self, byte: u8) -> bool {
+        self.cell_query = if byte == CELL_SIZE_QUERY[self.cell_query] {
+            self.cell_query + 1
+        } else {
+            usize::from(byte == CELL_SIZE_QUERY[0])
+        };
+        if self.cell_query == CELL_SIZE_QUERY.len() {
+            self.cell_query = 0;
+            return true;
+        }
+        false
+    }
+
     /// End the run being accumulated, keeping it only if it parses.
     fn finish(&mut self, out: &mut Vec<Segment<'_>>) {
         self.state = State::Text;
@@ -229,6 +258,9 @@ impl Scanner {
 
 /// Everything but the final `h`/`l` of `CSI ? 2026 h` and `CSI ? 2026 l`.
 const SYNC_PREFIX: &[u8] = b"\x1b[?2026";
+
+/// XTWINOPS 16: report the cell size in pixels.
+const CELL_SIZE_QUERY: &[u8] = b"\x1b[16t";
 
 const ESC: u8 = 0x1b;
 const ESC_BYTES: [u8; 1] = [ESC];
