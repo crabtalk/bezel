@@ -405,6 +405,8 @@ pub struct Emulator {
     /// Relative placements by image and placement id. They sit nowhere on
     /// the grid either: each frame finds them from their parent.
     relatives: std::collections::HashMap<(u32, u32), Relative>,
+    /// An iTerm2 file arriving in parts: its arguments, and its bytes so far.
+    multipart: Option<(Vec<u8>, Vec<u8>)>,
     /// One cell in pixels, which is what turns an image's pixel size into the
     /// rows it covers. The view measures it from the font every frame and the
     /// host hands it over; until then an image has no size the grid can use.
@@ -437,6 +439,7 @@ impl Emulator {
             next_anchor: 0,
             virtuals: std::collections::HashMap::new(),
             relatives: std::collections::HashMap::new(),
+            multipart: None,
             cell: None,
             held: None,
         }
@@ -499,6 +502,7 @@ impl Emulator {
                 Segment::Sync(true) => self.hold(),
                 Segment::Sync(false) => self.held = None,
                 Segment::Sixel(data) => self.sixel(&data),
+                Segment::Iterm(command) => self.iterm(command),
                 Segment::CellSizeQuery => {
                     if let Some(size) = self.window_size() {
                         let reply = format!("\x1b[6;{};{}t", size.cell_height, size.cell_width);
@@ -615,6 +619,49 @@ impl Emulator {
         let _ = self.place(kitty::Display::at_cursor(id));
     }
 
+    /// An iTerm2 file command: a whole file, or a part of one.
+    fn iterm(&mut self, command: kitty::Iterm) {
+        match command {
+            kitty::Iterm::File { args, payload } => {
+                self.iterm_show(&args, &kitty::decode(&payload));
+            }
+            kitty::Iterm::Begin { args } => self.multipart = Some((args, Vec::new())),
+            kitty::Iterm::Part(payload) => {
+                let Some((_, bytes)) = &mut self.multipart else {
+                    return;
+                };
+                bytes.extend(kitty::decode(&payload));
+                if bytes.len() > crate::iterm::MAX_FILE {
+                    self.multipart = None;
+                }
+            }
+            kitty::Iterm::End => {
+                if let Some((args, bytes)) = self.multipart.take() {
+                    self.iterm_show(&args, &bytes);
+                }
+            }
+        }
+    }
+
+    /// Show an iTerm2 file at the cursor, if it is an inline image.
+    fn iterm_show(&mut self, args: &[u8], bytes: &[u8]) {
+        let args = crate::iterm::Args::parse(args);
+        if !args.inline || bytes.len() > crate::iterm::MAX_FILE {
+            return;
+        }
+        let Some(image) = crate::iterm::image(bytes) else {
+            return;
+        };
+        let id = self.graphics.hold(image);
+        let mut display = kitty::Display::at_cursor(id);
+        if let Some((cell_w, cell_h)) = self.cell {
+            display.columns = args.width.cells(cell_w, self.cols());
+            display.rows = args.height.cells(cell_h, self.rows());
+        }
+        display.stretch = !args.preserve_aspect;
+        let _ = self.place(display);
+    }
+
     /// Hang a placement off the parent its `P` and `Q` name. The cursor stays
     /// where it is, whatever `C` says.
     fn relate(&mut self, display: kitty::Display) -> Result<(), &'static str> {
@@ -728,6 +775,10 @@ impl Emulator {
                 let h = r as f32 * cell_h;
                 let w = h * source_w / source_h;
                 ((w / cell_w).ceil(), r as f32, (offset_x, offset_y, w, h))
+            }
+            (c, r) if display.stretch => {
+                let (w, h) = (c as f32 * cell_w, r as f32 * cell_h);
+                (c as f32, r as f32, (offset_x, offset_y, w, h))
             }
             (c, r) => {
                 let (box_w, box_h) = (c as f32 * cell_w, r as f32 * cell_h);
