@@ -671,6 +671,18 @@ fn regular_glass_falls_back_to_an_opaque_tone() {
     }
 }
 
+/// Light's unlensed panel stays the near-white sheet the real material is,
+/// however the tint/gain pair beneath it is set — `flat` divides one by the
+/// other, so moving a knob without its partner repaints every popover on a
+/// build with no lens.
+#[test]
+fn light_glass_flattens_to_a_white_panel() {
+    let theme = Theme::light();
+    let spec = SurfaceStyle::Glass(Glass::Regular).spec(&theme);
+    let flat = spec.flat(spec.tint).expect("regular glass covers its backdrop");
+    assert!(flat.l > 0.95, "light flattens to {}", flat.l);
+}
+
 /// A material's spec is its tone at a coverage already, so the tone comes back.
 #[test]
 fn a_materials_flat_tone_is_the_materials_own() {

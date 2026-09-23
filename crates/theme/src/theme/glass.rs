@@ -34,20 +34,16 @@ impl Theme {
     }
 
     /// The translucent tint floating cards paint over their backdrop blur
-    /// (see `bezel::material`). Dark: the reference
-    /// `.glass-surface` menu tint verbatim — `oklch(0.33 0 0 / 34%)`. The
-    /// previous `surface_overlay` at 65% was tuned back when the tint had to
-    /// *approximate* the composited recipe without a real blur; kept over the
-    /// blur it buried the backdrop's colour and menus read as flat grey slabs
-    /// next to the hue-inheriting chrome (user report). At 34% the blurred
-    /// backdrop carries the card and the mid-grey only lifts it off the
-    /// plane. Light: heavier — a translucent white tint left menu text
-    /// ghosting over whatever sat behind the popover, so light coverage
-    /// steps up to keep rows on a known background.
+    /// (see `bezel::material`). Dark: the reference `.glass-surface` menu tint
+    /// verbatim — `oklch(0.33 0 0 / 34%)`. Light: heavier, since white over a
+    /// bright backdrop separates a row from it by less.
+    ///
+    /// Some callers paint this *over* a [`Surface`](crate::SurfaceStyle) —
+    /// `control_bar` does — so coverage here hides the lens under it.
     pub fn glass_overlay(&self) -> Hsla {
         match self.appearance {
             Appearance::Dark => color::oklch(0.33, 0.0, 0.0).opacity(0.34),
-            Appearance::Light => self.surface_overlay.opacity(0.85),
+            Appearance::Light => self.surface_overlay.opacity(0.55),
         }
     }
 
@@ -68,17 +64,16 @@ impl Theme {
     /// Section-card fill — the group box, and the in-panel cards built like it.
     ///
     /// Each appearance plates in the direction it has room in: dark lifts on a
-    /// white wash (`../desktop`'s `--color-card`), light lands a near-opaque
-    /// white card on the grey frost, at the coverage [`Self::glass_overlay`]
-    /// already needs to keep rows on a known background. An opaque platform has
-    /// no frost beneath the card, so it takes the grey below its white page.
+    /// white wash (`../desktop`'s `--color-card`), light lands a white card
+    /// over whatever is beneath it. An opaque platform has no frost beneath the
+    /// card, so it takes the grey below its white page.
     pub fn card_glass_bg(&self) -> Hsla {
         if !self.glass {
             return self.surface;
         }
         match self.appearance {
             Appearance::Dark => hsla(0.0, 0.0, 1.0, 0.06),
-            Appearance::Light => self.surface_card.opacity(0.85),
+            Appearance::Light => self.surface_card.opacity(0.60),
         }
     }
 
