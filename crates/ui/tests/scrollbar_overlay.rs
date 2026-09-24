@@ -407,3 +407,55 @@ fn channel_centres_the_thumb_in_the_room_the_pane_reserves(cx: &mut TestAppConte
         );
     }
 }
+
+fn thumb_up(cx: &mut VisualTestContext) -> bool {
+    cx.debug_bounds("test-bar-thumb")
+        .is_some_and(|bounds| bounds.size.width > px(0.) && bounds.size.height > px(0.))
+}
+
+/// Past the fade, with a frame drawn at the end of it.
+fn idle(cx: &mut VisualTestContext) {
+    cx.executor()
+        .advance_clock(scrollbars::TRANSIENT_IDLE + std::time::Duration::from_millis(50));
+    cx.update(|window, cx| window.simulate_next_frame(cx));
+    cx.run_until_parked();
+}
+
+/// gpui keeps the pointer's last position when it leaves the window, so the
+/// track under it would read as hovered again on the next frame.
+#[gpui::test]
+fn a_bar_fades_after_the_pointer_leaves_the_window_across_its_track(cx: &mut TestAppContext) {
+    for (axis, on_track) in [
+        (Axis::Vertical, point(px(191.), px(100.))),
+        (Axis::Horizontal, point(px(100.), px(191.))),
+    ] {
+        let (_host, mut cx) = open(axis, cx);
+        cx.update(|_, cx| scrollbars::set_visibility(Scrollbars::Scrolling, cx));
+        cx.run_until_parked();
+        cx.simulate_mouse_move(on_track, None, Modifiers::default());
+        idle(&mut cx);
+        assert!(
+            thumb_up(&mut cx),
+            "{axis:?}: hovering the track holds the bar up"
+        );
+
+        cx.simulate_event(gpui::MouseExitEvent {
+            position: on_track,
+            pressed_button: None,
+            modifiers: Modifiers::default(),
+        });
+        cx.run_until_parked();
+        idle(&mut cx);
+        assert!(
+            !thumb_up(&mut cx),
+            "{axis:?}: the bar stayed up after the pointer left"
+        );
+
+        cx.simulate_mouse_move(on_track, None, Modifiers::default());
+        idle(&mut cx);
+        assert!(
+            thumb_up(&mut cx),
+            "{axis:?}: coming back over the track raises it again"
+        );
+    }
+}
