@@ -50,9 +50,8 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_decorations: client_frame.then_some(WindowDecorations::Client),
                 // No strip of its own: the traffic lights sit in the
-                // nav. `app_owns_titlebar_drag` stays false, so AppKit
-                // still moves the window by the top edge and the app owes
-                // no drag bar of its own.
+                // nav, and AppKit still moves the window by the top edge,
+                // so the app owes no drag bar of its own there.
                 titlebar: Some(TitlebarOptions {
                     appears_transparent: true,
                     traffic_light_position: Some(point(px(TRAFFIC_LIGHT_X), px(TRAFFIC_LIGHT_Y))),

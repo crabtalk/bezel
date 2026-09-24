@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.1.28",
+    "date": "2026-09-25",
+    "summary": "The shell's working directory from the shell itself, and a client-decorated window that keeps its frame clear across an appearance switch.",
+    "new": [
+      "`Emulator::directory` answers the working directory the shell last reported through `OSC 7 ; file://host/path` or `OSC 9 ; 9 ; path`: percent-decoded, the host dropped, a Windows `/C:/` path without its leading slash, and the quotes around a `9 ; 9` path taken off. `None` until a report arrives; a shell that sends neither never sets it. `scanner::Segment::Directory` carries the report."
+    ],
+    "fixed": [
+      "`appearance::reapply_window_background` pushes `Transparent` rather than `Opaque` onto a window under `Decorations::Client`, so a switch between light and dark no longer fills the corners and resize band `ui::window::frame` leaves clear."
+    ]
+  },
+  {
     "version": "0.1.27",
     "date": "2026-09-24",
     "summary": "Reader highlights in five colours, anchors that find their words again after an outside edit, pictures that resolve against their document, a page frame that takes presses and drags for the editor, and a paste into source that lands in the source.",

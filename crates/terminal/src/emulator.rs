@@ -27,7 +27,12 @@
 //!   under text written after it. [`NoSync`] turns the buffering off and the
 //!   frame is held here instead: see [`Emulator::render_hold`].
 
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    rc::Rc,
+    time::Duration,
+};
 
 use crate::kitty;
 use crate::scanner::{Iterm, Scanner, Segment};
@@ -394,6 +399,7 @@ pub struct Emulator {
     parser: Processor<NoSync>,
     capture: EventCapture,
     title: Option<String>,
+    directory: Option<PathBuf>,
     bell: bool,
     /// Splits graphics commands off the stream ahead of the parser. Held
     /// across feeds: a pty read ends wherever the kernel filled the buffer,
@@ -439,6 +445,7 @@ impl Emulator {
             parser: Processor::new(),
             capture,
             title: None,
+            directory: None,
             bell: false,
             scanner: Scanner::new(),
             graphics: kitty::Store::new(),
@@ -511,6 +518,7 @@ impl Emulator {
                 Segment::Sync(false) => self.held = None,
                 Segment::Sixel(data) => self.sixel(&data),
                 Segment::Iterm(command) => self.iterm(command),
+                Segment::Directory(path) => self.directory = Some(path),
                 Segment::CellSizeQuery => {
                     if let Some(size) = self.window_size() {
                         let reply = format!("\x1b[6;{};{}t", size.cell_height, size.cell_width);
@@ -1259,6 +1267,13 @@ impl Emulator {
     /// OSC title, if the running program set one.
     pub fn title(&self) -> Option<&str> {
         self.title.as_deref()
+    }
+
+    /// The working directory the shell last reported through `OSC 7` or
+    /// `OSC 9 ; 9`. `None` until one arrives; a shell that emits neither never
+    /// sets it.
+    pub fn directory(&self) -> Option<&Path> {
+        self.directory.as_deref()
     }
 
     /// True once a BEL arrived; reading clears it.

@@ -20,7 +20,7 @@
 //! already-laid-out elements to re-run their paint with the new palette.
 
 use crate::{Appearance, Theme};
-use gpui::{App, Global, Subscription, Window, WindowId};
+use gpui::{App, Decorations, Global, Subscription, Window, WindowBackgroundAppearance, WindowId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -248,6 +248,10 @@ pub fn keep_background(window: &Window, cx: &mut App) {
 
 /// Push the theme's window background appearance onto every open window, bar
 /// the ones that asked to keep their own.
+///
+/// A window under `Decorations::Client` is pushed `Transparent` where the
+/// theme answers `Opaque`: its corners and resize band (`ui::window::frame`)
+/// must stay unpainted, and its content paints its own background.
 pub fn reapply_window_background(cx: &mut App) {
     let Some(wanted) = cx
         .try_global::<Theme>()
@@ -278,17 +282,30 @@ pub fn reapply_window_background(cx: &mut App) {
         // one. Deferring runs it as the update unwinds, still before the frame.
         if window
             .update(cx, |_, window, _| {
-                window.set_background_appearance(wanted);
+                window.set_background_appearance(background_for(wanted, window));
             })
             .is_err()
         {
             cx.defer(move |cx| {
                 window
                     .update(cx, |_, window, _| {
-                        window.set_background_appearance(wanted);
+                        window.set_background_appearance(background_for(wanted, window));
                     })
                     .ok();
             });
         }
+    }
+}
+
+/// `wanted`, bar an opaque background on a window that draws its own frame.
+fn background_for(
+    wanted: WindowBackgroundAppearance,
+    window: &Window,
+) -> WindowBackgroundAppearance {
+    match (wanted, window.window_decorations()) {
+        (WindowBackgroundAppearance::Opaque, Decorations::Client { .. }) => {
+            WindowBackgroundAppearance::Transparent
+        }
+        _ => wanted,
     }
 }

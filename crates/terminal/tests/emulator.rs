@@ -512,3 +512,56 @@ fn the_alternate_screen_keeps_a_keyboard_mode_of_its_own() {
         "the primary screen lost its flags"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Working directory
+// ---------------------------------------------------------------------------
+
+#[test]
+fn osc_7_reports_the_directory_percent_decoded() {
+    let mut e = emu(20, 5);
+    assert_eq!(e.directory(), None);
+    e.feed(b"\x1b]7;file://host/home/me/My%20Files\x1b\\");
+    assert_eq!(
+        e.directory(),
+        Some(std::path::Path::new("/home/me/My Files"))
+    );
+    assert_eq!(e.row_text(0), "");
+}
+
+#[test]
+fn osc_7_with_a_drive_drops_the_leading_slash() {
+    let mut e = emu(20, 5);
+    e.feed(b"\x1b]7;file:///C:/Users/me\x07");
+    assert_eq!(e.directory(), Some(std::path::Path::new("C:/Users/me")));
+}
+
+#[test]
+fn osc_9_9_reports_the_directory_unquoted() {
+    let mut e = emu(20, 5);
+    e.feed(b"\x1b]9;9;\"C:\\Users\\me\"\x1b\\");
+    assert_eq!(e.directory(), Some(std::path::Path::new("C:\\Users\\me")));
+}
+
+#[test]
+fn a_directory_split_across_reads_is_one_report() {
+    let whole = b"\x1b]7;file://host/tmp/a\x1b\\";
+    for at in 0..whole.len() {
+        let mut e = emu(20, 5);
+        e.feed(&whole[..at]);
+        e.feed(&whole[at..]);
+        assert_eq!(
+            e.directory(),
+            Some(std::path::Path::new("/tmp/a")),
+            "split at {at}"
+        );
+    }
+}
+
+#[test]
+fn a_report_that_is_not_a_path_keeps_the_last_one() {
+    let mut e = emu(20, 5);
+    e.feed(b"\x1b]7;file://host/tmp\x07");
+    e.feed(b"\x1b]7;https://example.com/\x07\x1b]9;a notification\x07");
+    assert_eq!(e.directory(), Some(std::path::Path::new("/tmp")));
+}
