@@ -131,10 +131,9 @@ fn marks() -> [MarkButton; 6] {
 /// registry that spells them: `markdown` carries the name through the parse and
 /// the serializer and asks here at paint.
 pub fn paint(name: &str, theme: &Theme) -> Option<markdown::MarkPaint> {
-    let wash = |color: gpui::Hsla, alpha: f32| gpui::Hsla { a: alpha, ..color };
     match name {
         "highlight" => Some(markdown::MarkPaint {
-            background: Some(wash(theme.warning, 0.30)),
+            background: Some(theme.highlight(theme::HighlightColor::Yellow)),
             ..Default::default()
         }),
         "underline" => Some(markdown::MarkPaint {

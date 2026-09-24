@@ -22,7 +22,7 @@ use ui::{
 };
 
 use crate::{
-    comment::Delta,
+    anchor::Delta,
     editor::{
         Editor, MIN_IMAGE_WIDTH,
         keys::{CancelUrl, ConfirmUrl},

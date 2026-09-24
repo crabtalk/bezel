@@ -1,9 +1,10 @@
 //! Positions that outlive the edits under them.
 //!
-//! A comment is anchored to a range of text, and that range has to move when
-//! the text around it does. What the comment *says* — who wrote it, its
-//! replies, whether it is settled — is the app's, the way a link preview is.
-//! What is here is the range, and what keeps it over the same words.
+//! A comment or a highlight is anchored to a range of text, and that range has
+//! to move when the text around it does. What it *says* — a thread's replies,
+//! a highlight's note, who made either — is the app's, the way a link preview
+//! is. What is here is the range, its wash, and what keeps it over the same
+//! words.
 //!
 //! The anchors live in the editor rather than in the app because
 //! [`crate::History`] restores whole-document snapshots: an undo has no delta to
@@ -19,20 +20,21 @@ use std::ops::Range;
 
 use markdown::{Annotation, Cursor, Selection, Splice};
 
-/// The app's key for a thread. Opaque — nothing here looks inside one.
+/// The app's key for a comment or a highlight. Opaque — nothing here looks
+/// inside one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct CommentId(pub u64);
+pub struct AnchorId(pub u64);
 
-/// A comment's range in the document, and which wash it paints.
+/// A range in the document, and which wash it paints.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Anchor {
-    pub id: CommentId,
+    pub id: AnchorId,
     pub range: Selection,
     pub state: Annotation,
 }
 
 impl Anchor {
-    pub fn new(id: CommentId, range: Selection) -> Self {
+    pub fn new(id: AnchorId, range: Selection) -> Self {
         Self {
             id,
             range,

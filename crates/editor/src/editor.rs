@@ -23,7 +23,7 @@ use std::{ops::Range, time::Duration};
 use theme::Theme;
 
 use crate::{
-    comment::{Anchor, CommentId, Delta},
+    anchor::{Anchor, AnchorId, Delta},
     history::{EditKind, History},
     layout::Layout,
     link::{self, Choice},
@@ -43,10 +43,15 @@ use keys::{
     InsertParagraph, KillLine, Left, MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock,
     ResetTextSize, Right, SelectAll, SelectDocumentEnd, SelectDocumentStart, SelectDown, SelectEnd,
     SelectHome, SelectLeft, SelectRight, SelectUp, SelectWordLeft, SelectWordRight, SoftBreak,
-    SplitBlock, ToggleBold, ToggleCode, ToggleItalic, ToggleStrike, Undo, Up, WordLeft, WordRight,
+    SplitBlock, ToggleBold, ToggleCode, ToggleHighlight, ToggleItalic, ToggleStrike, Undo, Up,
+    WordLeft, WordRight,
 };
 
 pub const CONTEXT: &str = "BezelEditor";
+
+/// The custom mark [`ToggleHighlight`] toggles. It does nothing until the app
+/// registers a mark under this name with [`markdown::set_marks`].
+pub const HIGHLIGHT_MARK: &str = "highlight";
 
 /// [`CONTEXT`], which every binding in [`keys`] is scoped to, plus the mark
 /// that keeps `tab` for [`Editor::indent`].
@@ -66,8 +71,8 @@ fn key_context() -> KeyContext {
 pub enum EditorEvent {
     /// The document is different, and the anchors have been mapped through it.
     Changed,
-    /// A click landed on a comment's range.
-    CommentActivated(CommentId),
+    /// A click landed on an anchor's range.
+    AnchorActivated(AnchorId),
     /// The editor switched between the document and its source, which a host
     /// lighting its own toggle has no other way to hear about — the switch can
     /// come from an undo as well as from the button.
@@ -635,7 +640,7 @@ impl Editor {
     ///
     /// The last match wins, so the newer of two overlapping ranges is the one a
     /// click opens.
-    pub fn comment_at(&self, at: gpui::Point<gpui::Pixels>) -> Option<CommentId> {
+    pub fn anchor_at(&self, at: gpui::Point<gpui::Pixels>) -> Option<AnchorId> {
         let at = self.layouts.hit(at)?;
         self.anchors
             .iter()
@@ -647,7 +652,7 @@ impl Editor {
     }
 
     /// Where to float a thread, mirroring [`Self::selection_bounds`].
-    pub fn anchor_bounds(&self, id: CommentId) -> Option<gpui::Bounds<gpui::Pixels>> {
+    pub fn anchor_bounds(&self, id: AnchorId) -> Option<gpui::Bounds<gpui::Pixels>> {
         let anchor = self.anchors.iter().find(|anchor| anchor.id == id)?;
         let (point, line_height) = self.layouts.position(anchor.range.ordered().0)?;
         Some(gpui::Bounds::new(
@@ -2060,9 +2065,9 @@ impl Editor {
         self.history.interrupt();
         self.caret_moved();
         // Only the editor sees the press, so only the editor can
-        // say which thread it landed on.
-        if let Some(id) = self.comment_at(position) {
-            cx.emit(EditorEvent::CommentActivated(id));
+        // say which anchor it landed on.
+        if let Some(id) = self.anchor_at(position) {
+            cx.emit(EditorEvent::AnchorActivated(id));
         }
         cx.notify();
     }
@@ -2366,6 +2371,11 @@ impl Render for Editor {
                 cx.listener(|this, _: &ToggleStrike, _, cx| this.toggle_mark(Mark::Strike, cx)),
             )
             .on_action(cx.listener(|this, _: &ToggleCode, _, cx| this.toggle_mark(Mark::Code, cx)))
+            .on_action(cx.listener(|this, _: &ToggleHighlight, _, cx| {
+                if this.marks.delimiter(HIGHLIGHT_MARK).is_some() {
+                    this.toggle_mark(Mark::Custom(HIGHLIGHT_MARK.into()), cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &MoveBlockUp, _, cx| {
                 this.move_block(this.cursor().block, -1, cx)
             }))

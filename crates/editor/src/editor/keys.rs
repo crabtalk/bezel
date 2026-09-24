@@ -52,6 +52,7 @@ actions!(
         ToggleItalic,
         ToggleStrike,
         ToggleCode,
+        ToggleHighlight,
         MoveBlockUp,
         MoveBlockDown,
         DuplicateBlock,
@@ -140,6 +141,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-i", ToggleItalic, ctx),
         KeyBinding::new("cmd-e", ToggleCode, ctx),
         KeyBinding::new("cmd-shift-x", ToggleStrike, ctx),
+        KeyBinding::new("cmd-shift-h", ToggleHighlight, ctx),
         // Three chords for one key: `cmd-+` is `cmd-shift-=` on the keyboards
         // that have no `+` of their own, and which of the two a platform
         // reports is not ours to guess.
@@ -191,6 +193,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-i", ToggleItalic, ctx),
         KeyBinding::new("ctrl-e", ToggleCode, ctx),
         KeyBinding::new("ctrl-shift-x", ToggleStrike, ctx),
+        KeyBinding::new("ctrl-shift-h", ToggleHighlight, ctx),
         KeyBinding::new("ctrl-=", IncreaseTextSize, ctx),
         KeyBinding::new("ctrl-+", IncreaseTextSize, ctx),
         KeyBinding::new("ctrl-shift-=", IncreaseTextSize, ctx),

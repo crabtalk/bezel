@@ -115,13 +115,13 @@ pub enum CopyButton {
     Hidden,
 }
 
-/// A range the caller wants washed, and which of the three washes it gets.
+/// A range the caller wants washed, and which wash it gets.
 ///
-/// A comment thread is what asks for this, and none of what it *says* is here:
-/// the caller keeps the thread and hands over the range, the way it hands over
-/// a [`crate::Preview`]. A closed set rather than a color, so the environment
-/// keeps deciding the paint.
+/// None of what a comment or a highlight *says* is here: the caller keeps it
+/// and hands over the range, the way it hands over a [`crate::Preview`]. A
+/// closed set rather than a color, so the environment keeps deciding the paint.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[non_exhaustive]
 pub enum Annotation {
     /// A thread still waiting on someone.
     #[default]
@@ -130,6 +130,8 @@ pub enum Annotation {
     Resolved,
     /// The one whose thread the reader has in front of them.
     Active,
+    /// A reader's highlight, in [`Theme::highlight`]'s wash.
+    Highlight(theme::HighlightColor),
 }
 
 impl Annotation {
@@ -138,6 +140,7 @@ impl Annotation {
             Self::Open => theme.warning.opacity(0.20),
             Self::Resolved => theme.warning.opacity(0.08),
             Self::Active => theme.warning.opacity(0.38),
+            Self::Highlight(color) => theme.highlight(color),
         }
     }
 }

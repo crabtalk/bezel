@@ -1319,3 +1319,31 @@ fn the_store_is_handed_the_editors_base(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
     assert_eq!(source(&editor, &mut cx), "![](/notes/article/shot.png)");
 }
+
+#[gpui::test]
+fn the_highlight_chord_toggles_a_registered_highlight(cx: &mut TestAppContext) {
+    let marks = markdown::Marks::new().with(editor::HIGHLIGHT_MARK, "==");
+    let (editor, mut cx) = open_built("a lit word", move |editor| editor.with_marks(marks), cx);
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.select(
+                markdown::Selection::new(
+                    markdown::Cursor::new(0, markdown::Part::Body, 2),
+                    markdown::Cursor::new(0, markdown::Part::Body, 5),
+                ),
+                cx,
+            )
+        })
+    });
+    cx.simulate_keystrokes(&format!("{PRIMARY}-shift-h"));
+    assert_eq!(source(&editor, &mut cx), "a ==lit== word");
+    cx.simulate_keystrokes(&format!("{PRIMARY}-shift-h"));
+    assert_eq!(source(&editor, &mut cx), "a lit word", "and back off");
+}
+
+#[gpui::test]
+fn the_highlight_chord_does_nothing_without_the_mark(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("a lit word", cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-a {PRIMARY}-shift-h"));
+    assert_eq!(source(&editor, &mut cx), "a lit word");
+}
