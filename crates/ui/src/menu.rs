@@ -11,9 +11,10 @@
 //! can never disagree about which row an open submenu hangs off. What the
 //! pointer did comes back as a [`Hit`]; acting on it stays the caller's.
 
-use crate::{icons, keys, popover, tooltip::Tooltip};
+use crate::{icons, keys, popover, scroll, tooltip::Tooltip};
 use gpui::{
-    Action, Context, MouseDownEvent, Pixels, Point, SharedString, Window, div, prelude::*, px,
+    Action, Axis, Context, MouseDownEvent, Pixels, Point, ScrollHandle, SharedString, Size, Window,
+    div, prelude::*, px,
 };
 use icons::Icon;
 use std::{cell::Cell, rc::Rc};
@@ -437,6 +438,10 @@ pub enum Hit {
 /// the [`Cursor`] holds open. `id` prefixes the rows' element ids, so two menus
 /// open at once keep their hover state apart.
 ///
+/// Every panel is capped at the window's height less the snap margin either
+/// side, and scrolls its rows past that. A submenu hangs off its row wherever
+/// the row has scrolled to, outside the parent's clip.
+///
 /// The pointer moves the cursor rather than lighting a row of its own, so a
 /// submenu can only ever hang off the row that is live. Everything the pointer
 /// does arrives as a [`Hit`], dismissal included.
@@ -445,6 +450,7 @@ pub fn card<V: 'static>(
     id: impl Into<SharedString>,
     items: &[Item],
     cursor: &Cursor,
+    window: &mut Window,
     cx: &mut Context<V>,
     on: impl Fn(&mut V, Hit, &mut Window, &mut Context<V>) + 'static,
 ) -> gpui::Div {
@@ -455,7 +461,7 @@ pub fn card<V: 'static>(
         chain: popover::Chain::default(),
         on: Rc::new(on),
     };
-    tree.panel(theme, items, cursor, 0, &[], cx)
+    tree.panel(theme, items, cursor, &[], window, cx)
 }
 
 /// A gpui mouse listener, boxed: `Context::listener` borrows the context it is
@@ -485,119 +491,152 @@ impl<V: 'static> Tree<V> {
         theme: &Theme,
         items: &[Item],
         cursor: &Cursor,
-        depth: usize,
         prefix: &[usize],
+        window: &mut Window,
         cx: &mut Context<V>,
     ) -> gpui::Div {
+        let depth = prefix.len();
         let lit = cursor.lit(depth);
         let down = cursor.open().get(depth).copied();
+        let rows_id = SharedString::from(format!("{}-rows", row_id(&self.id, prefix)));
+        let Scrolled(handle, shown) = window
+            .use_keyed_state(
+                SharedString::from(format!("{rows_id}-scrolled")),
+                cx,
+                |_, _| Scrolled::default(),
+            )
+            .read(cx)
+            .clone();
+        // Only a change of live row or of the viewport's size scrolls: a wheel
+        // that carried the live row out of view is left where it put it. gpui
+        // drops a request made before the rows have been laid out, and measures
+        // one against the viewport of the frame before.
+        let size = handle.bounds().size;
+        if size.height > Pixels::ZERO && shown.get() != Some((lit, size)) {
+            shown.set(Some((lit, size)));
+            if let Some(lit) = lit {
+                handle.scroll_to_item(lit);
+            }
+        }
+        let inset = px(popover::SNAP) + window.client_inset().unwrap_or(Pixels::ZERO);
+        let cap = window.viewport_size().height - inset * 2.0;
         // A menu where nothing carries a glyph keeps no room for one — a bar's
         // menus would otherwise open with an empty column down their left.
         let gutter = items.iter().any(Item::has_icon);
         let described = items.iter().any(Item::has_description);
+        let rows =
+            div().id(rows_id.clone()).p(px(popover::MENU_PAD)).children(
+                items.iter().enumerate().map(|(row, item)| {
+                    if matches!(item, Item::Separator) {
+                        return popover::divider().into_any_element();
+                    }
+                    let path: Vec<usize> = prefix.iter().copied().chain([row]).collect();
+                    let id = row_id(&self.id, &path);
+                    let (label, icon, enabled) = match item {
+                        Item::Action {
+                            label,
+                            icon,
+                            enabled,
+                            ..
+                        }
+                        | Item::Submenu {
+                            label,
+                            icon,
+                            enabled,
+                            ..
+                        } => (label.clone(), icon.clone(), *enabled),
+                        Item::Separator => unreachable!("separators returned above"),
+                    };
+                    let (description, hint) = match item {
+                        Item::Action {
+                            description,
+                            tooltip,
+                            ..
+                        } => (description.clone(), tooltip.clone()),
+                        _ => (None, None),
+                    };
+                    let row = if enabled {
+                        popover::menu_row(theme, lit == Some(row), None)
+                            .id(id.clone())
+                            .on_mouse_move(self.reports(Hit::Point(path.clone()), cx))
+                            .on_click(self.reports(
+                                match item {
+                                    // Clicking a submenu row opens it; there is
+                                    // nothing else it could mean.
+                                    Item::Submenu { .. } => Hit::Point(path.clone()),
+                                    _ => Hit::Choose(path.clone()),
+                                },
+                                cx,
+                            ))
+                    } else {
+                        disabled_row(theme).id(id.clone())
+                    };
+                    let row = row.when_some(hint, |row, hint| {
+                        row.tooltip(move |window, cx| Tooltip::text(hint.clone(), window, cx))
+                    });
+                    row.when(gutter, |row| row.child(glyph_slot(theme, icon, enabled)))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .child(label)
+                                .children(description.map(|description| {
+                                    description_line(theme, description, enabled)
+                                })),
+                        )
+                        .map(|row| match item {
+                            Item::Action {
+                                keystroke, checked, ..
+                            } => row
+                                .when(*checked, |row| {
+                                    row.child(
+                                        icons::icon(icons::glyph::Check)
+                                            .size(px(GLYPH))
+                                            .text_color(theme.text),
+                                    )
+                                })
+                                .when_some(keystroke.clone(), |row, keystroke| {
+                                    row.child(popover::kbd_hint(theme, &keystroke))
+                                }),
+                            _ => row.child(
+                                icons::icon(icons::glyph::ChevronRight)
+                                    .size(px(GLYPH))
+                                    .text_color(theme.text_faint),
+                            ),
+                        })
+                        .when_some(
+                            item.opens().filter(|_| down == Some(path[depth])),
+                            |parent, inner| {
+                                let panel = self
+                                    .panel(theme, inner, cursor, &path, window, cx)
+                                    .into_any_element();
+                                parent.relative().child(popover::anchored_submenu(
+                                    SharedString::from(format!("{id}-panel")),
+                                    panel,
+                                    &self.chain,
+                                ))
+                            },
+                        )
+                        .into_any_element()
+                }),
+            );
         popover::popover_card(theme)
+            .p_0()
+            .flex()
+            .flex_col()
+            .max_h(cap)
             .map(|card| match described {
                 true => card.w(px(PANEL_DESCRIBED)),
                 false => card.min_w(px(PANEL_MIN)),
             })
             .on_mouse_down_out(self.dismissal(cx))
-            .children(items.iter().enumerate().map(|(row, item)| {
-                if matches!(item, Item::Separator) {
-                    return popover::divider().into_any_element();
-                }
-                let path: Vec<usize> = prefix.iter().copied().chain([row]).collect();
-                let id = row_id(&self.id, &path);
-                let (label, icon, enabled) = match item {
-                    Item::Action {
-                        label,
-                        icon,
-                        enabled,
-                        ..
-                    }
-                    | Item::Submenu {
-                        label,
-                        icon,
-                        enabled,
-                        ..
-                    } => (label.clone(), icon.clone(), *enabled),
-                    Item::Separator => unreachable!("separators returned above"),
-                };
-                let (description, hint) = match item {
-                    Item::Action {
-                        description,
-                        tooltip,
-                        ..
-                    } => (description.clone(), tooltip.clone()),
-                    _ => (None, None),
-                };
-                let row = if enabled {
-                    popover::menu_row(theme, lit == Some(row), None)
-                        .id(id.clone())
-                        .on_mouse_move(self.reports(Hit::Point(path.clone()), cx))
-                        .on_click(self.reports(
-                            match item {
-                                // Clicking a submenu row opens it; there is
-                                // nothing else it could mean.
-                                Item::Submenu { .. } => Hit::Point(path.clone()),
-                                _ => Hit::Choose(path.clone()),
-                            },
-                            cx,
-                        ))
-                } else {
-                    disabled_row(theme).id(id.clone())
-                };
-                let row = row.when_some(hint, |row, hint| {
-                    row.tooltip(move |window, cx| Tooltip::text(hint.clone(), window, cx))
-                });
-                row.when(gutter, |row| row.child(glyph_slot(theme, icon, enabled)))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(label)
-                            .children(
-                                description.map(|description| {
-                                    description_line(theme, description, enabled)
-                                }),
-                            ),
-                    )
-                    .map(|row| match item {
-                        Item::Action {
-                            keystroke, checked, ..
-                        } => row
-                            .when(*checked, |row| {
-                                row.child(
-                                    icons::icon(icons::glyph::Check)
-                                        .size(px(GLYPH))
-                                        .text_color(theme.text),
-                                )
-                            })
-                            .when_some(keystroke.clone(), |row, keystroke| {
-                                row.child(popover::kbd_hint(theme, &keystroke))
-                            }),
-                        _ => row.child(
-                            icons::icon(icons::glyph::ChevronRight)
-                                .size(px(GLYPH))
-                                .text_color(theme.text_faint),
-                        ),
-                    })
-                    .when_some(
-                        item.opens().filter(|_| down == Some(path[depth])),
-                        |parent, inner| {
-                            let panel = self
-                                .panel(theme, inner, cursor, depth + 1, &path, cx)
-                                .into_any_element();
-                            parent.relative().child(popover::anchored_submenu(
-                                SharedString::from(format!("{id}-panel")),
-                                panel,
-                                &self.chain,
-                            ))
-                        },
-                    )
-                    .into_any_element()
-            }))
+            .child(
+                scroll::Viewport::new(rows_id, rows, Axis::Vertical)
+                    .track_scroll(&handle)
+                    .fill(),
+            )
     }
 
     /// One panel's share of the out-click test: it reports the press it did not
@@ -639,6 +678,13 @@ impl<V: 'static> Tree<V> {
         Box::new(cx.listener(move |view, _: &E, window, cx| on(view, hit.clone(), window, cx)))
     }
 }
+
+/// One panel's scroll position, and the live row and viewport size it last
+/// scrolled for.
+#[derive(Clone, Default)]
+struct Scrolled(ScrollHandle, Rc<Cell<Option<Shown>>>);
+
+type Shown = (Option<usize>, Size<Pixels>);
 
 /// A row's element id: the card's, then the path, so rows of two panels — or of
 /// two menus open at once — never collide.
