@@ -1,0 +1,30 @@
+[package]
+name = "bezel-browser"
+
+description = "A platform webview hosted in a gpui window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "browser"
+
+[lints]
+workspace = true
+
+[dependencies]
+gpui.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wry = { version = "0.57", default-features = false }
+
+[dev-dependencies]
+gpui_platform.workspace = true

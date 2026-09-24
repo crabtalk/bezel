@@ -14,6 +14,7 @@ members = [
     "crates/editor",
     "crates/terminal",
     "crates/canvas",
+    "crates/browser",
     "apps/gallery",
     "apps/web",
     "apps/hello",
@@ -48,6 +49,7 @@ syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.1.29" 
 syntax-std = { package = "bezel-syntax-std", path = "crates/syntax-std", version = "0.1.29" }
 terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.1.29" }
 canvas = { package = "bezel-canvas", path = "crates/canvas", version = "0.1.29" }
+browser = { package = "bezel-browser", path = "crates/browser", version = "0.1.29" }
 # An app rather than a library: `apps/web` renders the same catalog, and
 # nothing publishes it.
 gallery = { path = "apps/gallery" }
