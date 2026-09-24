@@ -20,9 +20,7 @@
 //! already-laid-out elements to re-run their paint with the new palette.
 
 use crate::{Appearance, Theme};
-use gpui::{
-    App, Decorations, Global, Subscription, Window, WindowBackgroundAppearance, WindowId,
-};
+use gpui::{App, Decorations, Global, Subscription, Window, WindowBackgroundAppearance, WindowId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
