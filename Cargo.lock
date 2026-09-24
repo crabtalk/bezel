@@ -2825,6 +2825,7 @@ version = "0.1.29"
 dependencies = [
  "bezel-agent",
  "bezel-blocks",
+ "bezel-browser",
  "bezel-canvas",
  "bezel-editor",
  "bezel-gpui",
