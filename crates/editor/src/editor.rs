@@ -1611,6 +1611,13 @@ impl Editor {
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };
+        // Source mode included: the whole document is one fence there.
+        if self.in_fence() {
+            if let Some(text) = item.text() {
+                self.paste_literal(&text, cx);
+            }
+            return;
+        }
         // A picture before its text, because a clipboard carrying both is
         // carrying a name for the picture — which is not the picture. A
         // screenshot has a file name beside its bytes, and a file copied in a
@@ -1647,11 +1654,29 @@ impl Editor {
         });
     }
 
+    /// Whether the selection starts and ends in one fence's code.
+    fn in_fence(&self) -> bool {
+        let (start, end) = self.selection.ordered();
+        start.part == Part::Code && end.part == Part::Code && start.block == end.block
+    }
+
+    /// Put `text` in place of the selection as it stands, caret after it.
+    fn paste_literal(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.edit(EditKind::Structure, cx, |this| {
+            let splice = this.doc.replace(this.selection, Text::plain(text));
+            this.selection = Selection::at(splice.caret.clamp(&this.doc));
+            vec![Delta::Spliced(splice)]
+        });
+    }
+
     /// A URL is never spliced in as a block. It links whatever is selected, or
     /// lands as a link where the caret is — and only when the block it landed
     /// in held nothing else does it also offer to become a card, which is the
     /// one place a card would not eat a sentence.
     fn paste_url(&mut self, url: String, cx: &mut Context<Self>) {
+        if self.in_fence() {
+            return self.paste_literal(&url, cx);
+        }
         // The one paste people expect to *not* overwrite what they chose.
         if !self.selection.is_collapsed() {
             return self.toggle_mark(Mark::Link(url), cx);
