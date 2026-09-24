@@ -10,6 +10,7 @@
 
 use editor::{Editor, ImageStore, Source};
 use gpui::{App, Entity};
+use std::path::Path;
 
 /// The gallery keeps what it is handed and guesses pictures the default way.
 pub fn of() -> ImageStore {
@@ -25,7 +26,7 @@ pub fn of() -> ImageStore {
 ///
 /// One gallery and one store, so neither the editor asking nor the app it sits
 /// in changes the answer.
-fn keep(source: Source, _: &Entity<Editor>, _: &App) -> Option<String> {
+fn keep(source: Source, _: &Entity<Editor>, _: Option<&Path>, _: &App) -> Option<String> {
     match source {
         Source::File(path) => Some(path.to_string_lossy().into_owned()),
         Source::Bytes(image) => write(image),

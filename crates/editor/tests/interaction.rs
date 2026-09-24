@@ -745,10 +745,25 @@ fn a_copied_file_that_is_not_a_picture_pastes_its_path(cx: &mut TestAppContext) 
 /// a test is the one place with nowhere else to put the answer.
 static ASKED: Mutex<Option<EntityId>> = Mutex::new(None);
 
-fn keep(source: Source, editor: &Entity<Editor>, _: &App) -> Option<String> {
+fn keep(
+    source: Source,
+    editor: &Entity<Editor>,
+    base: Option<&std::path::Path>,
+    _: &App,
+) -> Option<String> {
     *ASKED.lock().unwrap() = Some(editor.entity_id());
+    if let Some(base) = base {
+        return Some(format!("{}/{}", base.display(), path_name(&source)?));
+    }
     match source {
         Source::File(path) => Some(format!("media://{}", path.file_name()?.to_str()?)),
+        Source::Bytes(_) => None,
+    }
+}
+
+fn path_name(source: &Source) -> Option<String> {
+    match source {
+        Source::File(path) => Some(path.file_name()?.to_str()?.to_string()),
         Source::Bytes(_) => None,
     }
 }
@@ -1284,4 +1299,23 @@ fn a_copied_image_file_pastes_its_path_in_source(cx: &mut TestAppContext) {
     copy_file("/tmp/shot.png", &mut cx);
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
     assert_eq!(source(&editor, &mut cx), "/tmp/shot.png");
+}
+
+/// The store runs while the editor is being updated, so the base comes to it
+/// as an argument rather than through a read of the editor.
+#[gpui::test]
+fn the_store_is_handed_the_editors_base(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_built("", |editor| editor.with_base("/notes/article"), cx);
+    cx.update(|_, cx| {
+        editor::set_image_store(
+            cx,
+            ImageStore {
+                keep,
+                ..ImageStore::default()
+            },
+        )
+    });
+    copy_file("/My Notes/shot.png", &mut cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+    assert_eq!(source(&editor, &mut cx), "![](/notes/article/shot.png)");
 }
