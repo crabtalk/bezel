@@ -18,6 +18,7 @@ use std::{
 pub struct VariableList<K> {
     id: usize,
     activity: Rc<Cell<ScrollbarActivity>>,
+    hover: Rc<Cell<crate::scroll::Hover>>,
     pub state: ListState,
     keys: Rc<RefCell<Vec<K>>>,
     visible: Rc<RefCell<Range<usize>>>,
@@ -32,6 +33,7 @@ impl<K: Clone + Eq + 'static> Default for VariableList<K> {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             state,
             activity: Default::default(),
+            hover: Default::default(),
             keys: Default::default(),
             visible: Default::default(),
             grab: Default::default(),
@@ -144,6 +146,7 @@ impl<K: Clone + Eq + 'static> VariableList<K> {
             state: self.state.clone(),
             grab: self.grab.clone(),
             activity: self.activity.clone(),
+            hover: self.hover.clone(),
             end_inset: self.end_inset.get(),
         }
     }
@@ -157,7 +160,6 @@ struct ScrollbarActivity {
     offset: Pixels,
     max: Pixels,
     generation: u64,
-    hovered: bool,
 }
 
 /// The list's thumb, shaped like [`crate::scroll::transient`]: the fade *is*
@@ -173,6 +175,7 @@ struct Scrollbar {
     state: ListState,
     grab: Rc<Cell<Option<(Pixels, Pixels)>>>,
     activity: Rc<Cell<ScrollbarActivity>>,
+    hover: Rc<Cell<crate::scroll::Hover>>,
     end_inset: Pixels,
 }
 
@@ -212,8 +215,8 @@ impl RenderOnce for Scrollbar {
                 .absolute()
                 .top(range.start)
                 .h(range.end - range.start)
-                .w(px(4.))
-                .rounded(px(2.))
+                .w(px(crate::scroll::THUMB))
+                .rounded_full()
                 .bg(theme::Theme::of(cx).text_muted.opacity(0.4))
                 .on_mouse_down(MouseButton::Left, move |event, window, cx| {
                     down_state.scrollbar_drag_started();
@@ -232,7 +235,7 @@ impl RenderOnce for Scrollbar {
             // frame is requested once the fade completes. A hidden thumb is
             // also out of the hit test, which is what hovering the strip
             // raises it for.
-            let anim = self.activity.clone();
+            let anim_hover = self.hover.clone();
             let anim_grab = self.grab.clone();
             thumb
                 .with_animation(
@@ -242,7 +245,7 @@ impl RenderOnce for Scrollbar {
                     ))),
                     Animation::new(crate::scroll::TRANSIENT_IDLE),
                     move |el, progress| {
-                        if anim.get().hovered || anim_grab.get().is_some() {
+                        if anim_hover.get().held() || anim_grab.get().is_some() {
                             el
                         } else if progress < 1.0 {
                             el.opacity(1.0 - progress)
@@ -254,10 +257,10 @@ impl RenderOnce for Scrollbar {
                 .into_any_element()
         });
 
-        let hover = self.activity.clone();
+        let activity = self.activity.clone();
         let state = self.state.clone();
         let grab = self.grab.clone();
-        gpui::div()
+        let strip = gpui::div()
             .id(SharedString::from(format!("list-{}-track", self.id)))
             .absolute()
             .right_0()
@@ -265,62 +268,56 @@ impl RenderOnce for Scrollbar {
             .bottom(self.end_inset)
             .w(px(10.))
             .flex()
-            .justify_center()
-            .on_hover(move |hovered, window, _| {
-                let mut held = hover.get();
-                if held.hovered == *hovered {
-                    return;
-                }
-                held.hovered = *hovered;
-                held.generation += 1;
-                hover.set(held);
-                window.refresh();
-            })
-            .children(thumb)
-            .child(
-                gpui::canvas(
-                    move |bounds, window, _| {
-                        // Laid out against a viewport the geometry above has
-                        // not seen. Self-limiting: once they agree, nothing is
-                        // requested.
-                        if (bounds.size.height - track).abs() > px(0.5) {
-                            window.request_animation_frame();
+            .justify_center();
+        crate::scroll::hover_track(strip, self.hover, move |window, _| {
+            let mut held = activity.get();
+            held.generation += 1;
+            activity.set(held);
+            window.refresh();
+        })
+        .children(thumb)
+        .child(
+            gpui::canvas(
+                move |bounds, window, _| {
+                    // Laid out against a viewport the geometry above has
+                    // not seen. Self-limiting: once they agree, nothing is
+                    // requested.
+                    if (bounds.size.height - track).abs() > px(0.5) {
+                        window.request_animation_frame();
+                    }
+                },
+                move |_, _, window, _| {
+                    // Window-wide, because a drag leaves the strip and a
+                    // release can land anywhere: a grab left set would make
+                    // the next press continue the last gesture.
+                    let moved_state = state.clone();
+                    let moved_grab = grab.clone();
+                    window.on_mouse_event(move |event: &gpui::MouseMoveEvent, phase, window, _| {
+                        if phase == gpui::DispatchPhase::Bubble
+                            && let Some((start, offset)) = moved_grab.get()
+                            && travel > px(0.)
+                        {
+                            moved_state.set_offset_from_scrollbar(gpui::point(
+                                px(0.),
+                                (offset - (event.position.y - start) / travel * max)
+                                    .clamp(-max, px(0.)),
+                            ));
+                            window.refresh();
                         }
-                    },
-                    move |_, _, window, _| {
-                        // Window-wide, because a drag leaves the strip and a
-                        // release can land anywhere: a grab left set would make
-                        // the next press continue the last gesture.
-                        let moved_state = state.clone();
-                        let moved_grab = grab.clone();
-                        window.on_mouse_event(
-                            move |event: &gpui::MouseMoveEvent, phase, window, _| {
-                                if phase == gpui::DispatchPhase::Bubble
-                                    && let Some((start, offset)) = moved_grab.get()
-                                    && travel > px(0.)
-                                {
-                                    moved_state.set_offset_from_scrollbar(gpui::point(
-                                        px(0.),
-                                        (offset - (event.position.y - start) / travel * max)
-                                            .clamp(-max, px(0.)),
-                                    ));
-                                    window.refresh();
-                                }
-                            },
-                        );
-                        let up_state = state.clone();
-                        let up_grab = grab.clone();
-                        window.on_mouse_event(move |event: &gpui::MouseUpEvent, _, window, _| {
-                            if event.button == MouseButton::Left && up_grab.take().is_some() {
-                                up_state.scrollbar_drag_ended();
-                                window.refresh();
-                            }
-                        });
-                    },
-                )
-                .absolute()
-                .size_full(),
+                    });
+                    let up_state = state.clone();
+                    let up_grab = grab.clone();
+                    window.on_mouse_event(move |event: &gpui::MouseUpEvent, _, window, _| {
+                        if event.button == MouseButton::Left && up_grab.take().is_some() {
+                            up_state.scrollbar_drag_ended();
+                            window.refresh();
+                        }
+                    });
+                },
             )
-            .into_any_element()
+            .absolute()
+            .size_full(),
+        )
+        .into_any_element()
     }
 }

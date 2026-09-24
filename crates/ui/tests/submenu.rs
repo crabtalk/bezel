@@ -200,7 +200,7 @@ fn nested() -> Vec<Item> {
 impl gpui::Render for Pinned {
     fn render(
         &mut self,
-        _window: &mut gpui::Window,
+        window: &mut gpui::Window,
         cx: &mut gpui::Context<Self>,
     ) -> impl IntoElement {
         let theme = theme::Theme::of(cx).clone();
@@ -214,6 +214,7 @@ impl gpui::Render for Pinned {
                 "pinned",
                 &self.items,
                 &self.cursor,
+                window,
                 cx,
                 |view: &mut Self, hit, _, _| {
                     if let menu::Hit::Point(path) = hit {
@@ -226,9 +227,16 @@ impl gpui::Render for Pinned {
 
 /// A drawn window holding [`nested`] at the right edge, opened down `open`.
 fn pinned(cx: &mut TestAppContext, open: &[usize]) -> (gpui::Entity<Pinned>, VisualTestContext) {
+    pinned_with(cx, nested(), open)
+}
+
+fn pinned_with(
+    cx: &mut TestAppContext,
+    items: Vec<Item>,
+    open: &[usize],
+) -> (gpui::Entity<Pinned>, VisualTestContext) {
     cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
     let window = cx.add_window(|_, _| {
-        let items = nested();
         let mut cursor = menu::Cursor::default();
         cursor.point_at(&items, open);
         Pinned {
@@ -307,5 +315,74 @@ fn a_flipped_chain_keeps_going_the_same_way(cx: &mut TestAppContext) {
     assert!(
         second < first,
         "the second panel opened back across its parent ({second} is right of {first})"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A panel taller than the window
+// ---------------------------------------------------------------------------
+
+/// Rows `0..LONG - 1` are actions; the last row is a submenu.
+const LONG: usize = 80;
+
+fn long() -> Vec<Item> {
+    (0..LONG - 1)
+        .map(|row| Item::action(format!("Model {row}")))
+        .chain([Item::submenu("More", vec![Item::action("bezel.md")])])
+        .collect()
+}
+
+/// The first y down the pinned card's column that answers with `path`.
+fn find_y(
+    view: &gpui::Entity<Pinned>,
+    cx: &mut VisualTestContext,
+    path: &[usize],
+) -> Option<gpui::Pixels> {
+    let x = WIDTH - px(24.0);
+    (0..(f32::from(HEIGHT) / SWEEP) as usize)
+        .map(|step| px(step as f32 * SWEEP))
+        .find(|&y| row_at(view, cx, point(x, y)).as_deref() == Some(path))
+}
+
+#[gpui::test]
+fn a_long_panel_scrolls_to_the_row_the_keyboard_steps_to(cx: &mut TestAppContext) {
+    let (view, mut cx) = pinned_with(cx, long(), &[]);
+    assert!(
+        find_y(&view, &mut cx, &[0]).is_some(),
+        "the first row answered nowhere"
+    );
+    assert_eq!(
+        find_y(&view, &mut cx, &[LONG - 2]),
+        None,
+        "a row past the window edge answered before anything scrolled"
+    );
+
+    cx.update(|_, cx| {
+        view.update(cx, |view, cx| {
+            // Up from nothing lands on the last row.
+            view.cursor.step(&view.items, -1);
+            view.cursor.step(&view.items, -1);
+            cx.notify();
+        })
+    });
+    cx.run_until_parked();
+    assert!(
+        find_y(&view, &mut cx, &[LONG - 2]).is_some(),
+        "the stepped-to row was not scrolled into view"
+    );
+}
+
+#[gpui::test]
+fn a_submenu_off_a_scrolled_row_is_not_clipped(cx: &mut TestAppContext) {
+    let (view, mut cx) = pinned_with(cx, long(), &[LONG - 1]);
+    // The scroll is measured against the viewport of the frame before, which
+    // the resize changed; a real window draws the frame that corrects it.
+    cx.update(|_, cx| view.update(cx, |_, cx| cx.notify()));
+    cx.run_until_parked();
+    let y =
+        find_y(&view, &mut cx, &[LONG - 1]).expect("the submenu row was not scrolled into view");
+    assert!(
+        sweep_x(&view, &mut cx, y, &[LONG - 1, 0]).is_some(),
+        "the panel off the scrolled row answered nowhere"
     );
 }

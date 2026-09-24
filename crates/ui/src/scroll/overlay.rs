@@ -140,6 +140,7 @@ struct State {
     steady: ScrollbarState,
     transient: TransientState,
     horizontal: Rc<Cell<Horizontal>>,
+    horizontal_hover: Rc<Cell<scroll::Hover>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -147,7 +148,6 @@ struct Horizontal {
     offset: Pixels,
     max: Pixels,
     generation: usize,
-    hovered: bool,
     grab: Option<Pixels>,
 }
 
@@ -164,6 +164,7 @@ impl RenderOnce for Overlay {
                 steady: ScrollbarState::new(Painter::of(cx)),
                 transient: TransientState::new(Painter::of(cx)),
                 horizontal: Rc::default(),
+                horizontal_hover: Rc::default(),
             },
         );
         let held = state.read(cx);
@@ -179,6 +180,7 @@ impl RenderOnce for Overlay {
                 self.id,
                 &self.handle,
                 held.horizontal.clone(),
+                held.horizontal_hover.clone(),
                 always,
                 self.place,
             ),
@@ -213,6 +215,7 @@ fn horizontal(
     id: SharedString,
     handle: &ScrollHandle,
     state: Rc<Cell<Horizontal>>,
+    hover: Rc<Cell<scroll::Hover>>,
     always: bool,
     place: scroll::Place,
 ) -> AnyElement {
@@ -247,45 +250,44 @@ fn horizontal(
         window.refresh();
     };
     let hover_state = state.clone();
-    let track = scroll::track(&id, place, Axis::Horizontal)
-        .on_hover(move |hovered, window, _| {
-            let mut held = hover_state.get();
-            held.hovered = *hovered;
-            held.generation += 1;
-            hover_state.set(held);
-            window.refresh();
-        })
-        .on_drag_move(move |event: &DragMoveEvent<HorizontalDrag>, window, cx| {
-            if event.drag(cx).0 != drag_id {
-                return;
-            }
-            let viewport = drag_handle.bounds().size.width;
-            let max = drag_handle.max_offset().x;
-            let Some(range) = scroll::thumb_in_track(
-                viewport,
-                max,
-                drag_handle.offset().x,
-                viewport - 2. * scroll::BAR_INSET - end_inset,
-            ) else {
-                return;
-            };
-            let pointer = event.event.position.x - event.bounds.left();
-            let mut held = drag_state.get();
-            let grab = *held
-                .grab
-                .get_or_insert((pointer - range.start).clamp(px(0.), range.end - range.start));
-            drag_state.set(held);
-            let x = scroll::offset_for_thumb(
-                pointer - grab,
-                viewport - 2. * scroll::BAR_INSET - end_inset,
-                max,
-                range.end - range.start,
-            );
-            drag_handle.set_offset(point(x, drag_handle.offset().y));
-            window.refresh();
-        })
-        .on_mouse_up(MouseButton::Left, release.clone())
-        .on_mouse_up_out(MouseButton::Left, release);
+    let track = scroll::track(&id, place, Axis::Horizontal);
+    let track = scroll::hover_track(track, hover.clone(), move |window, _| {
+        let mut held = hover_state.get();
+        held.generation += 1;
+        hover_state.set(held);
+        window.refresh();
+    })
+    .on_drag_move(move |event: &DragMoveEvent<HorizontalDrag>, window, cx| {
+        if event.drag(cx).0 != drag_id {
+            return;
+        }
+        let viewport = drag_handle.bounds().size.width;
+        let max = drag_handle.max_offset().x;
+        let Some(range) = scroll::thumb_in_track(
+            viewport,
+            max,
+            drag_handle.offset().x,
+            viewport - 2. * scroll::BAR_INSET - end_inset,
+        ) else {
+            return;
+        };
+        let pointer = event.event.position.x - event.bounds.left();
+        let mut held = drag_state.get();
+        let grab = *held
+            .grab
+            .get_or_insert((pointer - range.start).clamp(px(0.), range.end - range.start));
+        drag_state.set(held);
+        let x = scroll::offset_for_thumb(
+            pointer - grab,
+            viewport - 2. * scroll::BAR_INSET - end_inset,
+            max,
+            range.end - range.start,
+        );
+        drag_handle.set_offset(point(x, drag_handle.offset().y));
+        window.refresh();
+    })
+    .on_mouse_up(MouseButton::Left, release.clone())
+    .on_mouse_up_out(MouseButton::Left, release);
     let thumb_debug_id = id.clone();
     let press_state = state.clone();
     let press_handle = handle.clone();
@@ -317,8 +319,7 @@ fn horizontal(
                 SharedString::from(format!("{id}-fade-{}", held.generation)),
                 Animation::new(scroll::TRANSIENT_IDLE),
                 move |el, p| {
-                    let held = state.get();
-                    if held.hovered || held.grab.is_some() {
+                    if hover.get().held() || state.get().grab.is_some() {
                         el
                     } else if p < 1. {
                         el.opacity(1. - p)

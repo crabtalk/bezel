@@ -294,12 +294,19 @@ impl Menubar {
         }
     }
 
-    fn card(&self, menu: usize, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn card(
+        &self,
+        menu: usize,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         menu::card(
             theme,
             SharedString::from(format!("menu-{menu}")),
             &self.menus[menu].items,
             &self.cursor,
+            window,
             cx,
             |bar, hit, _, cx| bar.hit(hit, cx),
         )
@@ -340,7 +347,7 @@ impl Focusable for Menubar {
 }
 
 impl Render for Menubar {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
         // `get`, not `as_open`: the card stays mounted through the exit phase.
         let mounted = self.open.get().copied();
@@ -357,7 +364,7 @@ impl Render for Menubar {
             .on_action(cx.listener(Self::dismiss))
             .children((0..self.menus.len()).map(|menu| {
                 let down = mounted == Some(menu);
-                let card = down.then(|| self.card(menu, &theme, cx));
+                let card = down.then(|| self.card(menu, &theme, window, cx));
                 div()
                     .relative()
                     .id(SharedString::from(format!("menubar-title-{menu}")))

@@ -66,7 +66,7 @@ const TRACK: f32 = 10.0;
 /// Room a bar is centred in across its axis when the caller reserves none.
 const CHANNEL: f32 = 2.0 * INSET + TRACK;
 /// Width of the thumb itself, centred in the track.
-const THUMB: f32 = 6.0;
+pub(crate) const THUMB: f32 = 4.0;
 /// Length of one [`rail`] mark, and its thickness.
 const MARK: f32 = 16.0;
 const MARK_THICK: f32 = 2.0;
@@ -258,6 +258,67 @@ pub fn contain_wheel<E: gpui::InteractiveElement>(el: E, axes: Axes) -> E {
 /// only, so without `block_mouse_except_scroll` the content under the strip
 /// takes the press as well; the wheel still passes, which is what a bar laid
 /// over a pane has to let through.
+/// Whether the pointer rests on a bar's track, which holds a transient bar up.
+///
+/// gpui keeps the pointer's last position when it leaves the window, and a
+/// track under that position reads as hovered again on the next frame. `out`
+/// is set when the pointer leaves the window across the track and cleared by
+/// the next move over it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Hover {
+    over: bool,
+    out: bool,
+}
+
+impl Hover {
+    pub(crate) fn held(self) -> bool {
+        self.over && !self.out
+    }
+}
+
+type SetHover = Rc<dyn Fn(Hover, &mut Window, &mut App)>;
+
+/// Keep `hover` for `track`, calling `changed` when it changes.
+pub(crate) fn hover_track<E: StatefulInteractiveElement>(
+    track: E,
+    hover: Rc<Cell<Hover>>,
+    changed: impl Fn(&mut Window, &mut App) + 'static,
+) -> E {
+    let set: SetHover = {
+        let hover = hover.clone();
+        Rc::new(move |next, window, cx| {
+            if next != hover.get() {
+                hover.set(next);
+                changed(window, cx);
+            }
+        })
+    };
+    let (over, exit, moved) = (hover.clone(), hover.clone(), hover);
+    let (set_exit, set_moved) = (set.clone(), set.clone());
+    track
+        .on_hover(move |hovered, window, cx| {
+            let over = Hover {
+                over: *hovered,
+                ..over.get()
+            };
+            set(over, window, cx)
+        })
+        .on_mouse_exit(move |_, window, cx| {
+            let out = Hover {
+                out: true,
+                ..exit.get()
+            };
+            set_exit(out, window, cx)
+        })
+        .on_mouse_move(move |_, window, cx| {
+            let back = Hover {
+                out: false,
+                ..moved.get()
+            };
+            set_moved(back, window, cx)
+        })
+}
+
 fn track(id: &SharedString, place: Place, axis: Axis) -> Stateful<Div> {
     let debug_id = id.clone();
     let el = div()
@@ -629,7 +690,8 @@ pub const TRANSIENT_IDLE: Duration = Duration::from_millis(1000);
 /// pointer is on the strip.
 #[derive(Clone)]
 pub struct TransientState {
-    cell: Rc<Cell<(Pixels, Pixels, u64, bool)>>,
+    cell: Rc<Cell<(Pixels, Pixels, u64)>>,
+    hover: Rc<Cell<Hover>>,
     bar: ScrollbarState,
 }
 
@@ -637,6 +699,7 @@ impl TransientState {
     pub fn new(painter: Painter) -> Self {
         Self {
             cell: Rc::new(Cell::new(Default::default())),
+            hover: Rc::default(),
             bar: ScrollbarState::new(painter),
         }
     }
@@ -718,12 +781,8 @@ fn transient_placed(
                 // and leaving starts its fade.
                 let hover_state = state.clone();
                 let hover_painter = state.bar.painter;
-                track.on_hover(move |hovered: &bool, _, cx: &mut App| {
+                hover_track(track, state.hover.clone(), move |_, cx| {
                     let mut cell = hover_state.cell.get();
-                    if cell.3 == *hovered {
-                        return;
-                    }
-                    cell.3 = *hovered;
                     cell.2 += 1;
                     hover_state.cell.set(cell);
                     hover_painter.notify(cx);
@@ -759,8 +818,7 @@ fn transient_placed(
                 ElementId::from(format!("{id}-fade-{generation}")),
                 Animation::new(TRANSIENT_IDLE),
                 move |el, p| {
-                    let cell = anim.cell.get();
-                    if cell.3 || anim.bar.dragging() {
+                    if anim.hover.get().held() || anim.bar.dragging() {
                         el
                     } else if p < 1.0 {
                         el.opacity(1.0 - p)

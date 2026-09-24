@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.1.29",
+    "date": "2026-09-25",
+    "summary": "Menus that stop at the window edge and scroll, copy from a fence as plain text, one scrollbar thumb, bars that fade when the pointer leaves the window, and highlights in Apple's system colours.",
+    "new": [
+      "`markdown::highlight_solid` answers a `HighlightColor` at full strength, Apple's system colour for the appearance, for a picker's swatch."
+    ],
+    "changed": [
+      "`menu::card` takes `&mut Window` before `cx`. Every menu panel, root or submenu, is capped at the window's height less the snap margin either side and scrolls its rows past that, with the overlay scrollbar. The keyboard's row is kept in view, and a submenu hangs off its row wherever the row has scrolled to.",
+      "`markdown::default_highlight` paints `highlight_solid` at 0.32 on dark and 0.45 on light, keeping text at 7:1 or better.",
+      "Every scrollbar thumb is 4px wide; `Overlay` and `Viewport` bars were 6px."
+    ],
+    "fixed": [
+      "Copy and cut inside a fence, which is the whole of `Mode::Source`, put the selected text on the clipboard as it stands rather than wrapped in a fence. A selection spanning a fence and the blocks around it still copies as markdown.",
+      "A transient scrollbar (`Overlay`, `Viewport`, `VariableList`) fades after the pointer leaves the window across its track instead of staying raised."
+    ]
+  },
+  {
     "version": "0.1.28",
     "date": "2026-09-25",
     "summary": "The shell's working directory from the shell itself, and a client-decorated window that keeps its frame clear across an appearance switch.",

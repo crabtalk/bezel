@@ -206,17 +206,31 @@ pub(crate) fn highlight_paint_of(cx: &App) -> HighlightPaint {
         .map_or(default_highlight, |installed| installed.0)
 }
 
-/// The shipped washes: translucent, so a selection over one still shows.
-pub fn default_highlight(color: HighlightColor, theme: &Theme) -> Hsla {
-    let hue = match color {
-        HighlightColor::Yellow => 95.0,
-        HighlightColor::Green => 150.0,
-        HighlightColor::Blue => 245.0,
-        HighlightColor::Pink => 350.0,
-        HighlightColor::Purple => 300.0,
+/// A [`HighlightColor`] itself, at full strength — Apple's system colour for
+/// the appearance. What a picker paints a swatch in.
+pub fn highlight_solid(color: HighlightColor, theme: &Theme) -> Hsla {
+    let dark = theme.appearance == theme::Appearance::Dark;
+    let hex = match color {
+        HighlightColor::Yellow if dark => 0xFFD60A,
+        HighlightColor::Yellow => 0xFFCC00,
+        HighlightColor::Green if dark => 0x32D74B,
+        HighlightColor::Green => 0x28CD41,
+        HighlightColor::Blue if dark => 0x0A84FF,
+        HighlightColor::Blue => 0x007AFF,
+        HighlightColor::Pink if dark => 0xFF375F,
+        HighlightColor::Pink => 0xFF2D55,
+        HighlightColor::Purple if dark => 0xBF5AF2,
+        HighlightColor::Purple => 0xAF52DE,
     };
-    match theme.appearance {
-        theme::Appearance::Dark => theme::oklch(0.72, 0.14, hue).opacity(0.34),
-        theme::Appearance::Light => theme::oklch(0.88, 0.13, hue).opacity(0.70),
-    }
+    gpui::rgb(hex).into()
+}
+
+/// The shipped washes: [`highlight_solid`] at a fixed alpha, translucent so a
+/// selection over one still shows.
+pub fn default_highlight(color: HighlightColor, theme: &Theme) -> Hsla {
+    let alpha = match theme.appearance {
+        theme::Appearance::Dark => 0.32,
+        theme::Appearance::Light => 0.45,
+    };
+    highlight_solid(color, theme).opacity(alpha)
 }

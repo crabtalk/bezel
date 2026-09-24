@@ -1583,9 +1583,17 @@ impl Editor {
     }
 
     /// The selection as markdown — what a copy puts on the clipboard, and what
-    /// a paste elsewhere reads back.
+    /// a paste elsewhere reads back. Inside one fence, the code as it stands.
     fn selected_source(&self) -> Option<String> {
-        (!self.selection.is_collapsed()).then(|| {
+        if self.selection.is_collapsed() {
+            return None;
+        }
+        if self.in_fence() {
+            let (start, end) = self.selection.clamp(&self.doc).ordered();
+            let code = self.doc.blocks[start.block].text_at(Part::Code)?;
+            return Some(code.text[start.offset..end.offset].to_string());
+        }
+        Some({
             let mut slice = self.doc.slice(self.selection);
             slice.normalize_with(&self.marks);
             markdown::serialize_with(&slice, &self.marks)
