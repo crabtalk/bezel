@@ -1,7 +1,7 @@
 use gpui::{
-    App, Bounds, Context, Element, ElementId, EventEmitter, FocusHandle, Focusable,
-    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Render, Style,
-    Subscription, Task, Window, relative,
+    App, Bounds, Context, CursorStyle, Element, ElementId, EventEmitter, FocusHandle, Focusable,
+    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, Pixels,
+    Render, Style, Subscription, Task, Window, relative,
 };
 use serde::de::DeserializeOwned;
 use std::{
@@ -22,6 +22,9 @@ use std::{
 /// The page takes keys while the view's focus handle is focused, and a press
 /// in the page focuses the handle. Key equivalents (cmd or ctrl held) reach
 /// gpui's key dispatch before the page sees them.
+///
+/// gpui elements behind the page are not hovered, and gpui's cursor over the
+/// page is the arrow.
 ///
 /// Paints nothing off macOS.
 pub struct WebView {
@@ -258,7 +261,7 @@ impl IntoElement for Host {
 
 impl Element for Host {
     type RequestLayoutState = ();
-    type PrepaintState = ();
+    type PrepaintState = Hitbox;
 
     fn id(&self) -> Option<ElementId> {
         Some("webview".into())
@@ -285,12 +288,13 @@ impl Element for Host {
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         _request_layout: &mut (),
         window: &mut Window,
         cx: &mut App,
-    ) {
+    ) -> Hitbox {
         window.set_focus_handle(&self.page.focus, cx);
+        window.insert_hitbox(bounds, HitboxBehavior::BlockMouse)
     }
 
     fn paint(
@@ -299,10 +303,14 @@ impl Element for Host {
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         _request_layout: &mut (),
-        _prepaint: &mut (),
+        hitbox: &mut Hitbox,
         window: &mut Window,
         _cx: &mut App,
     ) {
+        // gpui's view tracks the pointer across the page's pixels too, and
+        // resets the platform cursor whenever its own style under the pointer
+        // changes, over whatever WebKit set.
+        window.set_cursor_style(CursorStyle::Arrow, hitbox);
         let Some(id) = id else { return };
         let page = self.page.clone();
         window.with_element_state::<Shown, _>(id, |shown, window| {
