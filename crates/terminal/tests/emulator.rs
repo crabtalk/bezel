@@ -153,6 +153,37 @@ fn dsr_cursor_report_produces_pty_response() {
 }
 
 #[test]
+fn pixel_size_queries_answer_from_the_measured_cell() {
+    let mut e = emu(80, 24);
+    e.set_cell_size(8.4, 17.0);
+    assert_eq!(
+        String::from_utf8_lossy(&e.feed(b"\x1b[16t")),
+        "\x1b[6;17;8t"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&e.feed(b"\x1b[14t")),
+        "\x1b[4;408;640t"
+    );
+}
+
+#[test]
+fn pixel_size_queries_go_unanswered_before_a_cell_is_measured() {
+    let mut e = emu(80, 24);
+    assert!(e.feed(b"\x1b[14t\x1b[16t").is_empty());
+}
+
+#[test]
+fn replies_leave_in_the_order_their_queries_arrived() {
+    let mut e = emu(80, 24);
+    e.set_cell_size(8.0, 16.0);
+    let responses = e.feed(b"\x1b[14t\x1b[16t\x1b[6n\x1b[16t\x1b[c");
+    assert_eq!(
+        String::from_utf8_lossy(&responses),
+        "\x1b[4;384;640t\x1b[6;16;8t\x1b[1;1R\x1b[6;16;8t\x1b[?6c"
+    );
+}
+
+#[test]
 fn osc_title_and_bell() {
     let mut e = emu(20, 2);
     assert_eq!(e.title(), None);

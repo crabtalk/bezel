@@ -1,5 +1,35 @@
 [
   {
+    "version": "0.1.26",
+    "date": "2026-09-24",
+    "summary": "The rest of the kitty graphics protocol, sixel and iTerm2 images, and a terminal that answers the pixel size queries programs probe with before they send one.",
+    "new": [
+      "The terminal answers `CSI 14 t` and `CSI 16 t` from the cell size `Emulator::set_cell_size` measured, and every reply leaves in the order its query arrived.",
+      "Kitty placements by id: `a=p` places a stored image, `p` names a placement so one image can hold several, and `I` transmits and names an image by number, echoed in the reply. Every delete carries out its target — `a`, `i`, `n`, `c`, `p`, `q`, `x`, `y`, `z`, `r` — and an upper-case one frees the data of each image it leaves with no placement.",
+      "Kitty display keys: `z` layers an image over the text, under it, or under non-default cell backgrounds; `x`, `y`, `w`, `h` crop the source; `X`, `Y` offset it inside its first cell; `c` or `r` alone scales by the image's aspect, and both letterbox it.",
+      "Kitty payloads compressed with zlib (`o=z`), inflated whole and held to the same 64 MiB ceiling as an uncompressed one.",
+      "Kitty Unicode placeholders: a virtual placement (`U=1`) is shown wherever the text holds `U+10EEEE` cells naming it, which is the path multiplexers take. `kitty::PLACEHOLDER` is the character.",
+      "Kitty file, temporary file and shared memory transmission (`t=f`, `t=t`, `t=s`, with `O` and `S`), off until a host calls `Emulator::set_local_media(true)`. Paths resolve through symlinks, `/proc`, `/sys` and `/dev` are refused, only regular files are read, and every failure is the one `EBADF` reply.",
+      "Kitty relative placements (`P`, `Q`, `H`, `V`), found from their parent each frame and deleted with it, refused with `ENOPARENT`, `ECYCLE`, `ETOODEEP` past a chain of eight, or `EINVAL` for a virtual one.",
+      "Kitty animation: `a=f` adds or edits a frame over a blank, colored or earlier canvas, `a=a` sets the state, current frame, loop count and gaps, `a=c` composes a rectangle of one frame onto another, and `d=f` deletes a frame. `view::Images` plays them and schedules a repaint for when the next frame is due.",
+      "Sixel images, placed at the cursor the way `a=T` places a kitty image. `Emulator::set_advertise_sixel(true)` answers DA1 as `CSI ? 62 ; 4 ; 22 c` for programs that look for sixel there before sending one.",
+      "iTerm2 inline images (`OSC 1337 ; File=`), sent whole or in parts between `MultipartFile` and `FileEnd`, sized in cells, pixels or percent, with `preserveAspectRatio`. An animated GIF plays."
+    ],
+    "changed": [
+      "`terminal::scanner` holds `Scanner`, `Segment` and the new `Iterm`, which were in `kitty`. `Segment` reports sixel data, iTerm2 files and `CSI 16 t` alongside kitty commands and mode 2026.",
+      "`Segment`, `Iterm`, `kitty::Action`, `kitty::Target`, `kitty::Effect`, `kitty::Command`, `kitty::Display`, `kitty::Reply`, `kitty::Delete`, `emulator::Placement` and `view::PlacedImage` are `#[non_exhaustive]`.",
+      "`kitty::Store::apply` answers an `Effect` — a placement or a delete for the emulator to carry out — rather than a `Display`, and `kitty::Reply` is a struct carrying the `I` and `p` it echoes. `Command::compressed` is `Command::compression`.",
+      "`emulator::Placement` carries the placement's `frame`, `source` and `z`. `view::PlacedImage` carries them too, with `id`, `frame_index`, `next_frame` and `wake`; its `image` is the one frame to paint.",
+      "A lower-case `d=a` or `d=i` takes placements off the screen and keeps the image data, so the image can be placed again; the upper-case form frees it.",
+      "An image of the default z-index paints over the text rather than under it, as the protocol has it.",
+      "New dependencies: `miniz_oxide`, already in the tree under `png`, and `libc` on unix."
+    ],
+    "fixed": [
+      "Several placements can share one top-left cell; placing a second one there no longer drops the first.",
+      "`a=q` answers what the same transmission would — a refused medium, an unreadable file, a payload that does not fit its size — and stores nothing."
+    ]
+  },
+  {
     "version": "0.1.25",
     "date": "2026-09-23",
     "summary": "A window that closes without taking the app with it, a caret that holds its column through a scroll, and a key for either end of the document.",

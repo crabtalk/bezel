@@ -5,5 +5,11 @@
 //! machine and the paint, nothing else.
 
 pub mod emulator;
+mod iterm;
 pub mod kitty;
+mod media;
+mod pixels;
+mod placeholder;
+pub mod scanner;
+mod sixel;
 pub mod view;

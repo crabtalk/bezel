@@ -2,8 +2,9 @@
 //! `Processor` wrapped as a pure state machine.
 //!
 //! Bytes in ([`Emulator::feed`]), grid snapshots out ([`Emulator::line`],
-//! [`Emulator::cursor`]). No I/O, no timers, no gpui: the host owns the PTY and
-//! scheduling, the view owns paint. That split makes the whole escape-sequence
+//! [`Emulator::cursor`]). No timers, no gpui, and no I/O but the graphics
+//! files [`Emulator::set_local_media`] lets a program name: the host owns the
+//! PTY and scheduling, the view owns paint. That split makes the whole escape-sequence
 //! surface unit-testable with scripted byte strings.
 //!
 //! Selection lives here too ([`Emulator::start_selection`] and friends) rather
@@ -17,8 +18,10 @@
 //! - Query responses (DSR/DA/…) surface as `Event::PtyWrite` on the listener;
 //!   [`Emulator::feed`] returns them so the host can write them back.
 //! - Kitty graphics never reach the parser at all — `vte` discards APC runs
-//!   with no hook to catch them — so [`crate::kitty::Scanner`] takes them off
-//!   the stream first and [`Emulator::feed`] hands the rest on unchanged.
+//!   with no hook to catch them — so [`crate::scanner::Scanner`] takes them off
+//!   the stream first and [`Emulator::feed`] hands the rest on unchanged. A
+//!   sixel image's data goes the same way: `vte` hands a DCS to handlers
+//!   `Term` leaves empty.
 //! - `vte` buffers a synchronized update (mode 2026) and replays it at ESU.
 //!   Graphics leave the stream before that buffer, so a replay lands an image
 //!   under text written after it. [`NoSync`] turns the buffering off and the
@@ -26,9 +29,10 @@
 
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
-use crate::kitty::{self, Segment};
+use crate::kitty;
+use crate::scanner::{Iterm, Scanner, Segment};
 use alacritty_terminal::{
-    event::{Event, EventListener},
+    event::{Event, EventListener, WindowSize},
     grid::{Dimensions, Scroll},
     index::{Column, Line, Point},
     selection::{Selection, SelectionRange},
@@ -151,7 +155,8 @@ impl CellSnapshot {
 
 /// Where an image sits on the grid: its top-left cell in viewport
 /// coordinates, and how many cells it covers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct Placement {
     pub row: usize,
     pub col: usize,
@@ -159,6 +164,33 @@ pub struct Placement {
     pub rows: u16,
     /// The [`kitty::Store`] id of the image to paint here.
     pub image: u32,
+    /// Where the picture is drawn, in cells from the placement's top-left
+    /// cell. It can run past the placement's own cells, which paint clips to.
+    pub frame: Frame,
+    /// The part of the image drawn into [`Self::frame`].
+    pub source: Source,
+    /// Negative is under the text, and below `i32::MIN / 2` under
+    /// non-default cell backgrounds too. Zero and up is over the text.
+    pub z: i32,
+}
+
+/// A rectangle in cells, fractional where an offset or a letterbox puts an
+/// edge inside one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Frame {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// A rectangle in an image's pixels, inside the image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Source {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// The private-use codepoint a placement is anchored with, plus its id.
@@ -189,9 +221,54 @@ const ANCHOR_COLUMN_MAX: u32 = 256;
 #[derive(Debug, Clone, Copy)]
 struct Placed {
     image: u32,
+    /// The client's placement id, zero when it named none.
+    placement: u32,
     cols: u16,
     rows: u16,
+    frame: Frame,
+    source: Source,
+    z: i32,
 }
+
+/// A virtual placement: the box of `cols` by `rows` cells its placeholders
+/// tile, and where the picture sits in it.
+#[derive(Debug, Clone, Copy)]
+struct Virtual {
+    cols: u16,
+    rows: u16,
+    frame: Frame,
+    source: Source,
+    z: i32,
+}
+
+/// A placement positioned off another one: `offset` cells from its parent's
+/// top-left cell.
+#[derive(Debug, Clone, Copy)]
+struct Relative {
+    parent: (u32, u32),
+    offset: (i32, i32),
+    cols: u16,
+    rows: u16,
+    frame: Frame,
+    source: Source,
+    z: i32,
+}
+
+/// Placements found on the grid, each with what names it.
+type Found<K> = Vec<(K, Placement)>;
+
+/// What [`Emulator::locate`] found.
+struct Located {
+    /// Anchored placements, by anchor id.
+    anchored: Found<u32>,
+    /// Slices of virtual placements, by the placement each shows.
+    pieces: Found<(u32, u32)>,
+    /// Relative placements, by image and placement id.
+    relatives: Found<(u32, u32)>,
+}
+
+/// The longest chain of relative placements, counting the one being made.
+const MAX_RELATIVE_DEPTH: usize = 8;
 
 /// Cursor position in viewport coordinates (row 0 = top of the visible grid).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -321,12 +398,22 @@ pub struct Emulator {
     /// Splits graphics commands off the stream ahead of the parser. Held
     /// across feeds: a pty read ends wherever the kernel filled the buffer,
     /// which is as likely to be inside an escape as anywhere else.
-    scanner: kitty::Scanner,
+    scanner: Scanner,
     graphics: kitty::Store,
     /// Live placements by anchor id. The grid holds where each one is; this
     /// holds what it is.
     placed: std::collections::HashMap<u32, Placed>,
     next_anchor: u32,
+    /// Virtual placements (`U=1`) by image and placement id. They sit nowhere
+    /// on the grid: placeholder cells name them.
+    virtuals: std::collections::HashMap<(u32, u32), Virtual>,
+    /// Relative placements by image and placement id. They sit nowhere on
+    /// the grid either: each frame finds them from their parent.
+    relatives: std::collections::HashMap<(u32, u32), Relative>,
+    /// Whether DA1 is answered with sixel support in it.
+    advertise_sixel: bool,
+    /// An iTerm2 file arriving in parts: its arguments, and its bytes so far.
+    multipart: Option<(Vec<u8>, Vec<u8>)>,
     /// One cell in pixels, which is what turns an image's pixel size into the
     /// rows it covers. The view measures it from the font every frame and the
     /// host hands it over; until then an image has no size the grid can use.
@@ -353,10 +440,14 @@ impl Emulator {
             capture,
             title: None,
             bell: false,
-            scanner: kitty::Scanner::new(),
+            scanner: Scanner::new(),
             graphics: kitty::Store::new(),
             placed: std::collections::HashMap::new(),
             next_anchor: 0,
+            virtuals: std::collections::HashMap::new(),
+            relatives: std::collections::HashMap::new(),
+            multipart: None,
+            advertise_sixel: false,
             cell: None,
             held: None,
         }
@@ -375,45 +466,113 @@ impl Emulator {
     /// terminal wants written back to the PTY (DSR/DA query responses,
     /// graphics acknowledgements).
     ///
-    /// Graphics commands are answered where they sit in the stream; everything
-    /// else is answered once the whole read has been folded in, which is the
-    /// order `Term` raises its events in.
+    /// Replies leave in the order their queries arrived. A program probing
+    /// with several queries and a `CSI c` behind them reads the DA answer as
+    /// the end of the replies it will get.
     ///
     /// Mode 2026 is acted on where it sits too: the frame the program wants
     /// left on screen is the grid as it stands when the mode goes on.
+    ///
+    /// `CSI 14 t` and `CSI 16 t` go unanswered until
+    /// [`Emulator::set_cell_size`] has been called.
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
         let mut responses = Vec::new();
         for segment in self.scanner.feed(bytes) {
             match segment {
-                Segment::Text(text) => self.parser.advance(&mut self.term, text),
+                Segment::Text(text) => {
+                    self.parser.advance(&mut self.term, text);
+                    self.drain_events(&mut responses);
+                }
                 Segment::Graphics(command) => {
-                    let (landed, reply) = self.graphics.apply(command);
+                    let (effect, reply) = self.graphics.apply(command);
+                    let reply = match effect {
+                        Some(kitty::Effect::Display(display)) => match self.place(display) {
+                            Ok(()) => reply,
+                            // The store said yes to what it could see; the
+                            // placement is refused on what only the grid knows.
+                            Err(error) => (display.quiet < 2).then(|| kitty::Reply {
+                                id: display.image,
+                                number: reply.as_ref().map_or(0, |reply| reply.number),
+                                placement: display.placement,
+                                error: Some(error),
+                            }),
+                        },
+                        Some(kitty::Effect::Delete(delete)) => {
+                            self.delete(delete);
+                            reply
+                        }
+                        None => reply,
+                    };
                     if let Some(reply) = reply {
                         responses.extend(reply.bytes());
-                    }
-                    if let Some(display) = landed {
-                        self.place(display);
                     }
                 }
                 Segment::Sync(true) => self.hold(),
                 Segment::Sync(false) => self.held = None,
+                Segment::Sixel(data) => self.sixel(&data),
+                Segment::Iterm(command) => self.iterm(command),
+                Segment::CellSizeQuery => {
+                    if let Some(size) = self.window_size() {
+                        let reply = format!("\x1b[6;{};{}t", size.cell_height, size.cell_width);
+                        responses.extend_from_slice(reply.as_bytes());
+                    }
+                }
             }
         }
+        responses
+    }
+
+    /// Act on what `Term` raised while the parser ran.
+    fn drain_events(&mut self, responses: &mut Vec<u8>) {
+        let window = self.window_size();
         for event in self.capture.events.borrow_mut().drain(..) {
             match event {
+                // `Term` answers DA1 as a VT102.
+                Event::PtyWrite(text) if self.advertise_sixel && text == "\x1b[?6c" => {
+                    responses.extend_from_slice(b"\x1b[?62;4;22c")
+                }
                 Event::PtyWrite(text) => responses.extend_from_slice(text.as_bytes()),
+                Event::TextAreaSizeRequest(reply) => {
+                    if let Some(window) = window {
+                        responses.extend_from_slice(reply(window).as_bytes());
+                    }
+                }
                 Event::Title(title) => self.title = Some(title),
                 Event::ResetTitle => self.title = None,
                 Event::Bell => self.bell = true,
                 _ => {}
             }
         }
-        responses
+    }
+
+    /// The grid and its cell in whole pixels, which is what the size reports
+    /// carry. `None` until the view has measured a cell.
+    fn window_size(&self) -> Option<WindowSize> {
+        let (width, height) = self.cell?;
+        Some(WindowSize {
+            num_lines: self.term.screen_lines() as u16,
+            num_cols: self.term.columns() as u16,
+            cell_width: width.round() as u16,
+            cell_height: height.round() as u16,
+        })
     }
 
     /// The images the client has sent, by id.
     pub fn graphics(&self) -> &kitty::Store {
         &self.graphics
+    }
+
+    /// Answer DA1 as a VT220 with sixel graphics (`CSI ? 62 ; 4 ; 22 c`)
+    /// rather than as a VT102 (`CSI ? 6 c`). Off until a host turns it on.
+    /// Programs read attribute 4 in that answer to decide whether to send
+    /// sixel images; they are shown either way.
+    pub fn set_advertise_sixel(&mut self, advertise: bool) {
+        self.advertise_sixel = advertise;
+    }
+
+    /// See [`kitty::Store::set_local_media`].
+    pub fn set_local_media(&mut self, allow: bool) {
+        self.graphics.set_local_media(allow);
     }
 
     /// Put an image on the grid at the cursor, and move the cursor past it
@@ -425,31 +584,239 @@ impl Emulator {
     /// anchors into history at the same moment its text would have gone.
     /// `C=1` reserves nothing, so the image covers whatever is drawn under it.
     ///
-    /// Displaying an image takes its earlier placements off the grid. A
-    /// program redrawing a frame sends the same image every frame, and each
-    /// one would otherwise be a placement of its own.
-    fn place(&mut self, display: kitty::Display) {
+    /// A placement replaces the one the image already has under the same
+    /// placement id, zero included: an image placed with no `p` has at most
+    /// one placement.
+    fn place(&mut self, display: kitty::Display) -> Result<(), &'static str> {
         let image = display.image;
-        let Some((cell_w, cell_h)) = self.cell else {
-            return;
-        };
-        let Some((width, height)) = self.graphics.get(image).and_then(kitty::Image::size) else {
-            return;
-        };
-        // `c` and `r` state the extent outright. Without them it comes from
-        // the image's pixels against the measured cell.
-        let cols = match display.columns {
-            0 => (width as f32 / cell_w).ceil() as usize,
-            columns => columns as usize,
+        let key = (image, display.placement);
+        if display.parent_image != 0 {
+            return self.relate(display);
         }
-        .clamp(1, self.cols()) as u16;
-        let rows = match display.rows {
-            0 => (height as f32 / cell_h).ceil() as usize,
-            rows => rows as usize,
+        let Some((cols, rows, frame, source)) = self.extent(&display) else {
+            return Ok(());
+        };
+        self.relatives.remove(&key);
+        if display.unicode {
+            let virtual_ = Virtual {
+                cols: cols.max(1.0).min(u16::MAX as f32) as u16,
+                rows: rows.max(1.0).min(u16::MAX as f32) as u16,
+                frame,
+                source,
+                z: display.z,
+            };
+            self.virtuals.insert(key, virtual_);
+            return Ok(());
         }
-        .clamp(1, self.rows()) as u16;
+        let cols = (cols as usize).clamp(1, self.cols()) as u16;
+        let rows = (rows as usize).clamp(1, self.rows()) as u16;
 
-        self.placed.retain(|_, placed| placed.image != image);
+        self.anchor(display, cols, rows, frame, source);
+        Ok(())
+    }
+
+    /// Show a sixel image at the cursor, the way `a=T` shows one.
+    fn sixel(&mut self, data: &[u8]) {
+        let Some(rgba) = crate::sixel::decode(data) else {
+            return;
+        };
+        let image = kitty::Image::still(kitty::Format::Rgba, rgba.width, rgba.height, rgba.bytes);
+        let id = self.graphics.hold(image);
+        let _ = self.place(kitty::Display::at_cursor(id));
+    }
+
+    /// An iTerm2 file command: a whole file, or a part of one.
+    fn iterm(&mut self, command: Iterm) {
+        match command {
+            Iterm::File { args, payload } => {
+                self.iterm_show(&args, &kitty::decode(&payload));
+            }
+            Iterm::Begin { args } => self.multipart = Some((args, Vec::new())),
+            Iterm::Part(payload) => {
+                let Some((_, bytes)) = &mut self.multipart else {
+                    return;
+                };
+                bytes.extend(kitty::decode(&payload));
+                if bytes.len() > crate::iterm::MAX_FILE {
+                    self.multipart = None;
+                }
+            }
+            Iterm::End => {
+                if let Some((args, bytes)) = self.multipart.take() {
+                    self.iterm_show(&args, &bytes);
+                }
+            }
+        }
+    }
+
+    /// Show an iTerm2 file at the cursor, if it is an inline image.
+    fn iterm_show(&mut self, args: &[u8], bytes: &[u8]) {
+        let args = crate::iterm::Args::parse(args);
+        if !args.inline || bytes.len() > crate::iterm::MAX_FILE {
+            return;
+        }
+        let Some(image) = crate::iterm::image(bytes) else {
+            return;
+        };
+        let id = self.graphics.hold(image);
+        let mut display = kitty::Display::at_cursor(id);
+        if let Some((cell_w, cell_h)) = self.cell {
+            display.columns = args.width.cells(cell_w, self.cols());
+            display.rows = args.height.cells(cell_h, self.rows());
+        }
+        display.stretch = !args.preserve_aspect;
+        let _ = self.place(display);
+    }
+
+    /// Hang a placement off the parent its `P` and `Q` name. The cursor stays
+    /// where it is, whatever `C` says.
+    fn relate(&mut self, display: kitty::Display) -> Result<(), &'static str> {
+        let key = (display.image, display.placement);
+        let parent = (display.parent_image, display.parent_placement);
+        if display.unicode {
+            return Err("EINVAL:a virtual placement cannot be relative");
+        }
+        if !self.exists(parent) {
+            return Err("ENOPARENT");
+        }
+        let mut depth = 1;
+        let mut at = parent;
+        loop {
+            if at == key {
+                return Err("ECYCLE");
+            }
+            match self.relatives.get(&at) {
+                Some(relative) => {
+                    depth += 1;
+                    at = relative.parent;
+                }
+                None => break,
+            }
+        }
+        if depth > MAX_RELATIVE_DEPTH {
+            return Err("ETOODEEP");
+        }
+        let Some((cols, rows, frame, source)) = self.extent(&display) else {
+            return Ok(());
+        };
+        self.placed
+            .retain(|_, placed| (placed.image, placed.placement) != key);
+        self.virtuals.remove(&key);
+        self.relatives.insert(
+            key,
+            Relative {
+                parent,
+                offset: (display.parent_offset_x, display.parent_offset_y),
+                cols: cols.clamp(1.0, u16::MAX as f32) as u16,
+                rows: rows.clamp(1.0, u16::MAX as f32) as u16,
+                frame,
+                source,
+                z: display.z,
+            },
+        );
+        Ok(())
+    }
+
+    /// Whether any placement, of any kind, goes by `key`.
+    fn exists(&self, key: (u32, u32)) -> bool {
+        self.placed
+            .values()
+            .any(|placed| (placed.image, placed.placement) == key)
+            || self.virtuals.contains_key(&key)
+            || self.relatives.contains_key(&key)
+    }
+
+    /// Whether any placement, of any kind, shows `image`.
+    fn shown(&self, image: u32) -> bool {
+        self.placed.values().any(|placed| placed.image == image)
+            || self.virtuals.keys().any(|&(held, _)| held == image)
+            || self.relatives.keys().any(|&(held, _)| held == image)
+    }
+
+    /// The cells a display covers, unclamped, with its frame and source.
+    /// `None` until a cell has been measured, and for an image with nothing
+    /// to show.
+    fn extent(&self, display: &kitty::Display) -> Option<(f32, f32, Frame, Source)> {
+        let (cell_w, cell_h) = self.cell?;
+        let (width, height) = self
+            .graphics
+            .get(display.image)
+            .and_then(kitty::Image::size)?;
+        let x = display.source_x.min(width);
+        let y = display.source_y.min(height);
+        let source = Source {
+            x,
+            y,
+            width: match display.source_width {
+                0 => width - x,
+                w => w.min(width - x),
+            },
+            height: match display.source_height {
+                0 => height - y,
+                h => h.min(height - y),
+            },
+        };
+        if source.width == 0 || source.height == 0 {
+            return None;
+        }
+        let (source_w, source_h) = (source.width as f32, source.height as f32);
+        let offset_x = (display.offset_x as f32).min(cell_w - 1.0).max(0.0);
+        let offset_y = (display.offset_y as f32).min(cell_h - 1.0).max(0.0);
+        // The frame in pixels, and the cells it covers. Unscaled without `c`
+        // and `r`; one of them scales the other by the source's aspect; both
+        // fit the source inside the box they make, centred. The offset counts
+        // toward the cells only when neither is given.
+        let (cols, rows, frame) = match (display.columns, display.rows) {
+            (0, 0) => (
+                ((offset_x + source_w) / cell_w).ceil(),
+                ((offset_y + source_h) / cell_h).ceil(),
+                (offset_x, offset_y, source_w, source_h),
+            ),
+            (c, 0) => {
+                let w = c as f32 * cell_w;
+                let h = w * source_h / source_w;
+                (c as f32, (h / cell_h).ceil(), (offset_x, offset_y, w, h))
+            }
+            (0, r) => {
+                let h = r as f32 * cell_h;
+                let w = h * source_w / source_h;
+                ((w / cell_w).ceil(), r as f32, (offset_x, offset_y, w, h))
+            }
+            (c, r) if display.stretch => {
+                let (w, h) = (c as f32 * cell_w, r as f32 * cell_h);
+                (c as f32, r as f32, (offset_x, offset_y, w, h))
+            }
+            (c, r) => {
+                let (box_w, box_h) = (c as f32 * cell_w, r as f32 * cell_h);
+                let scale = (box_w / source_w).min(box_h / source_h);
+                let (w, h) = (source_w * scale, source_h * scale);
+                let x = offset_x + (box_w - w) / 2.0;
+                let y = offset_y + (box_h - h) / 2.0;
+                (c as f32, r as f32, (x, y, w, h))
+            }
+        };
+        let frame = Frame {
+            x: frame.0 / cell_w,
+            y: frame.1 / cell_h,
+            width: frame.2 / cell_w,
+            height: frame.3 / cell_h,
+        };
+        Some((cols, rows, frame, source))
+    }
+
+    /// Write a placement's anchors at the cursor, and move the cursor past it
+    /// unless the display said not to.
+    fn anchor(
+        &mut self,
+        display: kitty::Display,
+        cols: u16,
+        rows: u16,
+        frame: Frame,
+        source: Source,
+    ) {
+        let image = display.image;
+        self.placed
+            .retain(|_, placed| placed.image != image || placed.placement != display.placement);
         let anchor = self.next_anchor % ANCHOR_MAX;
         self.next_anchor = anchor.wrapping_add(1);
         // The id is reused once the ring wraps, so whatever wore it last stops
@@ -464,13 +831,32 @@ impl Emulator {
             let cell = &mut self.term.grid_mut()[cursor.line][Column(cursor.column.0 + offset)];
             // A cell only ever gains zerowidth chars, so one anchored again
             // without being written to in between would collect a pair per
-            // redraw. Clearing takes this cell's underline color and hyperlink
-            // with it.
+            // redraw. Rebuilt from the marks still worth keeping — the pairs
+            // of placements still live — which takes this cell's underline
+            // color and hyperlink with it.
             if cell
                 .zerowidth()
                 .is_some_and(|marks| marks.iter().any(|&mark| is_anchor(mark)))
             {
+                let marks = cell.zerowidth().unwrap_or(&[]);
+                let mut kept: Vec<char> = marks
+                    .iter()
+                    .copied()
+                    .filter(|&mark| !is_anchor(mark))
+                    .collect();
+                for (live, column) in anchor_pairs(marks) {
+                    if !self.placed.contains_key(&live) {
+                        continue;
+                    }
+                    kept.extend(char::from_u32(ANCHOR + live));
+                    kept.extend(
+                        column.and_then(|column| char::from_u32(ANCHOR_COLUMN + column as u32)),
+                    );
+                }
                 cell.extra = None;
+                for mark in kept {
+                    cell.push_zerowidth(mark);
+                }
             }
             for mark in [ANCHOR + anchor, ANCHOR_COLUMN + offset as u32] {
                 if let Some(mark) = char::from_u32(mark) {
@@ -478,7 +864,18 @@ impl Emulator {
                 }
             }
         }
-        self.placed.insert(anchor, Placed { image, cols, rows });
+        self.placed.insert(
+            anchor,
+            Placed {
+                image,
+                placement: display.placement,
+                cols,
+                rows,
+                frame,
+                source,
+                z: display.z,
+            },
+        );
         if display.cursor_movement == kitty::CursorMovement::After {
             for _ in 0..rows {
                 self.parser.advance(&mut self.term, b"\n");
@@ -501,48 +898,315 @@ impl Emulator {
     }
 
     fn live_placements(&self) -> Vec<Placement> {
-        let mut out: Vec<(u32, Placement)> = Vec::new();
-        let offset = self.display_offset() as i32;
-        let grid = self.term.grid();
-        for row in 0..self.rows() {
-            let line = Line(row as i32 - offset);
-            for col in 0..self.cols() {
-                let marks = grid[line][Column(col)].zerowidth().unwrap_or(&[]);
-                let anchor = marks.iter().find_map(|&mark| {
-                    let index = (mark as u32).wrapping_sub(ANCHOR);
-                    (index < ANCHOR_MAX).then_some(index)
-                });
-                let Some(anchor) = anchor else {
+        let located = self.locate(self.display_offset() as i32);
+        let mut out: Vec<Placement> = located.anchored.into_iter().map(|(_, p)| p).collect();
+        out.extend(located.pieces.into_iter().map(|(_, p)| p));
+        out.extend(located.relatives.into_iter().map(|(_, p)| p));
+        out
+    }
+
+    /// Every placement on the rows `offset` lines above the bottom of the
+    /// screen, each with what names it.
+    ///
+    /// A relative placement sits where its parent is found on those rows, so
+    /// one whose parent is off them is not found either. A virtual parent is
+    /// at the least row and least column of the placeholder cells showing it.
+    fn locate(&self, offset: i32) -> Located {
+        let (anchored, pieces) = self.scan(offset);
+        let mut relatives = Vec::new();
+        if !self.relatives.is_empty() {
+            let mut at: std::collections::HashMap<(u32, u32), (i64, i64)> =
+                std::collections::HashMap::new();
+            for (anchor, p) in &anchored {
+                if let Some(placed) = self.placed.get(anchor) {
+                    at.insert(
+                        (placed.image, placed.placement),
+                        (p.row as i64, p.col as i64),
+                    );
+                }
+            }
+            for (key, p) in &pieces {
+                let spot = at.entry(*key).or_insert((p.row as i64, p.col as i64));
+                *spot = (spot.0.min(p.row as i64), spot.1.min(p.col as i64));
+            }
+            for (&key, relative) in &self.relatives {
+                let Some((row, col)) = self.relative_spot(key, &at) else {
                     continue;
                 };
-                let Some(placed) = self.placed.get(&anchor) else {
-                    continue;
-                };
-                if out.iter().any(|(seen, _)| *seen == anchor) {
+                if row < 0 || col < 0 || row >= self.rows() as i64 || col >= self.cols() as i64 {
                     continue;
                 }
-                // A cell whose column mark was lost still holds the image; it
-                // can only say the left edge is here.
-                let within = marks
-                    .iter()
-                    .find_map(|&mark| {
-                        let index = (mark as u32).wrapping_sub(ANCHOR_COLUMN);
-                        (index < ANCHOR_COLUMN_MAX).then_some(index as usize)
-                    })
-                    .unwrap_or(0);
-                out.push((
-                    anchor,
+                relatives.push((
+                    key,
                     Placement {
-                        row,
-                        col: col.saturating_sub(within),
-                        cols: placed.cols,
-                        rows: placed.rows,
-                        image: placed.image,
+                        row: row as usize,
+                        col: col as usize,
+                        cols: relative.cols,
+                        rows: relative.rows,
+                        image: key.0,
+                        frame: relative.frame,
+                        source: relative.source,
+                        z: relative.z,
                     },
                 ));
             }
         }
-        out.into_iter().map(|(_, placement)| placement).collect()
+        Located {
+            anchored,
+            pieces,
+            relatives,
+        }
+    }
+
+    /// Where a relative placement's top-left cell is, walking its chain up
+    /// to a parent found on the grid.
+    fn relative_spot(
+        &self,
+        key: (u32, u32),
+        at: &std::collections::HashMap<(u32, u32), (i64, i64)>,
+    ) -> Option<(i64, i64)> {
+        let mut row = 0;
+        let mut col = 0;
+        let mut key = key;
+        for _ in 0..=MAX_RELATIVE_DEPTH {
+            let Some(relative) = self.relatives.get(&key) else {
+                return at.get(&key).map(|&(r, c)| (r + row, c + col));
+            };
+            row += relative.offset.1 as i64;
+            col += relative.offset.0 as i64;
+            key = relative.parent;
+        }
+        None
+    }
+
+    /// The placements on the rows `offset` lines above the bottom of the
+    /// screen, in one walk of their cells: anchored ones by anchor id, and the
+    /// slices of virtual placements that placeholder cells show, one per run
+    /// of cells that continue each other along a row. Zero is the screen the
+    /// cursor moves on.
+    fn scan(&self, offset: i32) -> (Found<u32>, Found<(u32, u32)>) {
+        let mut anchored: Vec<(u32, Placement)> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut pieces: Vec<((u32, u32), Placement)> = Vec::new();
+        let grid = self.term.grid();
+        for row in 0..self.rows() {
+            let line = Line(row as i32 - offset);
+            let mut decoder =
+                (!self.virtuals.is_empty()).then(crate::placeholder::RowDecoder::default);
+            // The run being grown: the key it was resolved to, the slot of its
+            // last cell, and its index in `pieces`.
+            let mut run: Option<((u32, u32), crate::placeholder::Slot, usize)> = None;
+            for col in 0..self.cols() {
+                let cell = &grid[line][Column(col)];
+                let marks = cell.zerowidth().unwrap_or(&[]);
+                for (anchor, within) in anchor_pairs(marks) {
+                    let Some(placed) = self.placed.get(&anchor) else {
+                        continue;
+                    };
+                    if !seen.insert(anchor) {
+                        continue;
+                    }
+                    // A cell whose column mark was lost still holds the image;
+                    // it can only say the left edge is here.
+                    let within = within.unwrap_or(0);
+                    anchored.push((
+                        anchor,
+                        Placement {
+                            row,
+                            col: col.saturating_sub(within),
+                            cols: placed.cols,
+                            rows: placed.rows,
+                            image: placed.image,
+                            frame: placed.frame,
+                            source: placed.source,
+                            z: placed.z,
+                        },
+                    ));
+                }
+                let Some(decoder) = decoder.as_mut() else {
+                    continue;
+                };
+                let shown = decoder
+                    .cell(cell)
+                    .and_then(|slot| self.shown_by(slot).map(|(key, v)| (slot, key, v)));
+                let Some((slot, key, virtual_)) = shown else {
+                    run = None;
+                    continue;
+                };
+                if let Some((run_key, last, at)) = &mut run
+                    && *run_key == key
+                    && last.row == slot.row
+                    && last.col + 1 == slot.col
+                {
+                    pieces[*at].1.cols += 1;
+                    *last = slot;
+                    continue;
+                }
+                run = Some((key, slot, pieces.len()));
+                pieces.push((
+                    key,
+                    Placement {
+                        row,
+                        col,
+                        cols: 1,
+                        rows: 1,
+                        image: key.0,
+                        frame: Frame {
+                            x: virtual_.frame.x - slot.col as f32,
+                            y: virtual_.frame.y - slot.row as f32,
+                            ..virtual_.frame
+                        },
+                        source: virtual_.source,
+                        z: virtual_.z,
+                    },
+                ));
+            }
+        }
+        (anchored, pieces)
+    }
+
+    /// The virtual placement a placeholder cell shows, and its key. A cell
+    /// naming no placement id shows the image's virtual placement with the
+    /// lowest id. A cell outside its placement's box shows nothing.
+    fn shown_by(&self, slot: crate::placeholder::Slot) -> Option<((u32, u32), &Virtual)> {
+        let key = match slot.placement {
+            0 => self
+                .virtuals
+                .keys()
+                .filter(|(image, _)| *image == slot.image)
+                .min()
+                .copied()?,
+            placement => (slot.image, placement),
+        };
+        let virtual_ = self.virtuals.get(&key)?;
+        (slot.row < virtual_.rows as u32 && slot.col < virtual_.cols as u32)
+            .then_some((key, virtual_))
+    }
+
+    /// Take the placements a delete names off the grid, and with an
+    /// upper-case one, free the data of each image it leaves with none.
+    ///
+    /// The ones named by position — every target but an image id, a range of
+    /// them and a z-index — are looked for on the screen alone, not in
+    /// history.
+    fn delete(&mut self, delete: kitty::Delete) {
+        use kitty::Target;
+        if delete.target == Target::All && delete.free {
+            self.placed.clear();
+            self.relatives.clear();
+            self.graphics.clear();
+            return;
+        }
+        let covers = |p: &Placement, col: u32, row: u32| {
+            let (col, row) = (col as usize, row as usize);
+            (p.col..p.col + p.cols as usize).contains(&col)
+                && (p.row..p.row + p.rows as usize).contains(&row)
+        };
+        // Which keys a delete names: an image id and placement, a range of
+        // ids, or a z-index. `None` for the deletes that name positions.
+        let names = |image: u32, placement: u32, z: i32| match delete.target {
+            Target::Image { id, placement: p } => Some(image == id && (p == 0 || placement == p)),
+            Target::Range(low, high) => Some((low..=high).contains(&image)),
+            Target::Z(want) => Some(z == want),
+            _ => None,
+        };
+        let by_name = matches!(
+            delete.target,
+            Target::Image { .. } | Target::Range(..) | Target::Z(_)
+        );
+        let mut anchors: Vec<u32> = Vec::new();
+        let mut keys: Vec<(u32, u32)> = Vec::new();
+        if by_name {
+            anchors.extend(
+                self.placed
+                    .iter()
+                    .filter(|(_, p)| names(p.image, p.placement, p.z) == Some(true))
+                    .map(|(&anchor, _)| anchor),
+            );
+            keys.extend(
+                self.relatives
+                    .iter()
+                    .filter(|(key, r)| names(key.0, key.1, r.z) == Some(true))
+                    .map(|(&key, _)| key),
+            );
+        } else {
+            let cursor = self.term.grid().cursor.point;
+            let hit = |p: &Placement| match delete.target {
+                Target::Cursor => covers(p, cursor.column.0 as u32, cursor.line.0 as u32),
+                Target::Cell { col, row, z } => covers(p, col, row) && z.is_none_or(|z| p.z == z),
+                Target::Column(col) => (p.col..p.col + p.cols as usize).contains(&(col as usize)),
+                Target::Row(row) => (p.row..p.row + p.rows as usize).contains(&(row as usize)),
+                _ => true,
+            };
+            let located = self.locate(0);
+            anchors.extend(
+                located
+                    .anchored
+                    .iter()
+                    .filter(|(_, p)| hit(p))
+                    .map(|(a, _)| *a),
+            );
+            keys.extend(
+                located
+                    .relatives
+                    .iter()
+                    .filter(|(_, p)| hit(p))
+                    .map(|(k, _)| *k),
+            );
+        }
+        let mut touched: Vec<u32> = Vec::new();
+        // A virtual placement has no position, so only the deletes that name
+        // images reach one — and a z-index is not one of those.
+        if !matches!(delete.target, Target::Z(_)) && by_name {
+            self.virtuals.retain(|&(image, placement), _| {
+                let hit = names(image, placement, 0) == Some(true);
+                if hit {
+                    touched.push(image);
+                }
+                !hit
+            });
+        }
+        touched.extend(
+            anchors
+                .iter()
+                .filter_map(|anchor| self.placed.remove(anchor))
+                .map(|placed| placed.image),
+        );
+        for key in keys {
+            if self.relatives.remove(&key).is_some() {
+                touched.push(key.0);
+            }
+        }
+        // A relative placement goes with its parent, and an image left with
+        // no placement by that goes too, whatever the case of `d`.
+        loop {
+            let orphans: Vec<(u32, u32)> = self
+                .relatives
+                .iter()
+                .filter(|(_, relative)| !self.exists(relative.parent))
+                .map(|(&key, _)| key)
+                .collect();
+            if orphans.is_empty() {
+                break;
+            }
+            for key in orphans {
+                self.relatives.remove(&key);
+                if !self.shown(key.0) {
+                    self.graphics.remove(key.0);
+                }
+            }
+        }
+        if !delete.free {
+            return;
+        }
+        if let Target::Image { id, .. } = delete.target {
+            touched.push(id);
+        }
+        for image in touched {
+            if !self.shown(image) {
+                self.graphics.remove(image);
+            }
+        }
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -781,7 +1445,11 @@ impl Emulator {
             .map(|col| {
                 let cell = &row[Column(col)];
                 CellSnapshot {
-                    ch: cell.c,
+                    // Stands for an image; the glyph itself is never drawn.
+                    ch: match cell.c {
+                        crate::placeholder::PLACEHOLDER => ' ',
+                        ch => ch,
+                    },
                     fg: map_color(cell.fg),
                     bg: map_color(cell.bg),
                     bold: cell.flags.intersects(Flags::BOLD),
@@ -859,6 +1527,22 @@ impl Emulator {
         }
         text
     }
+}
+
+/// The anchors in a cell's zerowidth marks, each with the column mark written
+/// straight after it.
+fn anchor_pairs(marks: &[char]) -> impl Iterator<Item = (u32, Option<usize>)> + '_ {
+    marks.iter().enumerate().filter_map(|(at, &mark)| {
+        let anchor = (mark as u32).wrapping_sub(ANCHOR);
+        if anchor >= ANCHOR_MAX {
+            return None;
+        }
+        let column = marks.get(at + 1).and_then(|&next| {
+            let index = (next as u32).wrapping_sub(ANCHOR_COLUMN);
+            (index < ANCHOR_COLUMN_MAX).then_some(index as usize)
+        });
+        Some((anchor, column))
+    })
 }
 
 /// Whether `ch` is one of the private-use codepoints a placement anchors with:
