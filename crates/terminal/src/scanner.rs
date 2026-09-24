@@ -11,6 +11,8 @@
 //! grid state at the moment an image arrives is the state the preceding text
 //! left behind.
 
+use std::path::PathBuf;
+
 use crate::kitty::Command;
 
 /// The most one APC run may carry before it is abandoned. The protocol chunks
@@ -43,6 +45,11 @@ pub enum Segment<'a> {
     /// An iTerm2 inline image command. The parser is handed the OSC with any
     /// payload taken out.
     Iterm(Iterm),
+    /// The shell's working directory, from `OSC 7 ; file://host/path` or
+    /// `OSC 9 ; 9 ; path`. The host is dropped: a shell over ssh reports the
+    /// remote machine's path. The OSC's bytes stay in the `Text` run around
+    /// it.
+    Directory(PathBuf),
 }
 
 /// An `OSC 1337` command that carries a file. Arguments and payloads are as
@@ -67,15 +74,20 @@ enum OscKind {
     Begin,
     Part,
     End,
+    /// `OSC 7`.
+    FileUrl,
+    /// `OSC 9 ; 9`.
+    Path,
 }
 
-/// The `OSC 1337` commands taken off the stream, by the header that starts
-/// each.
-const OSC_HEADERS: [(&[u8], OscKind); 4] = [
+/// The OSC commands the scanner reports, by the header that starts each.
+const OSC_HEADERS: [(&[u8], OscKind); 6] = [
     (b"1337;File=", OscKind::File),
     (b"1337;MultipartFile=", OscKind::Begin),
     (b"1337;FilePart=", OscKind::Part),
     (b"1337;FileEnd", OscKind::End),
+    (b"7;", OscKind::FileUrl),
+    (b"9;9;", OscKind::Path),
 ];
 
 /// The most an `OSC 1337` payload may carry before it is abandoned.
@@ -514,6 +526,8 @@ impl Scanner {
         match kind {
             OscKind::Begin => out.push(Segment::Iterm(Iterm::Begin { args })),
             OscKind::End => out.push(Segment::Iterm(Iterm::End)),
+            OscKind::FileUrl => out.extend(file_url(&args).map(Segment::Directory)),
+            OscKind::Path => out.extend(quoted_path(&args).map(Segment::Directory)),
             // A file with no `:` has nothing to show.
             OscKind::File | OscKind::Part => {}
         }
@@ -530,7 +544,7 @@ impl Scanner {
         match kind {
             OscKind::File => out.push(Segment::Iterm(Iterm::File { args, payload })),
             OscKind::Part => out.push(Segment::Iterm(Iterm::Part(payload))),
-            OscKind::Begin | OscKind::End => {}
+            OscKind::Begin | OscKind::End | OscKind::FileUrl | OscKind::Path => {}
         }
     }
 
@@ -566,6 +580,62 @@ const CAN: u8 = 0x18;
 const SUB: u8 = 0x1a;
 const ST: u8 = b'\\';
 const BEL: u8 = 0x07;
+
+/// The path of a `file://host/path` URL, percent-decoded. A Windows drive path
+/// arrives as `/C:/...` and loses the leading slash.
+fn file_url(url: &[u8]) -> Option<PathBuf> {
+    let rest = url.strip_prefix(b"file://")?;
+    let path = &rest[rest.iter().position(|&byte| byte == b'/')?..];
+    let mut decoded = Vec::with_capacity(path.len());
+    let mut at = 0;
+    while at < path.len() {
+        let escaped = (path[at] == b'%')
+            .then(|| path.get(at + 1..at + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok());
+        match escaped {
+            Some(byte) => {
+                decoded.push(byte);
+                at += 3;
+            }
+            None => {
+                decoded.push(path[at]);
+                at += 1;
+            }
+        }
+    }
+    if let [b'/', drive, b':', ..] = decoded[..]
+        && drive.is_ascii_alphabetic()
+    {
+        decoded.remove(0);
+    }
+    path_from(decoded)
+}
+
+/// An `OSC 9 ; 9` path, with the quotes Windows Terminal's snippets put
+/// around it taken off.
+fn quoted_path(path: &[u8]) -> Option<PathBuf> {
+    let path = match path {
+        [b'"', inner @ .., b'"'] => inner,
+        _ => path,
+    };
+    path_from(path.to_vec())
+}
+
+fn path_from(bytes: Vec<u8>) -> Option<PathBuf> {
+    if bytes.is_empty() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        Some(PathBuf::from(std::ffi::OsString::from_vec(bytes)))
+    }
+    #[cfg(not(unix))]
+    {
+        String::from_utf8(bytes).ok().map(PathBuf::from)
+    }
+}
 
 fn push_text<'a>(out: &mut Vec<Segment<'a>>, bytes: &'a [u8]) {
     if !bytes.is_empty() {
