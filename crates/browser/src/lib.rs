@@ -6,4 +6,4 @@
 
 mod view;
 
-pub use view::WebView;
+pub use view::{EvalError, LoadState, WebView, WebViewEvent};

@@ -22,16 +22,23 @@ workspace = true
 [dependencies]
 gpui.workspace = true
 tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-channel = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 wry = { version = "0.57", default-features = false }
-async-channel = "2"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
     "NSResponder",
     "NSView",
     "NSWindow",
+] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "WKNavigation",
+    "WKWebView",
 ] }
 
 [dev-dependencies]
