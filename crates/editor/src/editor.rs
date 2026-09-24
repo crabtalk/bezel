@@ -1984,6 +1984,11 @@ impl Render for Editor {
             self.caret_on = true;
         }
         let selection = focused.then_some(self.selection);
+        // gpui ends an outside file drag — left the window or released
+        // elsewhere — without a drop here, so the indicator goes with it.
+        if !cx.has_active_drag() {
+            self.dropping = None;
+        }
 
         // Typed text and IME reach an entity only through an input handler
         // registered during *paint*, against the bounds it should be anchored
@@ -2217,7 +2222,12 @@ impl Render for Editor {
             // will.
             .on_drag_move(cx.listener(
                 |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
-                    let over = this.layouts.block_at(event.event.position);
+                    let at = event.event.position;
+                    let over = event
+                        .bounds
+                        .contains(&at)
+                        .then(|| this.layouts.block_at(at))
+                        .flatten();
                     if over != this.dropping {
                         this.dropping = over;
                         cx.notify();
