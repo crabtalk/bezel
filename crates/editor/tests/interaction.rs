@@ -1301,6 +1301,43 @@ fn a_copied_image_file_pastes_its_path_in_source(cx: &mut TestAppContext) {
     assert_eq!(source(&editor, &mut cx), "/tmp/shot.png");
 }
 
+fn clipboard(cx: &mut VisualTestContext) -> Option<String> {
+    cx.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
+}
+
+#[gpui::test]
+fn a_copy_in_source_is_the_text_without_a_fence(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_built(
+        "# Title\n\nbody",
+        |editor| editor.with_mode(editor::Mode::Source),
+        cx,
+    );
+    cx.simulate_keystrokes(&format!("{PRIMARY}-a {PRIMARY}-c"));
+    assert_eq!(clipboard(&mut cx).as_deref(), Some("# Title\n\nbody"));
+
+    cx.simulate_keystrokes(&format!("{PRIMARY}-x"));
+    assert_eq!(clipboard(&mut cx).as_deref(), Some("# Title\n\nbody"));
+    assert_eq!(source(&editor, &mut cx), "");
+}
+
+#[gpui::test]
+fn a_copy_inside_a_code_block_is_the_code(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_built("```rust\nlet a = 1;\n```", |editor| editor, cx);
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.select(
+                markdown::Selection::new(
+                    markdown::Cursor::new(0, markdown::Part::Code, 4),
+                    markdown::Cursor::new(0, markdown::Part::Code, 9),
+                ),
+                cx,
+            )
+        })
+    });
+    cx.simulate_keystrokes(&format!("{PRIMARY}-c"));
+    assert_eq!(clipboard(&mut cx).as_deref(), Some("a = 1"));
+}
+
 /// The store runs while the editor is being updated, so the base comes to it
 /// as an argument rather than through a read of the editor.
 #[gpui::test]
