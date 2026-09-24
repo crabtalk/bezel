@@ -81,7 +81,13 @@ gpui = { git = "https://github.com/crabtalk/zed", version = ">=0.2.2" }
 gpui_platform = { git = "https://github.com/crabtalk/zed", version = ">=0.1.0", features = [
     "font-kit",
 ] }
-gpui_web = { git = "https://github.com/crabtalk/zed", version = ">=0.1.0" }
+gpui_web = {
+    git = "https://github.com/crabtalk/zed",
+    version = ">=0.1.0",
+    # Disable default features to avoid enabling `multithreaded`, which requires
+    # `wasm_thread` and is not supported on the stable Rust channel.
+    default-features = false,
+}
 
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare
