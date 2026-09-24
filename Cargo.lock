@@ -592,8 +592,11 @@ dependencies = [
 name = "bezel-browser"
 version = "0.1.29"
 dependencies = [
+ "async-channel",
  "bezel-gpui",
  "bezel-gpui-platform",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
  "tracing",
  "wry",
 ]

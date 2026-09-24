@@ -1,6 +1,7 @@
 use gpui::{
-    App, Bounds, Context, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, Pixels, Render, Style, Window, relative,
+    App, Bounds, Context, Element, ElementId, FocusHandle, Focusable, GlobalElementId,
+    InspectorElementId, IntoElement, LayoutId, Pixels, Render, Style, Subscription, Window,
+    relative,
 };
 use std::{
     cell::Cell,
@@ -15,16 +16,37 @@ use std::{
 /// every frame the element is painted and is parked in every frame it is not.
 /// A parked page stays loaded.
 ///
+/// The page takes keys while the view's focus handle is focused, and a press
+/// in the page focuses the handle. Key equivalents (cmd or ctrl held) reach
+/// gpui's key dispatch before the page sees them.
+///
 /// Paints nothing off macOS.
 pub struct WebView {
     page: Rc<Page>,
+    _focus: [Subscription; 2],
 }
 
 impl WebView {
-    pub fn new(url: impl Into<String>) -> Self {
+    pub fn new(url: impl Into<String>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus = cx.focus_handle();
+        let subscriptions = [
+            cx.on_focus(&focus, window, |this: &mut Self, _, _| {
+                this.page.take_keys()
+            }),
+            cx.on_blur(&focus, window, |this: &mut Self, _, _| {
+                this.page.give_keys()
+            }),
+        ];
         Self {
-            page: Rc::new(Page::new(url.into())),
+            page: Rc::new(Page::new(url.into(), focus)),
+            _focus: subscriptions,
         }
+    }
+}
+
+impl Focusable for WebView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.page.focus.clone()
     }
 }
 
@@ -80,9 +102,10 @@ impl Element for Host {
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
         _request_layout: &mut (),
-        _window: &mut Window,
-        _cx: &mut App,
+        window: &mut Window,
+        cx: &mut App,
     ) {
+        window.set_focus_handle(&self.page.focus, cx);
     }
 
     fn paint(
@@ -93,14 +116,14 @@ impl Element for Host {
         _request_layout: &mut (),
         _prepaint: &mut (),
         window: &mut Window,
-        _cx: &mut App,
+        cx: &mut App,
     ) {
         let Some(id) = id else { return };
         let page = self.page.clone();
         window.with_element_state::<Shown, _>(id, |shown, window| {
             let shown = shown.unwrap_or_else(|| Shown::new(page.clone()));
             page.owner.set(shown.token);
-            page.place(bounds, window);
+            page.place(bounds, window, cx);
             ((), shown)
         });
     }
@@ -142,16 +165,18 @@ struct Page {
     placed: Cell<Option<Bounds<Pixels>>>,
     /// The token of the [`Shown`] that placed the page last.
     owner: Cell<u64>,
+    focus: FocusHandle,
 }
 
 impl Page {
-    fn new(url: String) -> Self {
+    fn new(url: String, focus: FocusHandle) -> Self {
         Self {
             url,
             #[cfg(target_os = "macos")]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
             owner: Cell::new(0),
+            focus,
         }
     }
 }
@@ -163,22 +188,103 @@ impl Page {
     /// it.
     const PARKED: f64 = -20_000.0;
 
-    fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
-        let view = self.view.get_or_init(|| {
-            wry::WebViewBuilder::new()
-                .with_url(&self.url)
-                .with_bounds(rect(bounds))
-                .build_as_child(window)
-                .inspect_err(|error| tracing::warn!(%error, url = %self.url, "webview: build"))
-                .ok()
-        });
+    /// Posted by every frame of the page on a press. Any script in the page
+    /// can post it too.
+    const PRESSED: &str = "pressed";
+
+    fn place(self: &Rc<Self>, bounds: Bounds<Pixels>, window: &Window, cx: &App) {
+        let view = self.view.get_or_init(|| self.build(bounds, window, cx));
         let Some(view) = view else { return };
-        if self.placed.get() == Some(bounds) {
+        let placed = self.placed.get();
+        if placed == Some(bounds) {
             return;
         }
         let _ = view.set_bounds(rect(bounds));
         let _ = view.set_visible(true);
         self.placed.set(Some(bounds));
+        if placed.is_none() && self.focus.is_focused(window) {
+            self.take_keys();
+        }
+    }
+
+    fn build(
+        self: &Rc<Self>,
+        bounds: Bounds<Pixels>,
+        window: &Window,
+        cx: &App,
+    ) -> Option<wry::WebView> {
+        let (pressed, presses) = async_channel::unbounded::<()>();
+        let view = wry::WebViewBuilder::new()
+            .with_url(&self.url)
+            .with_bounds(rect(bounds))
+            .with_initialization_script_for_main_only(
+                format!(
+                    "addEventListener('mousedown', () => \
+                     window.webkit.messageHandlers.ipc.postMessage('{}'), true);",
+                    Self::PRESSED
+                ),
+                false,
+            )
+            .with_ipc_handler(move |request| {
+                if request.body() == Self::PRESSED {
+                    let _ = pressed.try_send(());
+                }
+            })
+            .build_as_child(window)
+            .inspect_err(|error| tracing::warn!(%error, url = %self.url, "webview: build"))
+            .ok()?;
+        // Ends when the page drops, which drops the sender held by the handler.
+        let page = Rc::downgrade(self);
+        window
+            .spawn(cx, async move |cx| {
+                while presses.recv().await.is_ok() {
+                    let Some(page) = page.upgrade() else { return };
+                    if page.holds_keys() {
+                        let _ = cx.update(|window, cx| window.focus(&page.focus, cx));
+                    }
+                }
+            })
+            .detach();
+        Some(view)
+    }
+
+    /// Whether the page, or a view inside it, is its window's first responder.
+    fn holds_keys(&self) -> bool {
+        use objc2_app_kit::NSView;
+        use wry::WebViewExtMacOS;
+
+        let Some(Some(view)) = self.view.get() else {
+            return false;
+        };
+        let page = view.webview();
+        let Some(window) = page.window() else {
+            return false;
+        };
+        window
+            .firstResponder()
+            .and_then(|responder| responder.downcast::<NSView>().ok())
+            .is_some_and(|responder| responder.isDescendantOf(&page))
+    }
+
+    fn take_keys(&self) {
+        use wry::WebViewExtMacOS;
+
+        let Some(Some(view)) = self.view.get() else {
+            return;
+        };
+        // `focus` unwraps the page's window.
+        if self.placed.get().is_some() && view.webview().window().is_some() {
+            let _ = view.focus();
+        }
+    }
+
+    /// Hands first responder back to gpui's view if the page holds it.
+    fn give_keys(&self) {
+        if let Some(Some(view)) = self.view.get()
+            && self.holds_keys()
+        {
+            let _ = view.focus_parent();
+        }
     }
 
     fn park(&self) {
@@ -190,6 +296,7 @@ impl Page {
         let Some(bounds) = self.placed.take() else {
             return;
         };
+        self.give_keys();
         let _ = view.set_visible(false);
         // `set_bounds` unwraps the page's window, which is gone once the window
         // has closed.
@@ -207,13 +314,17 @@ impl Page {
 
 #[cfg(not(target_os = "macos"))]
 impl Page {
-    fn place(&self, bounds: Bounds<Pixels>, _window: &Window) {
+    fn place(self: &Rc<Self>, bounds: Bounds<Pixels>, _window: &Window, _cx: &App) {
         self.placed.set(Some(bounds));
     }
 
     fn park(&self) {
         self.placed.set(None);
     }
+
+    fn take_keys(&self) {}
+
+    fn give_keys(&self) {}
 }
 
 #[cfg(target_os = "macos")]

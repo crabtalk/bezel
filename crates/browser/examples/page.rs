@@ -47,9 +47,9 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             },
-            |_, cx| {
+            |window, cx| {
                 cx.new(|cx| Example {
-                    page: cx.new(|_| WebView::new("https://example.com")),
+                    page: cx.new(|cx| WebView::new("https://example.com", window, cx)),
                     shown: true,
                 })
             },
