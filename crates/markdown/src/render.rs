@@ -7,13 +7,13 @@
 //!
 //! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
 
-use std::{cell::RefCell, ops::Range, rc::Rc};
+use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
-    InteractiveText, MouseButton, ObjectFit, Pixels, Point, SharedString, StrikethroughStyle,
-    StyledImage as _, StyledText, TextLayout, TextRun, UnderlineStyle, Window, canvas, div, font,
-    img, point, prelude::*, px, quad, size,
+    ImageSource, InteractiveText, MouseButton, ObjectFit, Pixels, Point, SharedString,
+    StrikethroughStyle, StyledImage as _, StyledText, TextLayout, TextRun, UnderlineStyle, Window,
+    canvas, div, font, img, point, prelude::*, px, quad, size,
 };
 use theme::{TextStyle, Theme, Typeset};
 
@@ -195,6 +195,9 @@ pub struct Editing<'a> {
     pub toggle: Option<Toggle>,
     /// Whether a fence offers to copy itself.
     pub copy: CopyButton,
+    /// The directory a relative image path is joined onto. `None` leaves it
+    /// relative, which gpui reads against the process's working directory.
+    pub base: Option<&'a Path>,
 }
 
 impl Default for Editing<'_> {
@@ -211,6 +214,7 @@ impl Default for Editing<'_> {
             typography: None,
             toggle: None,
             copy: CopyButton::default(),
+            base: None,
         }
     }
 }
@@ -600,6 +604,7 @@ struct Overlay<'a> {
     /// press listener that needs an owned handle.
     toggle: Option<&'a Toggle>,
     copy: CopyButton,
+    base: Option<&'a Path>,
 }
 
 impl<'a> Overlay<'a> {
@@ -677,6 +682,23 @@ impl<'a> Overlay<'a> {
     }
 }
 
+/// What gpui loads for an image URL as written in a document.
+///
+/// Anything with `://` is fetched as it stands. Anything else is a file: an
+/// absolute path as it stands, a relative one joined onto `base` when there is
+/// one.
+pub fn image_source(url: &str, base: Option<&Path>) -> ImageSource {
+    if url.contains("://") {
+        return SharedString::from(url.to_string()).into();
+    }
+    // gpui reads a file only from a `PathBuf` — handed a string it looks for
+    // an asset built into the binary and paints nothing.
+    match base {
+        Some(base) => base.join(url).into(),
+        None => std::path::PathBuf::from(url).into(),
+    }
+}
+
 /// Parse and render in one step — the common case for read-only content.
 pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
     let doc = crate::parse_with(source, &crate::Marks::of(cx));
@@ -714,6 +736,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         typography,
         toggle,
         copy,
+        base,
     } = editing;
     // Refilled every frame, in paint order — and emptied in *prepaint*, not
     // here. An editor reads last frame's positions while building this frame's
@@ -749,6 +772,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
             caption,
             toggle: toggle.as_ref(),
             copy,
+            base,
         };
         // The block's own box, recorded for a gutter handle and a drop target.
         // A rule and an image hold no text, so a layout would not find them.
@@ -1459,6 +1483,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         toggle: None,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
+        base: None,
     };
     let (underlay, lines) = code_lines(
         Some(crate::source::LANGUAGES[0]),
@@ -1837,13 +1862,7 @@ fn image(
             .text_color(theme.text_muted)
             .child(IMAGE_EMPTY)
     } else {
-        // A URL is fetched; anything else is a file, and gpui reads one only
-        // from a `PathBuf` — handed a string it looks for an asset built into
-        // the binary and paints nothing.
-        let picture = match url.contains("://") {
-            true => img(SharedString::from(url.to_string())),
-            false => img(std::path::PathBuf::from(url)),
-        };
+        let picture = img(image_source(url, overlay.base));
         let box_ = div()
             .relative()
             .rounded(px(Theme::button_radius()))

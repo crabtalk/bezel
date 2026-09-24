@@ -488,10 +488,7 @@ impl Editor {
             return None;
         };
         let box_ = self.picture_box(ix, Some(live))?;
-        let picture = match url.contains("://") {
-            true => img(gpui::SharedString::from(url.to_string())),
-            false => img(std::path::PathBuf::from(url)),
-        };
+        let picture = img(markdown::image_source(url, self.base.as_deref()));
         Some(
             div()
                 .absolute()

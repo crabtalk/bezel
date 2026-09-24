@@ -348,6 +348,8 @@ pub struct Editor {
     /// What the chords move is the shared adjustment on top of this; the base
     /// itself is the app's alone.
     text_size: Option<f32>,
+    /// The directory relative image paths resolve against.
+    base: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -398,6 +400,7 @@ impl Editor {
             goal: None,
             handle_at: None,
             text_size: None,
+            base: None,
         }
     }
 
@@ -466,6 +469,27 @@ impl Editor {
     /// screen.
     pub fn text_size(&self) -> Option<f32> {
         self.text_size
+    }
+
+    /// Resolve relative image paths against `dir` — the document's own folder,
+    /// for a document that keeps its pictures beside it. The stored URL stays
+    /// as written.
+    pub fn with_base(mut self, dir: impl Into<std::path::PathBuf>) -> Self {
+        self.base = Some(dir.into());
+        self
+    }
+
+    /// Change or clear the directory relative image paths resolve against.
+    pub fn set_base(&mut self, dir: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
+        if self.base != dir {
+            self.base = dir;
+            cx.notify();
+        }
+    }
+
+    /// The directory relative image paths resolve against, if one is set.
+    pub fn base(&self) -> Option<&std::path::Path> {
+        self.base.as_deref()
     }
 
     /// The box the document scrolls in, so typing off the bottom follows the
@@ -2367,6 +2391,7 @@ impl Render for Editor {
                                 // `checkbox_bounds`, which is what keeps a
                                 // toggle in the undo history.
                                 toggle: Some(markdown::Toggle::HitTested),
+                                base: self.base.as_deref(),
                                 ..Default::default()
                             },
                             window,

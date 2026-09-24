@@ -49,8 +49,8 @@ pub use marks::{MarkPaint, Marks, set_mark_paint, set_marks};
 pub use parse::{ParsedDoc, is_image, is_url, parse, parse_at, parse_ranges, parse_with};
 pub use preview::{LinkPreview, Preview, set_link_preview};
 pub use render::{
-    Annotation, BlockLayouts, Caption, CopyButton, Editing, OnToggle, Toggle, markdown, render,
-    render_source, render_with,
+    Annotation, BlockLayouts, Caption, CopyButton, Editing, OnToggle, Toggle, image_source,
+    markdown, render, render_source, render_with,
 };
 pub use select::{Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_with};
