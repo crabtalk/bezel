@@ -145,3 +145,78 @@ pub fn set_mark_paint(cx: &mut App, paint: Painter) {
 pub(crate) fn paint_of(cx: &App, name: &str, theme: &Theme) -> Option<MarkPaint> {
     (cx.try_global::<InstalledPaint>()?.0)(name, theme)
 }
+
+/// A reader's highlight colour, by name — the set Apple Books and Notes offer.
+///
+/// A name rather than a colour value, so a highlight saved under one look
+/// paints under another. [`set_highlight_paint`] decides what each one paints.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum HighlightColor {
+    #[default]
+    Yellow,
+    Green,
+    Blue,
+    Pink,
+    Purple,
+}
+
+impl HighlightColor {
+    /// Every colour, in the order a picker shows them.
+    pub const ALL: [Self; 5] = [
+        Self::Yellow,
+        Self::Green,
+        Self::Blue,
+        Self::Pink,
+        Self::Purple,
+    ];
+
+    /// The name to store. Stable across releases; [`Self::from_name`] reads it
+    /// back.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Yellow => "yellow",
+            Self::Green => "green",
+            Self::Blue => "blue",
+            Self::Pink => "pink",
+            Self::Purple => "purple",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|color| color.name() == name)
+    }
+}
+
+/// The wash a [`HighlightColor`] paints under text.
+pub type HighlightPaint = fn(color: HighlightColor, theme: &Theme) -> Hsla;
+
+struct InstalledHighlight(HighlightPaint);
+
+impl Global for InstalledHighlight {}
+
+/// `markdown::set_highlight_paint(cx, my_paint)` — call once at boot. Without
+/// it each colour paints [`default_highlight`].
+pub fn set_highlight_paint(cx: &mut App, paint: HighlightPaint) {
+    cx.set_global(InstalledHighlight(paint));
+}
+
+pub(crate) fn highlight_paint_of(cx: &App) -> HighlightPaint {
+    cx.try_global::<InstalledHighlight>()
+        .map_or(default_highlight, |installed| installed.0)
+}
+
+/// The shipped washes: translucent, so a selection over one still shows.
+pub fn default_highlight(color: HighlightColor, theme: &Theme) -> Hsla {
+    let hue = match color {
+        HighlightColor::Yellow => 95.0,
+        HighlightColor::Green => 150.0,
+        HighlightColor::Blue => 245.0,
+        HighlightColor::Pink => 350.0,
+        HighlightColor::Purple => 300.0,
+    };
+    match theme.appearance {
+        theme::Appearance::Dark => theme::oklch(0.72, 0.14, hue).opacity(0.34),
+        theme::Appearance::Light => theme::oklch(0.88, 0.13, hue).opacity(0.70),
+    }
+}

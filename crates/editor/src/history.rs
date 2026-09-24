@@ -15,7 +15,7 @@ use ui::history::SnapshotHistory;
 
 use markdown::{Cursor, Doc, Selection};
 
-use crate::{comment::Anchor, editor::Mode};
+use crate::{anchor::Anchor, editor::Mode};
 
 /// How many steps a document keeps.
 ///

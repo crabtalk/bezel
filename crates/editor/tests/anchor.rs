@@ -1,12 +1,12 @@
-//! Comment anchors under a real editor: the words a thread points at have to
-//! stay the words it points at.
+//! Anchors under a real editor: the words an anchor points at have to stay
+//! the words it points at.
 //!
 //! Driven through key dispatch rather than by calling the mapping directly,
 //! because the mapping is only half the claim — the other half is that every
 //! path through `Editor::edit` reports what it did, and a path that forgets is
 //! invisible to a unit test of the arithmetic.
 
-use editor::{Anchor, CommentId, Editor};
+use editor::{Anchor, AnchorId, Editor};
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
 use markdown::{Cursor, Part, Selection};
 
@@ -14,7 +14,7 @@ use markdown::{Cursor, Part, Selection};
 /// something below it to shift.
 const SOURCE: &str = "alpha one\n\nbravo two\n\ncharlie three";
 
-const ID: CommentId = CommentId(1);
+const ID: AnchorId = AnchorId(1);
 
 /// The primary modifier, which `editor::keys` splits the keymap on: cmd on
 /// macOS, ctrl everywhere else. A test that names one chord outright passes on
@@ -237,7 +237,7 @@ fn a_click_finds_the_comment_under_it(cx: &mut TestAppContext) {
         .update(|_, cx| editor.read(cx).anchor_bounds(ID))
         .expect("the anchor painted somewhere");
     assert_eq!(
-        cx.update(|_, cx| editor.read(cx).comment_at(bounds.origin)),
+        cx.update(|_, cx| editor.read(cx).anchor_at(bounds.origin)),
         Some(ID),
         "a point on the range answers with its thread"
     );

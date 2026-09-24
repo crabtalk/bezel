@@ -60,3 +60,25 @@ fn adjacent_links_merge_into_one_clickable_range() {
     assert_eq!(flat.links.len(), 1);
     assert_eq!(flat.links[0].0, 0..text.text.len());
 }
+
+#[test]
+fn a_relative_image_path_joins_the_base_and_nothing_else_does() {
+    use gpui::{ImageSource, Resource};
+    use std::path::Path;
+
+    let resolve = |url: &str, base: Option<&str>| match image_source(url, base.map(Path::new)) {
+        ImageSource::Resource(Resource::Path(path)) => path.to_string_lossy().into_owned(),
+        ImageSource::Resource(Resource::Uri(uri)) => uri.to_string(),
+        _ => panic!("expected a path or a URI"),
+    };
+    let base = Some("/notes/article");
+    assert_eq!(
+        resolve("assets/shot.png", base),
+        Path::new("/notes/article")
+            .join("assets/shot.png")
+            .to_string_lossy()
+    );
+    assert_eq!(resolve("assets/shot.png", None), "assets/shot.png");
+    assert_eq!(resolve("/pics/shot.png", base), "/pics/shot.png");
+    assert_eq!(resolve("https://x.dev/a.png", base), "https://x.dev/a.png");
+}

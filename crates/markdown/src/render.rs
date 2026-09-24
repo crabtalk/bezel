@@ -7,13 +7,13 @@
 //!
 //! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
 
-use std::{cell::RefCell, ops::Range, rc::Rc};
+use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
-    InteractiveText, MouseButton, ObjectFit, Pixels, Point, SharedString, StrikethroughStyle,
-    StyledImage as _, StyledText, TextLayout, TextRun, UnderlineStyle, Window, canvas, div, font,
-    img, point, prelude::*, px, quad, size,
+    ImageSource, InteractiveText, MouseButton, ObjectFit, Pixels, Point, SharedString,
+    StrikethroughStyle, StyledImage as _, StyledText, TextLayout, TextRun, UnderlineStyle, Window,
+    canvas, div, font, img, point, prelude::*, px, quad, size,
 };
 use theme::{TextStyle, Theme, Typeset};
 
@@ -115,13 +115,13 @@ pub enum CopyButton {
     Hidden,
 }
 
-/// A range the caller wants washed, and which of the three washes it gets.
+/// A range the caller wants washed, and which wash it gets.
 ///
-/// A comment thread is what asks for this, and none of what it *says* is here:
-/// the caller keeps the thread and hands over the range, the way it hands over
-/// a [`crate::Preview`]. A closed set rather than a color, so the environment
-/// keeps deciding the paint.
+/// None of what a comment or a highlight *says* is here: the caller keeps it
+/// and hands over the range, the way it hands over a [`crate::Preview`]. A
+/// closed set rather than a color, so the environment keeps deciding the paint.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[non_exhaustive]
 pub enum Annotation {
     /// A thread still waiting on someone.
     #[default]
@@ -130,14 +130,18 @@ pub enum Annotation {
     Resolved,
     /// The one whose thread the reader has in front of them.
     Active,
+    /// A reader's highlight, in the wash [`crate::set_highlight_paint`]
+    /// gives its colour.
+    Highlight(crate::HighlightColor),
 }
 
 impl Annotation {
-    fn wash(self, theme: &Theme) -> Hsla {
+    fn wash(self, theme: &Theme, highlight: crate::HighlightPaint) -> Hsla {
         match self {
             Self::Open => theme.warning.opacity(0.20),
             Self::Resolved => theme.warning.opacity(0.08),
             Self::Active => theme.warning.opacity(0.38),
+            Self::Highlight(color) => highlight(color, theme),
         }
     }
 }
@@ -195,6 +199,9 @@ pub struct Editing<'a> {
     pub toggle: Option<Toggle>,
     /// Whether a fence offers to copy itself.
     pub copy: CopyButton,
+    /// The directory a relative image path is joined onto. `None` leaves it
+    /// relative, which gpui reads against the process's working directory.
+    pub base: Option<&'a Path>,
 }
 
 impl Default for Editing<'_> {
@@ -211,6 +218,7 @@ impl Default for Editing<'_> {
             typography: None,
             toggle: None,
             copy: CopyButton::default(),
+            base: None,
         }
     }
 }
@@ -600,6 +608,8 @@ struct Overlay<'a> {
     /// press listener that needs an owned handle.
     toggle: Option<&'a Toggle>,
     copy: CopyButton,
+    base: Option<&'a Path>,
+    highlight: crate::HighlightPaint,
 }
 
 impl<'a> Overlay<'a> {
@@ -638,7 +648,9 @@ impl<'a> Overlay<'a> {
     fn annotated(&self, len: usize, theme: &Theme) -> Vec<(Range<usize>, Hsla)> {
         self.annotations
             .iter()
-            .filter_map(|(range, kind)| Some((self.clip(*range, len)?, kind.wash(theme))))
+            .filter_map(|(range, kind)| {
+                Some((self.clip(*range, len)?, kind.wash(theme, self.highlight)))
+            })
             .collect()
     }
 
@@ -674,6 +686,23 @@ impl<'a> Overlay<'a> {
         };
         let (start, end) = selection.ordered();
         start.block < self.block && self.block < end.block
+    }
+}
+
+/// What gpui loads for an image URL as written in a document.
+///
+/// Anything with `://` is fetched as it stands. Anything else is a file: an
+/// absolute path as it stands, a relative one joined onto `base` when there is
+/// one.
+pub fn image_source(url: &str, base: Option<&Path>) -> ImageSource {
+    if url.contains("://") {
+        return SharedString::from(url.to_string()).into();
+    }
+    // gpui reads a file only from a `PathBuf` — handed a string it looks for
+    // an asset built into the binary and paints nothing.
+    match base {
+        Some(base) => base.join(url).into(),
+        None => std::path::PathBuf::from(url).into(),
     }
 }
 
@@ -714,6 +743,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         typography,
         toggle,
         copy,
+        base,
     } = editing;
     // Refilled every frame, in paint order — and emptied in *prepaint*, not
     // here. An editor reads last frame's positions while building this frame's
@@ -730,6 +760,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
     let typography = typography.unwrap_or_else(|| Typography::of(cx));
+    let highlight = crate::marks::highlight_paint_of(cx);
     let mut column = div().flex().flex_col().children(reset);
 
     for (ix, block) in doc.blocks.iter().enumerate() {
@@ -749,6 +780,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
             caption,
             toggle: toggle.as_ref(),
             copy,
+            base,
+            highlight,
         };
         // The block's own box, recorded for a gutter handle and a drop target.
         // A rule and an image hold no text, so a layout would not find them.
@@ -1459,6 +1492,8 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         toggle: None,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
+        base: None,
+        highlight: crate::marks::highlight_paint_of(cx),
     };
     let (underlay, lines) = code_lines(
         Some(crate::source::LANGUAGES[0]),
@@ -1837,13 +1872,7 @@ fn image(
             .text_color(theme.text_muted)
             .child(IMAGE_EMPTY)
     } else {
-        // A URL is fetched; anything else is a file, and gpui reads one only
-        // from a `PathBuf` — handed a string it looks for an asset built into
-        // the binary and paints nothing.
-        let picture = match url.contains("://") {
-            true => img(SharedString::from(url.to_string())),
-            false => img(std::path::PathBuf::from(url)),
-        };
+        let picture = img(image_source(url, overlay.base));
         let box_ = div()
             .relative()
             .rounded(px(Theme::button_radius()))

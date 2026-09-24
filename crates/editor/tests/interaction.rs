@@ -745,10 +745,25 @@ fn a_copied_file_that_is_not_a_picture_pastes_its_path(cx: &mut TestAppContext) 
 /// a test is the one place with nowhere else to put the answer.
 static ASKED: Mutex<Option<EntityId>> = Mutex::new(None);
 
-fn keep(source: Source, editor: &Entity<Editor>, _: &App) -> Option<String> {
+fn keep(
+    source: Source,
+    editor: &Entity<Editor>,
+    base: Option<&std::path::Path>,
+    _: &App,
+) -> Option<String> {
     *ASKED.lock().unwrap() = Some(editor.entity_id());
+    if let Some(base) = base {
+        return Some(format!("{}/{}", base.display(), path_name(&source)?));
+    }
     match source {
         Source::File(path) => Some(format!("media://{}", path.file_name()?.to_str()?)),
+        Source::Bytes(_) => None,
+    }
+}
+
+fn path_name(source: &Source) -> Option<String> {
+    match source {
+        Source::File(path) => Some(path.file_name()?.to_str()?.to_string()),
         Source::Bytes(_) => None,
     }
 }
@@ -1240,4 +1255,95 @@ fn enter_in_an_empty_alert_keeps_it(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("> [!TIP]", cx);
     cx.simulate_keystrokes("enter");
     assert_eq!(source(&editor, &mut cx), "> [!TIP]");
+}
+
+fn copy_text(text: &str, cx: &mut VisualTestContext) {
+    cx.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(text.to_string())));
+}
+
+#[gpui::test]
+fn a_paste_in_source_goes_into_the_text_at_the_caret(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_built(
+        "# Title\n\nbody",
+        |editor| editor.with_mode(editor::Mode::Source),
+        cx,
+    );
+    let at = head(&editor, &mut cx).offset;
+    let pasted = "- a\n- b\n\n";
+    copy_text(pasted, &mut cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+
+    let mut expected = String::from("# Title\n\nbody");
+    expected.insert_str(at, pasted);
+    assert_eq!(source(&editor, &mut cx), expected, "spliced into the text");
+    let caret = head(&editor, &mut cx);
+    assert_eq!(
+        (caret.block, caret.part, caret.offset),
+        (0, markdown::Part::Code, at + pasted.len()),
+        "and the caret is after what was pasted"
+    );
+}
+
+#[gpui::test]
+fn a_url_pasted_over_a_selection_in_source_replaces_it(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_built("body", |editor| editor.with_mode(editor::Mode::Source), cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-a"));
+    copy_text("https://example.com", &mut cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+    assert_eq!(source(&editor, &mut cx), "https://example.com");
+}
+
+#[gpui::test]
+fn a_copied_image_file_pastes_its_path_in_source(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_built("", |editor| editor.with_mode(editor::Mode::Source), cx);
+    copy_file("/tmp/shot.png", &mut cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+    assert_eq!(source(&editor, &mut cx), "/tmp/shot.png");
+}
+
+/// The store runs while the editor is being updated, so the base comes to it
+/// as an argument rather than through a read of the editor.
+#[gpui::test]
+fn the_store_is_handed_the_editors_base(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_built("", |editor| editor.with_base("/notes/article"), cx);
+    cx.update(|_, cx| {
+        editor::set_image_store(
+            cx,
+            ImageStore {
+                keep,
+                ..ImageStore::default()
+            },
+        )
+    });
+    copy_file("/My Notes/shot.png", &mut cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
+    assert_eq!(source(&editor, &mut cx), "![](/notes/article/shot.png)");
+}
+
+#[gpui::test]
+fn the_highlight_chord_toggles_a_registered_highlight(cx: &mut TestAppContext) {
+    let marks = markdown::Marks::new().with(editor::HIGHLIGHT_MARK, "==");
+    let (editor, mut cx) = open_built("a lit word", move |editor| editor.with_marks(marks), cx);
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.select(
+                markdown::Selection::new(
+                    markdown::Cursor::new(0, markdown::Part::Body, 2),
+                    markdown::Cursor::new(0, markdown::Part::Body, 5),
+                ),
+                cx,
+            )
+        })
+    });
+    cx.simulate_keystrokes(&format!("{PRIMARY}-shift-h"));
+    assert_eq!(source(&editor, &mut cx), "a ==lit== word");
+    cx.simulate_keystrokes(&format!("{PRIMARY}-shift-h"));
+    assert_eq!(source(&editor, &mut cx), "a lit word", "and back off");
+}
+
+#[gpui::test]
+fn the_highlight_chord_does_nothing_without_the_mark(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("a lit word", cx);
+    cx.simulate_keystrokes(&format!("{PRIMARY}-a {PRIMARY}-shift-h"));
+    assert_eq!(source(&editor, &mut cx), "a lit word");
 }

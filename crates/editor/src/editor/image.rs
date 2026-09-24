@@ -22,7 +22,7 @@ use ui::{
 };
 
 use crate::{
-    comment::Delta,
+    anchor::Delta,
     editor::{
         Editor, MIN_IMAGE_WIDTH,
         keys::{CancelUrl, ConfirmUrl},
@@ -49,8 +49,9 @@ pub enum Source<'a> {
 ///
 /// Plain `fn` fields rather than a trait: a store needs *state* — which
 /// article is open, where the vault is — and in gpui that state lives in the
-/// app, not in a capture. So the store is handed `&App` and the editor doing
-/// the asking, and looks its answer up the same way everything else here does.
+/// app, not in a capture. So the store is handed `&App`, the editor doing the
+/// asking and its base, and looks its answer up the same way everything else
+/// here does.
 /// Nothing to box, and [`Default`] means a field added later is not a break.
 #[derive(Clone, Copy)]
 pub struct ImageStore {
@@ -59,8 +60,15 @@ pub struct ImageStore {
     /// is let go.
     ///
     /// `editor` is which document is asking, because an app with two windows
-    /// open has two answers and a bare call has no way to tell them apart.
-    pub keep: fn(source: Source, editor: &Entity<Editor>, cx: &App) -> Option<String>,
+    /// open has two answers and a bare call has no way to tell them apart. It
+    /// is being updated while this runs, so reading it panics; `base` is its
+    /// [`Editor::base`].
+    pub keep: fn(
+        source: Source,
+        editor: &Entity<Editor>,
+        base: Option<&Path>,
+        cx: &App,
+    ) -> Option<String>,
     /// Whether a file is a picture at all. Defaults to [`markdown::is_image`],
     /// which guesses from the extension — an app with its own decoder, or one
     /// that wants a file the guess rejects, says so here.
@@ -70,7 +78,7 @@ pub struct ImageStore {
 impl Default for ImageStore {
     fn default() -> Self {
         Self {
-            keep: |_, _, _| None,
+            keep: |_, _, _, _| None,
             accepts: |path| markdown::is_image(&path.to_string_lossy()),
         }
     }
@@ -101,13 +109,18 @@ fn store(cx: &App) -> ImageStore {
 /// What to write down for the pictures among `paths`. The store says where
 /// each one belongs, and a picture it does not want paints from where it
 /// already is.
-fn image_urls(cx: &App, paths: &[PathBuf], editor: &Entity<Editor>) -> Vec<String> {
+fn image_urls(
+    cx: &App,
+    paths: &[PathBuf],
+    editor: &Entity<Editor>,
+    base: Option<&Path>,
+) -> Vec<String> {
     let store = store(cx);
     paths
         .iter()
         .filter(|path| (store.accepts)(path))
         .map(|path| {
-            (store.keep)(Source::File(path), editor, cx)
+            (store.keep)(Source::File(path), editor, base, cx)
                 .unwrap_or_else(|| path.to_string_lossy().into_owned())
         })
         .collect()
@@ -204,7 +217,7 @@ impl Editor {
         if !self.blocks() {
             return;
         }
-        let urls = image_urls(cx, paths.paths(), &cx.entity());
+        let urls = image_urls(cx, paths.paths(), &cx.entity(), self.base.as_deref());
         let ix = self.dropping.take().unwrap_or(self.cursor().block);
         self.place_images(ix, urls, cx);
         cx.notify();
@@ -218,7 +231,7 @@ impl Editor {
         if !self.blocks() {
             return false;
         }
-        let urls = image_urls(cx, paths.paths(), &cx.entity());
+        let urls = image_urls(cx, paths.paths(), &cx.entity(), self.base.as_deref());
         if urls.is_empty() {
             return false;
         }
@@ -230,7 +243,8 @@ impl Editor {
     /// leaves the paste to whatever else the clipboard was carrying.
     pub(super) fn paste_image(&mut self, image: &gpui::Image, cx: &mut Context<Self>) -> bool {
         let editor = cx.entity();
-        let Some(url) = (store(cx).keep)(Source::Bytes(image), &editor, cx) else {
+        let Some(url) = (store(cx).keep)(Source::Bytes(image), &editor, self.base.as_deref(), cx)
+        else {
             return false;
         };
         self.place_images(self.cursor().block, vec![url], cx);
@@ -488,10 +502,7 @@ impl Editor {
             return None;
         };
         let box_ = self.picture_box(ix, Some(live))?;
-        let picture = match url.contains("://") {
-            true => img(gpui::SharedString::from(url.to_string())),
-            false => img(std::path::PathBuf::from(url)),
-        };
+        let picture = img(markdown::image_source(url, self.base.as_deref()));
         Some(
             div()
                 .absolute()

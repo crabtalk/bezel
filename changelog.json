@@ -1,5 +1,29 @@
 [
   {
+    "version": "0.1.27",
+    "date": "2026-09-24",
+    "summary": "Reader highlights in five colours, anchors that find their words again after an outside edit, pictures that resolve against their document, a page frame that takes presses and drags for the editor, and a paste into source that lands in the source.",
+    "new": [
+      "`markdown::Editing::base` names the directory a relative image path is joined onto, and `markdown::image_source` resolves a URL the way the renderer does: anything with `://` and any absolute path as written, a relative path under the base. The editor takes one per document through `Editor::with_base`, `set_base` and `base`. The stored URL is unchanged.",
+      "`Editor::press` takes a press from a host frame around the editor — padding, a floor under a short document — and places the caret at the nearest row, starts a drag, or dismisses a selection, as a press on the document would. A press the editor's own box took is marked with `Window::prevent_default` and ignored.",
+      "`markdown::HighlightColor` names a reader's highlight — yellow, green, blue, pink, purple — with a stable `name` to store and `from_name` to read it back. `Annotation::Highlight(color)` washes an anchor's range in it, so an editor anchor can be a highlight as well as a comment thread.",
+      "`markdown::set_highlight_paint` installs what each `HighlightColor` paints, handed the theme so light and dark can differ. Without it, `markdown::default_highlight` paints a translucent wash that keeps text at 7:1 or better.",
+      "`markdown::Quote` finds a range again in a document changed outside the editor. `Quote::of` takes the text under a range and up to 32 characters either side; `Quote::find` answers the saved range while it still covers that text, and otherwise the occurrence with the most context intact, nearest the old position on a tie.",
+      "`ToggleHighlight`, on `cmd-shift-h` on macOS and `ctrl-shift-h` elsewhere, toggles the custom mark named `editor::HIGHLIGHT_MARK` (`highlight`) and does nothing until the app registers a mark under that name."
+    ],
+    "changed": [
+      "`markdown::Editing` has a `base` field; a struct literal without `..Default::default()` has to name it.",
+      "`ImageStore::keep` takes the asking editor's base as a third argument, `Option<&Path>`. The store runs while that editor is being updated, and reading it there panics.",
+      "Editor anchors are no longer comment-only: `CommentId` is `AnchorId`, `EditorEvent::CommentActivated` is `EditorEvent::AnchorActivated`, and `Editor::comment_at` is `Editor::anchor_at`.",
+      "`markdown::Annotation` is `#[non_exhaustive]`."
+    ],
+    "fixed": [
+      "A file dragged over the editor and taken out or released elsewhere no longer leaves the drop line behind.",
+      "A text selection, a lifted block and an image resize keep following the pointer once a drag leaves the editor's box.",
+      "Paste in source mode, or inside a code block, inserts the clipboard text at the caret and leaves the caret after it, rather than splicing parsed blocks in beside the source. A URL, a picture or a copied file goes in as its text there."
+    ]
+  },
+  {
     "version": "0.1.26",
     "date": "2026-09-24",
     "summary": "The rest of the kitty graphics protocol, sixel and iTerm2 images, and a terminal that answers the pixel size queries programs probe with before they send one.",

@@ -23,7 +23,7 @@ use std::{ops::Range, time::Duration};
 use theme::Theme;
 
 use crate::{
-    comment::{Anchor, CommentId, Delta},
+    anchor::{Anchor, AnchorId, Delta},
     history::{EditKind, History},
     layout::Layout,
     link::{self, Choice},
@@ -43,10 +43,15 @@ use keys::{
     InsertParagraph, KillLine, Left, MoveBlockDown, MoveBlockUp, Outdent, Paste, Redo, RemoveBlock,
     ResetTextSize, Right, SelectAll, SelectDocumentEnd, SelectDocumentStart, SelectDown, SelectEnd,
     SelectHome, SelectLeft, SelectRight, SelectUp, SelectWordLeft, SelectWordRight, SoftBreak,
-    SplitBlock, ToggleBold, ToggleCode, ToggleItalic, ToggleStrike, Undo, Up, WordLeft, WordRight,
+    SplitBlock, ToggleBold, ToggleCode, ToggleHighlight, ToggleItalic, ToggleStrike, Undo, Up,
+    WordLeft, WordRight,
 };
 
 pub const CONTEXT: &str = "BezelEditor";
+
+/// The custom mark [`ToggleHighlight`] toggles. It does nothing until the app
+/// registers a mark under this name with [`markdown::set_marks`].
+pub const HIGHLIGHT_MARK: &str = "highlight";
 
 /// [`CONTEXT`], which every binding in [`keys`] is scoped to, plus the mark
 /// that keeps `tab` for [`Editor::indent`].
@@ -66,8 +71,8 @@ fn key_context() -> KeyContext {
 pub enum EditorEvent {
     /// The document is different, and the anchors have been mapped through it.
     Changed,
-    /// A click landed on a comment's range.
-    CommentActivated(CommentId),
+    /// A click landed on an anchor's range.
+    AnchorActivated(AnchorId),
     /// The editor switched between the document and its source, which a host
     /// lighting its own toggle has no other way to hear about — the switch can
     /// come from an undo as well as from the button.
@@ -348,6 +353,8 @@ pub struct Editor {
     /// What the chords move is the shared adjustment on top of this; the base
     /// itself is the app's alone.
     text_size: Option<f32>,
+    /// The directory relative image paths resolve against.
+    base: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -398,6 +405,7 @@ impl Editor {
             goal: None,
             handle_at: None,
             text_size: None,
+            base: None,
         }
     }
 
@@ -466,6 +474,27 @@ impl Editor {
     /// screen.
     pub fn text_size(&self) -> Option<f32> {
         self.text_size
+    }
+
+    /// Resolve relative image paths against `dir` — the document's own folder,
+    /// for a document that keeps its pictures beside it. The stored URL stays
+    /// as written.
+    pub fn with_base(mut self, dir: impl Into<std::path::PathBuf>) -> Self {
+        self.base = Some(dir.into());
+        self
+    }
+
+    /// Change or clear the directory relative image paths resolve against.
+    pub fn set_base(&mut self, dir: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
+        if self.base != dir {
+            self.base = dir;
+            cx.notify();
+        }
+    }
+
+    /// The directory relative image paths resolve against, if one is set.
+    pub fn base(&self) -> Option<&std::path::Path> {
+        self.base.as_deref()
     }
 
     /// The box the document scrolls in, so typing off the bottom follows the
@@ -611,7 +640,7 @@ impl Editor {
     ///
     /// The last match wins, so the newer of two overlapping ranges is the one a
     /// click opens.
-    pub fn comment_at(&self, at: gpui::Point<gpui::Pixels>) -> Option<CommentId> {
+    pub fn anchor_at(&self, at: gpui::Point<gpui::Pixels>) -> Option<AnchorId> {
         let at = self.layouts.hit(at)?;
         self.anchors
             .iter()
@@ -623,7 +652,7 @@ impl Editor {
     }
 
     /// Where to float a thread, mirroring [`Self::selection_bounds`].
-    pub fn anchor_bounds(&self, id: CommentId) -> Option<gpui::Bounds<gpui::Pixels>> {
+    pub fn anchor_bounds(&self, id: AnchorId) -> Option<gpui::Bounds<gpui::Pixels>> {
         let anchor = self.anchors.iter().find(|anchor| anchor.id == id)?;
         let (point, line_height) = self.layouts.position(anchor.range.ordered().0)?;
         Some(gpui::Bounds::new(
@@ -1587,6 +1616,13 @@ impl Editor {
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };
+        // Source mode included: the whole document is one fence there.
+        if self.in_fence() {
+            if let Some(text) = item.text() {
+                self.paste_literal(&text, cx);
+            }
+            return;
+        }
         // A picture before its text, because a clipboard carrying both is
         // carrying a name for the picture — which is not the picture. A
         // screenshot has a file name beside its bytes, and a file copied in a
@@ -1623,11 +1659,29 @@ impl Editor {
         });
     }
 
+    /// Whether the selection starts and ends in one fence's code.
+    fn in_fence(&self) -> bool {
+        let (start, end) = self.selection.ordered();
+        start.part == Part::Code && end.part == Part::Code && start.block == end.block
+    }
+
+    /// Put `text` in place of the selection as it stands, caret after it.
+    fn paste_literal(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.edit(EditKind::Structure, cx, |this| {
+            let splice = this.doc.replace(this.selection, Text::plain(text));
+            this.selection = Selection::at(splice.caret.clamp(&this.doc));
+            vec![Delta::Spliced(splice)]
+        });
+    }
+
     /// A URL is never spliced in as a block. It links whatever is selected, or
     /// lands as a link where the caret is — and only when the block it landed
     /// in held nothing else does it also offer to become a card, which is the
     /// one place a card would not eat a sentence.
     fn paste_url(&mut self, url: String, cx: &mut Context<Self>) {
+        if self.in_fence() {
+            return self.paste_literal(&url, cx);
+        }
         // The one paste people expect to *not* overwrite what they chose.
         if !self.selection.is_collapsed() {
             return self.toggle_mark(Mark::Link(url), cx);
@@ -1918,6 +1972,106 @@ impl Editor {
         true
     }
 
+    /// Press at `position` as if on the document: menus close, the editor
+    /// takes focus, and the caret goes to the nearest place a caret can be —
+    /// below the last block, above the first, or beside a line.
+    ///
+    /// For a host whose own frame around the editor should behave as the page. A
+    /// press the editor's box already took is marked with
+    /// [`Window::prevent_default`], and this ignores one so marked.
+    pub fn press(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        click_count: usize,
+        modifiers: gpui::Modifiers,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if window.default_prevented() {
+            return;
+        }
+        window.prevent_default();
+        self.pressed(position, click_count, modifiers, window, cx);
+    }
+
+    /// Whether a press is being dragged: a selection, a lifted block or an
+    /// image resize.
+    fn in_drag(&self) -> bool {
+        self.dragging || self.lifted.is_some() || self.resizing.is_some()
+    }
+
+    /// Follow a dragged pointer, wherever in the window it is.
+    fn drag_to(&mut self, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        // A lifted block follows the pointer.
+        if let Some((from, _)) = self.lifted {
+            if let Some(to) = self.layouts.block_at(position) {
+                self.lifted = Some((from, to));
+                cx.notify();
+            }
+            return;
+        }
+        // An image being resized follows the pointer the same way — the
+        // document holds nothing until the handle is released.
+        if let Some((ix, _)) = self.resizing {
+            if let Some(width) = self.dragged_width(ix, position.x) {
+                self.resizing = Some((ix, Some(width)));
+                cx.notify();
+            }
+            return;
+        }
+        if self.dragging
+            && let Some(hit) = self.layouts.hit(position)
+        {
+            self.selection = self.selection.extend_to(hit).clamp(&self.doc);
+            cx.notify();
+        }
+    }
+
+    fn pressed(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        click_count: usize,
+        modifiers: gpui::Modifiers,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        ui::popover::close_popup(self, cx, |this| &mut this.block_menu);
+        ui::popover::close_popup(self, cx, |this| &mut this.language_menu);
+        self.pasted = None;
+        self.focus_handle.clone().focus(window, cx);
+        // Ahead of the hit test, and returning without one: the
+        // box is a control, and a caret dropped into the row
+        // behind it would move the caret on every check.
+        if let Some(ix) = self.checkbox_at(position) {
+            self.toggle_task(ix, cx);
+            return;
+        }
+        if self.tail_click(position, cx) {
+            return;
+        }
+        let Some(hit) = self.layouts.hit(position) else {
+            return cx.notify();
+        };
+        self.selection = match click_count {
+            // Shift extends from wherever the anchor already is,
+            // which is what makes click-then-shift-click a range.
+            _ if modifiers.shift => self.selection.extend_to(hit),
+            1 => Selection::at(hit),
+            2 => Selection::new(hit.word_left(&self.doc), hit.word_right(&self.doc)),
+            _ => Selection::new(hit.home(), hit.end(&self.doc)),
+        }
+        .clamp(&self.doc);
+        self.dragging = click_count == 1 && !modifiers.shift;
+        self.history.interrupt();
+        self.caret_moved();
+        // Only the editor sees the press, so only the editor can
+        // say which anchor it landed on.
+        if let Some(id) = self.anchor_at(position) {
+            cx.emit(EditorEvent::AnchorActivated(id));
+        }
+        cx.notify();
+    }
+
     /// A click past the end of the document. Without this the document has no
     /// end: the click snaps back into the block above it, and what gets typed
     /// lands inside the code the reader was trying to escape.
@@ -1984,6 +2138,11 @@ impl Render for Editor {
             self.caret_on = true;
         }
         let selection = focused.then_some(self.selection);
+        // gpui ends an outside file drag — left the window or released
+        // elsewhere — without a drop here, so the indicator goes with it.
+        if !cx.has_active_drag() {
+            self.dropping = None;
+        }
 
         // Typed text and IME reach an entity only through an input handler
         // registered during *paint*, against the bounds it should be anchored
@@ -1992,9 +2151,20 @@ impl Render for Editor {
         // key bindings still fire and nothing types.
         let handle = self.focus_handle.clone();
         let entity = cx.entity();
+        let in_drag = self.in_drag();
         let input = canvas(
             |_, _, _| (),
             move |bounds, _, window, cx| {
+                // `on_mouse_move` hears the pointer only over this box, and a
+                // drag goes on past it. Registering it is paint's alone.
+                if in_drag {
+                    let entity = entity.clone();
+                    window.on_mouse_event(move |event: &gpui::MouseMoveEvent, phase, _, cx| {
+                        if phase == gpui::DispatchPhase::Bubble && event.dragging() {
+                            entity.update(cx, |this, cx| this.drag_to(event.position, cx));
+                        }
+                    });
+                }
                 // The gutter handle is placed from positions recorded in window
                 // coordinates, so the box they have to be measured against is
                 // taken here — the one place that knows it.
@@ -2035,43 +2205,20 @@ impl Render for Editor {
                     // press; without the flag this would close the menu it
                     // just opened. `ui::popover::Popup` solves it the same way.
                     if std::mem::take(&mut this.press_claimed) {
-                        return;
+                        this.focus_handle.clone().focus(window, cx);
+                    } else {
+                        this.pressed(
+                            event.position,
+                            event.click_count,
+                            event.modifiers,
+                            window,
+                            cx,
+                        );
                     }
-                    ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
-                    ui::popover::close_popup(this, cx, |this| &mut this.language_menu);
-                    this.pasted = None;
-                    this.focus_handle.clone().focus(window, cx);
-                    // Ahead of the hit test, and returning without one: the
-                    // box is a control, and a caret dropped into the row
-                    // behind it would move the caret on every check.
-                    if let Some(ix) = this.checkbox_at(event.position) {
-                        this.toggle_task(ix, cx);
-                        return;
-                    }
-                    if this.tail_click(event.position, cx) {
-                        return;
-                    }
-                    let Some(hit) = this.layouts.hit(event.position) else {
-                        return cx.notify();
-                    };
-                    this.selection = match event.click_count {
-                        // Shift extends from wherever the anchor already is,
-                        // which is what makes click-then-shift-click a range.
-                        _ if event.modifiers.shift => this.selection.extend_to(hit),
-                        1 => Selection::at(hit),
-                        2 => Selection::new(hit.word_left(&this.doc), hit.word_right(&this.doc)),
-                        _ => Selection::new(hit.home(), hit.end(&this.doc)),
-                    }
-                    .clamp(&this.doc);
-                    this.dragging = event.click_count == 1 && !event.modifiers.shift;
-                    this.history.interrupt();
-                    this.caret_moved();
-                    // Only the editor sees the press, so only the editor can
-                    // say which thread it landed on.
-                    if let Some(id) = this.comment_at(event.position) {
-                        cx.emit(EditorEvent::CommentActivated(id));
-                    }
-                    cx.notify();
+                    // What `press` reads to skip a press this box already
+                    // took. It also stops gpui's own focus transfer, which runs
+                    // after this listener, so both arms focus by hand.
+                    window.prevent_default();
                 }),
             )
             // The drag has to be tracked from the container rather than from a
@@ -2090,29 +2237,10 @@ impl Render for Editor {
                     this.over_text = over_text;
                     cx.notify();
                 }
-                // A lifted block follows the pointer; otherwise the pointer
-                // only decides which block wears the handle.
-                if let Some((from, _)) = this.lifted.filter(|_| event.dragging()) {
-                    if let Some(to) = this.layouts.block_at(event.position) {
-                        this.lifted = Some((from, to));
-                        cx.notify();
-                    }
-                    return;
-                }
-                // An image being resized follows the pointer the same way — the
-                // document holds nothing until the handle is released.
-                if let Some((ix, _)) = this.resizing.filter(|_| event.dragging()) {
-                    if let Some(width) = this.dragged_width(ix, event.position.x) {
-                        this.resizing = Some((ix, Some(width)));
-                        cx.notify();
-                    }
-                    return;
-                }
-                if this.dragging && event.dragging() {
-                    if let Some(hit) = this.layouts.hit(event.position) {
-                        this.selection = this.selection.extend_to(hit).clamp(&this.doc);
-                        cx.notify();
-                    }
+                // A drag in flight is followed by the window-wide listener
+                // `render` registers; otherwise the pointer only decides which
+                // block wears the handle.
+                if this.in_drag() {
                     return;
                 }
                 let hovered = this.layouts.block_at(event.position);
@@ -2217,7 +2345,12 @@ impl Render for Editor {
             // will.
             .on_drag_move(cx.listener(
                 |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
-                    let over = this.layouts.block_at(event.event.position);
+                    let at = event.event.position;
+                    let over = event
+                        .bounds
+                        .contains(&at)
+                        .then(|| this.layouts.block_at(at))
+                        .flatten();
                     if over != this.dropping {
                         this.dropping = over;
                         cx.notify();
@@ -2238,6 +2371,11 @@ impl Render for Editor {
                 cx.listener(|this, _: &ToggleStrike, _, cx| this.toggle_mark(Mark::Strike, cx)),
             )
             .on_action(cx.listener(|this, _: &ToggleCode, _, cx| this.toggle_mark(Mark::Code, cx)))
+            .on_action(cx.listener(|this, _: &ToggleHighlight, _, cx| {
+                if this.marks.delimiter(HIGHLIGHT_MARK).is_some() {
+                    this.toggle_mark(Mark::Custom(HIGHLIGHT_MARK.into()), cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &MoveBlockUp, _, cx| {
                 this.move_block(this.cursor().block, -1, cx)
             }))
@@ -2309,7 +2447,7 @@ impl Render for Editor {
             .child(input)
             // The document is inset by the gutter so the handle has somewhere
             // to sit *inside* the editor. Outside it the handle is clipped by
-            // any scrolling ancestor, and a drag through it never reaches
+            // any scrolling ancestor, and a pointer over it never reaches
             // `on_mouse_move`, which fires only while this element is the one
             // under the pointer.
             .child(
@@ -2357,6 +2495,7 @@ impl Render for Editor {
                                 // `checkbox_bounds`, which is what keeps a
                                 // toggle in the undo history.
                                 toggle: Some(markdown::Toggle::HitTested),
+                                base: self.base.as_deref(),
                                 ..Default::default()
                             },
                             window,

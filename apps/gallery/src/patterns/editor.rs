@@ -26,7 +26,7 @@
 //! drag-to-reorder, undo and the clipboard are the editor's own; this file
 //! contains not one line for any of them.
 
-use editor::{Anchor, CommentId, Editor, EditorEvent, Mode};
+use editor::{Anchor, AnchorId, Editor, EditorEvent, Mode};
 use gpui::{
     Context, ElementId, Entity, Focusable, Render, ScrollHandle, SharedString, Window, div,
     prelude::*, px,
@@ -79,16 +79,16 @@ const MARKS: [(&str, Mark); 4] = [
 /// The app's half of a comment. `editor` holds the range and maps it through
 /// every edit; what it says, and who said it, lives here.
 struct Thread {
-    id: CommentId,
+    id: AnchorId,
     body: SharedString,
 }
 
 pub struct EditorDemo {
     editor: Entity<Editor>,
-    /// The threads, keyed to the editor's anchors by [`CommentId`].
+    /// The threads, keyed to the editor's anchors by [`AnchorId`].
     threads: Vec<Thread>,
     /// The one whose range paints as [`Annotation::Active`].
-    open: Option<CommentId>,
+    open: Option<AnchorId>,
     /// Ids are the app's to mint — the editor never looks inside one.
     next: u64,
     /// The document pane's scroll, shared with the editor so the caret can
@@ -117,7 +117,7 @@ impl EditorDemo {
         // sees that press, which is why this arrives as an event rather than as
         // a hit test this file would have to run itself.
         cx.subscribe(&editor, |this, _, event: &EditorEvent, cx| {
-            if let EditorEvent::CommentActivated(id) = event {
+            if let EditorEvent::AnchorActivated(id) = event {
                 this.open = Some(*id);
                 cx.notify();
             }
@@ -139,7 +139,7 @@ impl EditorDemo {
         if selection.is_collapsed() {
             return;
         }
-        let id = CommentId(self.next);
+        let id = AnchorId(self.next);
         self.next += 1;
         self.threads.push(Thread {
             id,
