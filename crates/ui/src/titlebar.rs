@@ -23,10 +23,9 @@
 //! the cluster, and the frame around it — border, corners, shadow, resize
 //! edges — is [`crate::window::frame`].
 //!
-//! The window it belongs to opens with `appears_transparent: true` and
-//! **`app_owns_titlebar_drag: true`** — the second one stops AppKit from
-//! dragging the window *and* from delaying titlebar clicks while it waits to
-//! see a double-click.
+//! The window it belongs to opens with `appears_transparent: true`, and on
+//! Linux asks for `WindowDecorations::Client`. On macOS AppKit still drags the
+//! window by its transparent titlebar, and a [`grip`] there is redundant.
 //!
 //! ```ignore
 //! titlebar::titlebar("titlebar", true, window)
@@ -152,9 +151,9 @@ pub enum CaptionSide {
 /// those are painted over the client area by someone else, and these are not.
 ///
 /// ```ignore
-/// titlebar::titlebar("titlebar", &self.drag, true, window)
+/// titlebar::titlebar("titlebar", true, window)
 ///     .child(titlebar::controls(CaptionSide::Left, window, cx))
-///     .child(div().flex_1().child(/* … */))
+///     .child(titlebar::grip("titlebar-grip", &self.drag, window))
 ///     .child(titlebar::controls(CaptionSide::Right, window, cx))
 /// ```
 pub fn controls(side: CaptionSide, window: &Window, cx: &App) -> Div {
