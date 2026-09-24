@@ -212,8 +212,8 @@ impl RenderOnce for Scrollbar {
                 .absolute()
                 .top(range.start)
                 .h(range.end - range.start)
-                .w(px(4.))
-                .rounded(px(2.))
+                .w(px(crate::scroll::THUMB))
+                .rounded_full()
                 .bg(theme::Theme::of(cx).text_muted.opacity(0.4))
                 .on_mouse_down(MouseButton::Left, move |event, window, cx| {
                     down_state.scrollbar_drag_started();

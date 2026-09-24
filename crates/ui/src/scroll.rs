@@ -66,7 +66,7 @@ const TRACK: f32 = 10.0;
 /// Room a bar is centred in across its axis when the caller reserves none.
 const CHANNEL: f32 = 2.0 * INSET + TRACK;
 /// Width of the thumb itself, centred in the track.
-const THUMB: f32 = 6.0;
+pub(crate) const THUMB: f32 = 4.0;
 /// Length of one [`rail`] mark, and its thickness.
 const MARK: f32 = 16.0;
 const MARK_THICK: f32 = 2.0;
