@@ -38,14 +38,11 @@ pub mod appearance;
 
 mod brand;
 mod color;
-mod highlight;
 mod paint;
 mod platform;
 mod theme;
 
 pub use brand::{BASE_COLORS, Brand, Tint, Vibrancy, brand, set_brand};
-
-pub use highlight::HighlightColor;
 
 pub use platform::{LENSED, frosted_window};
 

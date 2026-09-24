@@ -46,7 +46,10 @@ pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKin
 pub use edit::{Shortcut, Splice, shortcut};
 pub use highlight::{Highlighter, languages, set_highlighter};
 pub use layout::{Layout, set_layout};
-pub use marks::{MarkPaint, Marks, set_mark_paint, set_marks};
+pub use marks::{
+    HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, set_highlight_paint,
+    set_mark_paint, set_marks,
+};
 pub use parse::{ParsedDoc, is_image, is_url, parse, parse_at, parse_ranges, parse_with};
 pub use preview::{LinkPreview, Preview, set_link_preview};
 pub use quote::Quote;

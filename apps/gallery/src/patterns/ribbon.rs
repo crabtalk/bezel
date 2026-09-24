@@ -133,7 +133,10 @@ fn marks() -> [MarkButton; 6] {
 pub fn paint(name: &str, theme: &Theme) -> Option<markdown::MarkPaint> {
     match name {
         "highlight" => Some(markdown::MarkPaint {
-            background: Some(theme.highlight(theme::HighlightColor::Yellow)),
+            background: Some(markdown::default_highlight(
+                markdown::HighlightColor::Yellow,
+                theme,
+            )),
             ..Default::default()
         }),
         "underline" => Some(markdown::MarkPaint {

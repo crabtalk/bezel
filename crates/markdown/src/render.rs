@@ -130,17 +130,18 @@ pub enum Annotation {
     Resolved,
     /// The one whose thread the reader has in front of them.
     Active,
-    /// A reader's highlight, in [`Theme::highlight`]'s wash.
-    Highlight(theme::HighlightColor),
+    /// A reader's highlight, in the wash [`crate::set_highlight_paint`]
+    /// gives its colour.
+    Highlight(crate::HighlightColor),
 }
 
 impl Annotation {
-    fn wash(self, theme: &Theme) -> Hsla {
+    fn wash(self, theme: &Theme, highlight: crate::HighlightPaint) -> Hsla {
         match self {
             Self::Open => theme.warning.opacity(0.20),
             Self::Resolved => theme.warning.opacity(0.08),
             Self::Active => theme.warning.opacity(0.38),
-            Self::Highlight(color) => theme.highlight(color),
+            Self::Highlight(color) => highlight(color, theme),
         }
     }
 }
@@ -608,6 +609,7 @@ struct Overlay<'a> {
     toggle: Option<&'a Toggle>,
     copy: CopyButton,
     base: Option<&'a Path>,
+    highlight: crate::HighlightPaint,
 }
 
 impl<'a> Overlay<'a> {
@@ -646,7 +648,9 @@ impl<'a> Overlay<'a> {
     fn annotated(&self, len: usize, theme: &Theme) -> Vec<(Range<usize>, Hsla)> {
         self.annotations
             .iter()
-            .filter_map(|(range, kind)| Some((self.clip(*range, len)?, kind.wash(theme))))
+            .filter_map(|(range, kind)| {
+                Some((self.clip(*range, len)?, kind.wash(theme, self.highlight)))
+            })
             .collect()
     }
 
@@ -756,6 +760,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
     let typography = typography.unwrap_or_else(|| Typography::of(cx));
+    let highlight = crate::marks::highlight_paint_of(cx);
     let mut column = div().flex().flex_col().children(reset);
 
     for (ix, block) in doc.blocks.iter().enumerate() {
@@ -776,6 +781,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
             toggle: toggle.as_ref(),
             copy,
             base,
+            highlight,
         };
         // The block's own box, recorded for a gutter handle and a drop target.
         // A rule and an image hold no text, so a layout would not find them.
@@ -1487,6 +1493,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
         base: None,
+        highlight: crate::marks::highlight_paint_of(cx),
     };
     let (underlay, lines) = code_lines(
         Some(crate::source::LANGUAGES[0]),
