@@ -8,9 +8,9 @@
 use browser::Frame;
 #[cfg(not(target_family = "wasm"))]
 use browser::{WebView, WebViewEvent};
+use gpui::{App, Context, Entity, KeyBinding, Render, Window, actions, div, prelude::*, px};
 #[cfg(not(target_family = "wasm"))]
 use gpui::{Focusable, SharedString, Subscription};
-use gpui::{App, Context, Entity, KeyBinding, Render, Window, actions, div, prelude::*, px};
 #[cfg(not(target_family = "wasm"))]
 use motion::{Fade, Painter};
 use theme::Theme;

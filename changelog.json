@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.1.30",
+    "date": "2026-09-25",
+    "summary": "`bezel-browser`, a platform webview placed in a gpui window: WKWebView on macOS, WebView2 on Windows, webkit2gtk on Linux under X11, and an iframe on the web build.",
+    "new": [
+      "`bezel-browser` (`browser`) holds `WebView`, an entity whose element places a native webview at its bounds in every frame it is painted and parks it, hidden and moved off-window, in every frame it is not. A parked page stays loaded. Nothing gpui paints can cover the page, and content masks do not clip it.",
+      "`WebView::load`, `back`, `forward` and `reload`; `location`, `title` and `is_loading` as the page last reported them. `WebViewEvent` carries `Location`, `Title` (on change only) and `Load(LoadState)`, taken from the page rather than from what it was told to load.",
+      "`WebView::eval` runs a JavaScript expression in the main frame and decodes its value from JSON, with a timeout. `EvalError` says why there is no value.",
+      "`WebView::with_user_agent` replaces the user agent the page is built with. On macOS the default is Safari's, with the installed Safari's version.",
+      "Keyboard focus follows gpui focus both ways: focusing the view's handle gives the page keys, a press in the page focuses the handle, and blurring or parking hands keys back to gpui. On macOS cmd-c, cmd-x, cmd-v, cmd-a, cmd-z and cmd-shift-z reach the page in the `WebView` key context.",
+      "On macOS the page sets the cursor over itself; gpui's cursor rects are off while the pointer is inside it.",
+      "Linux needs gpui on X11 and paints nothing under Wayland. It initializes GTK and pumps its events on a gpui timer unless the host already initialized GTK.",
+      "`browser::Frame`, on the web build only, puts an `<iframe>` beside gpui_web's canvas at the element's bounds, hidden when not painted and removed on drop. It reports nothing about its page.",
+      "The gallery's Browser page: an address field over a `WebView`, over a `Frame` on the web build. `apps/browse` is a Safari-shaped demo browser with tabs, a unified toolbar and a favorites start page."
+    ]
+  },
+  {
     "version": "0.1.29",
     "date": "2026-09-25",
     "summary": "Menus that stop at the window edge and scroll, copy from a fence as plain text, one scrollbar thumb, bars that fade when the pointer leaves the window, and highlights in Apple's system colours.",

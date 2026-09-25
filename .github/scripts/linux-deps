@@ -5,12 +5,17 @@
 # there. Trimmed from zed's `script/linux`, which also installs what the editor
 # needs and bezel does not; zed runs it on every ubuntu job for the same reason.
 #
+# `bezel-browser` builds wry's webkit2gtk webview, which links GTK 3 and
+# WebKitGTK 4.1.
+#
 # No vulkan driver: this builds and runs headless tests, and nothing here asks
 # a GPU for a frame. Add `mesa-vulkan-drivers` if that ever changes.
 set -euo pipefail
 apt-get update
 apt-get install -y --no-install-recommends \
     libfontconfig-dev \
+    libgtk-3-dev \
     libwayland-dev \
+    libwebkit2gtk-4.1-dev \
     libx11-xcb-dev \
     libxkbcommon-x11-dev
