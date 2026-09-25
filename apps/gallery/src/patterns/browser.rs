@@ -1,0 +1,178 @@
+//! A browser pane: an address field over a [`WebView`]. The field follows
+//! wherever the page goes, unless you are typing in it.
+//!
+//! On the web build the page is a [`Frame`], which reports nothing back: the
+//! field does not follow the page and there is no history to move through.
+
+#[cfg(target_family = "wasm")]
+use browser::Frame;
+#[cfg(not(target_family = "wasm"))]
+use browser::{WebView, WebViewEvent};
+use gpui::{App, Context, Entity, KeyBinding, Render, Window, actions, div, prelude::*, px};
+#[cfg(not(target_family = "wasm"))]
+use gpui::{Focusable, SharedString, Subscription};
+#[cfg(not(target_family = "wasm"))]
+use motion::{Fade, Painter};
+use theme::Theme;
+use ui::input::TextField;
+#[cfg(not(target_family = "wasm"))]
+use ui::{
+    icons,
+    widgets::{ButtonStyle, Buttons},
+};
+
+actions!(gallery_browser, [Go]);
+
+/// Claimed by the address field on top of `TextField`, so `enter` loads here.
+const ADDRESS_CONTEXT: &str = "GalleryAddress";
+
+const HOME: &str = "https://example.com";
+
+/// Bind the address field's keys. Called once at startup beside `input::init`.
+pub fn init(cx: &mut App) {
+    cx.bind_keys([KeyBinding::new("enter", Go, Some(ADDRESS_CONTEXT))]);
+}
+
+pub struct Browser {
+    address: Entity<TextField>,
+    /// Built on the first render: a `WebView` is made in a window.
+    #[cfg(not(target_family = "wasm"))]
+    page: Option<(Entity<WebView>, Subscription)>,
+    #[cfg(target_family = "wasm")]
+    frame: Entity<Frame>,
+}
+
+impl Browser {
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        let address = cx.new(|cx| {
+            let mut field = TextField::new(cx)
+                .with_key_context(ADDRESS_CONTEXT)
+                .with_placeholder("Address");
+            field.set_content(HOME, cx);
+            field
+        });
+        Self {
+            address,
+            #[cfg(not(target_family = "wasm"))]
+            page: None,
+            #[cfg(target_family = "wasm")]
+            frame: cx.new(|_| Frame::new(HOME)),
+        }
+    }
+
+    /// What the address field holds, as a URL; `None` when it is empty.
+    fn typed(&self, cx: &App) -> Option<String> {
+        let typed = self.address.read(cx).content().trim().to_owned();
+        if typed.is_empty() {
+            None
+        } else if typed.contains("://") {
+            Some(typed)
+        } else {
+            Some(format!("https://{typed}"))
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<WebView> {
+        if let Some((page, _)) = &self.page {
+            return page.clone();
+        }
+        let page = cx.new(|cx| WebView::new(HOME, window, cx));
+        let events = cx.subscribe_in(&page, window, |this, _, event, window, cx| {
+            if let WebViewEvent::Location(url) = event
+                && !this.address.focus_handle(cx).is_focused(window)
+            {
+                this.address
+                    .update(cx, |field, cx| field.set_content(url.clone(), cx));
+            }
+        });
+        self.page = Some((page.clone(), events));
+        page
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn go(&mut self, _: &Go, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((page, _)) = &self.page else { return };
+        let Some(url) = self.typed(cx) else { return };
+        page.update(cx, |page, _| page.load(url));
+        window.focus(&page.focus_handle(cx), cx);
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn go(&mut self, _: &Go, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(url) = self.typed(cx) else { return };
+        self.frame.update(cx, |frame, _| frame.load(url));
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl Render for Browser {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::of(cx).clone();
+        let painter = Painter::of(cx);
+        let page = self.page(window, cx);
+        let button = |key: &'static str, glyph: &'static [u8]| {
+            theme
+                .icon_button(
+                    glyph,
+                    ButtonStyle::Ghost,
+                    Some(Fade::new(painter, format!("browser-{key}"))),
+                )
+                .id(SharedString::from(format!("browser-{key}")))
+        };
+        let (back, forward, reload) = (page.clone(), page.clone(), page.clone());
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.0))
+                    .p(px(8.0))
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(
+                        button("back", icons::glyph::ArrowLeft)
+                            .on_click(move |_, _, cx| back.update(cx, |page, _| page.back())),
+                    )
+                    .child(
+                        button("forward", icons::glyph::ArrowRight)
+                            .on_click(move |_, _, cx| forward.update(cx, |page, _| page.forward())),
+                    )
+                    .child(
+                        button("reload", icons::glyph::RotateCw)
+                            .on_click(move |_, _, cx| reload.update(cx, |page, _| page.reload())),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .on_action(cx.listener(Self::go))
+                            .child(self.address.clone()),
+                    ),
+            )
+            .child(div().flex_1().min_h_0().child(page))
+    }
+}
+
+#[cfg(target_family = "wasm")]
+impl Render for Browser {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = Theme::of(cx);
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .p(px(8.0))
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .on_action(cx.listener(Self::go))
+                    .child(self.address.clone()),
+            )
+            .child(div().flex_1().min_h_0().child(self.frame.clone()))
+    }
+}

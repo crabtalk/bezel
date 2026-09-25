@@ -6,6 +6,7 @@
 
 pub mod agent;
 pub mod avatar;
+pub mod browser;
 pub mod canvas;
 pub mod dialect;
 pub mod diff;

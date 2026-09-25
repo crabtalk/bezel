@@ -1,0 +1,78 @@
+[package]
+name = "bezel-browser"
+
+description = "A platform webview hosted in a gpui window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "browser"
+
+[lints]
+workspace = true
+
+[dependencies]
+gpui.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-channel = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wry = { version = "0.57", default-features = false }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSApplication",
+    "NSEvent",
+    "NSResponder",
+    "NSTrackingArea",
+    "NSView",
+    "NSWindow",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSBundle",
+    "NSGeometry",
+    "NSString",
+] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "WKNavigation",
+    "WKWebView",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wry = { version = "0.57", default-features = false }
+webview2-com = "0.39"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wry = { version = "0.57", default-features = false, features = ["os-webview", "x11"] }
+gtk = "0.18"
+raw-window-handle = "0.6"
+webkit2gtk = "=2.0.2"
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+raw-window-handle = "0.6"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "CssStyleDeclaration",
+    "Document",
+    "DomRect",
+    "Element",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlIFrameElement",
+    "Node",
+] }
+
+[dev-dependencies]
+gpui_platform.workspace = true

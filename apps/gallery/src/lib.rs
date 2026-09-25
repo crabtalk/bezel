@@ -93,6 +93,7 @@ pub fn init(cx: &mut App) {
     tree::init(cx);
     // A pattern is an app: the composer page binds its own keys.
     patterns::agent::init(cx);
+    patterns::browser::init(cx);
     cx.bind_keys([
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-k", OpenPalette, None),
@@ -731,6 +732,7 @@ pub const PATTERNS: &[Group] = &[
             ),
             section("editor", "Editor", "apps/gallery/src/patterns/editor.rs"),
             section("canvas", "Canvas", "apps/gallery/src/patterns/canvas.rs"),
+            section("browser", "Browser", "apps/gallery/src/patterns/browser.rs"),
             section("ribbon", "Ribbon", "apps/gallery/src/patterns/ribbon.rs"),
             section(
                 "markdown",
@@ -1085,6 +1087,7 @@ pub struct Gallery {
     canvas: Entity<patterns::canvas::CanvasDemo>,
     #[cfg(not(target_family = "wasm"))]
     terminal: Entity<patterns::terminal::Terminal>,
+    browser: Entity<patterns::browser::Browser>,
     orbs: Entity<patterns::orbs::Orbs>,
     syntax: Entity<patterns::syntax::Syntax>,
     avatar: Entity<patterns::avatar::Avatars>,
@@ -1314,6 +1317,7 @@ impl Gallery {
             canvas: cx.new(patterns::canvas::CanvasDemo::new),
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(patterns::terminal::Terminal::new),
+            browser: cx.new(patterns::browser::Browser::new),
             orbs: cx.new(patterns::orbs::Orbs::new),
             syntax: cx.new(patterns::syntax::Syntax::new),
             icons_cargo: {
@@ -5026,6 +5030,7 @@ impl Gallery {
                 .into_any_element(),
             "editor" => self.editor.clone().into_any_element(),
             "canvas" => self.canvas.clone().into_any_element(),
+            "browser" => self.browser.clone().into_any_element(),
             "ribbon" => self.ribbon.clone().into_any_element(),
             #[cfg(not(target_family = "wasm"))]
             "agent-terminal" => self.terminal.clone().into_any_element(),
