@@ -1,0 +1,26 @@
+[package]
+name = "browse"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+browser.workspace = true
+theme.workspace = true
+ui.workspace = true
+icons = { workspace = true, features = [
+    "arrows",
+    "layout",
+    "navigation",
+    "notifications",
+    "security",
+    "shapes",
+    "text",
+] }
+gpui.workspace = true
+gpui_platform.workspace = true
+

@@ -1336,6 +1336,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "browse"
+version = "0.1.29"
+dependencies = [
+ "bezel-browser",
+ "bezel-gpui",
+ "bezel-gpui-platform",
+ "bezel-icons",
+ "bezel-theme",
+ "bezel-ui",
+]
+
+[[package]]
 name = "built"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
