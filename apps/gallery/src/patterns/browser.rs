@@ -1,7 +1,8 @@
 //! A browser pane: an address field over a [`WebView`]. The field follows
 //! wherever the page goes, unless you are typing in it.
 //!
-//! Native only; the page is a WKWebView on macOS and nothing elsewhere.
+//! Native only; the page is a WKWebView on macOS, WebView2 on Windows, and
+//! nothing on Linux.
 
 use browser::{WebView, WebViewEvent};
 use gpui::{

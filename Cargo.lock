@@ -601,6 +601,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+ "webview2-com",
  "wry",
 ]
 

@@ -41,5 +41,9 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
     "WKWebView",
 ] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+wry = { version = "0.57", default-features = false }
+webview2-com = "0.39"
+
 [dev-dependencies]
 gpui_platform.workspace = true
