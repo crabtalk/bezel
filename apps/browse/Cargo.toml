@@ -23,4 +23,3 @@ icons = { workspace = true, features = [
 ] }
 gpui.workspace = true
 gpui_platform.workspace = true
-

@@ -100,5 +100,8 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 
-[profile.release.package.browse]
+[profile.release]
 opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
