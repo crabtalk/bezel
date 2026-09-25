@@ -6,7 +6,6 @@
 
 pub mod agent;
 pub mod avatar;
-#[cfg(not(target_family = "wasm"))]
 pub mod browser;
 pub mod canvas;
 pub mod dialect;

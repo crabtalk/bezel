@@ -1,14 +1,13 @@
+use crate::host::{Host, Surface};
 use gpui::{
-    App, Bounds, Context, CursorStyle, Element, ElementId, EventEmitter, FocusHandle, Focusable,
-    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, Pixels,
-    Render, Style, Subscription, Task, Window, relative,
+    App, Bounds, Context, EventEmitter, FocusHandle, Focusable, IntoElement, Pixels, Render,
+    Subscription, Task, Window,
 };
 use serde::de::DeserializeOwned;
 use std::{
     cell::{Cell, RefCell},
     fmt,
     rc::Rc,
-    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -27,7 +26,8 @@ use std::{
 /// gpui elements behind the page are not hovered, and gpui's cursor over the
 /// page is the arrow.
 ///
-/// Paints nothing off macOS and Windows.
+/// Linux needs gpui on X11 and paints nothing under Wayland. Paints nothing
+/// off macOS, Windows and Linux.
 pub struct WebView {
     page: Rc<Page>,
     location: Option<String>,
@@ -82,6 +82,8 @@ impl std::error::Error for EvalError {}
 
 impl WebView {
     pub fn new(url: impl Into<String>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        #[cfg(target_os = "linux")]
+        gtk_loop::start(window, cx);
         let focus = cx.focus_handle();
         let subscriptions = [
             cx.on_focus(&focus, window, |this: &mut Self, _, _| {
@@ -232,13 +234,13 @@ impl Focusable for WebView {
 impl Render for WebView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         Host {
-            page: self.page.clone(),
+            surface: self.page.clone(),
         }
     }
 }
 
 /// Sent from the page's callbacks to the view.
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
 enum Report {
     Pressed,
     /// The page moved its own history; its URL is read back from the page.
@@ -247,124 +249,20 @@ enum Report {
     Title(String),
 }
 
-/// Fills its parent and places the page over itself.
-struct Host {
-    page: Rc<Page>,
-}
-
-impl IntoElement for Host {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
-impl Element for Host {
-    type RequestLayoutState = ();
-    type PrepaintState = Hitbox;
-
-    fn id(&self) -> Option<ElementId> {
-        Some("webview".into())
-    }
-
-    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, ()) {
-        let mut style = Style::default();
-        style.size.width = relative(1.).into();
-        style.size.height = relative(1.).into();
-        (window.request_layout(style, [], cx), ())
-    }
-
-    fn prepaint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _request_layout: &mut (),
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Hitbox {
-        window.set_focus_handle(&self.page.focus, cx);
-        window.insert_hitbox(bounds, HitboxBehavior::BlockMouse)
-    }
-
-    fn paint(
-        &mut self,
-        id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _request_layout: &mut (),
-        hitbox: &mut Hitbox,
-        window: &mut Window,
-        _cx: &mut App,
-    ) {
-        // gpui's view tracks the pointer across the page's pixels too, and
-        // resets the platform cursor whenever its own style under the pointer
-        // changes, over whatever WebKit set.
-        window.set_cursor_style(CursorStyle::Arrow, hitbox);
-        let Some(id) = id else { return };
-        let page = self.page.clone();
-        window.with_element_state::<Shown, _>(id, |shown, window| {
-            let shown = shown.unwrap_or_else(|| Shown::new(page.clone()));
-            page.owner.set(shown.token);
-            page.place(bounds, window);
-            ((), shown)
-        });
-    }
-}
-
-/// Held in the host's element state. gpui drops the state of an element a
-/// frame did not paint, which is what parks the page.
-struct Shown {
-    page: Rc<Page>,
-    token: u64,
-}
-
-impl Shown {
-    fn new(page: Rc<Page>) -> Self {
-        static TOKENS: AtomicU64 = AtomicU64::new(1);
-        Self {
-            page,
-            token: TOKENS.fetch_add(1, Ordering::Relaxed),
-        }
-    }
-}
-
-impl Drop for Shown {
-    // A host whose id path changed paints its new state before the old one is
-    // dropped, so only the state that placed the page last may park it.
-    fn drop(&mut self) {
-        if self.page.owner.get() == self.token {
-            self.page.park();
-        }
-    }
-}
-
 struct Page {
     /// What the page is built with; unread once it is built.
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
     url: RefCell<String>,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// Where the page last sat; `None` before the first paint and while parked.
     placed: Cell<Option<Bounds<Pixels>>>,
-    /// The token of the [`Shown`] that placed the page last.
     owner: Cell<u64>,
     focus: FocusHandle,
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
     reports: async_channel::Sender<Report>,
     /// Whether the page holds keyboard focus, as WebView2 last reported.
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     focused: Rc<Cell<bool>>,
 }
 
@@ -372,19 +270,37 @@ impl Page {
     fn new(url: String, focus: FocusHandle, reports: async_channel::Sender<Report>) -> Self {
         Self {
             url: RefCell::new(url),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
             owner: Cell::new(0),
             focus,
             reports,
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
             focused: Rc::new(Cell::new(false)),
         }
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+impl Surface for Page {
+    fn focus(&self) -> Option<&FocusHandle> {
+        Some(&self.focus)
+    }
+
+    fn owner(&self) -> &Cell<u64> {
+        &self.owner
+    }
+
+    fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
+        Page::place(self, bounds, window);
+    }
+
+    fn park(&self) {
+        Page::park(self);
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 impl Page {
     /// Where a parked page waits. Hidden alone, a WKWebView stays registered as
     /// a drag destination over its last rect and takes every drag that crosses
@@ -450,6 +366,8 @@ impl Page {
             .with_document_title_changed_handler(move |title| {
                 let _ = titles.try_send(Report::Title(title));
             });
+        #[cfg(target_os = "linux")]
+        let window = &gtk_loop::Parent::of(window).filter(|_| gtk::is_initialized())?;
         let view = self
             .configure(builder)
             .build_as_child(window)
@@ -648,7 +566,123 @@ fn closed(_view: &wry::WebView) -> bool {
     false
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(target_os = "linux")]
+impl Page {
+    fn configure<'a>(&self, builder: wry::WebViewBuilder<'a>) -> wry::WebViewBuilder<'a> {
+        builder
+    }
+
+    /// GTK reports focus itself, so a press needs no script.
+    fn attach(&self, view: &wry::WebView) {
+        use gtk::{glib::Propagation, prelude::WidgetExt};
+        use wry::WebViewExtUnix;
+
+        let page = view.webview();
+        let (got, lost) = (self.focused.clone(), self.focused.clone());
+        let pressed = self.reports.clone();
+        page.connect_focus_in_event(move |_, _| {
+            got.set(true);
+            let _ = pressed.try_send(Report::Pressed);
+            Propagation::Proceed
+        });
+        page.connect_focus_out_event(move |_, _| {
+            lost.set(false);
+            Propagation::Proceed
+        });
+    }
+
+    fn back(&self) {
+        use webkit2gtk::WebViewExt;
+        use wry::WebViewExtUnix;
+
+        if let Some(view) = self.built() {
+            view.webview().go_back();
+        }
+    }
+
+    fn forward(&self) {
+        use webkit2gtk::WebViewExt;
+        use wry::WebViewExtUnix;
+
+        if let Some(view) = self.built() {
+            view.webview().go_forward();
+        }
+    }
+
+    fn holds_keys(&self) -> bool {
+        self.focused.get()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn closed(_view: &wry::WebView) -> bool {
+    false
+}
+
+/// wry's webview on Linux is webkit2gtk, driven by GTK's main loop, which gpui
+/// does not run.
+#[cfg(target_os = "linux")]
+mod gtk_loop {
+    use gpui::{App, Window};
+    use raw_window_handle::{
+        HandleError, HasWindowHandle, RawWindowHandle, WindowHandle, XlibWindowHandle,
+    };
+    use std::{os::raw::c_ulong, time::Duration};
+
+    /// How often GTK's pending events are dispatched. Page input, painting
+    /// and callbacks wait for it.
+    const PUMP: Duration = Duration::from_millis(8);
+
+    /// Initializes GTK on X11 and starts pumping its events, once per process.
+    /// Does nothing under Wayland, or when GTK is already initialized: the
+    /// host runs the loop then.
+    pub(super) fn start(window: &Window, cx: &mut App) {
+        if gtk::is_initialized() || Parent::of(window).is_none() {
+            return;
+        }
+        gtk::gdk::set_allowed_backends("x11");
+        if let Err(error) = gtk::init() {
+            tracing::warn!(%error, "webview: gtk");
+            return;
+        }
+        let timers = cx.background_executor().clone();
+        cx.foreground_executor()
+            .spawn(async move {
+                loop {
+                    timers.timer(PUMP).await;
+                    while gtk::events_pending() {
+                        gtk::main_iteration_do(false);
+                    }
+                }
+            })
+            .detach();
+    }
+
+    /// gpui's X11 window, as the Xlib handle wry takes. gpui hands out an XCB
+    /// one for the same window.
+    pub(super) struct Parent(XlibWindowHandle);
+
+    impl Parent {
+        /// `None` under Wayland.
+        pub(super) fn of(window: &Window) -> Option<Self> {
+            match HasWindowHandle::window_handle(window).ok()?.as_raw() {
+                RawWindowHandle::Xcb(handle) => Some(Self(XlibWindowHandle::new(
+                    c_ulong::from(handle.window.get()),
+                ))),
+                _ => None,
+            }
+        }
+    }
+
+    impl HasWindowHandle for Parent {
+        fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+            // SAFETY: an X window id, valid while gpui's window is.
+            Ok(unsafe { WindowHandle::borrow_raw(RawWindowHandle::Xlib(self.0)) })
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 impl Page {
     fn place(&self, bounds: Bounds<Pixels>, _window: &Window) {
         self.placed.set(Some(bounds));
@@ -685,7 +719,7 @@ impl Page {
     fn give_keys(&self) {}
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn rect(bounds: Bounds<Pixels>) -> wry::Rect {
     wry::Rect {
         position: wry::dpi::LogicalPosition::new(

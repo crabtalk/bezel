@@ -45,5 +45,25 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
 wry = { version = "0.57", default-features = false }
 webview2-com = "0.39"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+wry = { version = "0.57", default-features = false, features = ["os-webview", "x11"] }
+gtk = "0.18"
+raw-window-handle = "0.6"
+webkit2gtk = "=2.0.2"
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+raw-window-handle = "0.6"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "CssStyleDeclaration",
+    "Document",
+    "DomRect",
+    "Element",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlIFrameElement",
+    "Node",
+] }
+
 [dev-dependencies]
 gpui_platform.workspace = true

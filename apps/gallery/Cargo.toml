@@ -21,6 +21,7 @@ theme.workspace = true
 
 [dependencies]
 agent.workspace = true
+browser.workspace = true
 canvas.workspace = true
 editor.workspace = true
 markdown.workspace = true
@@ -50,7 +51,6 @@ web-time.workspace = true
 # wasm32, so the terminal crate (and the pattern built on it) sits off the web
 # build until that dep is fixed upstream.
 terminal.workspace = true
-browser.workspace = true
 gpui_platform.workspace = true
 # The live highlighter. A web build has the build script's table instead.
 syntax.workspace = true
