@@ -31,9 +31,18 @@ wry = { version = "0.57", default-features = false }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
+    "NSApplication",
+    "NSEvent",
     "NSResponder",
+    "NSTrackingArea",
     "NSView",
     "NSWindow",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSBundle",
+    "NSGeometry",
+    "NSString",
 ] }
 objc2-web-kit = { version = "0.3", default-features = false, features = [
     "std",

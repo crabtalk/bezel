@@ -54,6 +54,7 @@ const LIGHTS_ROOM: f32 = if cfg!(target_os = "macos") {
 const TAB_BAR_HEIGHT: f32 = 30.0;
 const ADDRESS_HEIGHT: f32 = 30.0;
 const ADDRESS_MAX_WIDTH: f32 = 640.0;
+const RELOAD_SIZE: f32 = 22.0;
 const SIDEBAR_WIDTH: f32 = 220.0;
 const TILE: f32 = 64.0;
 
@@ -332,34 +333,52 @@ impl Shell {
         } else {
             LIGHTS_ROOM
         };
+        // Both sides grow from zero alike, so the pill sits at the toolbar's
+        // centre until one side's buttons need more than half of what is left.
+        let side = || {
+            div()
+                .flex_1()
+                .self_stretch()
+                .flex()
+                .items_center()
+                .gap(px(4.0))
+        };
         titlebar::titlebar("toolbar", false, window)
             .h(px(Theme::HEADER_HEIGHT))
             .flex_none()
-            .pl(px(lights))
-            .pr(px(12.0))
             .gap(px(4.0))
             .bg(theme.surface)
             .when(self.tabs.len() < 2, |bar| {
                 bar.border_b_1().border_color(theme.border)
             })
-            .child(button("sidebar", icons::glyph::PanelLeft).on_click(
-                cx.listener(|this, _, window, cx| this.toggle_sidebar(&ToggleSidebar, window, cx)),
-            ))
             .child(
-                button("back", icons::glyph::ChevronLeft)
-                    .on_click(cx.listener(|this, _, window, cx| this.back(&Back, window, cx))),
+                side()
+                    .pl(px(lights))
+                    .child(
+                        button("sidebar", icons::glyph::PanelLeft).on_click(cx.listener(
+                            |this, _, window, cx| this.toggle_sidebar(&ToggleSidebar, window, cx),
+                        )),
+                    )
+                    .child(
+                        button("back", icons::glyph::ChevronLeft).on_click(
+                            cx.listener(|this, _, window, cx| this.back(&Back, window, cx)),
+                        ),
+                    )
+                    .child(button("forward", icons::glyph::ChevronRight).on_click(
+                        cx.listener(|this, _, window, cx| this.forward(&Forward, window, cx)),
+                    ))
+                    .child(titlebar::grip("grip-leading", &self.drag, window)),
             )
-            .child(
-                button("forward", icons::glyph::ChevronRight).on_click(
-                    cx.listener(|this, _, window, cx| this.forward(&Forward, window, cx)),
-                ),
-            )
-            .child(titlebar::grip("grip-leading", &self.drag, window))
             .child(self.address_bar(theme, window, cx))
-            .child(titlebar::grip("grip-trailing", &self.drag, window))
             .child(
-                button("new-tab", icons::glyph::Plus)
-                    .on_click(cx.listener(|this, _, window, cx| this.open(None, window, cx))),
+                side()
+                    .pr(px(12.0))
+                    .child(titlebar::grip("grip-trailing", &self.drag, window))
+                    .child(
+                        button("new-tab", icons::glyph::Plus).on_click(
+                            cx.listener(|this, _, window, cx| this.open(None, window, cx)),
+                        ),
+                    ),
             )
     }
 
@@ -373,7 +392,7 @@ impl Shell {
         let pill = div()
             .id("address")
             .relative()
-            .flex_1()
+            .flex_basis(px(ADDRESS_MAX_WIDTH))
             .min_w(px(200.0))
             .max_w(px(ADDRESS_MAX_WIDTH))
             .h(px(ADDRESS_HEIGHT))
@@ -403,6 +422,10 @@ impl Shell {
             let shown = location.as_deref().map(host).unwrap_or_default();
             pill.cursor_text()
                 .on_click(cx.listener(|this, _, window, cx| this.edit_address(window, cx)))
+                // Balances the reload button, so the host sits at the pill's centre.
+                .when(page.is_some(), |pill| {
+                    pill.child(div().flex_none().w(px(RELOAD_SIZE)))
+                })
                 .child(div().flex_1())
                 .when(secure, |pill| pill.child(glyph(icons::glyph::Lock)))
                 .when(location.is_none(), |pill| {
@@ -421,7 +444,7 @@ impl Shell {
                             .icon_button(icons::glyph::RotateCw, ButtonStyle::Ghost, None)
                             .id("reload")
                             .flex_none()
-                            .size(px(22.0))
+                            .size(px(RELOAD_SIZE))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 cx.stop_propagation();
                                 this.reload(&Reload, window, cx)

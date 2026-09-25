@@ -1,7 +1,7 @@
 use crate::host::{Host, Surface};
 use gpui::{
-    App, Bounds, Context, EventEmitter, FocusHandle, Focusable, IntoElement, Pixels, Render,
-    Subscription, Task, Window,
+    Action, App, Bounds, Context, EventEmitter, FocusHandle, Focusable, Global, IntoElement,
+    KeyBinding, Pixels, Render, Subscription, Task, Window, actions, div, prelude::*,
 };
 use serde::de::DeserializeOwned;
 use std::{
@@ -24,7 +24,7 @@ use std::{
 /// page takes every key while it holds focus.
 ///
 /// gpui elements behind the page are not hovered, and gpui's cursor over the
-/// page is the arrow.
+/// page is the arrow. On macOS the page sets the cursor over itself.
 ///
 /// Linux needs gpui on X11 and paints nothing under Wayland. Paints nothing
 /// off macOS, Windows and Linux.
@@ -84,6 +84,7 @@ impl WebView {
     pub fn new(url: impl Into<String>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         #[cfg(target_os = "linux")]
         gtk_loop::start(window, cx);
+        bind_edits(cx);
         let focus = cx.focus_handle();
         let subscriptions = [
             cx.on_focus(&focus, window, |this: &mut Self, _, _| {
@@ -126,6 +127,14 @@ impl WebView {
 
     pub fn is_loading(&self) -> bool {
         self.loading
+    }
+
+    /// The user agent the page is built with, in place of the platform's.
+    /// Read at the first paint. On macOS the default is Safari's, with the
+    /// installed Safari's version.
+    pub fn with_user_agent(self, user_agent: impl Into<String>) -> Self {
+        *self.page.user_agent.borrow_mut() = Some(user_agent.into());
+        self
     }
 
     /// Before the first paint, replaces the URL the page is built with.
@@ -232,15 +241,71 @@ impl Focusable for WebView {
 }
 
 impl Render for WebView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        Host {
-            surface: self.page.clone(),
-        }
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .key_context(KEY_CONTEXT)
+            .on_action(on_edit::<Copy>(Edit::Copy, cx))
+            .on_action(on_edit::<Cut>(Edit::Cut, cx))
+            .on_action(on_edit::<Paste>(Edit::Paste, cx))
+            .on_action(on_edit::<SelectAll>(Edit::SelectAll, cx))
+            .on_action(on_edit::<Undo>(Edit::Undo, cx))
+            .on_action(on_edit::<Redo>(Edit::Redo, cx))
+            .child(Host {
+                surface: self.page.clone(),
+            })
     }
 }
 
+actions!(webview, [Copy, Cut, Paste, SelectAll, Undo, Redo]);
+
+const KEY_CONTEXT: &str = "WebView";
+
+/// Edits a WKWebView takes as responder actions (`copy:`, `paste:`) and only
+/// through them: without an Edit menu, cmd-c in the page copies nothing.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+enum Edit {
+    Copy,
+    Cut,
+    Paste,
+    SelectAll,
+    Undo,
+    Redo,
+}
+
+fn on_edit<A: Action>(
+    edit: Edit,
+    cx: &mut Context<WebView>,
+) -> impl Fn(&A, &mut Window, &mut App) + 'static {
+    cx.listener(move |this, _: &A, _, _| this.page.edit(edit))
+}
+
+/// Binds the edit keys in the view's context, once per app.
+fn bind_edits(cx: &mut App) {
+    struct Bound;
+    impl Global for Bound {}
+
+    if !cfg!(target_os = "macos") || cx.has_global::<Bound>() {
+        return;
+    }
+    cx.set_global(Bound);
+    let context = Some(KEY_CONTEXT);
+    cx.bind_keys([
+        KeyBinding::new("cmd-c", Copy, context),
+        KeyBinding::new("cmd-x", Cut, context),
+        KeyBinding::new("cmd-v", Paste, context),
+        KeyBinding::new("cmd-a", SelectAll, context),
+        KeyBinding::new("cmd-z", Undo, context),
+        KeyBinding::new("cmd-shift-z", Redo, context),
+    ]);
+}
+
 /// Sent from the page's callbacks to the view.
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    allow(dead_code)
+)]
 enum Report {
     Pressed,
     /// The page moved its own history; its URL is read back from the page.
@@ -251,15 +316,28 @@ enum Report {
 
 struct Page {
     /// What the page is built with; unread once it is built.
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+        allow(dead_code)
+    )]
     url: RefCell<String>,
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+        allow(dead_code)
+    )]
+    user_agent: RefCell<Option<String>>,
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
+    #[cfg(target_os = "macos")]
+    cursor: std::cell::OnceCell<cursor::Watch>,
     /// Where the page last sat; `None` before the first paint and while parked.
     placed: Cell<Option<Bounds<Pixels>>>,
     owner: Cell<u64>,
     focus: FocusHandle,
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+        allow(dead_code)
+    )]
     reports: async_channel::Sender<Report>,
     /// Whether the page holds keyboard focus, as WebView2 last reported.
     #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -270,8 +348,11 @@ impl Page {
     fn new(url: String, focus: FocusHandle, reports: async_channel::Sender<Report>) -> Self {
         Self {
             url: RefCell::new(url),
+            user_agent: RefCell::new(None),
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             view: std::cell::OnceCell::new(),
+            #[cfg(target_os = "macos")]
+            cursor: std::cell::OnceCell::new(),
             placed: Cell::new(None),
             owner: Cell::new(0),
             focus,
@@ -366,6 +447,11 @@ impl Page {
             .with_document_title_changed_handler(move |title| {
                 let _ = titles.try_send(Report::Title(title));
             });
+        let user_agent = self.user_agent.borrow().clone().or_else(default_user_agent);
+        let builder = match user_agent {
+            Some(user_agent) => builder.with_user_agent(user_agent),
+            None => builder,
+        };
         #[cfg(target_os = "linux")]
         let window = &gtk_loop::Parent::of(window).filter(|_| gtk::is_initialized())?;
         let view = self
@@ -432,6 +518,10 @@ impl Page {
             return;
         };
         self.give_keys();
+        #[cfg(target_os = "macos")]
+        if let Some(cursor) = self.cursor.get() {
+            cursor.release();
+        }
         let _ = view.set_visible(false);
         if closed(view) {
             return;
@@ -455,7 +545,36 @@ impl Page {
         builder.with_initialization_script_for_main_only(Self::PRESSED, false)
     }
 
-    fn attach(&self, _view: &wry::WebView) {}
+    fn attach(&self, view: &wry::WebView) {
+        use wry::WebViewExtMacOS;
+
+        let _ = self.cursor.set(cursor::Watch::new(&view.webview()));
+    }
+
+    /// Sent down the key window's responder chain, where the page's view is
+    /// first while it holds keys.
+    fn edit(&self, edit: Edit) {
+        use objc2::{MainThreadMarker, sel};
+        use objc2_app_kit::NSApplication;
+
+        if !self.holds_keys() {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let action = match edit {
+            Edit::Copy => sel!(copy:),
+            Edit::Cut => sel!(cut:),
+            Edit::Paste => sel!(paste:),
+            Edit::SelectAll => sel!(selectAll:),
+            Edit::Undo => sel!(undo:),
+            Edit::Redo => sel!(redo:),
+        };
+        // SAFETY: a nil target resolves along the responder chain, and every
+        // action here takes a sender, which may be nil.
+        unsafe { NSApplication::sharedApplication(mtm).sendAction_to_from(action, None, None) };
+    }
 
     fn back(&self) {
         use wry::WebViewExtMacOS;
@@ -491,6 +610,139 @@ impl Page {
             .firstResponder()
             .and_then(|responder| responder.downcast::<NSView>().ok())
             .is_some_and(|responder| responder.isDescendantOf(&page))
+    }
+}
+
+/// A WKWebView reports `AppleWebKit/605.1.15 (KHTML, like Gecko)` and no
+/// browser, and some sites (Google) serve an unknown browser a basic page.
+#[cfg(target_os = "macos")]
+fn default_user_agent() -> Option<String> {
+    use objc2_foundation::{NSBundle, NSString};
+
+    let version = NSBundle::bundleWithPath(&NSString::from_str("/Applications/Safari.app"))
+        .and_then(|safari| {
+            safari.objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))
+        })
+        .and_then(|version| version.downcast::<NSString>().ok())
+        .map_or_else(|| "26.0".to_owned(), |version| version.to_string());
+    Some(format!(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 \
+         (KHTML, like Gecko) Version/{version} Safari/605.1.15"
+    ))
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn default_user_agent() -> Option<String> {
+    None
+}
+
+/// Hands the cursor to WebKit while the pointer is over the page.
+///
+/// gpui's view registers a cursor rect over its whole visible rect, the page's
+/// pixels included, and AppKit applies it over the cursor WebKit sets. While
+/// the pointer is inside the page the window's cursor rects are disabled.
+#[cfg(target_os = "macos")]
+mod cursor {
+    use objc2::{
+        AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
+        rc::Retained,
+        runtime::{NSObject, NSObjectProtocol},
+    };
+    use objc2_app_kit::{NSEvent, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow};
+    use objc2_foundation::NSRect;
+    use std::cell::Cell;
+
+    pub(super) struct Watch {
+        page: Retained<NSView>,
+        area: Retained<NSTrackingArea>,
+        /// A tracking area does not retain its owner.
+        watcher: Retained<Watcher>,
+    }
+
+    impl Watch {
+        pub(super) fn new(page: &NSView) -> Self {
+            let mtm = MainThreadMarker::new().expect("the page is built on the main thread");
+            let watcher: Retained<Watcher> = {
+                let watcher = Watcher::alloc(mtm).set_ivars(Inside::default());
+                // SAFETY: `NSObject`'s `init` on a freshly allocated instance.
+                unsafe { msg_send![super(watcher), init] }
+            };
+            // SAFETY: the watcher answers `mouseEntered:` and `mouseExited:`
+            // and outlives the area, which `Drop` removes first.
+            let area = unsafe {
+                NSTrackingArea::initWithRect_options_owner_userInfo(
+                    NSTrackingArea::alloc(),
+                    NSRect::ZERO,
+                    NSTrackingAreaOptions::MouseEnteredAndExited
+                        | NSTrackingAreaOptions::ActiveAlways
+                        | NSTrackingAreaOptions::InVisibleRect,
+                    Some(&watcher),
+                    None,
+                )
+            };
+            page.addTrackingArea(&area);
+            Self {
+                page: page.retain(),
+                area,
+                watcher,
+            }
+        }
+
+        /// Gives the cursor back to gpui if the pointer was inside the page.
+        /// A hidden view reports no exit.
+        pub(super) fn release(&self) {
+            if self.watcher.ivars().0.replace(false)
+                && let Some(window) = self.page.window()
+            {
+                enable(&window);
+            }
+        }
+    }
+
+    impl Drop for Watch {
+        fn drop(&mut self) {
+            self.page.removeTrackingArea(&self.area);
+            self.release();
+        }
+    }
+
+    #[derive(Default)]
+    struct Inside(Cell<bool>);
+
+    define_class!(
+        #[unsafe(super(NSObject))]
+        #[thread_kind = MainThreadOnly]
+        #[name = "BezelWebViewCursorWatcher"]
+        #[ivars = Inside]
+        struct Watcher;
+
+        unsafe impl NSObjectProtocol for Watcher {}
+
+        impl Watcher {
+            #[unsafe(method(mouseEntered:))]
+            fn entered(&self, event: &NSEvent) {
+                self.ivars().0.set(true);
+                if let Some(window) = event.window(self.mtm()) {
+                    window.disableCursorRects();
+                }
+            }
+
+            #[unsafe(method(mouseExited:))]
+            fn exited(&self, event: &NSEvent) {
+                if self.ivars().0.replace(false)
+                    && let Some(window) = event.window(self.mtm())
+                {
+                    enable(&window);
+                }
+            }
+        }
+    );
+
+    fn enable(window: &NSWindow) {
+        window.enableCursorRects();
+        if let Some(content) = window.contentView() {
+            window.invalidateCursorRectsForView(&content);
+        }
     }
 }
 
@@ -559,6 +811,8 @@ impl Page {
     fn holds_keys(&self) -> bool {
         self.focused.get()
     }
+
+    fn edit(&self, _edit: Edit) {}
 }
 
 #[cfg(target_os = "windows")]
@@ -612,6 +866,8 @@ impl Page {
     fn holds_keys(&self) -> bool {
         self.focused.get()
     }
+
+    fn edit(&self, _edit: Edit) {}
 }
 
 #[cfg(target_os = "linux")]
@@ -666,9 +922,9 @@ mod gtk_loop {
         /// `None` under Wayland.
         pub(super) fn of(window: &Window) -> Option<Self> {
             match HasWindowHandle::window_handle(window).ok()?.as_raw() {
-                RawWindowHandle::Xcb(handle) => Some(Self(XlibWindowHandle::new(
-                    c_ulong::from(handle.window.get()),
-                ))),
+                RawWindowHandle::Xcb(handle) => Some(Self(XlibWindowHandle::new(c_ulong::from(
+                    handle.window.get(),
+                )))),
                 _ => None,
             }
         }
@@ -709,6 +965,8 @@ impl Page {
     fn holds_keys(&self) -> bool {
         false
     }
+
+    fn edit(&self, _edit: Edit) {}
 
     fn park(&self) {
         self.placed.set(None);
