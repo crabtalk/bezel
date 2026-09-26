@@ -125,6 +125,7 @@ mod sections;
 pub use catalog::*;
 pub use fixtures::*;
 use sections::*;
+use sections::{controls, data, foundations, material, navigation, overlays};
 
 /// The rail's padding — the grid its rows, its footer and the traffic lights
 /// all sit on.
@@ -182,42 +183,14 @@ const COMPACT_NAV_PAD: f32 = if cfg!(target_os = "macos") {
 };
 
 pub struct Gallery {
-    /// The icons page's cargo snippet, parsed once. `markdown::render` wants a
-    /// `Doc`, and re-parsing it every frame would sit in the scroll path.
-    icons_cargo: markdown::Doc,
-    search: Entity<TextField>,
-    filled: Entity<TextField>,
-    /// The two multi-line shapes. Their row counts are this page's example, not
-    /// a default the library holds — `Shape` takes them from the caller.
-    notes: Entity<TextField>,
-    composer: Entity<TextField>,
     /// Mounted only while open — a palette that lingers keeps a stale query.
     palette: Option<Entity<CommandPalette>>,
     last_command: Option<SharedString>,
     /// Built on the first render, which is the first time there is a window.
     pending: Option<Entity<PendingKeys>>,
-    segment: usize,
-    /// Which glyph segment the icon-only toggle group is on.
-    segment_view: usize,
-    expanded: bool,
-    /// Which step rows are showing their output.
-    step_open: [bool; 3],
-    /// The second collapsible: a section that follows a run until you take it
-    /// over. `running` is what a streaming flag would be in a real app.
-    running: bool,
-    details: widgets::Takeover,
     /// Right-click menu, anchored at the click position.
     context_menu: popover::Popup<gpui::Point<gpui::Pixels>>,
-    /// Select state lives here, not in a component: the menu is mounted by
-    /// this view, so this view owns whether it is open and what is chosen.
-    theme_menu: popover::Popup<()>,
-    theme_choice: usize,
-    /// The combobox, by contrast, owns its own menu — it has a query field to
-    /// hold, so it is an entity.
-    language: Entity<Combobox>,
-    /// So does the date picker, which holds a month and a cursor.
-    date: Entity<Calendar>,
-    /// And the menubar, which holds which menu is down.
+    /// The menubar demo, which holds which menu is down.
     menubar: Entity<Menubar>,
     /// The app's own menus, mounted in the nav where the platform has no menu
     /// bar of its own. A second entity rather than a second mount of the one
@@ -233,117 +206,21 @@ pub struct Gallery {
     sheet: popover::Popup<popover::Side>,
     /// The rail, when the window is too narrow to carry it beside the pane.
     drawer: popover::Popup<()>,
-    /// Where the split's divider sits, as a fraction of the container.
-    split: f32,
-    split_dragging: bool,
     /// The window's resting focus. Without it the key context has no node in
     /// the focus path, and `cmd-k` reaches nothing.
     focus_handle: gpui::FocusHandle,
-    /// Focus for the wired controls. A stateless `fn(&Theme, ..) -> Div` has
-    /// nowhere to keep a handle, so the view that composes it holds them —
-    /// the same place it already holds what each one is set to.
-    buttons: [gpui::FocusHandle; 3],
-    icon_buttons: [gpui::FocusHandle; 3],
-    checkboxes: [gpui::FocusHandle; 2],
-    radios: [gpui::FocusHandle; 2],
-    switches: [gpui::FocusHandle; 2],
-    segments: [gpui::FocusHandle; 3],
-    segments_view: [gpui::FocusHandle; 2],
-    slider: gpui::FocusHandle,
     /// The composer's knobs, and which of its three files is showing. What they
     /// are *set to* is the brand global — the page keeps no palette.
-    probe_knobs: [gpui::FocusHandle; 13],
     brand_knobs: [gpui::FocusHandle; brand::KNOB_COUNT],
-    /// The type-scale probe on the Typography page.
-    type_probe: gpui::FocusHandle,
     brand_file: usize,
-    tab_strip: [gpui::FocusHandle; 3],
     /// Which button was last pressed, and by what — the only way to see that a
     /// keyboard press and a click reach the same place.
     last_pressed: Option<SharedString>,
-    /// What the wired controls are set to. Every one of them paints from the
-    /// caller's state and reports nothing back, so this is where the answer is.
-    checked: [bool; 2],
-    radio: usize,
-    switched: [bool; 2],
-    level: f32,
-    tab_choice: usize,
-    /// The tab-strip demo's open tabs, in order, with one of them in front.
-    /// What each opens is [`STRIP_TABS`].
-    strip: tabs::Strip<&'static str>,
-    nav_choice: usize,
-    titlebar_drag: titlebar::DragState,
-    /// Scroll position and thumb-grab for every scrolling surface here. gpui
-    /// owns the offset; the second half of each pair is only where in the thumb
-    /// a drag took hold.
     /// The rail is its own view so it can be cached: forty rows that change
     /// only on a tab or a selection, and were being rebuilt every frame.
     rail: Entity<Rail>,
     pane_scroll: gpui::ScrollHandle,
     pane_bar: TransientState,
-    demo_scroll: gpui::ScrollHandle,
-    /// A pane nested in `gallery-pane` keeps the wheel it can act on, so
-    /// scrolling it does not drag the page behind it. One per pane: the state
-    /// is where that pane stood before the wheel being dispatched.
-    demo_claim: scroll::ClaimState,
-    demo_bar: ScrollbarState,
-    /// The follow-scroll demo: a log that grows under a view pinned to its end.
-    log_scroll: gpui::ScrollHandle,
-    log_bar: ScrollbarState,
-    log_follow: scroll::FollowState,
-    log_lines: usize,
-    /// The drift demo: a strip too wide for the pane, and chips to carry
-    /// across it.
-    drift_scroll: gpui::ScrollHandle,
-    drift: scroll::DriftState,
-    drift_chips: Vec<SharedString>,
-    table_scroll: gpui::ScrollHandle,
-    table_claim: scroll::ClaimState,
-    table_bar: ScrollbarState,
-    tree_scroll: gpui::ScrollHandle,
-    tree_claim: scroll::ClaimState,
-    tree_bar: ScrollbarState,
-    rows_scroll: gpui::UniformListScrollHandle,
-    rows_bar: ScrollbarState,
-    /// How many of [`VIRTUAL_ROWS`] rows the list actually built last frame.
-    /// A `Cell` because the count is written from inside the render closure,
-    /// which the list owns and calls with no view in scope — and it is the only
-    /// honest way to *show* that virtualization is happening.
-    rows_built: Rc<Cell<usize>>,
-    /// Which folders are open, by path. App data, and the reason `tree` reports
-    /// an intent rather than expanding anything itself.
-    tree_expanded: HashSet<String>,
-    tree_selected: Option<String>,
-    tree_cursor: usize,
-    tree_focus: gpui::FocusHandle,
-    /// Which page of the imaginary result set is showing. 1-based, like the
-    /// component: it is a label, not an index.
-    page: usize,
-    /// Which column the table page is sorted by. The app's, because the app is
-    /// what has to sort the rows — the table only says what a click meant.
-    table_sort: Option<Sort>,
-    /// One field per pattern, because a pattern is a screen and owns a screen's
-    /// worth of state. A component demo can keep its value or two up here
-    /// beside the rest; thirteen of them cannot.
-    activity: Entity<patterns::agent::Activity>,
-    tool_calls: Entity<patterns::agent::ToolCalls>,
-    agent_composer: Entity<patterns::agent::Composer>,
-    transcript: Entity<patterns::transcript::Transcript>,
-    diff: Entity<patterns::diff::Diff>,
-    document: Entity<patterns::document::Document>,
-    dialect: Entity<patterns::dialect::Dialect>,
-    ribbon: Entity<patterns::ribbon::RibbonDemo>,
-    /// Prose a reader can drag over, which owns the selection the way any host
-    /// of `markdown::selectable` has to.
-    selectable: Entity<patterns::selectable::Selectable>,
-    editor: Entity<patterns::editor::EditorDemo>,
-    canvas: Entity<patterns::canvas::CanvasDemo>,
-    #[cfg(not(target_family = "wasm"))]
-    terminal: Entity<patterns::terminal::Terminal>,
-    browser: Entity<patterns::browser::Browser>,
-    orbs: Entity<patterns::orbs::Orbs>,
-    syntax: Entity<patterns::syntax::Syntax>,
-    avatar: Entity<patterns::avatar::Avatars>,
     /// Which top-nav tab is open.
     tab: usize,
     /// Where you were in each tab — switching away and back should land you
@@ -357,32 +234,6 @@ pub struct Gallery {
     stats_shown: bool,
     /// Where the meter has been dragged to, if it has.
     stats_at: Floating,
-    /// What answered the last press on the layer demo — the band over the page,
-    /// or a row under it.
-    layer_answer: Option<SharedString>,
-    /// The Floating panel page's own panel, so dragging the demo never moves
-    /// the meter — one state per panel is what keeps two of them apart.
-    panel_demo: Floating,
-    /// The Stats page's spinner — what the meter is there to catch.
-    stats_spinner: bool,
-    /// The glass probe: where it has been dragged, its size and rounding as
-    /// slider fractions, and which backdrop it is over. Sizes are fractions
-    /// because that is what a slider reports.
-    probe_at: Floating,
-    probe_w: f32,
-    probe_h: f32,
-    probe_r: f32,
-    probe_bg: usize,
-    /// Which look the probe paints — one three-way, since frost is a look.
-    probe_style: SurfaceStyle,
-    /// The look under the knobs, in the units it ships in — a spec rather than
-    /// six fractions, so seating it on a shipped look is an assignment and the
-    /// labels are the numbers to write back into the palette.
-    probe_spec: SurfaceSpec,
-    probe_tint: bool,
-    probe_magnify: f32,
-    probe_disp: f32,
-    probe_fill: f32,
     /// Renders one section alone, without the nav, rail or header around it.
     /// The website embeds a page per component this way, so a doc page shows
     /// the component it documents rather than the whole browser.
@@ -391,6 +242,13 @@ pub struct Gallery {
     /// `None` is the whole page. A doc page holds one embed and moves it from
     /// snippet to snippet, so this changes without the window reloading.
     example: Option<SharedString>,
+    controls: controls::State,
+    data: data::State,
+    navigation: navigation::State,
+    overlays: overlays::State,
+    material: material::State,
+    foundations: foundations::State,
+    patterns: patterns::State,
 }
 
 impl Gallery {
@@ -447,160 +305,34 @@ impl Gallery {
             app_menus,
             drag: titlebar::DragState::default(),
             last_menu_item: None,
-            search: cx.new(|cx| TextField::new(cx).with_placeholder("Search components…")),
-            filled: cx.new(|cx| {
-                let mut field = TextField::new(cx);
-                field.set_content("Select me with shift-left", cx);
-                field
-            }),
-            notes: cx.new(|cx| {
-                let mut field = TextField::new(cx).with_shape(Shape::Rows(4));
-                field.set_content(
-                    "Wrapping is the point: this line is longer than the box, so it \
-                     folds. Press enter for a hard break.",
-                    cx,
-                );
-                field
-            }),
-            composer: cx.new(|cx| {
-                TextField::new(cx)
-                    .with_shape(Shape::Grow { min: 2, max: 6 })
-                    .with_placeholder("Grows as you type…")
-            }),
-            theme_menu: popover::Popup::default(),
-            theme_choice: 0,
-            language: cx.new(|cx| {
-                Combobox::new(
-                    LANGUAGES.iter().map(|l| SharedString::from(*l)).collect(),
-                    "Pick a language",
-                    cx,
-                )
-                .with_selection(0)
-            }),
-            date: cx.new(|cx| Calendar::new(today(), cx)),
             palette: None,
             last_command: None,
             pending: None,
-            segment: 0,
-            segment_view: 0,
-            expanded: true,
-            step_open: [false; 3],
-            // Arrives mid-run, which is the state the auto-follow is for.
-            running: true,
-            details: widgets::Takeover::default(),
             context_menu: popover::Popup::default(),
             sheet: popover::Popup::default(),
             drawer: popover::Popup::default(),
-            split: 0.4,
-            split_dragging: false,
             focus_handle: cx.focus_handle(),
-            buttons: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
-            icon_buttons: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
-            checkboxes: [cx.focus_handle(), cx.focus_handle()],
-            radios: [cx.focus_handle(), cx.focus_handle()],
-            switches: [cx.focus_handle(), cx.focus_handle()],
-            segments: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
-            segments_view: [cx.focus_handle(), cx.focus_handle()],
-            slider: cx.focus_handle(),
             brand_knobs: std::array::from_fn(|_| cx.focus_handle()),
-            probe_knobs: std::array::from_fn(|_| cx.focus_handle()),
-            type_probe: cx.focus_handle(),
             brand_file: 0,
-            tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             rail,
             pane_scroll: gpui::ScrollHandle::new(),
             pane_bar: TransientState::new(Painter::of(cx)),
-            demo_scroll: gpui::ScrollHandle::new(),
-            demo_claim: scroll::ClaimState::new(),
-            demo_bar: ScrollbarState::new(Painter::of(cx)),
-            log_scroll: gpui::ScrollHandle::new(),
-            log_bar: ScrollbarState::new(Painter::of(cx)),
-            log_follow: scroll::FollowState::new(),
-            drift_scroll: gpui::ScrollHandle::new(),
-            drift: scroll::DriftState::new(),
-            drift_chips: DRIFT_CHIPS
-                .iter()
-                .copied()
-                .map(SharedString::from)
-                .collect(),
-            // Enough to overflow the box on arrival, so the pin has something
-            // to hold onto before you press anything.
-            log_lines: 24,
-            table_scroll: gpui::ScrollHandle::new(),
-            table_claim: scroll::ClaimState::new(),
-            table_bar: ScrollbarState::new(Painter::of(cx)),
-            table_sort: None,
-            page: 1,
-            tree_scroll: gpui::ScrollHandle::new(),
-            tree_claim: scroll::ClaimState::new(),
-            tree_bar: ScrollbarState::new(Painter::of(cx)),
-            rows_scroll: gpui::UniformListScrollHandle::new(),
-            rows_bar: ScrollbarState::new(Painter::of(cx)),
-            rows_built: Rc::new(Cell::new(0)),
-            // Opened so the page shows nesting on arrival rather than a flat
-            // list of two folders.
-            tree_expanded: ["crates", "crates/ui"]
-                .into_iter()
-                .map(String::from)
-                .collect(),
-            tree_selected: None,
-            tree_cursor: 0,
-            tree_focus: cx.focus_handle().tab_stop(true),
             last_pressed: None,
-            checked: [true, false],
-            radio: 0,
-            switched: [true, false],
-            level: 0.5,
-            tab_choice: 0,
-            strip: STRIP_TABS[..3].iter().map(|(name, ..)| *name).collect(),
-            nav_choice: 0,
-            titlebar_drag: titlebar::DragState::default(),
             tab: 2,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
-            activity: cx.new(patterns::agent::Activity::new),
-            tool_calls: cx.new(|_| patterns::agent::ToolCalls::default()),
-            agent_composer: cx.new(patterns::agent::Composer::new),
-            transcript: cx.new(patterns::transcript::Transcript::new),
-            diff: cx.new(|_| patterns::diff::Diff),
-            document: cx.new(patterns::document::Document::new),
-            dialect: cx.new(patterns::dialect::Dialect::new),
-            ribbon: cx.new(patterns::ribbon::RibbonDemo::new),
-            selectable: cx.new(patterns::selectable::Selectable::new),
-            editor: cx.new(patterns::editor::EditorDemo::new),
-            canvas: cx.new(patterns::canvas::CanvasDemo::new),
-            #[cfg(not(target_family = "wasm"))]
-            terminal: cx.new(patterns::terminal::Terminal::new),
-            browser: cx.new(patterns::browser::Browser::new),
-            orbs: cx.new(patterns::orbs::Orbs::new),
-            syntax: cx.new(patterns::syntax::Syntax::new),
-            icons_cargo: {
-                let (tag, code) = patterns::samples::ICONS_CARGO;
-                markdown::parse(&format!("```{tag}\n{code}\n```"))
-            },
-            avatar: cx.new(patterns::avatar::Avatars::new),
             stats: cx.new(Stats::new),
             stats_shown: false,
             stats_at: Floating::new(Painter::of(cx)),
-            layer_answer: None,
-            panel_demo: Floating::new(Painter::of(cx)),
-            stats_spinner: false,
-            probe_at: Floating::new(Painter::of(cx)),
-            // 168 x 168 at r34, as fractions of the slider ranges.
-            probe_w: (168.0 - 120.0) / 480.0,
-            probe_h: (168.0 - 30.0) / 220.0,
-            probe_r: 34.0 / 84.0,
-            probe_bg: 5,
-            probe_style: SurfaceStyle::Glass(Glass::Clear),
-            // The knobs open on the shipped look rather than on copies of its
-            // numbers: a theme change moves the probe with it.
-            probe_spec: Theme::of(cx).glass_clear,
-            probe_tint: false,
-            probe_magnify: (Theme::of(cx).glass_magnify + 16.0) / 32.0,
-            probe_disp: Theme::of(cx).glass_dispersion,
-            probe_fill: 0.34,
             embedded: false,
             example: None,
+            controls: controls::State::new(cx),
+            data: data::State::new(cx),
+            navigation: navigation::State::new(cx),
+            overlays: overlays::State::new(cx),
+            material: material::State::new(cx),
+            foundations: foundations::State::new(cx),
+            patterns: patterns::State::new(cx),
         }
     }
 
@@ -742,7 +474,7 @@ impl Gallery {
     }
 
     fn nudge(&mut self, delta: f32, cx: &mut Context<Self>) {
-        self.level = (self.level + delta).clamp(0.0, 1.0);
+        self.controls.level = (self.controls.level + delta).clamp(0.0, 1.0);
         cx.notify();
     }
 
@@ -794,8 +526,8 @@ impl Gallery {
     }
 
     fn choose_theme(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.theme_choice = index;
-        popover::close_popup(self, cx, |view: &mut Self| &mut view.theme_menu);
+        self.controls.theme_choice = index;
+        popover::close_popup(self, cx, |view: &mut Self| &mut view.controls.theme_menu);
         cx.notify();
     }
 }

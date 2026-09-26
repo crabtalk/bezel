@@ -107,16 +107,16 @@ impl Gallery {
                         row()
                             .child(
                                 theme
-                                    .toggle(self.stats_spinner)
+                                    .toggle(self.overlays.stats_spinner)
                                     .id("stats-spinner")
                                     .cursor_pointer()
                                     .on_click(cx.listener(|view, _, _, cx| {
-                                        view.stats_spinner = !view.stats_spinner;
+                                        view.overlays.stats_spinner = !view.overlays.stats_spinner;
                                         cx.notify();
                                     })),
                             )
                             .child(div().child("Mount a spinner"))
-                            .when(self.stats_spinner, |row| {
+                            .when(self.overlays.stats_spinner, |row| {
                                 row.child(loaders::pulse_loader(
                                     "stats-pulse",
                                     &theme,
@@ -167,7 +167,7 @@ impl Gallery {
                         .overflow_hidden()
                         .child(floating::panel(
                             "floating-demo",
-                            &self.panel_demo,
+                            &self.overlays.panel_demo,
                             gpui::point(px(40.0), px(40.0)),
                             popover::popover_card(&theme)
                                 .w(px(180.0))
@@ -208,7 +208,8 @@ impl Gallery {
                                         .text_color(theme.text_muted)
                                         .hover(|el| el.bg(theme.element_hover))
                                         .on_click(cx.listener(move |view: &mut Self, _, _, cx| {
-                                            view.layer_answer = Some(format!("row {row}").into());
+                                            view.overlays.layer_answer =
+                                                Some(format!("row {row}").into());
                                             cx.notify();
                                         }))
                                         .child(SharedString::from(format!("Row {row}")))
@@ -224,13 +225,13 @@ impl Gallery {
                                 .items_center()
                                 .justify_center()
                                 .on_click(cx.listener(|view: &mut Self, _, _, cx| {
-                                    view.layer_answer = Some("the band".into());
+                                    view.overlays.layer_answer = Some("the band".into());
                                     cx.notify();
                                 }))
                                 .child(
                                     popover::popover_card(&theme)
                                         .px(px(16.0))
-                                        .child(match &self.layer_answer {
+                                        .child(match &self.overlays.layer_answer {
                                             Some(what) => {
                                                 SharedString::from(format!("{what} took the press"))
                                             }
@@ -337,5 +338,27 @@ impl Gallery {
 
             _ => return None,
         })
+    }
+}
+
+/// What this group's demos hold between frames.
+pub(crate) struct State {
+    /// What answered the last press on the layer demo — the band over the page,
+    /// or a row under it.
+    pub(crate) layer_answer: Option<SharedString>,
+    /// The Floating panel page's own panel, so dragging the demo never moves
+    /// the meter — one state per panel is what keeps two of them apart.
+    pub(crate) panel_demo: Floating,
+    /// The Stats page's spinner — what the meter is there to catch.
+    pub(crate) stats_spinner: bool,
+}
+
+impl State {
+    pub(crate) fn new(cx: &mut Context<Gallery>) -> Self {
+        Self {
+            layer_answer: None,
+            panel_demo: Floating::new(Painter::of(cx)),
+            stats_spinner: false,
+        }
     }
 }

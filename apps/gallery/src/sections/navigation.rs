@@ -79,13 +79,13 @@ impl Gallery {
                                 pressable(
                                     focus::focusable(
                                         &theme,
-                                        &self.tab_strip[index],
-                                        theme.tab(label, self.tab_choice == index),
+                                        &self.navigation.tab_strip[index],
+                                        theme.tab(label, self.navigation.tab_choice == index),
                                     ),
                                     SharedString::from(format!("tab-{index}")),
                                     cx,
                                     move |view, cx| {
-                                        view.tab_choice = index;
+                                        view.navigation.tab_choice = index;
                                         cx.notify();
                                     },
                                 )
@@ -126,49 +126,46 @@ impl Gallery {
                         .flex_row()
                         .items_center()
                         .gap(px(6.0))
-                        .child(
-                            tabs::bar("demo-strip").children(self.strip.tabs().iter().map(
-                                |open| {
-                                    let key = *open;
-                                    let front = self.strip.active() == Some(&key);
-                                    let mut label = tabs::Label::new(key);
-                                    if let Some((_, icon, dirty, badge)) =
-                                        STRIP_TABS.iter().find(|(name, ..)| *name == key)
-                                    {
-                                        label = label.with_icon(*icon);
-                                        if *dirty {
-                                            label =
-                                                label.mark(icons::Icon::glyph(STRIP_MARK).solid());
-                                        }
-                                        if !badge.is_empty() {
-                                            label = label.with_badge(*badge);
-                                        }
+                        .child(tabs::bar("demo-strip").children(
+                            self.navigation.strip.tabs().iter().map(|open| {
+                                let key = *open;
+                                let front = self.navigation.strip.active() == Some(&key);
+                                let mut label = tabs::Label::new(key);
+                                if let Some((_, icon, dirty, badge)) =
+                                    STRIP_TABS.iter().find(|(name, ..)| *name == key)
+                                {
+                                    label = label.with_icon(*icon);
+                                    if *dirty {
+                                        label = label.mark(icons::Icon::glyph(STRIP_MARK).solid());
                                     }
-                                    tabs::tab(
-                                        &theme,
-                                        key,
-                                        label,
-                                        match front {
-                                            true => tabs::State::Focused,
-                                            false => tabs::State::Resting,
-                                        },
-                                    )
-                                    .on_click(cx.listener(move |view, _, _, cx| {
-                                        view.strip.activate(&key);
-                                        cx.notify();
-                                    }))
-                                    .child(
-                                        tabs::close(&theme, key, tabs::Close::OnHover).on_click(
-                                            cx.listener(move |view, _, _, cx| {
-                                                cx.stop_propagation();
-                                                view.strip.close(&key);
-                                                cx.notify();
-                                            }),
-                                        ),
-                                    )
-                                },
-                            )),
-                        )
+                                    if !badge.is_empty() {
+                                        label = label.with_badge(*badge);
+                                    }
+                                }
+                                tabs::tab(
+                                    &theme,
+                                    key,
+                                    label,
+                                    match front {
+                                        true => tabs::State::Focused,
+                                        false => tabs::State::Resting,
+                                    },
+                                )
+                                .on_click(cx.listener(move |view, _, _, cx| {
+                                    view.navigation.strip.activate(&key);
+                                    cx.notify();
+                                }))
+                                .child(
+                                    tabs::close(&theme, key, tabs::Close::OnHover).on_click(
+                                        cx.listener(move |view, _, _, cx| {
+                                            cx.stop_propagation();
+                                            view.navigation.strip.close(&key);
+                                            cx.notify();
+                                        }),
+                                    ),
+                                )
+                            }),
+                        ))
                         .child(
                             theme
                                 .ghost("strip-add")
@@ -183,9 +180,9 @@ impl Gallery {
                                 .on_click(cx.listener(|view, _, _, cx| {
                                     if let Some((next, ..)) = STRIP_TABS
                                         .iter()
-                                        .find(|(name, ..)| !view.strip.contains(name))
+                                        .find(|(name, ..)| !view.navigation.strip.contains(name))
                                     {
-                                        view.strip.open(next);
+                                        view.navigation.strip.open(next);
                                         cx.notify();
                                     }
                                 })),
@@ -215,7 +212,7 @@ impl Gallery {
                                     .text_color(theme.text_muted),
                                 )
                                 .on_click(cx.listener(move |view, _, _, cx| {
-                                    view.strip.cycle(step);
+                                    view.navigation.strip.cycle(step);
                                     cx.notify();
                                 }))
                         })),
@@ -232,7 +229,7 @@ impl Gallery {
                         .border_color(theme.border)
                         .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
-                        .child(match self.strip.active() {
+                        .child(match self.navigation.strip.active() {
                             Some(open) => SharedString::from(format!("{open} is in front")),
                             None => SharedString::from("Nothing open"),
                         }),
@@ -272,7 +269,7 @@ impl Gallery {
                                     .nav_row(
                                         Some(Icon::glyph(icon)),
                                         *label,
-                                        self.nav_choice == index,
+                                        self.navigation.nav_choice == index,
                                         key.clone(),
                                     )
                                     .when(*label == "Archived", |row| {
@@ -305,7 +302,7 @@ impl Gallery {
                                         )
                                     });
                                 pressable(row, key.key.clone(), cx, move |view, cx| {
-                                    view.nav_choice = index;
+                                    view.navigation.nav_choice = index;
                                     cx.notify();
                                 })
                                 .into_any_element()
@@ -346,7 +343,7 @@ impl Gallery {
                                 .child(caption("Traffic lights cleared"))
                                 .child(titlebar::grip(
                                     "titlebar-lights-grip",
-                                    &self.titlebar_drag,
+                                    &self.navigation.titlebar_drag,
                                     window,
                                 ))
                                 .child(pressable(
@@ -372,7 +369,7 @@ impl Gallery {
                                 .child(caption("A pane with no lights over it"))
                                 .child(titlebar::grip(
                                     "titlebar-plain-grip",
-                                    &self.titlebar_drag,
+                                    &self.navigation.titlebar_drag,
                                     window,
                                 )),
                         ),
@@ -415,13 +412,13 @@ impl Gallery {
                             .flex_row()
                             .on_drag_move(cx.listener(
                                 |view, event: &DragMoveEvent<SplitDrag>, _, cx| {
-                                    view.split = widgets::axis_fraction(
+                                    view.navigation.split = widgets::axis_fraction(
                                         event.event.position,
                                         event.bounds,
                                         Axis::Horizontal,
                                         0.15,
                                     );
-                                    view.split_dragging = true;
+                                    view.navigation.split_dragging = true;
                                     cx.notify();
                                 },
                             ))
@@ -430,26 +427,29 @@ impl Gallery {
                             .on_mouse_up(
                                 gpui::MouseButton::Left,
                                 cx.listener(|view, _, _, cx| {
-                                    view.split_dragging = false;
+                                    view.navigation.split_dragging = false;
                                     cx.notify();
                                 }),
                             )
                             .on_mouse_up_out(
                                 gpui::MouseButton::Left,
                                 cx.listener(|view, _, _, cx| {
-                                    view.split_dragging = false;
+                                    view.navigation.split_dragging = false;
                                     cx.notify();
                                 }),
                             )
-                            .child(div().w(relative(self.split)).child(pane(SharedString::from(
-                                format!("{:.0}%", self.split * 100.0),
-                            ))))
+                            .child(div().w(relative(self.navigation.split)).child(pane(
+                                SharedString::from(format!(
+                                    "{:.0}%",
+                                    self.navigation.split * 100.0
+                                )),
+                            )))
                             .child(
                                 theme
                                     .split_handle(
                                         Axis::Horizontal,
                                         SplitStyle::Line {
-                                            dragging: self.split_dragging,
+                                            dragging: self.navigation.split_dragging,
                                         },
                                     )
                                     .id("split-handle")
@@ -634,5 +634,45 @@ impl Gallery {
 
             _ => return None,
         })
+    }
+}
+
+impl Gallery {
+    /// Open the tab strip's `at`, wrapping at both ends, and take the focus
+    /// with it.
+    pub(crate) fn open_tab(&mut self, at: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let count = self.navigation.tab_strip.len() as isize;
+        let at = at.rem_euclid(count) as usize;
+        self.navigation.tab_choice = at;
+        window.focus(&self.navigation.tab_strip[at], cx);
+        cx.notify();
+    }
+}
+
+/// What this group's demos hold between frames.
+pub(crate) struct State {
+    /// Where the split's divider sits, as a fraction of the container.
+    pub(crate) split: f32,
+    pub(crate) split_dragging: bool,
+    pub(crate) tab_strip: [gpui::FocusHandle; 3],
+    pub(crate) tab_choice: usize,
+    /// The tab-strip demo's open tabs, in order, with one of them in front.
+    /// What each opens is [`STRIP_TABS`].
+    pub(crate) strip: tabs::Strip<&'static str>,
+    pub(crate) nav_choice: usize,
+    pub(crate) titlebar_drag: titlebar::DragState,
+}
+
+impl State {
+    pub(crate) fn new(cx: &mut Context<Gallery>) -> Self {
+        Self {
+            split: 0.4,
+            split_dragging: false,
+            tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
+            tab_choice: 0,
+            strip: STRIP_TABS[..3].iter().map(|(name, ..)| *name).collect(),
+            nav_choice: 0,
+            titlebar_drag: titlebar::DragState::default(),
+        }
     }
 }

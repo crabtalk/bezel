@@ -92,7 +92,7 @@ impl Gallery {
                             div().w(px(240.0)).flex_none().child(
                                 focus::focusable(
                                     &theme,
-                                    &self.type_probe,
+                                    &self.foundations.type_probe,
                                     theme.slider((base - floor) / span),
                                 )
                                 .id("type-probe")
@@ -379,7 +379,7 @@ impl Gallery {
                     ))
                     .child(theme.field_label("Cargo"))
                     .child(markdown::render(
-                        &self.icons_cargo,
+                        &self.foundations.icons_cargo,
                         markdown::Caption::Hidden,
                         window,
                         cx,
@@ -430,5 +430,26 @@ impl Gallery {
 
             _ => return None,
         })
+    }
+}
+
+/// What this group's demos hold between frames.
+pub(crate) struct State {
+    /// The icons page's cargo snippet, parsed once. `markdown::render` wants a
+    /// `Doc`, and re-parsing it every frame would sit in the scroll path.
+    pub(crate) icons_cargo: markdown::Doc,
+    /// The type-scale probe on the Typography page.
+    pub(crate) type_probe: gpui::FocusHandle,
+}
+
+impl State {
+    pub(crate) fn new(cx: &mut Context<Gallery>) -> Self {
+        Self {
+            icons_cargo: {
+                let (tag, code) = patterns::samples::ICONS_CARGO;
+                markdown::parse(&format!("```{tag}\n{code}\n```"))
+            },
+            type_probe: cx.focus_handle(),
+        }
     }
 }

@@ -2,12 +2,12 @@
 
 use crate::*;
 
-mod controls;
-mod data;
-mod foundations;
-mod material;
-mod navigation;
-mod overlays;
+pub(crate) mod controls;
+pub(crate) mod data;
+pub(crate) mod foundations;
+pub(crate) mod material;
+pub(crate) mod navigation;
+pub(crate) mod overlays;
 mod patterns;
 
 /// The gallery's own rhythm, looser than the system gap the library defaults to.

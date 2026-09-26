@@ -27,7 +27,7 @@ impl Gallery {
                         failed,
                         output,
                     } = STEPS[index];
-                    let open = self.step_open[index];
+                    let open = self.data.step_open[index];
                     div()
                         .when(!first, |el| el.border_t_1().border_color(theme.border))
                         .child(
@@ -43,7 +43,7 @@ impl Gallery {
                                 .hover(|s| s.bg(theme.element_hover))
                                 .id(SharedString::from(format!("step-{index}")))
                                 .on_click(cx.listener(move |view, _, _, cx| {
-                                    view.step_open[index] = !view.step_open[index];
+                                    view.data.step_open[index] = !view.data.step_open[index];
                                     cx.notify();
                                 })),
                         )
@@ -104,11 +104,15 @@ impl Gallery {
                      ctrl-a/ctrl-e go to the ends of the logical line rather than \
                      stopping at a wrap.",
                 ))
-                .child(shape_demo(&theme, "Shape::Rows(4)", self.notes.clone()))
+                .child(shape_demo(
+                    &theme,
+                    "Shape::Rows(4)",
+                    self.data.notes.clone(),
+                ))
                 .child(shape_demo(
                     &theme,
                     "Shape::Grow { min: 2, max: 6 }",
-                    self.composer.clone(),
+                    self.data.composer.clone(),
                 ))
                 .child(hint(
                     &theme,
@@ -126,15 +130,17 @@ impl Gallery {
                      of a month and the grid follows — pageup and pagedown page \
                      months, enter chooses, escape dismisses.",
                 ))
-                .child(div().w(px(220.0)).child(self.date.clone()))
+                .child(div().w(px(220.0)).child(self.data.date.clone()))
                 .child(
                     div()
                         .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
-                        .child(SharedString::from(match self.date.read(cx).selection() {
-                            Some(date) => format!("chosen: {date}"),
-                            None => "nothing chosen".to_string(),
-                        })),
+                        .child(SharedString::from(
+                            match self.data.date.read(cx).selection() {
+                                Some(date) => format!("chosen: {date}"),
+                                None => "nothing chosen".to_string(),
+                            },
+                        )),
                 )
                 .into_any_element(),
 
@@ -174,42 +180,44 @@ impl Gallery {
                                 div()
                                     .id("page-prev")
                                     .on_click(cx.listener(|view, _, _, cx| {
-                                        view.go_to_page(view.page.saturating_sub(1), cx)
+                                        view.go_to_page(view.data.page.saturating_sub(1), cx)
                                     }))
                                     .child(pagination::step(
                                         &theme,
                                         icons::glyph::ChevronLeft,
-                                        self.page > 1,
+                                        self.data.page > 1,
                                     )),
                             )
                             .children(
-                                pagination::window(self.page, RESULT_PAGES, 2)
+                                pagination::window(self.data.page, RESULT_PAGES, 2)
                                     .into_iter()
                                     .enumerate()
                                     .map(|(slot, entry)| match entry {
                                         pagination::Slot::Gap => {
                                             pagination::ellipsis(&theme).into_any_element()
                                         }
-                                        pagination::Slot::Page(page) => {
-                                            pagination::page_button(&theme, page, page == self.page)
-                                                .id(SharedString::from(format!("page-{slot}")))
-                                                .on_click(cx.listener(move |view, _, _, cx| {
-                                                    view.go_to_page(page, cx)
-                                                }))
-                                                .into_any_element()
-                                        }
+                                        pagination::Slot::Page(page) => pagination::page_button(
+                                            &theme,
+                                            page,
+                                            page == self.data.page,
+                                        )
+                                        .id(SharedString::from(format!("page-{slot}")))
+                                        .on_click(cx.listener(move |view, _, _, cx| {
+                                            view.go_to_page(page, cx)
+                                        }))
+                                        .into_any_element(),
                                     }),
                             )
                             .child(
                                 div()
                                     .id("page-next")
                                     .on_click(cx.listener(|view, _, _, cx| {
-                                        view.go_to_page(view.page + 1, cx)
+                                        view.go_to_page(view.data.page + 1, cx)
                                     }))
                                     .child(pagination::step(
                                         &theme,
                                         icons::glyph::ChevronRight,
-                                        self.page < RESULT_PAGES,
+                                        self.data.page < RESULT_PAGES,
                                     )),
                             ),
                     )
@@ -219,7 +227,7 @@ impl Gallery {
                             .text_color(theme.text_muted)
                             .child(SharedString::from(format!(
                                 "page {} of {RESULT_PAGES}",
-                                self.page
+                                self.data.page
                             ))),
                     )
                     .into_any_element()
@@ -244,7 +252,7 @@ impl Gallery {
                         .child(scroll::claim_wheel(
                             scroll::pane("scroll-demo", Axes::Vertical)
                                 .size_full()
-                                .track_scroll(&self.demo_scroll)
+                                .track_scroll(&self.data.demo_scroll)
                                 .child(div().p(px(14.0)).flex().flex_col().gap(px(8.0)).children(
                                     (1..=30).map(|line| {
                                         div()
@@ -253,14 +261,14 @@ impl Gallery {
                                             .child(SharedString::from(format!("Line {line}")))
                                     }),
                                 )),
-                            &self.demo_scroll,
+                            &self.data.demo_scroll,
                             Axes::Vertical,
-                            &self.demo_claim,
+                            &self.data.demo_claim,
                         ))
                         .child(scroll::scrollbar(
                             "scroll-demo-bar",
-                            &self.demo_scroll,
-                            &self.demo_bar,
+                            &self.data.demo_scroll,
+                            &self.data.demo_bar,
                         )),
                 )
                 .into_any_element(),
@@ -279,7 +287,7 @@ impl Gallery {
                             div()
                                 .id("follow-append")
                                 .on_click(cx.listener(|view, _, _, cx| {
-                                    view.log_lines += 1;
+                                    view.data.log_lines += 1;
                                     cx.notify();
                                 }))
                                 .child(theme.button(
@@ -292,7 +300,7 @@ impl Gallery {
                             div()
                                 .id("follow-jump")
                                 .on_click(cx.listener(|view, _, _, cx| {
-                                    view.log_follow.follow();
+                                    view.data.log_follow.follow();
                                     cx.notify();
                                 }))
                                 .child(theme.button(
@@ -308,14 +316,14 @@ impl Gallery {
                             div()
                                 .text_style(TextStyle::Callout)
                                 .font_family(theme.font_mono.clone())
-                                .text_color(if self.log_follow.following() {
+                                .text_color(if self.data.log_follow.following() {
                                     theme.success
                                 } else {
                                     theme.text_faint
                                 })
                                 .child(SharedString::from(format!(
                                     "following: {}",
-                                    self.log_follow.following()
+                                    self.data.log_follow.following()
                                 ))),
                         ),
                 )
@@ -331,9 +339,9 @@ impl Gallery {
                         .child(
                             scroll::pane("follow-demo", Axes::Vertical)
                                 .size_full()
-                                .track_scroll(&self.log_scroll)
+                                .track_scroll(&self.data.log_scroll)
                                 .child(div().p(px(14.0)).flex().flex_col().gap(px(6.0)).children(
-                                    (1..=self.log_lines).map(|line| {
+                                    (1..=self.data.log_lines).map(|line| {
                                         div()
                                             .text_style(TextStyle::Callout)
                                             .font_family(theme.font_mono.clone())
@@ -344,11 +352,11 @@ impl Gallery {
                                     }),
                                 )),
                         )
-                        .child(scroll::follow(&self.log_scroll, &self.log_follow))
+                        .child(scroll::follow(&self.data.log_scroll, &self.data.log_follow))
                         .child(scroll::scrollbar(
                             "follow-demo-bar",
-                            &self.log_scroll,
-                            &self.log_bar,
+                            &self.data.log_scroll,
+                            &self.data.log_bar,
                         )),
                 )
                 .into_any_element(),
@@ -356,6 +364,7 @@ impl Gallery {
             "drift" => {
                 let accent = theme.accent;
                 let chips: Vec<AnyElement> = self
+                    .data
                     .drift_chips
                     .iter()
                     .map(|label| {
@@ -411,19 +420,19 @@ impl Gallery {
                                     .flex_row()
                                     .items_center()
                                     .gap(px(8.0))
-                                    .track_scroll(&self.drift_scroll)
+                                    .track_scroll(&self.data.drift_scroll)
                                     // Typed, so a drag of anything else leaves
                                     // the strip where it is.
                                     .on_drag_move(cx.listener(
                                         |view, event: &DragMoveEvent<ChipDrag>, _, _| {
-                                            view.drift.aim(event.event.position);
+                                            view.data.drift.aim(event.event.position);
                                         },
                                     ))
                                     .children(chips),
                             )
                             .child(scroll::drift(
-                                &self.drift_scroll,
-                                &self.drift,
+                                &self.data.drift_scroll,
+                                &self.data.drift,
                                 Axes::Horizontal,
                                 // The page past the strip takes no chips, so a
                                 // pointer carried out there is still aiming here.
@@ -436,7 +445,7 @@ impl Gallery {
             "table" => {
                 let columns = table_columns();
                 let mut rows = TABLE_ROWS;
-                if let Some(sort) = self.table_sort {
+                if let Some(sort) = self.data.table_sort {
                     // bezel never sees the rows: it says what the click meant
                     // and paints the arrow, and the sorting happens here.
                     rows.sort_by(|left, right| {
@@ -465,6 +474,7 @@ impl Gallery {
                                 table::header(&theme).children(columns.iter().enumerate().map(
                                     |(index, column)| {
                                         let sorted = self
+                                            .data
                                             .table_sort
                                             .filter(|sort| sort.column == index)
                                             .map(|sort| sort.ascending);
@@ -484,7 +494,7 @@ impl Gallery {
                                     .child(scroll::claim_wheel(
                                         scroll::pane("table-body", Axes::Vertical)
                                             .size_full()
-                                            .track_scroll(&self.table_scroll)
+                                            .track_scroll(&self.data.table_scroll)
                                             .children(rows.iter().enumerate().map(
                                                 |(index, (name, kind, size))| {
                                                     table::row(
@@ -512,14 +522,14 @@ impl Gallery {
                                                     )
                                                 },
                                             )),
-                                        &self.table_scroll,
+                                        &self.data.table_scroll,
                                         Axes::Vertical,
-                                        &self.table_claim,
+                                        &self.data.table_claim,
                                     ))
                                     .child(scroll::scrollbar(
                                         "table-bar",
-                                        &self.table_scroll,
-                                        &self.table_bar,
+                                        &self.data.table_scroll,
+                                        &self.data.table_bar,
                                     )),
                             ),
                     )
@@ -538,7 +548,7 @@ impl Gallery {
                     .child(
                         div()
                             .key_context(tree::KEY_CONTEXT)
-                            .track_focus(&self.tree_focus)
+                            .track_focus(&self.data.tree_focus)
                             .on_action(cx.listener(|view, _: &tree::SelectPrevious, _, cx| {
                                 view.tree_step(Direction::Up, cx)
                             }))
@@ -561,14 +571,15 @@ impl Gallery {
                             .child(scroll::claim_wheel(
                                 scroll::pane("tree-body", Axes::Vertical)
                                     .size_full()
-                                    .track_scroll(&self.tree_scroll)
+                                    .track_scroll(&self.data.tree_scroll)
                                     .child(tree::tree().p(px(6.0)).children(
                                         rows.iter().enumerate().map(|(index, entry)| {
                                             tree::tree_row(
                                                 &theme,
                                                 &entry.row,
-                                                self.tree_selected.as_deref() == Some(&entry.path),
-                                                index == self.tree_cursor,
+                                                self.data.tree_selected.as_deref()
+                                                    == Some(&entry.path),
+                                                index == self.data.tree_cursor,
                                             )
                                             .id(SharedString::from(format!("tree-{index}")))
                                             .on_click(cx.listener(move |view, _, window, cx| {
@@ -577,17 +588,17 @@ impl Gallery {
                                             .child(SharedString::from(entry.label))
                                         }),
                                     )),
-                                &self.tree_scroll,
+                                &self.data.tree_scroll,
                                 Axes::Vertical,
-                                &self.tree_claim,
+                                &self.data.tree_claim,
                             ))
                             .child(scroll::scrollbar(
                                 "tree-bar",
-                                &self.tree_scroll,
-                                &self.tree_bar,
+                                &self.data.tree_scroll,
+                                &self.data.tree_bar,
                             )),
                     )
-                    .when_some(self.tree_selected.clone(), |page, path| {
+                    .when_some(self.data.tree_selected.clone(), |page, path| {
                         page.child(
                             div()
                                 .text_style(TextStyle::Callout)
@@ -599,7 +610,7 @@ impl Gallery {
             }
 
             "virtual-list" => {
-                let built = self.rows_built.clone();
+                let built = self.data.rows_built.clone();
                 let muted = theme.text_muted;
                 let mono = theme.font_mono.clone();
                 section
@@ -622,7 +633,7 @@ impl Gallery {
                                 "virtual-rows",
                                 VIRTUAL_ROWS,
                                 px(26.0),
-                                &self.rows_scroll,
+                                &self.data.rows_scroll,
                                 move |range, _, _| {
                                     built.set(range.len());
                                     range
@@ -651,8 +662,8 @@ impl Gallery {
                             ))
                             .child(scroll::scrollbar(
                                 "virtual-bar",
-                                &list::scroll_handle(&self.rows_scroll),
-                                &self.rows_bar,
+                                &list::scroll_handle(&self.data.rows_scroll),
+                                &self.data.rows_bar,
                             )),
                     )
                     .child(
@@ -662,7 +673,7 @@ impl Gallery {
                             .text_color(theme.text_muted)
                             .child(SharedString::from(format!(
                                 "{VIRTUAL_ROWS} rows · {} built this frame",
-                                self.rows_built.get()
+                                self.data.rows_built.get()
                             ))),
                     )
                     .into_any_element()
@@ -678,7 +689,7 @@ impl Gallery {
     /// open folders.
     pub(crate) fn tree_rows(&self) -> Vec<TreeRow> {
         let mut rows = Vec::new();
-        flatten_tree(FILE_TREE, 0, "", &self.tree_expanded, &mut rows);
+        flatten_tree(FILE_TREE, 0, "", &self.data.tree_expanded, &mut rows);
         rows
     }
 
@@ -687,13 +698,13 @@ impl Gallery {
     pub(crate) fn tree_step(&mut self, direction: Direction, cx: &mut Context<Self>) {
         let rows = self.tree_rows();
         let shape: Vec<tree::Row> = rows.iter().map(|entry| entry.row).collect();
-        match tree::step(&shape, self.tree_cursor, direction) {
-            Some(Move::To(index)) => self.tree_cursor = index,
+        match tree::step(&shape, self.data.tree_cursor, direction) {
+            Some(Move::To(index)) => self.data.tree_cursor = index,
             Some(Move::Expand(index)) => {
-                self.tree_expanded.insert(rows[index].path.clone());
+                self.data.tree_expanded.insert(rows[index].path.clone());
             }
             Some(Move::Collapse(index)) => {
-                self.tree_expanded.remove(&rows[index].path);
+                self.data.tree_expanded.remove(&rows[index].path);
             }
             None => {}
         }
@@ -706,29 +717,169 @@ impl Gallery {
     pub(crate) fn tree_click(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let rows = self.tree_rows();
         let Some(entry) = rows.get(index) else { return };
-        self.tree_cursor = index;
+        self.data.tree_cursor = index;
         if entry.row.expanded.is_some() {
-            if !self.tree_expanded.remove(&entry.path) {
-                self.tree_expanded.insert(entry.path.clone());
+            if !self.data.tree_expanded.remove(&entry.path) {
+                self.data.tree_expanded.insert(entry.path.clone());
             }
         } else {
-            self.tree_selected = Some(entry.path.clone());
+            self.data.tree_selected = Some(entry.path.clone());
         }
-        window.focus(&self.tree_focus, cx);
+        window.focus(&self.data.tree_focus, cx);
         cx.notify();
     }
 
     /// Go to a page, clamped the way the component clamps what it draws — the
     /// prev/next steps hand this `page - 1` and `page + 1` without checking.
     pub(crate) fn go_to_page(&mut self, page: usize, cx: &mut Context<Self>) {
-        self.page = page.clamp(1, RESULT_PAGES);
+        self.data.page = page.clamp(1, RESULT_PAGES);
         cx.notify();
     }
 
     /// A heading was clicked. `next_sort` says what that means; sorting the
     /// rows is this view's job, since they are this view's rows.
     pub(crate) fn sort_table(&mut self, column: usize, cx: &mut Context<Self>) {
-        self.table_sort = Some(table::next_sort(self.table_sort, column));
+        self.data.table_sort = Some(table::next_sort(self.data.table_sort, column));
         cx.notify();
+    }
+}
+
+impl Gallery {
+    /// Put `held` in front of `before` — where the drift demo's drop lands.
+    /// The list is the app's, the way a board's cards are: bezel reports where
+    /// the pointer let go and arranges nothing itself.
+    pub(crate) fn move_chip(
+        &mut self,
+        held: &SharedString,
+        before: &SharedString,
+        cx: &mut Context<Self>,
+    ) {
+        if held == before {
+            return;
+        }
+        let Some(from) = self.data.drift_chips.iter().position(|chip| chip == held) else {
+            return;
+        };
+        let chip = self.data.drift_chips.remove(from);
+        let at = self
+            .data
+            .drift_chips
+            .iter()
+            .position(|chip| chip == before)
+            .unwrap_or(self.data.drift_chips.len());
+        self.data.drift_chips.insert(at, chip);
+        cx.notify();
+    }
+}
+
+/// What this group's demos hold between frames.
+pub(crate) struct State {
+    /// The two multi-line shapes. Their row counts are this page's example, not
+    /// a default the library holds — `Shape` takes them from the caller.
+    pub(crate) notes: Entity<TextField>,
+    pub(crate) composer: Entity<TextField>,
+    /// Which step rows are showing their output.
+    pub(crate) step_open: [bool; 3],
+    /// So does the date picker, which holds a month and a cursor.
+    pub(crate) date: Entity<Calendar>,
+    pub(crate) demo_scroll: gpui::ScrollHandle,
+    /// A pane nested in `gallery-pane` keeps the wheel it can act on, so
+    /// scrolling it does not drag the page behind it. One per pane: the state
+    /// is where that pane stood before the wheel being dispatched.
+    pub(crate) demo_claim: scroll::ClaimState,
+    pub(crate) demo_bar: ScrollbarState,
+    /// The follow-scroll demo: a log that grows under a view pinned to its end.
+    pub(crate) log_scroll: gpui::ScrollHandle,
+    pub(crate) log_bar: ScrollbarState,
+    pub(crate) log_follow: scroll::FollowState,
+    pub(crate) log_lines: usize,
+    /// The drift demo: a strip too wide for the pane, and chips to carry
+    /// across it.
+    pub(crate) drift_scroll: gpui::ScrollHandle,
+    pub(crate) drift: scroll::DriftState,
+    pub(crate) drift_chips: Vec<SharedString>,
+    pub(crate) table_scroll: gpui::ScrollHandle,
+    pub(crate) table_claim: scroll::ClaimState,
+    pub(crate) table_bar: ScrollbarState,
+    pub(crate) tree_scroll: gpui::ScrollHandle,
+    pub(crate) tree_claim: scroll::ClaimState,
+    pub(crate) tree_bar: ScrollbarState,
+    pub(crate) rows_scroll: gpui::UniformListScrollHandle,
+    pub(crate) rows_bar: ScrollbarState,
+    /// How many of [`VIRTUAL_ROWS`] rows the list actually built last frame.
+    /// A `Cell` because the count is written from inside the render closure,
+    /// which the list owns and calls with no view in scope — and it is the only
+    /// honest way to *show* that virtualization is happening.
+    pub(crate) rows_built: Rc<Cell<usize>>,
+    /// Which folders are open, by path. App data, and the reason `tree` reports
+    /// an intent rather than expanding anything itself.
+    pub(crate) tree_expanded: HashSet<String>,
+    pub(crate) tree_selected: Option<String>,
+    pub(crate) tree_cursor: usize,
+    pub(crate) tree_focus: gpui::FocusHandle,
+    /// Which page of the imaginary result set is showing. 1-based, like the
+    /// component: it is a label, not an index.
+    pub(crate) page: usize,
+    /// Which column the table page is sorted by. The app's, because the app is
+    /// what has to sort the rows — the table only says what a click meant.
+    pub(crate) table_sort: Option<Sort>,
+}
+
+impl State {
+    pub(crate) fn new(cx: &mut Context<Gallery>) -> Self {
+        Self {
+            notes: cx.new(|cx| {
+                let mut field = TextField::new(cx).with_shape(Shape::Rows(4));
+                field.set_content(
+                    "Wrapping is the point: this line is longer than the box, so it \
+                 folds. Press enter for a hard break.",
+                    cx,
+                );
+                field
+            }),
+            composer: cx.new(|cx| {
+                TextField::new(cx)
+                    .with_shape(Shape::Grow { min: 2, max: 6 })
+                    .with_placeholder("Grows as you type…")
+            }),
+            step_open: [false; 3],
+            date: cx.new(|cx| Calendar::new(today(), cx)),
+            demo_scroll: gpui::ScrollHandle::new(),
+            demo_claim: scroll::ClaimState::new(),
+            demo_bar: ScrollbarState::new(Painter::of(cx)),
+            log_scroll: gpui::ScrollHandle::new(),
+            log_bar: ScrollbarState::new(Painter::of(cx)),
+            log_follow: scroll::FollowState::new(),
+            // Enough to overflow the box on arrival, so the pin has something
+            // to hold onto before you press anything.
+            log_lines: 24,
+            drift_scroll: gpui::ScrollHandle::new(),
+            drift: scroll::DriftState::new(),
+            drift_chips: DRIFT_CHIPS
+                .iter()
+                .copied()
+                .map(SharedString::from)
+                .collect(),
+            table_scroll: gpui::ScrollHandle::new(),
+            table_claim: scroll::ClaimState::new(),
+            table_bar: ScrollbarState::new(Painter::of(cx)),
+            tree_scroll: gpui::ScrollHandle::new(),
+            tree_claim: scroll::ClaimState::new(),
+            tree_bar: ScrollbarState::new(Painter::of(cx)),
+            rows_scroll: gpui::UniformListScrollHandle::new(),
+            rows_bar: ScrollbarState::new(Painter::of(cx)),
+            rows_built: Rc::new(Cell::new(0)),
+            // Opened so the page shows nesting on arrival rather than a flat
+            // list of two folders.
+            tree_expanded: ["crates", "crates/ui"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            tree_selected: None,
+            tree_cursor: 0,
+            tree_focus: cx.focus_handle().tab_stop(true),
+            page: 1,
+            table_sort: None,
+        }
     }
 }
