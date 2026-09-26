@@ -25,6 +25,11 @@ use std::{fmt, rc::Rc, time::Duration};
 /// gpui elements behind the page are not hovered, and gpui's cursor over the
 /// page is the arrow. On macOS the page sets the cursor over itself.
 ///
+/// In a frame where a [`ui::cover`] recorded after the view overlaps it, the
+/// page is parked. On macOS a still of the page, taken while it is still up,
+/// is painted in its place; until the still arrives the page stays over the
+/// cover. Elsewhere the place is left empty.
+///
 /// Linux needs gpui on X11 and paints nothing under Wayland. Paints nothing
 /// off macOS, Windows and Linux.
 pub struct WebView {
@@ -222,6 +227,10 @@ impl WebView {
                     self.title = title.clone();
                     cx.emit(WebViewEvent::Title(title));
                 }
+            }
+            Report::Still(still) => {
+                self.page.captured(still);
+                cx.notify();
             }
         }
     }

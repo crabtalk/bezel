@@ -1,6 +1,9 @@
 use super::{Edit, Report};
-use gpui::{App, Window};
-use std::cell::OnceCell;
+use gpui::{App, RenderImage, Window};
+use std::{
+    cell::{Cell, OnceCell},
+    sync::Arc,
+};
 use wry::WebViewExtMacOS;
 
 mod cursor;
@@ -92,6 +95,77 @@ pub(super) fn back(view: &wry::WebView) {
 pub(super) fn forward(view: &wry::WebView) {
     // SAFETY: called on the main thread.
     unsafe { view.webview().goForward() };
+}
+
+/// Takes a still of the page's visible rect, at the backing scale. `done`
+/// runs on the main thread.
+pub(super) fn capture(
+    view: &wry::WebView,
+    done: impl FnOnce(Option<Arc<RenderImage>>) + 'static,
+) -> bool {
+    use block2::RcBlock;
+    use objc2_app_kit::NSImage;
+    use objc2_foundation::NSError;
+
+    let done = Cell::new(Some(done));
+    let block = RcBlock::new(move |picture: *mut NSImage, _: *mut NSError| {
+        // SAFETY: WebKit hands a valid image, or null with an error.
+        let still = unsafe { picture.as_ref() }.and_then(pixels);
+        if let Some(done) = done.take() {
+            done(still);
+        }
+    });
+    // SAFETY: called on the main thread. No configuration takes the visible
+    // rect.
+    unsafe {
+        view.webview()
+            .takeSnapshotWithConfiguration_completionHandler(None, &block);
+    }
+    true
+}
+
+/// An `NSImage` is drawn into a bitmap to become pixels at all.
+fn pixels(picture: &objc2_app_kit::NSImage) -> Option<Arc<RenderImage>> {
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+    use objc2_core_graphics::{
+        CGBitmapContextCreate, CGColorSpace, CGContext, CGImage, CGImageAlphaInfo,
+        CGImageByteOrderInfo, kCGColorSpaceSRGB,
+    };
+
+    // SAFETY: a null rect and no context ask for the best representation.
+    let picture =
+        unsafe { picture.CGImageForProposedRect_context_hints(std::ptr::null_mut(), None, None) }?;
+    let (width, height) = (
+        CGImage::width(Some(&picture)),
+        CGImage::height(Some(&picture)),
+    );
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let mut bytes = vec![0u8; width * height * 4];
+    // SAFETY: reads an immutable CoreGraphics constant.
+    let space = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB }))?;
+    // BGRA in memory, which is what `RenderImage` holds.
+    let info = CGImageAlphaInfo::PremultipliedFirst.0 | CGImageByteOrderInfo::Order32Little.0;
+    // SAFETY: `bytes` holds `height` rows of `width * 4` bytes and outlives
+    // the context.
+    let context = unsafe {
+        CGBitmapContextCreate(
+            bytes.as_mut_ptr().cast(),
+            width,
+            height,
+            8,
+            width * 4,
+            Some(&space),
+            info,
+        )
+    }?;
+    let rect = CGRect::new(CGPoint::ZERO, CGSize::new(width as f64, height as f64));
+    CGContext::draw_image(Some(&context), rect, Some(&picture));
+    drop(context);
+    let buffer =
+        image::RgbaImage::from_raw(width.try_into().ok()?, height.try_into().ok()?, bytes)?;
+    Some(Arc::new(RenderImage::new([image::Frame::new(buffer)])))
 }
 
 /// Whether the page's window has closed. wry's `set_bounds` and `focus`

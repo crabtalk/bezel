@@ -90,3 +90,10 @@ pub(super) fn closed(_view: &wry::WebView) -> bool {
 pub(super) fn default_user_agent() -> Option<String> {
     None
 }
+
+pub(super) fn capture(
+    _view: &wry::WebView,
+    _done: impl FnOnce(Option<std::sync::Arc<gpui::RenderImage>>) + 'static,
+) -> bool {
+    false
+}

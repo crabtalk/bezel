@@ -80,6 +80,7 @@ pub(super) fn modal_with(
                     .flex()
                     .items_center()
                     .justify_center()
+                    .child(crate::cover::cover())
                     // On the card's wrapper, not the scrim: a press inside the
                     // card is not "out", so the dialog's own buttons keep
                     // working with no occluding overlay and no propagation
@@ -234,6 +235,7 @@ pub fn sheet(
                     .h(viewport.height)
                     .bg(scrim_alpha(0.6 * (1.0 - exit.unwrap_or(0.0))))
                     .on_click(on_dismiss)
+                    .child(crate::cover::cover())
                     .child(panel),
             ),
     )

@@ -17,6 +17,7 @@ pub use icons;
 
 pub mod combobox;
 pub mod control_bar;
+pub mod cover;
 pub mod date;
 pub mod floating;
 pub mod focus;

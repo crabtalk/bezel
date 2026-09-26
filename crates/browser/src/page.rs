@@ -1,6 +1,9 @@
 use crate::{LoadState, host::Surface};
-use gpui::{App, Bounds, FocusHandle, Keystroke, Pixels, Window};
-use std::cell::{Cell, RefCell};
+use gpui::{App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
+use std::{
+    cell::{Cell, RefCell},
+    sync::Arc,
+};
 
 #[cfg_attr(target_os = "macos", path = "page/macos.rs")]
 #[cfg_attr(target_os = "windows", path = "page/windows.rs")]
@@ -25,6 +28,18 @@ pub(crate) enum Report {
     Moved,
     Load(LoadState, String),
     Title(String),
+    /// A still of the page, taken for a cover; `None` if the capture failed.
+    Still(Option<Arc<RenderImage>>),
+}
+
+/// Whether something is painted over the page.
+enum Cover {
+    Off,
+    /// The page is still up while its still is taken. A parked page captures
+    /// blank.
+    Capturing,
+    /// The page is parked, and the still, if any, is painted in its place.
+    On(Option<Arc<RenderImage>>),
 }
 
 /// Edits a WKWebView takes as responder actions (`copy:`, `paste:`) and only
@@ -57,6 +72,9 @@ pub(crate) struct Page {
     /// Where the page last sat; `None` before the first paint and while parked.
     placed: Cell<Option<Bounds<Pixels>>>,
     owner: Cell<u64>,
+    cover: RefCell<Cover>,
+    /// A still painted before the page was uncovered, to free from the atlas.
+    dropped: RefCell<Option<Arc<RenderImage>>>,
     pub(crate) focus: FocusHandle,
     #[cfg_attr(
         not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
@@ -87,6 +105,8 @@ impl Page {
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
             owner: Cell::new(0),
+            cover: RefCell::new(Cover::Off),
+            dropped: RefCell::new(None),
             focus,
             reports,
             platform: platform::State::new(cx),
@@ -109,6 +129,46 @@ impl Surface for Page {
 
     fn park(&self) {
         Page::park(self);
+    }
+
+    fn cover(&self) {
+        if !matches!(*self.cover.borrow(), Cover::Off) {
+            return;
+        }
+        if self.placed.get().is_some() && self.capture() {
+            *self.cover.borrow_mut() = Cover::Capturing;
+        } else {
+            Page::park(self);
+            *self.cover.borrow_mut() = Cover::On(None);
+        }
+    }
+
+    fn still(&self) -> Option<Arc<RenderImage>> {
+        match &*self.cover.borrow() {
+            Cover::On(still) => still.clone(),
+            Cover::Off | Cover::Capturing => None,
+        }
+    }
+
+    fn take_dropped(&self) -> Option<Arc<RenderImage>> {
+        self.dropped.take()
+    }
+}
+
+impl Page {
+    /// Parks the page for the still if it is still covered.
+    pub(crate) fn captured(&self, still: Option<Arc<RenderImage>>) {
+        if matches!(*self.cover.borrow(), Cover::Capturing) {
+            Page::park(self);
+            *self.cover.borrow_mut() = Cover::On(still);
+        }
+    }
+
+    /// Run before the page is placed.
+    fn uncover(&self) {
+        if let Cover::On(still) = self.cover.replace(Cover::Off) {
+            *self.dropped.borrow_mut() = still;
+        }
     }
 }
 
@@ -135,6 +195,7 @@ impl Page {
     })();";
 
     fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
+        self.uncover();
         let view = self.view.get_or_init(|| self.build(bounds, window));
         let Some(view) = view else { return };
         let placed = self.placed.get();
@@ -196,6 +257,17 @@ impl Page {
 
     fn built(&self) -> Option<&wry::WebView> {
         self.view.get()?.as_ref()
+    }
+
+    /// Whether a still was asked for; it arrives as [`Report::Still`].
+    fn capture(&self) -> bool {
+        let Some(view) = self.built() else {
+            return false;
+        };
+        let reports = self.reports.clone();
+        platform::capture(view, move |still| {
+            let _ = reports.try_send(Report::Still(still));
+        })
     }
 
     pub(crate) fn start(window: &Window, cx: &mut App) {

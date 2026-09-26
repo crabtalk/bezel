@@ -13,7 +13,12 @@ impl State {
 
 impl Page {
     pub(super) fn place(&self, bounds: Bounds<Pixels>, _window: &Window) {
+        self.uncover();
         self.placed.set(Some(bounds));
+    }
+
+    pub(super) fn capture(&self) -> bool {
+        false
     }
 
     pub(super) fn park(&self) {
