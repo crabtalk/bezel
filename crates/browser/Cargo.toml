@@ -53,6 +53,7 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
 [target.'cfg(target_os = "windows")'.dependencies]
 wry = { version = "0.57", default-features = false }
 webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wry = { version = "0.57", default-features = false, features = ["os-webview", "x11"] }

@@ -631,6 +631,7 @@ dependencies = [
  "web-sys",
  "webkit2gtk",
  "webview2-com",
+ "windows 0.62.2",
  "wry",
 ]
 
