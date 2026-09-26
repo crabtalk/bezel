@@ -30,7 +30,7 @@ impl Editor {
         }
     }
 
-    pub(super) fn reveal_caret(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn reveal_caret(&mut self, window: &mut Window) {
         if !self.reveal {
             return;
         }
@@ -43,7 +43,6 @@ impl Editor {
         let Some((at, line)) = self.layouts.position(self.selection.head) else {
             return;
         };
-        self.reveal = false;
 
         let view = scroll.bounds();
         let offset = scroll.offset();
@@ -56,9 +55,13 @@ impl Editor {
         // `set_offset` clamps nothing, and past the ends the document would
         // scroll away from the caret it was asked to show.
         let y = y.clamp(-scroll.max_offset().y, gpui::px(0.0));
+        // Left set after a scroll: a caret far off was placed at a guess, and
+        // the frame that builds what lies between can move it again.
         if y != offset.y {
             scroll.set_offset(gpui::point(offset.x, y));
-            cx.notify();
+            window.request_animation_frame();
+        } else {
+            self.reveal = false;
         }
     }
 

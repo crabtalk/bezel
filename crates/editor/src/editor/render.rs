@@ -16,6 +16,14 @@ impl Render for Editor {
             self.caret_on = true;
         }
         let selection = focused.then_some(self.selection);
+        // The source line a reveal owed in source mode lands on.
+        let reveal_line = match self.mode {
+            Mode::Source => self
+                .source_text()
+                .get(..self.selection.head.offset)
+                .map_or(0, |before| before.matches('\n').count()),
+            Mode::Blocks => 0,
+        };
         // gpui ends an outside file drag — left the window or released
         // elsewhere — without a drop here, so the indicator goes with it.
         if !cx.has_active_drag() {
@@ -342,6 +350,12 @@ impl Render for Editor {
                                 selection,
                                 caret_on: self.caret_on,
                                 layouts: Some(&self.layouts),
+                                keep: if self.reveal {
+                                    std::slice::from_ref(&reveal_line)
+                                } else {
+                                    &[]
+                                },
+                                scroll: self.scroll.as_ref(),
                                 typography: Some(markdown::Typography::of(cx).scaled(
                                     text_size::resolve(self.text_size, cx)
                                         / theme::base_text_size(),
@@ -374,6 +388,14 @@ impl Render for Editor {
                                 // toggle in the undo history.
                                 toggle: Some(markdown::Toggle::HitTested),
                                 base: self.base.as_deref(),
+                                // A reveal owed to a caret nobody is focused on
+                                // still needs its block built to find it.
+                                keep: if self.reveal {
+                                    std::slice::from_ref(&self.selection.head.block)
+                                } else {
+                                    &[]
+                                },
+                                scroll: self.scroll.as_ref(),
                                 ..Default::default()
                             },
                             window,
@@ -388,7 +410,7 @@ impl Render for Editor {
                     let entity = cx.entity();
                     move |_, _, window, cx| {
                         entity.update(cx, |this, cx| {
-                            this.reveal_caret(cx);
+                            this.reveal_caret(window);
                             this.settle_handle(window, cx);
                         });
                     }

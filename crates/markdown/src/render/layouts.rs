@@ -32,17 +32,13 @@ pub(super) struct Frames {
     heights: Heights,
 }
 
-/// What a block off-screen is stood in at, and where the screen was.
+/// Block heights kept across frames, so a block off-screen is placed without
+/// being built.
 #[derive(Default)]
 pub(super) struct Heights {
-    /// A block's height by [`block_key`], at `width`.
+    /// A block's height by [`block_key`], as last measured at whatever width
+    /// the column had then.
     by_key: HashMap<u64, Pixels>,
-    /// The column's width the heights were measured at.
-    width: Option<Pixels>,
-    /// The column's box last frame, in window coordinates.
-    column: Option<Bounds<Pixels>>,
-    /// The part of the window the column was clipped to last frame.
-    visible: Option<Bounds<Pixels>>,
 }
 
 /// One shaped run and the slice of its part it covers.
@@ -305,35 +301,6 @@ impl BlockLayouts {
 
     pub(super) fn record_checkbox(&self, ix: usize, bounds: Bounds<Pixels>) {
         self.0.borrow_mut().checkboxes.push((ix, bounds));
-    }
-
-    /// Starts a frame: empties what the last one painted and notes where the
-    /// column sits and what of it the window shows. A change of width drops
-    /// every height and asks for another frame, since the blocks stood in at
-    /// them this frame are the wrong size.
-    pub(super) fn frame(&self, column: Bounds<Pixels>, window: &mut Window) {
-        self.clear();
-        let mut frames = self.0.borrow_mut();
-        let heights = &mut frames.heights;
-        heights.column = Some(column);
-        heights.visible = Some(window.content_mask().bounds);
-        if heights.width != Some(column.size.width) {
-            if heights.width.is_some() {
-                window.request_animation_frame();
-            }
-            heights.width = Some(column.size.width);
-            heights.by_key.clear();
-        }
-    }
-
-    /// The span of the column, from its top, a block has to reach into to be
-    /// built: what the window showed last frame and a screen either side of
-    /// it. `None` before a frame has painted.
-    pub(super) fn band(&self) -> Option<Range<Pixels>> {
-        let heights = &self.0.borrow().heights;
-        let (column, visible) = (heights.column?, heights.visible?);
-        let margin = visible.size.height;
-        Some(visible.top() - column.top() - margin..visible.bottom() - column.top() + margin)
     }
 
     pub(super) fn height(&self, key: u64) -> Option<Pixels> {
