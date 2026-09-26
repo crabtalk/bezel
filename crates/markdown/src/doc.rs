@@ -57,7 +57,7 @@ impl Doc {
 /// the serializer: the first block is at 0, and no block is more than one
 /// level deeper than the block before it. A document that satisfies it always
 /// serializes to markdown that parses back to the same indents.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Block {
     pub kind: BlockKind,
     pub indent: u8,
@@ -188,7 +188,7 @@ pub enum Part {
 /// The block vocabulary. Closed by design — a consumer that needs a block of
 /// its own is a reason to widen this enum rather than to grow an extension
 /// system.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BlockKind {
     Paragraph(Text),
     Heading {
@@ -257,7 +257,7 @@ pub enum BlockKind {
 /// names one of these five; anything else stays the text it was written as.
 /// A blockquote holding two paragraphs becomes two [`BlockKind::Quote`] blocks
 /// and each carries the kind, so writing the document back gives two alerts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum QuoteKind {
     Note,
     Tip,
@@ -291,7 +291,7 @@ impl QuoteKind {
 }
 
 /// GFM column alignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Align {
     #[default]
     Left,
@@ -310,7 +310,7 @@ pub enum Align {
 /// A newline in `text` is a line break within the block (markdown's soft or
 /// hard break, which this model does not distinguish — neither does Notion).
 /// Whether it paints as a break or a space is a rendering decision.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Text {
     pub text: String,
     /// Outermost first. Ranges may overlap and may be identical.
@@ -367,7 +367,7 @@ impl Text {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MarkSpan {
     pub range: Range<usize>,
     pub mark: Mark,
@@ -383,7 +383,7 @@ pub struct MarkSpan {
 /// The other two are CommonMark's title slot, `[url](url "chip")`, which is
 /// core, ignored by every other renderer, and the only place left to say what
 /// the shorthand cannot: a chip alone on a line, and the bigger card.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Form {
     Auto,
     Chip,
@@ -409,7 +409,7 @@ impl Form {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Mark {
     Bold,
     Italic,

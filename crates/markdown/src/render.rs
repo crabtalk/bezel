@@ -7,7 +7,14 @@
 //!
 //! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
 
-use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    ops::Range,
+    path::Path,
+    rc::Rc,
+};
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
@@ -401,9 +408,12 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     // column so it runs ahead of every recorder below it.
     let reset = layouts.map(|layouts| {
         let layouts = layouts.clone();
-        canvas(move |_, _, _| layouts.clear(), |_, _, _, _| ())
-            .absolute()
-            .size(px(0.0))
+        canvas(
+            move |bounds, window, _| layouts.frame(bounds, window),
+            |_, _, _, _| (),
+        )
+        .absolute()
+        .size_full()
     });
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
@@ -412,12 +422,53 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     let highlight = crate::marks::highlight_paint_of(cx);
     let mut column = div().flex().flex_col().children(reset);
 
+    // With layouts to measure into, a block outside the band stands in at its
+    // last height. The band is last frame's, so it is dropped at the first
+    // block never measured: nothing below it has a known position.
+    let keys: Vec<u64> = match layouts {
+        Some(layouts) => {
+            let keys: Vec<u64> = doc
+                .blocks
+                .iter()
+                .map(|block| block_key(block, &typography))
+                .collect();
+            layouts.prune(&keys);
+            keys
+        }
+        None => Vec::new(),
+    };
+    let mut band = layouts.and_then(BlockLayouts::band);
+    let caret = selection.map(|selection| (selection.head.block, selection.anchor.block));
+    let mut top = px(0.0);
+    let mut skipped: Option<(f32, Pixels)> = None;
+
     for (ix, block) in doc.blocks.iter().enumerate() {
         let gap = match doc.blocks.get(ix.wrapping_sub(1)) {
             None => 0.0,
             Some(previous) if tight(previous, block) => LIST_GAP,
             Some(_) => BLOCK_GAP,
         };
+        if let (Some(layouts), Some(within)) = (layouts, band.clone()) {
+            match layouts.height(keys[ix]) {
+                Some(height) => {
+                    let start = top + px(gap);
+                    top = start + height;
+                    let near = top >= within.start && start <= within.end;
+                    let held = caret.is_some_and(|(head, anchor)| ix == head || ix == anchor);
+                    if !near && !held {
+                        skipped = Some(match skipped {
+                            None => (gap, height),
+                            Some((first, run)) => (first, run + px(gap) + height),
+                        });
+                        continue;
+                    }
+                }
+                None => band = None,
+            }
+        }
+        if let Some((first, run)) = skipped.take() {
+            column = column.child(stand_in(first, run));
+        }
         let overlay = Overlay {
             block: ix,
             part: Part::Body,
@@ -436,8 +487,12 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         // A rule and an image hold no text, so a layout would not find them.
         let frame = layouts.map(|layouts| {
             let layouts = layouts.clone();
+            let key = keys[ix];
             canvas(
-                move |bounds, _, _| layouts.record_block(ix, bounds),
+                move |bounds, _, _| {
+                    layouts.record_block(ix, bounds);
+                    layouts.record_height(key, bounds.size.height);
+                },
                 |_, _, _, _| (),
             )
             .absolute()
@@ -475,8 +530,40 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 ),
         );
     }
+    if let Some((first, run)) = skipped {
+        column = column.child(stand_in(first, run));
+    }
 
     column.into_any_element()
+}
+
+/// What a block's height is cached under: its content and the type it is set
+/// in, so an edit elsewhere that shifts its index keeps the height.
+fn block_key(block: &Block, typography: &Typography) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    block.hash(&mut hasher);
+    typography.body.size().to_bits().hash(&mut hasher);
+    typography.body.line_height().to_bits().hash(&mut hasher);
+    hasher.finish()
+}
+
+/// A run of blocks outside the band, as the space they took when last built.
+/// Scrolled into view before a frame has built them — a jump further than the
+/// band reaches — it asks for the frame that will.
+fn stand_in(gap: f32, height: Pixels) -> gpui::Div {
+    div().mt(px(gap)).h(height).w_full().relative().child(
+        canvas(
+            |bounds, window, _| {
+                let shown = bounds.intersect(&window.content_mask().bounds);
+                if shown.size.height > px(0.0) && shown.size.width > px(0.0) {
+                    window.request_animation_frame();
+                }
+            },
+            |_, _, _, _| (),
+        )
+        .absolute()
+        .size_full(),
+    )
 }
 
 /// Whether two adjacent blocks belong to the same list and should sit close.

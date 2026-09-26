@@ -28,6 +28,21 @@ pub(super) struct Frames {
     /// A task block's checkbox, which is not its marker column: the column is
     /// gutter either side of the box, and a click there places a caret.
     checkboxes: Vec<(usize, Bounds<Pixels>)>,
+    /// Kept across frames: [`Self::clear`] leaves it.
+    heights: Heights,
+}
+
+/// What a block off-screen is stood in at, and where the screen was.
+#[derive(Default)]
+pub(super) struct Heights {
+    /// A block's height by [`block_key`], at `width`.
+    by_key: HashMap<u64, Pixels>,
+    /// The column's width the heights were measured at.
+    width: Option<Pixels>,
+    /// The column's box last frame, in window coordinates.
+    column: Option<Bounds<Pixels>>,
+    /// The part of the window the column was clipped to last frame.
+    visible: Option<Bounds<Pixels>>,
 }
 
 /// One shaped run and the slice of its part it covers.
@@ -290,6 +305,53 @@ impl BlockLayouts {
 
     pub(super) fn record_checkbox(&self, ix: usize, bounds: Bounds<Pixels>) {
         self.0.borrow_mut().checkboxes.push((ix, bounds));
+    }
+
+    /// Starts a frame: empties what the last one painted and notes where the
+    /// column sits and what of it the window shows. A change of width drops
+    /// every height and asks for another frame, since the blocks stood in at
+    /// them this frame are the wrong size.
+    pub(super) fn frame(&self, column: Bounds<Pixels>, window: &mut Window) {
+        self.clear();
+        let mut frames = self.0.borrow_mut();
+        let heights = &mut frames.heights;
+        heights.column = Some(column);
+        heights.visible = Some(window.content_mask().bounds);
+        if heights.width != Some(column.size.width) {
+            if heights.width.is_some() {
+                window.request_animation_frame();
+            }
+            heights.width = Some(column.size.width);
+            heights.by_key.clear();
+        }
+    }
+
+    /// The span of the column, from its top, a block has to reach into to be
+    /// built: what the window showed last frame and a screen either side of
+    /// it. `None` before a frame has painted.
+    pub(super) fn band(&self) -> Option<Range<Pixels>> {
+        let heights = &self.0.borrow().heights;
+        let (column, visible) = (heights.column?, heights.visible?);
+        let margin = visible.size.height;
+        Some(visible.top() - column.top() - margin..visible.bottom() - column.top() + margin)
+    }
+
+    pub(super) fn height(&self, key: u64) -> Option<Pixels> {
+        self.0.borrow().heights.by_key.get(&key).copied()
+    }
+
+    pub(super) fn record_height(&self, key: u64, height: Pixels) {
+        self.0.borrow_mut().heights.by_key.insert(key, height);
+    }
+
+    /// Drops the heights of blocks no longer in the document once they
+    /// outnumber the ones that are.
+    pub(super) fn prune(&self, keys: &[u64]) {
+        let by_key = &mut self.0.borrow_mut().heights.by_key;
+        if by_key.len() > 2 * keys.len() {
+            let keep: std::collections::HashSet<u64> = keys.iter().copied().collect();
+            by_key.retain(|key, _| keep.contains(key));
+        }
     }
 
     pub(super) fn clear(&self) {
