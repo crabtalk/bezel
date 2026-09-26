@@ -30,3 +30,24 @@ fn composition_selection_is_relative_to_replacement_text(cx: &mut TestAppContext
         })
         .unwrap();
 }
+
+/// A range handed to `select` is floored onto char boundaries and the end of
+/// the text, with the caret at its end.
+#[gpui::test]
+fn select_clamps_to_char_boundaries(cx: &mut TestAppContext) {
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let window = cx.add_window(|_, cx| TextField::new(cx));
+    window
+        .update(cx, |field, window, cx| {
+            field.set_content("a中b", cx);
+            // Byte 2 is inside `中` (bytes 1..4); 99 is past the end.
+            field.select(2..99, cx);
+            assert_eq!(
+                field.selected_text_range(false, window, cx).unwrap().range,
+                1..3,
+                "utf-16: `中` starts at 1, the end is 3"
+            );
+            assert_eq!(field.cursor(), 5);
+        })
+        .unwrap();
+}

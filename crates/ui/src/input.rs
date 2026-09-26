@@ -361,6 +361,8 @@ pub struct TextField {
     /// Byte ranges to paint in a syntax colour, in document order — see
     /// [`Self::set_spans`]. Empty for every field that is prose.
     spans: Vec<(Range<usize>, HighlightKind)>,
+    /// Byte ranges washed behind the text — see [`Self::set_matches`].
+    matches: Vec<Range<usize>>,
 }
 
 impl EventEmitter<FieldEvent> for TextField {}
@@ -392,6 +394,7 @@ impl TextField {
             blink: None,
             follow_caret: false,
             spans: Vec::new(),
+            matches: Vec::new(),
         }
     }
 
@@ -502,6 +505,7 @@ impl TextField {
         self.content = self.case.apply(&normalized).into_owned().into();
         // Colours describe text this field no longer holds.
         self.spans.clear();
+        self.matches.clear();
         // A programmatic reset is not something the user did, so there is
         // nothing here for them to undo back past.
         self.history.clear();
@@ -532,6 +536,28 @@ impl TextField {
     /// replaces what the colours were about.
     pub fn set_spans(&mut self, spans: Vec<(Range<usize>, HighlightKind)>, cx: &mut Context<Self>) {
         self.spans = spans;
+        cx.notify();
+    }
+
+    /// Wash these byte ranges behind the text, as search matches. Not kept in
+    /// step with edits, and cleared by [`Self::set_content`], the same as
+    /// [`Self::set_spans`]. A range past the end or off a char boundary is
+    /// not painted.
+    pub fn set_matches(&mut self, matches: Vec<Range<usize>>, cx: &mut Context<Self>) {
+        self.matches = matches;
+        cx.notify();
+    }
+
+    /// Select `range` and scroll it into view, with the caret at its end.
+    /// Clamped to the content and to char boundaries.
+    pub fn select(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        let end = floor_boundary(&self.content, range.end);
+        let start = floor_boundary(&self.content, range.start.min(end));
+        self.selected_range = start..end;
+        self.selection_reversed = false;
+        self.marked_range = None;
+        self.goal_x = None;
+        self.caret_moved();
         cx.notify();
     }
 
@@ -1351,6 +1377,15 @@ fn offset_for_position(
     last
 }
 
+/// The char boundary at or before `offset`, clamped to the end of `text`.
+fn floor_boundary(text: &str, offset: usize) -> usize {
+    let mut offset = offset.min(text.len());
+    while !text.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    offset
+}
+
 /// The selection as one rect per visual row, relative to the text origin.
 ///
 /// A row's left edge is always x=0, so a continuation row is taken from there
@@ -1626,6 +1661,8 @@ struct FieldPrepaint {
     /// Top-left of the text, which is the box moved up by the scroll offset.
     origin: Point<Pixels>,
     cursor: Option<PaintQuad>,
+    /// One quad per visual row each match covers.
+    matches: Vec<PaintQuad>,
     /// One quad per visual row the selection covers.
     selection: Vec<PaintQuad>,
 }
@@ -1733,6 +1770,16 @@ impl Element for TextFieldElement {
         let cursor = field.cursor_offset();
         let shape = field.shape;
         let marked_range = field.marked_range.clone();
+        let matches: Vec<_> = field
+            .matches
+            .iter()
+            .filter(|range| {
+                range.start <= range.end
+                    && field.content.is_char_boundary(range.start)
+                    && field.content.is_char_boundary(range.end)
+            })
+            .cloned()
+            .collect();
         let scrolled = field.scroll;
         let follow_caret = field.follow_caret;
         let style = window.text_style();
@@ -1816,6 +1863,21 @@ impl Element for TextFieldElement {
         });
         let origin = bounds.origin - scroll;
 
+        let matches = if is_placeholder {
+            Vec::new()
+        } else {
+            matches
+                .iter()
+                .flat_map(|range| selection_rows(&lines, range, line_height))
+                .map(|rect| {
+                    fill(
+                        Bounds::new(origin + rect.origin, rect.size),
+                        theme.warning.opacity(0.25),
+                    )
+                })
+                .collect()
+        };
+
         let (selection, cursor) = if selected_range.is_empty() {
             let at = position_for_offset(&lines, cursor, line_height).unwrap_or_default();
             (
@@ -1849,6 +1911,7 @@ impl Element for TextFieldElement {
             lines,
             origin,
             cursor,
+            matches,
             selection,
         }
     }
@@ -1894,6 +1957,7 @@ impl Element for TextFieldElement {
             });
         });
         let lines = std::mem::take(&mut prepaint.lines);
+        let matches = std::mem::take(&mut prepaint.matches);
         let selection = std::mem::take(&mut prepaint.selection);
         let cursor = prepaint.cursor.take();
         let origin = prepaint.origin;
@@ -1901,8 +1965,8 @@ impl Element for TextFieldElement {
         // Scrolled text runs past the box in both directions, so everything the
         // field draws is masked to it — text, selection and caret alike.
         window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
-            for selection in selection {
-                window.paint_quad(selection);
+            for quad in matches.into_iter().chain(selection) {
+                window.paint_quad(quad);
             }
 
             let mut top = origin;
