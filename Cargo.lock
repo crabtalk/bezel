@@ -583,7 +583,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bezel"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-agent",
  "bezel-gpui",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-agent"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-blocks"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-browser"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "async-channel",
  "bezel-gpui",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-canvas"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-editor",
  "bezel-gpui",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-editor"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "bezel-markdown",
@@ -973,7 +973,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-icons"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "usvg",
@@ -981,7 +981,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-markdown"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -991,7 +991,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-motion"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-syntax"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-theme",
  "tree-sitter",
@@ -1012,7 +1012,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-syntax-std"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-syntax",
  "tree-sitter-bash",
@@ -1026,7 +1026,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-terminal"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "alacritty_terminal",
  "bezel-gpui",
@@ -1038,7 +1038,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-theme"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "objc",
@@ -1050,7 +1050,7 @@ dependencies = [
 
 [[package]]
 name = "bezel-ui"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "bezel-icons",
@@ -1372,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "browse"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-browser",
  "bezel-gpui",
@@ -2914,7 +2914,7 @@ dependencies = [
 
 [[package]]
 name = "gallery"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-agent",
  "bezel-blocks",
@@ -3432,7 +3432,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hello"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel",
  "bezel-gpui",
@@ -5115,7 +5115,7 @@ dependencies = [
 
 [[package]]
 name = "parity"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-platform",
@@ -8341,7 +8341,7 @@ dependencies = [
 
 [[package]]
 name = "web"
-version = "0.1.30"
+version = "0.2.0"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-web",

@@ -1,5 +1,20 @@
 [
   {
+    "version": "0.2.0",
+    "date": "2026-09-26",
+    "summary": "Menus, dialogs and tooltips over a `WebView`, the held prefix of a key sequence and what can follow it, find in a text field, and app shortcuts from inside a WebView2 page.",
+    "new": [
+      "`ui::cover` records the rectangles overlays cover during prepaint, each stamped with its place in the frame's prepaint order. `cover::mark` takes a place and `cover::covered` answers whether a cover recorded after it overlaps a rectangle in the frame being drawn. Every `ui::surface::Surface` card (popover layers, menus, dialogs, tooltips, hover cards) and the dialog and sheet scrims record themselves; `cover::cover()` records its parent's box for anything else an app floats, such as a drag preview. A cover in a view gpui reuses from the last frame (`AnyView::cached`) is not recorded.",
+      "A `WebView` with a cover recorded after it is parked. On macOS a still of the page, taken while it is still up, is painted in its place, and the page stays over the cover until the still arrives; elsewhere the place is left empty. `browser::Frame` hides its iframe. The page comes back live once nothing covers it.",
+      "`ui::pending::PendingKeys` shows the prefix of a key sequence gpui is holding and the continuations the keymap binds after it, and renders nothing while no sequence is pending. `with_label` names each continuation's action; the default is the action's name without its namespace, split into words.",
+      "`TextField::select` selects a byte range and scrolls it into view with the caret at its end. `TextField::set_matches` washes byte ranges behind the text as search matches, cleared by `set_content` and not kept in step with edits.",
+      "On Windows a key a WebView2 page takes with ctrl or alt held, or a function key, goes to gpui's key dispatch in place of the page when the keymap binds it, alone or as the start of a sequence, in the view's key context."
+    ],
+    "changed": [
+      "`bezel-browser` depends on `bezel-ui`."
+    ]
+  },
+  {
     "version": "0.1.30",
     "date": "2026-09-25",
     "summary": "`bezel-browser`, a platform webview placed in a gpui window: WKWebView on macOS, WebView2 on Windows, webkit2gtk on Linux under X11, and an iframe on the web build.",
