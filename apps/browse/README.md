@@ -34,4 +34,3 @@ Text in the address field that has no scheme, contains a dot and no spaces loads
 - Tabs show a globe, not the site's favicon.
 - No stop button or load progress: the address field shows only whether a page is loading.
 - Back and forward are always enabled.
-- On Windows, the page takes every key while it holds focus, so the shortcuts above do not fire from inside a page (BROW-8).
