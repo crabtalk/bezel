@@ -27,7 +27,11 @@ pub enum ButtonStyle {
 
 /// The glyph a [`Buttons::icon_button`] carries, at the size every other
 /// control in this crate paints one.
-const GLYPH: f32 = 14.0;
+pub const ICON_GLYPH: f32 = 14.0;
+
+/// The padding that sets an [`Buttons::icon_button`]'s glyph [`Theme::EDGE`]
+/// from its container's edge.
+pub const ICON_EDGE_PAD: f32 = Theme::EDGE - (Theme::BUTTON_HEIGHT - ICON_GLYPH) / 2.0;
 
 /// What a [`Buttons::control_group`] insets its items by, and the gap between
 /// them — so the first sits as far from the track's edge as from its neighbour.
@@ -73,7 +77,7 @@ pub trait Buttons: ThemeExt {
             .w(px(Theme::BUTTON_HEIGHT))
             .justify_center();
         let (button, tint) = appearance(self.theme(), square, style, None, fade, true);
-        button.child(crate::icons::icon(icon).size(px(GLYPH)).text_color(tint))
+        button.child(crate::icons::icon(icon).size(px(ICON_GLYPH)).text_color(tint))
     }
 
     /// SwiftUI's `ControlGroup`, and what a toolbar paints behind the items it

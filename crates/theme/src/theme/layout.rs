@@ -208,4 +208,8 @@ impl Theme {
     /// The margin from content to its container's edge. Same measurement,
     /// visual format's `|-`.
     pub const CONTENT_MARGIN: f32 = 20.0;
+    /// From a column's edge to the glyph of the control at the end of a row,
+    /// measured to the glyph rather than the button. Mirrored at the trailing
+    /// end.
+    pub const EDGE: f32 = 12.0;
 }
