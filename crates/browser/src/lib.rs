@@ -9,6 +9,7 @@
 #[cfg(target_family = "wasm")]
 mod frame;
 mod host;
+mod page;
 mod view;
 
 #[cfg(target_family = "wasm")]
