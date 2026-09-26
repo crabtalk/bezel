@@ -31,6 +31,7 @@ use ui::{
     menubar::{self, Menu, Menubar, MenubarEvent},
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
+    pending::PendingKeys,
     popover,
     scroll::{self, Axes, ScrollbarState, TransientState},
     stats::{self, Stats},
@@ -102,6 +103,9 @@ pub fn init(cx: &mut App) {
         // Scoped to this page's context, so it never shadows the escape a
         // menu, a combobox or the document editor binds inside its own.
         KeyBinding::new("escape", CloseOverlay, Some("Gallery")),
+        // Sequences, for the pending-keys hint in the corner.
+        KeyBinding::new("ctrl-g p", OpenPalette, Some("Gallery")),
+        KeyBinding::new("ctrl-g f", ToggleFullScreen, Some("Gallery")),
     ]);
 }
 
@@ -943,6 +947,8 @@ pub struct Gallery {
     /// Mounted only while open — a palette that lingers keeps a stale query.
     palette: Option<Entity<CommandPalette>>,
     last_command: Option<SharedString>,
+    /// Built on the first render, which is the first time there is a window.
+    pending: Option<Entity<PendingKeys>>,
     segment: usize,
     /// Which glyph segment the icon-only toggle group is on.
     segment_view: usize,
@@ -1227,6 +1233,7 @@ impl Gallery {
             date: cx.new(|cx| Calendar::new(today(), cx)),
             palette: None,
             last_command: None,
+            pending: None,
             segment: 0,
             segment_view: 0,
             expanded: true,
@@ -5563,6 +5570,17 @@ impl Render for Gallery {
             .text_color(theme.text)
             .text_style(TextStyle::Body)
             .child(content)
+            .child(
+                div()
+                    .absolute()
+                    .bottom(px(CARD_PAD))
+                    .right(px(CARD_PAD))
+                    .child(
+                        self.pending
+                            .get_or_insert_with(|| cx.new(|cx| PendingKeys::new(window, cx)))
+                            .clone(),
+                    ),
+            )
             // The rail, once it no longer fits beside the pane. Same width, so
             // the cached layout `rail::style` reports still describes it.
             .when(self.drawer.get().is_some(), |root| {

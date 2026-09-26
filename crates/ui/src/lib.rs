@@ -30,6 +30,7 @@ pub mod menu;
 pub mod menubar;
 pub mod pagination;
 pub mod palette;
+pub mod pending;
 pub mod popover;
 pub mod scroll;
 mod search;
