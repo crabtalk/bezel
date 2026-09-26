@@ -17,7 +17,7 @@ mod scaffolding;
 mod status;
 
 pub use button::Button;
-pub use buttons::{ButtonRole, ButtonStyle, Buttons};
+pub use buttons::{ButtonRole, ButtonStyle, Buttons, ICON_EDGE_PAD, ICON_GLYPH};
 pub use content::Content;
 pub use controls::{Controls, SliderDrag, slider_fraction};
 pub use icon::Icons;

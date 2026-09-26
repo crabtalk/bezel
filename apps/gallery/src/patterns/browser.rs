@@ -18,7 +18,7 @@ use ui::input::TextField;
 #[cfg(not(target_family = "wasm"))]
 use ui::{
     icons,
-    widgets::{ButtonStyle, Buttons},
+    widgets::{ButtonStyle, Buttons, ICON_EDGE_PAD},
 };
 
 actions!(gallery_browser, [Go]);
@@ -130,7 +130,8 @@ impl Render for Browser {
                     .flex()
                     .items_center()
                     .gap(px(4.0))
-                    .p(px(8.0))
+                    .px(px(ICON_EDGE_PAD))
+                    .py(px(8.0))
                     .border_b_1()
                     .border_color(theme.border)
                     .child(

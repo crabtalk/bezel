@@ -1,5 +1,31 @@
 [
   {
+    "version": "0.2.1",
+    "date": "2026-09-26",
+    "summary": "A long document in the editor lays out only what the window shows, syntax colours in a text field follow its edits, an incremental syntax document, and a scrollbar thumb 2px off its edge.",
+    "new": [
+      "`syntax::document::Document` holds a source parsed across edits. `edit` takes the replaced byte range, where the new text ends and the whole text now, reparses from the old tree and answers the byte ranges whose spans may have changed; `spans` and `spans_in` answer what `syntax::highlight` would paint. `Document::new` answers `None` for a wasm grammar and for a language with an injections query.",
+      "`ui::input::Edit` is one replacement in a field's text, as `start`, `old_end` and `new_end` byte offsets. `Edit::between` gives the smallest edit between two texts and `Edit::map` carries a byte range through one.",
+      "`ui::scroll::Overlay::margin` sets the gap between the pane's edge and a scrollbar thumb, across the axis. It defaults to 2px, and the 10px track under the thumb keeps its width at any margin.",
+      "`Theme::EDGE` (12) is the distance from a column's edge to the glyph of the control at the end of a row. `ui::widgets::ICON_GLYPH` is the icon button's glyph size and `ICON_EDGE_PAD` the padding that sets an icon button's glyph `EDGE` from its container's edge.",
+      "`markdown::Editing::keep` names blocks, or source lines for `render_source`, to build wherever they are, and `Editing::scroll` is the scroll container a document sits in."
+    ],
+    "changed": [
+      "With `layouts` given, `markdown::render_with` and `render_source` build only the blocks, or source lines, within half a screen of the part of the window the document shows, plus the caret's, the selection anchor's and those in `keep`. The rest are placed at their last measured height or a guess from their length, `BlockLayouts` answers only for what was built, and heights above the first block showing that come out different move `Editing::scroll` by the difference.",
+      "`markdown::Editing` has `keep` and `scroll` fields; a struct literal without `..Default::default()` has to name them.",
+      "`FieldEvent::Changed` carries the `Edit` the field applied, and `TextField` moves its syntax spans through each edit rather than leaving them where they were until `set_spans`.",
+      "`Overlay::channel` is gone; `Overlay::margin` places the thumb. A scrollbar thumb sits 2px from the pane's edge rather than 7px.",
+      "`markdown::Block`, `BlockKind`, `Text`, `MarkSpan`, `Mark`, `Form`, `QuoteKind` and `Align` derive `Hash`.",
+      "`Editor::select` on an editor without focus builds and reveals the selected block, keeping the reveal until the caret is in view.",
+      "Built on `bezel-gpui` 0.3.13."
+    ],
+    "fixed": [
+      "Scrolling a long document in the editor costs time in proportion to the window rather than the document: 1000 sections scroll at about 1 ms a frame, down from 33 ms.",
+      "Text and icons over a translucent background no longer carry a dark rim along their edges on macOS; `bezel-gpui` 0.3.13 blends the destination alpha with one minus the source alpha.",
+      "Syntax colours in a `TextField` stay on their characters between an edit and the recolour that follows it."
+    ]
+  },
+  {
     "version": "0.2.0",
     "date": "2026-09-26",
     "summary": "Menus, dialogs and tooltips over a `WebView`, the held prefix of a key sequence and what can follow it, find in a text field, and app shortcuts from inside a WebView2 page.",

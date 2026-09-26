@@ -28,6 +28,17 @@ pub(super) struct Frames {
     /// A task block's checkbox, which is not its marker column: the column is
     /// gutter either side of the box, and a click there places a caret.
     checkboxes: Vec<(usize, Bounds<Pixels>)>,
+    /// Kept across frames: [`Self::clear`] leaves it.
+    heights: Heights,
+}
+
+/// Block heights kept across frames, so a block off-screen is placed without
+/// being built.
+#[derive(Default)]
+pub(super) struct Heights {
+    /// A block's height by [`block_key`], as last measured at whatever width
+    /// the column had then.
+    by_key: HashMap<u64, Pixels>,
 }
 
 /// One shaped run and the slice of its part it covers.
@@ -290,6 +301,24 @@ impl BlockLayouts {
 
     pub(super) fn record_checkbox(&self, ix: usize, bounds: Bounds<Pixels>) {
         self.0.borrow_mut().checkboxes.push((ix, bounds));
+    }
+
+    pub(super) fn height(&self, key: u64) -> Option<Pixels> {
+        self.0.borrow().heights.by_key.get(&key).copied()
+    }
+
+    pub(super) fn record_height(&self, key: u64, height: Pixels) {
+        self.0.borrow_mut().heights.by_key.insert(key, height);
+    }
+
+    /// Drops the heights of blocks no longer in the document once they
+    /// outnumber the ones that are.
+    pub(super) fn prune(&self, keys: &[u64]) {
+        let by_key = &mut self.0.borrow_mut().heights.by_key;
+        if by_key.len() > 2 * keys.len() {
+            let keep: std::collections::HashSet<u64> = keys.iter().copied().collect();
+            by_key.retain(|key, _| keep.contains(key));
+        }
     }
 
     pub(super) fn clear(&self) {

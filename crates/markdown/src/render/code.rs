@@ -16,17 +16,10 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         layouts,
         annotations,
         typography,
+        keep,
+        scroll,
         ..
     } = editing;
-    // The same reset `render_with` opens with, and for the same reason: the
-    // positions this frame records are the ones the next click resolves
-    // against, and last frame's have to go first.
-    let reset = layouts.map(|layouts| {
-        let layouts = layouts.clone();
-        canvas(move |_, _, _| layouts.clear(), |_, _, _, _| ())
-            .absolute()
-            .size(px(0.0))
-    });
     let theme = Theme::of(cx).clone();
     let typography = typography.unwrap_or_else(|| Typography::of(cx));
     let overlay = Overlay {
@@ -45,49 +38,179 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         base: None,
         highlight: crate::marks::highlight_paint_of(cx),
     };
-    let (underlay, lines) = code_lines(
-        Some(crate::source::LANGUAGES[0]),
-        code,
-        overlay,
-        &typography,
-        &theme,
-        cx,
-    );
-    // Keep each number beside its source line, including wrapped and empty lines.
     let style = crate::SourceStyle::of(cx);
-    let digits = lines.len().to_string().len().max(style.gutter_min_digits);
-    let gap = style.gutter_gap.max(0.0) * typography.code.size();
-    let gutter_width = digits as f32 * typography.code.size() + gap;
-    let lines = lines
-        .into_iter()
-        .enumerate()
-        .map(|(index, line)| {
-            if !style.line_numbers {
-                return line;
-            }
-            div()
-                .flex()
-                .items_start()
-                .child(
-                    div()
-                        .w(px(gutter_width))
-                        .flex_shrink_0()
-                        .pr(px(gap))
-                        .font_family(theme.font_mono.clone())
-                        .text_color(style.gutter_color.unwrap_or(theme.text_faint))
-                        .text_right()
-                        .child((index + 1).to_string()),
-                )
-                .child(div().flex_1().min_w_0().child(line))
-                .into_any_element()
+    let count = code.split('\n').count();
+    let gutter = Gutter::new(&style, count, &typography, &theme);
+
+    let Some(layouts) = layouts else {
+        let (underlay, lines) = code_lines(
+            Some(crate::source::LANGUAGES[0]),
+            code,
+            overlay,
+            &typography,
+            &theme,
+            cx,
+        );
+        let lines = lines
+            .into_iter()
+            .enumerate()
+            .map(|(index, line)| gutter.row(index, line))
+            .collect();
+        return div()
+            .flex()
+            .flex_col()
+            .child(code_body(0, underlay, lines, &typography, true))
+            .into_any_element();
+    };
+
+    // Built a line at a time by the same column the blocks are: a line is to
+    // this text what a block is to a document.
+    let language = crate::source::LANGUAGES[0];
+    let spans: Option<Rc<[Span]>> = crate::highlight::spans(cx, Some(language), code)
+        .or_else(|| crate::source::is_markdown(language).then(|| crate::source::spans(code)))
+        .map(Into::into);
+    let mut ranges = Vec::with_capacity(count);
+    let mut offset = 0usize;
+    for line in code.split('\n') {
+        ranges.push(offset..offset + line.len());
+        offset += line.len() + 1;
+    }
+    let line_of = |at: usize| {
+        ranges
+            .partition_point(|range| range.end < at)
+            .min(count - 1)
+    };
+    let mut kept: Vec<usize> = keep.to_vec();
+    if let Some(selection) = selection {
+        kept.push(line_of(selection.head.offset));
+        kept.push(line_of(selection.anchor.offset));
+    }
+    let line = px(typography.code.line_height());
+    let keys: Vec<u64> = ranges
+        .iter()
+        .map(|range| {
+            let mut hasher = DefaultHasher::new();
+            "source".hash(&mut hasher);
+            code[range.clone()].hash(&mut hasher);
+            typography.code.size().to_bits().hash(&mut hasher);
+            hasher.finish()
         })
         .collect();
+    layouts.prune(&keys);
+    let indent = px(gutter.width() + 2.0 * CODE_PADDING_X);
+    let guesses: Vec<Guess> = ranges
+        .iter()
+        .map(|range| Guess {
+            chars: range.len(),
+            line,
+            rows: 0,
+            extra: px(0.0),
+            indent,
+        })
+        .collect();
+    let paint = RowPaint {
+        caret: overlay.caret_painted(),
+        selected: overlay.selected(code.len()),
+        annotated: overlay.annotated(code.len(), &theme),
+        caret_color: theme.caret,
+        selection_color: theme.selection,
+        code_size: typography.code.size(),
+    };
+    let code: Rc<str> = code.into();
+    let sink = layouts.clone();
+    let ranges: Rc<[Range<usize>]> = ranges.into();
+    let column = Column {
+        layouts: layouts.clone(),
+        keys: keys.into(),
+        gaps: vec![px(0.0); count].into(),
+        guesses: guesses.into(),
+        keep: kept,
+        scroll: scroll.cloned(),
+        build: Box::new(move |index, _, _| {
+            let span = ranges[index].clone();
+            let styled = code_line(&code[span.clone()], span.start, spans.as_deref(), &theme);
+            let layout = styled.layout().clone();
+            let (sink, paint) = (sink.clone(), paint.clone());
+            let underlay = canvas(
+                |_, _, _| (),
+                move |_, _, window, _| {
+                    sink.record(0, Part::Code, span.clone(), layout.clone());
+                    paint.paint(&span, &layout, window);
+                },
+            )
+            .absolute()
+            .size_full();
+            let text = div().relative().child(underlay).child(styled);
+            div()
+                .px(px(CODE_PADDING_X))
+                .child(gutter.row(index, text.into_any_element()))
+                .into_any_element()
+        }),
+    };
     div()
         .flex()
         .flex_col()
-        .children(reset)
-        .child(code_body(0, underlay, lines, &typography, true))
+        .py(px(CODE_PADDING_Y))
+        .text_size(px(typography.code.size()))
+        .line_height(line)
+        .child(column)
         .into_any_element()
+}
+
+/// The line numbers beside a source view, when it shows them.
+#[derive(Clone)]
+struct Gutter {
+    shown: bool,
+    width: f32,
+    gap: f32,
+    color: Hsla,
+    font: SharedString,
+}
+
+impl Gutter {
+    fn new(
+        style: &crate::SourceStyle,
+        lines: usize,
+        typography: &Typography,
+        theme: &Theme,
+    ) -> Self {
+        let digits = lines.to_string().len().max(style.gutter_min_digits);
+        let gap = style.gutter_gap.max(0.0) * typography.code.size();
+        Self {
+            shown: style.line_numbers,
+            width: digits as f32 * typography.code.size() + gap,
+            gap,
+            color: style.gutter_color.unwrap_or(theme.text_faint),
+            font: theme.font_mono.clone(),
+        }
+    }
+
+    fn width(&self) -> f32 {
+        if self.shown { self.width } else { 0.0 }
+    }
+
+    /// Keeps each number beside its source line, including wrapped and empty
+    /// lines.
+    fn row(&self, index: usize, line: AnyElement) -> AnyElement {
+        if !self.shown {
+            return line;
+        }
+        div()
+            .flex()
+            .items_start()
+            .child(
+                div()
+                    .w(px(self.width))
+                    .flex_shrink_0()
+                    .pr(px(self.gap))
+                    .font_family(self.font.clone())
+                    .text_color(self.color)
+                    .text_right()
+                    .child((index + 1).to_string()),
+            )
+            .child(div().flex_1().min_w_0().child(line))
+            .into_any_element()
+    }
 }
 
 /// The shaped lines of a fence, and the canvas that paints the caret, the
@@ -110,15 +233,6 @@ pub(super) fn code_lines(
             .filter(|language| crate::source::is_markdown(language))
             .map(|_| crate::source::spans(code))
     });
-    let mono = font(theme.font_mono.clone());
-    let run = |len: usize, color: Hsla| TextRun {
-        len,
-        font: mono.clone(),
-        color,
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
     // Each source line's own layout, with the slice of the code it covers —
     // the caret and a click both resolve through these. A wrapped line is
     // several rows of one layout, which is the case `range_rects` already
@@ -130,29 +244,7 @@ pub(super) fn code_lines(
         .map(|line| {
             let start = offset;
             offset += line.len() + 1;
-            let mut runs = Vec::new();
-            // Runs are measured within the line; spans are byte ranges over the
-            // whole block, so every span is clipped to the line and rebased.
-            let mut pos = 0usize;
-            if let Some(spans) = &spans {
-                let end = start + line.len();
-                for (range, kind) in spans.iter().filter(|(r, _)| r.end > start && r.start < end) {
-                    let s = range.start.clamp(start, end) - start;
-                    let e = range.end.min(end) - start;
-                    if s > pos {
-                        runs.push(run(s - pos, theme.text));
-                    }
-                    runs.push(run(e - s, theme.syntax.color(*kind)));
-                    pos = e;
-                }
-            }
-            if pos < line.len() {
-                runs.push(run(line.len() - pos, theme.text));
-            }
-            if runs.is_empty() {
-                runs.push(run(0, theme.text));
-            }
-            let styled = StyledText::new(SharedString::from(line.to_string())).with_runs(runs);
+            let styled = code_line(line, start, spans.as_deref(), theme);
             rows.push((start..start + line.len(), styled.layout().clone()));
             styled.into_any_element()
         })
@@ -164,6 +256,14 @@ pub(super) fn code_lines(
     let code_size = typography.code.size();
     let annotated = overlay.annotated(code.len(), theme);
     let (caret_color, selection_color) = (theme.caret, theme.selection);
+    let paint = RowPaint {
+        caret,
+        selected,
+        annotated,
+        caret_color,
+        selection_color,
+        code_size,
+    };
     let underlay = canvas(
         |_, _, _| (),
         move |_, _, window, _| {
@@ -171,52 +271,7 @@ pub(super) fn code_lines(
                 if let Some(sink) = &sink {
                     sink.record(ix, Part::Code, span.clone(), layout.clone());
                 }
-                for (range, wash) in &annotated {
-                    let (from, to) = (range.start.max(span.start), range.end.min(span.end));
-                    if from < to {
-                        for rect in
-                            range_rects(layout, &(from - span.start..to - span.start), 0.0, 0.0)
-                        {
-                            window.paint_quad(quad(
-                                rect,
-                                px(2.0),
-                                *wash,
-                                px(0.0),
-                                gpui::transparent_black(),
-                                BorderStyle::default(),
-                            ));
-                        }
-                    }
-                }
-                if let Some(range) = &selected {
-                    let (from, to) = (range.start.max(span.start), range.end.min(span.end));
-                    if from < to {
-                        for rect in
-                            range_rects(layout, &(from - span.start..to - span.start), 0.0, 0.0)
-                        {
-                            window.paint_quad(quad(
-                                rect,
-                                px(2.0),
-                                selection_color,
-                                px(0.0),
-                                gpui::transparent_black(),
-                                BorderStyle::default(),
-                            ));
-                        }
-                    }
-                }
-                if let Some(offset) = caret.filter(|at| span.contains(at) || *at == span.end)
-                    && let Some(head) = layout.position_for_index(offset - span.start)
-                {
-                    window.paint_quad(quad(
-                        caret_quad(head, code_size, layout.line_height()),
-                        px(0.0),
-                        caret_color,
-                        px(0.0),
-                        gpui::transparent_black(),
-                        BorderStyle::default(),
-                    ));
-                }
+                paint.paint(span, layout, window);
             }
         },
     )
@@ -224,6 +279,96 @@ pub(super) fn code_lines(
     .size_full();
 
     (underlay.into_any_element(), lines)
+}
+
+/// A highlighted byte range of a text.
+type Span = (Range<usize>, theme::HighlightKind);
+
+/// One line of code, coloured by the spans over the text it came from.
+///
+/// Runs are measured within the line; spans are byte ranges over the whole
+/// text, so every span is clipped to the line and rebased.
+fn code_line(line: &str, start: usize, spans: Option<&[Span]>, theme: &Theme) -> StyledText {
+    let mono = font(theme.font_mono.clone());
+    let run = |len: usize, color: Hsla| TextRun {
+        len,
+        font: mono.clone(),
+        color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let mut runs = Vec::new();
+    let mut pos = 0usize;
+    if let Some(spans) = spans {
+        let end = start + line.len();
+        for (range, kind) in spans.iter().filter(|(r, _)| r.end > start && r.start < end) {
+            let s = range.start.clamp(start, end) - start;
+            let e = range.end.min(end) - start;
+            if s > pos {
+                runs.push(run(s - pos, theme.text));
+            }
+            runs.push(run(e - s, theme.syntax.color(*kind)));
+            pos = e;
+        }
+    }
+    if pos < line.len() {
+        runs.push(run(line.len() - pos, theme.text));
+    }
+    if runs.is_empty() {
+        runs.push(run(0, theme.text));
+    }
+    StyledText::new(SharedString::from(line.to_string())).with_runs(runs)
+}
+
+/// What paints under a line of code: the annotations, the selection and the
+/// caret, each clipped to the slice of the text the line covers.
+#[derive(Clone)]
+struct RowPaint {
+    caret: Option<usize>,
+    selected: Option<Range<usize>>,
+    annotated: Vec<(Range<usize>, Hsla)>,
+    caret_color: Hsla,
+    selection_color: Hsla,
+    code_size: f32,
+}
+
+impl RowPaint {
+    fn paint(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
+        let wash = |range: &Range<usize>, color: Hsla, window: &mut Window| {
+            let (from, to) = (range.start.max(span.start), range.end.min(span.end));
+            if from < to {
+                for rect in range_rects(layout, &(from - span.start..to - span.start), 0.0, 0.0) {
+                    window.paint_quad(quad(
+                        rect,
+                        px(2.0),
+                        color,
+                        px(0.0),
+                        gpui::transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
+            }
+        };
+        for (range, color) in &self.annotated {
+            wash(range, *color, window);
+        }
+        if let Some(range) = &self.selected {
+            wash(range, self.selection_color, window);
+        }
+        if let Some(offset) = self.caret.filter(|at| span.contains(at) || *at == span.end)
+            && let Some(head) = layout.position_for_index(offset - span.start)
+        {
+            window.paint_quad(quad(
+                caret_quad(head, self.code_size, layout.line_height()),
+                px(0.0),
+                self.caret_color,
+                px(0.0),
+                gpui::transparent_black(),
+                BorderStyle::default(),
+            ));
+        }
+    }
 }
 
 pub(super) fn code_block(
