@@ -505,3 +505,372 @@ impl Gallery {
         cx.notify();
     }
 }
+
+impl Render for Gallery {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = Painter::of(cx);
+        let theme = Theme::of(cx).clone();
+        let reduce_motion = cx.reduce_motion();
+        // gpui has no media query: every responsive decision in this file is
+        // this one read, and it is the window rather than the element — the
+        // same thing a CSS breakpoint measures.
+        let compact = window.viewport_size().width < px(COMPACT_BELOW);
+        // A rail that is showing beside the pane must not also be in the
+        // drawer: one entity, two mounts. Widening the window is the case.
+        if !compact {
+            self.drawer.close();
+        }
+
+        // Rail on the left, one component in the pane — the set is long enough
+        // that a single scroll of everything reads as a wall.
+        let section =
+            section_at(self.selected[self.tab]).unwrap_or(&TABS[self.tab].groups[0].sections[0]);
+        let body = self.body(section, window, cx);
+        let pane = div().relative().flex_1().min_h_0().map(|pane| {
+            if TABS[self.tab].full_bleed {
+                // A pattern is a screen: it takes the pane whole and
+                // scrolls its own parts, so neither the fixed column nor
+                // the pane's own scrollbar applies to it.
+                //
+                // Narrower than a screen it stays one anyway, and you pan
+                // across it — a pattern is a file you copy into a desktop app,
+                // and thirteen phone layouts of one document nothing.
+                pane.child(
+                    div()
+                        .id("gallery-canvas")
+                        .size_full()
+                        .when(compact, |canvas| scroll::scrolls(canvas, Axes::Both))
+                        .child(
+                            div()
+                                .size_full()
+                                .when(compact, |screen| screen.min_w(px(CANVAS_MIN)))
+                                .p(px(24.0))
+                                .child(body),
+                        ),
+                )
+            } else {
+                pane.child(
+                    scroll::pane("gallery-pane", Axes::Vertical)
+                        .size_full()
+                        .track_scroll(&self.pane_scroll)
+                        // The column width components are designed for;
+                        // several are `w_full` and would otherwise stretch
+                        // to the whole pane.
+                        .child(
+                            div()
+                                // Compact drops to the header's padding, so the
+                                // body and the section title share one grid.
+                                .p(px(if compact { CARD_PAD } else { PANE_PAD }))
+                                .child(column().child(body)),
+                        ),
+                )
+                .child(scroll::transient(
+                    "pane-bar",
+                    &self.pane_scroll,
+                    &self.pane_bar,
+                    reduce_motion,
+                ))
+            }
+        });
+        let content = if self.embedded {
+            // The page around the iframe is already the nav, the rail and the
+            // header — repeating them inside it would be the same chrome twice.
+            div().flex().flex_col().size_full().child(pane)
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .size_full()
+                .child(self.nav(&theme, compact, window, cx))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .flex_row()
+                        .when(!compact, |row| {
+                            row.child(self.rail.clone().cached(rail::style()))
+                        })
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .h_full()
+                                .flex()
+                                .flex_col()
+                                .bg(theme.surface)
+                                .overflow_hidden()
+                                // Runs off the window's right and bottom edges,
+                                // so the only corner that floats is the one
+                                // that gets rounded. The seam it rounds against
+                                // is the rail, so a drawer leaves it nothing to
+                                // round and the pane meets the window edge.
+                                .when(!compact, |card| {
+                                    card.rounded_tl(px(Theme::panel_radius()))
+                                        .border_t_1()
+                                        .border_l_1()
+                                        .border_color(theme.border)
+                                })
+                                .child(self.header(section, &theme))
+                                .child(pane),
+                        ),
+                )
+        };
+
+        // Traversal goes on the root so `tab` works wherever focus happens to
+        // be, rather than only inside whatever claimed it.
+        let root = focus::traversal(div())
+            .id("gallery-scroll")
+            .key_context("Gallery")
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::open_palette))
+            .on_action(cx.listener(Self::toggle_fps_overlay))
+            .on_action(cx.listener(Self::reset_frame_overlay_stats))
+            .on_action(cx.listener(Self::toggle_full_screen))
+            .on_action(cx.listener(Self::close_overlay))
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(|view, event: &gpui::MouseDownEvent, _, cx| {
+                    view.context_menu.open(event.position);
+                    cx.notify();
+                }),
+            )
+            .size_full()
+            .bg(theme.window_bg())
+            .font_family(theme.font_sans.clone())
+            .text_color(theme.text)
+            .text_style(TextStyle::Body)
+            .child(content)
+            .child(
+                div()
+                    .absolute()
+                    .bottom(px(CARD_PAD))
+                    .right(px(CARD_PAD))
+                    .child(
+                        self.pending
+                            .get_or_insert_with(|| cx.new(|cx| PendingKeys::new(window, cx)))
+                            .clone(),
+                    ),
+            )
+            // The rail, once it no longer fits beside the pane. Same width, so
+            // the cached layout `rail::style` reports still describes it.
+            .when(self.drawer.get().is_some(), |root| {
+                root.child(popover::sheet(
+                    "gallery-drawer",
+                    window.viewport_size(),
+                    popover::Side::Left,
+                    px(RAIL_WIDTH),
+                    popover::sheet_panel(&theme, popover::Side::Left)
+                        // Starts where the rail starts in the wide layout —
+                        // below the nav strip. The scrim dims that strip but
+                        // cannot dim the traffic lights over it, which AppKit
+                        // paints above the canvas.
+                        .pt(px(Theme::HEADER_HEIGHT))
+                        .child(self.rail.clone().cached(rail::style()))
+                        .into_any_element(),
+                    self.drawer.closing_since(),
+                    cx.listener(|view, _, _, cx| view.close_drawer(cx)),
+                ))
+            })
+            // Not on the page that documents it: that page mounts the meter in
+            // its own column, and the entity can only be in one place. Nor on a
+            // narrow window, where its home corner is most of the width.
+            .when(
+                self.stats_shown && !compact && section.key != "stats",
+                |root| {
+                    // Home is read off the viewport rather than stored, so the
+                    // corner it opens in is the corner of *this* window.
+                    let viewport = window.viewport_size();
+                    let home = gpui::point(
+                        viewport.width - px(stats::WIDTH + CARD_PAD),
+                        px(Theme::HEADER_HEIGHT + CARD_PAD),
+                    );
+                    root.child(floating::panel(
+                        "meter",
+                        &self.stats_at,
+                        home,
+                        self.stats.clone(),
+                    ))
+                },
+            )
+            .when_some(
+                self.context_menu
+                    .get()
+                    .copied()
+                    .map(|position| (position, self.context_menu.closing_since())),
+                |root, (position, closing)| {
+                    root.child(popover::menu_at(
+                        "gallery-context",
+                        position,
+                        popover::popover_card(&theme)
+                            .w(px(180.0))
+                            .children(["Cut", "Copy", "Paste"].iter().enumerate().map(
+                                |(index, label)| {
+                                    popover::menu_row(
+                                        &theme,
+                                        false,
+                                        Some(Fade::new(view, format!("ctx-{index}"))),
+                                    )
+                                    .id(SharedString::from(format!("ctx-item-{index}")))
+                                    .on_click(
+                                        cx.listener(|view, _, _, cx| view.close_context_menu(cx)),
+                                    )
+                                    .child(*label)
+                                    .into_any_element()
+                                },
+                            ))
+                            // Dismissal is the caller's, and this is that
+                            // caller: press anywhere off the card and the menu
+                            // goes away.
+                            .on_mouse_down_out(
+                                cx.listener(|view, _, _, cx| view.close_context_menu(cx)),
+                            )
+                            .into_any_element(),
+                        closing,
+                    ))
+                },
+            )
+            .when(self.dialog.get().is_some(), |root| {
+                root.child(popover::modal(
+                    "gallery-dialog",
+                    window.viewport_size(),
+                    popover::dialog_card(&theme)
+                        .gap(px(12.0))
+                        .child(popover::dialog_title(&theme, "Discard changes?"))
+                        .child(popover::dialog_body(
+                            &theme,
+                            "This cannot be undone. The working tree keeps whatever \
+                             you have not saved.",
+                        ))
+                        .child(
+                            div()
+                                .mt(px(4.0))
+                                .flex()
+                                .flex_row()
+                                .justify_end()
+                                .gap(px(8.0))
+                                .child(
+                                    div()
+                                        .id("dialog-cancel")
+                                        .on_click(
+                                            cx.listener(|view, _, _, cx| view.close_dialog(cx)),
+                                        )
+                                        .child(theme.button(
+                                            "Cancel",
+                                            ButtonStyle::Ghost,
+                                            Some(Fade::new(view, "g-dialog-no")),
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .id("dialog-confirm")
+                                        .on_click(
+                                            cx.listener(|view, _, _, cx| view.close_dialog(cx)),
+                                        )
+                                        .child(theme.button(
+                                            "Discard",
+                                            ButtonStyle::Destructive,
+                                            None,
+                                        )),
+                                ),
+                        )
+                        .into_any_element(),
+                    cx.listener(|view, _, _, cx| view.close_dialog(cx)),
+                ))
+            })
+            .when_some(self.sheet.get().copied(), |root, side| {
+                // A side sheet is as wide as a rail; a bottom one is as tall
+                // as a picker, which is a different number for the same reason
+                // — it is measured across the edge it hangs off.
+                let extent = match side {
+                    popover::Side::Bottom => px(300.0),
+                    _ => px(320.0),
+                };
+                root.child(popover::sheet(
+                    "gallery-sheet",
+                    window.viewport_size(),
+                    side,
+                    extent,
+                    popover::sheet_panel(&theme, side)
+                        .p(px(20.0))
+                        .gap(px(14.0))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .justify_between()
+                                .child(popover::dialog_title(&theme, "Details"))
+                                .child(
+                                    div()
+                                        .id("close-sheet")
+                                        .on_click(
+                                            cx.listener(|view, _, _, cx| view.close_sheet(cx)),
+                                        )
+                                        .child(theme.button(
+                                            "Close",
+                                            ButtonStyle::Ghost,
+                                            Some(Fade::new(view, "g-sheet-close")),
+                                        )),
+                                ),
+                        )
+                        .child(popover::dialog_body(
+                            &theme,
+                            "A sheet is the dialog card pinned to an edge — same scrim, \
+                             same glass, spanning whichever edge it hangs off.",
+                        ))
+                        .child(
+                            theme
+                                .group_box()
+                                .child(
+                                    theme
+                                        .card_row(true)
+                                        .hover(|s| s.bg(theme.element_hover))
+                                        .child(theme.row_icon(icons::glyph::Monitor))
+                                        .child(theme.row_title("Appearance")),
+                                )
+                                .child(
+                                    theme
+                                        .card_row(false)
+                                        .hover(|s| s.bg(theme.element_hover))
+                                        .child(theme.row_icon(icons::glyph::Folder))
+                                        .child(theme.row_title("Storage")),
+                                ),
+                        )
+                        .into_any_element(),
+                    self.sheet.closing_since(),
+                    cx.listener(|view, _, _, cx| view.close_sheet(cx)),
+                ))
+            })
+            .when_some(self.palette.clone(), |root, palette| {
+                // Centered over a scrim, the way a palette always appears.
+                root.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .bg(theme::scrim(0.35))
+                        .flex()
+                        .justify_center()
+                        // Without items_start the card stretches to the full
+                        // window height (flex default is align: stretch).
+                        .items_start()
+                        .pt(px(120.0))
+                        // The palette binds `escape` itself, but a scrim you
+                        // can press and nothing happens reads as a stuck
+                        // window. The wrapper sizes to the card, so "out" is
+                        // the scrim.
+                        .child(div().child(palette).on_mouse_down_out(cx.listener(
+                            |view, _, _, cx| {
+                                view.palette = None;
+                                cx.notify();
+                            },
+                        ))),
+                )
+            });
+
+        // Border, corners, shadow and resize edges, for the desktops that hand
+        // the window over undecorated. Everywhere else this is the root back
+        // unchanged.
+        ui::window::frame(root, window, cx)
+    }
+}

@@ -445,3 +445,33 @@ impl Gallery {
         })
     }
 }
+
+impl Gallery {
+    /// The slider by keyboard. Clamped here rather than in the widget: the
+    /// paint clamps what it draws, but the value is this view's to keep sane.
+    /// The shipped look the probe's variant chip is pointing at.
+    pub(crate) fn probe_look(&self, cx: &App) -> SurfaceSpec {
+        let theme = Theme::of(cx);
+        self.probe_style.spec(theme)
+    }
+
+    /// The probe knob a slider id drives. Drag writes its value, the arrows add
+    /// a step; both go through here so the two cannot disagree.
+    pub(crate) fn probe_knob(&mut self, id: &str) -> &mut f32 {
+        match id {
+            "probe-w" => &mut self.probe_w,
+            "probe-h" => &mut self.probe_h,
+            "probe-b" => &mut self.probe_spec.rim,
+            "probe-m" => &mut self.probe_magnify,
+            "probe-dim" => &mut self.probe_spec.gain,
+            "probe-sat" => &mut self.probe_spec.saturation,
+            "probe-blur" => &mut self.probe_spec.blur,
+            "probe-lift" => &mut self.probe_spec.tint.a,
+            "probe-edge" => &mut self.probe_spec.edge,
+            "probe-edgew" => &mut self.probe_spec.edge_width,
+            "probe-disp" => &mut self.probe_disp,
+            "probe-fill" => &mut self.probe_fill,
+            _ => &mut self.probe_r,
+        }
+    }
+}

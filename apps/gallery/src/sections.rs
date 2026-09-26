@@ -402,3 +402,23 @@ pub(crate) fn column() -> gpui::Div {
         .flex_col()
         .gap(px(28.0))
 }
+
+impl Gallery {
+    /// One section by key. Unknown keys render nothing — [`SECTIONS`] is the
+    /// list, and anything off it is a typo at the call site.
+    pub(crate) fn section_body(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.foundations(key, window, cx)
+            .or_else(|| self.controls(key, window, cx))
+            .or_else(|| self.navigation(key, window, cx))
+            .or_else(|| self.overlays(key, window, cx))
+            .or_else(|| self.material(key, window, cx))
+            .or_else(|| self.data(key, window, cx))
+            .or_else(|| self.patterns(key, window, cx))
+            .unwrap_or_else(|| div().into_any_element())
+    }
+}

@@ -672,3 +672,63 @@ impl Gallery {
         })
     }
 }
+
+impl Gallery {
+    /// The visible rows, rebuilt from this view's own tree and its own set of
+    /// open folders.
+    pub(crate) fn tree_rows(&self) -> Vec<TreeRow> {
+        let mut rows = Vec::new();
+        flatten_tree(FILE_TREE, 0, "", &self.tree_expanded, &mut rows);
+        rows
+    }
+
+    /// An arrow key. `tree::step` decides what it meant; applying it is this
+    /// view's job, because the set of open folders is this view's.
+    pub(crate) fn tree_step(&mut self, direction: Direction, cx: &mut Context<Self>) {
+        let rows = self.tree_rows();
+        let shape: Vec<tree::Row> = rows.iter().map(|entry| entry.row).collect();
+        match tree::step(&shape, self.tree_cursor, direction) {
+            Some(Move::To(index)) => self.tree_cursor = index,
+            Some(Move::Expand(index)) => {
+                self.tree_expanded.insert(rows[index].path.clone());
+            }
+            Some(Move::Collapse(index)) => {
+                self.tree_expanded.remove(&rows[index].path);
+            }
+            None => {}
+        }
+        cx.notify();
+    }
+
+    /// A click: a folder opens or closes, a file is chosen. Both move the
+    /// keyboard cursor, so the two ways of getting around agree on where you
+    /// are.
+    pub(crate) fn tree_click(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let rows = self.tree_rows();
+        let Some(entry) = rows.get(index) else { return };
+        self.tree_cursor = index;
+        if entry.row.expanded.is_some() {
+            if !self.tree_expanded.remove(&entry.path) {
+                self.tree_expanded.insert(entry.path.clone());
+            }
+        } else {
+            self.tree_selected = Some(entry.path.clone());
+        }
+        window.focus(&self.tree_focus, cx);
+        cx.notify();
+    }
+
+    /// Go to a page, clamped the way the component clamps what it draws — the
+    /// prev/next steps hand this `page - 1` and `page + 1` without checking.
+    pub(crate) fn go_to_page(&mut self, page: usize, cx: &mut Context<Self>) {
+        self.page = page.clamp(1, RESULT_PAGES);
+        cx.notify();
+    }
+
+    /// A heading was clicked. `next_sort` says what that means; sorting the
+    /// rows is this view's job, since they are this view's rows.
+    pub(crate) fn sort_table(&mut self, column: usize, cx: &mut Context<Self>) {
+        self.table_sort = Some(table::next_sort(self.table_sort, column));
+        cx.notify();
+    }
+}
