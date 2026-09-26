@@ -72,9 +72,10 @@ const INSET: f32 = 4.0;
 const BAR_INSET: Pixels = px(INSET);
 /// Width of the strip the thumb sits in.
 const TRACK: f32 = 10.0;
-/// Room a bar is centred in across its axis when the caller reserves none.
-const CHANNEL: f32 = 2.0 * INSET + TRACK;
-/// Width of the thumb itself, centred in the track.
+/// Gap between the thumb and the pane's edge across its axis, unless the
+/// caller sets one.
+const MARGIN: f32 = 2.0;
+/// Width of the thumb itself.
 pub(crate) const THUMB: f32 = 4.0;
 /// Length of one [`rail`] mark, and its thickness.
 const MARK: f32 = 16.0;

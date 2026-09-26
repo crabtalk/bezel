@@ -57,11 +57,10 @@ impl Overlay {
         self
     }
 
-    /// Centre the bar in `room` reserved across its axis rather than in the
-    /// default strip at the edge. Pass the padding the pane holds beside its
-    /// content and the thumb runs down the middle of it.
-    pub fn channel(mut self, room: Pixels) -> Self {
-        self.place.channel = room.max(px(0.));
+    /// Gap between the pane's edge and the thumb, across the axis. Defaults
+    /// to 2px. The grab area stays the same width at any margin.
+    pub fn margin(mut self, margin: Pixels) -> Self {
+        self.place.margin = margin.max(px(0.));
         self
     }
 
@@ -297,6 +296,7 @@ fn horizontal(
         .absolute()
         .left(range.start)
         .w(size)
+        .bottom(place.inner())
         .h(px(scroll::THUMB))
         .rounded_full()
         .bg(ink(0.2))

@@ -82,14 +82,12 @@ pub(super) fn track(id: &SharedString, place: Place, axis: Axis) -> Stateful<Div
             .top(BAR_INSET)
             .right(place.near())
             .bottom(BAR_INSET + place.end)
-            .w(px(TRACK))
-            .justify_center(),
+            .w(px(TRACK)),
         Axis::Horizontal => el
             .left(BAR_INSET)
             .right(BAR_INSET + place.end)
             .bottom(place.near())
-            .h(px(TRACK))
-            .items_center(),
+            .h(px(TRACK)),
     }
 }
 
@@ -247,23 +245,29 @@ impl ScrollbarState {
 pub(super) struct Place {
     /// Shortens the track at its far end.
     pub(super) end: Pixels,
-    /// Room reserved across the axis, which the track is centred in.
-    pub(super) channel: Pixels,
+    /// Gap between the pane's edge and the thumb, across the axis.
+    pub(super) margin: Pixels,
 }
 
 impl Default for Place {
     fn default() -> Self {
         Self {
             end: px(0.),
-            channel: px(CHANNEL),
+            margin: px(MARGIN),
         }
     }
 }
 
 impl Place {
-    /// Gap between the near edge of the pane and the near side of the track.
-    fn near(self) -> Pixels {
-        ((self.channel - px(TRACK)) * 0.5).max(px(0.))
+    /// Gap between the pane's edge and the track. The track is centred on the
+    /// thumb where the margin leaves room, and starts at the edge otherwise.
+    pub(super) fn near(self) -> Pixels {
+        (self.margin - px(TRACK - THUMB) * 0.5).max(px(0.))
+    }
+
+    /// Gap between the track's outer side and the thumb.
+    pub(super) fn inner(self) -> Pixels {
+        self.margin - self.near()
     }
 }
 
@@ -335,6 +339,7 @@ pub(super) fn scrollbar_placed(
                 .absolute()
                 .top(range.start)
                 .h(size)
+                .right(place.inner())
                 .w(px(THUMB))
                 .rounded_full()
                 .bg(if dragging { ink(0.38) } else { ink(0.2) })
@@ -546,6 +551,7 @@ pub(super) fn transient_placed(
         .absolute()
         .top(range.start)
         .h(size)
+        .right(place.inner())
         .w(px(THUMB))
         .rounded_full()
         .bg(if dragging { ink(0.38) } else { ink(0.2) })
