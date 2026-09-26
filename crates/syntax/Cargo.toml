@@ -30,6 +30,8 @@ tree-sitter-language.workspace = true
 
 [dev-dependencies]
 # Fixtures only. The core links no grammar of its own — these give the
-# injection and registry tests a host/injected pair to run against.
+# injection and registry tests a host/injected pair to run against, and the
+# document tests a full-sized highlights query.
 tree-sitter-html.workspace = true
 tree-sitter-css.workspace = true
+tree-sitter-rust.workspace = true

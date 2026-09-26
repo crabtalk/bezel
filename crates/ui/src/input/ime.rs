@@ -83,7 +83,14 @@ impl EntityInputHandler for TextField {
         self.marked_range.take();
         self.last_edit = Some((kind, self.selected_range.end));
         self.caret_moved();
-        cx.emit(FieldEvent::Changed);
+        self.edited(
+            Edit {
+                start: range.start,
+                old_end: range.end,
+                new_end: range.start + new_text.len(),
+            },
+            cx,
+        );
         cx.notify();
     }
 
@@ -114,7 +121,14 @@ impl EntityInputHandler for TextField {
         self.selection_reversed = false;
 
         self.caret_moved();
-        cx.emit(FieldEvent::Changed);
+        self.edited(
+            Edit {
+                start: range.start,
+                old_end: range.end,
+                new_end: range.start + new_text.len(),
+            },
+            cx,
+        );
         cx.notify();
     }
 

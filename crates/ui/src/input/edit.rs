@@ -316,6 +316,7 @@ impl TextField {
     }
 
     pub(super) fn restore(&mut self, point: Snapshot, cx: &mut Context<Self>) {
+        let edit = Edit::between(&self.content, &point.content);
         self.content = point.content;
         self.selected_range = point.selection;
         self.selection_reversed = point.reversed;
@@ -323,7 +324,7 @@ impl TextField {
         // The next edit must not join whatever group was open before.
         self.last_edit = None;
         self.caret_moved();
-        cx.emit(FieldEvent::Changed);
+        self.edited(edit, cx);
         cx.notify();
     }
 

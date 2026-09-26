@@ -92,10 +92,67 @@ pub const DEFAULT_UNDO_LIMIT: usize = 10;
 /// [`Self::Changed`], a composer reading the word behind the caret wants both.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldEvent {
-    /// The text is different.
-    Changed,
+    /// The text is different, by this edit.
+    Changed(Edit),
     /// The text is the same and the caret is somewhere else.
     Moved,
+}
+
+/// One replacement in a field's text, in bytes: `start..old_end` of the text
+/// before became `start..new_end` of the text after. The fields are
+/// tree-sitter's `InputEdit` byte fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Edit {
+    pub start: usize,
+    pub old_end: usize,
+    pub new_end: usize,
+}
+
+impl Edit {
+    /// The smallest edit that turns `before` into `after`: what they share at
+    /// either end is left out.
+    pub fn between(before: &str, after: &str) -> Self {
+        let prefix = before
+            .char_indices()
+            .zip(after.chars())
+            .find(|((_, a), b)| a != b)
+            .map_or(before.len().min(after.len()), |((at, _), _)| at);
+        let suffix = before[prefix..]
+            .chars()
+            .rev()
+            .zip(after[prefix..].chars().rev())
+            .take_while(|(a, b)| a == b)
+            .map(|(a, _)| a.len_utf8())
+            .sum::<usize>();
+        Self {
+            start: prefix,
+            old_end: before.len() - suffix,
+            new_end: after.len() - suffix,
+        }
+    }
+
+    /// Where `range` of the text before lands in the text after. A range
+    /// wholly before the edit stays, one wholly after moves by the length the
+    /// edit added or took, one the edit falls inside grows or shrinks with it,
+    /// and one the edit cuts keeps the part it did not touch. `None` when the
+    /// edit took all of it.
+    pub fn map(self, range: Range<usize>) -> Option<Range<usize>> {
+        let shift = |at: usize| at + self.new_end - self.old_end;
+        let mapped = if range.end <= self.start {
+            range
+        } else if range.start >= self.old_end {
+            shift(range.start)..shift(range.end)
+        } else if range.start < self.start && self.old_end < range.end {
+            range.start..shift(range.end)
+        } else if range.start < self.start {
+            range.start..self.start
+        } else if self.old_end < range.end {
+            self.new_end..shift(range.end)
+        } else {
+            return None;
+        };
+        (!mapped.is_empty()).then_some(mapped)
+    }
 }
 
 /// Half the caret's blink period — the 500ms on, 500ms off macOS itself uses.
@@ -510,6 +567,7 @@ impl TextField {
     /// Replace the content, putting the cursor at the end.
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
         let normalized = normalize(&content.into(), self.shape);
+        let before = self.content.len();
         self.content = self.case.apply(&normalized).into_owned().into();
         // Colours describe text this field no longer holds.
         self.spans.clear();
@@ -521,7 +579,11 @@ impl TextField {
         let end = self.content.len();
         self.selected_range = end..end;
         self.marked_range = None;
-        cx.emit(FieldEvent::Changed);
+        cx.emit(FieldEvent::Changed(Edit {
+            start: 0,
+            old_end: before,
+            new_end: end,
+        }));
         cx.notify();
     }
 
@@ -529,16 +591,24 @@ impl TextField {
         self.set_content("", cx);
     }
 
+    /// Carry the spans through an edit just applied, and say so.
+    fn edited(&mut self, edit: Edit, cx: &mut Context<Self>) {
+        let spans = std::mem::take(&mut self.spans);
+        self.spans = spans
+            .into_iter()
+            .filter_map(|(range, kind)| Some((edit.map(range)?, kind)))
+            .collect();
+        cx.emit(FieldEvent::Changed(edit));
+    }
+
     /// Paint these byte ranges in syntax colours, in document order. Whatever
     /// they leave uncovered stays the field's own text colour, so a language
     /// nothing can colour is simply no spans at all.
     ///
-    /// This field holds text, not a document: it does not parse, and it does
-    /// not keep the spans in step with edits. The caller recomputes them —
-    /// [`FieldEvent::Changed`] is the signal — and until it does, the frames in
-    /// between paint the ranges it last handed over. Stale ones are dropped
-    /// rather than shifted, so the worst a late recolour looks like is a word
-    /// in the wrong colour for a frame.
+    /// This field holds text, not a document: it does not parse. Each edit it
+    /// applies moves the spans through [`Edit::map`], so until the caller hands
+    /// over fresh ones — [`FieldEvent::Changed`] carries the edit to reparse
+    /// from — they stay on the characters they were computed for.
     ///
     /// [`set_content`](Self::set_content) clears them: replacing the text
     /// replaces what the colours were about.

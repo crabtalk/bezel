@@ -77,7 +77,11 @@ pub trait Buttons: ThemeExt {
             .w(px(Theme::BUTTON_HEIGHT))
             .justify_center();
         let (button, tint) = appearance(self.theme(), square, style, None, fade, true);
-        button.child(crate::icons::icon(icon).size(px(ICON_GLYPH)).text_color(tint))
+        button.child(
+            crate::icons::icon(icon)
+                .size(px(ICON_GLYPH))
+                .text_color(tint),
+        )
     }
 
     /// SwiftUI's `ControlGroup`, and what a toolbar paints behind the items it
