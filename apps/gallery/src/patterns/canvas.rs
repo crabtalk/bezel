@@ -577,7 +577,7 @@ mod tests {
         for _ in 0..3 {
             cx.update(|window, cx| window.draw(cx).clear(cx));
         }
-        let demo = cx.update(|_, cx| gallery.read(cx).canvas.clone());
+        let demo = cx.update(|_, cx| gallery.read(cx).patterns.canvas.clone());
         let view = cx.update(|_, cx| demo.read(cx).view.clone());
         (demo, view, cx)
     }

@@ -29,7 +29,7 @@ explore it to see the library in use beyond the component gallery.
 
 ```toml
 [dependencies]
-bezel = "0.1"
+bezel = "0.2"
 ```
 
 An app also names the two crates the facade cannot cover — `gpui` because

@@ -117,7 +117,7 @@ wasm = true"#,
 /// highlighted ahead of time has to be the string rendered.
 pub const ICONS_CARGO: (&str, &str) = (
     "toml",
-    r#"bezel-icons = { version = "0.1", features = ["arrows", "multimedia"] }"#,
+    r#"bezel-icons = { version = "0.2", features = ["arrows", "multimedia"] }"#,
 );
 
 /// Fences the gallery paints outside the Syntax page, pre-highlighted for the

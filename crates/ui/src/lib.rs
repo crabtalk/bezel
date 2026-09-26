@@ -17,6 +17,7 @@ pub use icons;
 
 pub mod combobox;
 pub mod control_bar;
+pub mod cover;
 pub mod date;
 pub mod floating;
 pub mod focus;
@@ -30,6 +31,7 @@ pub mod menu;
 pub mod menubar;
 pub mod pagination;
 pub mod palette;
+pub mod pending;
 pub mod popover;
 pub mod scroll;
 mod search;

@@ -40,7 +40,7 @@ With the sources checked out, `crates/ui/src/` is the truth and
 
 ```toml
 [dependencies]
-bezel = "0.1"
+bezel = "0.2"
 gpui = { package = "bezel-gpui", version = "0.3" }
 gpui_platform = { package = "bezel-gpui-platform", version = "0.3", features = ["font-kit"] }
 ```
