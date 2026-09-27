@@ -33,6 +33,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         caption: Caption::default(),
         // The source view is one fence and holds no task block.
         toggle: None,
+        image: None,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
         base: None,
@@ -126,6 +127,10 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         guesses: guesses.into(),
         keep: kept,
         scroll: scroll.cloned(),
+        item_of: {
+            let ranges = ranges.clone();
+            Box::new(move |at| ranges.partition_point(|line| line.end < at.offset))
+        },
         build: Box::new(move |index, _, _| {
             let span = ranges[index].clone();
             let styled = code_line(&code[span.clone()], span.start, spans.as_deref(), &theme);

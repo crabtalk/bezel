@@ -30,6 +30,19 @@ pub(super) struct Frames {
     checkboxes: Vec<(usize, Bounds<Pixels>)>,
     /// Kept across frames: [`Self::clear`] leaves it.
     heights: Heights,
+    /// Kept across frames until the column has shown it.
+    reveal: Option<Reveal>,
+}
+
+/// A range waiting to be scrolled into view.
+#[derive(Clone, Copy)]
+pub(super) struct Reveal {
+    pub(super) range: Selection,
+    /// Frames it has scrolled in.
+    pub(super) tries: u8,
+    /// Where the column item holding it was placed last frame, in window
+    /// coordinates. `None` before it has been built.
+    pub(super) top: Option<Pixels>,
 }
 
 /// Block heights kept across frames, so a block off-screen is placed without
@@ -273,6 +286,28 @@ impl BlockLayouts {
             .iter()
             .find(|(block, _)| *block == ix)
             .map(|(_, bounds)| *bounds)
+    }
+
+    /// Scrolls the document until the start of `range` shows, centring it
+    /// when it does not.
+    ///
+    /// Answered over the next few frames by a document rendered with these
+    /// layouts and an [`Editing::scroll`]; without one the request is dropped
+    /// at the next frame. A later call replaces an earlier one.
+    pub fn reveal(&self, range: Selection) {
+        self.0.borrow_mut().reveal = Some(Reveal {
+            range,
+            tries: 0,
+            top: None,
+        });
+    }
+
+    pub(super) fn revealing(&self) -> Option<Reveal> {
+        self.0.borrow().reveal
+    }
+
+    pub(super) fn set_revealing(&self, reveal: Option<Reveal>) {
+        self.0.borrow_mut().reveal = reveal;
     }
 
     pub(super) fn record(&self, block: usize, part: Part, range: Range<usize>, layout: TextLayout) {

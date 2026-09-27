@@ -154,6 +154,10 @@ pub enum Annotation {
     /// A reader's highlight, in the wash [`crate::set_highlight_paint`]
     /// gives its colour.
     Highlight(crate::HighlightColor),
+    /// A find hit.
+    Match,
+    /// The find hit the reader is on.
+    Current,
 }
 
 impl Annotation {
@@ -163,6 +167,8 @@ impl Annotation {
             Self::Resolved => theme.warning.opacity(0.08),
             Self::Active => theme.warning.opacity(0.38),
             Self::Highlight(color) => highlight(color, theme),
+            Self::Match => theme.accent.opacity(0.22),
+            Self::Current => theme.accent.opacity(0.48),
         }
     }
 }
@@ -172,6 +178,9 @@ impl Annotation {
 /// Shared rather than borrowed: the press listener it is cloned into outlives
 /// the frame that built it.
 pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Handed the image block whose picture was clicked — see [`Editing::image`].
+pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
 /// Who answers a press on a task block's checkbox.
 ///
@@ -222,6 +231,10 @@ pub struct Editing<'a> {
     /// Makes a task block's checkbox a control, and says who answers the
     /// press. `None` paints a mark.
     pub toggle: Option<Toggle>,
+    /// Makes a picture a control: a click on it calls this with its block. A
+    /// press and release more than a couple of pixels apart is a drag and
+    /// calls nothing. The press still reaches whatever is under the picture.
+    pub image: Option<OnImage>,
     /// Whether a fence offers to copy itself.
     pub copy: CopyButton,
     /// The directory a relative image path is joined onto. `None` leaves it
@@ -251,6 +264,7 @@ impl Default for Editing<'_> {
             caption: Caption::default(),
             typography: None,
             toggle: None,
+            image: None,
             copy: CopyButton::default(),
             base: None,
             keep: &[],
@@ -280,6 +294,7 @@ struct Overlay<'a> {
     /// Borrowed so [`Overlay`] stays `Copy` — the clone is made at the one
     /// press listener that needs an owned handle.
     toggle: Option<&'a Toggle>,
+    image: Option<&'a OnImage>,
     copy: CopyButton,
     base: Option<&'a Path>,
     highlight: crate::HighlightPaint,
@@ -415,6 +430,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         caption,
         typography,
         toggle,
+        image,
         copy,
         base,
         keep,
@@ -451,6 +467,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 placeholder: placeholder.as_ref(),
                 caption,
                 toggle: toggle.as_ref(),
+                image: image.as_ref(),
                 copy,
                 base,
                 highlight,
@@ -484,6 +501,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         placeholder,
         caption,
         toggle,
+        image,
         copy,
         base: base.map(Path::to_path_buf),
         highlight,
@@ -497,6 +515,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         guesses: guesses.into(),
         keep: kept,
         scroll: scroll.cloned(),
+        item_of: Box::new(|at| at.block),
         build: Box::new(move |ix, window, cx| {
             let overlay = Overlay {
                 block: ix,
@@ -508,6 +527,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 placeholder: owned.placeholder.as_ref(),
                 caption: owned.caption,
                 toggle: owned.toggle.as_ref(),
+                image: owned.image.as_ref(),
                 copy: owned.copy,
                 base: owned.base.as_deref(),
                 highlight: owned.highlight,
@@ -536,6 +556,7 @@ struct Owned {
     placeholder: Option<SharedString>,
     caption: Caption,
     toggle: Option<Toggle>,
+    image: Option<OnImage>,
     copy: CopyButton,
     base: Option<std::path::PathBuf>,
     highlight: crate::HighlightPaint,

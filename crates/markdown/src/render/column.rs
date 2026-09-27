@@ -6,6 +6,12 @@ use gpui::{
     relative,
 };
 
+/// Frames a reveal is given to settle before it is dropped.
+const REVEAL_TRIES: u8 = 4;
+
+/// The column item holding a cursor.
+pub(super) type ItemOf = Box<dyn Fn(Cursor) -> usize>;
+
 /// Builds one block's box, without the gap above it.
 pub(super) type BuildBlock = Box<dyn Fn(usize, &mut Window, &mut App) -> AnyElement>;
 
@@ -48,6 +54,8 @@ pub(super) struct Column {
     pub(super) guesses: Rc<[Guess]>,
     pub(super) keep: Vec<usize>,
     pub(super) scroll: Option<ScrollHandle>,
+    /// The item a [`BlockLayouts::reveal`] range starts in.
+    pub(super) item_of: ItemOf,
     pub(super) build: BuildBlock,
 }
 
@@ -124,14 +132,28 @@ impl Element for Column {
         window: &mut Window,
         cx: &mut App,
     ) -> Vec<Built> {
+        // Read before the clear: it is last frame's geometry.
+        let reveal = self.layouts.revealing();
+        // Its first row, from the top of the item it is in.
+        let extent = reveal.and_then(|reveal| {
+            let top = reveal.top?;
+            Some(
+                self.layouts
+                    .rects(reveal.range)
+                    .first()
+                    .map(|row| (row.top() - top, row.bottom() - top)),
+            )
+        });
         // Emptied here rather than at build: an editor reads last frame's
         // positions while it builds this frame's tree.
         self.layouts.clear();
         let width = bounds.size.width;
         let count = self.keys.len();
         if count == 0 {
+            self.layouts.set_revealing(None);
             return Vec::new();
         }
+        let revealed = reveal.map(|reveal| (self.item_of)(reveal.range.ordered().0).min(count - 1));
         let heights = self.heights(width);
         let mut tops = Vec::with_capacity(count);
         let mut y = px(0.0);
@@ -160,6 +182,7 @@ impl Element for Column {
 
         let mut built: Vec<usize> = (first..=last).collect();
         built.extend(self.keep.iter().copied().filter(|ix| *ix < count));
+        built.extend(revealed);
         built.sort_unstable();
         built.dedup();
 
@@ -210,6 +233,7 @@ impl Element for Column {
             placed[ix] = Some(y);
         }
 
+        let revealed_height = revealed.map(|ix| measured_at(ix).unwrap_or(heights[ix]));
         for (item, measured) in &mut items {
             let top = placed[item.ix].unwrap_or(tops[item.ix]);
             item.element
@@ -222,6 +246,33 @@ impl Element for Column {
         {
             let offset = scroll.offset();
             scroll.set_offset(point(offset.x, offset.y - shift));
+        }
+        if let (Some(reveal), Some(ix)) = (reveal, revealed) {
+            let top = placed[ix].unwrap_or(tops[ix]);
+            let (start, end) = match extent.flatten() {
+                Some((start, end)) => (top + start, top + end),
+                None => (top, top + revealed_height.unwrap_or_default()),
+            };
+            let inside = from <= start && end <= to;
+            // Only last frame's rows say where the range is inside its item.
+            let shown = extent.is_some() && inside;
+            match &self.scroll {
+                Some(scroll) if !shown && reveal.tries < REVEAL_TRIES => {
+                    let off = match inside {
+                        true => px(0.0),
+                        false => (start + end) * 0.5 - (from + to) * 0.5,
+                    };
+                    let offset = scroll.offset();
+                    scroll.set_offset(point(offset.x, offset.y - off));
+                    self.layouts.set_revealing(Some(Reveal {
+                        range: reveal.range,
+                        tries: reveal.tries + 1,
+                        top: Some(bounds.top() + top),
+                    }));
+                    changed = true;
+                }
+                _ => self.layouts.set_revealing(None),
+            }
         }
         if changed {
             window.request_animation_frame();

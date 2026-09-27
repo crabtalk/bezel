@@ -3,7 +3,7 @@
 //! [`render`] handles pointer selection; [`surface`] adds keyboard focus and copy.
 //! Selection state stays with the caller so lists can share one selection.
 
-use crate::{BlockLayouts, Cursor, Doc, Editing, Selection, render_with};
+use crate::{BlockLayouts, Cursor, Doc, Editing, Selection};
 use gpui::{
     AnyElement, Context, CursorStyle, DispatchPhase, ElementId, MouseButton, MouseDownEvent,
     MouseMoveEvent, Window, canvas, div, prelude::*,
@@ -46,6 +46,36 @@ pub fn render<V: 'static>(
     layouts: &BlockLayouts,
     selection: Option<Selection>,
     dragging: bool,
+    window: &mut Window,
+    cx: &mut Context<V>,
+    on_pointer: impl Fn(&mut V, Pointer, &mut Context<V>) + 'static,
+) -> AnyElement {
+    render_with(
+        id,
+        doc,
+        layouts,
+        selection,
+        dragging,
+        Editing::default(),
+        window,
+        cx,
+        on_pointer,
+    )
+}
+
+/// [`render`], painting what `editing` asks for besides. Its `selection`,
+/// `caret_on` and `layouts` are ignored.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a document, its selection, what else it paints, and a gesture"
+)]
+pub fn render_with<V: 'static>(
+    id: impl Into<ElementId>,
+    doc: &Doc,
+    layouts: &BlockLayouts,
+    selection: Option<Selection>,
+    dragging: bool,
+    editing: Editing,
     window: &mut Window,
     cx: &mut Context<V>,
     on_pointer: impl Fn(&mut V, Pointer, &mut Context<V>) + 'static,
@@ -102,7 +132,7 @@ pub fn render<V: 'static>(
             MouseButton::Left,
             cx.listener(move |view, _, _, cx| off(view, Pointer::Up, cx)),
         )
-        .child(render_with(
+        .child(crate::render_with(
             doc,
             Editing {
                 selection,
@@ -111,7 +141,7 @@ pub fn render<V: 'static>(
                 // insertion point in text nobody can type into.
                 caret_on: false,
                 layouts: Some(layouts),
-                ..Editing::default()
+                ..editing
             },
             window,
             cx,

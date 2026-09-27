@@ -1,6 +1,11 @@
 //! Images and bookmark cards.
 
 use super::*;
+use gpui::ClickEvent;
+
+/// How far a press may travel before its release is a drag, not a click on a
+/// picture.
+const DRAG_SLOP: f64 = 2.0;
 
 /// A picture and the caption under it, which is the alt text a caret can reach.
 ///
@@ -35,17 +40,29 @@ pub(super) fn image(
             .text_size(px(typography.body.size()))
             .text_color(theme.text_muted)
             .child(IMAGE_EMPTY)
+            .into_any_element()
     } else {
         let picture = img(image_source(url, overlay.base));
+        let ix = overlay.block;
         let box_ = div()
+            .id(ElementId::named_usize("md-picture", ix))
             .relative()
             .rounded(px(Theme::button_radius()))
             .overflow_hidden()
             .border_1()
             .border_color(theme.border)
+            .when_some(overlay.image.cloned(), |el, on_image| {
+                el.cursor_pointer().on_click(move |event, window, cx| {
+                    if let ClickEvent::Mouse(click) = event
+                        && (click.up.position - click.down.position).magnitude() > DRAG_SLOP
+                    {
+                        return;
+                    }
+                    on_image(ix, window, cx);
+                })
+            })
             .children(overlay.layouts.map(|layouts| {
                 let layouts = layouts.clone();
-                let ix = overlay.block;
                 canvas(
                     move |bounds, _, _| layouts.record_picture(ix, bounds),
                     |_, _, _, _| (),
@@ -67,6 +84,7 @@ pub(super) fn image(
             // is a percentage and so needs a box that spans one to measure.
             None => box_.child(picture.max_w_full()),
         }
+        .into_any_element()
     };
     div()
         .flex()
