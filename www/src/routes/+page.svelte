@@ -50,7 +50,7 @@
 		     consumer cannot end up with a second copy in the graph. -->
 		<div class="install code-block">
 			<span class="file">Cargo.toml</span>
-			<code>bezel = "0.1"</code>
+			<code>bezel = "0.2"</code>
 			<button class="copy" type="button" aria-label="Copy">
 				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 				{@html Copy}{@html Check}

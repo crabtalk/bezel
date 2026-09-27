@@ -211,11 +211,12 @@ impl Element for Surface {
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) {
+        crate::cover::record(bounds, window, cx);
         self.child.prepaint(window, cx);
     }
 

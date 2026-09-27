@@ -21,6 +21,7 @@ workspace = true
 
 [dependencies]
 gpui.workspace = true
+ui.workspace = true
 tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -29,30 +30,52 @@ async-channel = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 wry = { version = "0.57", default-features = false }
 objc2 = "0.6"
+block2 = "0.6"
+image = { version = "0.25", default-features = false }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",
+    "objc2-core-graphics",
     "NSApplication",
     "NSEvent",
+    "NSGraphicsContext",
+    "NSImage",
+    "NSImageRep",
     "NSResponder",
     "NSTrackingArea",
     "NSView",
     "NSWindow",
 ] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "CFCGTypes",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "std",
+    "CGBitmapContext",
+    "CGColorSpace",
+    "CGContext",
+    "CGImage",
+] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
     "NSBundle",
+    "NSError",
     "NSGeometry",
     "NSString",
 ] }
 objc2-web-kit = { version = "0.3", default-features = false, features = [
     "std",
+    "block2",
+    "objc2-app-kit",
     "WKNavigation",
+    "WKSnapshotConfiguration",
     "WKWebView",
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 wry = { version = "0.57", default-features = false }
 webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wry = { version = "0.57", default-features = false, features = ["os-webview", "x11"] }

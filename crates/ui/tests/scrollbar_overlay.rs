@@ -10,7 +10,7 @@ struct Host {
     presses: usize,
     visibility: Option<Scrollbars>,
     end_inset: gpui::Pixels,
-    channel: Option<gpui::Pixels>,
+    margin: Option<gpui::Pixels>,
     narrow: bool,
 }
 
@@ -25,8 +25,8 @@ impl Render for Host {
             .on_click(cx.listener(|this, _, _, _| this.presses += 1));
         let mut overlay =
             scrollbars::Overlay::new("test-bar", &self.handle, self.axis).end_inset(self.end_inset);
-        if let Some(channel) = self.channel {
-            overlay = overlay.channel(channel);
+        if let Some(margin) = self.margin {
+            overlay = overlay.margin(margin);
         }
         if let Some(visibility) = self.visibility {
             overlay = overlay.visibility(visibility);
@@ -55,7 +55,7 @@ fn open(axis: Axis, cx: &mut TestAppContext) -> (gpui::Entity<Host>, VisualTestC
         presses: 0,
         visibility: None,
         end_inset: px(0.),
-        channel: None,
+        margin: None,
         narrow: false,
     });
     let host = window.root(cx).unwrap();
@@ -79,24 +79,24 @@ fn overlay_preserves_viewport_and_content_clicks(cx: &mut TestAppContext) {
 #[gpui::test]
 fn horizontal_thumb_drags_only_the_horizontal_axis(cx: &mut TestAppContext) {
     let (host, mut cx) = open(Axis::Horizontal, cx);
-    cx.simulate_mouse_move(point(px(20.), px(191.)), None, Modifiers::default());
+    cx.simulate_mouse_move(point(px(20.), px(196.)), None, Modifiers::default());
     cx.simulate_mouse_down(
-        point(px(20.), px(191.)),
+        point(px(20.), px(196.)),
         MouseButton::Left,
         Modifiers::default(),
     );
     cx.simulate_mouse_move(
-        point(px(30.), px(191.)),
+        point(px(30.), px(196.)),
         MouseButton::Left,
         Modifiers::default(),
     );
     cx.simulate_mouse_move(
-        point(px(110.), px(191.)),
+        point(px(110.), px(196.)),
         MouseButton::Left,
         Modifiers::default(),
     );
     cx.simulate_mouse_up(
-        point(px(110.), px(191.)),
+        point(px(110.), px(196.)),
         MouseButton::Left,
         Modifiers::default(),
     );
@@ -118,24 +118,24 @@ fn vertical_thumb_drags_and_never_mode_removes_it(cx: &mut TestAppContext) {
             window.refresh();
         });
         cx.run_until_parked();
-        cx.simulate_mouse_move(point(px(191.), px(20.)), None, Modifiers::default());
+        cx.simulate_mouse_move(point(px(196.), px(20.)), None, Modifiers::default());
         cx.simulate_mouse_down(
-            point(px(191.), px(20.)),
+            point(px(196.), px(20.)),
             MouseButton::Left,
             Modifiers::default(),
         );
         cx.simulate_mouse_move(
-            point(px(191.), px(30.)),
+            point(px(196.), px(30.)),
             MouseButton::Left,
             Modifiers::default(),
         );
         cx.simulate_mouse_move(
-            point(px(191.), px(110.)),
+            point(px(196.), px(110.)),
             MouseButton::Left,
             Modifiers::default(),
         );
         cx.simulate_mouse_up(
-            point(px(191.), px(110.)),
+            point(px(196.), px(110.)),
             MouseButton::Left,
             Modifiers::default(),
         );
@@ -177,7 +177,7 @@ fn frame_keeps_distinct_handle_and_scrollbar_state(cx: &mut TestAppContext) {
     cx.simulate_resize(size(px(200.), px(200.)));
     cx.update(|window, _| window.refresh());
     cx.run_until_parked();
-    cx.simulate_mouse_move(point(px(191.), px(20.)), None, Modifiers::default());
+    cx.simulate_mouse_move(point(px(196.), px(20.)), None, Modifiers::default());
     assert_eq!(
         cx.debug_bounds("framed-content").unwrap().size,
         size(px(200.), px(200.))
@@ -272,8 +272,8 @@ fn check_inset(axis: Axis, cx: &mut TestAppContext) {
     let track = cx.debug_bounds("test-bar-track").unwrap();
     let thumb = cx.debug_bounds("test-bar-thumb").unwrap();
     let (origin, dimensions) = match axis {
-        Axis::Horizontal => (point(px(4.), px(186.)), size(px(192.), px(10.))),
-        Axis::Vertical => (point(px(186.), px(4.)), size(px(10.), px(192.))),
+        Axis::Horizontal => (point(px(4.), px(190.)), size(px(192.), px(10.))),
+        Axis::Vertical => (point(px(190.), px(4.)), size(px(10.), px(192.))),
     };
     assert_eq!(track.origin, origin);
     assert_eq!(track.size, dimensions);
@@ -347,7 +347,7 @@ fn detached_track_clears_footer_and_reaches_scroll_end(cx: &mut TestAppContext) 
         });
         cx.run_until_parked();
         let track = cx.debug_bounds("test-bar-track").unwrap();
-        assert_eq!(track.right(), px(196.));
+        assert_eq!(track.right(), px(200.));
         assert_eq!(track.bottom(), px(136.));
         assert_eq!(
             cx.update(|_, cx| host.read(cx).handle.bounds().size),
@@ -376,35 +376,40 @@ fn detached_track_clears_footer_and_reaches_scroll_end(cx: &mut TestAppContext) 
     }
 }
 
-/// The thumb's centre line sits half a channel from the edge, for any channel.
+/// The thumb stands `margin` off the pane's edge, 2px unless set, and the
+/// track under it keeps its width.
 #[gpui::test]
-fn channel_centres_the_thumb_in_the_room_the_pane_reserves(cx: &mut TestAppContext) {
-    for (axis, channel) in [(Axis::Vertical, px(40.)), (Axis::Horizontal, px(24.))] {
+fn margin_sets_the_gap_between_the_thumb_and_the_edge(cx: &mut TestAppContext) {
+    for axis in [Axis::Vertical, Axis::Horizontal] {
         let (host, mut cx) = open(axis, cx);
-        let default = cx.debug_bounds("test-bar-thumb").unwrap();
-        cx.update(|window, cx| {
-            host.update(cx, |host, cx| {
-                host.channel = Some(channel);
-                cx.notify();
+        for margin in [None, Some(px(0.)), Some(px(12.))] {
+            cx.update(|window, cx| {
+                host.update(cx, |host, cx| {
+                    host.margin = margin;
+                    cx.notify();
+                });
+                window.refresh();
             });
-            window.refresh();
-        });
-        cx.run_until_parked();
-        let placed = cx.debug_bounds("test-bar-thumb").unwrap();
-        let pane = cx.update(|_, cx| host.read(cx).handle.bounds());
-        let (far, centre, thickness) = match axis {
-            Axis::Vertical => (pane.right(), placed.center().x, placed.size.width),
-            Axis::Horizontal => (pane.bottom(), placed.center().y, placed.size.height),
-        };
-        assert_eq!(far - centre, channel * 0.5, "{axis:?}");
-        assert_eq!(
-            thickness,
-            match axis {
-                Axis::Vertical => default.size.width,
-                Axis::Horizontal => default.size.height,
-            },
-            "a wider channel moves the thumb, it does not fatten it: {axis:?}"
-        );
+            cx.run_until_parked();
+            let thumb = cx.debug_bounds("test-bar-thumb").unwrap();
+            let track = cx.debug_bounds("test-bar-track").unwrap();
+            let pane = cx.update(|_, cx| host.read(cx).handle.bounds());
+            let (gap, thickness, width) = match axis {
+                Axis::Vertical => (
+                    pane.right() - thumb.right(),
+                    thumb.size.width,
+                    track.size.width,
+                ),
+                Axis::Horizontal => (
+                    pane.bottom() - thumb.bottom(),
+                    thumb.size.height,
+                    track.size.height,
+                ),
+            };
+            assert_eq!(gap, margin.unwrap_or(px(2.)), "{axis:?} {margin:?}");
+            assert_eq!(thickness, px(4.), "{axis:?} {margin:?}");
+            assert_eq!(width, px(10.), "{axis:?} {margin:?}");
+        }
     }
 }
 
@@ -426,8 +431,8 @@ fn idle(cx: &mut VisualTestContext) {
 #[gpui::test]
 fn a_bar_fades_after_the_pointer_leaves_the_window_across_its_track(cx: &mut TestAppContext) {
     for (axis, on_track) in [
-        (Axis::Vertical, point(px(191.), px(100.))),
-        (Axis::Horizontal, point(px(100.), px(191.))),
+        (Axis::Vertical, point(px(196.), px(100.))),
+        (Axis::Horizontal, point(px(100.), px(196.))),
     ] {
         let (_host, mut cx) = open(axis, cx);
         cx.update(|_, cx| scrollbars::set_visibility(Scrollbars::Scrolling, cx));

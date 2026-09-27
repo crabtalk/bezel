@@ -36,7 +36,7 @@ A property of the value rather than a second call, so a control can hold one `Ic
 ## Features
 
 ```toml
-bezel-icons = { version = "0.1", features = ["arrows", "navigation"] }
+bezel-icons = { version = "0.2", features = ["arrows", "navigation"] }
 ```
 
 One per Lucide category, named as Lucide names them; `full` is all 42, and nothing is on by default. Cargo unions features across a graph, so `ui`'s own three — `arrows`, `notifications`, `text` — are the floor for anything depending on it.

@@ -31,10 +31,18 @@ use crate::{
     text_size::{self, TextSize},
 };
 
+mod anchors;
+mod blocks;
+mod caret;
+mod clipboard;
 pub(crate) mod image;
 mod input;
 pub mod keys;
 pub(crate) mod menu;
+mod mode;
+mod pointer;
+mod render;
+mod typing;
 
 pub use keys::init;
 use keys::{

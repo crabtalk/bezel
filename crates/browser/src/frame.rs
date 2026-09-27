@@ -1,9 +1,10 @@
 use crate::host::{Host, Surface};
-use gpui::{Bounds, Context, FocusHandle, IntoElement, Pixels, Render, Window};
+use gpui::{Bounds, Context, FocusHandle, IntoElement, Pixels, Render, RenderImage, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
+    sync::Arc,
 };
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{HtmlCanvasElement, HtmlIFrameElement};
@@ -13,7 +14,8 @@ use web_sys::{HtmlCanvasElement, HtmlIFrameElement};
 /// The iframe is built the first time the frame is painted, beside the
 /// window's canvas, and removed when the frame drops. It sits at the element's
 /// bounds in every frame the element is painted and is hidden in every frame
-/// it is not. A hidden iframe stays loaded.
+/// it is not, or where a [`ui::cover`] recorded after it overlaps it. A hidden
+/// iframe stays loaded.
 ///
 /// A site that refuses to be framed (`X-Frame-Options`, CSP
 /// `frame-ancestors`) shows the browser's error page. The frame reports
@@ -148,6 +150,18 @@ impl Surface for Iframe {
         {
             let _ = iframe.style().set_property("display", "none");
         }
+    }
+
+    fn cover(&self) {
+        self.park();
+    }
+
+    fn still(&self) -> Option<Arc<RenderImage>> {
+        None
+    }
+
+    fn take_dropped(&self) -> Option<Arc<RenderImage>> {
+        None
     }
 }
 

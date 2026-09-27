@@ -41,7 +41,7 @@ impl SearchList {
                 .with_frame(false)
         });
         cx.subscribe(&query, move |view, query, event: &FieldEvent, cx| {
-            if matches!(event, FieldEvent::Changed) {
+            if matches!(event, FieldEvent::Changed(_)) {
                 let search = get(view);
                 let text = query.read(cx).content();
                 if search.text != *text {

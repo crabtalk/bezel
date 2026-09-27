@@ -22,6 +22,7 @@
 use std::ops::Range;
 use theme::HighlightKind;
 
+pub mod document;
 pub mod lang;
 pub mod registry;
 pub mod session;

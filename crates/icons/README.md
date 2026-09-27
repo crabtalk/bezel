@@ -9,7 +9,7 @@ constants for [gpui]. Part of [bezel], and reached as `bezel::icons` from it.
 
 ```toml
 [dependencies]
-icons = { package = "bezel-icons", version = "0.1", features = ["navigation"] }
+icons = { package = "bezel-icons", version = "0.2", features = ["navigation"] }
 ```
 
 ```rust

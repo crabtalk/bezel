@@ -7,7 +7,14 @@
 //!
 //! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
 
-use std::{cell::RefCell, ops::Range, path::Path, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    ops::Range,
+    path::Path,
+    rc::Rc,
+};
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
@@ -27,6 +34,20 @@ use crate::{
 };
 
 /// Space between two ordinary blocks, and the tighter space inside a list.
+mod code;
+mod column;
+mod layouts;
+mod media;
+mod table;
+mod text;
+
+pub use code::*;
+use column::*;
+pub use layouts::*;
+use media::*;
+use table::*;
+pub use text::*;
+
 const BLOCK_GAP: f32 = 12.0;
 const LIST_GAP: f32 = 4.0;
 /// One indent level. Wide enough to clear a marker and read as a level.
@@ -184,6 +205,10 @@ pub struct Editing<'a> {
     /// and the phase belongs to whoever owns the focus.
     pub caret_on: bool,
     /// Filled as the document paints, for a caller resolving clicks against it.
+    ///
+    /// Given, only the blocks near the part of the window the document shows
+    /// are built, and it answers for those alone. The rest are placed at their
+    /// last measured height, or a guess at one, and held in it across frames.
     pub layouts: Option<&'a BlockLayouts>,
     /// Ranges washed under the text, in the order given.
     pub annotations: &'a [(Selection, Annotation)],
@@ -202,6 +227,15 @@ pub struct Editing<'a> {
     /// The directory a relative image path is joined onto. `None` leaves it
     /// relative, which gpui reads against the process's working directory.
     pub base: Option<&'a Path>,
+    /// Blocks built wherever they are, alongside the ones near the part of the
+    /// window the document shows — source lines, for [`render_source`]. The
+    /// caret's and the selection anchor's are built without being named. Only
+    /// read with `layouts` given.
+    pub keep: &'a [usize],
+    /// The scroll container the document sits in. When blocks above the text
+    /// showing come out taller or shorter than they were placed at, its offset
+    /// moves by the difference. Only read with `layouts` given.
+    pub scroll: Option<&'a gpui::ScrollHandle>,
 }
 
 impl Default for Editing<'_> {
@@ -219,6 +253,8 @@ impl Default for Editing<'_> {
             toggle: None,
             copy: CopyButton::default(),
             base: None,
+            keep: &[],
+            scroll: None,
         }
     }
 }
@@ -1152,24 +1188,26 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         toggle,
         copy,
         base,
+        keep,
+        scroll,
     } = editing;
-    // Refilled every frame, in paint order — and emptied in *prepaint*, not
-    // here. An editor reads last frame's positions while building this frame's
-    // tree (a menu anchored at the caret, a handle beside a block), and
-    // clearing at build time takes them away before it can. Placed first in the
-    // column so it runs ahead of every recorder below it.
-    let reset = layouts.map(|layouts| {
-        let layouts = layouts.clone();
-        canvas(move |_, _, _| layouts.clear(), |_, _, _, _| ())
-            .absolute()
-            .size(px(0.0))
-    });
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
     let typography = typography.unwrap_or_else(|| Typography::of(cx));
     let highlight = crate::marks::highlight_paint_of(cx);
-    let mut column = div().flex().flex_col().children(reset);
+    let gaps: Vec<Pixels> = doc
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(ix, block)| {
+            px(match doc.blocks.get(ix.wrapping_sub(1)) {
+                None => 0.0,
+                Some(previous) if tight(previous, block) => LIST_GAP,
+                Some(_) => BLOCK_GAP,
+            })
+        })
+        .collect();
 
     for (ix, block) in doc.blocks.iter().enumerate() {
         let gap = match doc.blocks.get(ix.wrapping_sub(1)) {
@@ -1199,43 +1237,132 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 move |bounds, _, _| layouts.record_block(ix, bounds),
                 |_, _, _, _| (),
             )
-            .absolute()
-            .size_full()
-        });
-        column = column.child(
-            // The indent sits on the outside and the recorder on the inside,
-            // so what is recorded is the box the block's text actually
-            // occupies. Recorded outside the padding, every level answered
-            // with the same left edge, and a gutter handle placed from it
-            // stayed at the margin while the block it belongs to moved right.
-            div()
-                .mt(px(gap))
-                .pl(px(block.indent as f32 * INDENT_WIDTH))
-                .child(
-                    div()
-                        .w_full()
-                        .relative()
-                        .children(frame)
-                        // What a caret cannot enter still has to show it is
-                        // inside the selection, or a rule between two
-                        // paragraphs looks untouched right up until it
-                        // disappears.
-                        .when(overlay.covers_block() && block.opaque(), |el| {
-                            el.rounded(px(4.0)).bg(theme.selection)
-                        })
-                        .child(block_element(
-                            block,
-                            overlay,
-                            &typography,
-                            &theme,
-                            window,
-                            cx,
-                        )),
-                ),
-        );
+            .into_any_element()
+        }),
     }
+    .into_any_element()
+}
 
-    column.into_any_element()
+/// What [`Column`] builds a block from, owned so it can build one at prepaint.
+struct Owned {
+    blocks: Vec<Block>,
+    selection: Option<Selection>,
+    caret_on: bool,
+    layouts: BlockLayouts,
+    annotations: Vec<(Selection, Annotation)>,
+    placeholder: Option<SharedString>,
+    caption: Caption,
+    toggle: Option<Toggle>,
+    copy: CopyButton,
+    base: Option<std::path::PathBuf>,
+    highlight: crate::HighlightPaint,
+    typography: Typography,
+    theme: Theme,
+}
+
+/// A block's box: its indent outside, and inside it the recorder and the
+/// block itself.
+fn block_box(
+    block: &Block,
+    overlay: Overlay,
+    typography: &Typography,
+    theme: &Theme,
+    window: &mut Window,
+    cx: &mut App,
+) -> gpui::Div {
+    let ix = overlay.block;
+    // The block's own box, recorded for a gutter handle and a drop target.
+    // A rule and an image hold no text, so a layout would not find them.
+    let frame = overlay.layouts.map(|layouts| {
+        let layouts = layouts.clone();
+        canvas(
+            move |bounds, _, _| layouts.record_block(ix, bounds),
+            |_, _, _, _| (),
+        )
+        .absolute()
+        .size_full()
+    });
+    // The indent sits on the outside and the recorder on the inside, so what
+    // is recorded is the box the block's text actually occupies. Recorded
+    // outside the padding, every level answered with the same left edge, and a
+    // gutter handle placed from it stayed at the margin while the block it
+    // belongs to moved right.
+    div()
+        .w_full()
+        .pl(px(block.indent as f32 * INDENT_WIDTH))
+        .child(
+            div()
+                .w_full()
+                .relative()
+                .children(frame)
+                // What a caret cannot enter still has to show it is inside the
+                // selection, or a rule between two paragraphs looks untouched
+                // right up until it disappears.
+                .when(overlay.covers_block() && block.opaque(), |el| {
+                    el.rounded(px(4.0)).bg(theme.selection)
+                })
+                .child(block_element(block, overlay, typography, theme, window, cx)),
+        )
+}
+
+/// What a block's height is cached under: its content and the type it is set
+/// in, so an edit elsewhere that shifts its index keeps the height.
+fn block_key(block: &Block, typography: &Typography) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    block.hash(&mut hasher);
+    typography.body.size().to_bits().hash(&mut hasher);
+    typography.body.line_height().to_bits().hash(&mut hasher);
+    hasher.finish()
+}
+
+/// What a block is placed at before it has ever been built.
+fn guess(block: &Block, typography: &Typography) -> Guess {
+    let body = px(typography.body.line_height());
+    let prose = |chars: usize, line: Pixels| Guess {
+        chars,
+        line,
+        rows: 0,
+        extra: px(0.0),
+        indent: px(0.0),
+    };
+    let guess = match &block.kind {
+        BlockKind::Paragraph(text)
+        | BlockKind::Bullet(text)
+        | BlockKind::Ordered { text, .. }
+        | BlockKind::Task { text, .. }
+        | BlockKind::Quote { text, .. } => prose(text.text.len(), body),
+        BlockKind::Heading { level, text } => prose(
+            text.text.len(),
+            px(typography.heading(*level).line_height()),
+        ),
+        BlockKind::Code { code, .. } => Guess {
+            rows: code.text.lines().count().max(1),
+            line: px(typography.code.line_height()),
+            extra: px(2.0 * CODE_PADDING_Y) + body,
+            ..prose(0, body)
+        },
+        BlockKind::Table { rows, .. } => Guess {
+            rows: rows.len() + 1,
+            extra: px(8.0) * (rows.len() + 1) as f32,
+            ..prose(0, body)
+        },
+        BlockKind::Image { alt, .. } => Guess {
+            extra: px(240.0),
+            ..prose(alt.text.len(), px(typography.caption.line_height()))
+        },
+        BlockKind::Bookmark { .. } => Guess {
+            extra: body * 3.0,
+            ..prose(0, body)
+        },
+        BlockKind::Rule => Guess {
+            extra: body,
+            ..prose(0, px(0.0))
+        },
+    };
+    Guess {
+        indent: px(block.indent as f32 * INDENT_WIDTH),
+        ..guess
+    }
 }
 
 /// Whether two adjacent blocks belong to the same list and should sit close.

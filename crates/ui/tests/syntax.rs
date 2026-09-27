@@ -1,9 +1,11 @@
 //! Syntax colours on a field: the runs spans become, and what an edit does to
 //! them.
 
-use gpui::{TestAppContext, TextRun, font};
+use std::{cell::RefCell, rc::Rc};
+
+use gpui::{EntityInputHandler, TestAppContext, TextRun, font};
 use theme::{Appearance, HighlightKind, SyntaxPalette, Theme};
-use ui::input::{TextField, coloured, underlined};
+use ui::input::{Edit, FieldEvent, TextField, coloured, underlined};
 
 fn base() -> TextRun {
     TextRun {
@@ -146,4 +148,117 @@ fn replacing_the_content_drops_the_colours(cx: &mut TestAppContext) {
             assert!(field.spans().is_empty());
         })
         .unwrap();
+}
+
+#[test]
+fn an_edit_between_two_texts_leaves_out_what_they_share() {
+    assert_eq!(
+        Edit::between("let x = 1;", "let mut x = 1;"),
+        Edit {
+            start: 4,
+            old_end: 4,
+            new_end: 8
+        }
+    );
+    assert_eq!(
+        Edit::between("a 中文 b", "a b"),
+        Edit {
+            start: 2,
+            old_end: 9,
+            new_end: 2
+        }
+    );
+    assert_eq!(
+        Edit::between("same", "same"),
+        Edit {
+            start: 4,
+            old_end: 4,
+            new_end: 4
+        }
+    );
+}
+
+#[test]
+fn a_range_moves_with_the_edit_around_it() {
+    let insert = Edit {
+        start: 4,
+        old_end: 4,
+        new_end: 8,
+    };
+    assert_eq!(insert.map(0..3), Some(0..3), "before it stays");
+    assert_eq!(insert.map(0..4), Some(0..4), "ending where it starts stays");
+    assert_eq!(
+        insert.map(4..6),
+        Some(8..10),
+        "starting where it starts moves"
+    );
+    assert_eq!(insert.map(2..6), Some(2..10), "around it grows");
+    let delete = Edit {
+        start: 2,
+        old_end: 6,
+        new_end: 2,
+    };
+    assert_eq!(
+        delete.map(0..4),
+        Some(0..2),
+        "cut at its end keeps the start"
+    );
+    assert_eq!(
+        delete.map(4..9),
+        Some(2..5),
+        "cut at its start keeps the end"
+    );
+    assert_eq!(delete.map(3..5), None, "taken whole is gone");
+    assert_eq!(delete.map(7..9), Some(3..5), "after it moves back");
+}
+
+/// Typing between two spans moves the second along, and typing inside one
+/// stretches it, so a late recolour finds each colour on its own characters.
+#[gpui::test]
+fn spans_follow_the_text_through_an_edit(cx: &mut TestAppContext) {
+    cx.update(|cx| Theme::install(Appearance::Dark, cx));
+    let window = cx.add_window(|_, cx| TextField::new(cx));
+    let field = window.root(cx).unwrap();
+    let events: Rc<RefCell<Vec<FieldEvent>>> = Rc::default();
+    cx.update({
+        let events = events.clone();
+        |cx| {
+            cx.subscribe(&field, move |_, event: &FieldEvent, _| {
+                events.borrow_mut().push(*event)
+            })
+            .detach()
+        }
+    });
+    window
+        .update(cx, |field, window, cx| {
+            field.set_content("let s = \"ab\";", cx);
+            field.set_spans(
+                vec![
+                    (0..3, HighlightKind::Keyword),
+                    (8..12, HighlightKind::String),
+                ],
+                cx,
+            );
+            field.select(4..4, cx);
+            field.replace_text_in_range(None, "mut ", window, cx);
+            assert_eq!(
+                field.spans(),
+                &[
+                    (0..3, HighlightKind::Keyword),
+                    (12..16, HighlightKind::String)
+                ]
+            );
+            field.select(14..14, cx);
+            field.replace_text_in_range(None, "c", window, cx);
+            assert_eq!(field.spans()[1], (12..17, HighlightKind::String));
+        })
+        .unwrap();
+    assert_eq!(
+        events.borrow()[1],
+        FieldEvent::Changed(Edit {
+            start: 4,
+            old_end: 4,
+            new_end: 8
+        })
+    );
 }

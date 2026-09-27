@@ -1,12 +1,17 @@
 use gpui::{
-    App, Bounds, CursorStyle, Element, ElementId, FocusHandle, GlobalElementId, Hitbox,
-    HitboxBehavior, InspectorElementId, IntoElement, LayoutId, Pixels, Style, Window, relative,
+    App, Bounds, Corners, CursorStyle, Element, ElementId, FocusHandle, GlobalElementId, Hitbox,
+    HitboxBehavior, InspectorElementId, IntoElement, LayoutId, Pixels, RenderImage, Style, Window,
+    relative,
 };
 use std::{
     cell::Cell,
     rc::Rc,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
+use ui::cover::{self, Mark};
 
 /// A native surface over the window that a [`Host`] places.
 pub(crate) trait Surface: 'static {
@@ -15,6 +20,13 @@ pub(crate) trait Surface: 'static {
     fn owner(&self) -> &Cell<u64>;
     fn place(&self, bounds: Bounds<Pixels>, window: &Window);
     fn park(&self);
+    /// Called in place of [`Surface::place`] in a frame where something is
+    /// painted over the surface.
+    fn cover(&self);
+    /// What to paint in the surface's place while it is covered.
+    fn still(&self) -> Option<Arc<RenderImage>>;
+    /// A still no longer painted, once the surface is uncovered.
+    fn take_dropped(&self) -> Option<Arc<RenderImage>>;
 }
 
 /// Fills its parent and places a surface over itself.
@@ -32,7 +44,7 @@ impl<S: Surface> IntoElement for Host<S> {
 
 impl<S: Surface> Element for Host<S> {
     type RequestLayoutState = ();
-    type PrepaintState = Hitbox;
+    type PrepaintState = (Hitbox, Mark);
 
     fn id(&self) -> Option<ElementId> {
         Some("webview".into())
@@ -63,11 +75,14 @@ impl<S: Surface> Element for Host<S> {
         _request_layout: &mut (),
         window: &mut Window,
         cx: &mut App,
-    ) -> Hitbox {
+    ) -> (Hitbox, Mark) {
         if let Some(focus) = self.surface.focus() {
             window.set_focus_handle(focus, cx);
         }
-        window.insert_hitbox(bounds, HitboxBehavior::BlockMouse)
+        (
+            window.insert_hitbox(bounds, HitboxBehavior::BlockMouse),
+            cover::mark(),
+        )
     }
 
     fn paint(
@@ -76,22 +91,33 @@ impl<S: Surface> Element for Host<S> {
         _inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         _request_layout: &mut (),
-        hitbox: &mut Hitbox,
+        (hitbox, mark): &mut (Hitbox, Mark),
         window: &mut Window,
-        _cx: &mut App,
+        cx: &mut App,
     ) {
         // gpui's view tracks the pointer across the page's pixels too, and
         // resets the platform cursor whenever its own style under the pointer
         // changes, over whatever WebKit set.
         window.set_cursor_style(CursorStyle::Arrow, hitbox);
         let Some(id) = id else { return };
+        let covered = cover::covered(*mark, bounds, window, cx);
         let surface = self.surface.clone();
         window.with_element_state::<Shown<S>, _>(id, |shown, window| {
             let shown = shown.unwrap_or_else(|| Shown::new(surface.clone()));
             surface.owner().set(shown.token);
-            surface.place(bounds, window);
+            if covered {
+                surface.cover();
+            } else {
+                surface.place(bounds, window);
+            }
             ((), shown)
         });
+        if let Some(still) = self.surface.take_dropped() {
+            let _ = window.drop_image(still);
+        }
+        if let Some(still) = self.surface.still() {
+            let _ = window.paint_image(bounds, bounds, Corners::default(), still, 0, false);
+        }
     }
 }
 

@@ -31,8 +31,8 @@ The string is the family name the file declares, not a path. Go through `set_pal
 ## Feature gates
 
 ```toml
-bezel = "0.1"
-bezel = { version = "0.1", features = ["geist-mono"] }
+bezel = "0.2"
+bezel = { version = "0.2", features = ["geist-mono"] }
 ```
 
 | | |
