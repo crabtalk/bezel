@@ -21,9 +21,9 @@ use std::{fmt, rc::Rc, time::Duration};
 /// in the page focuses the handle. On macOS, a press on gpui's view outside
 /// the page takes the keys back, whether or not the handle loses focus, and
 /// key equivalents (cmd or ctrl held) reach gpui's key dispatch before the
-/// page sees them. On Windows, a
-/// key with ctrl or alt held, or a function key, goes to gpui's key dispatch
-/// in place of the page when the keymap binds it in the view's key context.
+/// page sees them. On Windows, a key with ctrl or alt held, or a function key,
+/// goes to gpui's key dispatch in place of the page when the keymap binds it
+/// in the view's key context.
 ///
 /// gpui elements behind the page are not hovered, and gpui's cursor over the
 /// page is the arrow. On macOS the page sets the cursor over itself.
@@ -55,6 +55,10 @@ pub enum WebViewEvent {
     /// The page's title changed.
     Title(String),
     Load(LoadState),
+    /// The page asked to open this URL in a window of its own: a
+    /// `target="_blank"` link or `window.open`. No window opens and the page
+    /// stays where it is; where the URL goes is the host's.
+    NewWindow(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -256,6 +260,7 @@ impl WebView {
                     cx.emit(WebViewEvent::Title(title));
                 }
             }
+            Report::Opened(url) => cx.emit(WebViewEvent::NewWindow(url)),
             Report::Still(still) => {
                 self.page.captured(still);
                 cx.notify();
