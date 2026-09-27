@@ -403,9 +403,11 @@ impl Editor {
         let at = self.cursor();
         match at.part {
             Part::Code => return self.insert("\n", cx),
-            // A cell is one line by definition; Enter has nowhere to put a
-            // break, so it does nothing rather than something surprising.
-            Part::Cell { .. } => return,
+            // A cell is one line by definition: Enter goes down a row.
+            Part::Cell { .. } => {
+                self.cell_down(cx);
+                return;
+            }
             // An image with nothing to show yet is missing one thing, so Enter
             // asks for it rather than carrying on past a blank.
             Part::Caption
@@ -491,6 +493,9 @@ impl Editor {
         if !self.blocks() {
             return self.insert(INDENT, cx);
         }
+        if self.step_cell(true, cx) {
+            return;
+        }
         self.edit(EditKind::Structure, cx, |this| {
             this.doc.indent(this.cursor().block);
             vec![]
@@ -500,6 +505,9 @@ impl Editor {
     pub(super) fn outdent(&mut self, _: &Outdent, _: &mut Window, cx: &mut Context<Self>) {
         if !self.blocks() {
             return self.unindent(cx);
+        }
+        if self.step_cell(false, cx) {
+            return;
         }
         self.edit(EditKind::Structure, cx, |this| {
             this.doc.outdent(this.cursor().block);

@@ -112,12 +112,22 @@ pub(super) fn table(
                 // part row 1 — row 0 is the header slot whether or not it is
                 // filled.
                 let row = if has_header { r } else { r + 1 };
+                let part = Part::Cell { row, column: c };
+                cell_el = cell_el.relative().children(overlay.layouts.map(|layouts| {
+                    let layouts = layouts.clone();
+                    canvas(
+                        move |bounds, _, _| layouts.record_cell(ix, part, bounds),
+                        |_, _, _, _| (),
+                    )
+                    .absolute()
+                    .size_full()
+                }));
                 cell_el = cell_el.child(painted_text(
                     flat,
                     len,
                     typography.body.size(),
                     typography.body.line_height(),
-                    overlay.at(Part::Cell { row, column: c }),
+                    overlay.at(part),
                     theme,
                 ));
             }

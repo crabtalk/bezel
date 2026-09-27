@@ -111,7 +111,8 @@ impl Render for Editor {
             // payload: a text selection has nothing to carry, and gpui's drag
             // payload is for things being dropped somewhere.
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                if !*hovered && this.hovered.take().is_some() {
+                if !*hovered && (this.hovered.take().is_some() | this.hovered_cell.take().is_some())
+                {
                     cx.notify();
                 }
             }))
@@ -130,8 +131,10 @@ impl Render for Editor {
                     return;
                 }
                 let hovered = this.layouts.block_at(event.position);
-                if hovered != this.hovered {
+                let cell = this.layouts.cell_at(event.position);
+                if hovered != this.hovered || cell != this.hovered_cell {
                     this.hovered = hovered;
+                    this.hovered_cell = cell;
                     cx.notify();
                 }
             }))
@@ -434,6 +437,9 @@ impl Render for Editor {
             .children(self.handle(focused, &theme, cx))
             .children(self.resize_handle(&theme, cx))
             .children(self.drop_indicator(&theme))
+            .children(self.table_strips(&theme, cx))
+            .children(self.table_handles(&theme, cx))
+            .children(self.table_menu(&theme, cx))
             .children(self.language_chip(&theme, cx))
             .children(self.block_menu(&theme, cx))
             .children(self.language_menu(&theme, cx))

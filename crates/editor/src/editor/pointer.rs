@@ -105,6 +105,7 @@ impl Editor {
     ) {
         ui::popover::close_popup(self, cx, |this| &mut this.block_menu);
         ui::popover::close_popup(self, cx, |this| &mut this.language_menu);
+        ui::popover::close_popup(self, cx, |this| &mut this.table_menu);
         self.pasted = None;
         self.focus_handle.clone().focus(window, cx);
         // Ahead of the hit test, and returning without one: the

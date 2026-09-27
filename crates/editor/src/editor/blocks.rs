@@ -187,4 +187,156 @@ impl Editor {
         // screen.
         self.reveal = false;
     }
+
+    /// Put an empty row in table `ix` before `row` ([`Part::Cell`]
+    /// numbering) and the caret in its first cell.
+    pub fn add_row(&mut self, ix: usize, row: usize, cx: &mut Context<Self>) {
+        if !self.blocks() || !matches!(self.kind_at(ix), Some(BlockKind::Table { .. })) {
+            return;
+        }
+        self.edit(EditKind::Structure, cx, |this| {
+            this.doc.insert_row(ix, row);
+            let row = row.max(1);
+            this.selection = Selection::at(Cursor::new(ix, Part::Cell { row, column: 0 }, 0));
+            vec![Delta::Cells {
+                block: ix,
+                row: Some(row),
+                column: None,
+            }]
+        });
+    }
+
+    /// Put an empty column in table `ix` before `column` and the caret in it,
+    /// on the caret's row when the caret is in this table.
+    pub fn add_column(&mut self, ix: usize, column: usize, cx: &mut Context<Self>) {
+        if !self.blocks() || !matches!(self.kind_at(ix), Some(BlockKind::Table { .. })) {
+            return;
+        }
+        let row = match self.cursor() {
+            Cursor {
+                block,
+                part: Part::Cell { row, .. },
+                ..
+            } if block == ix => row,
+            _ => self.doc.blocks[ix]
+                .parts()
+                .first()
+                .map_or(0, |part| match part {
+                    Part::Cell { row, .. } => *row,
+                    _ => 0,
+                }),
+        };
+        self.edit(EditKind::Structure, cx, |this| {
+            this.doc.insert_column(ix, column);
+            this.selection = Selection::at(Cursor::new(ix, Part::Cell { row, column }, 0));
+            vec![Delta::Cells {
+                block: ix,
+                row: None,
+                column: Some(column),
+            }]
+        });
+    }
+
+    /// Tab and Shift-Tab in a table: the next or previous cell, with Tab in
+    /// the last one adding a row. `false` when the caret is not in a cell.
+    pub(super) fn step_cell(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
+        let at = self.cursor();
+        let Part::Cell { row, .. } = at.part else {
+            return false;
+        };
+        let parts = self.doc.blocks[at.block].parts();
+        let Some(here) = parts.iter().position(|part| *part == at.part) else {
+            return false;
+        };
+        let next = match forward {
+            true => parts.get(here + 1),
+            false => here.checked_sub(1).and_then(|ix| parts.get(ix)),
+        };
+        match next {
+            Some(part) => {
+                let end = Cursor::new(at.block, *part, usize::MAX).clamp(&self.doc);
+                self.head_to(end, false);
+                cx.notify();
+            }
+            None if forward => self.add_row(at.block, row + 1, cx),
+            None => {}
+        }
+        true
+    }
+
+    /// Enter in a table: the same column one row down, adding a row below the
+    /// last. `false` when the caret is not in a cell.
+    pub(super) fn cell_down(&mut self, cx: &mut Context<Self>) -> bool {
+        let at = self.cursor();
+        let Part::Cell { row, column } = at.part else {
+            return false;
+        };
+        let below = Part::Cell {
+            row: row + 1,
+            column,
+        };
+        if self.doc.blocks[at.block].text_at(below).is_none() {
+            self.add_row(at.block, row + 1, cx);
+            if column > 0 {
+                self.head_to(Cursor::new(at.block, below, 0).clamp(&self.doc), false);
+            }
+            return true;
+        }
+        let end = Cursor::new(at.block, below, usize::MAX).clamp(&self.doc);
+        self.head_to(end, false);
+        cx.notify();
+        true
+    }
+
+    /// Take body row `row` out of table `ix`. Does nothing to the header row.
+    pub fn remove_row(&mut self, ix: usize, row: usize, cx: &mut Context<Self>) {
+        self.remove_line(ix, Line::Row(row), cx);
+    }
+
+    /// Take `column` out of table `ix`. Does nothing to the last column.
+    pub fn remove_column(&mut self, ix: usize, column: usize, cx: &mut Context<Self>) {
+        self.remove_line(ix, Line::Column(column), cx);
+    }
+
+    fn remove_line(&mut self, ix: usize, line: Line, cx: &mut Context<Self>) {
+        if !self.blocks() {
+            return;
+        }
+        let Some(BlockKind::Table { header, rows, .. }) = self.kind_at(ix) else {
+            return;
+        };
+        let width = rows
+            .iter()
+            .map(Vec::len)
+            .chain([header.len()])
+            .max()
+            .unwrap_or(0);
+        let removable = match line {
+            Line::Row(row) => (1..=rows.len()).contains(&row),
+            Line::Column(column) => width > 1 && column < width,
+        };
+        if !removable {
+            return;
+        }
+        self.edit(EditKind::Structure, cx, |this| {
+            match line {
+                Line::Row(row) => this.doc.remove_row(ix, row),
+                Line::Column(column) => this.doc.remove_column(ix, column),
+            };
+            this.selection = this.selection.clamp(&this.doc);
+            let (row, column) = match line {
+                Line::Row(row) => (Some(row), None),
+                Line::Column(column) => (None, Some(column)),
+            };
+            vec![Delta::CellsRemoved {
+                block: ix,
+                row,
+                column,
+            }]
+        });
+    }
+
+    fn kind_at(&self, ix: usize) -> Option<&BlockKind> {
+        self.doc.blocks.get(ix).map(|block| &block.kind)
+    }
 }

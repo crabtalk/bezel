@@ -317,6 +317,94 @@ impl Doc {
     /// The tag on a fenced block — what the label shows, what the highlighter
     /// reads, and what the info string carries. Not [`Doc::set_kind`]'s job:
     /// that carries a *body* across, and a fence has none to give back.
+    /// Put an empty row in table `ix` before `row`, numbered as
+    /// [`Part::Cell`] numbers rows (1 is the first body row), as wide as the
+    /// widest row. `false` when `ix` is not a table.
+    pub fn insert_row(&mut self, ix: usize, row: usize) -> bool {
+        let Some(BlockKind::Table { header, rows, .. }) =
+            self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        else {
+            return false;
+        };
+        let width = rows
+            .iter()
+            .map(Vec::len)
+            .chain([header.len(), 1])
+            .max()
+            .unwrap_or(1);
+        let at = row.saturating_sub(1).min(rows.len());
+        rows.insert(at, vec![Text::default(); width]);
+        true
+    }
+
+    /// Put an empty, left-aligned column in table `ix` before `column`, in the
+    /// header and every row. `false` when `ix` is not a table.
+    pub fn insert_column(&mut self, ix: usize, column: usize) -> bool {
+        let Some(BlockKind::Table {
+            align,
+            header,
+            rows,
+        }) = self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        else {
+            return false;
+        };
+        for cells in std::iter::once(&mut *header)
+            .filter(|header| !header.is_empty())
+            .chain(rows.iter_mut())
+        {
+            cells.insert(column.min(cells.len()), Text::default());
+        }
+        align.insert(column.min(align.len()), crate::Align::Left);
+        true
+    }
+
+    /// Take body row `row` ([`Part::Cell`] numbering) out of table `ix`.
+    /// `false` for the header row, a row that is not there, or a block that
+    /// is not a table.
+    pub fn remove_row(&mut self, ix: usize, row: usize) -> bool {
+        let Some(BlockKind::Table { rows, .. }) =
+            self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        else {
+            return false;
+        };
+        if row == 0 || row > rows.len() {
+            return false;
+        }
+        rows.remove(row - 1);
+        true
+    }
+
+    /// Take `column` out of table `ix`, from the header and every row.
+    /// `false` for the last column left, or a block that is not a table.
+    pub fn remove_column(&mut self, ix: usize, column: usize) -> bool {
+        let Some(BlockKind::Table {
+            align,
+            header,
+            rows,
+        }) = self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        else {
+            return false;
+        };
+        let width = rows
+            .iter()
+            .map(Vec::len)
+            .chain([header.len()])
+            .max()
+            .unwrap_or(0);
+        if width < 2 || column >= width {
+            return false;
+        }
+        for cells in std::iter::once(&mut *header).chain(rows.iter_mut()) {
+            if column < cells.len() {
+                cells.remove(column);
+            }
+        }
+        if column < align.len() {
+            align.remove(column);
+        }
+        true
+    }
+
     pub fn set_language(&mut self, ix: usize, language: Option<String>) {
         if let Some(BlockKind::Code { language: tag, .. }) =
             self.blocks.get_mut(ix).map(|block| &mut block.kind)

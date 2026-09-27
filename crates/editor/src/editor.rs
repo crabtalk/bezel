@@ -270,6 +270,13 @@ fn source_doc(source: &str) -> Doc {
 /// without one a trigger's click on the *release* reopens what it just shut.
 pub(crate) type MenuPopup = ui::popover::Popup<(usize, gpui::Point<gpui::Pixels>)>;
 
+/// A table's row or column, as [`markdown::Part::Cell`] numbers them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Line {
+    Row(usize),
+    Column(usize),
+}
+
 pub struct Editor {
     doc: Doc,
     /// The dialect this document is read and written in — the app's own marks,
@@ -316,6 +323,10 @@ pub struct Editor {
     dropping: Option<usize>,
     /// The block the pointer is over, which is the only one showing a handle.
     hovered: Option<usize>,
+    /// The table cell the pointer is over, whose row and column show handles.
+    hovered_cell: Option<(usize, Part)>,
+    /// A table row's or column's menu: the table, the line and where it hangs.
+    table_menu: ui::popover::Popup<(usize, Line, gpui::Point<gpui::Pixels>)>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
     /// An image being dragged wider or narrower by its edge handle, and the
@@ -398,6 +409,8 @@ impl Editor {
             url_prompt: None,
             dropping: None,
             hovered: None,
+            hovered_cell: None,
+            table_menu: Default::default(),
             lifted: None,
             resizing: None,
             block_menu: MenuPopup::default(),

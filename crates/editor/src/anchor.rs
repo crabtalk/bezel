@@ -18,7 +18,7 @@
 
 use std::ops::Range;
 
-use markdown::{Annotation, Cursor, Selection, Splice};
+use markdown::{Annotation, Cursor, Part, Selection, Splice};
 
 /// The app's key for a comment or a highlight. Opaque — nothing here looks
 /// inside one.
@@ -74,6 +74,20 @@ pub(crate) enum Delta {
     Moved { at: Range<usize>, to: Option<usize> },
     /// Blocks appeared at `at`, pushing everything from there down.
     Opened { at: usize, count: usize },
+    /// A row or a column appeared in table `block`, pushing the cells from
+    /// there on.
+    Cells {
+        block: usize,
+        row: Option<usize>,
+        column: Option<usize>,
+    },
+    /// A row or a column left table `block`, taking what was in it and
+    /// pulling the cells after it back.
+    CellsRemoved {
+        block: usize,
+        row: Option<usize>,
+        column: Option<usize>,
+    },
 }
 
 impl Delta {
@@ -122,6 +136,39 @@ impl Delta {
                 };
                 Some(Cursor { block, ..at })
             }
+            Self::Cells { block, row, column } => Some(match at.part {
+                Part::Cell { row: r, column: c } if at.block == *block => {
+                    let past = |line: usize, opened: Option<usize>| {
+                        line + usize::from(opened.is_some_and(|opened| line >= opened))
+                    };
+                    Cursor {
+                        part: Part::Cell {
+                            row: past(r, *row),
+                            column: past(c, *column),
+                        },
+                        ..at
+                    }
+                }
+                _ => at,
+            }),
+            Self::CellsRemoved { block, row, column } => match at.part {
+                Part::Cell { row: r, column: c } if at.block == *block => {
+                    if Some(r) == *row || Some(c) == *column {
+                        return None;
+                    }
+                    let past = |line: usize, removed: Option<usize>| {
+                        line - usize::from(removed.is_some_and(|removed| line > removed))
+                    };
+                    Some(Cursor {
+                        part: Part::Cell {
+                            row: past(r, *row),
+                            column: past(c, *column),
+                        },
+                        ..at
+                    })
+                }
+                _ => Some(at),
+            },
             Self::Opened { at: opened, count } => Some(Cursor {
                 block: if at.block >= *opened {
                     at.block + count

@@ -280,6 +280,72 @@ fn the_slash_menu_offers_every_gfm_alert_quote(cx: &mut TestAppContext) {
     }
 }
 
+const TABLE: &str = "| a | b |\n| --- | --- |\n| c | d |";
+
+#[gpui::test]
+fn tab_walks_the_cells_and_adds_a_row_past_the_last(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with(TABLE, cx);
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("1");
+    cx.simulate_keystrokes("tab tab tab");
+    cx.simulate_input("x");
+    cx.simulate_keystrokes("shift-tab");
+    cx.simulate_input("2");
+    assert_eq!(
+        source(&editor, &mut cx),
+        "| a | b1 |\n| --- | --- |\n| c | d2 |\n| x |  |"
+    );
+}
+
+#[gpui::test]
+fn enter_in_a_cell_goes_down_a_row(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with(TABLE, cx);
+    cx.simulate_keystrokes("tab enter");
+    cx.simulate_input("1");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("2");
+    assert_eq!(
+        source(&editor, &mut cx),
+        "| a | b |\n| --- | --- |\n| c | d1 |\n|  | 2 |"
+    );
+}
+
+#[gpui::test]
+fn a_column_goes_into_the_header_and_every_row(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with(TABLE, cx);
+    editor.update(&mut cx, |editor, cx| editor.add_column(0, 1, cx));
+    cx.simulate_input("x");
+    assert_eq!(
+        source(&editor, &mut cx),
+        "| a | x | b |\n| --- | --- | --- |\n| c |  | d |"
+    );
+}
+
+#[gpui::test]
+fn rows_and_columns_go_in_and_out_anywhere(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with(TABLE, cx);
+    editor.update(&mut cx, |editor, cx| editor.add_row(0, 1, cx));
+    cx.simulate_input("x");
+    assert_eq!(
+        source(&editor, &mut cx),
+        "| a | b |\n| --- | --- |\n| x |  |\n| c | d |"
+    );
+    editor.update(&mut cx, |editor, cx| {
+        editor.remove_column(0, 0, cx);
+        editor.remove_row(0, 2, cx);
+    });
+    assert_eq!(source(&editor, &mut cx), "| b |\n| --- |\n|  |");
+    editor.update(&mut cx, |editor, cx| {
+        editor.remove_column(0, 0, cx);
+        editor.remove_row(0, 0, cx);
+    });
+    assert_eq!(
+        source(&editor, &mut cx),
+        "| b |\n| --- |\n|  |",
+        "the last column and the header row stay"
+    );
+}
+
 /// "Quote" is the eighth row with no query; its variants sit behind it.
 const TO_QUOTE: &str = "down down down down down down down";
 

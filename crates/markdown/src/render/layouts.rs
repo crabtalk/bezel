@@ -28,6 +28,8 @@ pub(super) struct Frames {
     /// A task block's checkbox, which is not its marker column: the column is
     /// gutter either side of the box, and a click there places a caret.
     checkboxes: Vec<(usize, Bounds<Pixels>)>,
+    /// A table cell's box, padding included.
+    cells: Vec<(usize, Part, Bounds<Pixels>)>,
     /// Kept across frames: [`Self::clear`] leaves it.
     heights: Heights,
     /// Kept across frames until the column has shown it.
@@ -294,6 +296,26 @@ impl BlockLayouts {
             .map(|(_, bounds)| *bounds)
     }
 
+    /// Where a table cell painted, padding included.
+    pub fn cell_bounds(&self, ix: usize, part: Part) -> Option<Bounds<Pixels>> {
+        self.0
+            .borrow()
+            .cells
+            .iter()
+            .find(|(block, at, _)| *block == ix && *at == part)
+            .map(|(_, _, bounds)| *bounds)
+    }
+
+    /// The table cell under `point`: its block and part.
+    pub fn cell_at(&self, point: Point<Pixels>) -> Option<(usize, Part)> {
+        self.0
+            .borrow()
+            .cells
+            .iter()
+            .find(|(_, _, bounds)| bounds.contains(&point))
+            .map(|(block, part, _)| (*block, *part))
+    }
+
     /// Scrolls the document until the start of `range` shows, centring it
     /// when it does not.
     ///
@@ -360,6 +382,10 @@ impl BlockLayouts {
         self.0.borrow_mut().checkboxes.push((ix, bounds));
     }
 
+    pub(super) fn record_cell(&self, ix: usize, part: Part, bounds: Bounds<Pixels>) {
+        self.0.borrow_mut().cells.push((ix, part, bounds));
+    }
+
     /// The height last measured for `key`, or else for whatever block was
     /// last at `ix`.
     pub(super) fn height(&self, ix: usize, key: u64) -> Option<Pixels> {
@@ -399,6 +425,7 @@ impl BlockLayouts {
         frames.languages.clear();
         frames.pictures.clear();
         frames.checkboxes.clear();
+        frames.cells.clear();
     }
 }
 
