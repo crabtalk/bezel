@@ -315,6 +315,8 @@ pub struct Theme {
     /// Keyboard focus ring — a hairline, so it marks the control without
     /// restating the label inside it.
     pub ring: Hsla,
+    /// Where a dragged block would land in the block editor.
+    pub drop_line: Hsla,
     /// Destructive-action button fill (danger plate, carries [`Self::on_accent`]).
     pub danger_strong: Hsla,
 

@@ -152,11 +152,10 @@ impl Editor {
             div()
                 .absolute()
                 .left(px(0.0))
-                .top(y - self.origin.y - px(1.0))
+                .top(y - self.origin.y)
                 .w_full()
-                .h(px(2.0))
-                .rounded(px(1.0))
-                .bg(theme.accent)
+                .h(px(1.0))
+                .bg(theme.drop_line)
                 .into_any_element(),
         )
     }

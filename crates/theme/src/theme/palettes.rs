@@ -49,6 +49,7 @@ impl Theme {
             cursor: hsla(0.0, 0.0, 1.0, 0.35),
             caret: color::neutral(0.673), // the accent
             ring: paint::hairline_for(Appearance::Dark, 0.35), // ~2.5× border_strong
+            drop_line: color::neutral(0.55),
             danger_strong: color::oklch(0.58, 0.16, 25.0),
             code_text: color::neutral(0.94), // near-white, a shade above body text
             code_wash: hsla(0.0, 0.0, 1.0, 0.08), // white/8
@@ -197,6 +198,7 @@ impl Theme {
             cursor: hsla(0.0, 0.0, 0.0, 0.55),
             caret: color::neutral(0.511), // the accent
             ring: paint::hairline_for(Appearance::Light, 0.35),
+            drop_line: color::neutral(0.62),
             danger_strong: color::oklch(0.51, 0.20, 25.0),
             code_text: color::neutral(0.18), // near-black, a shade under body text
             code_wash: hsla(0.0, 0.0, 0.0, 0.06), // black/6
