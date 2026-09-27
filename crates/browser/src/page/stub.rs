@@ -12,8 +12,9 @@ impl State {
 }
 
 impl Page {
-    pub(super) fn place(&self, bounds: Bounds<Pixels>, _window: &Window) {
+    pub(super) fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
         self.uncover();
+        self.window.set(Some(window.window_handle()));
         self.placed.set(Some(bounds));
     }
 

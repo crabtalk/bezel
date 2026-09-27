@@ -59,6 +59,24 @@ pub(super) fn build(
     Some(builder.build_as_child(&parent))
 }
 
+/// Moves the X window wry built the page in under `window`. `false` under
+/// Wayland.
+pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
+    use gtk::prelude::WidgetExt;
+
+    let Some(parent) = gtk_loop::Parent::of(window) else {
+        return false;
+    };
+    let Some(container) = view.webview().toplevel().and_then(|top| top.window()) else {
+        return false;
+    };
+    let Some(parent) = parent.gdk_window() else {
+        return false;
+    };
+    container.reparent(&parent, 0, 0);
+    true
+}
+
 pub(super) fn edit(_edit: Edit) {}
 
 pub(super) fn back(view: &wry::WebView) {

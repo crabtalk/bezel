@@ -620,6 +620,7 @@ dependencies = [
  "bezel-gpui-platform",
  "bezel-ui",
  "block2 0.6.2",
+ "gdkx11",
  "gtk",
  "image",
  "objc2 0.6.4",

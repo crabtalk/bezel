@@ -3,8 +3,8 @@ use crate::{
     page::{Edit, Page, Report},
 };
 use gpui::{
-    Action, App, Context, EventEmitter, FocusHandle, Focusable, Global, IntoElement, KeyBinding,
-    Render, Subscription, Task, Window, actions, div, prelude::*,
+    Action, AnyWindowHandle, App, Context, EventEmitter, FocusHandle, Focusable, Global,
+    IntoElement, KeyBinding, Render, Subscription, Task, Window, actions, div, prelude::*,
 };
 use serde::de::DeserializeOwned;
 use std::{fmt, rc::Rc, time::Duration};
@@ -12,9 +12,10 @@ use std::{fmt, rc::Rc, time::Duration};
 /// A webview showing one page.
 ///
 /// The page is built the first time the view is painted, in the window it is
-/// painted in, and stays in that window. It sits at the element's bounds in
-/// every frame the element is painted and is parked in every frame it is not.
-/// A parked page stays loaded.
+/// painted in, and moves to each other window the view is painted in. It sits
+/// at the element's bounds in every frame the element is painted and is parked
+/// in every frame it is not. A parked page stays loaded. A view painted in two
+/// windows in turn moves its page on every paint.
 ///
 /// The page takes keys while the view's focus handle is focused, and a press
 /// in the page focuses the handle. On macOS, key equivalents (cmd or ctrl
@@ -37,6 +38,8 @@ pub struct WebView {
     location: Option<String>,
     title: String,
     loading: bool,
+    /// The window [`Self::_focus`] listens in.
+    focus_window: Option<AnyWindowHandle>,
     _focus: [Subscription; 2],
     _reports: Task<()>,
 }
@@ -89,23 +92,12 @@ impl WebView {
         Page::start(window, cx);
         bind_edits(cx);
         let focus = cx.focus_handle();
-        let subscriptions = [
-            cx.on_focus(&focus, window, |this: &mut Self, window, _| {
-                this.page.watch_keys(window);
-                this.page.take_keys()
-            }),
-            cx.on_blur(&focus, window, |this: &mut Self, _, _| {
-                this.page.give_keys()
-            }),
-        ];
+        let subscriptions = Self::listen(&focus, window, cx);
         let (reports, received) = async_channel::unbounded();
         // Ends when the page drops, which drops every sender.
-        let task = cx.spawn_in(window, async move |this, cx| {
+        let task = cx.spawn(async move |this, cx| {
             while let Ok(report) = received.recv().await {
-                if this
-                    .update_in(cx, |this, window, cx| this.report(report, window, cx))
-                    .is_err()
-                {
+                if this.update(cx, |this, cx| this.report(report, cx)).is_err() {
                     return;
                 }
             }
@@ -115,9 +107,25 @@ impl WebView {
             location: None,
             title: String::new(),
             loading: false,
+            focus_window: Some(window.window_handle()),
             _focus: subscriptions,
             _reports: task,
         }
+    }
+
+    /// Focus listeners are per window.
+    fn listen(
+        focus: &FocusHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> [Subscription; 2] {
+        [
+            cx.on_focus(focus, window, |this: &mut Self, window, _| {
+                this.page.watch_keys(window);
+                this.page.take_keys()
+            }),
+            cx.on_blur(focus, window, |this: &mut Self, _, _| this.page.give_keys()),
+        ]
     }
 
     /// The URL the page last reported; `None` before its first report.
@@ -201,15 +209,27 @@ impl WebView {
         })
     }
 
-    fn report(&mut self, report: Report, window: &mut Window, cx: &mut Context<Self>) {
+    fn report(&mut self, report: Report, cx: &mut Context<Self>) {
         match report {
+            // Deferred: the window's handlers may update this view.
             Report::Pressed => {
-                if self.page.holds_keys() {
-                    window.focus(&self.page.focus, cx);
+                if self.page.holds_keys()
+                    && let Some(window) = self.page.window()
+                {
+                    let focus = self.page.focus.clone();
+                    App::defer(cx, move |cx| {
+                        let _ = window.update(cx, |_, window, cx| window.focus(&focus, cx));
+                    });
                 }
             }
             Report::Key(keystroke) => {
-                window.dispatch_keystroke(keystroke, cx);
+                if let Some(window) = self.page.window() {
+                    App::defer(cx, move |cx| {
+                        let _ = window.update(cx, |_, window, cx| {
+                            window.dispatch_keystroke(keystroke, cx);
+                        });
+                    });
+                }
             }
             Report::Moved => {
                 if let Some(url) = self.page.location() {
@@ -253,6 +273,11 @@ impl Focusable for WebView {
 
 impl Render for WebView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.focus_window != Some(window.window_handle()) {
+            Page::start(window, cx);
+            self._focus = Self::listen(&self.page.focus, window, cx);
+            self.focus_window = Some(window.window_handle());
+        }
         if self.page.focus.is_focused(window) {
             self.page.watch_keys(window);
         }

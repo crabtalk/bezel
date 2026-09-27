@@ -65,6 +65,26 @@ pub(super) fn build(
     )
 }
 
+/// Moves the page into gpui's view in `window`, where `build` put it in the
+/// window it was built in.
+pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
+    use objc2_app_kit::NSView;
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = HasWindowHandle::window_handle(window) else {
+        return false;
+    };
+    let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+        return false;
+    };
+    // SAFETY: gpui's handle points at its window's view, which the window
+    // holds while it is open.
+    let parent = unsafe { handle.ns_view.cast::<NSView>().as_ref() };
+    // Taken out of its old superview first.
+    parent.addSubview(&view.webview());
+    true
+}
+
 /// Sent down the key window's responder chain, where the page's view is
 /// first while it holds keys.
 pub(super) fn edit(edit: Edit) {
