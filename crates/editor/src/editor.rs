@@ -668,6 +668,24 @@ impl Editor {
             .set_selection(Selection::at(cursor.clamp(&self.doc)));
     }
 
+    /// The visual-row edge when it has painted, or the hard-line edge before
+    /// the first layout. Home and End remain useful during that first frame,
+    /// while every subsequent press respects soft wrapping.
+    fn visual_row_edge(&self, at: Cursor, end: bool) -> Cursor {
+        self.layouts.visual_row_edge(at, end).unwrap_or_else(|| {
+            if end {
+                line_end(at, &self.doc)
+            } else {
+                line_home(at, &self.doc)
+            }
+        })
+    }
+
+    fn move_to_visual_row_edge(&mut self, extend: bool, end: bool, cx: &mut Context<Self>) {
+        let target = self.visual_row_edge(self.selection.head, end);
+        self.moved(extend, |_, _| target, cx);
+    }
+
     /// Delete from the caret to wherever `to` lands — every kill chord, sharing
     /// the cursor functions the motion chords use so the two cannot disagree.
     ///
@@ -801,7 +819,11 @@ impl Editor {
         // Source mode maps nothing: its deltas are about one fence, and an
         // anchor dragged through those would point at the markup. They are
         // clamped back onto the document on the way out instead.
-        for delta in edit(self) {
+        let deltas = edit(self);
+        // A caret can move to a newly created visual row before the renderer
+        // records that row. Its prior coordinates are no longer its position.
+        self.layouts.invalidate();
+        for delta in deltas {
             if !self.blocks() {
                 continue;
             }

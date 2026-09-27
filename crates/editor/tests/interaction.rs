@@ -270,6 +270,74 @@ fn end_stays_on_the_softbreak_line(cx: &mut TestAppContext) {
     assert_eq!(source(&editor, &mut cx), "abX\ncd");
 }
 
+/// Home and End follow painted rows, not only literal newlines. The test
+/// platform's fixed-width shaping makes the relationship independent of a
+/// platform font's exact metrics.
+#[gpui::test]
+fn home_and_end_follow_the_edges_of_a_wrapped_row(cx: &mut TestAppContext) {
+    let source = "word ".repeat(100);
+
+    let (editor, _window, mut cx) = open_with(&source, cx);
+    cx.simulate_keystrokes("down right");
+    let expected_home = cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        editor
+            .layouts()
+            .visual_row_edge(editor.selection().head, false)
+            .expect("the wrapped row painted")
+    });
+    assert!(
+        expected_home.offset > 0,
+        "the second visual row is not line zero"
+    );
+    cx.simulate_keystrokes("home");
+    assert_eq!(head(&editor, &mut cx), expected_home);
+
+    let (editor, _window, mut cx) = open_with(&source, &mut *cx);
+    cx.simulate_keystrokes("down right");
+    let expected_end = cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        editor
+            .layouts()
+            .visual_row_edge(editor.selection().head, true)
+            .expect("the wrapped row painted")
+    });
+    assert!(
+        expected_end.offset < source.len(),
+        "the row ends before the text"
+    );
+    cx.simulate_keystrokes("end");
+    assert_eq!(head(&editor, &mut cx), expected_end);
+}
+
+/// A second key can arrive before the frame that paints a soft break. Up must
+/// therefore start from the new line, not the old layout position at the same
+/// byte offset.
+#[gpui::test]
+fn up_after_a_soft_break_uses_the_new_caret_position(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with(&"a".repeat(200), cx);
+    cx.simulate_keystrokes("down shift-enter up");
+    assert_eq!(
+        head(&editor, &mut cx).offset,
+        0,
+        "up from the new visual line reaches the first row's start"
+    );
+}
+
+/// Splitting a wrapped block also creates a new visual row. Until it paints,
+/// the next Up must use the new block's caret rather than the old block's
+/// position at the offset that was split.
+#[gpui::test]
+fn up_after_enter_uses_the_new_caret_position(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with(&"a".repeat(200), cx);
+    cx.simulate_keystrokes("down enter up");
+    assert_eq!(
+        head(&editor, &mut cx),
+        markdown::Cursor::default(),
+        "up from the split block reaches the first row's start"
+    );
+}
+
 #[gpui::test]
 fn down_moves_to_the_second_softbreak_line(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("ab\ncd", cx);

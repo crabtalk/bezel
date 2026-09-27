@@ -1,0 +1,40 @@
+name: '[Auto] Sync Fork'
+
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-with-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - run: echo "BRANCH=bot/sync-$(date '+%Y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - run: git switch -c "$BRANCH"
+      - run: git remote add upstream https://github.com/crabtalk/bezel.git
+      - run: git fetch upstream
+      - run: git reset --hard upstream/main
+      - run: git push --set-upstream origin "$BRANCH"
+
+      - name: Update GPUI dependencies
+        run: |
+          perl -0pi -e          's/^gpui\s*=.+$/gpui          = { git = "https:\/\/github.com\/crabtalk\/zed", version = ">=0.2.2" }/m' Cargo.toml
+          perl -0pi -e 's/^gpui_platform\s*=.+$/gpui_platform = { git = "https:\/\/github.com\/crabtalk\/zed", version = ">=0.1.0", features = [/m' Cargo.toml
+          perl -0pi -e      's/^gpui_web\s*=.+$/gpui_web      = { git = "https:\/\/github.com\/crabtalk\/zed", version = ">=0.1.0" }/m' Cargo.toml
+
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8.1.1
+        with:
+          title:          "[bot] Update GPUI dependencies"
+          commit-message: "[bot] Update GPUI dependencies"
+          base: main
+          branch: ${{ env.BRANCH }}
+          delete-branch: true

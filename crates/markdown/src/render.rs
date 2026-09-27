@@ -707,6 +707,25 @@ impl BlockLayouts {
         Some((cursor_in_row(&frames, next, from.x)?, next.bounds.origin.y))
     }
 
+    /// The start or end of the painted row holding `at`.
+    ///
+    /// A wrap boundary belongs to both neighbouring rows. Home follows the
+    /// following row and End the preceding one, matching the side of the
+    /// boundary each key means and preventing either key from jumping to the
+    /// hard line's edge.
+    pub fn visual_row_edge(&self, at: Cursor, end: bool) -> Option<Cursor> {
+        let frames = self.0.borrow();
+        let mut rows = frames.rows.iter().filter(|row| {
+            row.block == at.block && row.part == at.part && row_contains(row, at.offset)
+        });
+        let row = if end { rows.next() } else { rows.next_back() }?;
+        Some(Cursor::new(
+            row.block,
+            row.part,
+            if end { row.range.end } else { row.range.start },
+        ))
+    }
+
     /// Whether `point` is inside painted text.
     ///
     /// [`Self::hit`] answers with the nearest run wherever it is asked, which
@@ -838,6 +857,15 @@ impl BlockLayouts {
         frames.languages.clear();
         frames.pictures.clear();
         frames.checkboxes.clear();
+    }
+
+    /// Discard coordinates from the document state before an edit.
+    ///
+    /// Input actions can arrive before the next paint pass. Keeping the old
+    /// rows would interpret a caret moved by Enter against its former visual
+    /// position, so the following Up or Down must wait for the new layout.
+    pub fn invalidate(&self) {
+        self.clear();
     }
 }
 
