@@ -1,4 +1,7 @@
-//! Reports a press on the page, in any of its frames, before WebKit takes it.
+//! Watches presses in the page's window before AppKit dispatches them. A
+//! press on the page, in any of its frames, is reported. A press on gpui's
+//! view outside the page takes the keys back from the page, whether or not
+//! gpui's focus moves.
 
 use super::Report;
 use block2::RcBlock;
@@ -14,8 +17,12 @@ impl Monitor {
         let page = page.retain();
         let block = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
             // SAFETY: AppKit hands a valid event.
-            if on(&page, unsafe { event.as_ref() }, mtm) {
-                let _ = reports.try_send(Report::Pressed);
+            match landed(&page, unsafe { event.as_ref() }, mtm) {
+                Some(Landed::Page) => {
+                    let _ = reports.try_send(Report::Pressed);
+                }
+                Some(Landed::Host) if super::holds(&page) => super::release(&page),
+                _ => {}
             }
             event.as_ptr()
         });
@@ -36,19 +43,31 @@ impl Drop for Monitor {
     }
 }
 
-/// Whether `event` lands on the page. A hidden page takes no hit.
-fn on(page: &NSView, event: &NSEvent, mtm: MainThreadMarker) -> bool {
-    let (Some(window), Some(pressed)) = (page.window(), event.window(mtm)) else {
-        return false;
-    };
+enum Landed {
+    Page,
+    /// gpui's view, outside the page and any other view in it.
+    Host,
+}
+
+/// `None` for a press outside gpui's view in the page's window, or on
+/// another view inside it. A hidden page takes no hit.
+fn landed(page: &NSView, event: &NSEvent, mtm: MainThreadMarker) -> Option<Landed> {
+    let (window, pressed) = (page.window()?, event.window(mtm)?);
     if !std::ptr::eq(&*window, &*pressed) {
-        return false;
+        return None;
     }
     // SAFETY: called on the main thread.
-    let Some(parent) = (unsafe { page.superview() }) else {
-        return false;
-    };
+    let host = unsafe { page.superview() }?;
+    // SAFETY: called on the main thread.
+    let frame = unsafe { host.superview() }?;
     // `hitTest:` takes a point in the superview's coordinates.
-    let point = parent.convertPoint_fromView(event.locationInWindow(), None);
-    page.hitTest(point).is_some()
+    let point = frame.convertPoint_fromView(event.locationInWindow(), None);
+    let hit = host.hitTest(point)?;
+    if hit.isDescendantOf(page) {
+        Some(Landed::Page)
+    } else if std::ptr::eq(&*hit, &*host) {
+        Some(Landed::Host)
+    } else {
+        None
+    }
 }

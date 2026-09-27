@@ -18,8 +18,10 @@ use std::{fmt, rc::Rc, time::Duration};
 /// windows in turn moves its page on every paint.
 ///
 /// The page takes keys while the view's focus handle is focused, and a press
-/// in the page focuses the handle. On macOS, key equivalents (cmd or ctrl
-/// held) reach gpui's key dispatch before the page sees them. On Windows, a
+/// in the page focuses the handle. On macOS, a press on gpui's view outside
+/// the page takes the keys back, whether or not the handle loses focus, and
+/// key equivalents (cmd or ctrl held) reach gpui's key dispatch before the
+/// page sees them. On Windows, a
 /// key with ctrl or alt held, or a function key, goes to gpui's key dispatch
 /// in place of the page when the keymap binds it in the view's key context.
 ///

@@ -38,18 +38,8 @@ impl State {
 
     pub(super) fn watch_keys(&self, _window: &Window) {}
 
-    /// Whether the page, or a view inside it, is its window's first responder.
     pub(super) fn holds_keys(&self, view: &wry::WebView) -> bool {
-        use objc2_app_kit::NSView;
-
-        let page = view.webview();
-        let Some(window) = page.window() else {
-            return false;
-        };
-        window
-            .firstResponder()
-            .and_then(|responder| responder.downcast::<NSView>().ok())
-            .is_some_and(|responder| responder.isDescendantOf(&page))
+        holds(&view.webview())
     }
 }
 
@@ -86,11 +76,27 @@ pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
 /// first responder. wry's `focus_parent` picks the view the page was built
 /// in.
 pub(super) fn give_keys(view: &wry::WebView) {
-    let page = view.webview();
+    release(&view.webview());
+}
+
+fn release(page: &objc2_app_kit::NSView) {
     // SAFETY: called on the main thread.
     if let (Some(window), Some(parent)) = (page.window(), unsafe { page.superview() }) {
         window.makeFirstResponder(Some(&parent));
     }
+}
+
+/// Whether the page, or a view inside it, is its window's first responder.
+fn holds(page: &objc2_app_kit::NSView) -> bool {
+    use objc2_app_kit::NSView;
+
+    let Some(window) = page.window() else {
+        return false;
+    };
+    window
+        .firstResponder()
+        .and_then(|responder| responder.downcast::<NSView>().ok())
+        .is_some_and(|responder| responder.isDescendantOf(page))
 }
 
 /// Sent down the key window's responder chain, where the page's view is
