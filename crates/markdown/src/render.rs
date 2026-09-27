@@ -315,10 +315,10 @@ impl Caret {
 
     pub fn position(self, layouts: &BlockLayouts) -> Option<(Point<Pixels>, Pixels)> {
         let frames = layouts.0.borrow();
-        let row = frames
-            .rows
-            .iter()
-            .find(|row| self.visual_row.is_some_and(|reference| row_is(row, reference)))?;
+        let row = frames.rows.iter().find(|row| {
+            self.visual_row
+                .is_some_and(|reference| row_is(row, reference))
+        })?;
         Some((
             position_in_row(&frames, row, self.selection.head.offset)?,
             row.bounds.size.height,
@@ -354,19 +354,25 @@ impl Caret {
                     && next.range.start == head.offset
             })
         } else {
-            index.checked_sub(1).and_then(|previous| frames.rows.get(previous)).filter(
-                |previous| {
+            index
+                .checked_sub(1)
+                .and_then(|previous| frames.rows.get(previous))
+                .filter(|previous| {
                     head.offset == row.range.start
                         && previous.block == head.block
                         && previous.part == head.part
                         && previous.range.end == head.offset
-                },
-            )
+                })
         };
         let (target, target_row) = match adjoining {
             Some(adjoining) => (head, adjoining),
             None => {
-                let target = if right { head.right(doc) } else { head.left(doc) }.clamp(doc);
+                let target = if right {
+                    head.right(doc)
+                } else {
+                    head.left(doc)
+                }
+                .clamp(doc);
                 let target_row = if row_contains(row, target.offset)
                     && row.block == target.block
                     && row.part == target.part
@@ -402,12 +408,7 @@ impl Caret {
         self.move_to_row_edge(layouts, extend, true)
     }
 
-    fn move_to_row_edge(
-        &mut self,
-        layouts: &BlockLayouts,
-        extend: bool,
-        end: bool,
-    ) -> bool {
+    fn move_to_row_edge(&mut self, layouts: &BlockLayouts, extend: bool, end: bool) -> bool {
         let frames = layouts.0.borrow();
         let Some(row) = row_index(&frames, self.visual_row).map(|index| &frames.rows[index]) else {
             return false;
@@ -443,7 +444,9 @@ impl Caret {
         });
         let next = match down {
             true => frames.rows.get(index + 1),
-            false => index.checked_sub(1).and_then(|previous| frames.rows.get(previous)),
+            false => index
+                .checked_sub(1)
+                .and_then(|previous| frames.rows.get(previous)),
         };
         let Some(next) = next else {
             return false;
@@ -470,22 +473,16 @@ impl Caret {
         self.move_logically(doc, layouts, extend, true, Cursor::word_right)
     }
 
-    pub fn move_document_start(
-        &mut self,
-        doc: &Doc,
-        layouts: &BlockLayouts,
-        extend: bool,
-    ) -> bool {
-        self.move_logically(doc, layouts, extend, false, |_, doc| Selection::all(doc).anchor)
+    pub fn move_document_start(&mut self, doc: &Doc, layouts: &BlockLayouts, extend: bool) -> bool {
+        self.move_logically(doc, layouts, extend, false, |_, doc| {
+            Selection::all(doc).anchor
+        })
     }
 
-    pub fn move_document_end(
-        &mut self,
-        doc: &Doc,
-        layouts: &BlockLayouts,
-        extend: bool,
-    ) -> bool {
-        self.move_logically(doc, layouts, extend, true, |_, doc| Selection::all(doc).head)
+    pub fn move_document_end(&mut self, doc: &Doc, layouts: &BlockLayouts, extend: bool) -> bool {
+        self.move_logically(doc, layouts, extend, true, |_, doc| {
+            Selection::all(doc).head
+        })
     }
 
     fn move_logically(
@@ -504,9 +501,7 @@ impl Caret {
             Box::new(frames.rows.iter().rev())
         };
         let Some(row) = rows.into_iter().find(|row| {
-            row.block == target.block
-                && row.part == target.part
-                && row_contains(row, target.offset)
+            row.block == target.block && row.part == target.part && row_contains(row, target.offset)
         }) else {
             return false;
         };
@@ -541,12 +536,7 @@ impl Caret {
         true
     }
 
-    pub fn extend_at(
-        &mut self,
-        point: Point<Pixels>,
-        doc: &Doc,
-        layouts: &BlockLayouts,
-    ) -> bool {
+    pub fn extend_at(&mut self, point: Point<Pixels>, doc: &Doc, layouts: &BlockLayouts) -> bool {
         let frames = layouts.0.borrow();
         let Some(row) = row_at(&frames, point) else {
             return false;

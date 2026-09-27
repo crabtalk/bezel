@@ -348,7 +348,10 @@ fn end_keeps_the_end_of_a_wrapped_row(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with(&text, cx);
     cx.simulate_keystrokes("down right end");
     let row_end = head(&editor, &mut cx);
-    assert!(row_end.offset < text.len(), "the test has another wrapped row");
+    assert!(
+        row_end.offset < text.len(),
+        "the test has another wrapped row"
+    );
 
     cx.simulate_keystrokes("right");
     assert_eq!(
@@ -701,7 +704,7 @@ fn the_handle_follows_the_caret(cx: &mut TestAppContext) {
 /// half a second later.
 #[gpui::test]
 fn the_handle_moves_in_with_an_indented_block(cx: &mut TestAppContext) {
-    let (editor, _window, mut cx) = open_with("- first\n- second", &mut *cx);
+    let (editor, _window, mut cx) = open_with("- first\n- second", cx);
     go_to_block(&editor, &mut cx, 1);
     cx.run_until_parked();
     let before = cx
@@ -732,14 +735,14 @@ fn the_handle_moves_in_with_an_indented_block(cx: &mut TestAppContext) {
 /// trap once it does not. Nothing above an atomic block merges, so the empty
 /// one was left behind with no way left to reach it.
 #[gpui::test]
-fn an_empty_block_after_an_atomic_one_deletes(cx: &mut TestAppContext) {
+fn an_empty_block_after_an_atomic_one_deletes(mut cx: &mut TestAppContext) {
     for (name, source) in [
         ("a rule", "a\n\n---\n\nx"),
         ("a fence", "a\n\n```rs\nk\n```\n\nx"),
         ("an image", "a\n\n![c](https://e.com/i.png)\n\nx"),
         ("a table", "a\n\n| h |\n| - |\n| c |\n\nx"),
     ] {
-        let (editor, _window, mut cx) = open_with(source, &mut *cx);
+        let (editor, _window, mut cx) = open_with(source, &mut cx);
         // Empty the trailing paragraph, then try to take the paragraph itself.
         for _ in 0..25 {
             cx.simulate_keystrokes("down");

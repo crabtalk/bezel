@@ -743,18 +743,22 @@ impl Editor {
 
     fn word(&mut self, right: bool, extend: bool, cx: &mut Context<Self>) {
         let moved = if right {
-            self.caret
-                .move_word_right(&self.doc, &self.layouts, extend)
+            self.caret.move_word_right(&self.doc, &self.layouts, extend)
         } else {
-            self.caret
-                .move_word_left(&self.doc, &self.layouts, extend)
+            self.caret.move_word_left(&self.doc, &self.layouts, extend)
         };
         if moved {
             self.finish_caret_motion(cx);
         }
     }
 
-    fn document_edge(&mut self, end: bool, extend: bool, cx: &mut Context<Self>) {
+    fn document_edge(
+        &mut self,
+        end: bool,
+        extend: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let moved = if end {
             self.caret
                 .move_document_end(&self.doc, &self.layouts, extend)
@@ -764,6 +768,13 @@ impl Editor {
         };
         if moved {
             self.finish_caret_motion(cx);
+            // A document-edge move can cross the whole viewport. Waiting for
+            // the post-paint reveal makes the scroll change schedule a second
+            // frame, so reveal from the same cached caret row and explicitly
+            // draw the resulting scroll position now. The caret and layouts
+            // remain the only sources of position truth.
+            self.reveal_caret(cx);
+            window.refresh();
         }
     }
 
@@ -801,8 +812,7 @@ impl Editor {
         // Deleting the last block is the other way to an empty document, and
         // the caret belongs at the start of whatever replaces it.
         if ensure_block(&mut self.doc) {
-            self.caret
-                .set_selection(Selection::at(Cursor::default()));
+            self.caret.set_selection(Selection::at(Cursor::default()));
         }
         if !self.blocks() {
             self.ensure_source();
@@ -840,10 +850,7 @@ impl Editor {
         };
         if moved {
             self.finish_caret_motion(cx);
-        } else if down
-            && !extend
-            && self.cursor().block + 1 == self.doc.blocks.len()
-        {
+        } else if down && !extend && self.cursor().block + 1 == self.doc.blocks.len() {
             self.append_tail(cx);
         }
     }
@@ -941,8 +948,7 @@ impl Editor {
                     markdown::parse_at(self.source_text(), self.cursor().offset, &self.marks);
                 self.doc = doc;
                 ensure_block(&mut self.doc);
-                self.caret
-                    .set_selection(Selection::at(at.clamp(&self.doc)));
+                self.caret.set_selection(Selection::at(at.clamp(&self.doc)));
                 for anchor in &mut self.anchors {
                     anchor.range = anchor.range.clamp(&self.doc);
                 }
@@ -1344,8 +1350,7 @@ impl Editor {
         self.edit(kind, cx, |this| {
             let before = this.doc.blocks.len();
             let splice = if !this.caret.selection().is_collapsed() {
-                this.doc
-                    .replace(this.caret.selection(), Text::default())
+                this.doc.replace(this.caret.selection(), Text::default())
             } else if at.offset > 0 {
                 this.doc
                     .replace(Selection::new(at.left(&this.doc), at), Text::default())
@@ -1438,9 +1443,7 @@ impl Editor {
         self.edit(EditKind::Structure, cx, |this| {
             let mut deltas = Vec::new();
             if !this.caret.selection().is_collapsed() {
-                let splice = this
-                    .doc
-                    .replace(this.caret.selection(), Text::default());
+                let splice = this.doc.replace(this.caret.selection(), Text::default());
                 this.caret
                     .set_selection(Selection::at(splice.caret.clamp(&this.doc)));
                 deltas.push(Delta::Spliced(splice));
@@ -1551,8 +1554,7 @@ impl Editor {
     /// things there are to back out of, innermost first.
     fn dismiss(&mut self, _: &Dismiss, _: &mut Window, cx: &mut Context<Self>) {
         if self.pasted.take().is_none() && self.slash.take().is_none() {
-            self.caret
-                .set_selection(Selection::at(self.caret.head()));
+            self.caret.set_selection(Selection::at(self.caret.head()));
         }
         cx.notify();
     }
@@ -1594,9 +1596,7 @@ impl Editor {
         };
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(source));
         self.edit(EditKind::Structure, cx, |this| {
-            let splice = this
-                .doc
-                .replace(this.caret.selection(), Text::default());
+            let splice = this.doc.replace(this.caret.selection(), Text::default());
             this.caret
                 .set_selection(Selection::at(splice.caret.clamp(&this.doc)));
             vec![Delta::Spliced(splice)]
@@ -1662,9 +1662,7 @@ impl Editor {
     /// Put `text` in place of the selection as it stands, caret after it.
     fn paste_literal(&mut self, text: &str, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
-            let splice = this
-                .doc
-                .replace(this.caret.selection(), Text::plain(text));
+            let splice = this.doc.replace(this.caret.selection(), Text::plain(text));
             this.caret
                 .set_selection(Selection::at(splice.caret.clamp(&this.doc)));
             vec![Delta::Spliced(splice)]
@@ -1688,9 +1686,7 @@ impl Editor {
         let at = self.cursor();
         let alone = at.part == Part::Body && self.caret_text().is_some_and(Text::is_empty);
         self.edit(EditKind::Structure, cx, |this| {
-            let splice = this
-                .doc
-                .replace(this.caret.selection(), Text::link(&url));
+            let splice = this.doc.replace(this.caret.selection(), Text::link(&url));
             this.caret
                 .set_selection(Selection::at(splice.caret.clamp(&this.doc)));
             vec![Delta::Spliced(splice)]
@@ -1782,8 +1778,7 @@ impl Editor {
                     Cursor::new(ix + 1, Part::Body, 0)
                 }
             };
-            this.caret
-                .set_selection(Selection::at(at.clamp(&this.doc)));
+            this.caret.set_selection(Selection::at(at.clamp(&this.doc)));
             vec![Delta::Spliced(Splice {
                 removed: Selection::new(
                     Cursor::new(ix, Part::Body, 0),
@@ -1796,28 +1791,18 @@ impl Editor {
     }
 
     fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(step) = self
-            .history
-            .undo(
-                self.mode,
-                &self.doc,
-                self.caret.selection(),
-                &self.anchors,
-            )
+        if let Some(step) =
+            self.history
+                .undo(self.mode, &self.doc, self.caret.selection(), &self.anchors)
         {
             self.restore(step, cx);
         }
     }
 
     fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(step) = self
-            .history
-            .redo(
-                self.mode,
-                &self.doc,
-                self.caret.selection(),
-                &self.anchors,
-            )
+        if let Some(step) =
+            self.history
+                .redo(self.mode, &self.doc, self.caret.selection(), &self.anchors)
         {
             self.restore(step, cx);
         }
@@ -2410,36 +2395,28 @@ impl Render for Editor {
             .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
             .on_action(cx.listener(|this, _: &Home, _, cx| this.row_edge(false, false, cx)))
             .on_action(cx.listener(|this, _: &End, _, cx| this.row_edge(true, false, cx)))
-            .on_action(
-                cx.listener(|this, _: &DocumentStart, _, cx| this.document_edge(false, false, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &DocumentEnd, _, cx| this.document_edge(true, false, cx)),
-            )
+            .on_action(cx.listener(|this, _: &DocumentStart, window, cx| {
+                this.document_edge(false, false, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DocumentEnd, window, cx| {
+                this.document_edge(true, false, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &WordLeft, _, cx| this.word(false, false, cx)))
             .on_action(cx.listener(|this, _: &WordRight, _, cx| this.word(true, false, cx)))
-            .on_action(cx.listener(|this, _: &SelectLeft, _, cx| {
-                this.horizontal(false, true, cx)
-            }))
-            .on_action(cx.listener(|this, _: &SelectRight, _, cx| {
-                this.horizontal(true, true, cx)
-            }))
+            .on_action(cx.listener(|this, _: &SelectLeft, _, cx| this.horizontal(false, true, cx)))
+            .on_action(cx.listener(|this, _: &SelectRight, _, cx| this.horizontal(true, true, cx)))
             .on_action(cx.listener(|this, _: &SelectUp, _, cx| this.vertical(false, true, cx)))
             .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.vertical(true, true, cx)))
             .on_action(cx.listener(|this, _: &SelectHome, _, cx| this.row_edge(false, true, cx)))
             .on_action(cx.listener(|this, _: &SelectEnd, _, cx| this.row_edge(true, true, cx)))
-            .on_action(cx.listener(|this, _: &SelectDocumentStart, _, cx| {
-                this.document_edge(false, true, cx)
+            .on_action(cx.listener(|this, _: &SelectDocumentStart, window, cx| {
+                this.document_edge(false, true, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &SelectDocumentEnd, _, cx| {
-                this.document_edge(true, true, cx)
+            .on_action(cx.listener(|this, _: &SelectDocumentEnd, window, cx| {
+                this.document_edge(true, true, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &SelectWordLeft, _, cx| {
-                this.word(false, true, cx)
-            }))
-            .on_action(cx.listener(|this, _: &SelectWordRight, _, cx| {
-                this.word(true, true, cx)
-            }))
+            .on_action(cx.listener(|this, _: &SelectWordLeft, _, cx| this.word(false, true, cx)))
+            .on_action(cx.listener(|this, _: &SelectWordRight, _, cx| this.word(true, true, cx)))
             .w_full()
             // Text under the pointer, so the pointer says so — and only there,
             // or while a drag is still sweeping one out. The editor's box
