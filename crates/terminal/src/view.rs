@@ -5,8 +5,9 @@
 //!   [`Appearance`];
 //! - keystroke → PTY byte encoding (printables, control keys, arrows/nav
 //!   escape sequences, Ctrl- combos, Alt prefixing);
-//! - the 12 ms input coalescer and the 80 ms resize debounce constants (the
-//!   host drives the timers; the buffer logic here is pure);
+//! - the 12 ms input coalescer, the 4 ms output batch and the 80 ms resize
+//!   debounce constant (the host drives the timers; the buffer logic here is
+//!   pure);
 //! - [`TerminalElement`] — a custom gpui element that measures cell metrics
 //!   from the real mono font (the "font probe"), reports the resulting
 //!   cols×rows back to the host through its grid callback, and paints the
@@ -15,9 +16,9 @@
 //!   cursor block.
 
 use gpui::{
-    App, Bounds, GlobalElementId, Hsla, KeyLayout, LayoutId, Modifiers, PaintQuad, Pixels, Point,
-    ShapedLine, SharedString, Style, TextRun, Window, fill, font, outline, point, px, relative,
-    size,
+    App, Bounds, Edges, GlobalElementId, Hsla, KeyLayout, LayoutId, Modifiers, PaintQuad, Pixels,
+    Point, ShapedLine, SharedString, Style, TextRun, Window, fill, font, outline, point, px,
+    relative, size,
 };
 
 use theme::{Appearance, Theme};
@@ -46,8 +47,6 @@ pub use palette::*;
 /// Terminal font metrics (mono).
 pub const TERM_FONT_SIZE: f32 = 13.0;
 pub const TERM_LINE_HEIGHT: f32 = 18.0;
-/// Inner padding of the grid area.
-pub const TERM_PADDING: f32 = 12.0;
 
 /// Keyboard input coalescing window before a PTY write flush.
 pub const COALESCE_MS: u64 = 12;
@@ -79,6 +78,75 @@ impl InputCoalescer {
 
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Output batch (pure buffer; the host owns the 4 ms timer)
+// ---------------------------------------------------------------------------
+
+/// Window over which PTY output is held and fed as one run.
+pub const OUTPUT_BATCH_MS: u64 = 4;
+/// Held bytes at which [`OutputBatch::push`] hands them back without waiting
+/// for the window to end.
+pub const OUTPUT_BATCH_LIMIT: usize = 256 * 1024;
+
+/// What [`OutputBatch::push`] asks of the host.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Batched {
+    /// The first chunk after idle. Feed it now, then start an
+    /// [`OUTPUT_BATCH_MS`] timer that calls [`OutputBatch::tick`].
+    Open(Vec<u8>),
+    /// Held for the timer already running.
+    Held,
+    /// The held bytes reached [`OUTPUT_BATCH_LIMIT`]. Feed them now; the
+    /// timer keeps running.
+    Full(Vec<u8>),
+}
+
+/// Groups PTY output into one feed per window. The first chunk after idle is
+/// fed at once; what arrives while the window is open is held until
+/// [`OutputBatch::tick`]. A window that ends with nothing held closes the
+/// batch, and the next chunk opens a new one.
+#[derive(Debug, Default)]
+pub struct OutputBatch {
+    pending: Vec<u8>,
+    open: bool,
+}
+
+impl OutputBatch {
+    pub fn push(&mut self, bytes: Vec<u8>) -> Batched {
+        if bytes.is_empty() {
+            return Batched::Held;
+        }
+        if !self.open {
+            self.open = true;
+            return Batched::Open(bytes);
+        }
+        if self.pending.is_empty() {
+            self.pending = bytes;
+        } else {
+            self.pending.extend_from_slice(&bytes);
+        }
+        if self.pending.len() >= OUTPUT_BATCH_LIMIT {
+            return Batched::Full(std::mem::take(&mut self.pending));
+        }
+        Batched::Held
+    }
+
+    /// The window ended. `Some` is the held bytes: feed them and start the
+    /// timer again. `None` closes the batch; start no timer.
+    pub fn tick(&mut self) -> Option<Vec<u8>> {
+        if self.pending.is_empty() {
+            self.open = false;
+            return None;
+        }
+        Some(std::mem::take(&mut self.pending))
+    }
+
+    /// Whether a timer should be running.
+    pub fn is_open(&self) -> bool {
+        self.open
     }
 }
 
@@ -129,7 +197,8 @@ pub struct PlacedImage {
 /// after a resize.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GridGeometry {
-    /// Top-left of the first glyph (bounds origin plus padding).
+    /// Top-left of the first glyph: the element's bounds origin moved in by
+    /// the content inset.
     pub origin: Point<Pixels>,
     pub cell_w: f32,
     pub line_h: f32,
@@ -151,6 +220,7 @@ pub struct TerminalElement {
     grid: GridHook,
     focused: bool,
     font_size: f32,
+    inset: Edges<Pixels>,
 }
 
 impl TerminalElement {
@@ -162,6 +232,7 @@ impl TerminalElement {
             grid: Box::new(grid),
             focused,
             font_size: TERM_FONT_SIZE,
+            inset: Edges::default(),
         }
     }
 
@@ -174,8 +245,23 @@ impl TerminalElement {
         self
     }
 
+    /// Inset the grid from the element's bounds. Cols and rows are measured
+    /// from the bounds minus the inset; the margin is still inside the
+    /// element's bounds for hit-testing. Defaults to zero.
+    pub fn with_content_inset(mut self, inset: Edges<Pixels>) -> Self {
+        self.inset = inset;
+        self
+    }
+
     fn line_height(&self) -> f32 {
         self.font_size * TERM_LINE_HEIGHT / TERM_FONT_SIZE
+    }
+
+    fn grid_origin(&self, bounds: Bounds<Pixels>) -> Point<Pixels> {
+        point(
+            bounds.left() + self.inset.left,
+            bounds.top() + self.inset.top,
+        )
     }
 }
 
@@ -292,16 +378,13 @@ impl gpui::Element for TerminalElement {
             .unwrap_or(px(self.font_size * 0.6));
         let line_h = px(self.line_height());
 
-        let inner_w = f32::from(bounds.size.width) - 2.0 * TERM_PADDING;
-        let inner_h = f32::from(bounds.size.height) - 2.0 * TERM_PADDING;
+        let inner_w = f32::from(bounds.size.width - self.inset.left - self.inset.right);
+        let inner_h = f32::from(bounds.size.height - self.inset.top - self.inset.bottom);
         let cols = ((inner_w / f32::from(cell_w)).floor() as i64).clamp(2, 500) as u16;
         let rows = ((inner_h / f32::from(line_h)).floor() as i64).clamp(1, 500) as u16;
 
         // Report the measured grid, then snapshot for painting.
-        let origin = point(
-            bounds.left() + px(TERM_PADDING),
-            bounds.top() + px(TERM_PADDING),
-        );
+        let origin = self.grid_origin(bounds);
         let snapshot = (self.grid)(
             GridGeometry {
                 origin,
@@ -481,10 +564,7 @@ impl gpui::Element for TerminalElement {
         cx: &mut App,
     ) {
         let line_h = px(self.line_height());
-        let origin = point(
-            bounds.left() + px(TERM_PADDING),
-            bounds.top() + px(TERM_PADDING),
-        );
+        let origin = self.grid_origin(bounds);
         window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
             let images = std::mem::take(&mut prepaint.images);
             let paint_layer = |layer: Layer, window: &mut Window| {

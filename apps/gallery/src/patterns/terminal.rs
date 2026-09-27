@@ -11,11 +11,14 @@
 //! Native-only: `alacritty_terminal` pulls `home`, which does not compile for
 //! wasm32, so the crate (and this page) sits off the web build.
 
-use gpui::{Context, Render, SharedString, Subscription, Task, Window, div, prelude::*, px};
+use gpui::{Context, Edges, Render, SharedString, Subscription, Task, Window, div, prelude::*, px};
 use std::time::Duration;
 use terminal::{
     emulator::Emulator,
-    view::{GridSnapshot, Images, TerminalElement, terminal_panel_bg},
+    view::{
+        Batched, GridSnapshot, Images, OUTPUT_BATCH_MS, OutputBatch, TerminalElement,
+        terminal_panel_bg,
+    },
 };
 use theme::{TextStyle, Theme, Typeset, hairline};
 
@@ -111,8 +114,12 @@ pub struct Terminal {
     /// fired. A page nobody is looking at does not tick, so the session pauses
     /// where it stood rather than replaying into the void.
     elapsed: u64,
-    /// Script beats fed so far.
+    /// Script beats handed to [`Self::batch`] so far.
     fed: usize,
+    /// Output on its way to the emulator. A PTY host pushes each read here.
+    batch: OutputBatch,
+    /// The batch window's timer, running while the batch is open.
+    flush: Option<Task<()>>,
     /// The history-scroll phase has happened.
     scrolled: bool,
     /// Pending tick. At most one in flight; dropping it pauses the session.
@@ -139,6 +146,8 @@ impl Terminal {
             script,
             elapsed: 0,
             fed: 0,
+            batch: OutputBatch::default(),
+            flush: None,
             scrolled: false,
             tick: None,
             activation: None,
@@ -172,7 +181,7 @@ impl Terminal {
         if self.fed < self.script.len() {
             while self.fed < self.script.len() && self.script[self.fed].1 <= elapsed {
                 let (bytes, _) = self.script[self.fed];
-                self.emulator.feed(bytes);
+                self.output(bytes.to_vec(), cx);
                 self.fed += 1;
             }
         } else {
@@ -186,12 +195,46 @@ impl Terminal {
                 let rows = self.emulator.rows() as u16;
                 self.emulator = Emulator::new(cols, rows);
                 self.images = Images::new();
+                self.batch = OutputBatch::default();
+                self.flush = None;
                 self.fed = 0;
                 self.scrolled = false;
                 self.elapsed = 0;
             }
         }
         cx.notify();
+    }
+
+    /// Hand one read of output to the batch, feeding what it gives back.
+    fn output(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        match self.batch.push(bytes) {
+            Batched::Open(bytes) => {
+                self.emulator.feed(&bytes);
+                self.schedule_flush(cx);
+            }
+            Batched::Full(bytes) => {
+                self.emulator.feed(&bytes);
+            }
+            Batched::Held => {}
+        }
+    }
+
+    /// End the batch window: feed what it held and run another window, or
+    /// close the batch when it held nothing.
+    fn schedule_flush(&mut self, cx: &mut Context<Self>) {
+        self.flush = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(OUTPUT_BATCH_MS))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.flush = None;
+                if let Some(bytes) = this.batch.tick() {
+                    this.emulator.feed(&bytes);
+                    this.schedule_flush(cx);
+                    cx.notify();
+                }
+            });
+        }));
     }
 
     /// The header strip: a live dot, the OSC title the script set, and what
@@ -265,7 +308,8 @@ impl Render for Terminal {
                 })
             },
             true,
-        );
+        )
+        .with_content_inset(Edges::all(px(12.0)));
 
         div().size_full().flex().justify_center().child(
             div()
