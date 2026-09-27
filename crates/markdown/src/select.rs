@@ -68,6 +68,12 @@ impl Cursor {
         while offset > 0 && !text.text.is_char_boundary(offset) {
             offset -= 1;
         }
+        if let Some(mention) = text.mention_around(offset) {
+            offset = match offset - mention.start <= mention.end - offset {
+                true => mention.start,
+                false => mention.end,
+            };
+        }
         Self { offset, ..here }
     }
 
@@ -114,6 +120,7 @@ impl Cursor {
             while offset > 0 && !text.text.is_char_boundary(offset) {
                 offset -= 1;
             }
+            let offset = text.mention_around(offset).map_or(offset, |m| m.start);
             return Self { offset, ..here };
         }
         if let Some(part) = here.step_part(doc, -1) {
@@ -140,6 +147,7 @@ impl Cursor {
             while offset < len && !text.text.is_char_boundary(offset) {
                 offset += 1;
             }
+            let offset = text.mention_around(offset).map_or(offset, |m| m.end);
             return Self { offset, ..here };
         }
         if let Some(part) = here.step_part(doc, 1) {
@@ -241,6 +249,7 @@ impl Cursor {
         let head = &text.text[..here.offset];
         let trimmed = head.trim_end_matches(|c: char| !c.is_alphanumeric());
         let offset = trimmed.trim_end_matches(char::is_alphanumeric).len();
+        let offset = text.mention_around(offset).map_or(offset, |m| m.start);
         Self { offset, ..here }
     }
 
@@ -260,8 +269,9 @@ impl Cursor {
                 .len();
         let rest = &tail[skipped..];
         let word = rest.len() - rest.trim_start_matches(char::is_alphanumeric).len();
+        let offset = here.offset + skipped + word;
         Self {
-            offset: here.offset + skipped + word,
+            offset: text.mention_around(offset).map_or(offset, |m| m.end),
             ..here
         }
     }

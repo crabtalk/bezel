@@ -232,6 +232,24 @@ fn a_block_prefix_typed_in_a_heading_stays_text(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn text_goes_either_side_of_a_chip_alone_on_its_line(cx: &mut TestAppContext) {
+    let chip = "[https://x.com](https://x.com \"chip\")";
+    let (editor, _window, mut cx) = open_with(chip, cx);
+    cx.simulate_keystrokes("end");
+    cx.simulate_input(" after");
+    cx.simulate_keystrokes("home");
+    cx.simulate_input("before ");
+    assert_eq!(source(&editor, &mut cx), format!("before {chip} after"));
+}
+
+#[gpui::test]
+fn backspace_takes_a_mention_whole(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("a [https://x.com](https://x.com \"chip\")", cx);
+    cx.simulate_keystrokes("end backspace");
+    assert_eq!(source(&editor, &mut cx), "a");
+}
+
+#[gpui::test]
 fn typing_an_alert_marker_after_quote_shortcut_promotes_it(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("", cx);
     cx.simulate_input("> ");

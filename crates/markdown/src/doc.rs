@@ -235,10 +235,9 @@ pub enum BlockKind {
     /// everything it shows past the URL comes from [`crate::preview`], so there
     /// is nothing here for a caret to edit.
     ///
-    /// [`Form`] picks which of the three — a chip, a card, or a card with its
-    /// picture across the width. Off a line of its own the same link is a
-    /// [`Mark::Mention`], which is the same three minus what shaped text cannot
-    /// hold.
+    /// [`Form`] picks a card or a card with its picture across the width;
+    /// [`Form::Chip`] paints as the card. A chip is a [`Mark::Mention`], on a
+    /// line of its own or not.
     Bookmark {
         url: String,
         form: Form,
@@ -354,6 +353,19 @@ impl Text {
         self.text.is_empty()
     }
 
+    /// The mention `offset` falls strictly inside. A caret has no place there:
+    /// the mention shows its preview, not its text.
+    pub(crate) fn mention_around(&self, offset: usize) -> Option<Range<usize>> {
+        self.marks
+            .iter()
+            .find(|span| {
+                matches!(span.mark, Mark::Mention { .. })
+                    && span.range.start < offset
+                    && offset < span.range.end
+            })
+            .map(|span| span.range.clone())
+    }
+
     /// Whether no other mark overlaps the one at `ix`.
     ///
     /// A mark written whole — a code span, a mention — leaves no room inside
@@ -383,6 +395,7 @@ pub struct MarkSpan {
 /// The other two are CommonMark's title slot, `[url](url "chip")`, which is
 /// core, ignored by every other renderer, and the only place left to say what
 /// the shorthand cannot: a chip alone on a line, and the bigger card.
+/// [`Form::Chip`] stays inline wherever it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Form {
     Auto,
@@ -419,9 +432,9 @@ pub enum Mark {
     /// A link painted richly rather than as underlined text — a chip inline, a
     /// [`BlockKind::Bookmark`] with a block to itself.
     ///
-    /// The chip shows the URL, because a [`Text`] is one string and every caret
-    /// offset is a byte into it: an inline atom painted wider or narrower than
-    /// the text under it has nowhere to put the offsets in between.
+    /// The chip shows a favicon and the [`crate::preview`] title in place of
+    /// its text, and opens the card on hover. Its text is atomic: a caret sits
+    /// at either end, never inside, and typing at its end falls outside it.
     Mention {
         url: String,
         form: Form,

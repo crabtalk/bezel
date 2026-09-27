@@ -35,10 +35,6 @@ pub struct Paste {
     /// menu is anchored.
     pub at: Cursor,
     pub url: String,
-    /// Whether the URL has a block to itself, which is what decides both the
-    /// rows below and what a chip becomes: an element with a favicon there, a
-    /// mark over shaped text anywhere else.
-    pub alone: bool,
     /// What this spot can hold. A card is a block, so it is offered only where
     /// the URL has one; a chip fits either way. A picture is offered where a
     /// card is, and only for a URL whose name says it is one — a row that
@@ -59,7 +55,6 @@ impl Paste {
         Self {
             at,
             url,
-            alone,
             rows,
             active: 0,
         }

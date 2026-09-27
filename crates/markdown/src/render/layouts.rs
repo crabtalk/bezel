@@ -54,7 +54,7 @@ pub(super) struct Heights {
     by_key: HashMap<u64, Pixels>,
     /// The height last measured at each column index, whatever block was
     /// there.
-    by_index: Vec<Pixels>,
+    by_index: Vec<Option<Pixels>>,
 }
 
 /// One shaped run and the slice of its part it covers.
@@ -68,6 +68,7 @@ pub(super) struct Painted {
     part: Part,
     range: Range<usize>,
     layout: TextLayout,
+    shown: Shown,
 }
 
 pub(super) struct PaintedRow {
@@ -76,6 +77,7 @@ pub(super) struct PaintedRow {
     part: Part,
     range: Range<usize>,
     bounds: Bounds<Pixels>,
+    /// Where its line starts in the painted text's [`Shown`] offsets.
     line_start: usize,
     wrapped_row: usize,
 }
@@ -118,7 +120,7 @@ impl BlockLayouts {
         })?;
         let point = painted
             .layout
-            .position_for_index(at.offset - painted.range.start)?;
+            .position_for_index(painted.shown.at(at.offset - painted.range.start))?;
         Some((point, painted.layout.line_height()))
     }
 
@@ -151,6 +153,7 @@ impl BlockLayouts {
                 let last = if here == to { end.offset } else { usize::MAX };
                 let range = first.saturating_sub(painted.range.start).min(len)
                     ..last.saturating_sub(painted.range.start).min(len);
+                let range = painted.shown.range(&range);
                 (range.start < range.end).then(|| range_rects(&painted.layout, &range, 0.0, 0.0))
             })
             .flatten()
@@ -313,15 +316,31 @@ impl BlockLayouts {
         self.0.borrow_mut().reveal = reveal;
     }
 
-    pub(super) fn record(&self, block: usize, part: Part, range: Range<usize>, layout: TextLayout) {
+    pub(super) fn record(
+        &self,
+        block: usize,
+        part: Part,
+        range: Range<usize>,
+        layout: TextLayout,
+        shown: Shown,
+    ) {
         let mut frames = self.0.borrow_mut();
         let painted = frames.texts.len();
-        record_rows(&mut frames.rows, painted, block, part, &range, &layout);
+        record_rows(
+            &mut frames.rows,
+            painted,
+            block,
+            part,
+            &range,
+            &layout,
+            &shown,
+        );
         frames.texts.push(Painted {
             block,
             part,
             range,
             layout,
+            shown,
         });
     }
 
@@ -348,17 +367,17 @@ impl BlockLayouts {
         heights
             .by_key
             .get(&key)
-            .or_else(|| heights.by_index.get(ix))
             .copied()
+            .or_else(|| heights.by_index.get(ix).copied().flatten())
     }
 
     pub(super) fn record_height(&self, ix: usize, key: u64, height: Pixels) {
         let heights = &mut self.0.borrow_mut().heights;
         heights.by_key.insert(key, height);
         if heights.by_index.len() <= ix {
-            heights.by_index.resize(ix + 1, px(0.0));
+            heights.by_index.resize(ix + 1, None);
         }
-        heights.by_index[ix] = height;
+        heights.by_index[ix] = Some(height);
     }
 
     /// Drops the heights of blocks no longer in the document once they
@@ -389,20 +408,15 @@ pub(super) fn row_contains(row: &PaintedRow, offset: usize) -> bool {
 
 pub(super) fn cursor_in_row(frames: &Frames, row: &PaintedRow, x: Pixels) -> Option<Cursor> {
     let painted = &frames.texts[row.painted];
-    let line = painted
-        .layout
-        .line_layout_for_index(row.line_start - painted.range.start)?;
+    let line = painted.layout.line_layout_for_index(row.line_start)?;
     let height = row.bounds.size.height;
     let local = point(
         x - row.bounds.origin.x,
         height * (row.wrapped_row as f32 + 0.5),
     );
     let (Ok(offset) | Err(offset)) = line.closest_index_for_position(local, height);
-    Some(Cursor::new(
-        row.block,
-        row.part,
-        (row.line_start + offset).min(row.range.end),
-    ))
+    let offset = painted.range.start + painted.shown.offset(row.line_start + offset);
+    Some(Cursor::new(row.block, row.part, offset.min(row.range.end)))
 }
 
 pub(super) fn record_rows(
@@ -412,11 +426,12 @@ pub(super) fn record_rows(
     part: Part,
     range: &Range<usize>,
     layout: &TextLayout,
+    shown: &Shown,
 ) {
     let line_height = layout.line_height();
     let bounds = layout.bounds();
     let mut origin = bounds.origin;
-    let mut line_start = range.start;
+    let mut line_start = 0;
     for line in layout.line_layouts() {
         let shaped = &line.unwrapped_layout;
         let row_ends = line
@@ -430,7 +445,8 @@ pub(super) fn record_rows(
                 painted,
                 block,
                 part,
-                range: line_start + row_start..line_start + row_end,
+                range: range.start + shown.offset(line_start + row_start)
+                    ..range.start + shown.offset(line_start + row_end),
                 bounds: Bounds::new(
                     origin + point(px(0.0), line_height * row as f32),
                     size(bounds.size.width, line_height),

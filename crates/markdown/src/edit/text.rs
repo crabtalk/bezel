@@ -15,8 +15,11 @@ impl Text {
             if at <= span.range.start {
                 span.range.start += n;
                 span.range.end += n;
-            } else if at <= span.range.end {
-                // Inside, or exactly at the end — the left-sticky rule.
+            } else if at < span.range.end
+                || (at == span.range.end && !matches!(span.mark, Mark::Mention { .. }))
+            {
+                // Inside, or exactly at the end — the left-sticky rule, which a
+                // mention does not follow.
                 span.range.end += n;
             }
         }

@@ -139,7 +139,13 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
             let underlay = canvas(
                 |_, _, _| (),
                 move |_, _, window, _| {
-                    sink.record(0, Part::Code, span.clone(), layout.clone());
+                    sink.record(
+                        0,
+                        Part::Code,
+                        span.clone(),
+                        layout.clone(),
+                        Shown::default(),
+                    );
                     paint.paint(&span, &layout, window);
                 },
             )
@@ -274,7 +280,13 @@ pub(super) fn code_lines(
         move |_, _, window, _| {
             for (span, layout) in &rows {
                 if let Some(sink) = &sink {
-                    sink.record(ix, Part::Code, span.clone(), layout.clone());
+                    sink.record(
+                        ix,
+                        Part::Code,
+                        span.clone(),
+                        layout.clone(),
+                        Shown::default(),
+                    );
                 }
                 paint.paint(span, layout, window);
             }

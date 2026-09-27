@@ -3,28 +3,105 @@
 use super::*;
 
 /// Inline content flattened for shaping: one string, its runs, and the ranges
-/// that need painting underneath (link clicks, inline-code washes, chips).
+/// that need painting underneath (link clicks, inline-code washes, mentions).
+///
+/// [`Self::text`] is the [`Text`] with every mention replaced by what it shows,
+/// so every range here is in its offsets; [`Self::shown`] maps the two.
 pub struct Flat {
     pub text: SharedString,
     pub runs: Vec<TextRun>,
     pub links: Vec<(Range<usize>, String)>,
     pub code: Vec<Range<usize>>,
-    pub chips: Vec<Range<usize>>,
+    pub mentions: Vec<Mention>,
+    pub shown: Shown,
 }
+
+/// A mention as it is shown: a favicon slot, then its label and title.
+#[derive(Clone, Debug)]
+pub struct Mention {
+    pub url: String,
+    /// Everything it shows, the favicon slot included.
+    pub range: Range<usize>,
+    /// The favicon slot: one em space.
+    pub icon: Range<usize>,
+    pub favicon: Option<SharedString>,
+    /// What stands in the slot while no favicon has loaded.
+    pub initial: SharedString,
+}
+
+/// Where a mention's range in a [`Text`] and its range in a [`Flat`] line up,
+/// in document order, as `(text, flat)` pairs.
+///
+/// An offset inside a mention's text has no place in what it shows, and one
+/// inside what it shows has none in the text: each lands on an end.
+#[derive(Clone, Debug, Default)]
+pub struct Shown(Rc<[(Range<usize>, Range<usize>)]>);
+
+impl Shown {
+    /// Where a text offset shows. One inside a mention lands on its start.
+    pub fn at(&self, offset: usize) -> usize {
+        self.map(offset, false)
+    }
+
+    /// Where a text range shows. An end inside a mention takes all of it.
+    pub fn range(&self, range: &Range<usize>) -> Range<usize> {
+        self.map(range.start, false)..self.map(range.end, true)
+    }
+
+    fn map(&self, offset: usize, end: bool) -> usize {
+        let mut shift = 0isize;
+        for (text, flat) in self.0.iter() {
+            if offset <= text.start {
+                break;
+            }
+            if offset < text.end {
+                return if end { flat.end } else { flat.start };
+            }
+            shift = flat.end as isize - text.end as isize;
+        }
+        offset.saturating_add_signed(shift)
+    }
+
+    /// The text offset of a shown one. One inside a mention lands on the
+    /// nearer end.
+    pub fn offset(&self, shown: usize) -> usize {
+        let mut shift = 0isize;
+        for (text, flat) in self.0.iter() {
+            if shown <= flat.start {
+                break;
+            }
+            if shown < flat.end {
+                return if shown - flat.start <= flat.end - shown {
+                    text.start
+                } else {
+                    text.end
+                };
+            }
+            shift = text.end as isize - flat.end as isize;
+        }
+        shown.saturating_add_signed(shift)
+    }
+}
+
+/// What stands in a mention's favicon slot. An em space is as wide as the
+/// type is tall.
+const ICON_SLOT: &str = "\u{2003}";
 
 /// Marks are ranges, gpui wants consecutive runs — so cut the text at every
 /// mark boundary and ask which marks cover each piece.
 pub fn flatten(text: &Text, base_weight: FontWeight, theme: &Theme) -> Flat {
-    flatten_with(text, base_weight, theme, |_| None)
+    flatten_with(text, base_weight, theme, |_| None, |_| None)
 }
 
-/// [`flatten`] with the app's own marks painted — see [`crate::MarkPaint`]. A
-/// name the app does not paint reads as the text it wraps.
+/// [`flatten`] with the app's own marks painted — see [`crate::MarkPaint`] —
+/// and each mention described by `preview`. A name the app does not paint
+/// reads as the text it wraps.
 pub fn flatten_with(
     text: &Text,
     base_weight: FontWeight,
     theme: &Theme,
     paint: impl Fn(&str) -> Option<crate::MarkPaint>,
+    preview: impl Fn(&str) -> Option<preview::Preview>,
 ) -> Flat {
     let mut cuts: Vec<usize> = text
         .marks
@@ -36,20 +113,41 @@ pub fn flatten_with(
     cuts.sort_unstable();
     cuts.dedup();
 
+    // Mentions in order; one overlapping an earlier one is text.
+    let mut atoms: Vec<(Range<usize>, &str)> = text
+        .marks
+        .iter()
+        .filter_map(|span| match &span.mark {
+            Mark::Mention { url, .. } if !span.range.is_empty() => {
+                Some((span.range.clone(), url.as_str()))
+            }
+            _ => None,
+        })
+        .collect();
+    atoms.sort_by_key(|(range, _)| range.start);
+    atoms.dedup_by(|later, earlier| later.0.start < earlier.0.end);
+
+    let mut shown = String::with_capacity(text.text.len());
     let mut runs = Vec::new();
     let mut links: Vec<(Range<usize>, String)> = Vec::new();
     let mut code: Vec<Range<usize>> = Vec::new();
-    let mut chips: Vec<Range<usize>> = Vec::new();
+    let mut mentions: Vec<Mention> = Vec::new();
+    let mut map: Vec<(Range<usize>, Range<usize>)> = Vec::new();
 
     for pair in cuts.windows(2) {
         let (start, end) = (pair[0], pair[1]);
+        let atom = atoms
+            .iter()
+            .find(|(range, _)| range.start <= start && end <= range.end);
+        if atom.is_some_and(|(range, _)| range.start != start) {
+            continue;
+        }
         let covering = text
             .marks
             .iter()
             .filter(|span| span.range.start <= start && span.range.end >= end);
 
         let (mut bold, mut italic, mut mono, mut strike) = (false, false, false, false);
-        let mut chip = false;
         let mut link = None;
         // The app's own marks, merged in the order they cover this run: the
         // last one to say something about a field is the one that says it.
@@ -60,10 +158,7 @@ pub fn flatten_with(
                 Mark::Italic => italic = true,
                 Mark::Strike => strike = true,
                 Mark::Code => mono = true,
-                Mark::Mention { url, .. } => {
-                    chip = true;
-                    link = Some(url.clone());
-                }
+                Mark::Mention { .. } => {}
                 Mark::Link(url) | Mark::Image(url) => link = Some(url.clone()),
                 Mark::Custom(name) => {
                     let Some(painted) = paint(name) else { continue };
@@ -78,26 +173,7 @@ pub fn flatten_with(
         }
         let (italic, strike) = (italic || custom.italic, strike || custom.strikethrough);
 
-        if mono {
-            match code.last_mut() {
-                Some(range) if range.end == start => range.end = end,
-                _ => code.push(start..end),
-            }
-        }
-        if chip {
-            match chips.last_mut() {
-                Some(range) if range.end == start => range.end = end,
-                _ => chips.push(start..end),
-            }
-        }
-        if let Some(url) = &link {
-            match links.last_mut() {
-                Some((range, last)) if range.end == start && last == url => range.end = end,
-                _ => links.push((start..end, url.clone())),
-            }
-        }
-
-        let mut face = font(if mono {
+        let mut face = font(if mono && atom.is_none() {
             theme.font_mono.clone()
         } else {
             theme.font_body.clone()
@@ -112,24 +188,89 @@ pub fn flatten_with(
         } else {
             FontStyle::Normal
         };
+        let underline = UnderlineStyle {
+            color: Some(theme.text_muted),
+            thickness: px(1.0),
+            wavy: false,
+        };
+
+        if let Some((range, url)) = atom {
+            let described = preview(url).unwrap_or_default();
+            let host = preview::host(url);
+            let own = &text.text[range.clone()];
+            let title: SharedString = match &described.title {
+                Some(title) => title.clone(),
+                None if own != *url => own.to_string().into(),
+                None => host.to_string().into(),
+            };
+            let from = shown.len();
+            let mut run = |shown: &mut String,
+                           piece: &str,
+                           color: Hsla,
+                           underline: Option<UnderlineStyle>| {
+                shown.push_str(piece);
+                runs.push(TextRun {
+                    len: piece.len(),
+                    font: face.clone(),
+                    color,
+                    background_color: None,
+                    underline,
+                    strikethrough: None,
+                });
+            };
+            run(&mut shown, ICON_SLOT, gpui::transparent_black(), None);
+            run(&mut shown, " ", theme.text, None);
+            if let Some(label) = described.label.filter(|_| described.title.is_some()) {
+                run(&mut shown, &label, theme.text_muted, None);
+                run(&mut shown, " ", theme.text, None);
+            }
+            run(&mut shown, &title, theme.text, Some(underline));
+            let to = shown.len();
+            links.push((from..to, url.to_string()));
+            mentions.push(Mention {
+                url: url.to_string(),
+                range: from..to,
+                icon: from..from + ICON_SLOT.len(),
+                favicon: described.icon,
+                initial: host
+                    .chars()
+                    .next()
+                    .unwrap_or('?')
+                    .to_uppercase()
+                    .to_string()
+                    .into(),
+            });
+            map.push((range.clone(), from..to));
+            continue;
+        }
+
+        let (from, to) = (shown.len(), shown.len() + end - start);
+        shown.push_str(&text.text[start..end]);
+        if mono {
+            match code.last_mut() {
+                Some(range) if range.end == from => range.end = to,
+                _ => code.push(from..to),
+            }
+        }
+        if let Some(url) = &link {
+            match links.last_mut() {
+                Some((range, last)) if range.end == from && last == url => range.end = to,
+                _ => links.push((from..to, url.clone())),
+            }
+        }
 
         runs.push(TextRun {
             len: end - start,
             font: face,
             // Links stay monochrome and underlined; the accent is reserved for
-            // primary actions. A chip carries its own wash, so underlining it
-            // too would say the same thing twice.
+            // primary actions.
             color: match (mono, custom.color) {
                 (_, Some(color)) => color,
                 (true, None) => theme.code_text,
                 (false, None) => theme.text,
             },
             background_color: custom.background,
-            underline: ((link.is_some() && !chip) || custom.underline).then_some(UnderlineStyle {
-                color: Some(theme.text_muted),
-                thickness: px(1.0),
-                wavy: false,
-            }),
+            underline: (link.is_some() || custom.underline).then_some(underline),
             strikethrough: strike.then_some(StrikethroughStyle {
                 thickness: px(1.0),
                 color: Some(theme.text_muted),
@@ -138,11 +279,12 @@ pub fn flatten_with(
     }
 
     Flat {
-        text: text.text.clone().into(),
+        text: shown.into(),
         runs,
         links,
         code,
-        chips,
+        mentions,
+        shown: Shown(map.into()),
     }
 }
 
@@ -155,9 +297,13 @@ pub(super) fn text_element(
     theme: &Theme,
     cx: &App,
 ) -> AnyElement {
-    let flat = flatten_with(text, weight, theme, |name| {
-        crate::marks::paint_of(cx, name, theme)
-    });
+    let flat = flatten_with(
+        text,
+        weight,
+        theme,
+        |name| crate::marks::paint_of(cx, name, theme),
+        |url| preview::of(cx, url),
+    );
     painted_text(flat, text.text.len(), size, line_height, overlay, theme)
 }
 
@@ -175,7 +321,9 @@ pub(super) fn painted_text(
     theme: &Theme,
 ) -> AnyElement {
     let (ix, part) = (overlay.block, overlay.part);
-    let (caret, selected) = (overlay.caret_painted(), overlay.selected(len));
+    let shown = flat.shown.clone();
+    let caret = overlay.caret_painted().map(|offset| shown.at(offset));
+    let selected = overlay.selected(len).map(|range| shown.range(&range));
     let span = 0..len;
     // Only where the caret already is, and only while there is nothing to
     // read: a hint on every empty block would be a page of grey.
@@ -193,36 +341,66 @@ pub(super) fn painted_text(
     let styled = StyledText::new(flat.text).with_runs(flat.runs);
     let layout = styled.layout().clone();
 
-    let painted: AnyElement = if flat.links.is_empty() {
-        styled.into_any_element()
-    } else {
-        let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
-        InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
-            .on_click(ranges, move |clicked, _window, cx| {
-                if let Some(url) = urls.get(clicked) {
-                    cx.open_url(url);
-                }
-            })
-            .into_any_element()
-    };
+    let mentions = flat.mentions;
+    let painted: AnyElement =
+        if flat.links.is_empty() {
+            styled.into_any_element()
+        } else {
+            let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
+            let hovered: Vec<(Range<usize>, String)> = mentions
+                .iter()
+                .map(|mention| (mention.range.clone(), mention.url.clone()))
+                .collect();
+            let text = InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
+                .on_click(ranges, move |clicked, _window, cx| {
+                    if let Some(url) = urls.get(clicked) {
+                        cx.open_url(url);
+                    }
+                });
+            match hovered.is_empty() {
+                true => text.into_any_element(),
+                false => text
+                    .tooltip(move |at, _window, cx| {
+                        let (_, url) = hovered.iter().find(|(range, _)| range.contains(&at))?;
+                        Some(MentionCard::view(url, cx))
+                    })
+                    .into_any_element(),
+            }
+        };
 
     // The wash is painted before the text — an earlier sibling is underneath —
     // reading glyph geometry from the text's own layout handle. Pure paint,
     // never part of layout.
     let wash = theme.code_wash;
     let code_ranges = flat.code;
-    let chip_wash = theme.element_hover;
-    let chip_edge = theme.border;
-    let chip_ranges = flat.chips;
+    let (icon_color, icon_wash) = (theme.text_muted, theme.element_hover);
     let caret_color = theme.caret;
     let selection_color = theme.selection;
-    let annotated = overlay.annotated(len, theme);
+    let annotated: Vec<_> = overlay
+        .annotated(len, theme)
+        .into_iter()
+        .map(|(range, wash)| (shown.range(&range), wash))
+        .collect();
     let layouts = overlay.layouts.cloned();
     let underlay = canvas(
-        |_, _, _| (),
-        move |_, _, window, _| {
+        {
+            let mentions = mentions.clone();
+            move |_, window, cx| {
+                mentions
+                    .iter()
+                    .map(|mention| {
+                        let favicon = mention.favicon.clone()?;
+                        let source = gpui::Resource::Uri(favicon.to_string().into());
+                        window
+                            .use_asset::<gpui::ImgResourceLoader>(&source, cx)?
+                            .ok()
+                    })
+                    .collect::<Vec<_>>()
+            }
+        },
+        move |_, favicons, window, cx| {
             if let Some(layouts) = &layouts {
-                layouts.record(ix, part, span.clone(), layout.clone());
+                layouts.record(ix, part, span.clone(), layout.clone(), shown.clone());
             }
             // Below the selection, so dragging across a comment still reads as
             // selected rather than as a third colour nobody chose.
@@ -277,19 +455,48 @@ pub(super) fn painted_text(
                     ));
                 }
             }
-            // Wider, rounder and outlined, so a chip and an inline code span
-            // never read as the same thing at a glance.
-            for range in &chip_ranges {
-                for rect in range_rects(&layout, range, CHIP_PAD_X, CHIP_INSET_Y) {
-                    window.paint_quad(quad(
-                        rect,
-                        px(Theme::control_radius()),
-                        chip_wash,
-                        px(1.0),
-                        chip_edge,
-                        BorderStyle::Solid,
-                    ));
+            for (mention, favicon) in mentions.iter().zip(favicons) {
+                let Some(slot) = range_rects(&layout, &mention.icon, 0.0, 0.0).pop() else {
+                    continue;
+                };
+                let side = slot.size.width.min(px(size));
+                let icon = Bounds::new(
+                    slot.origin + point(px(0.0), (slot.size.height - side) / 2.0),
+                    gpui::size(side, side),
+                );
+                let radius = gpui::Corners::all(side / 4.0);
+                if let Some(favicon) = favicon {
+                    window
+                        .paint_image(icon, icon, radius, favicon, 0, false)
+                        .ok();
+                    continue;
                 }
+                window.paint_quad(quad(
+                    icon,
+                    side / 4.0,
+                    icon_wash,
+                    px(0.0),
+                    gpui::transparent_black(),
+                    BorderStyle::default(),
+                ));
+                let font = font(Theme::of(cx).font_body.clone());
+                let letter = window.text_system().shape_line(
+                    mention.initial.clone(),
+                    side * 0.55,
+                    &[TextRun {
+                        len: mention.initial.len(),
+                        font,
+                        color: icon_color,
+                        background_color: None,
+                        underline: None,
+                        strikethrough: None,
+                    }],
+                    None,
+                );
+                let at = point(icon.center().x - letter.width / 2.0, icon.origin.y);
+                letter
+                    .paint(at, side, gpui::TextAlign::Left, None, window, cx)
+                    .ok();
             }
         },
     )

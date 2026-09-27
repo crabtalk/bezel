@@ -82,3 +82,26 @@ fn a_relative_image_path_joins_the_base_and_nothing_else_does() {
     assert_eq!(resolve("/pics/shot.png", base), "/pics/shot.png");
     assert_eq!(resolve("https://x.dev/a.png", base), "https://x.dev/a.png");
 }
+
+#[test]
+fn a_mention_shows_its_host_behind_a_favicon_slot() {
+    let theme = Theme::dark();
+    let doc = parse("a [https://x.com/p](https://x.com/p \"chip\") b");
+    let BlockKind::Paragraph(text) = &doc.blocks[0].kind else {
+        panic!("expected a paragraph")
+    };
+    let flat = flatten(text, FontWeight::NORMAL, &theme);
+    assert_eq!(flat.text.as_ref(), "a \u{2003} x.com b");
+    assert_eq!(
+        flat.runs.iter().map(|run| run.len).sum::<usize>(),
+        flat.text.len()
+    );
+    let mention = &flat.mentions[0];
+    let end = 2 + "https://x.com/p".len();
+    assert_eq!(flat.shown.at(2), mention.range.start);
+    assert_eq!(flat.shown.at(end), mention.range.end);
+    assert_eq!(flat.shown.at(end + 2), mention.range.end + 2);
+    assert_eq!(flat.shown.offset(mention.range.start + 1), 2);
+    assert_eq!(flat.shown.offset(mention.range.end - 1), end);
+    assert_eq!(flat.shown.offset(mention.range.end + 2), end + 2);
+}

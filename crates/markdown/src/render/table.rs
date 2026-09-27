@@ -34,7 +34,7 @@ pub(super) fn table(
     let has_header = !header.is_empty();
 
     let text_system = window.text_system();
-    let mut flats: Vec<Vec<Option<Flat>>> = Vec::with_capacity(all.len());
+    let mut flats: Vec<Vec<Option<(Flat, usize)>>> = Vec::with_capacity(all.len());
     let mut content = vec![0.0f32; columns];
     for (r, row) in all.iter().enumerate() {
         let weight = if has_header && r == 0 {
@@ -48,9 +48,13 @@ pub(super) fn table(
                 out.push(None);
                 continue;
             };
-            let flat = flatten_with(cell, weight, theme, |name| {
-                crate::marks::paint_of(cx, name, theme)
-            });
+            let flat = flatten_with(
+                cell,
+                weight,
+                theme,
+                |name| crate::marks::paint_of(cx, name, theme),
+                |url| preview::of(cx, url),
+            );
             if !flat.text.is_empty() {
                 let width = f32::from(
                     text_system
@@ -64,7 +68,7 @@ pub(super) fn table(
                 );
                 *natural = natural.max(width);
             }
-            out.push(Some(flat));
+            out.push(Some((flat, cell.text.len())));
         }
         flats.push(out);
     }
@@ -103,12 +107,11 @@ pub(super) fn table(
                 Align::Center => cell_el.text_center(),
                 Align::Right => cell_el.text_right(),
             };
-            if let Some(flat) = cell {
+            if let Some((flat, len)) = cell {
                 // `all` drops an empty header, so a table without one starts at
                 // part row 1 — row 0 is the header slot whether or not it is
                 // filled.
                 let row = if has_header { r } else { r + 1 };
-                let len = flat.text.len();
                 cell_el = cell_el.child(painted_text(
                     flat,
                     len,

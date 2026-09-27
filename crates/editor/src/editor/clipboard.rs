@@ -149,10 +149,8 @@ impl Editor {
         let card = |url, form| BlockKind::Bookmark { url, form };
         match choice {
             Choice::Dismiss => cx.notify(),
-            // A chip with a line to itself is a block, which is what gives it
-            // room for a favicon; inside a sentence it is a mark over the text
-            // that is already there, and only the spelling changes.
-            Choice::Chip if pasted.alone => self.turn_into(ix, card(pasted.url, Form::Chip), cx),
+            // A mark over the text that is already there: only the spelling
+            // changes.
             Choice::Chip => self.edit(EditKind::Structure, cx, |this| {
                 let end = Cursor {
                     offset: pasted.at.offset + pasted.url.len(),

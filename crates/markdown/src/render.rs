@@ -69,15 +69,8 @@ const CARET_WIDTH: f32 = 1.5;
 const INLINE_CODE_RADIUS: f32 = 4.5;
 const INLINE_CODE_PAD_X: f32 = 2.0;
 const INLINE_CODE_INSET_Y: f32 = 2.0;
-/// A mention's chip — the same quad-under-glyphs trick as inline code, with
-/// more room and an outline so the two do not read as the same thing.
-const CHIP_PAD_X: f32 = 4.0;
-const CHIP_INSET_Y: f32 = 1.0;
-/// A chip with a block to itself is a real element rather than a wash, so it
-/// has room for the favicon the inline one cannot hold.
-const CHIP_BLOCK_PAD_X: f32 = 8.0;
-const CHIP_BLOCK_PAD_Y: f32 = 3.0;
-const CHIP_ICON: f32 = 15.0;
+/// A mention's hover card.
+const MENTION_CARD_WIDTH: f32 = 320.0;
 /// Bookmark metrics. Notion's card: 180px of image beside the text, and a
 /// height that fits a title, two lines of blurb and a footer. A cover moves
 /// that image above the text and gives it the card's full width.
