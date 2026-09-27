@@ -18,7 +18,6 @@ use markdown::{
     Annotation, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Splice,
     Text, edit, edit::shortcut,
 };
-use motion::Painter;
 use std::{ops::Range, time::Duration};
 use theme::Theme;
 

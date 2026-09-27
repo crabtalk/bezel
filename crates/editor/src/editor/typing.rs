@@ -9,7 +9,6 @@ impl Editor {
     /// Typing, backspace, delete and IME all land here, so none of them has to
     /// ask whether a selection was empty.
     pub(super) fn insert(&mut self, text: &str, cx: &mut Context<Self>) {
-        let painter = Painter::of(cx);
         self.edit(EditKind::Insert, cx, |this| {
             let mut typed = Text::plain(text);
             // A stored mark applies to what is typed next and to nothing else,
@@ -25,7 +24,7 @@ impl Editor {
             let shortcut = this.apply_shortcut();
             let promoted = this.promote_quote_marker();
             let inline = this.apply_inline_rule();
-            this.track_slash(text, painter);
+            this.track_slash(text);
             std::iter::once(Delta::Spliced(splice))
                 .chain(shortcut)
                 .chain(promoted)
@@ -39,7 +38,7 @@ impl Editor {
     /// The query is the text between the `/` and the caret, so there is no
     /// second field and no focus to hand over — typing filters because typing
     /// is what it already was.
-    pub(super) fn track_slash(&mut self, typed: &str, painter: Painter) {
+    pub(super) fn track_slash(&mut self, typed: &str) {
         if !self.chrome.slash {
             return;
         }
@@ -64,13 +63,10 @@ impl Editor {
             // Only in a body: a fence holds its slash literally, and a caption
             // belongs to a block that is already what it is.
             if let Some(slash) = opened.filter(|_| starts_word && at.part == Part::Body) {
-                self.slash = Some(Slash::open(
-                    Cursor {
-                        offset: slash,
-                        ..at
-                    },
-                    painter,
-                ));
+                self.slash = Some(Slash::open(Cursor {
+                    offset: slash,
+                    ..at
+                }));
             }
             return;
         }
@@ -94,9 +90,14 @@ impl Editor {
         kind: Option<BlockKind>,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(slash) = &self.slash else {
+        let Some(slash) = &mut self.slash else {
             return false;
         };
+        if kind.is_none() && slash.on_group() {
+            slash.descend();
+            cx.notify();
+            return true;
+        }
         let (at, kind) = (slash.at, kind.or_else(|| slash.choice()));
         self.slash = None;
         let Some(kind) = kind else {
@@ -324,7 +325,6 @@ impl Editor {
         } else {
             EditKind::Delete
         };
-        let painter = Painter::of(cx);
         self.edit(kind, cx, |this| {
             let before = this.doc.blocks.len();
             let splice = if !this.selection.is_collapsed() {
@@ -351,7 +351,7 @@ impl Editor {
             this.selection = Selection::at(head.clamp(&this.doc));
             // Deleting narrows the query too, and backspacing onto the slash
             // itself is what closes the menu.
-            this.track_slash("", painter);
+            this.track_slash("");
             vec![Delta::Spliced(splice)]
         });
     }

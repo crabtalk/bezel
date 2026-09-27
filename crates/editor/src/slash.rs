@@ -8,9 +8,11 @@
 //! typed after the `/`, which is how Notion does it and why there is no second
 //! field to hand focus to.
 
-use gpui::{ScrollHandle, SharedString};
-use motion::Painter;
-use ui::{popover::Filter, scroll::TransientState};
+use gpui::SharedString;
+use ui::{
+    menu::{self, Item},
+    popover::filter_indices,
+};
 
 use markdown::{Align, BlockKind, Cursor, QuoteKind, Text};
 
@@ -150,44 +152,126 @@ fn same(row: &BlockKind, kind: &BlockKind) -> bool {
     }
 }
 
-/// An open menu: where the `/` sits, and the ranked list under it.
+/// A row of the open menu: one block, or a group of them behind a submenu.
+/// Indices are into [`items`].
+enum Row {
+    Block(usize),
+    Group(SharedString, Vec<usize>),
+}
+
+/// An open menu: where the `/` sits, and the rows under it.
 pub struct Slash {
     /// The `/` itself. Everything between it and the caret is the query, and
     /// backspacing onto it closes the menu.
     pub at: Cursor,
-    pub filter: Filter,
-    /// The list's own scroll, so a walk down the rows can bring one below the
-    /// fold into view. Made with the menu, so every open starts at the top.
-    pub scroll: ScrollHandle,
-    pub bar: TransientState,
+    rows: Vec<Row>,
+    pub cursor: menu::Cursor,
 }
 
 impl Slash {
-    pub fn open(at: Cursor, painter: Painter) -> Self {
-        Self {
+    pub fn open(at: Cursor) -> Self {
+        let mut slash = Self {
             at,
-            filter: Filter::new(items().into_iter().map(|(label, _)| label).collect()),
-            scroll: ScrollHandle::new(),
-            bar: TransientState::new(painter),
-        }
+            rows: Vec::new(),
+            cursor: menu::Cursor::default(),
+        };
+        slash.refilter("");
+        slash
     }
 
+    /// With no query the quotes sit behind one row; a query ranks every block
+    /// flat.
     pub fn refilter(&mut self, query: &str) {
-        self.filter.refilter(query);
-        self.scroll.scroll_to_item(0);
+        let items = items();
+        self.rows = if query.is_empty() {
+            let mut rows = Vec::new();
+            let mut quotes = Vec::new();
+            for (ix, (_, kind)) in items.iter().enumerate() {
+                if !matches!(kind, BlockKind::Quote { .. }) {
+                    rows.push(Row::Block(ix));
+                    continue;
+                }
+                if quotes.is_empty() {
+                    rows.push(Row::Group("Quote".into(), Vec::new()));
+                }
+                quotes.push(ix);
+            }
+            if let Some(Row::Group(_, group)) =
+                rows.iter_mut().find(|row| matches!(row, Row::Group(..)))
+            {
+                *group = quotes;
+            }
+            rows
+        } else {
+            let labels: Vec<SharedString> = items.into_iter().map(|(label, _)| label).collect();
+            filter_indices(query, &labels)
+                .into_iter()
+                .map(Row::Block)
+                .collect()
+        };
+        self.cursor.clear();
+        self.cursor.step(&self.menu(), 1);
     }
 
-    /// Walk the rows, keeping the active one on screen.
+    /// The rows as [`ui::menu::card`] paints them.
+    pub fn menu(&self) -> Vec<Item> {
+        let items = items();
+        self.rows
+            .iter()
+            .map(|row| match row {
+                Row::Block(ix) => Item::action(items[*ix].0.clone()),
+                Row::Group(label, group) => Item::submenu(
+                    label.clone(),
+                    group
+                        .iter()
+                        .map(|ix| {
+                            let label = &items[*ix].0;
+                            let short = label
+                                .strip_prefix("Quote (")
+                                .and_then(|rest| rest.strip_suffix(')'))
+                                .unwrap_or(label);
+                            Item::action(short.to_string())
+                        })
+                        .collect(),
+                ),
+            })
+            .collect()
+    }
+
+    /// Walk the rows of the innermost open panel.
     pub fn step(&mut self, delta: isize) {
-        self.filter.step(delta);
-        if let Some(row) = self.filter.active() {
-            self.scroll.scroll_to_item(row);
-        }
+        let menu = self.menu();
+        self.cursor.step(&menu, delta);
+    }
+
+    /// Open the group under the live row. `false` when it is not one.
+    pub fn descend(&mut self) -> bool {
+        let menu = self.menu();
+        self.cursor.descend(&menu)
+    }
+
+    /// Whether the live row is a group, which Enter opens rather than picks.
+    pub fn on_group(&self) -> bool {
+        self.cursor.path().is_some_and(|path| {
+            matches!(
+                (self.rows.get(path[0]), path.len()),
+                (Some(Row::Group(..)), 1)
+            )
+        })
     }
 
     /// The block confirming right now would make.
     pub fn choice(&self) -> Option<BlockKind> {
-        let ix = self.filter.active_item()?;
+        self.kind_at(&self.cursor.path()?)
+    }
+
+    /// The block the row at `path` makes, and `None` for a group.
+    pub fn kind_at(&self, path: &[usize]) -> Option<BlockKind> {
+        let ix = match (self.rows.get(*path.first()?)?, path.get(1)) {
+            (Row::Block(ix), None) => *ix,
+            (Row::Group(_, group), Some(row)) => *group.get(*row)?,
+            _ => return None,
+        };
         items().into_iter().nth(ix).map(|(_, kind)| kind)
     }
 

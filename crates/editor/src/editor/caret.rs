@@ -139,13 +139,12 @@ impl Editor {
                 self.delete_back(cx)
             };
         }
-        let painter = Painter::of(cx);
         self.edit(EditKind::Delete, cx, |this| {
             let splice = this
                 .doc
                 .replace(Selection::new(target, at), Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
-            this.track_slash("", painter);
+            this.track_slash("");
             vec![Delta::Spliced(splice)]
         });
     }
@@ -208,6 +207,22 @@ impl Editor {
         self.caret_moved();
         cx.emit(EditorEvent::Changed);
         cx.notify();
+    }
+
+    /// Left and right into and out of the slash menu's group, when it has one
+    /// to open or close. `false` leaves the key to the caret.
+    pub(super) fn slash_side(&mut self, right: bool, cx: &mut Context<Self>) -> bool {
+        let Some(slash) = &mut self.slash else {
+            return false;
+        };
+        let moved = match right {
+            true => slash.descend(),
+            false => slash.cursor.ascend(),
+        };
+        if moved {
+            cx.notify();
+        }
+        moved
     }
 
     /// Up and down, by one painted row.

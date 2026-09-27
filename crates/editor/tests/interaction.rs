@@ -280,6 +280,37 @@ fn the_slash_menu_offers_every_gfm_alert_quote(cx: &mut TestAppContext) {
     }
 }
 
+/// "Quote" is the eighth row with no query; its variants sit behind it.
+const TO_QUOTE: &str = "down down down down down down down";
+
+#[gpui::test]
+fn right_opens_the_quote_group_and_enter_picks_inside_it(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    cx.simulate_input("/");
+    cx.simulate_keystrokes(&format!("{TO_QUOTE} right down enter"));
+    assert_eq!(source(&editor, &mut cx), "> [!NOTE]");
+}
+
+#[gpui::test]
+fn enter_on_the_quote_group_opens_it(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    cx.simulate_input("/");
+    cx.simulate_keystrokes(&format!("{TO_QUOTE} enter down down enter"));
+    assert_eq!(source(&editor, &mut cx), "> [!TIP]");
+}
+
+#[gpui::test]
+fn left_closes_the_quote_group(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("", cx);
+    cx.simulate_input("/");
+    cx.simulate_keystrokes(&format!("{TO_QUOTE} right left down enter"));
+    assert!(
+        source(&editor, &mut cx).starts_with("```"),
+        "the row after the group is Code: {:?}",
+        source(&editor, &mut cx)
+    );
+}
+
 #[gpui::test]
 fn home_stays_on_the_softbreak_line(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("ab\ncd", cx);

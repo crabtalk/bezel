@@ -5,12 +5,13 @@
 //! painted, so none of them can drift from the text it points at.
 
 use gpui::{
-    AnyElement, App, Context, CursorStyle, MouseButton, Pixels, Point, SharedString, div,
+    AnyElement, App, Context, CursorStyle, MouseButton, Pixels, Point, SharedString, Window, div,
     prelude::*, px,
 };
 use markdown::BlockKind;
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
+use ui::menu::Hit;
 
 use crate::{
     editor::{Editor, HANDLE_SIZE},
@@ -379,63 +380,49 @@ impl Editor {
     ///
     /// The anchor comes from the same layout the caret paints against, so it
     /// costs nothing beyond a lookup and it cannot drift from the text.
-    pub(super) fn slash_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn slash_menu(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let slash = self.slash.as_ref()?;
         let (point, line_height) = self.layouts.position(slash.at)?;
-        let items = crate::slash::items();
-        let reduce_motion = cx.reduce_motion();
-        // The `.id` is not optional: a row without one neither takes the cursor
-        // on hover nor clicks.
-        let rows = slash
-            .filter
-            .filtered()
-            .iter()
-            .enumerate()
-            .map(|(row, &ix)| {
-                let kind = items[ix].1.clone();
-                ui::popover::menu_row(theme, Some(row) == slash.filter.active(), None)
-                    .id(SharedString::from(format!("slash-row-{ix}")))
-                    .child(items[ix].0.clone())
-                    .on_mouse_move(cx.listener(move |this: &mut Self, _, _, cx| {
-                        if let Some(slash) = this.slash.as_mut()
-                            && slash.filter.active() != Some(row)
-                        {
-                            slash.filter.set_active(row);
-                            cx.notify();
-                        }
-                    }))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.confirm_slash(Some(kind.clone()), cx);
-                    }))
-            });
+        let card = ui::menu::card(
+            theme,
+            "slash",
+            &slash.menu(),
+            &slash.cursor,
+            window,
+            cx,
+            |this: &mut Self, hit, _, cx| match hit {
+                Hit::Point(path) => {
+                    if let Some(slash) = this.slash.as_mut()
+                        && slash.cursor.point_at(&slash.menu(), &path)
+                    {
+                        cx.notify();
+                    }
+                }
+                Hit::Choose(path) => {
+                    let kind = this.slash.as_ref().and_then(|slash| slash.kind_at(&path));
+                    this.confirm_slash(kind, cx);
+                }
+                Hit::Dismiss => {
+                    this.slash = None;
+                    cx.notify();
+                }
+            },
+        )
+        // Compiles to nothing outside a test build. It is here because the
+        // menu's state opening and the menu *painting* are two different
+        // things, and the bug that shipped was the second one failing while
+        // the first looked fine.
+        .debug_selector(|| SLASH_MENU.to_string())
+        .max_h(px(280.0));
         Some(ui::popover::menu_at(
             "slash-menu",
             gpui::point(point.x, point.y + line_height),
-            ui::popover::popover_card(theme)
-                // Compiles to nothing outside a test build. It is here because
-                // the menu's state opening and the menu *painting* are two
-                // different things, and the bug that shipped was the second one
-                // failing while the first looked fine.
-                .debug_selector(|| SLASH_MENU.to_string())
-                .w(px(200.0))
-                .relative()
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.slash = None;
-                    cx.notify();
-                }))
-                .child(
-                    ui::scroll::pane("slash-rows", ui::scroll::Axes::Vertical)
-                        .max_h(px(280.0))
-                        .track_scroll(&slash.scroll)
-                        .children(rows),
-                )
-                .child(ui::scroll::transient(
-                    "slash-bar",
-                    &slash.scroll,
-                    &slash.bar,
-                    reduce_motion,
-                ))
-                .into_any_element(),
+            card.into_any_element(),
             None,
         ))
     }

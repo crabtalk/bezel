@@ -276,8 +276,16 @@ impl Render for Editor {
             }))
             // Motion is one method with a `Cursor` function and an "extend"
             // flag, so a shift variant cannot drift from the key it shadows.
-            .on_action(cx.listener(|this, _: &Left, _, cx| this.moved(false, Cursor::left, cx)))
-            .on_action(cx.listener(|this, _: &Right, _, cx| this.moved(false, Cursor::right, cx)))
+            .on_action(cx.listener(|this, _: &Left, _, cx| {
+                if !this.slash_side(false, cx) {
+                    this.moved(false, Cursor::left, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &Right, _, cx| {
+                if !this.slash_side(true, cx) {
+                    this.moved(false, Cursor::right, cx)
+                }
+            }))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.vertical(false, false, cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
             .on_action(cx.listener(|this, _: &Home, _, cx| this.moved(false, line_home, cx)))
@@ -418,7 +426,7 @@ impl Render for Editor {
                 .absolute()
                 .size(gpui::px(0.0)),
             )
-            .children(self.slash_menu(&theme, cx))
+            .children(self.slash_menu(&theme, window, cx))
             .children(self.paste_menu(&theme, cx))
             .children(self.url_prompt(&theme, cx))
             .children(self.image_target(cx))
