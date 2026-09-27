@@ -155,6 +155,12 @@ impl WebView {
         self.page.load(url.into());
     }
 
+    /// Takes the keys back from the page if it holds them, whatever gpui's
+    /// focus is.
+    pub fn release_keys(&self) {
+        self.page.give_keys();
+    }
+
     pub fn back(&mut self) {
         self.page.back();
     }

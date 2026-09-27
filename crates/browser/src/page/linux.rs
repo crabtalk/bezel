@@ -19,7 +19,7 @@ impl State {
         }
     }
 
-    /// GTK reports focus itself, so a press needs no script.
+    /// GTK reports focus, and a press with it.
     pub(super) fn attach(&self, view: &wry::WebView, reports: &async_channel::Sender<Report>) {
         use gtk::{glib::Propagation, prelude::WidgetExt};
 
@@ -75,6 +75,10 @@ pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
     };
     container.reparent(&parent, 0, 0);
     true
+}
+
+pub(super) fn give_keys(view: &wry::WebView) {
+    let _ = view.focus_parent();
 }
 
 pub(super) fn edit(_edit: Edit) {}

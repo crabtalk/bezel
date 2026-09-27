@@ -240,7 +240,6 @@ impl Page {
             .with_initialization_script(Self::MOVED)
             .with_ipc_handler(move |request| {
                 let report = match request.body().as_str() {
-                    "pressed" => Report::Pressed,
                     "moved" => Report::Moved,
                     _ => return,
                 };
@@ -359,7 +358,7 @@ impl Page {
         if let Some(view) = self.built()
             && self.holds_keys()
         {
-            let _ = view.focus_parent();
+            platform::give_keys(view);
         }
     }
 

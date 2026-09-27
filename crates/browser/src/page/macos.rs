@@ -7,22 +7,27 @@ use std::{
 use wry::WebViewExtMacOS;
 
 mod cursor;
+mod press;
 
 pub(super) const BINDS_EDITS: bool = true;
 
 pub(super) struct State {
     cursor: OnceCell<cursor::Watch>,
+    press: OnceCell<Option<press::Monitor>>,
 }
 
 impl State {
     pub(super) fn new(_cx: &App) -> Self {
         Self {
             cursor: OnceCell::new(),
+            press: OnceCell::new(),
         }
     }
 
-    pub(super) fn attach(&self, view: &wry::WebView, _reports: &async_channel::Sender<Report>) {
-        let _ = self.cursor.set(cursor::Watch::new(&view.webview()));
+    pub(super) fn attach(&self, view: &wry::WebView, reports: &async_channel::Sender<Report>) {
+        let page = view.webview();
+        let _ = self.cursor.set(cursor::Watch::new(&page));
+        let _ = self.press.set(press::Monitor::new(&page, reports.clone()));
     }
 
     pub(super) fn parked(&self) {
@@ -50,19 +55,11 @@ impl State {
 
 pub(super) fn start(_window: &Window, _cx: &mut App) {}
 
-/// Run in every frame. Any script in the page can post the same message.
-const PRESSED: &str = "addEventListener('mousedown', () => \
-    window.webkit.messageHandlers.ipc.postMessage('pressed'), true);";
-
 pub(super) fn build(
     builder: wry::WebViewBuilder<'_>,
     window: &Window,
 ) -> Option<wry::Result<wry::WebView>> {
-    Some(
-        builder
-            .with_initialization_script_for_main_only(PRESSED, false)
-            .build_as_child(window),
-    )
+    Some(builder.build_as_child(window))
 }
 
 /// Moves the page into gpui's view in `window`, where `build` put it in the
@@ -83,6 +80,17 @@ pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
     // Taken out of its old superview first.
     parent.addSubview(&view.webview());
     true
+}
+
+/// Makes the page's superview, gpui's view in the window the page is in now,
+/// first responder. wry's `focus_parent` picks the view the page was built
+/// in.
+pub(super) fn give_keys(view: &wry::WebView) {
+    let page = view.webview();
+    // SAFETY: called on the main thread.
+    if let (Some(window), Some(parent)) = (page.window(), unsafe { page.superview() }) {
+        window.makeFirstResponder(Some(&parent));
+    }
 }
 
 /// Sent down the key window's responder chain, where the page's view is
