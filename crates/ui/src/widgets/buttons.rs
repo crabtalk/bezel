@@ -47,6 +47,14 @@ fn frame() -> Div {
         .cursor_pointer()
 }
 
+/// [`frame`] squared to a glyph: [`Buttons::icon_button`]'s shape.
+fn square() -> Div {
+    frame()
+        .px(px(0.0))
+        .w(px(Theme::BUTTON_HEIGHT))
+        .justify_center()
+}
+
 pub trait Buttons: ThemeExt {
     /// A labeled button in one of the shipped styles. `fade` matters only for
     /// [`ButtonStyle::Ghost`]: `Some` animates the hover wash per instance,
@@ -72,12 +80,18 @@ pub trait Buttons: ThemeExt {
     /// An icon carries no accessible name — reach for
     /// [`crate::tooltip`] on the way past.
     fn icon_button(&self, icon: impl Into<Icon>, style: ButtonStyle, fade: Option<Fade>) -> Div {
-        let square = frame()
-            .px(px(0.0))
-            .w(px(Theme::BUTTON_HEIGHT))
-            .justify_center();
-        let (button, tint) = appearance(self.theme(), square, style, None, fade, true);
+        let (button, tint) = appearance(self.theme(), square(), style, None, fade, true);
         button.child(
+            crate::icons::icon(icon)
+                .size(px(ICON_GLYPH))
+                .text_color(tint),
+        )
+    }
+
+    /// [`Self::icon_button`]'s square with its glyph in `tint`, and no hover:
+    /// neither the glyph nor the fill moves under the pointer.
+    fn tinted_icon_button(&self, icon: impl Into<Icon>, tint: gpui::Hsla) -> Div {
+        square().text_color(tint).child(
             crate::icons::icon(icon)
                 .size(px(ICON_GLYPH))
                 .text_color(tint),
