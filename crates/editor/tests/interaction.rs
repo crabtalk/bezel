@@ -270,6 +270,74 @@ fn end_stays_on_the_softbreak_line(cx: &mut TestAppContext) {
     assert_eq!(source(&editor, &mut cx), "abX\ncd");
 }
 
+/// Home and End follow painted rows, not only literal newlines. The test
+/// platform's fixed-width shaping makes the relationship independent of a
+/// platform font's exact metrics.
+#[gpui::test]
+fn home_and_end_follow_the_edges_of_a_wrapped_row(cx: &mut TestAppContext) {
+    let source = "word ".repeat(100);
+
+    let (editor, _window, mut cx) = open_with(&source, cx);
+    cx.simulate_keystrokes("down right");
+    let expected_home = cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        editor
+            .layouts()
+            .visual_row_edge(editor.selection().head, false)
+            .expect("the wrapped row painted")
+    });
+    assert!(
+        expected_home.offset > 0,
+        "the second visual row is not line zero"
+    );
+    cx.simulate_keystrokes("home");
+    assert_eq!(head(&editor, &mut cx), expected_home);
+
+    let (editor, _window, mut cx) = open_with(&source, &mut *cx);
+    cx.simulate_keystrokes("down right");
+    let expected_end = cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        editor
+            .layouts()
+            .visual_row_edge(editor.selection().head, true)
+            .expect("the wrapped row painted")
+    });
+    assert!(
+        expected_end.offset < source.len(),
+        "the row ends before the text"
+    );
+    cx.simulate_keystrokes("end");
+    assert_eq!(head(&editor, &mut cx), expected_end);
+}
+
+/// A second key can arrive before the frame that paints a soft break. Up must
+/// therefore start from the new line, not the old layout position at the same
+/// byte offset.
+#[gpui::test]
+fn up_after_a_soft_break_uses_the_new_caret_position(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with(&"a".repeat(200), cx);
+    cx.simulate_keystrokes("down shift-enter up");
+    assert_eq!(
+        head(&editor, &mut cx).offset,
+        0,
+        "up from the new visual line reaches the first row's start"
+    );
+}
+
+/// Splitting a wrapped block also creates a new visual row. Until it paints,
+/// the next Up must use the new block's caret rather than the old block's
+/// position at the offset that was split.
+#[gpui::test]
+fn up_after_enter_uses_the_new_caret_position(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with(&"a".repeat(200), cx);
+    cx.simulate_keystrokes("down enter up");
+    assert_eq!(
+        head(&editor, &mut cx),
+        markdown::Cursor::default(),
+        "up from the split block reaches the first row's start"
+    );
+}
+
 #[gpui::test]
 fn down_moves_to_the_second_softbreak_line(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("ab\ncd", cx);
@@ -317,6 +385,100 @@ fn down_does_not_stick_inside_a_wrapped_block(cx: &mut TestAppContext) {
         rows.windows(2).all(|pair| pair[0] != pair[1]),
         "every step moves: {rows:?}"
     );
+}
+
+/// A wrap boundary is one byte offset with two visual positions. Home must
+/// retain the following row, otherwise Left immediately consumes a character
+/// instead of crossing to the preceding row at the same offset.
+#[gpui::test]
+fn home_keeps_the_start_of_a_wrapped_row(cx: &mut TestAppContext) {
+    let text = "word ".repeat(80);
+    let (editor, _window, mut cx) = open_with(&text, cx);
+    cx.simulate_keystrokes("down right home");
+    let row_start = head(&editor, &mut cx);
+    assert!(row_start.offset > 0, "the test reached a wrapped row");
+
+    cx.simulate_keystrokes("left");
+    assert_eq!(
+        head(&editor, &mut cx),
+        row_start,
+        "Left first crosses the wrap boundary without changing the offset"
+    );
+    cx.simulate_keystrokes("left");
+    assert!(head(&editor, &mut cx).offset < row_start.offset);
+}
+
+/// End has the opposite affinity: Right first crosses from the preceding
+/// row's end to the following row's start at the same document offset.
+#[gpui::test]
+fn end_keeps_the_end_of_a_wrapped_row(cx: &mut TestAppContext) {
+    let text = "word ".repeat(80);
+    let (editor, _window, mut cx) = open_with(&text, cx);
+    cx.simulate_keystrokes("down right end");
+    let row_end = head(&editor, &mut cx);
+    assert!(
+        row_end.offset < text.len(),
+        "the test has another wrapped row"
+    );
+
+    cx.simulate_keystrokes("right");
+    assert_eq!(
+        head(&editor, &mut cx),
+        row_end,
+        "Right first crosses the wrap boundary without changing the offset"
+    );
+    cx.simulate_keystrokes("right");
+    assert!(head(&editor, &mut cx).offset > row_end.offset);
+}
+
+/// Row ranges are byte ranges, including when shaping marked multibyte text.
+/// Keeping the computed row prevents Home inside inline code from resolving
+/// through an unrelated byte or the preceding row.
+#[gpui::test]
+fn home_in_wrapped_multibyte_inline_code_keeps_its_row(cx: &mut TestAppContext) {
+    let text = "日本語🙂 `some code` ".repeat(30);
+    let (editor, _window, mut cx) = open_with(&text, cx);
+    cx.simulate_keystrokes("down right home");
+    let row_start = head(&editor, &mut cx);
+    let body = cx.update(|_, cx| {
+        editor.read(cx).doc().blocks[0]
+            .text_at(markdown::Part::Body)
+            .unwrap()
+            .text
+            .clone()
+    });
+    assert!(body.is_char_boundary(row_start.offset));
+    assert!(row_start.offset > 0, "the test reached a wrapped row");
+
+    cx.simulate_keystrokes("left");
+    assert_eq!(head(&editor, &mut cx), row_start);
+}
+
+#[gpui::test]
+fn vertical_motion_uses_the_new_caret_after_enter(cx: &mut TestAppContext) {
+    let text = "word ".repeat(80);
+    let (editor, _window, mut cx) = open_with(&text, cx);
+    cx.simulate_keystrokes("down right right enter");
+    cx.run_until_parked();
+    let created = head(&editor, &mut cx);
+    assert_eq!(created.block, 1);
+    assert_eq!(created.offset, 0);
+
+    cx.simulate_keystrokes("up down");
+    assert_eq!(head(&editor, &mut cx), created);
+}
+
+#[gpui::test]
+fn vertical_motion_uses_the_new_caret_after_shift_enter(cx: &mut TestAppContext) {
+    let text = "word ".repeat(80);
+    let (editor, _window, mut cx) = open_with(&text, cx);
+    cx.simulate_keystrokes("down right right shift-enter");
+    cx.run_until_parked();
+    let created = head(&editor, &mut cx);
+    assert!(created.offset > 0);
+
+    cx.simulate_keystrokes("up down");
+    assert_eq!(head(&editor, &mut cx), created);
 }
 
 #[gpui::test]
@@ -610,7 +772,7 @@ fn the_handle_follows_the_caret(cx: &mut TestAppContext) {
 /// half a second later.
 #[gpui::test]
 fn the_handle_moves_in_with_an_indented_block(cx: &mut TestAppContext) {
-    let (editor, _window, mut cx) = open_with("- first\n- second", &mut *cx);
+    let (editor, _window, mut cx) = open_with("- first\n- second", cx);
     go_to_block(&editor, &mut cx, 1);
     cx.run_until_parked();
     let before = cx
@@ -641,14 +803,14 @@ fn the_handle_moves_in_with_an_indented_block(cx: &mut TestAppContext) {
 /// trap once it does not. Nothing above an atomic block merges, so the empty
 /// one was left behind with no way left to reach it.
 #[gpui::test]
-fn an_empty_block_after_an_atomic_one_deletes(cx: &mut TestAppContext) {
+fn an_empty_block_after_an_atomic_one_deletes(mut cx: &mut TestAppContext) {
     for (name, source) in [
         ("a rule", "a\n\n---\n\nx"),
         ("a fence", "a\n\n```rs\nk\n```\n\nx"),
         ("an image", "a\n\n![c](https://e.com/i.png)\n\nx"),
         ("a table", "a\n\n| h |\n| - |\n| c |\n\nx"),
     ] {
-        let (editor, _window, mut cx) = open_with(source, &mut *cx);
+        let (editor, _window, mut cx) = open_with(source, &mut cx);
         // Empty the trailing paragraph, then try to take the paragraph itself.
         for _ in 0..25 {
             cx.simulate_keystrokes("down");

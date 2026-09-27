@@ -34,16 +34,17 @@ impl EntityInputHandler for Editor {
         // The platform is told about one text at a time, so a selection that
         // leaves the caret's own is reported collapsed — there are no
         // coordinates here in which to express it.
-        let (start, end) = self.selection.ordered();
+        let selection = self.caret.selection();
+        let (start, end) = selection.ordered();
         let spans_one = start.block == end.block && start.part == end.part;
-        let head = self.selection.head;
+        let head = selection.head;
         let range = if spans_one {
             start.offset..end.offset
         } else {
             head.offset..head.offset
         };
         Some(UTF16Selection {
-            reversed: spans_one && self.selection.head == start,
+            reversed: spans_one && selection.head == start,
             range: range_to_utf16(&self.caret_text()?.text, range),
         })
     }
@@ -85,7 +86,7 @@ impl EntityInputHandler for Editor {
             .or_else(|| self.marked.clone())
         {
             let at = self.cursor();
-            self.selection = Selection::new(
+            self.caret.set_selection(Selection::new(
                 Cursor {
                     offset: range.start,
                     ..at
@@ -94,7 +95,7 @@ impl EntityInputHandler for Editor {
                     offset: range.end,
                     ..at
                 },
-            );
+            ));
         }
         self.marked = None;
         self.insert(text, cx);
@@ -130,7 +131,9 @@ impl EntityInputHandler for Editor {
         self.doc.edit_at(at, |body| body.insert(start, text));
         self.marked = (!text.is_empty()).then_some(start..start + text.len());
         let selected = composition_selection(text, start, marked);
-        self.selection = Selection::new(
+        // Composition mutates the shaped text outside `Editor::edit`, so it
+        // must invalidate the old visual row through the same caret API.
+        self.caret.set_selection(Selection::new(
             Cursor {
                 offset: selected.start,
                 ..at
@@ -139,7 +142,7 @@ impl EntityInputHandler for Editor {
                 offset: selected.end,
                 ..at
             },
-        );
+        ));
         self.reveal = true;
         self.caret_moved();
         cx.notify();

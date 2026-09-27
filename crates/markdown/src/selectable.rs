@@ -3,7 +3,7 @@
 //! [`render`] handles pointer selection; [`surface`] adds keyboard focus and copy.
 //! Selection state stays with the caller so lists can share one selection.
 
-use crate::{BlockLayouts, Cursor, Doc, Editing, Selection, render_with};
+use crate::{BlockLayouts, Caret, Cursor, Doc, Editing, Selection, render_with};
 use gpui::{
     AnyElement, Context, CursorStyle, DispatchPhase, ElementId, MouseButton, MouseDownEvent,
     MouseMoveEvent, Window, canvas, div, prelude::*,
@@ -105,7 +105,7 @@ pub fn render<V: 'static>(
         .child(render_with(
             doc,
             Editing {
-                selection,
+                caret: selection.map(Caret::new),
                 // Read-only text has no caret. Without this a collapsed
                 // selection — every press that starts one — would blink an
                 // insertion point in text nobody can type into.

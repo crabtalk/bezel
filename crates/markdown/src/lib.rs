@@ -54,7 +54,7 @@ pub use parse::{ParsedDoc, is_image, is_url, parse, parse_at, parse_ranges, pars
 pub use preview::{LinkPreview, Preview, set_link_preview};
 pub use quote::Quote;
 pub use render::{
-    Annotation, BlockLayouts, Caption, CopyButton, Editing, OnToggle, Toggle, image_source,
+    Annotation, BlockLayouts, Caption, Caret, CopyButton, Editing, OnToggle, Toggle, image_source,
     markdown, render, render_source, render_with,
 };
 pub use select::{Cursor, Selection};
