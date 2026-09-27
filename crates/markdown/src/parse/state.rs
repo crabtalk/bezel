@@ -139,8 +139,7 @@ impl ParseState {
         // leave no way to write a link that stays one — and it is the paste
         // menu's `Dismiss` that has to write that down.
         //
-        // A chip promotes too: off the text flow it can be a real element, and
-        // that is the only place a favicon has room to sit.
+        // A chip stays a paragraph, so text can go either side of it.
         //
         // The text has to *be* the URL. `[Example Site](url "chip")` alone on a
         // line keeps its title and stays a paragraph, because promoting it
@@ -154,6 +153,7 @@ impl ParseState {
         ] = text.marks.as_slice()
             && range.start == 0
             && range.end == text.text.len()
+            && *form != Form::Chip
             && text.text == *url
             && is_url(url)
         {

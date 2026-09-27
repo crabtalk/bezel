@@ -33,6 +33,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         caption: Caption::default(),
         // The source view is one fence and holds no task block.
         toggle: None,
+        image: None,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
         base: None,
@@ -126,6 +127,10 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         guesses: guesses.into(),
         keep: kept,
         scroll: scroll.cloned(),
+        item_of: {
+            let ranges = ranges.clone();
+            Box::new(move |at| ranges.partition_point(|line| line.end < at.offset))
+        },
         build: Box::new(move |index, _, _| {
             let span = ranges[index].clone();
             let styled = code_line(&code[span.clone()], span.start, spans.as_deref(), &theme);
@@ -134,7 +139,13 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
             let underlay = canvas(
                 |_, _, _| (),
                 move |_, _, window, _| {
-                    sink.record(0, Part::Code, span.clone(), layout.clone());
+                    sink.record(
+                        0,
+                        Part::Code,
+                        span.clone(),
+                        layout.clone(),
+                        Shown::default(),
+                    );
                     paint.paint(&span, &layout, window);
                 },
             )
@@ -269,7 +280,13 @@ pub(super) fn code_lines(
         move |_, _, window, _| {
             for (span, layout) in &rows {
                 if let Some(sink) = &sink {
-                    sink.record(ix, Part::Code, span.clone(), layout.clone());
+                    sink.record(
+                        ix,
+                        Part::Code,
+                        span.clone(),
+                        layout.clone(),
+                        Shown::default(),
+                    );
                 }
                 paint.paint(span, layout, window);
             }

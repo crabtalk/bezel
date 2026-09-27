@@ -71,6 +71,21 @@ pub(super) fn build(
     Some(builder.build_as_child(window))
 }
 
+/// Moves the page's window into `window`.
+pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = HasWindowHandle::window_handle(window) else {
+        return false;
+    };
+    let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return false;
+    };
+    view.reparent(handle.hwnd.get())
+        .inspect_err(|error| tracing::warn!(%error, "webview: reparent"))
+        .is_ok()
+}
+
 pub(super) fn edit(_edit: Edit) {}
 
 pub(super) fn back(view: &wry::WebView) {

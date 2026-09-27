@@ -266,6 +266,44 @@ fn coalescer_schedules_once_per_burst() {
     assert!(!c.push(b""));
 }
 
+#[test]
+fn output_batch_feeds_the_first_chunk_and_holds_the_rest() {
+    use terminal::view::{Batched, OutputBatch};
+    let mut b = OutputBatch::default();
+    assert!(!b.is_open());
+    assert_eq!(b.push(b"a".to_vec()), Batched::Open(b"a".to_vec()));
+    assert!(b.is_open());
+    assert_eq!(b.push(b"b".to_vec()), Batched::Held);
+    assert_eq!(b.push(b"c".to_vec()), Batched::Held);
+    assert_eq!(b.tick(), Some(b"bc".to_vec()));
+    assert!(b.is_open(), "a window that fed keeps the batch open");
+    assert_eq!(b.tick(), None);
+    assert!(!b.is_open(), "an empty window closes it");
+    assert_eq!(b.push(b"d".to_vec()), Batched::Open(b"d".to_vec()));
+    // Empty chunks neither open nor hold anything.
+    let mut b = OutputBatch::default();
+    assert_eq!(b.push(Vec::new()), Batched::Held);
+    assert!(!b.is_open());
+}
+
+#[test]
+fn output_batch_hands_back_at_the_limit() {
+    use terminal::view::{Batched, OUTPUT_BATCH_LIMIT, OutputBatch};
+    let mut b = OutputBatch::default();
+    b.push(b"a".to_vec());
+    assert_eq!(b.push(vec![b'x'; OUTPUT_BATCH_LIMIT - 1]), Batched::Held);
+    assert_eq!(
+        b.push(b"y".to_vec()),
+        Batched::Full({
+            let mut full = vec![b'x'; OUTPUT_BATCH_LIMIT - 1];
+            full.push(b'y');
+            full
+        })
+    );
+    assert!(b.is_open(), "the timer keeps running");
+    assert_eq!(b.tick(), None);
+}
+
 /// Relative luminance, for contrast assertions (WCAG 2.x definition).
 fn luminance(r: u8, g: u8, b: u8) -> f32 {
     let f = |c: u8| {

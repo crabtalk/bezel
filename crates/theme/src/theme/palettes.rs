@@ -1,9 +1,9 @@
 //! The two concrete palettes: dark and light.
 
-use gpui::hsla;
+use gpui::{hsla, rgb};
 
 use crate::{
-    Appearance, color, paint,
+    Appearance, Ink, TextInk, color, paint,
     theme::{Glass, MaterialSpec, SurfaceSpec, SurfaceStyle, Theme, syntax::SyntaxPalette},
 };
 
@@ -26,9 +26,9 @@ impl Theme {
             element_active: hsla(0.0, 0.0, 1.0, 0.12),
             border: hsla(0.0, 0.0, 1.0, 0.08),
             border_strong: hsla(0.0, 0.0, 1.0, 0.14),
-            text: color::neutral(0.922),       // ~neutral-200
-            text_muted: color::neutral(0.708), // ~neutral-400
-            text_faint: color::neutral(0.556), // ~neutral-500
+            text: TextInk::color(Appearance::Dark, Ink::APPKIT.dark.text),
+            text_muted: TextInk::color(Appearance::Dark, Ink::APPKIT.dark.muted),
+            text_faint: TextInk::color(Appearance::Dark, Ink::APPKIT.dark.faint),
             text_dim: color::grey(0x98),
             solid: color::neutral(0.922),         // near-white plate
             on_solid: color::grey(0x0e),          // near-black label
@@ -45,10 +45,11 @@ impl Theme {
             surface_raised_hover: color::neutral(0.29),
             band: paint::band_for(Appearance::Dark),
             input_bg: hsla(0.0, 0.0, 1.0, 0.03),
-            selection: hsla(0.66, 0.6, 0.55, 0.35),
+            selection: rgb(0x3f638b).into(),
             cursor: hsla(0.0, 0.0, 1.0, 0.35),
             caret: color::neutral(0.673), // the accent
             ring: paint::hairline_for(Appearance::Dark, 0.35), // ~2.5× border_strong
+            drop_line: color::neutral(0.55),
             danger_strong: color::oklch(0.58, 0.16, 25.0),
             code_text: color::neutral(0.94), // near-white, a shade above body text
             code_wash: hsla(0.0, 0.0, 1.0, 0.08), // white/8
@@ -170,16 +171,9 @@ impl Theme {
             element_active: hsla(0.0, 0.0, 0.0, 0.06),
             border: hsla(0.0, 0.0, 0.0, 0.10),
             border_strong: hsla(0.0, 0.0, 0.0, 0.17),
-            // ~neutral-850. Pure neutral-900 measures 17.9:1 on white — *more*
-            // contrast than dark mode's 16.1:1, which reads as harsh rather than
-            // crisp. Backing off to 0.25 lands at ~16:1: the same perceived
-            // weight as the dark theme, not the maximum available.
-            text: color::neutral(0.25),
-            text_muted: color::neutral(0.439), // ~neutral-600 → ~7.7:1
-            // A touch darker than dark mode's neutral-500 counterpart: the light
-            // sidebar is a real grey, and faint text has to clear its floor there
-            // too, not just on the white content plane.
-            text_faint: color::neutral(0.535),
+            text: TextInk::color(Appearance::Light, Ink::APPKIT.light.text),
+            text_muted: TextInk::color(Appearance::Light, Ink::APPKIT.light.muted),
+            text_faint: TextInk::color(Appearance::Light, Ink::APPKIT.light.faint),
             text_dim: color::neutral(0.50),
             solid: color::neutral(0.205), // near-black plate, deeper than body text
             on_solid: color::neutral(0.985), // near-white label
@@ -200,10 +194,11 @@ impl Theme {
             // the dark 16% would read as a bruise.
             band: paint::band_for(Appearance::Light),
             input_bg: color::grey(0xff),
-            selection: hsla(0.66, 0.75, 0.62, 0.28),
+            selection: rgb(0xb3d7ff).into(),
             cursor: hsla(0.0, 0.0, 0.0, 0.55),
             caret: color::neutral(0.511), // the accent
             ring: paint::hairline_for(Appearance::Light, 0.35),
+            drop_line: color::neutral(0.62),
             danger_strong: color::oklch(0.51, 0.20, 25.0),
             code_text: color::neutral(0.18), // near-black, a shade under body text
             code_wash: hsla(0.0, 0.0, 0.0, 0.06), // black/6

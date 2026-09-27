@@ -111,7 +111,8 @@ impl Render for Editor {
             // payload: a text selection has nothing to carry, and gpui's drag
             // payload is for things being dropped somewhere.
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                if !*hovered && this.hovered.take().is_some() {
+                if !*hovered && (this.hovered.take().is_some() | this.hovered_cell.take().is_some())
+                {
                     cx.notify();
                 }
             }))
@@ -130,8 +131,10 @@ impl Render for Editor {
                     return;
                 }
                 let hovered = this.layouts.block_at(event.position);
-                if hovered != this.hovered {
+                let cell = this.layouts.cell_at(event.position);
+                if hovered != this.hovered || cell != this.hovered_cell {
                     this.hovered = hovered;
+                    this.hovered_cell = cell;
                     cx.notify();
                 }
             }))
@@ -276,8 +279,16 @@ impl Render for Editor {
             }))
             // Motion is one method with a `Cursor` function and an "extend"
             // flag, so a shift variant cannot drift from the key it shadows.
-            .on_action(cx.listener(|this, _: &Left, _, cx| this.moved(false, Cursor::left, cx)))
-            .on_action(cx.listener(|this, _: &Right, _, cx| this.moved(false, Cursor::right, cx)))
+            .on_action(cx.listener(|this, _: &Left, _, cx| {
+                if !this.slash_side(false, cx) {
+                    this.moved(false, Cursor::left, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &Right, _, cx| {
+                if !this.slash_side(true, cx) {
+                    this.moved(false, Cursor::right, cx)
+                }
+            }))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.vertical(false, false, cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
             .on_action(cx.listener(|this, _: &Home, _, cx| this.moved(false, line_home, cx)))
@@ -418,7 +429,7 @@ impl Render for Editor {
                 .absolute()
                 .size(gpui::px(0.0)),
             )
-            .children(self.slash_menu(&theme, cx))
+            .children(self.slash_menu(&theme, window, cx))
             .children(self.paste_menu(&theme, cx))
             .children(self.url_prompt(&theme, cx))
             .children(self.image_target(cx))
@@ -426,6 +437,9 @@ impl Render for Editor {
             .children(self.handle(focused, &theme, cx))
             .children(self.resize_handle(&theme, cx))
             .children(self.drop_indicator(&theme))
+            .children(self.table_strips(&theme, cx))
+            .children(self.table_handles(&theme, cx))
+            .children(self.table_menu(&theme, cx))
             .children(self.language_chip(&theme, cx))
             .children(self.block_menu(&theme, cx))
             .children(self.language_menu(&theme, cx))

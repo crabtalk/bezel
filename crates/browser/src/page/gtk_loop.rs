@@ -52,6 +52,19 @@ impl Parent {
     }
 }
 
+impl Parent {
+    /// The X window as GDK's, which is what a GDK window reparents under.
+    pub(super) fn gdk_window(&self) -> Option<gtk::gdk::Window> {
+        use gtk::glib::Cast;
+
+        let display = gtk::gdk::Display::default()?
+            .downcast::<gdkx11::X11Display>()
+            .ok()?;
+        let window = gdkx11::X11Window::foreign_new_for_display(&display, self.0.window);
+        Some(window.upcast())
+    }
+}
+
 impl HasWindowHandle for Parent {
     fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
         // SAFETY: an X window id, valid while gpui's window is.

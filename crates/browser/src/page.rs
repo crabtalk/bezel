@@ -1,5 +1,5 @@
 use crate::{LoadState, host::Surface};
-use gpui::{App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
+use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
 use std::{
     cell::{Cell, RefCell},
     sync::Arc,
@@ -71,6 +71,8 @@ pub(crate) struct Page {
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// Where the page last sat; `None` before the first paint and while parked.
     placed: Cell<Option<Bounds<Pixels>>>,
+    /// The window the page is in; `None` before the first paint.
+    window: Cell<Option<AnyWindowHandle>>,
     owner: Cell<u64>,
     cover: RefCell<Cover>,
     /// A still painted before the page was uncovered, to free from the atlas.
@@ -104,6 +106,7 @@ impl Page {
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
+            window: Cell::new(None),
             owner: Cell::new(0),
             cover: RefCell::new(Cover::Off),
             dropped: RefCell::new(None),
@@ -164,6 +167,11 @@ impl Page {
         }
     }
 
+    /// The window the page is in; `None` before the first paint.
+    pub(crate) fn window(&self) -> Option<AnyWindowHandle> {
+        self.window.get()
+    }
+
     /// Run before the page is placed.
     fn uncover(&self) {
         if let Cover::On(still) = self.cover.replace(Cover::Off) {
@@ -198,6 +206,15 @@ impl Page {
         self.uncover();
         let view = self.view.get_or_init(|| self.build(bounds, window));
         let Some(view) = view else { return };
+        if self.window.get() != Some(window.window_handle()) {
+            self.give_keys();
+            self.platform.parked();
+            if !platform::reparent(view, window) {
+                return;
+            }
+            self.window.set(Some(window.window_handle()));
+            self.placed.set(None);
+        }
         let placed = self.placed.get();
         if placed == Some(bounds) {
             return;
@@ -252,6 +269,7 @@ impl Page {
             .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
             .ok()?;
         self.platform.attach(&view, &self.reports);
+        self.window.set(Some(window.window_handle()));
         Some(view)
     }
 

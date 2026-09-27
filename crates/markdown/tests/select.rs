@@ -218,3 +218,40 @@ fn no_replacement_escapes_the_round_trip() {
         }
     }
 }
+
+const CHIP: &str = "a [https://x.com](https://x.com \"chip\") b";
+
+#[test]
+fn a_chip_alone_on_its_line_stays_a_paragraph() {
+    let source = "[https://x.com](https://x.com \"chip\")";
+    let doc = parse(source);
+    assert!(matches!(doc.blocks[0].kind, BlockKind::Paragraph(_)));
+    assert_eq!(serialize(&doc), source);
+}
+
+#[test]
+fn the_caret_steps_over_a_mention_whole() {
+    let doc = parse(CHIP);
+    let (start, end) = (2, 2 + "https://x.com".len());
+    assert_eq!(body(0, start).right(&doc), body(0, end));
+    assert_eq!(body(0, end).left(&doc), body(0, start));
+    assert_eq!(body(0, start + 3).clamp(&doc), body(0, start));
+    assert_eq!(body(0, end - 3).clamp(&doc), body(0, end));
+    assert_eq!(body(0, end + 1).word_left(&doc), body(0, start));
+}
+
+#[test]
+fn typing_after_a_mention_stays_outside_it() {
+    let doc = parse(CHIP);
+    let BlockKind::Paragraph(mut text) = doc.blocks[0].kind.clone() else {
+        panic!("expected a paragraph")
+    };
+    let end = 2 + "https://x.com".len();
+    text.insert(end, "!");
+    let mention = text
+        .marks
+        .iter()
+        .find(|span| matches!(span.mark, Mark::Mention { .. }))
+        .expect("the mention survives");
+    assert_eq!(mention.range, 2..end);
+}

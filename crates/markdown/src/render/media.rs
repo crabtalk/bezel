@@ -1,6 +1,11 @@
 //! Images and bookmark cards.
 
 use super::*;
+use gpui::ClickEvent;
+
+/// How far a press may travel before its release is a drag, not a click on a
+/// picture.
+const DRAG_SLOP: f64 = 2.0;
 
 /// A picture and the caption under it, which is the alt text a caret can reach.
 ///
@@ -35,17 +40,29 @@ pub(super) fn image(
             .text_size(px(typography.body.size()))
             .text_color(theme.text_muted)
             .child(IMAGE_EMPTY)
+            .into_any_element()
     } else {
         let picture = img(image_source(url, overlay.base));
+        let ix = overlay.block;
         let box_ = div()
+            .id(ElementId::named_usize("md-picture", ix))
             .relative()
             .rounded(px(Theme::button_radius()))
             .overflow_hidden()
             .border_1()
             .border_color(theme.border)
+            .when_some(overlay.image.cloned(), |el, on_image| {
+                el.cursor_pointer().on_click(move |event, window, cx| {
+                    if let ClickEvent::Mouse(click) = event
+                        && (click.up.position - click.down.position).magnitude() > DRAG_SLOP
+                    {
+                        return;
+                    }
+                    on_image(ix, window, cx);
+                })
+            })
             .children(overlay.layouts.map(|layouts| {
                 let layouts = layouts.clone();
-                let ix = overlay.block;
                 canvas(
                     move |bounds, _, _| layouts.record_picture(ix, bounds),
                     |_, _, _, _| (),
@@ -67,6 +84,7 @@ pub(super) fn image(
             // is a percentage and so needs a box that spans one to measure.
             None => box_.child(picture.max_w_full()),
         }
+        .into_any_element()
     };
     div()
         .flex()
@@ -95,9 +113,7 @@ pub(super) fn image(
 /// A bookmark, in Notion's proportions: a fixed-height row with the text on the
 /// left and an image panel of a fixed width on the right, all of it one click
 /// target. [`Form::Embed`] turns the row into a column and gives the image the
-/// card's full width instead, and [`Form::Chip`] is neither — a pill of favicon
-/// and title, which is what an inline mention would be if shaped text had
-/// anywhere to put a picture.
+/// card's full width instead.
 ///
 /// The row is a fixed height with its footer pinned to the bottom, because a
 /// preview resolves *after* the card has painted — a blurb arriving into a box
@@ -134,40 +150,6 @@ pub(super) fn bookmark(
             None => initial(&host, size, muted, wash),
         }
     };
-
-    if form == Form::Chip {
-        let open = url.to_string();
-        let pill = div()
-            .id(ElementId::named_usize("md-chip", ix))
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(6.0))
-            .px(px(CHIP_BLOCK_PAD_X))
-            .py(px(CHIP_BLOCK_PAD_Y))
-            .rounded(px(Theme::control_radius()))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.element_hover)
-            .text_size(px(typography.body.size()))
-            .line_height(px(typography.body.line_height()))
-            .text_color(theme.text)
-            .cursor(CursorStyle::PointingHand)
-            .hover(|el| el.bg(theme.element_active))
-            .on_click(move |_, _, cx| cx.open_url(&open))
-            .child(mark(CHIP_ICON))
-            // The host, not the URL, when nothing has resolved it: a chip is
-            // the short form, and a raw URL in a pill is the long one.
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(preview.title.unwrap_or(label)),
-            );
-        // A block's own box is `display: block`, where a pill would take the
-        // whole width. One flex row around it is what lets it hug its label.
-        return div().flex().flex_row().child(pill).into_any_element();
-    }
 
     let words = div()
         .flex()
@@ -275,4 +257,35 @@ pub(super) fn initial(host: &str, size: f32, color: Hsla, wash: Hsla) -> AnyElem
                 .to_string(),
         ))
         .into_any_element()
+}
+
+/// A mention's hover card: its bookmark, picture on top.
+pub(super) struct MentionCard {
+    url: String,
+    typography: Typography,
+}
+
+impl MentionCard {
+    pub(super) fn view(url: &str, cx: &mut App) -> gpui::AnyView {
+        let typography = Typography::of(cx);
+        cx.new(|_| Self {
+            url: url.to_string(),
+            typography,
+        })
+        .into()
+    }
+}
+
+impl Render for MentionCard {
+    fn render(&mut self, _: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = Theme::of(cx).clone();
+        div().w(px(MENTION_CARD_WIDTH)).child(bookmark(
+            0,
+            &self.url,
+            Form::Embed,
+            &self.typography,
+            &theme,
+            cx,
+        ))
+    }
 }

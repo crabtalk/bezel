@@ -1,5 +1,36 @@
 [
   {
+    "version": "0.2.2",
+    "date": "2026-09-27",
+    "summary": "Inline link mentions with a favicon, title and hover card, table rows and columns added and removed anywhere in the editor, find highlights and scroll-to-range in markdown, text ink on the brand, a terminal content inset and output batch, a WebView that follows its window, and macOS's selection colour.",
+    "new": [
+      "A `Mark::Mention` paints as a favicon, the preview's label in muted text when it has a title, and the underlined title, or the host when nothing has resolved it; hovering it shows its bookmark card with the picture on top. `markdown::Flat` carries `mentions` and `shown`, which maps offsets between the `Text` and what it shows.",
+      "`markdown::Annotation::Match` and `Annotation::Current` paint find hits. `BlockLayouts::reveal` scrolls a document until the start of a range shows, over the next few frames, through `Editing::scroll`.",
+      "`markdown::Editing::image` takes an `OnImage`, called with the block whose picture was clicked; a press and release more than a couple of pixels apart is a drag and calls nothing. `selectable::render_with` is `selectable::render` with an `Editing`.",
+      "`theme::Brand::ink` sets the alpha of `text`, `text_muted` and `text_faint` over white in dark and black in light. `Ink::APPKIT`, AppKit's label colours, is the default; `Ink::ACCESSIBLE` holds text and muted at 4.5:1 and faint at 3:1 on `bg` and `surface`.",
+      "`terminal::OutputBatch` groups PTY output into one feed per `OUTPUT_BATCH_MS` window, handing held bytes back early at `OUTPUT_BATCH_LIMIT`. `TerminalView::with_content_inset` insets the grid from the element's bounds.",
+      "`Buttons::tinted_icon_button` is an icon button's square with its glyph in a given colour and no hover.",
+      "`Theme::drop_line` is the colour of the line where a dragged block would land in the editor.",
+      "The slash menu shows the quote variants behind one \"Quote\" row with no query typed; → or Enter opens it and ← closes it. A query still lists every block flat.",
+      "The editor grows and shrinks tables: `+` strips along a table's right and bottom edges add a column and a row, and handles on its left and top edges at the hovered cell open insert-before, insert-after and delete for that row or column. Tab and Shift-Tab walk cells, with Tab past the last one adding a row, and Enter goes down a row. `Doc::insert_row`, `insert_column`, `remove_row` and `remove_column`, `Editor::add_row`, `add_column`, `remove_row` and `remove_column`, and `BlockLayouts::cell_bounds` and `cell_at` are the pieces."
+    ],
+    "changed": [
+      "A mention is atomic: a caret sits at either end and never inside, arrow and word motions step over it, Backspace at its end removes it whole, and text typed at its end falls outside it.",
+      "`[url](url \"chip\")` alone on a line is a paragraph holding a mention rather than a `BlockKind::Bookmark`, and the paste menu's chip is a mention wherever it lands. A `Bookmark` with `Form::Chip` paints as a card. `link::Paste::alone` is gone.",
+      "`markdown::Flat::chips` is gone, and `flatten_with` takes a preview function after the mark painter.",
+      "`Theme::text`, `text_muted` and `text_faint` are translucent ink at `Ink::APPKIT`'s alphas rather than opaque greys.",
+      "`Theme::selection` is `NSColor.selectedTextBackgroundColor` with the default accent: `#3F638B` in dark and `#B3D7FF` in light, opaque.",
+      "`terminal::TERM_PADDING` is gone; a `TerminalView` has no inset until `with_content_inset` gives it one.",
+      "A `WebView`'s page moves to each window the view is painted in rather than staying in the first.",
+      "Block shortcuts (`## `, `1. `, `- `, `> ` and the rest) turn only a paragraph; in a heading, list item, quote or task the prefix stays text.",
+      "The editor's drop line is 1px in `Theme::drop_line` rather than 2px in `Theme::accent`."
+    ],
+    "fixed": [
+      "A block whose content changes every frame, such as a streamed reply, keeps its last measured height at its index rather than falling back to a guess each frame, and a table's guess counts its cell padding and dividers; a streamed table no longer jumps by its height on every token.",
+      "A heading's text is written without escaping block syntax after its `#`: `## 1. Foo` saves as written rather than as `## 1\\. Foo`."
+    ]
+  },
+  {
     "version": "0.2.1",
     "date": "2026-09-26",
     "summary": "A long document in the editor lays out only what the window shows, syntax colours in a text field follow its edits, an incremental syntax document, and a scrollbar thumb 2px off its edge.",

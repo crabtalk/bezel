@@ -5,17 +5,27 @@
 //! painted, so none of them can drift from the text it points at.
 
 use gpui::{
-    AnyElement, App, Context, CursorStyle, MouseButton, Pixels, Point, SharedString, div,
+    AnyElement, App, Context, CursorStyle, MouseButton, Pixels, Point, SharedString, Window, div,
     prelude::*, px,
 };
-use markdown::BlockKind;
+use markdown::{BlockKind, Part};
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
+use ui::menu::Hit;
 
 use crate::{
-    editor::{Editor, HANDLE_SIZE},
+    editor::{Editor, HANDLE_SIZE, Line},
     layout::Layout,
 };
+
+/// What a row of a table line's menu does.
+type TableAction = Box<dyn Fn(&mut Editor, &mut Context<Editor>)>;
+
+/// How thick a table's `+` strips are.
+const TABLE_STRIP: f32 = 16.0;
+/// A table row or column handle, across and along the edge it sits on.
+const TABLE_HANDLE_THIN: f32 = 12.0;
+const TABLE_HANDLE_LONG: f32 = 20.0;
 
 /// How far the language chip reaches past the word it wraps.
 const CHIP_PAD_X: f32 = 6.0;
@@ -151,13 +161,250 @@ impl Editor {
             div()
                 .absolute()
                 .left(px(0.0))
-                .top(y - self.origin.y - px(1.0))
+                .top(y - self.origin.y)
                 .w_full()
-                .h(px(2.0))
-                .rounded(px(1.0))
-                .bg(theme.accent)
+                .h(px(1.0))
+                .bg(theme.drop_line)
                 .into_any_element(),
         )
+    }
+
+    /// The `+` strips along a table's right and bottom edges, on the table
+    /// under the pointer or else the one the caret is in: a column and a row
+    /// at the end.
+    pub(super) fn table_strips(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.blocks() {
+            return None;
+        }
+        let ix = [self.hovered, Some(self.cursor().block)]
+            .into_iter()
+            .flatten()
+            .find(|ix| {
+                matches!(
+                    self.doc.blocks.get(*ix).map(|block| &block.kind),
+                    Some(BlockKind::Table { .. })
+                )
+            })?;
+        let BlockKind::Table { header, rows, .. } = &self.doc.blocks[ix].kind else {
+            return None;
+        };
+        let columns = rows.iter().map(Vec::len).chain([header.len()]).max()?;
+        let end_row = rows.len() + 1;
+        let bounds = self.layouts.block_bounds(ix)?;
+        let origin = bounds.origin - self.origin;
+        let strip =
+            |id: &'static str, add: fn(&mut Self, usize, usize, &mut Context<Self>), at: usize| {
+                div()
+                    .id(id)
+                    .absolute()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.0))
+                    .cursor(CursorStyle::PointingHand)
+                    .text_style(TextStyle::Callout)
+                    .text_color(theme.text_faint)
+                    .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
+                    .child("+")
+                    // Held here, or the editor's own move handler takes the
+                    // hovered block away from under the pointer.
+                    .on_mouse_move(|_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &gpui::MouseDownEvent, window, cx| {
+                            this.press_claimed = true;
+                            this.focus_handle.clone().focus(window, cx);
+                            add(this, ix, at, cx);
+                        }),
+                    )
+            };
+        Some(
+            div()
+                .absolute()
+                .left(origin.x)
+                .top(origin.y)
+                .w(bounds.size.width)
+                .h(bounds.size.height)
+                .child(
+                    strip("table-add-column", Self::add_column, columns)
+                        .left(bounds.size.width)
+                        .top(px(0.0))
+                        .w(px(TABLE_STRIP))
+                        .h(bounds.size.height),
+                )
+                .child(
+                    strip("table-add-row", Self::add_row, end_row)
+                        .left(px(0.0))
+                        .top(bounds.size.height)
+                        .w(bounds.size.width)
+                        .h(px(TABLE_STRIP)),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// A handle on the table's left edge at the row of the hovered cell, else
+    /// the caret's, and one on its top edge at that cell's column. Each opens
+    /// its line's menu.
+    pub(super) fn table_handles(
+        &self,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.blocks() {
+            return None;
+        }
+        let caret = self.cursor();
+        let (ix, part) = self.hovered_cell.or_else(|| {
+            matches!(caret.part, Part::Cell { .. }).then_some((caret.block, caret.part))
+        })?;
+        let Part::Cell { row, column } = part else {
+            return None;
+        };
+        let table = self.layouts.block_bounds(ix)?;
+        let cell = self.layouts.cell_bounds(ix, part)?;
+        let handle = |id: &'static str, glyph: &'static str, line: Line, anchor: Point<Pixels>| {
+            let trigger = div()
+                .id(id)
+                .absolute()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(4.0))
+                .bg(theme.surface)
+                .border_1()
+                .border_color(theme.border)
+                .cursor(CursorStyle::PointingHand)
+                .text_style(TextStyle::Caption)
+                .text_color(theme.text_faint)
+                .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
+                .child(glyph)
+                .on_mouse_move(|_, _, cx| cx.stop_propagation())
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &gpui::MouseDownEvent, _, _| this.press_claimed = true),
+                );
+            ui::popover::menu_trigger_matching(
+                trigger,
+                |this| &mut this.table_menu,
+                move |&(block, at, _)| block == ix && at == line,
+                move |_| (ix, line, anchor),
+                cx,
+            )
+        };
+        let row_mid = cell.origin.y + cell.size.height / 2.0;
+        let column_mid = cell.origin.x + cell.size.width / 2.0;
+        Some(
+            div()
+                .child(
+                    handle(
+                        "table-row-handle",
+                        "⋮",
+                        Line::Row(row),
+                        gpui::point(table.origin.x, row_mid),
+                    )
+                    .left(table.origin.x - self.origin.x - px(TABLE_HANDLE_THIN / 2.0))
+                    .top(row_mid - self.origin.y - px(TABLE_HANDLE_LONG / 2.0))
+                    .w(px(TABLE_HANDLE_THIN))
+                    .h(px(TABLE_HANDLE_LONG)),
+                )
+                .child(
+                    handle(
+                        "table-column-handle",
+                        "⋯",
+                        Line::Column(column),
+                        gpui::point(column_mid, table.origin.y),
+                    )
+                    .left(column_mid - self.origin.x - px(TABLE_HANDLE_LONG / 2.0))
+                    .top(table.origin.y - self.origin.y - px(TABLE_HANDLE_THIN / 2.0))
+                    .w(px(TABLE_HANDLE_LONG))
+                    .h(px(TABLE_HANDLE_THIN)),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// Insert before, insert after and delete, for the line a table handle
+    /// opened.
+    pub(super) fn table_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.blocks() {
+            return None;
+        }
+        let view = Painter::of(cx);
+        let &(ix, line, at) = self.table_menu.get()?;
+        let Some(BlockKind::Table { header, rows, .. }) =
+            self.doc.blocks.get(ix).map(|block| &block.kind)
+        else {
+            return None;
+        };
+        let width = rows.iter().map(Vec::len).chain([header.len()]).max()?;
+        let action = |label: &'static str, run: TableAction| {
+            ui::popover::menu_row(
+                theme,
+                false,
+                Some(Fade::new(view, format!("table-{label}"))),
+            )
+            .id(SharedString::from(format!("table-row-{label}")))
+            .child(label)
+            .on_click(cx.listener(move |this, _, _, cx| {
+                ui::popover::close_popup(this, cx, |this| &mut this.table_menu);
+                run(this, cx);
+            }))
+        };
+        let rows: Vec<_> = match line {
+            Line::Row(row) => [
+                (row > 0).then(|| {
+                    action(
+                        "Insert above",
+                        Box::new(move |this, cx| this.add_row(ix, row, cx)),
+                    )
+                }),
+                Some(action(
+                    "Insert below",
+                    Box::new(move |this, cx| this.add_row(ix, row + 1, cx)),
+                )),
+                (row > 0).then(|| {
+                    action(
+                        "Delete row",
+                        Box::new(move |this, cx| this.remove_row(ix, row, cx)),
+                    )
+                }),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+            Line::Column(column) => [
+                Some(action(
+                    "Insert left",
+                    Box::new(move |this, cx| this.add_column(ix, column, cx)),
+                )),
+                Some(action(
+                    "Insert right",
+                    Box::new(move |this, cx| this.add_column(ix, column + 1, cx)),
+                )),
+                (width > 1).then(|| {
+                    action(
+                        "Delete column",
+                        Box::new(move |this, cx| this.remove_column(ix, column, cx)),
+                    )
+                }),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+        };
+        Some(ui::popover::menu_at(
+            "table-menu",
+            at,
+            ui::popover::dismiss_on_out(
+                ui::popover::popover_card(theme).w(px(160.0)),
+                |this| &mut this.table_menu,
+                cx,
+            )
+            .children(rows)
+            .into_any_element(),
+            self.table_menu.closing_since(),
+        ))
     }
 
     /// The click target over a fence's header, where its language sits.
@@ -379,63 +626,49 @@ impl Editor {
     ///
     /// The anchor comes from the same layout the caret paints against, so it
     /// costs nothing beyond a lookup and it cannot drift from the text.
-    pub(super) fn slash_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn slash_menu(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let slash = self.slash.as_ref()?;
         let (point, line_height) = self.layouts.position(slash.at)?;
-        let items = crate::slash::items();
-        let reduce_motion = cx.reduce_motion();
-        // The `.id` is not optional: a row without one neither takes the cursor
-        // on hover nor clicks.
-        let rows = slash
-            .filter
-            .filtered()
-            .iter()
-            .enumerate()
-            .map(|(row, &ix)| {
-                let kind = items[ix].1.clone();
-                ui::popover::menu_row(theme, Some(row) == slash.filter.active(), None)
-                    .id(SharedString::from(format!("slash-row-{ix}")))
-                    .child(items[ix].0.clone())
-                    .on_mouse_move(cx.listener(move |this: &mut Self, _, _, cx| {
-                        if let Some(slash) = this.slash.as_mut()
-                            && slash.filter.active() != Some(row)
-                        {
-                            slash.filter.set_active(row);
-                            cx.notify();
-                        }
-                    }))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.confirm_slash(Some(kind.clone()), cx);
-                    }))
-            });
+        let card = ui::menu::card(
+            theme,
+            "slash",
+            &slash.menu(),
+            &slash.cursor,
+            window,
+            cx,
+            |this: &mut Self, hit, _, cx| match hit {
+                Hit::Point(path) => {
+                    if let Some(slash) = this.slash.as_mut()
+                        && slash.cursor.point_at(&slash.menu(), &path)
+                    {
+                        cx.notify();
+                    }
+                }
+                Hit::Choose(path) => {
+                    let kind = this.slash.as_ref().and_then(|slash| slash.kind_at(&path));
+                    this.confirm_slash(kind, cx);
+                }
+                Hit::Dismiss => {
+                    this.slash = None;
+                    cx.notify();
+                }
+            },
+        )
+        // Compiles to nothing outside a test build. It is here because the
+        // menu's state opening and the menu *painting* are two different
+        // things, and the bug that shipped was the second one failing while
+        // the first looked fine.
+        .debug_selector(|| SLASH_MENU.to_string())
+        .max_h(px(280.0));
         Some(ui::popover::menu_at(
             "slash-menu",
             gpui::point(point.x, point.y + line_height),
-            ui::popover::popover_card(theme)
-                // Compiles to nothing outside a test build. It is here because
-                // the menu's state opening and the menu *painting* are two
-                // different things, and the bug that shipped was the second one
-                // failing while the first looked fine.
-                .debug_selector(|| SLASH_MENU.to_string())
-                .w(px(200.0))
-                .relative()
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.slash = None;
-                    cx.notify();
-                }))
-                .child(
-                    ui::scroll::pane("slash-rows", ui::scroll::Axes::Vertical)
-                        .max_h(px(280.0))
-                        .track_scroll(&slash.scroll)
-                        .children(rows),
-                )
-                .child(ui::scroll::transient(
-                    "slash-bar",
-                    &slash.scroll,
-                    &slash.bar,
-                    reduce_motion,
-                ))
-                .into_any_element(),
+            card.into_any_element(),
             None,
         ))
     }

@@ -1,10 +1,8 @@
-//! Brand: one hue for the greys, one for the accent, one radius.
+//! Brand: one hue for the greys, one for the accent, one radius, and the
+//! text ink.
 //!
-//! The two palettes in `palettes.rs` are designed — every lightness in them was
-//! tuned against a measured contrast ratio, and light is not dark inverted. A
-//! brand does not replace that work; it rotates it. Lightness is never a knob
-//! here, so a branded palette keeps the contrast the shipped one was verified
-//! at, and the only thing that moves is hue.
+//! Apart from the text ink, a brand moves hue alone: every other lightness in
+//! `palettes.rs` stays as the palette set it.
 
 use gpui::{App, Global, Hsla};
 
@@ -44,6 +42,83 @@ pub const BASE_COLORS: [(&str, Tint); 5] = [
     ("Gray", Tint::new(264.364, 0.027)),
     ("Slate", Tint::new(257.417, 0.046)),
 ];
+
+/// The alpha of each text role over the appearance's ink — white in dark,
+/// black in light.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextInk {
+    /// [`Theme::text`].
+    pub text: f32,
+    /// [`Theme::text_muted`].
+    pub muted: f32,
+    /// [`Theme::text_faint`].
+    pub faint: f32,
+}
+
+impl TextInk {
+    /// The role at `alpha` over `appearance`'s ink.
+    pub fn color(appearance: Appearance, alpha: f32) -> Hsla {
+        match appearance {
+            Appearance::Dark => gpui::hsla(0.0, 0.0, 1.0, alpha),
+            Appearance::Light => gpui::hsla(0.0, 0.0, 0.0, alpha),
+        }
+    }
+
+    /// Writes [`Theme::text`], [`Theme::text_muted`] and [`Theme::text_faint`]
+    /// for the theme's appearance.
+    pub fn paint(&self, theme: &mut Theme) {
+        let appearance = theme.appearance;
+        theme.text = Self::color(appearance, self.text);
+        theme.text_muted = Self::color(appearance, self.muted);
+        theme.text_faint = Self::color(appearance, self.faint);
+    }
+}
+
+/// Text ink for both appearances.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Ink {
+    pub dark: TextInk,
+    pub light: TextInk,
+}
+
+impl Ink {
+    /// AppKit's label, secondary and tertiary label colours. Muted is under
+    /// 4.5:1 on white, and faint is under 3:1 in both appearances.
+    pub const APPKIT: Self = Self {
+        dark: TextInk {
+            text: 0.85,
+            muted: 0.55,
+            faint: 0.25,
+        },
+        light: TextInk {
+            text: 0.85,
+            muted: 0.50,
+            faint: 0.26,
+        },
+    };
+
+    /// Text and muted at 4.5:1 or more and faint at 3:1 or more, on
+    /// [`Theme::bg`] and [`Theme::surface`] in both appearances.
+    pub const ACCESSIBLE: Self = Self {
+        dark: TextInk {
+            text: 0.85,
+            muted: 0.52,
+            faint: 0.40,
+        },
+        light: TextInk {
+            text: 0.85,
+            muted: 0.56,
+            faint: 0.43,
+        },
+    };
+
+    pub fn for_appearance(&self, appearance: Appearance) -> TextInk {
+        match appearance {
+            Appearance::Dark => self.dark,
+            Appearance::Light => self.light,
+        }
+    }
+}
 
 /// Whether the window composites translucent — AppKit's vibrancy, and Mica.
 ///
@@ -114,6 +189,8 @@ pub struct Brand {
     /// answer: a Mica window carries no glass, since the blur a card lays over
     /// the content it covers is [`LENSED`](crate::LENSED) and Mica is not.
     pub glass: bool,
+    /// The text roles' alphas. [`Ink::APPKIT`] is what the palettes ship.
+    pub ink: Ink,
 }
 
 impl Global for Brand {}
@@ -127,6 +204,7 @@ impl Default for Brand {
             vibrancy_alpha: Theme::VIBRANCY_ALPHA,
             vibrancy: Vibrancy::Auto,
             glass: crate::LENSED,
+            ink: Ink::APPKIT,
         }
     }
 }
@@ -167,6 +245,7 @@ impl Brand {
         // nothing was looking at it.
         theme.vibrancy_alpha = self.vibrancy_alpha;
         theme.glass = self.glass;
+        self.ink.for_appearance(theme.appearance).paint(theme);
         // Every colour token, with the rule doing the choosing: a token that is
         // already grey takes the tint, and one that already carries a hue —
         // danger, warning, success — is semantic and keeps it. Translucent ink

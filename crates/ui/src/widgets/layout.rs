@@ -236,7 +236,7 @@ pub trait Layout: ThemeExt {
                         .left(px(-1.0))
                         .right(px(-1.0))
                         .h(px(2.0))
-                        .bg(theme.text),
+                        .bg(theme.solid),
                 )
             })
     }

@@ -42,7 +42,7 @@ mod paint;
 mod platform;
 mod theme;
 
-pub use brand::{BASE_COLORS, Brand, Tint, Vibrancy, brand, set_brand};
+pub use brand::{BASE_COLORS, Brand, Ink, TextInk, Tint, Vibrancy, brand, set_brand};
 
 pub use platform::{LENSED, frosted_window};
 

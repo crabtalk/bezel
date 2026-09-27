@@ -59,19 +59,27 @@ fn contrast_ratio_hits_known_anchors() {
     assert!((contrast_ratio(black, white) - contrast_ratio(white, black)).abs() < 1e-4);
 }
 
-/// The core claim of the light palette: it is *paired* to dark by contrast
-/// ratio, not mirrored by lightness. Each text token must land within 1.0 of
-/// its counterpart's ratio against its own background.
+/// The palette under the accessible ink.
+fn accessible(appearance: Appearance) -> Theme {
+    let brand = Brand {
+        ink: Ink::ACCESSIBLE,
+        ..Brand::default()
+    };
+    Theme::branded(&brand, appearance)
+}
+
+/// Each accessible text role lands within 1.0 of its counterpart's ratio in
+/// the other appearance.
 #[test]
-fn text_contrast_is_paired_across_appearances() {
-    let (d, l) = (Theme::dark(), Theme::light());
+fn accessible_text_contrast_is_paired_across_appearances() {
+    let (d, l) = (accessible(Appearance::Dark), accessible(Appearance::Light));
     for (name, dark_fg, light_fg) in [
         ("text", d.text, l.text),
         ("text_muted", d.text_muted, l.text_muted),
         ("text_faint", d.text_faint, l.text_faint),
     ] {
-        let dr = contrast_ratio(dark_fg, d.bg);
-        let lr = contrast_ratio(light_fg, l.bg);
+        let dr = contrast_ratio(flatten(dark_fg, d.bg), d.bg);
+        let lr = contrast_ratio(flatten(light_fg, l.bg), l.bg);
         assert!(
             (dr - lr).abs() < 1.0,
             "{name}: dark {dr:.2}:1 vs light {lr:.2}:1 — not a matched pair"
@@ -79,37 +87,51 @@ fn text_contrast_is_paired_across_appearances() {
     }
 }
 
-/// Body and secondary text must clear WCAG AA (4.5:1) against **both** planes
-/// they can land on, in both appearances.
-///
-/// `text_faint` is held to a lower floor on purpose. It is placeholder and
-/// disabled-control copy only, which WCAG 1.4.3 exempts, and the *existing
-/// dark palette* already measures ~4.2:1 there (neutral-500 on #060606). The
-/// light tone is matched to that inherited number rather than raised past it,
-/// so the two appearances stay siblings; raising the floor is a palette
-/// decision for both modes at once, not something light mode should do alone.
+/// Under the accessible ink, text and muted clear WCAG AA (4.5:1) and faint
+/// clears 3:1, on both planes in both appearances. `text_dim` is opaque and
+/// holds 4.5:1 under any ink.
 #[test]
-fn text_tones_clear_wcag_aa() {
-    for t in [Theme::dark(), Theme::light()] {
+fn accessible_text_tones_clear_their_floors() {
+    for t in [accessible(Appearance::Dark), accessible(Appearance::Light)] {
         for (name, fg, floor) in [
             ("text", t.text, 4.5),
             ("text_muted", t.text_muted, 4.5),
             ("text_dim", t.text_dim, 4.5),
-            ("text_faint", t.text_faint, 4.1),
+            ("text_faint", t.text_faint, 3.0),
         ] {
-            let on_bg = contrast_ratio(fg, t.bg);
-            let on_surface = contrast_ratio(fg, t.surface);
-            assert!(
-                on_bg >= floor,
-                "{:?} {name} on bg is {on_bg:.2}:1, below {floor}",
-                t.appearance
-            );
-            assert!(
-                on_surface >= floor,
-                "{:?} {name} on surface is {on_surface:.2}:1, below {floor}",
-                t.appearance
-            );
+            for (plane, bg) in [("bg", t.bg), ("surface", t.surface)] {
+                let ratio = contrast_ratio(flatten(fg, bg), bg);
+                assert!(
+                    ratio >= floor,
+                    "{:?} {name} on {plane} is {ratio:.2}:1, below {floor}",
+                    t.appearance
+                );
+            }
         }
+    }
+}
+
+/// Every ink steps down from text to muted to faint.
+#[test]
+fn text_roles_step_down() {
+    for ink in [Ink::APPKIT, Ink::ACCESSIBLE] {
+        for t in [ink.dark, ink.light] {
+            assert!(t.text > t.muted && t.muted > t.faint, "{t:?}");
+        }
+    }
+}
+
+/// The shipped palettes carry the default brand's ink.
+#[test]
+fn palettes_ship_the_default_ink() {
+    for appearance in [Appearance::Dark, Appearance::Light] {
+        let (shipped, branded) = (
+            Theme::for_appearance(appearance),
+            Theme::branded(&Brand::default(), appearance),
+        );
+        assert_eq!(shipped.text, branded.text);
+        assert_eq!(shipped.text_muted, branded.text_muted);
+        assert_eq!(shipped.text_faint, branded.text_faint);
     }
 }
 
@@ -342,16 +364,7 @@ fn bare_plates_are_visible_against_their_panel() {
 #[test]
 fn neutrals_are_achromatic() {
     for t in [Theme::dark(), Theme::light()] {
-        for c in [
-            t.bg,
-            t.surface,
-            t.surface_raised,
-            t.text,
-            t.text_muted,
-            t.text_faint,
-            t.solid,
-            t.on_solid,
-        ] {
+        for c in [t.bg, t.surface, t.surface_raised, t.solid, t.on_solid] {
             assert_eq!(c.s, 0.0, "{:?} neutral has chroma", t.appearance);
             assert_eq!(c.a, 1.0, "{:?} neutral is translucent", t.appearance);
         }

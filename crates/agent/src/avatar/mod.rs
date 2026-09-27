@@ -157,7 +157,8 @@ pub fn avatar(pose: Pose) -> AnyElement {
             let theme = Theme::of(cx);
             let head = pose.color.unwrap_or(theme.accent);
             // Whichever end of the theme reads as a hole in this body.
-            let ink = if contrast_ratio(head, theme.bg) >= contrast_ratio(head, theme.text) {
+            let text = flatten(theme.text, head);
+            let ink = if contrast_ratio(head, theme.bg) >= contrast_ratio(head, text) {
                 theme.bg
             } else {
                 theme.text
