@@ -224,6 +224,14 @@ fn ctrl_enter_inside_a_list_breaks_it_in_two(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_block_prefix_typed_in_a_heading_stays_text(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("## Foo", cx);
+    cx.simulate_keystrokes("home");
+    cx.simulate_input("1. ");
+    assert_eq!(source(&editor, &mut cx), "## 1. Foo");
+}
+
+#[gpui::test]
 fn typing_an_alert_marker_after_quote_shortcut_promotes_it(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("", cx);
     cx.simulate_input("> ");

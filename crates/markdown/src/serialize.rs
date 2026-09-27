@@ -137,7 +137,8 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8, marks: &Marks) {
         BlockKind::Paragraph(text) => write_lines(out, &pad, &pad, &inline(text, marks)),
         BlockKind::Heading { level, text } => {
             let hashes = "#".repeat((*level).clamp(1, 6) as usize);
-            write_lines(out, &format!("{pad}{hashes} "), &pad, &inline(text, marks));
+            let body = inline_in(text, marks, Lead::Heading);
+            write_lines(out, &format!("{pad}{hashes} "), &pad, &body);
         }
         // A bullet with no text would be written as a line holding nothing but
         // a dash — and a line of dashes directly under a paragraph is a setext
@@ -187,7 +188,7 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8, marks: &Marks) {
         BlockKind::Image { url, alt, width } => {
             out.push_str(&pad);
             out.push_str("![");
-            escape_inline(out, &alt.text, marks);
+            escape_inline(out, &alt.text, marks, Lead::Line);
             // After the escaping, and bare: every `|` a caption holds is
             // written `\|` to keep two body lines from reconstituting into a
             // table, so an unescaped one is the delimiter and nothing else.
@@ -311,6 +312,20 @@ fn write_table(
 /// opening them in order and closing them in reverse reproduces the nesting —
 /// which is what keeps `**_x_**` and `_**x**_` distinct.
 fn inline(text: &Text, marks: &Marks) -> String {
+    inline_in(text, marks, Lead::Line)
+}
+
+/// What the first line of inline text follows.
+#[derive(Clone, Copy)]
+enum Lead {
+    /// The start of a line, or a container marker that reads block syntax
+    /// after it.
+    Line,
+    /// An ATX heading's `# `, after which only a run of hashes means anything.
+    Heading,
+}
+
+fn inline_in(text: &Text, marks: &Marks, lead: Lead) -> String {
     let mut out = String::new();
     let mut open: Vec<usize> = Vec::new();
     let mut started = vec![false; text.marks.len()];
@@ -331,7 +346,7 @@ fn inline(text: &Text, marks: &Marks) -> String {
         if point < cursor {
             continue;
         }
-        escape_inline(&mut out, &text.text[cursor..point], marks);
+        escape_inline(&mut out, &text.text[cursor..point], marks, lead);
         cursor = point;
 
         while let Some(&top) = open.last() {
@@ -401,7 +416,12 @@ fn inline(text: &Text, marks: &Marks) -> String {
         }
     }
 
-    escape_inline(&mut out, &text.text[cursor.min(text.text.len())..], marks);
+    escape_inline(
+        &mut out,
+        &text.text[cursor.min(text.text.len())..],
+        marks,
+        lead,
+    );
     while let Some(ix) = open.pop() {
         close_mark(&mut out, &text.marks[ix].mark, delimiters[ix], marks);
     }
@@ -531,15 +551,17 @@ fn bare_destination(url: &str) -> bool {
 ///
 /// Called with slices between mark boundaries, so "line start" means the start
 /// of a line in the *output*, not in the slice.
-fn escape_inline(out: &mut String, s: &str, marks: &Marks) {
+fn escape_inline(out: &mut String, s: &str, marks: &Marks, lead: Lead) {
     let mut line_start = out.is_empty() || out.ends_with('\n');
+    let mut lead = if out.is_empty() { lead } else { Lead::Line };
     for (ix, line) in s.split('\n').enumerate() {
         if ix > 0 {
             out.push('\n');
             line_start = true;
+            lead = Lead::Line;
         }
         let body = if line_start {
-            escape_block_marker(out, line)
+            escape_block_marker(out, line, lead)
         } else {
             line
         };
@@ -551,7 +573,7 @@ fn escape_inline(out: &mut String, s: &str, marks: &Marks) {
 /// Escape a leading run that would open a block, returning what is left of the
 /// line. Only ever fires at a line start — mid-line these characters are
 /// ordinary text, and escaping them there is what turns `#123` into `\#123`.
-fn escape_block_marker<'a>(out: &mut String, line: &'a str) -> &'a str {
+fn escape_block_marker<'a>(out: &mut String, line: &'a str, lead: Lead) -> &'a str {
     let after_space = |rest: &str| rest.starts_with([' ', '\t']) || rest.is_empty();
 
     let hashes = line.len() - line.trim_start_matches('#').len();
@@ -559,6 +581,9 @@ fn escape_block_marker<'a>(out: &mut String, line: &'a str) -> &'a str {
         out.push('\\');
         out.push_str(&line[..hashes]);
         return &line[hashes..];
+    }
+    if let Lead::Heading = lead {
+        return line;
     }
 
     if let Some(rest) = line.strip_prefix('>') {

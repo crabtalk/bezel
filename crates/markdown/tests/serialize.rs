@@ -154,6 +154,13 @@ fn a_heading_in_body_text_is_escaped() {
 }
 
 #[test]
+fn block_syntax_opening_a_heading_is_not_escaped() {
+    for source in ["## 1. Foo", "## - Foo", "## > Foo", "## ---"] {
+        assert_eq!(serialize(&parse(source)), source);
+    }
+}
+
+#[test]
 fn text_that_looks_like_a_list_is_escaped() {
     for body in ["- item", "1. item", "> quote", "+ item"] {
         let doc = Doc {

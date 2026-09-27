@@ -222,7 +222,13 @@ impl Editor {
         if at.part != Part::Body {
             return None;
         }
-        let text = self.doc.blocks.get(at.block)?.text_at(Part::Body)?;
+        // Only a paragraph turns: in a heading, list item or quote the prefix
+        // is text.
+        let block = self.doc.blocks.get(at.block)?;
+        if !matches!(block.kind, BlockKind::Paragraph(_)) {
+            return None;
+        }
+        let text = block.text_at(Part::Body)?;
         // Only from the very start of a block, and only up to the caret: a
         // `- ` typed in the middle of a sentence is a hyphen.
         let (hit, len) = shortcut(&text.text)?;
