@@ -75,7 +75,7 @@ pub trait Controls: ThemeExt {
         box_ = if checked {
             box_.border_1()
                 .border_color(crate::widgets::RING_SLOT)
-                .bg(theme.text)
+                .bg(theme.solid)
         } else {
             box_.border_1()
                 .border_color(theme.ink(0.25))
@@ -111,7 +111,7 @@ pub trait Controls: ThemeExt {
             .items_center()
             .justify_center()
             .when(selected, |ring| {
-                ring.child(div().size(px(8.0)).rounded_full().bg(theme.text))
+                ring.child(div().size(px(8.0)).rounded_full().bg(theme.solid))
             })
     }
 
@@ -130,7 +130,7 @@ pub trait Controls: ThemeExt {
                     .h_full()
                     .w(gpui::relative(fraction))
                     .rounded_full()
-                    .bg(theme.text),
+                    .bg(theme.solid),
             )
     }
 
@@ -179,7 +179,7 @@ pub trait Controls: ThemeExt {
                             .h_full()
                             .w(gpui::relative(fraction))
                             .rounded_full()
-                            .bg(theme.text),
+                            .bg(theme.solid),
                     ),
             )
             .child(
@@ -189,7 +189,7 @@ pub trait Controls: ThemeExt {
                         .size(px(14.0))
                         .ml(px(-7.0))
                         .rounded_full()
-                        .bg(theme.text),
+                        .bg(theme.solid),
                 ),
             )
     }

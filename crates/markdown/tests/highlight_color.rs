@@ -6,7 +6,7 @@ fn text_reads_over_every_default_highlight() {
     for theme in [Theme::dark(), Theme::light()] {
         for color in HighlightColor::ALL {
             let wash = flatten(default_highlight(color, &theme), theme.bg);
-            let ratio = contrast_ratio(theme.text, wash);
+            let ratio = contrast_ratio(flatten(theme.text, wash), wash);
             assert!(
                 ratio >= 7.0,
                 "{:?} {color:?}: text at {ratio:.2}:1",

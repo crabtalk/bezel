@@ -219,11 +219,12 @@ pub struct Theme {
     pub border_strong: Hsla,
 
     // ---- paint: text ----
-    /// Primary text. ~17.5:1 on its own background in both appearances.
+    /// Primary text. Translucent, like `text_muted` and `text_faint`: the
+    /// appearance's ink at the alpha [`Brand::ink`](crate::Brand::ink) sets.
     pub text: Hsla,
-    /// Muted text: timestamps, secondary labels. ~7.5–8:1.
+    /// Muted text: timestamps, secondary labels.
     pub text_muted: Hsla,
-    /// Faint text: placeholders, disabled. ~4.5:1 — AA for body copy.
+    /// Faint text: placeholders, disabled.
     pub text_faint: Hsla,
     /// One notch below `text_muted` — the diff file-path tone. It exists as its
     /// own token rather than being folded into `text_muted` because the dark
