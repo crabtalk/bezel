@@ -116,8 +116,9 @@ pub fn bindings() -> Vec<KeyBinding> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MenubarEvent {
     /// `path` is a row index per level, outermost first — one entry for a
-    /// top-level row, two for a row in a submenu. [`Menu::at`] turns it back
-    /// into the item.
+    /// top-level row, two for a row in a submenu — and then the segment's
+    /// index for a pick in a segmented row. [`Menu::at`] turns it back into
+    /// the item.
     Selected { menu: usize, path: Vec<usize> },
 }
 
@@ -230,21 +231,27 @@ impl Menubar {
         cx.notify();
     }
 
-    /// `right`: into the submenu under the cursor if there is one, else across
-    /// to the next menu. A submenu row that swallowed `right` without opening
-    /// would be a dead key on the one row that has somewhere to go.
+    /// `right`: to the next segment of a segmented row, else into the submenu
+    /// under the cursor if there is one, else across to the next menu. A
+    /// submenu row that swallowed `right` without opening would be a dead key
+    /// on the one row that has somewhere to go.
     fn go_deeper(&mut self, cx: &mut Context<Self>) {
         let Some(menu) = self.open_menu() else { return };
-        if self.cursor.descend(&self.menus[menu].items) {
+        let items = &self.menus[menu].items;
+        if self.cursor.slide(items, 1) || self.cursor.descend(items) {
             cx.notify();
         } else {
             self.step_menu(1, cx);
         }
     }
 
-    /// `left`: out of the innermost submenu, else back to the previous menu.
+    /// `left`: to the previous segment of a segmented row, else out of the
+    /// innermost submenu, else back to the previous menu.
     fn go_shallower(&mut self, cx: &mut Context<Self>) {
-        if self.cursor.ascend() {
+        let slid = self
+            .open_menu()
+            .is_some_and(|menu| self.cursor.slide(&self.menus[menu].items, -1));
+        if slid || self.cursor.ascend() {
             cx.notify();
         } else {
             self.step_menu(-1, cx);
