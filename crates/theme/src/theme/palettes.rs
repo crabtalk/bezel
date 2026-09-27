@@ -1,6 +1,6 @@
 //! The two concrete palettes: dark and light.
 
-use gpui::hsla;
+use gpui::{hsla, rgb};
 
 use crate::{
     Appearance, Ink, TextInk, color, paint,
@@ -45,7 +45,7 @@ impl Theme {
             surface_raised_hover: color::neutral(0.29),
             band: paint::band_for(Appearance::Dark),
             input_bg: hsla(0.0, 0.0, 1.0, 0.03),
-            selection: hsla(0.66, 0.6, 0.55, 0.35),
+            selection: rgb(0x3f638b).into(),
             cursor: hsla(0.0, 0.0, 1.0, 0.35),
             caret: color::neutral(0.673), // the accent
             ring: paint::hairline_for(Appearance::Dark, 0.35), // ~2.5× border_strong
@@ -193,7 +193,7 @@ impl Theme {
             // the dark 16% would read as a bruise.
             band: paint::band_for(Appearance::Light),
             input_bg: color::grey(0xff),
-            selection: hsla(0.66, 0.75, 0.62, 0.28),
+            selection: rgb(0xb3d7ff).into(),
             cursor: hsla(0.0, 0.0, 0.0, 0.55),
             caret: color::neutral(0.511), // the accent
             ring: paint::hairline_for(Appearance::Light, 0.35),

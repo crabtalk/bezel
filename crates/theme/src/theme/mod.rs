@@ -297,6 +297,10 @@ pub struct Theme {
     /// the border and shadow carrying the elevation.
     pub input_bg: Hsla,
     /// Text-selection highlight in the composer and inputs.
+    ///
+    /// Opaque, painted under the text. Measured macOS 26, 2026-09-27, default
+    /// accent: `NSColor.selectedTextBackgroundColor` is `#B3D7FF` light and
+    /// `#3F638B` dark.
     pub selection: Hsla,
     /// Terminal block cursor.
     pub cursor: Hsla,
