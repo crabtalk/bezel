@@ -52,6 +52,9 @@ pub(super) struct Heights {
     /// A block's height by [`block_key`], as last measured at whatever width
     /// the column had then.
     by_key: HashMap<u64, Pixels>,
+    /// The height last measured at each column index, whatever block was
+    /// there.
+    by_index: Vec<Pixels>,
 }
 
 /// One shaped run and the slice of its part it covers.
@@ -338,21 +341,34 @@ impl BlockLayouts {
         self.0.borrow_mut().checkboxes.push((ix, bounds));
     }
 
-    pub(super) fn height(&self, key: u64) -> Option<Pixels> {
-        self.0.borrow().heights.by_key.get(&key).copied()
+    /// The height last measured for `key`, or else for whatever block was
+    /// last at `ix`.
+    pub(super) fn height(&self, ix: usize, key: u64) -> Option<Pixels> {
+        let heights = &self.0.borrow().heights;
+        heights
+            .by_key
+            .get(&key)
+            .or_else(|| heights.by_index.get(ix))
+            .copied()
     }
 
-    pub(super) fn record_height(&self, key: u64, height: Pixels) {
-        self.0.borrow_mut().heights.by_key.insert(key, height);
+    pub(super) fn record_height(&self, ix: usize, key: u64, height: Pixels) {
+        let heights = &mut self.0.borrow_mut().heights;
+        heights.by_key.insert(key, height);
+        if heights.by_index.len() <= ix {
+            heights.by_index.resize(ix + 1, px(0.0));
+        }
+        heights.by_index[ix] = height;
     }
 
     /// Drops the heights of blocks no longer in the document once they
     /// outnumber the ones that are.
     pub(super) fn prune(&self, keys: &[u64]) {
-        let by_key = &mut self.0.borrow_mut().heights.by_key;
-        if by_key.len() > 2 * keys.len() {
+        let heights = &mut self.0.borrow_mut().heights;
+        heights.by_index.truncate(keys.len());
+        if heights.by_key.len() > 2 * keys.len() {
             let keep: std::collections::HashSet<u64> = keys.iter().copied().collect();
-            by_key.retain(|key, _| keep.contains(key));
+            heights.by_key.retain(|key, _| keep.contains(key));
         }
     }
 

@@ -647,7 +647,7 @@ fn guess(block: &Block, typography: &Typography) -> Guess {
         },
         BlockKind::Table { rows, .. } => Guess {
             rows: rows.len() + 1,
-            extra: px(8.0) * (rows.len() + 1) as f32,
+            extra: px(2.0 * TABLE_CELL_PADDING + TABLE_DIVIDER) * (rows.len() + 1) as f32,
             ..prose(0, body)
         },
         BlockKind::Image { alt, .. } => Guess {

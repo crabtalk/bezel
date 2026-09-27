@@ -42,7 +42,8 @@ impl Guess {
 /// measure into.
 ///
 /// Its height is every block's last measured height, at whatever width that
-/// was, or its [`Guess`], plus the gaps. At prepaint it builds the blocks within half a screen of the part
+/// was, else the last height measured at its index, else its [`Guess`], plus
+/// the gaps. At prepaint it builds the blocks within half a screen of the part
 /// of the window it shows, and those in `keep`, and lays them out around the
 /// first block showing, which stays where the last frame's heights put it.
 /// Heights that come out different above that block move `scroll` by the
@@ -68,7 +69,12 @@ impl Column {
 fn heights(layouts: &BlockLayouts, keys: &[u64], guesses: &[Guess], width: Pixels) -> Vec<Pixels> {
     keys.iter()
         .zip(guesses)
-        .map(|(key, guess)| layouts.height(*key).unwrap_or_else(|| guess.height(width)))
+        .enumerate()
+        .map(|(ix, (key, guess))| {
+            layouts
+                .height(ix, *key)
+                .unwrap_or_else(|| guess.height(width))
+        })
         .collect()
 }
 
@@ -238,7 +244,8 @@ impl Element for Column {
             let top = placed[item.ix].unwrap_or(tops[item.ix]);
             item.element
                 .prepaint_at(bounds.origin + point(px(0.0), top), window, cx);
-            self.layouts.record_height(self.keys[item.ix], *measured);
+            self.layouts
+                .record_height(item.ix, self.keys[item.ix], *measured);
         }
 
         if shift != px(0.0)
