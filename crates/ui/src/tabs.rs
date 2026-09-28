@@ -9,7 +9,8 @@
 //!
 //! [`Strip`] is the order and the activation, and imports no gpui — closing,
 //! cycling and reordering are `Vec` arithmetic, testable without a window. The
-//! paint is [`bar`], [`tab`] and [`close`].
+//! paint is [`bar`], [`tab`] and [`close`], with [`drop_mark`] for a drop
+//! target and [`Reorder`] for a tab carried along its strip.
 //!
 //! What a tab *holds* never enters this module. `Id` is the caller's key, and
 //! the body it opens is the caller's match on that key.
@@ -30,12 +31,20 @@
 //! }))
 //! ```
 
-use gpui::{Div, ElementId, SharedString, Stateful, div, prelude::*, px};
+use std::cmp::Ordering;
+
+use gpui::{
+    BoxShadow, Div, ElementId, SharedString, Stateful, StyleRefinement, div, point, prelude::*, px,
+};
 
 use icons::Icon;
 use theme::{TextStyle, Theme, Typeset};
 
 use crate::widgets::{self, Buttons as _};
+
+mod reorder;
+
+pub use reorder::Reorder;
 
 /// An ordered set of tabs, one of them active.
 ///
@@ -165,6 +174,46 @@ impl<Id: Clone + PartialEq> Strip<Id> {
         let moved = self.order.remove(from);
         self.order.insert(to, moved);
     }
+
+    /// Carry `id` `travel` pixels along the strip from its slot, positive to
+    /// the right, passing every neighbour whose centre its own centre crosses.
+    ///
+    /// Returns the tabs passed, in the order passed, and the travel left over
+    /// past the new slot. `width` measures a tab; a tab it cannot measure is
+    /// not passed, and neither is anything beyond it.
+    pub fn carry(
+        &mut self,
+        id: &Id,
+        travel: f32,
+        width: impl Fn(&Id) -> Option<f32>,
+    ) -> (Vec<Id>, f32) {
+        let mut passed = Vec::new();
+        let (Some(mut at), Some(own)) = (self.index_of(id), width(id)) else {
+            return (passed, travel);
+        };
+        let mut travel = travel;
+        loop {
+            let next = match travel.partial_cmp(&0.0) {
+                Some(Ordering::Greater) => at + 1,
+                Some(Ordering::Less) if at > 0 => at - 1,
+                _ => break,
+            };
+            let Some(neighbour) = self.order.get(next).cloned() else {
+                break;
+            };
+            let Some(theirs) = width(&neighbour) else {
+                break;
+            };
+            if travel.abs() <= (own + theirs) / 2.0 + GAP {
+                break;
+            }
+            travel -= travel.signum() * (theirs + GAP);
+            self.order.swap(at, next);
+            passed.push(neighbour);
+            at = next;
+        }
+        (passed, travel)
+    }
 }
 
 /// What a tab shows.
@@ -226,6 +275,43 @@ pub enum State {
 pub enum Close {
     Always,
     OnHover,
+}
+
+/// The edge of a tab a drop lands on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Leading,
+    Trailing,
+}
+
+impl Side {
+    /// Where a tab moved from `from` to `to` lands on the tab whose place it
+    /// takes: its trailing edge moving right, its leading edge moving left.
+    /// `None` when it stays put.
+    pub fn of(from: usize, to: usize) -> Option<Self> {
+        match from.cmp(&to) {
+            Ordering::Less => Some(Self::Trailing),
+            Ordering::Greater => Some(Self::Leading),
+            Ordering::Equal => None,
+        }
+    }
+}
+
+/// A [`tab`]'s drop mark, for its `drag_over` style: a 1px accent line on
+/// `side`, in the gap beside the tab. A shadow, so the tab's layout does not
+/// move.
+pub fn drop_mark(style: StyleRefinement, side: Side, theme: &Theme) -> StyleRefinement {
+    let x = match side {
+        Side::Leading => px(-1.0),
+        Side::Trailing => px(1.0),
+    };
+    style.shadow(vec![BoxShadow {
+        color: theme.accent.opacity(0.6),
+        offset: point(x, px(0.0)),
+        blur_radius: px(0.0),
+        spread_radius: px(0.0),
+        inset: false,
+    }])
 }
 
 /// How wide one tab grows before its label truncates.
