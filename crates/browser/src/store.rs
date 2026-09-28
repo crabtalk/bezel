@@ -25,7 +25,7 @@ impl DataStore {
         self
     }
 
-    /// Windows and Linux: the directory the store lives in. Pages built with
+    /// Windows: the directory the store lives in. Pages built with
     /// one directory share one store. Ignored on macOS.
     pub fn with_directory(mut self, directory: impl Into<PathBuf>) -> Self {
         self.directory = Some(directory.into());
@@ -42,8 +42,8 @@ impl DataStore {
 
     /// Clears the cookies, storage and cache this store keeps, whether or not
     /// a page built with it is open. Resolves to whether it was cleared: an
-    /// incognito store keeps nothing and resolves `true`; on Windows, and off
-    /// macOS, Windows and Linux, it resolves `false`.
+    /// incognito store keeps nothing and resolves `true`. Resolves `false` off
+    /// macOS.
     ///
     /// On macOS before 14 an identifier's store is the default one.
     pub fn clear(&self, cx: &App) -> Task<bool> {

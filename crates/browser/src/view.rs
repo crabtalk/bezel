@@ -8,12 +8,7 @@ use gpui::{
     IntoElement, KeyBinding, Render, Subscription, Task, Window, actions, div, prelude::*,
 };
 use serde::de::DeserializeOwned;
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-    rc::Rc,
-    time::Duration,
-};
+use std::{fmt, rc::Rc, time::Duration};
 
 /// A webview showing one page.
 ///
@@ -39,8 +34,7 @@ use std::{
 /// is painted in its place; until the still arrives the page stays over the
 /// cover. Elsewhere the place is left empty.
 ///
-/// Linux needs gpui on X11 and paints nothing under Wayland. Paints nothing
-/// off macOS, Windows and Linux.
+/// Paints nothing off macOS and Windows.
 pub struct WebView {
     page: Rc<Page>,
     location: Option<String>,
@@ -65,19 +59,6 @@ pub enum WebViewEvent {
     /// `target="_blank"` link or `window.open`. No window opens and the page
     /// stays where it is; where the URL goes is the host's.
     NewWindow(String),
-    /// A download the host's destination took began, saving to `path`.
-    DownloadStarted {
-        url: String,
-        path: PathBuf,
-    },
-    /// A download ended, whether or not it succeeded. `path` is where it was
-    /// saved; always `None` on macOS, where the path is the one
-    /// [`Self::DownloadStarted`] carried.
-    DownloadFinished {
-        url: String,
-        path: Option<PathBuf>,
-        succeeded: bool,
-    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,32 +163,9 @@ impl WebView {
         self
     }
 
-    /// Takes the page's downloads. `destination` is called with each
-    /// download's URL and the path the platform proposes, in the user's
-    /// download folder, and returns the absolute path to save to, or `None` to
-    /// refuse the download. Without one, every download is refused. There is
-    /// no progress report: a download is [`WebViewEvent::DownloadStarted`],
-    /// then [`WebViewEvent::DownloadFinished`].
-    pub fn with_downloads(
-        mut self,
-        destination: impl FnMut(&str, &Path) -> Option<PathBuf> + 'static,
-    ) -> Self {
-        self.set_downloads(destination);
-        self
-    }
-
-    /// [`Self::with_downloads`] on a live page: the next download asks
-    /// `destination`.
-    pub fn set_downloads(
-        &mut self,
-        destination: impl FnMut(&str, &Path) -> Option<PathBuf> + 'static,
-    ) {
-        *self.page.downloads.borrow_mut() = Some(Box::new(destination));
-    }
-
     /// Clears the cookies, storage and cache in the page's store, for every
-    /// page that shares it. `false` before the first paint and off macOS,
-    /// Windows and Linux, where there is no store to clear.
+    /// page that shares it. `false` before the first paint, and off macOS and
+    /// Windows, where there is no store to clear.
     pub fn clear_data(&self) -> bool {
         self.page.clear_data()
     }
@@ -323,12 +281,6 @@ impl WebView {
                 }
             }
             Report::Opened(url) => cx.emit(WebViewEvent::NewWindow(url)),
-            Report::Download(url, path) => cx.emit(WebViewEvent::DownloadStarted { url, path }),
-            Report::Downloaded(url, path, succeeded) => cx.emit(WebViewEvent::DownloadFinished {
-                url,
-                path,
-                succeeded,
-            }),
             Report::Still(still) => {
                 self.page.captured(still);
                 cx.notify();

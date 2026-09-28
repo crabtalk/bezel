@@ -2,27 +2,19 @@ use crate::{DataStore, LoadState, host::Surface};
 use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
 use std::{
     cell::{Cell, RefCell},
-    path::{Path, PathBuf},
     sync::Arc,
 };
 
-/// Picks where a download is saved, or refuses it.
-pub(crate) type Destination = Box<dyn FnMut(&str, &Path) -> Option<PathBuf>>;
-
 #[cfg_attr(target_os = "macos", path = "page/macos.rs")]
 #[cfg_attr(target_os = "windows", path = "page/windows.rs")]
-#[cfg_attr(target_os = "linux", path = "page/linux.rs")]
 #[cfg_attr(
-    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    not(any(target_os = "macos", target_os = "windows")),
     path = "page/stub.rs"
 )]
 mod platform;
 
 /// Sent from the page's callbacks to the view.
-#[cfg_attr(
-    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-    allow(dead_code)
-)]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 pub(crate) enum Report {
     Pressed,
     /// A key the page took that the keymap binds.
@@ -34,11 +26,6 @@ pub(crate) enum Report {
     Title(String),
     /// The page asked for a window of its own, for this URL.
     Opened(String),
-    /// A download began, saving to this path.
-    Download(String, PathBuf),
-    /// A download ended: where it was saved, if the platform says, and
-    /// whether it succeeded.
-    Downloaded(String, Option<PathBuf>, bool),
     /// A still of the page, taken for a cover; `None` if the capture failed.
     Still(Option<Arc<RenderImage>>),
 }
@@ -68,27 +55,13 @@ pub(crate) enum Edit {
 
 pub(crate) struct Page {
     /// What the page is built with; unread once it is built.
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     url: RefCell<String>,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) user_agent: RefCell<Option<String>>,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) store: RefCell<DataStore>,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
-    pub(crate) downloads: std::rc::Rc<RefCell<Option<Destination>>>,
-    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// Where the page last sat; `None` before the first paint and while parked.
     placed: Cell<Option<Bounds<Pixels>>>,
@@ -99,15 +72,9 @@ pub(crate) struct Page {
     /// A still painted before the page was uncovered, to free from the atlas.
     dropped: RefCell<Option<Arc<RenderImage>>>,
     pub(crate) focus: FocusHandle,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     reports: async_channel::Sender<Report>,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     platform: platform::State,
 }
 
@@ -125,8 +92,7 @@ impl Page {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
             store: RefCell::new(DataStore::default()),
-            downloads: std::rc::Rc::default(),
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
             window: Cell::new(None),
@@ -203,7 +169,7 @@ impl Page {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 impl Page {
     /// Where a parked page waits. Hidden alone, a WKWebView stays registered as
     /// a drag destination over its last rect and takes every drag that crosses
@@ -301,27 +267,6 @@ impl Page {
                 None => builder,
             };
             let builder = platform::store(builder, store.identifier);
-            let (destination, started, finished) = (
-                self.downloads.clone(),
-                self.reports.clone(),
-                self.reports.clone(),
-            );
-            let builder = builder
-                .with_download_started_handler(move |url, path| {
-                    let chosen = destination
-                        .borrow_mut()
-                        .as_mut()
-                        .and_then(|destination| destination(&url, path));
-                    let Some(chosen) = chosen else {
-                        return false;
-                    };
-                    *path = chosen;
-                    let _ = started.try_send(Report::Download(url, path.clone()));
-                    true
-                })
-                .with_download_completed_handler(move |url, path, ok| {
-                    let _ = finished.try_send(Report::Downloaded(url, path, ok));
-                });
             platform::build(builder, window)?
                 .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
                 .ok()
@@ -458,7 +403,7 @@ impl Page {
 
 /// Runs `build` with the context for `directory`, or with none, which has wry
 /// make the page its own.
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn with_context<T>(
     directory: Option<std::path::PathBuf>,
     build: impl FnOnce(Option<&mut wry::WebContext>) -> T,
@@ -472,7 +417,7 @@ fn with_context<T>(
 /// Runs `f` with the context for `directory`, `None` being the platform's
 /// default store. A context lives as long as the thread: pages built with it
 /// hold on to it.
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn shared_context<T>(
     directory: Option<std::path::PathBuf>,
     f: impl FnOnce(&mut wry::WebContext) -> T,
@@ -495,7 +440,7 @@ pub(crate) fn clear_store(store: &DataStore, done: impl FnOnce(bool) + Send + 's
     platform::clear_store(store, done);
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn rect(bounds: Bounds<Pixels>) -> wry::Rect {
     wry::Rect {
         position: wry::dpi::LogicalPosition::new(
