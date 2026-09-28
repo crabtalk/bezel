@@ -273,6 +273,29 @@ pub fn surface_shadows() -> Vec<BoxShadow> {
     ]
 }
 
+/// The shadow a client-decorated window's frame casts. Every layer reaches at
+/// most [`Theme::CLIENT_INSET`](crate::Theme::CLIENT_INSET) past the surface
+/// on every side (offset + blur + spread); the window's edge clips anything
+/// further.
+pub fn frame_shadows() -> Vec<BoxShadow> {
+    vec![
+        BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, 0.16),
+            offset: point(px(0.0), px(2.0)),
+            blur_radius: px(8.0),
+            spread_radius: px(-1.0),
+            inset: false,
+        },
+        BoxShadow {
+            color: hsla(0.0, 0.0, 0.0, 0.1),
+            offset: point(px(0.0), px(1.0)),
+            blur_radius: px(2.0),
+            spread_radius: px(0.0),
+            inset: false,
+        },
+    ]
+}
+
 /// Selection outline for rows and chips INSIDE a floating card (menu rows,
 /// the picker rail, segmented chips): the inset ring alone, in both
 /// appearances. Card rows fill with a translucent wash

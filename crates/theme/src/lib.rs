@@ -52,9 +52,9 @@ pub use color::{
 };
 pub use paint::{
     INK_FILL_SCALE, INK_HAIRLINE_SCALE, SCRIM_ALPHA_DARK, band, card_selected_bg,
-    card_selected_shadows, current_appearance, glass_selected_bg, glass_selected_shadows, hairline,
-    ink, lock_appearance, scrim, set_current_appearance, surface_shadows, theme_generation,
-    user_bubble_bg, wash,
+    card_selected_shadows, current_appearance, frame_shadows, glass_selected_bg,
+    glass_selected_shadows, hairline, ink, lock_appearance, scrim, set_current_appearance,
+    surface_shadows, theme_generation, user_bubble_bg, wash,
 };
 pub use theme::{
     ControlSize, Glass, HighlightKind, Material, MaterialSpec, Metrics, Sizing, SurfaceSpec,

@@ -719,3 +719,14 @@ fn clear_glass_has_no_flat_tone() {
         assert_eq!(spec.flat(spec.tint), None);
     }
 }
+
+#[test]
+fn the_frame_shadow_stays_inside_the_client_inset() {
+    for shadow in frame_shadows() {
+        let reach = f32::from(shadow.blur_radius) + f32::from(shadow.spread_radius);
+        let (x, y) = (f32::from(shadow.offset.x), f32::from(shadow.offset.y));
+        for side in [reach + x, reach - x, reach + y, reach - y] {
+            assert!(side <= Theme::CLIENT_INSET, "{shadow:?} reaches {side}px");
+        }
+    }
+}
