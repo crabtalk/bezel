@@ -175,7 +175,8 @@ impl WebView {
     }
 
     /// The store the page is built with, in place of the platform's default.
-    /// Read at the first paint.
+    /// Read at the first paint. A page keeps the store it was built with: a
+    /// different store takes a new `WebView`.
     pub fn with_data_store(self, store: DataStore) -> Self {
         *self.page.store.borrow_mut() = store;
         self
@@ -184,15 +185,24 @@ impl WebView {
     /// Takes the page's downloads. `destination` is called with each
     /// download's URL and the path the platform proposes, in the user's
     /// download folder, and returns the absolute path to save to, or `None` to
-    /// refuse the download. Read at the first paint. There is no progress
-    /// report: a download is [`WebViewEvent::DownloadStarted`], then
-    /// [`WebViewEvent::DownloadFinished`].
+    /// refuse the download. Without one, every download is refused. There is
+    /// no progress report: a download is [`WebViewEvent::DownloadStarted`],
+    /// then [`WebViewEvent::DownloadFinished`].
     pub fn with_downloads(
-        self,
+        mut self,
         destination: impl FnMut(&str, &Path) -> Option<PathBuf> + 'static,
     ) -> Self {
-        *self.page.downloads.borrow_mut() = Some(Box::new(destination));
+        self.set_downloads(destination);
         self
+    }
+
+    /// [`Self::with_downloads`] on a live page: the next download asks
+    /// `destination`.
+    pub fn set_downloads(
+        &mut self,
+        destination: impl FnMut(&str, &Path) -> Option<PathBuf> + 'static,
+    ) {
+        *self.page.downloads.borrow_mut() = Some(Box::new(destination));
     }
 
     /// Clears the cookies, storage and cache in the page's store, for every

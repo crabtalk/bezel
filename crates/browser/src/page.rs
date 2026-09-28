@@ -87,7 +87,7 @@ pub(crate) struct Page {
         not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
         allow(dead_code)
     )]
-    pub(crate) downloads: RefCell<Option<Destination>>,
+    pub(crate) downloads: std::rc::Rc<RefCell<Option<Destination>>>,
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// Where the page last sat; `None` before the first paint and while parked.
@@ -125,7 +125,7 @@ impl Page {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
             store: RefCell::new(DataStore::default()),
-            downloads: RefCell::new(None),
+            downloads: std::rc::Rc::default(),
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
@@ -301,24 +301,27 @@ impl Page {
                 None => builder,
             };
             let builder = platform::store(builder, store.identifier);
-            let builder = match self.downloads.take() {
-                Some(mut destination) => {
-                    let (started, finished) = (self.reports.clone(), self.reports.clone());
-                    builder
-                        .with_download_started_handler(move |url, path| {
-                            let Some(chosen) = destination(&url, path) else {
-                                return false;
-                            };
-                            *path = chosen;
-                            let _ = started.try_send(Report::Download(url, path.clone()));
-                            true
-                        })
-                        .with_download_completed_handler(move |url, path, ok| {
-                            let _ = finished.try_send(Report::Downloaded(url, path, ok));
-                        })
-                }
-                None => builder,
-            };
+            let (destination, started, finished) = (
+                self.downloads.clone(),
+                self.reports.clone(),
+                self.reports.clone(),
+            );
+            let builder = builder
+                .with_download_started_handler(move |url, path| {
+                    let chosen = destination
+                        .borrow_mut()
+                        .as_mut()
+                        .and_then(|destination| destination(&url, path));
+                    let Some(chosen) = chosen else {
+                        return false;
+                    };
+                    *path = chosen;
+                    let _ = started.try_send(Report::Download(url, path.clone()));
+                    true
+                })
+                .with_download_completed_handler(move |url, path, ok| {
+                    let _ = finished.try_send(Report::Downloaded(url, path, ok));
+                });
             platform::build(builder, window)?
                 .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
                 .ok()
