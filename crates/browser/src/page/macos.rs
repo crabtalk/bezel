@@ -145,6 +145,11 @@ pub(super) fn forward(view: &wry::WebView) {
     unsafe { view.webview().goForward() };
 }
 
+pub(super) fn reload_bypassing_cache(view: &wry::WebView) {
+    // SAFETY: called on the main thread.
+    unsafe { view.webview().reloadFromOrigin() };
+}
+
 /// Takes a still of the page's visible rect, at the backing scale. `done`
 /// runs on the main thread.
 pub(super) fn capture(

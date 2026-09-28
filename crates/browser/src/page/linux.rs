@@ -103,6 +103,12 @@ pub(super) fn forward(view: &wry::WebView) {
     view.webview().go_forward();
 }
 
+pub(super) fn reload_bypassing_cache(view: &wry::WebView) {
+    use webkit2gtk::WebViewExt;
+
+    view.webview().reload_bypass_cache();
+}
+
 pub(super) fn closed(_view: &wry::WebView) -> bool {
     false
 }

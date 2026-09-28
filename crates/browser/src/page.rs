@@ -390,6 +390,12 @@ impl Page {
         }
     }
 
+    pub(crate) fn reload_bypassing_cache(&self) {
+        if let Some(view) = self.built() {
+            platform::reload_bypassing_cache(view);
+        }
+    }
+
     /// Whether the page was built to clear. Clears every kind of data its
     /// store holds.
     pub(crate) fn clear_data(&self) -> bool {

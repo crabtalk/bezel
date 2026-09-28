@@ -40,6 +40,8 @@ impl Page {
 
     pub(crate) fn reload(&self) {}
 
+    pub(crate) fn reload_bypassing_cache(&self) {}
+
     pub(crate) fn location(&self) -> Option<String> {
         None
     }

@@ -226,6 +226,11 @@ impl WebView {
         self.page.reload();
     }
 
+    /// Reloads from the network, past the cache.
+    pub fn reload_bypassing_cache(&mut self) {
+        self.page.reload_bypassing_cache();
+    }
+
     /// Evaluates `script`, a JavaScript expression, in the page's main frame
     /// and decodes its value from JSON. `undefined` decodes as `null`; a
     /// promise is not awaited.

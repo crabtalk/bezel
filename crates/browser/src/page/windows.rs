@@ -110,6 +110,21 @@ pub(super) fn forward(view: &wry::WebView) {
     let _ = unsafe { view.webview().GoForward() };
 }
 
+/// Through the DevTools protocol: WebView2 has no reload that skips the cache.
+pub(super) fn reload_bypassing_cache(view: &wry::WebView) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2CallDevToolsProtocolMethodCompletedHandler;
+    use windows::core::w;
+
+    // SAFETY: called on the thread that owns the webview.
+    let _ = unsafe {
+        view.webview().CallDevToolsProtocolMethod(
+            w!("Page.reload"),
+            w!(r#"{"ignoreCache":true}"#),
+            None::<&ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>,
+        )
+    };
+}
+
 pub(super) fn closed(_view: &wry::WebView) -> bool {
     false
 }
