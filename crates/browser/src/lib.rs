@@ -13,5 +13,5 @@ mod view;
 
 #[cfg(target_family = "wasm")]
 pub use frame::Frame;
-pub use store::DataStore;
+pub use store::{DataStore, Usage};
 pub use view::{EvalError, LoadState, WebView, WebViewEvent};

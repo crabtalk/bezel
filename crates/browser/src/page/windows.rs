@@ -145,3 +145,11 @@ pub(super) fn capture(
 pub(super) fn clear_store(_store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
     done(false);
 }
+
+// TODO: report a store's usage on Windows.
+pub(super) fn store_usage(
+    _store: &crate::DataStore,
+    done: impl FnOnce(Option<crate::Usage>) + Send + 'static,
+) {
+    done(None);
+}

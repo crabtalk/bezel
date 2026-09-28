@@ -50,10 +50,6 @@ impl Page {
         None
     }
 
-    pub(crate) fn clear_data(&self) -> bool {
-        false
-    }
-
     pub(crate) fn eval(&self, _script: &str, _done: impl Fn(String) + Send + 'static) -> bool {
         false
     }
@@ -71,4 +67,11 @@ impl Page {
 
 pub(super) fn clear_store(_store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
     done(false);
+}
+
+pub(super) fn store_usage(
+    _store: &crate::DataStore,
+    done: impl FnOnce(Option<crate::Usage>) + Send + 'static,
+) {
+    done(None);
 }

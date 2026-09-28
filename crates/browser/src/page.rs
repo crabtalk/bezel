@@ -355,13 +355,6 @@ impl Page {
         }
     }
 
-    /// Whether the page was built to clear. Clears every kind of data its
-    /// store holds.
-    pub(crate) fn clear_data(&self) -> bool {
-        self.built()
-            .is_some_and(|view| view.clear_all_browsing_data().is_ok())
-    }
-
     pub(crate) fn location(&self) -> Option<String> {
         self.built()?.url().ok()
     }
@@ -449,6 +442,15 @@ fn shared_context<T>(
 /// Clears `store`, calling `done` with whether it was cleared.
 pub(crate) fn clear_store(store: &DataStore, done: impl FnOnce(bool) + Send + 'static) {
     platform::clear_store(store, done);
+}
+
+/// Reports what `store` holds, calling `done` with `None` where the platform
+/// cannot tell.
+pub(crate) fn store_usage(
+    store: &DataStore,
+    done: impl FnOnce(Option<crate::Usage>) + Send + 'static,
+) {
+    platform::store_usage(store, done);
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]

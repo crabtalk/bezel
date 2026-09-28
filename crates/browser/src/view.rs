@@ -184,13 +184,6 @@ impl WebView {
         self
     }
 
-    /// Clears the cookies, storage and cache in the page's store, for every
-    /// page that shares it. `false` before the first paint, and off macOS and
-    /// Windows, where there is no store to clear.
-    pub fn clear_data(&self) -> bool {
-        self.page.clear_data()
-    }
-
     /// Before the first paint, replaces the URL the page is built with.
     /// After it, navigates the page.
     pub fn load(&mut self, url: impl Into<String>) {

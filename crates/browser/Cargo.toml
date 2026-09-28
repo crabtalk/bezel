@@ -60,6 +60,7 @@ objc2-core-graphics = { version = "0.3", default-features = false, features = [
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
+    "NSArray",
     "NSBundle",
     "NSDate",
     "NSError",
@@ -74,6 +75,7 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
     "WKNavigation",
     "WKSnapshotConfiguration",
     "WKWebView",
+    "WKWebsiteDataRecord",
     "WKWebsiteDataStore",
 ] }
 

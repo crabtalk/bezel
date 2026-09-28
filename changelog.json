@@ -1,5 +1,28 @@
 [
   {
+    "version": "0.2.4",
+    "date": "2026-09-28",
+    "summary": "Tabs that reorder live under the pointer with a drop mark for other drops, a host-installed link handler in markdown, WebView data stores, cache-bypassing reload and back/forward availability, a wired segmented control, and a client-decorated frame whose shadow fits its window.",
+    "new": [
+      "`ui::tabs::Reorder` carries a dragged tab along its strip: the tab follows the pointer, the tabs it passes slide aside over `motion::TAB_SLIDE`, and the strip's order changes during the drag, so a drop needs no handler. `grab` goes in the tab's `on_drag` constructor, `follow` in the bar's `on_drag_move`, and `Reorder::tab` wraps each tab. `Strip::carry` is the swap arithmetic: a tab passes a neighbour once their centres cross.",
+      "`ui::tabs::drop_mark` is a tab's `drag_over` style: a 1px accent line on the `Side` a drop lands on. `Side::of` gives the side for a move from one index to another.",
+      "`markdown::set_link_handler` installs a `LinkHandler` that opens every clicked inline link and bookmark card. Without one a link goes to `App::open_url`.",
+      "`browser::DataStore` names where a page keeps its cookies, storage and cache: incognito, a directory on Windows, or a store identifier on macOS 14 and later. `WebView::with_data_store` builds the page with one. On macOS, `DataStore::clear` clears a store once every page built with it is closed, and `DataStore::usage` reports the sites holding data in it as a `browser::Usage`.",
+      "`browser::WebView::reload_bypassing_cache` reloads from the network: `reloadFromOrigin` on macOS, the DevTools protocol's `Page.reload` on Windows.",
+      "`browser::WebView::can_go_back` and `can_go_forward` answer whether `back` and `forward` would move the page, as of its last load or history move, and `WebViewEvent::History` reports when either changes.",
+      "`Controls::segmented` is a `toggle_group` of labelled segments that reports the index of a clicked segment.",
+      "`theme::frame_shadows` is the shadow a client-decorated window's frame casts, reaching no further than `Theme::CLIENT_INSET` past the surface on any side."
+    ],
+    "changed": [
+      "`bezel-browser` has no Linux backend: on Linux the crate builds and a `WebView` paints nothing, as on every platform but macOS and Windows. It no longer links GTK or WebKitGTK.",
+      "`browser::WebViewEvent` has a `History` variant; a `match` over it needs an arm for it.",
+      "`window::frame` paints `theme::frame_shadows` rather than `theme::surface_shadows`."
+    ],
+    "fixed": [
+      "A client-decorated window's shadow is no longer cut off as a hard rectangle at the window's bottom and side edges."
+    ]
+  },
+  {
     "version": "0.2.3",
     "date": "2026-09-28",
     "summary": "Segmented rows in menus, new-window requests from a WebView's page reported to its host, and a WebView on macOS that gives the keys back to gpui when anything outside it is pressed.",

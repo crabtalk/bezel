@@ -244,26 +244,42 @@ pub(super) fn default_user_agent() -> Option<String> {
     ))
 }
 
-/// Removes every kind of data from the store `store` names: the store for its
-/// identifier from macOS 14, the default store otherwise.
-pub(super) fn clear_store(store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
-    use objc2::MainThreadMarker;
-    use objc2_foundation::{NSDate, NSUUID};
+/// The store `store` names: the store for its identifier from macOS 14, the
+/// default store otherwise. `None` off the main thread.
+fn website_store(
+    store: &crate::DataStore,
+) -> Option<(
+    objc2::rc::Retained<objc2_web_kit::WKWebsiteDataStore>,
+    objc2::MainThreadMarker,
+)> {
+    use objc2_foundation::NSUUID;
     use objc2_web_kit::WKWebsiteDataStore;
 
-    let Some(mtm) = MainThreadMarker::new() else {
-        done(false);
-        return;
-    };
-    let done = std::cell::Cell::new(Some(done));
+    let mtm = objc2::MainThreadMarker::new()?;
     // SAFETY: on the main thread, as the marker proves.
-    unsafe {
-        let data = match store.identifier {
+    let data = unsafe {
+        match store.identifier {
             Some(identifier) if objc2::available!(macos = 14.0) => {
                 WKWebsiteDataStore::dataStoreForIdentifier(&NSUUID::from_bytes(identifier), mtm)
             }
             _ => WKWebsiteDataStore::defaultDataStore(mtm),
-        };
+        }
+    };
+    Some((data, mtm))
+}
+
+/// Removes every kind of data from the store `store` names.
+pub(super) fn clear_store(store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    use objc2_foundation::NSDate;
+    use objc2_web_kit::WKWebsiteDataStore;
+
+    let Some((data, mtm)) = website_store(store) else {
+        done(false);
+        return;
+    };
+    let done = std::cell::Cell::new(Some(done));
+    // SAFETY: on the main thread, as `website_store` proves.
+    unsafe {
         let types = WKWebsiteDataStore::allWebsiteDataTypes(mtm);
         let since = NSDate::dateWithTimeIntervalSince1970(0.0);
         let handler = block2::RcBlock::new(move || {
@@ -272,5 +288,39 @@ pub(super) fn clear_store(store: &crate::DataStore, done: impl FnOnce(bool) + Se
             }
         });
         data.removeDataOfTypes_modifiedSince_completionHandler(&types, &since, &handler);
+    }
+}
+
+/// The sites holding any kind of data in the store `store` names, by the
+/// name WebKit shows for each.
+pub(super) fn store_usage(
+    store: &crate::DataStore,
+    done: impl FnOnce(Option<crate::Usage>) + Send + 'static,
+) {
+    use objc2_foundation::NSArray;
+    use objc2_web_kit::{WKWebsiteDataRecord, WKWebsiteDataStore};
+
+    let Some((data, mtm)) = website_store(store) else {
+        done(None);
+        return;
+    };
+    let done = std::cell::Cell::new(Some(done));
+    // SAFETY: on the main thread, as `website_store` proves; WebKit hands the
+    // records to the handler on the main thread.
+    unsafe {
+        let types = WKWebsiteDataStore::allWebsiteDataTypes(mtm);
+        let handler = block2::RcBlock::new(
+            move |records: std::ptr::NonNull<NSArray<WKWebsiteDataRecord>>| {
+                let sites = records
+                    .as_ref()
+                    .iter()
+                    .map(|record| record.displayName().to_string())
+                    .collect();
+                if let Some(done) = done.take() {
+                    done(Some(crate::Usage { sites }));
+                }
+            },
+        );
+        data.fetchDataRecordsOfTypes_completionHandler(&types, &handler);
     }
 }

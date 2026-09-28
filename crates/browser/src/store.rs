@@ -40,8 +40,9 @@ impl DataStore {
         self
     }
 
-    /// Clears the cookies, storage and cache this store keeps, whether or not
-    /// a page built with it is open. Resolves to whether it was cleared: an
+    /// Clears the cookies, storage and cache this store keeps. Every page
+    /// built with the store must be closed first. Resolves to whether it was
+    /// cleared: an
     /// incognito store keeps nothing and resolves `true`. Resolves `false` off
     /// macOS.
     ///
@@ -57,4 +58,25 @@ impl DataStore {
         cx.foreground_executor()
             .spawn(async move { answer.recv().await.unwrap_or(false) })
     }
+
+    /// What this store holds. Resolves `None` where the platform cannot tell:
+    /// off macOS. An incognito store holds nothing.
+    pub fn usage(&self, cx: &App) -> Task<Option<Usage>> {
+        if self.incognito {
+            return Task::ready(Some(Usage::default()));
+        }
+        let (reported, answer) = async_channel::bounded(1);
+        crate::page::store_usage(self, move |usage| {
+            let _ = reported.try_send(usage);
+        });
+        cx.foreground_executor()
+            .spawn(async move { answer.recv().await.ok().flatten() })
+    }
+}
+
+/// What a [`DataStore`] holds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Usage {
+    /// The sites holding any data, by the name the platform shows for each.
+    pub sites: Vec<String>,
 }
