@@ -447,26 +447,43 @@ impl Page {
     }
 }
 
-/// Runs `build` with the context for `directory`. A context lives as long as
-/// the thread: pages built with it hold on to it.
+/// Runs `build` with the context for `directory`, or with none, which has wry
+/// make the page its own.
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn with_context<T>(
     directory: Option<std::path::PathBuf>,
     build: impl FnOnce(Option<&mut wry::WebContext>) -> T,
 ) -> T {
-    thread_local! {
-        static CONTEXTS: RefCell<std::collections::HashMap<std::path::PathBuf, wry::WebContext>> =
-            RefCell::default();
+    match directory {
+        Some(directory) => shared_context(Some(directory), |context| build(Some(context))),
+        None => build(None),
     }
-    let Some(directory) = directory else {
-        return build(None);
-    };
+}
+
+/// Runs `f` with the context for `directory`, `None` being the platform's
+/// default store. A context lives as long as the thread: pages built with it
+/// hold on to it.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn shared_context<T>(
+    directory: Option<std::path::PathBuf>,
+    f: impl FnOnce(&mut wry::WebContext) -> T,
+) -> T {
+    thread_local! {
+        static CONTEXTS: RefCell<
+            std::collections::HashMap<Option<std::path::PathBuf>, wry::WebContext>,
+        > = RefCell::default();
+    }
     CONTEXTS.with_borrow_mut(|contexts| {
         let context = contexts
             .entry(directory.clone())
-            .or_insert_with(|| wry::WebContext::new(Some(directory)));
-        build(Some(context))
+            .or_insert_with(|| wry::WebContext::new(directory));
+        f(context)
     })
+}
+
+/// Clears `store`, calling `done` with whether it was cleared.
+pub(crate) fn clear_store(store: &DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    platform::clear_store(store, done);
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]

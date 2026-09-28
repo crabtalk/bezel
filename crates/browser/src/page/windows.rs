@@ -124,3 +124,9 @@ pub(super) fn capture(
 ) -> bool {
     false
 }
+
+/// WebView2 reaches a store only through a built page.
+// TODO: clear a store with no page built on Windows.
+pub(super) fn clear_store(_store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    done(false);
+}

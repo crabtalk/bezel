@@ -117,3 +117,27 @@ pub(super) fn capture(
 ) -> bool {
     false
 }
+
+/// Clears every kind of data from the store `store` names. `false` before GTK
+/// is initialized.
+pub(super) fn clear_store(store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    use webkit2gtk::{WebContextExt as _, WebsiteDataManagerExtManual as _};
+    use wry::WebContextExt as _;
+
+    if !gtk::is_initialized() {
+        done(false);
+        return;
+    }
+    super::shared_context(store.directory.clone(), |context| {
+        let Some(manager) = context.context().website_data_manager() else {
+            done(false);
+            return;
+        };
+        manager.clear(
+            webkit2gtk::WebsiteDataTypes::ALL,
+            gtk::glib::TimeSpan::from_seconds(0),
+            None::<&webkit2gtk::gio::Cancellable>,
+            move |result| done(result.is_ok()),
+        );
+    });
+}

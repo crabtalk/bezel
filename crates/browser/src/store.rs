@@ -1,3 +1,4 @@
+use gpui::{App, Task};
 use std::path::PathBuf;
 
 /// Where a page keeps its cookies, storage and cache.
@@ -37,5 +38,23 @@ impl DataStore {
     pub fn with_identifier(mut self, identifier: [u8; 16]) -> Self {
         self.identifier = Some(identifier);
         self
+    }
+
+    /// Clears the cookies, storage and cache this store keeps, whether or not
+    /// a page built with it is open. Resolves to whether it was cleared: an
+    /// incognito store keeps nothing and resolves `true`; on Windows, and off
+    /// macOS, Windows and Linux, it resolves `false`.
+    ///
+    /// On macOS before 14 an identifier's store is the default one.
+    pub fn clear(&self, cx: &App) -> Task<bool> {
+        if self.incognito {
+            return Task::ready(true);
+        }
+        let (cleared, answer) = async_channel::bounded(1);
+        crate::page::clear_store(self, move |ok| {
+            let _ = cleared.try_send(ok);
+        });
+        cx.foreground_executor()
+            .spawn(async move { answer.recv().await.unwrap_or(false) })
     }
 }

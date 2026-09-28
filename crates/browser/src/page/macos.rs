@@ -238,3 +238,34 @@ pub(super) fn default_user_agent() -> Option<String> {
          (KHTML, like Gecko) Version/{version} Safari/605.1.15"
     ))
 }
+
+/// Removes every kind of data from the store `store` names: the store for its
+/// identifier from macOS 14, the default store otherwise.
+pub(super) fn clear_store(store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    use objc2::MainThreadMarker;
+    use objc2_foundation::{NSDate, NSUUID};
+    use objc2_web_kit::WKWebsiteDataStore;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        done(false);
+        return;
+    };
+    let done = std::cell::Cell::new(Some(done));
+    // SAFETY: on the main thread, as the marker proves.
+    unsafe {
+        let data = match store.identifier {
+            Some(identifier) if objc2::available!(macos = 14.0) => {
+                WKWebsiteDataStore::dataStoreForIdentifier(&NSUUID::from_bytes(identifier), mtm)
+            }
+            _ => WKWebsiteDataStore::defaultDataStore(mtm),
+        };
+        let types = WKWebsiteDataStore::allWebsiteDataTypes(mtm);
+        let since = NSDate::dateWithTimeIntervalSince1970(0.0);
+        let handler = block2::RcBlock::new(move || {
+            if let Some(done) = done.take() {
+                done(true);
+            }
+        });
+        data.removeDataOfTypes_modifiedSince_completionHandler(&types, &since, &handler);
+    }
+}

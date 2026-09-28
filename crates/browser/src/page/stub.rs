@@ -62,3 +62,7 @@ impl Page {
 
     pub(crate) fn give_keys(&self) {}
 }
+
+pub(super) fn clear_store(_store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    done(false);
+}
