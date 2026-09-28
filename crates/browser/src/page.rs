@@ -311,6 +311,17 @@ impl Page {
         }
     }
 
+    /// Whether the page can step back and forward; `(false, false)` before
+    /// it is built.
+    pub(crate) fn history(&self) -> (bool, bool) {
+        self.built().map_or((false, false), |view| {
+            (
+                view.can_go_back().unwrap_or(false),
+                view.can_go_forward().unwrap_or(false),
+            )
+        })
+    }
+
     /// Whether the page, or a view inside it, holds keyboard focus.
     pub(crate) fn holds_keys(&self) -> bool {
         self.built()

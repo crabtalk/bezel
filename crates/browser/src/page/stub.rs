@@ -38,6 +38,10 @@ impl Page {
 
     pub(crate) fn forward(&self) {}
 
+    pub(crate) fn history(&self) -> (bool, bool) {
+        (false, false)
+    }
+
     pub(crate) fn reload(&self) {}
 
     pub(crate) fn reload_bypassing_cache(&self) {}

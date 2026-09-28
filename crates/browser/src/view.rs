@@ -40,6 +40,8 @@ pub struct WebView {
     location: Option<String>,
     title: String,
     loading: bool,
+    /// Whether the page could step back, and forward, when it last moved.
+    history: (bool, bool),
     /// The window [`Self::_focus`] listens in.
     focus_window: Option<AnyWindowHandle>,
     _focus: [Subscription; 2],
@@ -54,6 +56,12 @@ pub enum WebViewEvent {
     Location(String),
     /// The page's title changed.
     Title(String),
+    /// Whether [`WebView::back`] and [`WebView::forward`] would move the page
+    /// changed.
+    History {
+        back: bool,
+        forward: bool,
+    },
     Load(LoadState),
     /// The page asked to open this URL in a window of its own: a
     /// `target="_blank"` link or `window.open`. No window opens and the page
@@ -113,6 +121,7 @@ impl WebView {
             location: None,
             title: String::new(),
             loading: false,
+            history: (false, false),
             focus_window: Some(window.window_handle()),
             _focus: subscriptions,
             _reports: task,
@@ -141,6 +150,18 @@ impl WebView {
 
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    /// Whether [`Self::back`] would move the page, as of its last load or
+    /// history move. `false` before the first paint.
+    pub fn can_go_back(&self) -> bool {
+        self.history.0
+    }
+
+    /// Whether [`Self::forward`] would move the page, as of its last load or
+    /// history move. `false` before the first paint.
+    pub fn can_go_forward(&self) -> bool {
+        self.history.1
     }
 
     pub fn is_loading(&self) -> bool {
@@ -267,11 +288,13 @@ impl WebView {
                 if let Some(url) = self.page.location() {
                     self.locate(url, cx);
                 }
+                self.step(cx);
             }
             Report::Load(state, url) => {
                 self.locate(url, cx);
                 self.loading = state == LoadState::Started;
                 cx.emit(WebViewEvent::Load(state));
+                self.step(cx);
             }
             // Live pages rewrite their title, some every second.
             Report::Title(title) => {
@@ -285,6 +308,15 @@ impl WebView {
                 self.page.captured(still);
                 cx.notify();
             }
+        }
+    }
+
+    fn step(&mut self, cx: &mut Context<Self>) {
+        let history = self.page.history();
+        if history != self.history {
+            self.history = history;
+            let (back, forward) = history;
+            cx.emit(WebViewEvent::History { back, forward });
         }
     }
 
