@@ -359,6 +359,14 @@ pub(crate) fn demo_menus() -> Vec<Menu> {
         Menu::new(
             "View",
             vec![
+                Item::segmented(
+                    [
+                        ui::menu::Segment::new(icons::glyph::SquareKanban, "Lanes"),
+                        ui::menu::Segment::new(icons::glyph::List, "List"),
+                    ],
+                    0,
+                ),
+                Item::Separator,
                 Item::action("Toggle Sidebar").with_keystroke(keys::printed("secondary-b")),
                 Item::action("Full Screen").with_keystroke(keys::printed(
                     match cfg!(target_os = "macos") {

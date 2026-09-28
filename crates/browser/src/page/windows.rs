@@ -21,7 +21,7 @@ impl State {
         }
     }
 
-    /// WebView2 reports focus itself, so a press needs no script.
+    /// WebView2 reports focus, and a press with it.
     pub(super) fn attach(&self, view: &wry::WebView, reports: &async_channel::Sender<Report>) {
         use webview2_com::FocusChangedEventHandler;
 
@@ -84,6 +84,10 @@ pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
     view.reparent(handle.hwnd.get())
         .inspect_err(|error| tracing::warn!(%error, "webview: reparent"))
         .is_ok()
+}
+
+pub(super) fn give_keys(view: &wry::WebView) {
+    let _ = view.focus_parent();
 }
 
 pub(super) fn edit(_edit: Edit) {}

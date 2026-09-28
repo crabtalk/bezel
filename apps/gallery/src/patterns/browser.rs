@@ -78,13 +78,13 @@ impl Browser {
             return page.clone();
         }
         let page = cx.new(|cx| WebView::new(HOME, window, cx));
-        let events = cx.subscribe_in(&page, window, |this, _, event, window, cx| {
-            if let WebViewEvent::Location(url) = event
-                && !this.address.focus_handle(cx).is_focused(window)
-            {
+        let events = cx.subscribe_in(&page, window, |this, page, event, window, cx| match event {
+            WebViewEvent::Location(url) if !this.address.focus_handle(cx).is_focused(window) => {
                 this.address
                     .update(cx, |field, cx| field.set_content(url.clone(), cx));
             }
+            WebViewEvent::NewWindow(url) => page.update(cx, |page, _| page.load(url.clone())),
+            _ => {}
         });
         self.page = Some((page.clone(), events));
         page

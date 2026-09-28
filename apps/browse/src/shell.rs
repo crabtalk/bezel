@@ -155,10 +155,12 @@ impl Shell {
     ) -> (Entity<WebView>, Subscription) {
         let page = cx.new(|cx| WebView::new(url, window, cx));
         let events = cx.subscribe_in(&page, window, |this, page, event, window, cx| {
-            if let WebViewEvent::Title(title) = event
-                && this.front_page().as_ref() == Some(page)
-            {
-                window.set_window_title(title);
+            match event {
+                WebViewEvent::Title(title) if this.front_page().as_ref() == Some(page) => {
+                    window.set_window_title(title);
+                }
+                WebViewEvent::NewWindow(url) => this.open(Some(url.clone()), window, cx),
+                _ => {}
             }
             cx.notify();
         });

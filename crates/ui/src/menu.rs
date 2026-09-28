@@ -23,6 +23,9 @@ use theme::{TextStyle, Theme, Typeset};
 /// The leading glyph and the trailing check, at the size the rows are set in.
 const GLYPH: f32 = 13.0;
 
+/// A segment's glyph, over its label.
+const SEGMENT_GLYPH: f32 = 16.0;
+
 /// How wide a panel sits.
 const PANEL_MIN: f32 = 180.0;
 /// How wide one holding a described row sits — a width, not a floor. A
@@ -74,7 +77,31 @@ pub enum Item {
         enabled: bool,
         items: Vec<Item>,
     },
+    /// Options side by side in one row, each a glyph over its label, the
+    /// `selected` one highlighted. A pick is a [`Hit::Choose`] whose path is
+    /// the row's, then the segment's index.
+    Segmented {
+        segments: Vec<Segment>,
+        selected: usize,
+        enabled: bool,
+    },
     Separator,
+}
+
+/// One option of an [`Item::Segmented`] row.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Segment {
+    pub icon: Icon,
+    pub label: SharedString,
+}
+
+impl Segment {
+    pub fn new(icon: impl Into<Icon>, label: impl Into<SharedString>) -> Self {
+        Self {
+            icon: icon.into(),
+            label: label.into(),
+        }
+    }
 }
 
 impl Item {
@@ -99,13 +126,22 @@ impl Item {
         }
     }
 
-    /// No-ops on a separator, which has nothing to hang a glyph on.
+    pub fn segmented(segments: impl IntoIterator<Item = Segment>, selected: usize) -> Self {
+        Item::Segmented {
+            segments: segments.into_iter().collect(),
+            selected,
+            enabled: true,
+        }
+    }
+
+    /// No-ops on a separator, which has nothing to hang a glyph on, and on a
+    /// segmented row, whose glyphs are its segments'.
     pub fn with_icon(mut self, icon: impl Into<Icon>) -> Self {
         match &mut self {
             Item::Action { icon: slot, .. } | Item::Submenu { icon: slot, .. } => {
                 *slot = Some(icon.into())
             }
-            Item::Separator => {}
+            Item::Segmented { .. } | Item::Separator => {}
         }
         self
     }
@@ -191,7 +227,9 @@ impl Item {
 
     pub fn disabled(mut self) -> Self {
         match &mut self {
-            Item::Action { enabled, .. } | Item::Submenu { enabled, .. } => *enabled = false,
+            Item::Action { enabled, .. }
+            | Item::Submenu { enabled, .. }
+            | Item::Segmented { enabled, .. } => *enabled = false,
             Item::Separator => {}
         }
         self
@@ -204,6 +242,9 @@ impl Item {
         match self {
             Item::Action { enabled, .. } => *enabled,
             Item::Submenu { enabled, items, .. } => *enabled && items.iter().any(Item::selectable),
+            Item::Segmented {
+                enabled, segments, ..
+            } => *enabled && !segments.is_empty(),
             Item::Separator => false,
         }
     }
@@ -225,6 +266,16 @@ impl Item {
         )
     }
 
+    /// The segment a cursor landing on this row starts on: the selected one.
+    fn landing(&self) -> Option<usize> {
+        match self {
+            Item::Segmented {
+                segments, selected, ..
+            } if !segments.is_empty() => Some((*selected).min(segments.len() - 1)),
+            _ => None,
+        }
+    }
+
     /// The submenu this row opens, if it is one that can be opened.
     fn opens(&self) -> Option<&[Item]> {
         match self {
@@ -238,7 +289,9 @@ impl Item {
     }
 }
 
-/// The item `path` names — one row index per level, outermost first.
+/// The item `path` names — one row index per level, outermost first. `None`
+/// for a path to a segment of an [`Item::Segmented`] row; its path less the
+/// last index names the row.
 pub fn at<'a>(items: &'a [Item], path: &[usize]) -> Option<&'a Item> {
     let (&row, above) = path.split_last()?;
     items_at(items, above)?.get(row)
@@ -303,8 +356,9 @@ pub fn next_selectable(items: &[Item], from: Option<usize>, delta: isize) -> Opt
 // ---------------------------------------------------------------------------
 
 /// Where an open menu is being worked: `open` is the chain of submenu rows
-/// currently down, outermost first, and `row` is the live row in the menu that
-/// chain ends at.
+/// currently down, outermost first, `row` is the live row in the menu that
+/// chain ends at, and `segment` the live segment when that row is an
+/// [`Item::Segmented`].
 ///
 /// One cursor for both input devices. A menu that tracked hover separately from
 /// the keyboard could have two rows lit and a submenu hanging off neither.
@@ -312,6 +366,7 @@ pub fn next_selectable(items: &[Item], from: Option<usize>, delta: isize) -> Opt
 pub struct Cursor {
     open: Vec<usize>,
     row: Option<usize>,
+    segment: Option<usize>,
 }
 
 impl Cursor {
@@ -325,17 +380,24 @@ impl Cursor {
         self.row
     }
 
+    /// The live segment, while the live row is an [`Item::Segmented`].
+    pub fn segment(&self) -> Option<usize> {
+        self.segment
+    }
+
     /// Whether a submenu is down — where a menubar's `left` closes a level
     /// instead of crossing to the previous menu.
     pub fn nested(&self) -> bool {
         !self.open.is_empty()
     }
 
-    /// The full path to the live row, outermost first.
+    /// The full path to the live row, outermost first, and on to the live
+    /// segment of a segmented row.
     pub fn path(&self) -> Option<Vec<usize>> {
         let row = self.row?;
         let mut path = self.open.clone();
         path.push(row);
+        path.extend(self.segment);
         Some(path)
     }
 
@@ -343,6 +405,7 @@ impl Cursor {
     pub fn clear(&mut self) {
         self.open.clear();
         self.row = None;
+        self.segment = None;
     }
 
     /// The row lit in the panel at `depth`: the row holding the submenu open
@@ -361,6 +424,21 @@ impl Cursor {
             return;
         };
         self.row = next_selectable(items, self.row, delta);
+        self.segment = self.row.and_then(|row| items[row].landing());
+    }
+
+    /// Move across the segments of the live row, stopping at either end.
+    /// `false` when the live row is not an [`Item::Segmented`].
+    pub fn slide(&mut self, root: &[Item], delta: isize) -> bool {
+        let Some(Item::Segmented { segments, .. }) = self
+            .row
+            .and_then(|row| items_at(root, &self.open)?.get(row))
+        else {
+            return false;
+        };
+        let at = self.segment.unwrap_or(0) as isize + delta.signum();
+        self.segment = Some(at.clamp(0, segments.len() as isize - 1) as usize);
+        true
     }
 
     /// Open the submenu under the live row and land on its first row. `false`
@@ -375,6 +453,7 @@ impl Cursor {
             return false;
         };
         self.row = next_selectable(inner, None, 1);
+        self.segment = self.row.and_then(|row| inner[row].landing());
         self.open.push(row);
         true
     }
@@ -385,6 +464,7 @@ impl Cursor {
         match self.open.pop() {
             Some(row) => {
                 self.row = Some(row);
+                self.segment = None;
                 true
             }
             None => false,
@@ -394,22 +474,34 @@ impl Cursor {
     /// Put the cursor on the row `path` names, opening the chain above it and,
     /// if it is a submenu row, itself — pointing at a submenu row is what opens
     /// it. Nothing is lit inside the fresh panel until something moves into it.
+    /// A path to a segment puts the cursor on that segment of its row.
     ///
     /// Answers whether that changed anything, because the pointer reports every
     /// move and only a change is worth a repaint.
     pub fn point_at(&mut self, root: &[Item], path: &[usize]) -> bool {
-        let (open, row) = match path.split_last() {
-            None => (Vec::new(), None),
-            Some((&row, above)) if at(root, path).and_then(Item::opens).is_some() => {
-                (above.iter().copied().chain([row]).collect(), None)
+        let (open, row, segment) = match path {
+            [] => (Vec::new(), None, None),
+            [above @ .., row, segment]
+                if matches!(
+                    at(root, &path[..path.len() - 1]),
+                    Some(Item::Segmented { .. })
+                ) =>
+            {
+                (above.to_vec(), Some(*row), Some(*segment))
             }
-            Some((&row, above)) => (above.to_vec(), Some(row)),
+            _ if at(root, path).and_then(Item::opens).is_some() => (path.to_vec(), None, None),
+            [above @ .., row] => (
+                above.to_vec(),
+                Some(*row),
+                at(root, path).and_then(Item::landing),
+            ),
         };
-        if self.open == open && self.row == row {
+        if self.open == open && self.row == row && self.segment == segment {
             return false;
         }
         self.open = open;
         self.row = row;
+        self.segment = segment;
         true
     }
 }
@@ -531,6 +623,17 @@ impl<V: 'static> Tree<V> {
                         return popover::divider().into_any_element();
                     }
                     let path: Vec<usize> = prefix.iter().copied().chain([row]).collect();
+                    if let Item::Segmented {
+                        segments,
+                        selected,
+                        enabled,
+                    } = item
+                    {
+                        let live = cursor.segment().filter(|_| lit == Some(row));
+                        return self
+                            .segmented(theme, segments, *selected, *enabled, live, &path, cx)
+                            .into_any_element();
+                    }
                     let id = row_id(&self.id, &path);
                     let (label, icon, enabled) = match item {
                         Item::Action {
@@ -545,7 +648,9 @@ impl<V: 'static> Tree<V> {
                             enabled,
                             ..
                         } => (label.clone(), icon.clone(), *enabled),
-                        Item::Separator => unreachable!("separators returned above"),
+                        Item::Segmented { .. } | Item::Separator => {
+                            unreachable!("returned above")
+                        }
                     };
                     let (description, hint) = match item {
                         Item::Action {
@@ -637,6 +742,71 @@ impl<V: 'static> Tree<V> {
                     .track_scroll(&handle)
                     .fill(),
             )
+    }
+
+    /// An [`Item::Segmented`] row: its segments share the row's width, the
+    /// selected one washed, the live one lit the way a live row is.
+    #[allow(clippy::too_many_arguments)]
+    fn segmented(
+        &self,
+        theme: &Theme,
+        segments: &[Segment],
+        selected: usize,
+        enabled: bool,
+        live: Option<usize>,
+        path: &[usize],
+        cx: &mut Context<V>,
+    ) -> gpui::Stateful<gpui::Div> {
+        div()
+            .id(row_id(&self.id, path))
+            .flex()
+            .flex_row()
+            .gap(px(popover::MENU_PAD))
+            .children(segments.iter().enumerate().map(|(at, segment)| {
+                let path: Vec<usize> = path.iter().copied().chain([at]).collect();
+                let chosen = at == selected;
+                let ink = match (enabled, chosen || live == Some(at)) {
+                    (false, _) => theme.text_faint.opacity(0.5),
+                    (true, true) => theme.text,
+                    (true, false) => theme.text_muted,
+                };
+                let cell = div()
+                    .id(row_id(&self.id, &path))
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(4.0))
+                    .px(px(8.0))
+                    .py(px(6.0))
+                    .rounded(px(Theme::inset_radius(
+                        Theme::surface_radius(),
+                        popover::MENU_PAD,
+                    )))
+                    .text_style(TextStyle::Callout)
+                    .text_color(ink)
+                    .when(chosen, |cell| {
+                        cell.bg(theme.element_active)
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                    })
+                    .when(!chosen && live == Some(at), |cell| {
+                        cell.bg(theme.card_selected_bg())
+                    })
+                    .child(
+                        icons::icon(segment.icon.clone())
+                            .size(px(SEGMENT_GLYPH))
+                            .text_color(ink),
+                    )
+                    .child(div().max_w_full().truncate().child(segment.label.clone()));
+                match enabled {
+                    true => cell
+                        .cursor_pointer()
+                        .on_mouse_move(self.reports(Hit::Point(path.clone()), cx))
+                        .on_click(self.reports(Hit::Choose(path), cx)),
+                    false => cell,
+                }
+            }))
     }
 
     /// One panel's share of the out-click test: it reports the press it did not

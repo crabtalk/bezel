@@ -19,6 +19,9 @@ impl Example {
         let page = cx.new(|cx| WebView::new("https://example.com", window, cx));
         let events = cx.subscribe(&page, |_, page, event: &WebViewEvent, cx| {
             println!("{event:?}");
+            if let WebViewEvent::NewWindow(url) = event {
+                page.update(cx, |page, _| page.load(url.clone()));
+            }
             if *event == WebViewEvent::Load(LoadState::Finished) {
                 let links = page.read(cx).eval::<usize>(
                     "document.links.length",

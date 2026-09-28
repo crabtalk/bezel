@@ -1,4 +1,4 @@
-use ui::menu::*;
+use ui::{icons, menu::*};
 
 /// `a · ─ · b(disabled) · c`
 fn items() -> Vec<Item> {
@@ -248,4 +248,76 @@ fn a_chain_that_no_longer_resolves_moves_nothing() {
     cursor.step(&flat, 1);
     assert_eq!(cursor.row(), Some(0));
     assert!(!cursor.descend(&flat));
+}
+
+fn segmented() -> Vec<Item> {
+    vec![
+        Item::action("above"),
+        Item::segmented(
+            [
+                Segment::new(icons::glyph::Check, "Lanes"),
+                Segment::new(icons::glyph::ChevronRight, "List"),
+                Segment::new(icons::glyph::ChevronDown, "Table"),
+            ],
+            1,
+        ),
+        Item::action("below"),
+    ]
+}
+
+#[test]
+fn a_segmented_row_is_landed_on_at_its_selection() {
+    let items = segmented();
+    let mut cursor = Cursor::default();
+    cursor.step(&items, 1);
+    assert_eq!(cursor.segment(), None);
+    assert!(!cursor.slide(&items, 1));
+
+    cursor.step(&items, 1);
+    assert_eq!(cursor.row(), Some(1));
+    assert_eq!(cursor.segment(), Some(1));
+    // A pick names the segment after the row.
+    assert_eq!(cursor.path(), Some(vec![1, 1]));
+
+    cursor.step(&items, 1);
+    assert_eq!(cursor.segment(), None);
+    assert_eq!(cursor.path(), Some(vec![2]));
+}
+
+#[test]
+fn sliding_stops_at_either_end() {
+    let items = segmented();
+    let mut cursor = Cursor::default();
+    cursor.point_at(&items, &[1]);
+    assert!(cursor.slide(&items, 1));
+    assert_eq!(cursor.segment(), Some(2));
+    assert!(cursor.slide(&items, 1));
+    assert_eq!(cursor.segment(), Some(2));
+    assert!(cursor.slide(&items, -1));
+    assert!(cursor.slide(&items, -1));
+    assert!(cursor.slide(&items, -1));
+    assert_eq!(cursor.path(), Some(vec![1, 0]));
+}
+
+#[test]
+fn pointing_at_a_segment_lights_it() {
+    let items = segmented();
+    let mut cursor = Cursor::default();
+    assert!(cursor.point_at(&items, &[1, 2]));
+    assert_eq!(cursor.row(), Some(1));
+    assert_eq!(cursor.segment(), Some(2));
+    assert!(!cursor.point_at(&items, &[1, 2]));
+    assert!(cursor.point_at(&items, &[1, 0]));
+    assert!(cursor.point_at(&items, &[0]));
+    assert_eq!(cursor.segment(), None);
+    // A segment path names no item; less its last index it names the row.
+    assert_eq!(at(&items, &[1, 0]), None);
+    assert!(matches!(at(&items, &[1]), Some(Item::Segmented { .. })));
+}
+
+#[test]
+fn a_disabled_or_empty_segmented_row_is_stepped_over() {
+    assert!(!Item::segmented([], 0).selectable());
+    assert!(!segmented()[1].clone().disabled().selectable());
+    assert!(segmented()[1].selectable());
 }

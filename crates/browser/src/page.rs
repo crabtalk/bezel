@@ -28,6 +28,8 @@ pub(crate) enum Report {
     Moved,
     Load(LoadState, String),
     Title(String),
+    /// The page asked for a window of its own, for this URL.
+    Opened(String),
     /// A still of the page, taken for a cover; `None` if the capture failed.
     Still(Option<Arc<RenderImage>>),
 }
@@ -229,7 +231,8 @@ impl Page {
 
     fn build(&self, bounds: Bounds<Pixels>, window: &Window) -> Option<wry::WebView> {
         let url = self.url.borrow();
-        let (ipc, loads, titles) = (
+        let (ipc, loads, titles, opened) = (
+            self.reports.clone(),
             self.reports.clone(),
             self.reports.clone(),
             self.reports.clone(),
@@ -240,7 +243,6 @@ impl Page {
             .with_initialization_script(Self::MOVED)
             .with_ipc_handler(move |request| {
                 let report = match request.body().as_str() {
-                    "pressed" => Report::Pressed,
                     "moved" => Report::Moved,
                     _ => return,
                 };
@@ -255,6 +257,10 @@ impl Page {
             })
             .with_document_title_changed_handler(move |title| {
                 let _ = titles.try_send(Report::Title(title));
+            })
+            .with_new_window_req_handler(move |url, _| {
+                let _ = opened.try_send(Report::Opened(url));
+                wry::NewWindowResponse::Deny
             });
         let user_agent = self
             .user_agent
@@ -359,7 +365,7 @@ impl Page {
         if let Some(view) = self.built()
             && self.holds_keys()
         {
-            let _ = view.focus_parent();
+            platform::give_keys(view);
         }
     }
 
