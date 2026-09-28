@@ -1,4 +1,5 @@
 use crate::{
+    DataStore,
     host::Host,
     page::{Edit, Page, Report},
 };
@@ -153,6 +154,20 @@ impl WebView {
     pub fn with_user_agent(self, user_agent: impl Into<String>) -> Self {
         *self.page.user_agent.borrow_mut() = Some(user_agent.into());
         self
+    }
+
+    /// The store the page is built with, in place of the platform's default.
+    /// Read at the first paint.
+    pub fn with_data_store(self, store: DataStore) -> Self {
+        *self.page.store.borrow_mut() = store;
+        self
+    }
+
+    /// Clears the cookies, storage and cache in the page's store, for every
+    /// page that shares it. `false` before the first paint and off macOS,
+    /// Windows and Linux, where there is no store to clear.
+    pub fn clear_data(&self) -> bool {
+        self.page.clear_data()
     }
 
     /// Before the first paint, replaces the URL the page is built with.

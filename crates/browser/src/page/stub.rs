@@ -44,6 +44,10 @@ impl Page {
         None
     }
 
+    pub(crate) fn clear_data(&self) -> bool {
+        false
+    }
+
     pub(crate) fn eval(&self, _script: &str, _done: impl Fn(String) + Send + 'static) -> bool {
         false
     }

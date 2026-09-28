@@ -59,6 +59,14 @@ pub(super) fn build(
     Some(builder.build_as_child(&parent))
 }
 
+/// Store identifiers are macOS's.
+pub(super) fn store<'a>(
+    builder: wry::WebViewBuilder<'a>,
+    _identifier: Option<[u8; 16]>,
+) -> wry::WebViewBuilder<'a> {
+    builder
+}
+
 /// Moves the X window wry built the page in under `window`. `false` under
 /// Wayland.
 pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {

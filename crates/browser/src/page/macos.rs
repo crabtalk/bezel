@@ -52,6 +52,20 @@ pub(super) fn build(
     Some(builder.build_as_child(window))
 }
 
+/// Uses the persistent store `identifier` names; wry falls back to the default
+/// store before macOS 14.
+pub(super) fn store<'a>(
+    builder: wry::WebViewBuilder<'a>,
+    identifier: Option<[u8; 16]>,
+) -> wry::WebViewBuilder<'a> {
+    use wry::WebViewBuilderExtDarwin;
+
+    match identifier {
+        Some(identifier) => builder.with_data_store_identifier(identifier),
+        None => builder,
+    }
+}
+
 /// Moves the page into gpui's view in `window`, where `build` put it in the
 /// window it was built in.
 pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {

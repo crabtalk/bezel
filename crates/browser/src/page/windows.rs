@@ -71,6 +71,14 @@ pub(super) fn build(
     Some(builder.build_as_child(window))
 }
 
+/// Store identifiers are macOS's.
+pub(super) fn store<'a>(
+    builder: wry::WebViewBuilder<'a>,
+    _identifier: Option<[u8; 16]>,
+) -> wry::WebViewBuilder<'a> {
+    builder
+}
+
 /// Moves the page's window into `window`.
 pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};

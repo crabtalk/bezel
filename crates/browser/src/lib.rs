@@ -9,8 +9,10 @@
 mod frame;
 mod host;
 mod page;
+mod store;
 mod view;
 
 #[cfg(target_family = "wasm")]
 pub use frame::Frame;
+pub use store::DataStore;
 pub use view::{EvalError, LoadState, WebView, WebViewEvent};

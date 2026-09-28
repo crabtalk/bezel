@@ -1,4 +1,4 @@
-use crate::{LoadState, host::Surface};
+use crate::{DataStore, LoadState, host::Surface};
 use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
 use std::{
     cell::{Cell, RefCell},
@@ -69,6 +69,11 @@ pub(crate) struct Page {
         allow(dead_code)
     )]
     pub(crate) user_agent: RefCell<Option<String>>,
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+        allow(dead_code)
+    )]
+    pub(crate) store: RefCell<DataStore>,
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// Where the page last sat; `None` before the first paint and while parked.
@@ -105,6 +110,7 @@ impl Page {
         Self {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
+            store: RefCell::new(DataStore::default()),
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
@@ -237,43 +243,53 @@ impl Page {
             self.reports.clone(),
             self.reports.clone(),
         );
-        let builder = wry::WebViewBuilder::new()
-            .with_url(url.as_str())
-            .with_bounds(rect(bounds))
-            .with_initialization_script(Self::MOVED)
-            .with_ipc_handler(move |request| {
-                let report = match request.body().as_str() {
-                    "moved" => Report::Moved,
-                    _ => return,
-                };
-                let _ = ipc.try_send(report);
-            })
-            .with_on_page_load_handler(move |event, url| {
-                let state = match event {
-                    wry::PageLoadEvent::Started => LoadState::Started,
-                    wry::PageLoadEvent::Finished => LoadState::Finished,
-                };
-                let _ = loads.try_send(Report::Load(state, url));
-            })
-            .with_document_title_changed_handler(move |title| {
-                let _ = titles.try_send(Report::Title(title));
-            })
-            .with_new_window_req_handler(move |url, _| {
-                let _ = opened.try_send(Report::Opened(url));
-                wry::NewWindowResponse::Deny
-            });
-        let user_agent = self
-            .user_agent
-            .borrow()
-            .clone()
-            .or_else(platform::default_user_agent);
-        let builder = match user_agent {
-            Some(user_agent) => builder.with_user_agent(user_agent),
-            None => builder,
-        };
-        let view = platform::build(builder, window)?
-            .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
-            .ok()?;
+        let store = self.store.borrow().clone();
+        let directory = store.directory.filter(|_| !store.incognito);
+        let view = with_context(directory, |context| {
+            let builder = match context {
+                Some(context) => wry::WebViewBuilder::new_with_web_context(context),
+                None => wry::WebViewBuilder::new(),
+            };
+            let builder = builder
+                .with_incognito(store.incognito)
+                .with_url(url.as_str())
+                .with_bounds(rect(bounds))
+                .with_initialization_script(Self::MOVED)
+                .with_ipc_handler(move |request| {
+                    let report = match request.body().as_str() {
+                        "moved" => Report::Moved,
+                        _ => return,
+                    };
+                    let _ = ipc.try_send(report);
+                })
+                .with_on_page_load_handler(move |event, url| {
+                    let state = match event {
+                        wry::PageLoadEvent::Started => LoadState::Started,
+                        wry::PageLoadEvent::Finished => LoadState::Finished,
+                    };
+                    let _ = loads.try_send(Report::Load(state, url));
+                })
+                .with_document_title_changed_handler(move |title| {
+                    let _ = titles.try_send(Report::Title(title));
+                })
+                .with_new_window_req_handler(move |url, _| {
+                    let _ = opened.try_send(Report::Opened(url));
+                    wry::NewWindowResponse::Deny
+                });
+            let user_agent = self
+                .user_agent
+                .borrow()
+                .clone()
+                .or_else(platform::default_user_agent);
+            let builder = match user_agent {
+                Some(user_agent) => builder.with_user_agent(user_agent),
+                None => builder,
+            };
+            let builder = platform::store(builder, store.identifier);
+            platform::build(builder, window)?
+                .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
+                .ok()
+        })?;
         self.platform.attach(&view, &self.reports);
         self.window.set(Some(window.window_handle()));
         Some(view)
@@ -341,6 +357,13 @@ impl Page {
         }
     }
 
+    /// Whether the page was built to clear. Clears every kind of data its
+    /// store holds.
+    pub(crate) fn clear_data(&self) -> bool {
+        self.built()
+            .is_some_and(|view| view.clear_all_browsing_data().is_ok())
+    }
+
     pub(crate) fn location(&self) -> Option<String> {
         self.built()?.url().ok()
     }
@@ -389,6 +412,28 @@ impl Page {
             ..rect(bounds)
         });
     }
+}
+
+/// Runs `build` with the context for `directory`. A context lives as long as
+/// the thread: pages built with it hold on to it.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn with_context<T>(
+    directory: Option<std::path::PathBuf>,
+    build: impl FnOnce(Option<&mut wry::WebContext>) -> T,
+) -> T {
+    thread_local! {
+        static CONTEXTS: RefCell<std::collections::HashMap<std::path::PathBuf, wry::WebContext>> =
+            RefCell::default();
+    }
+    let Some(directory) = directory else {
+        return build(None);
+    };
+    CONTEXTS.with_borrow_mut(|contexts| {
+        let context = contexts
+            .entry(directory.clone())
+            .or_insert_with(|| wry::WebContext::new(Some(directory)));
+        build(Some(context))
+    })
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
