@@ -8,7 +8,12 @@ use gpui::{
     IntoElement, KeyBinding, Render, Subscription, Task, Window, actions, div, prelude::*,
 };
 use serde::de::DeserializeOwned;
-use std::{fmt, rc::Rc, time::Duration};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+    rc::Rc,
+    time::Duration,
+};
 
 /// A webview showing one page.
 ///
@@ -60,6 +65,19 @@ pub enum WebViewEvent {
     /// `target="_blank"` link or `window.open`. No window opens and the page
     /// stays where it is; where the URL goes is the host's.
     NewWindow(String),
+    /// A download the host's destination took began, saving to `path`.
+    DownloadStarted {
+        url: String,
+        path: PathBuf,
+    },
+    /// A download ended, whether or not it succeeded. `path` is where it was
+    /// saved; always `None` on macOS, where the path is the one
+    /// [`Self::DownloadStarted`] carried.
+    DownloadFinished {
+        url: String,
+        path: Option<PathBuf>,
+        succeeded: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +178,20 @@ impl WebView {
     /// Read at the first paint.
     pub fn with_data_store(self, store: DataStore) -> Self {
         *self.page.store.borrow_mut() = store;
+        self
+    }
+
+    /// Takes the page's downloads. `destination` is called with each
+    /// download's URL and the path the platform proposes, in the user's
+    /// download folder, and returns the absolute path to save to, or `None` to
+    /// refuse the download. Read at the first paint. There is no progress
+    /// report: a download is [`WebViewEvent::DownloadStarted`], then
+    /// [`WebViewEvent::DownloadFinished`].
+    pub fn with_downloads(
+        self,
+        destination: impl FnMut(&str, &Path) -> Option<PathBuf> + 'static,
+    ) -> Self {
+        *self.page.downloads.borrow_mut() = Some(Box::new(destination));
         self
     }
 
@@ -276,6 +308,12 @@ impl WebView {
                 }
             }
             Report::Opened(url) => cx.emit(WebViewEvent::NewWindow(url)),
+            Report::Download(url, path) => cx.emit(WebViewEvent::DownloadStarted { url, path }),
+            Report::Downloaded(url, path, succeeded) => cx.emit(WebViewEvent::DownloadFinished {
+                url,
+                path,
+                succeeded,
+            }),
             Report::Still(still) => {
                 self.page.captured(still);
                 cx.notify();

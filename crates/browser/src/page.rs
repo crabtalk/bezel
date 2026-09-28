@@ -2,8 +2,12 @@ use crate::{DataStore, LoadState, host::Surface};
 use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
 use std::{
     cell::{Cell, RefCell},
+    path::{Path, PathBuf},
     sync::Arc,
 };
+
+/// Picks where a download is saved, or refuses it.
+pub(crate) type Destination = Box<dyn FnMut(&str, &Path) -> Option<PathBuf>>;
 
 #[cfg_attr(target_os = "macos", path = "page/macos.rs")]
 #[cfg_attr(target_os = "windows", path = "page/windows.rs")]
@@ -30,6 +34,11 @@ pub(crate) enum Report {
     Title(String),
     /// The page asked for a window of its own, for this URL.
     Opened(String),
+    /// A download began, saving to this path.
+    Download(String, PathBuf),
+    /// A download ended: where it was saved, if the platform says, and
+    /// whether it succeeded.
+    Downloaded(String, Option<PathBuf>, bool),
     /// A still of the page, taken for a cover; `None` if the capture failed.
     Still(Option<Arc<RenderImage>>),
 }
@@ -74,6 +83,11 @@ pub(crate) struct Page {
         allow(dead_code)
     )]
     pub(crate) store: RefCell<DataStore>,
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+        allow(dead_code)
+    )]
+    pub(crate) downloads: RefCell<Option<Destination>>,
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// Where the page last sat; `None` before the first paint and while parked.
@@ -111,6 +125,7 @@ impl Page {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
             store: RefCell::new(DataStore::default()),
+            downloads: RefCell::new(None),
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
@@ -286,6 +301,24 @@ impl Page {
                 None => builder,
             };
             let builder = platform::store(builder, store.identifier);
+            let builder = match self.downloads.take() {
+                Some(mut destination) => {
+                    let (started, finished) = (self.reports.clone(), self.reports.clone());
+                    builder
+                        .with_download_started_handler(move |url, path| {
+                            let Some(chosen) = destination(&url, path) else {
+                                return false;
+                            };
+                            *path = chosen;
+                            let _ = started.try_send(Report::Download(url, path.clone()));
+                            true
+                        })
+                        .with_download_completed_handler(move |url, path, ok| {
+                            let _ = finished.try_send(Report::Downloaded(url, path, ok));
+                        })
+                }
+                None => builder,
+            };
             platform::build(builder, window)?
                 .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
                 .ok()
