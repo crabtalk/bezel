@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.2.3",
+    "date": "2026-09-28",
+    "summary": "Segmented rows in menus, new-window requests from a WebView's page reported to its host, and a WebView on macOS that gives the keys back to gpui when anything outside it is pressed.",
+    "new": [
+      "`menu::Item::Segmented` is a row of options side by side, each a glyph over its label, the selected one highlighted, built with `Item::segmented` from `menu::Segment`s. A pick is a `Hit::Choose` whose path is the row's, then the segment's index. `Cursor::slide` moves between the live row's segments, stopping at either end, and `Cursor::segment` is the live one; a menubar's ← and → slide within a segmented row before they open, close or switch menus.",
+      "`browser::WebView::release_keys` takes the keys back from the page if it holds them, whatever gpui's focus is.",
+      "`browser::WebViewEvent::NewWindow` carries the URL a page asked to open in a window of its own, from a `target=\"_blank\"` link or `window.open`. No window opens and the page stays where it is. The browse app opens it in a new tab."
+    ],
+    "changed": [
+      "`browser::WebViewEvent` has a `NewWindow` variant; a `match` over it needs an arm for it.",
+      "`menu::Item` has a `Segmented` variant; a `match` over it needs an arm for it. `Cursor::path` ends with the live segment's index while the live row is segmented."
+    ],
+    "fixed": [
+      "On macOS, a press in any frame of a `WebView`'s page focuses the view, including frames whose press never reached it before.",
+      "On macOS, a `WebView`'s page moved to another window gives the keys back to gpui in that window, and a press on gpui's view outside the page takes the keys back even when gpui's focus does not move."
+    ]
+  },
+  {
     "version": "0.2.2",
     "date": "2026-09-27",
     "summary": "Inline link mentions with a favicon, title and hover card, table rows and columns added and removed anywhere in the editor, find highlights and scroll-to-range in markdown, text ink on the brand, a terminal content inset and output batch, a WebView that follows its window, and macOS's selection colour.",
