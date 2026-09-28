@@ -26,7 +26,7 @@ use theme::Theme;
 ///
 /// Under `Decorations::Server` the child is handed back in a full-size div and
 /// nothing else is painted. Under `Decorations::Client` it takes a border,
-/// [`Theme::surface_radius`] corners and [`theme::surface_shadows`], inside a
+/// [`Theme::surface_radius`] corners and [`theme::frame_shadows`], inside a
 /// [`Theme::CLIENT_INSET`] band that resizes the window.
 ///
 /// Must be the window's root element: the resize bands are hit-tested against
@@ -98,7 +98,7 @@ pub fn frame(child: impl IntoElement, window: &mut Window, cx: &App) -> Div {
                     surface.rounded_br(radius)
                 })
                 .when(!tiling.is_tiled(), |surface| {
-                    surface.shadow(theme::surface_shadows())
+                    surface.shadow(theme::frame_shadows())
                 })
                 .child(child),
         )

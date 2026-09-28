@@ -1,4 +1,4 @@
-use crate::{LoadState, host::Surface};
+use crate::{DataStore, LoadState, host::Surface};
 use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
 use std::{
     cell::{Cell, RefCell},
@@ -7,18 +7,14 @@ use std::{
 
 #[cfg_attr(target_os = "macos", path = "page/macos.rs")]
 #[cfg_attr(target_os = "windows", path = "page/windows.rs")]
-#[cfg_attr(target_os = "linux", path = "page/linux.rs")]
 #[cfg_attr(
-    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    not(any(target_os = "macos", target_os = "windows")),
     path = "page/stub.rs"
 )]
 mod platform;
 
 /// Sent from the page's callbacks to the view.
-#[cfg_attr(
-    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-    allow(dead_code)
-)]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 pub(crate) enum Report {
     Pressed,
     /// A key the page took that the keymap binds.
@@ -59,17 +55,13 @@ pub(crate) enum Edit {
 
 pub(crate) struct Page {
     /// What the page is built with; unread once it is built.
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     url: RefCell<String>,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) user_agent: RefCell<Option<String>>,
-    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    pub(crate) store: RefCell<DataStore>,
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// Where the page last sat; `None` before the first paint and while parked.
     placed: Cell<Option<Bounds<Pixels>>>,
@@ -80,15 +72,9 @@ pub(crate) struct Page {
     /// A still painted before the page was uncovered, to free from the atlas.
     dropped: RefCell<Option<Arc<RenderImage>>>,
     pub(crate) focus: FocusHandle,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     reports: async_channel::Sender<Report>,
-    #[cfg_attr(
-        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-        allow(dead_code)
-    )]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     platform: platform::State,
 }
 
@@ -105,7 +91,8 @@ impl Page {
         Self {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            store: RefCell::new(DataStore::default()),
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
             window: Cell::new(None),
@@ -182,7 +169,7 @@ impl Page {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 impl Page {
     /// Where a parked page waits. Hidden alone, a WKWebView stays registered as
     /// a drag destination over its last rect and takes every drag that crosses
@@ -237,43 +224,53 @@ impl Page {
             self.reports.clone(),
             self.reports.clone(),
         );
-        let builder = wry::WebViewBuilder::new()
-            .with_url(url.as_str())
-            .with_bounds(rect(bounds))
-            .with_initialization_script(Self::MOVED)
-            .with_ipc_handler(move |request| {
-                let report = match request.body().as_str() {
-                    "moved" => Report::Moved,
-                    _ => return,
-                };
-                let _ = ipc.try_send(report);
-            })
-            .with_on_page_load_handler(move |event, url| {
-                let state = match event {
-                    wry::PageLoadEvent::Started => LoadState::Started,
-                    wry::PageLoadEvent::Finished => LoadState::Finished,
-                };
-                let _ = loads.try_send(Report::Load(state, url));
-            })
-            .with_document_title_changed_handler(move |title| {
-                let _ = titles.try_send(Report::Title(title));
-            })
-            .with_new_window_req_handler(move |url, _| {
-                let _ = opened.try_send(Report::Opened(url));
-                wry::NewWindowResponse::Deny
-            });
-        let user_agent = self
-            .user_agent
-            .borrow()
-            .clone()
-            .or_else(platform::default_user_agent);
-        let builder = match user_agent {
-            Some(user_agent) => builder.with_user_agent(user_agent),
-            None => builder,
-        };
-        let view = platform::build(builder, window)?
-            .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
-            .ok()?;
+        let store = self.store.borrow().clone();
+        let directory = store.directory.filter(|_| !store.incognito);
+        let view = with_context(directory, |context| {
+            let builder = match context {
+                Some(context) => wry::WebViewBuilder::new_with_web_context(context),
+                None => wry::WebViewBuilder::new(),
+            };
+            let builder = builder
+                .with_incognito(store.incognito)
+                .with_url(url.as_str())
+                .with_bounds(rect(bounds))
+                .with_initialization_script(Self::MOVED)
+                .with_ipc_handler(move |request| {
+                    let report = match request.body().as_str() {
+                        "moved" => Report::Moved,
+                        _ => return,
+                    };
+                    let _ = ipc.try_send(report);
+                })
+                .with_on_page_load_handler(move |event, url| {
+                    let state = match event {
+                        wry::PageLoadEvent::Started => LoadState::Started,
+                        wry::PageLoadEvent::Finished => LoadState::Finished,
+                    };
+                    let _ = loads.try_send(Report::Load(state, url));
+                })
+                .with_document_title_changed_handler(move |title| {
+                    let _ = titles.try_send(Report::Title(title));
+                })
+                .with_new_window_req_handler(move |url, _| {
+                    let _ = opened.try_send(Report::Opened(url));
+                    wry::NewWindowResponse::Deny
+                });
+            let user_agent = self
+                .user_agent
+                .borrow()
+                .clone()
+                .or_else(platform::default_user_agent);
+            let builder = match user_agent {
+                Some(user_agent) => builder.with_user_agent(user_agent),
+                None => builder,
+            };
+            let builder = platform::store(builder, store.identifier);
+            platform::build(builder, window)?
+                .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
+                .ok()
+        })?;
         self.platform.attach(&view, &self.reports);
         self.window.set(Some(window.window_handle()));
         Some(view)
@@ -314,6 +311,17 @@ impl Page {
         }
     }
 
+    /// Whether the page can step back and forward; `(false, false)` before
+    /// it is built.
+    pub(crate) fn history(&self) -> (bool, bool) {
+        self.built().map_or((false, false), |view| {
+            (
+                view.can_go_back().unwrap_or(false),
+                view.can_go_forward().unwrap_or(false),
+            )
+        })
+    }
+
     /// Whether the page, or a view inside it, holds keyboard focus.
     pub(crate) fn holds_keys(&self) -> bool {
         self.built()
@@ -338,6 +346,12 @@ impl Page {
     pub(crate) fn reload(&self) {
         if let Some(view) = self.built() {
             let _ = view.reload();
+        }
+    }
+
+    pub(crate) fn reload_bypassing_cache(&self) {
+        if let Some(view) = self.built() {
+            platform::reload_bypassing_cache(view);
         }
     }
 
@@ -391,7 +405,55 @@ impl Page {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+/// Runs `build` with the context for `directory`, or with none, which has wry
+/// make the page its own.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn with_context<T>(
+    directory: Option<std::path::PathBuf>,
+    build: impl FnOnce(Option<&mut wry::WebContext>) -> T,
+) -> T {
+    match directory {
+        Some(directory) => shared_context(Some(directory), |context| build(Some(context))),
+        None => build(None),
+    }
+}
+
+/// Runs `f` with the context for `directory`, `None` being the platform's
+/// default store. A context lives as long as the thread: pages built with it
+/// hold on to it.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn shared_context<T>(
+    directory: Option<std::path::PathBuf>,
+    f: impl FnOnce(&mut wry::WebContext) -> T,
+) -> T {
+    thread_local! {
+        static CONTEXTS: RefCell<
+            std::collections::HashMap<Option<std::path::PathBuf>, wry::WebContext>,
+        > = RefCell::default();
+    }
+    CONTEXTS.with_borrow_mut(|contexts| {
+        let context = contexts
+            .entry(directory.clone())
+            .or_insert_with(|| wry::WebContext::new(directory));
+        f(context)
+    })
+}
+
+/// Clears `store`, calling `done` with whether it was cleared.
+pub(crate) fn clear_store(store: &DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    platform::clear_store(store, done);
+}
+
+/// Reports what `store` holds, calling `done` with `None` where the platform
+/// cannot tell.
+pub(crate) fn store_usage(
+    store: &DataStore,
+    done: impl FnOnce(Option<crate::Usage>) + Send + 'static,
+) {
+    platform::store_usage(store, done);
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn rect(bounds: Bounds<Pixels>) -> wry::Rect {
     wry::Rect {
         position: wry::dpi::LogicalPosition::new(

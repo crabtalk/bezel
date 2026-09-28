@@ -29,6 +29,7 @@ pub mod doc;
 pub mod edit;
 pub mod highlight;
 pub mod layout;
+pub mod link;
 pub mod marks;
 pub mod parse;
 pub mod preview;
@@ -46,6 +47,7 @@ pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKin
 pub use edit::{Shortcut, Splice, shortcut};
 pub use highlight::{Highlighter, languages, set_highlighter};
 pub use layout::{Layout, set_layout};
+pub use link::{LinkHandler, set_link_handler};
 pub use marks::{
     HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, highlight_solid,
     set_highlight_paint, set_mark_paint, set_marks,

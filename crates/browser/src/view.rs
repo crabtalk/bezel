@@ -1,4 +1,5 @@
 use crate::{
+    DataStore,
     host::Host,
     page::{Edit, Page, Report},
 };
@@ -33,13 +34,14 @@ use std::{fmt, rc::Rc, time::Duration};
 /// is painted in its place; until the still arrives the page stays over the
 /// cover. Elsewhere the place is left empty.
 ///
-/// Linux needs gpui on X11 and paints nothing under Wayland. Paints nothing
-/// off macOS, Windows and Linux.
+/// Paints nothing off macOS and Windows.
 pub struct WebView {
     page: Rc<Page>,
     location: Option<String>,
     title: String,
     loading: bool,
+    /// Whether the page could step back, and forward, when it last moved.
+    history: (bool, bool),
     /// The window [`Self::_focus`] listens in.
     focus_window: Option<AnyWindowHandle>,
     _focus: [Subscription; 2],
@@ -54,6 +56,12 @@ pub enum WebViewEvent {
     Location(String),
     /// The page's title changed.
     Title(String),
+    /// Whether [`WebView::back`] and [`WebView::forward`] would move the page
+    /// changed.
+    History {
+        back: bool,
+        forward: bool,
+    },
     Load(LoadState),
     /// The page asked to open this URL in a window of its own: a
     /// `target="_blank"` link or `window.open`. No window opens and the page
@@ -113,6 +121,7 @@ impl WebView {
             location: None,
             title: String::new(),
             loading: false,
+            history: (false, false),
             focus_window: Some(window.window_handle()),
             _focus: subscriptions,
             _reports: task,
@@ -143,6 +152,18 @@ impl WebView {
         &self.title
     }
 
+    /// Whether [`Self::back`] would move the page, as of its last load or
+    /// history move. `false` before the first paint.
+    pub fn can_go_back(&self) -> bool {
+        self.history.0
+    }
+
+    /// Whether [`Self::forward`] would move the page, as of its last load or
+    /// history move. `false` before the first paint.
+    pub fn can_go_forward(&self) -> bool {
+        self.history.1
+    }
+
     pub fn is_loading(&self) -> bool {
         self.loading
     }
@@ -152,6 +173,14 @@ impl WebView {
     /// installed Safari's version.
     pub fn with_user_agent(self, user_agent: impl Into<String>) -> Self {
         *self.page.user_agent.borrow_mut() = Some(user_agent.into());
+        self
+    }
+
+    /// The store the page is built with, in place of the platform's default.
+    /// Read at the first paint. A page keeps the store it was built with: a
+    /// different store takes a new `WebView`.
+    pub fn with_data_store(self, store: DataStore) -> Self {
+        *self.page.store.borrow_mut() = store;
         self
     }
 
@@ -177,6 +206,11 @@ impl WebView {
 
     pub fn reload(&mut self) {
         self.page.reload();
+    }
+
+    /// Reloads from the network, past the cache.
+    pub fn reload_bypassing_cache(&mut self) {
+        self.page.reload_bypassing_cache();
     }
 
     /// Evaluates `script`, a JavaScript expression, in the page's main frame
@@ -247,11 +281,13 @@ impl WebView {
                 if let Some(url) = self.page.location() {
                     self.locate(url, cx);
                 }
+                self.step(cx);
             }
             Report::Load(state, url) => {
                 self.locate(url, cx);
                 self.loading = state == LoadState::Started;
                 cx.emit(WebViewEvent::Load(state));
+                self.step(cx);
             }
             // Live pages rewrite their title, some every second.
             Report::Title(title) => {
@@ -265,6 +301,15 @@ impl WebView {
                 self.page.captured(still);
                 cx.notify();
             }
+        }
+    }
+
+    fn step(&mut self, cx: &mut Context<Self>) {
+        let history = self.page.history();
+        if history != self.history {
+            self.history = history;
+            let (back, forward) = history;
+            cx.emit(WebViewEvent::History { back, forward });
         }
     }
 

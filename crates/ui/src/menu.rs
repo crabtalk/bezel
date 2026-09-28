@@ -530,6 +530,11 @@ pub enum Hit {
 /// the [`Cursor`] holds open. `id` prefixes the rows' element ids, so two menus
 /// open at once keep their hover state apart.
 ///
+/// The root panel is returned unanchored: mount it through one of
+/// [`popover`]'s anchored layers ([`popover::anchored_menu_below`],
+/// [`popover::menu_at`], …). Childed bare, it paints in flow, under every
+/// later sibling. Submenu panels are anchored here.
+///
 /// Every panel is capped at the window's height less the snap margin either
 /// side, and scrolls its rows past that. A submenu hangs off its row wherever
 /// the row has scrolled to, outside the parent's clip.

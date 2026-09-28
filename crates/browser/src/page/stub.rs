@@ -38,7 +38,13 @@ impl Page {
 
     pub(crate) fn forward(&self) {}
 
+    pub(crate) fn history(&self) -> (bool, bool) {
+        (false, false)
+    }
+
     pub(crate) fn reload(&self) {}
+
+    pub(crate) fn reload_bypassing_cache(&self) {}
 
     pub(crate) fn location(&self) -> Option<String> {
         None
@@ -57,4 +63,15 @@ impl Page {
     pub(crate) fn take_keys(&self) {}
 
     pub(crate) fn give_keys(&self) {}
+}
+
+pub(super) fn clear_store(_store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    done(false);
+}
+
+pub(super) fn store_usage(
+    _store: &crate::DataStore,
+    done: impl FnOnce(Option<crate::Usage>) + Send + 'static,
+) {
+    done(None);
 }

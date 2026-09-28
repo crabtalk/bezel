@@ -211,7 +211,7 @@ pub(super) fn bookmark(
         .bg(theme.surface_card)
         .cursor(CursorStyle::PointingHand)
         .hover(|el| el.bg(theme.element_hover))
-        .on_click(move |_, _, cx| cx.open_url(&open));
+        .on_click(move |_, window, cx| crate::link::open(&open, window, cx));
 
     if form == Form::Embed {
         card.flex_col()

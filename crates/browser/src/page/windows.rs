@@ -71,6 +71,14 @@ pub(super) fn build(
     Some(builder.build_as_child(window))
 }
 
+/// Store identifiers are macOS's.
+pub(super) fn store<'a>(
+    builder: wry::WebViewBuilder<'a>,
+    _identifier: Option<[u8; 16]>,
+) -> wry::WebViewBuilder<'a> {
+    builder
+}
+
 /// Moves the page's window into `window`.
 pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -102,6 +110,21 @@ pub(super) fn forward(view: &wry::WebView) {
     let _ = unsafe { view.webview().GoForward() };
 }
 
+/// Through the DevTools protocol: WebView2 has no reload that skips the cache.
+pub(super) fn reload_bypassing_cache(view: &wry::WebView) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2CallDevToolsProtocolMethodCompletedHandler;
+    use windows::core::w;
+
+    // SAFETY: called on the thread that owns the webview.
+    let _ = unsafe {
+        view.webview().CallDevToolsProtocolMethod(
+            w!("Page.reload"),
+            w!(r#"{"ignoreCache":true}"#),
+            None::<&ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>,
+        )
+    };
+}
+
 pub(super) fn closed(_view: &wry::WebView) -> bool {
     false
 }
@@ -115,4 +138,18 @@ pub(super) fn capture(
     _done: impl FnOnce(Option<std::sync::Arc<gpui::RenderImage>>) + 'static,
 ) -> bool {
     false
+}
+
+/// WebView2 reaches a store only through a built page.
+// TODO: clear a store with no page built on Windows.
+pub(super) fn clear_store(_store: &crate::DataStore, done: impl FnOnce(bool) + Send + 'static) {
+    done(false);
+}
+
+// TODO: report a store's usage on Windows.
+pub(super) fn store_usage(
+    _store: &crate::DataStore,
+    done: impl FnOnce(Option<crate::Usage>) + Send + 'static,
+) {
+    done(None);
 }

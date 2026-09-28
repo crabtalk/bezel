@@ -352,9 +352,9 @@ pub(super) fn painted_text(
                 .map(|mention| (mention.range.clone(), mention.url.clone()))
                 .collect();
             let text = InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
-                .on_click(ranges, move |clicked, _window, cx| {
+                .on_click(ranges, move |clicked, window, cx| {
                     if let Some(url) = urls.get(clicked) {
-                        cx.open_url(url);
+                        crate::link::open(url, window, cx);
                     }
                 });
             match hovered.is_empty() {

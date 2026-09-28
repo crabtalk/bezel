@@ -1,12 +1,18 @@
 //! Display-only controls — toggle, checkbox, radio, progress, slider, select
 //! face, segmented control. State is always the caller's; each control is the
-//! paint plus its gesture contract, and the caller adds `.id(..)` / handlers.
+//! paint plus its gesture contract, and the caller adds `.id(..)` / handlers —
+//! but for [`Controls::segmented`], which takes them.
 //!
 //! A catalog trait, like every widget group: import it to unlock
-//! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`.
+//! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`,
+//! `theme.segmented(..)`.
 
 use crate::stack;
-use gpui::{App, Axis, Div, DragMoveEvent, ElementId, SharedString, div, prelude::*, px};
+use std::rc::Rc;
+
+use gpui::{
+    App, Axis, Div, DragMoveEvent, ElementId, SharedString, Stateful, Window, div, prelude::*, px,
+};
 use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
@@ -254,6 +260,32 @@ pub trait Controls: ThemeExt {
             .px(px(10.0))
             .py(px(4.0))
             .child(label.into())
+    }
+
+    /// A [`Self::toggle_group`] of labelled segments, wired: a click on one
+    /// reports its index to `on_pick`, the selected one included. Nothing is
+    /// selected when `selected` is out of range.
+    ///
+    /// ```ignore
+    /// theme.segmented("search-engine", ["Google", "DuckDuckGo"], selected,
+    ///     cx.listener(|view, ix: &usize, _, cx| view.pick_engine(*ix, cx)))
+    /// ```
+    fn segmented<Label: Into<SharedString>>(
+        &self,
+        id: impl Into<ElementId>,
+        segments: impl IntoIterator<Item = Label>,
+        selected: usize,
+        on_pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
+    ) -> Stateful<Div> {
+        let on_pick = Rc::new(on_pick);
+        self.toggle_group()
+            .id(id)
+            .children(segments.into_iter().enumerate().map(|(ix, label)| {
+                let on_pick = on_pick.clone();
+                self.toggle_group_item(label, ix == selected)
+                    .id(ix)
+                    .on_click(move |_, window, cx| on_pick(&ix, window, cx))
+            }))
     }
 
     /// A segment carrying a glyph rather than a word, for a control with no

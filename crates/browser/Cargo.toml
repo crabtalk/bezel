@@ -8,7 +8,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-readme.workspace = true
+readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
@@ -60,10 +60,13 @@ objc2-core-graphics = { version = "0.3", default-features = false, features = [
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
+    "NSArray",
     "NSBundle",
+    "NSDate",
     "NSError",
     "NSGeometry",
     "NSString",
+    "NSUUID",
 ] }
 objc2-web-kit = { version = "0.3", default-features = false, features = [
     "std",
@@ -72,6 +75,8 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
     "WKNavigation",
     "WKSnapshotConfiguration",
     "WKWebView",
+    "WKWebsiteDataRecord",
+    "WKWebsiteDataStore",
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -79,13 +84,6 @@ wry = { version = "0.57", default-features = false }
 webview2-com = "0.39"
 raw-window-handle = "0.6"
 windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-wry = { version = "0.57", default-features = false, features = ["os-webview", "x11"] }
-gtk = "0.18"
-gdkx11 = "0.18"
-raw-window-handle = "0.6"
-webkit2gtk = "=2.0.2"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 raw-window-handle = "0.6"

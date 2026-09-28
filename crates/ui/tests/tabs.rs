@@ -1,4 +1,4 @@
-use ui::tabs::Strip;
+use ui::tabs::{Side, Strip};
 
 fn strip(tabs: &[&str]) -> Strip<String> {
     tabs.iter().map(|tab| tab.to_string()).collect()
@@ -141,4 +141,62 @@ fn index_of_reports_where_a_tab_sits() {
     assert_eq!(strip.index_of(&"absent".into()), None);
     assert_eq!(strip.len(), 3);
     assert!(strip.contains(&"c".into()));
+}
+
+/// Every tab 100px wide, but for `unmeasured`.
+fn width(unmeasured: &'static str) -> impl Fn(&String) -> Option<f32> {
+    move |tab| (tab != unmeasured).then_some(100.0)
+}
+
+#[test]
+fn a_carried_tab_passes_a_neighbour_once_the_centres_cross() {
+    let mut strip = strip(&["a", "b", "c"]);
+    let (passed, left) = strip.carry(&"a".into(), 102.0, width(""));
+    assert!(passed.is_empty());
+    assert_eq!(left, 102.0);
+
+    let (passed, left) = strip.carry(&"a".into(), 110.0, width(""));
+    assert_eq!(passed, ["b"]);
+    assert_eq!(left, 8.0);
+    assert_eq!(order(&strip), "b a c");
+
+    // Just past the swap is not enough to swap back.
+    let (passed, _) = strip.carry(&"a".into(), -8.0, width(""));
+    assert!(passed.is_empty());
+}
+
+#[test]
+fn a_long_carry_passes_several_tabs_either_way() {
+    let mut strip = strip(&["a", "b", "c"]);
+    let (passed, left) = strip.carry(&"a".into(), 250.0, width(""));
+    assert_eq!(passed, ["b", "c"]);
+    assert_eq!(left, 46.0);
+    assert_eq!(order(&strip), "b c a");
+
+    let (passed, left) = strip.carry(&"a".into(), -210.0, width(""));
+    assert_eq!(passed, ["c", "b"]);
+    assert_eq!(left, -6.0);
+    assert_eq!(order(&strip), "a b c");
+}
+
+#[test]
+fn a_carry_stops_at_the_ends_and_at_what_it_cannot_measure() {
+    let mut strip = strip(&["a", "b", "c"]);
+    strip.carry(&"a".into(), -500.0, width(""));
+    strip.carry(&"c".into(), 500.0, width(""));
+    assert_eq!(order(&strip), "a b c");
+
+    let (passed, _) = strip.carry(&"a".into(), 500.0, width("c"));
+    assert_eq!(passed, ["b"]);
+    assert_eq!(order(&strip), "b a c");
+
+    let (passed, _) = strip.carry(&"b".into(), 500.0, width("b"));
+    assert!(passed.is_empty());
+}
+
+#[test]
+fn a_drop_marks_the_edge_it_lands_on() {
+    assert_eq!(Side::of(0, 2), Some(Side::Trailing));
+    assert_eq!(Side::of(2, 0), Some(Side::Leading));
+    assert_eq!(Side::of(1, 1), None);
 }
