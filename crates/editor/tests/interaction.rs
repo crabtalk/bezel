@@ -1496,3 +1496,109 @@ fn the_highlight_chord_does_nothing_without_the_mark(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(&format!("{PRIMARY}-a {PRIMARY}-shift-h"));
     assert_eq!(source(&editor, &mut cx), "a lit word");
 }
+
+#[gpui::test]
+fn a_table_row_handle_survives_the_pointer_crossing_cell_padding(cx: &mut TestAppContext) {
+    let (editor, _, mut cx) = open_with(
+        "paragraph\n\n| A | B |\n| --- | --- |\n| first | row |\n| second | row |",
+        cx,
+    );
+    let (table, cell) = cx.update(|_, cx| {
+        let layouts = editor.read(cx).layouts();
+        (
+            layouts.block_bounds(1).unwrap(),
+            layouts
+                .cell_bounds(1, markdown::Part::Cell { row: 1, column: 0 })
+                .unwrap(),
+        )
+    });
+    let mut x = cell.center().x;
+    while x >= table.left() {
+        cx.simulate_mouse_move(point(x, cell.center().y), None, gpui::Modifiers::default());
+        cx.run_until_parked();
+        assert!(
+            cx.debug_bounds("table-row-handle").is_some(),
+            "handle disappeared at {x:?}; table {table:?}; cell {cell:?}"
+        );
+        x -= px(1.0);
+    }
+    let handle = cx.debug_bounds("table-row-handle").unwrap().center();
+    cx.simulate_click(handle, gpui::Modifiers::default());
+    cx.run_until_parked();
+    let delete = cx.debug_bounds("Delete row").expect("delete row menu item");
+    cx.simulate_click(delete.center(), gpui::Modifiers::default());
+    cx.run_until_parked();
+    assert!(!source(&editor, &mut cx).contains("first"));
+}
+
+#[gpui::test]
+fn table_add_controls_fit_inside_the_block_without_covering_cells(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_scrolling_with(TABLE, cx);
+    cx.simulate_resize(size(px(360.0), px(600.0)));
+    cx.run_until_parked();
+    cx.simulate_mouse_move(point(px(50.0), px(30.0)), None, gpui::Modifiers::default());
+    cx.run_until_parked();
+    let (table, last) = cx.update(|_, cx| {
+        let layouts = editor.read(cx).layouts();
+        (
+            layouts.block_bounds(0).unwrap(),
+            layouts
+                .cell_bounds(0, markdown::Part::Cell { row: 1, column: 1 })
+                .unwrap(),
+        )
+    });
+    let add_row = cx.debug_bounds("table-add-row").expect("add row");
+    let add_column = cx.debug_bounds("table-add-column").expect("add column");
+    for bounds in [add_row, add_column] {
+        assert!(bounds.left() >= table.left() && bounds.right() <= table.right());
+        assert!(bounds.top() >= table.top() && bounds.bottom() <= table.bottom());
+    }
+    assert!(last.right() <= add_column.left());
+    assert!(last.bottom() <= add_row.top());
+    cx.simulate_click(add_row.center(), gpui::Modifiers::default());
+    cx.run_until_parked();
+    assert_eq!(
+        source(&editor, &mut cx),
+        "| a | b |\n| --- | --- |\n| c | d |\n|  |  |"
+    );
+    let add_column = cx.debug_bounds("table-add-column").unwrap();
+    cx.simulate_click(add_column.center(), gpui::Modifiers::default());
+    cx.run_until_parked();
+    assert_eq!(
+        source(&editor, &mut cx),
+        "| a | b |  |\n| --- | --- | --- |\n| c | d |  |\n|  |  |  |"
+    );
+}
+
+#[gpui::test]
+fn a_table_column_handle_survives_the_pointer_crossing_cell_padding(cx: &mut TestAppContext) {
+    let (editor, _, mut cx) = open_with(
+        "paragraph\n\n| A | B |\n| --- | --- |\n| first | second |",
+        cx,
+    );
+    let (table, cell) = cx.update(|_, cx| {
+        let layouts = editor.read(cx).layouts();
+        (
+            layouts.block_bounds(1).unwrap(),
+            layouts
+                .cell_bounds(1, markdown::Part::Cell { row: 0, column: 1 })
+                .unwrap(),
+        )
+    });
+    let mut y = cell.center().y;
+    while y >= table.top() {
+        cx.simulate_mouse_move(point(cell.center().x, y), None, gpui::Modifiers::default());
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("table-column-handle").is_some());
+        y -= px(1.0);
+    }
+    let handle = cx.debug_bounds("table-column-handle").unwrap().center();
+    cx.simulate_click(handle, gpui::Modifiers::default());
+    cx.run_until_parked();
+    let delete = cx
+        .debug_bounds("Delete column")
+        .expect("delete column menu item");
+    cx.simulate_click(delete.center(), gpui::Modifiers::default());
+    cx.run_until_parked();
+    assert!(!source(&editor, &mut cx).contains("second"));
+}

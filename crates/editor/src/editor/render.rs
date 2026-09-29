@@ -400,6 +400,9 @@ impl Render for Editor {
                                 // `checkbox_bounds`, which is what keeps a
                                 // toggle in the undo history.
                                 toggle: Some(markdown::Toggle::HitTested),
+                                table_controls: true,
+                                image_overlay: self.image_overlay.clone(),
+                                image_overlay_corner: self.image_overlay_corner,
                                 base: self.base.as_deref(),
                                 // A reveal owed to a caret nobody is focused on
                                 // still needs its block built to find it.

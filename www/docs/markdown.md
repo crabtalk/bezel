@@ -59,12 +59,14 @@ A preview can supply `Editing::image_overlay` to build a control from a picture'
 block index and original URL:
 
 ```rust
+image_overlay_corner: markdown::ImageOverlayCorner::TopRight,
 image_overlay: Some(Rc::new(|block, url, window, cx| {
     Some(open_image_button(block, url, window, cx).into_any_element())
 })),
 ```
 
-The control appears at the picture's bottom-right on hover, with a 6px inset.
+The control appears on hover with a 6px inset. `image_overlay_corner` accepts
+any `markdown::ImageOverlayCorner` corner and defaults to `BottomRight`.
 Its presses stay on the control. Return `None` to omit it for one picture;
 leaving the option unset adds no listeners or visual changes. Empty picture
 placeholders and source view have no overlay.

@@ -60,8 +60,8 @@ pub use parse::{ParsedDoc, is_image, is_url, parse, parse_at, parse_ranges, pars
 pub use preview::{LinkPreview, Preview};
 pub use quote::Quote;
 pub use render::{
-    Annotation, BlockLayouts, Caption, CopyButton, Editing, ImageOverlay, OnImage, OnToggle,
-    Toggle, image_source, markdown, render, render_source, render_with,
+    Annotation, BlockLayouts, Caption, CopyButton, Editing, ImageOverlay, ImageOverlayCorner,
+    OnImage, OnToggle, Toggle, image_source, markdown, render, render_source, render_with,
 };
 pub use select::{Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_with};

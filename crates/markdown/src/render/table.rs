@@ -120,6 +120,8 @@ pub(super) fn table(
                         |_, _, _, _| (),
                     )
                     .absolute()
+                    .top(px(0.0))
+                    .left(px(0.0))
                     .size_full()
                 }));
                 cell_el = cell_el.child(painted_text(
@@ -136,13 +138,22 @@ pub(super) fn table(
         inner = inner.child(row_el);
     }
 
-    ui::scroll::Viewport::new(
+    let table = ui::scroll::Viewport::new(
         format!("md-table-scroll-{ix}"),
         div()
             .id(ElementId::named_usize("md-table", ix))
             .w_full()
             .child(inner),
         gpui::Axis::Horizontal,
-    )
-    .into_any_element()
+    );
+    if overlay.table_controls {
+        div()
+            .w_full()
+            .pr(px(TABLE_CONTROL_SIZE))
+            .pb(px(TABLE_CONTROL_SIZE))
+            .child(table)
+            .into_any_element()
+    } else {
+        table.into_any_element()
+    }
 }

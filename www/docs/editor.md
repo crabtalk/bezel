@@ -65,6 +65,23 @@ cx.set_image_store(editor::ImageStore {
 
 Only a screenshot needs this — bytes have no address and a document holds one. With no store installed, a screenshot cannot be pasted at all.
 
+## Picture controls
+
+Article editors can use the same hover controls as markdown previews:
+
+```rust
+Editor::new(source, cx)
+    .with_image_overlay(Rc::new(|block, url, window, cx| {
+        Some(open_image_button(block, url, window, cx).into_any_element())
+    }))
+    .with_image_overlay_corner(markdown::ImageOverlayCorner::TopRight)
+```
+
+Bottom-right is the default. `set_image_overlay` replaces the callback or removes
+it with `None`; `set_image_overlay_corner` changes its position. Both take the
+editor's context. Controls appear only in rich mode, and their presses do not
+move the caret or start a selection.
+
 ## Paste policy
 
 ```rust

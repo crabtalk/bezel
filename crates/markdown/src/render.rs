@@ -90,6 +90,8 @@ const CAPTION_HINT: &str = "Write a caption";
 /// Table metrics. The design is frameless: hairlines between rows are the only
 /// chrome — no outer box, no header fill, no rounding.
 const TABLE_CELL_PADDING: f32 = 12.0;
+/// Reserved lane for editor table controls, inside the block bounds.
+pub const TABLE_CONTROL_SIZE: f32 = 16.0;
 const TABLE_DIVIDER: f32 = 1.0;
 /// Floor for a column's max-content share, so a short column ("1k") beside a
 /// prose column keeps a readable width.
@@ -178,6 +180,16 @@ pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 /// Builds a picture's hover control from its block index and original URL.
 pub type ImageOverlay = Rc<dyn Fn(usize, &str, &mut Window, &mut App) -> Option<AnyElement>>;
 
+/// The picture corner holding an app's hover control.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ImageOverlayCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    #[default]
+    BottomRight,
+}
+
 /// Who answers a press on a task block's checkbox.
 ///
 /// Either variant paints the box as a control — the pointer over it is a hand.
@@ -227,13 +239,17 @@ pub struct Editing<'a> {
     /// Makes a task block's checkbox a control, and says who answers the
     /// press. `None` paints a mark.
     pub toggle: Option<Toggle>,
-    /// Makes a picture a control: a click on it calls this with its block. A
+    /// Handles a picture click with its block index, keeping the arrow cursor. A
     /// press and release more than a couple of pixels apart is a drag and
     /// calls nothing. The press still reaches whatever is under the picture.
     pub image: Option<OnImage>,
-    /// An app control inset at the picture's bottom-right, visible on hover.
+    /// An app control inset at `image_overlay_corner`, visible on hover.
     /// Its presses do not reach the picture. `None` adds no listeners.
     pub image_overlay: Option<ImageOverlay>,
+    /// Corner for the picture control; defaults to bottom-right.
+    pub image_overlay_corner: ImageOverlayCorner,
+    /// Reserves right and bottom lanes inside tables for editor controls.
+    pub table_controls: bool,
     /// Whether a fence offers to copy itself.
     pub copy: CopyButton,
     /// The directory a relative image path is joined onto. `None` leaves it
@@ -265,6 +281,8 @@ impl Default for Editing<'_> {
             toggle: None,
             image: None,
             image_overlay: None,
+            image_overlay_corner: ImageOverlayCorner::BottomRight,
+            table_controls: false,
             copy: CopyButton::default(),
             base: None,
             keep: &[],
@@ -296,6 +314,8 @@ struct Overlay<'a> {
     toggle: Option<&'a Toggle>,
     image: Option<&'a OnImage>,
     image_overlay: Option<&'a ImageOverlay>,
+    image_overlay_corner: ImageOverlayCorner,
+    table_controls: bool,
     copy: CopyButton,
     base: Option<&'a Path>,
     highlight: crate::HighlightPaint,
@@ -437,6 +457,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         toggle,
         image,
         image_overlay,
+        image_overlay_corner,
+        table_controls,
         copy,
         base,
         keep,
@@ -476,6 +498,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 toggle: toggle.as_ref(),
                 image: image.as_ref(),
                 image_overlay: image_overlay.as_ref(),
+                image_overlay_corner,
+                table_controls,
                 copy,
                 base,
                 highlight,
@@ -490,13 +514,19 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     let keys: Vec<u64> = doc
         .blocks
         .iter()
-        .map(|block| block_key(block, &typography))
+        .map(|block| block_key(block, &typography, table_controls))
         .collect();
     layouts.prune(&keys);
     let guesses: Vec<Guess> = doc
         .blocks
         .iter()
-        .map(|block| guess(block, &typography))
+        .map(|block| {
+            let mut guess = guess(block, &typography);
+            if table_controls && matches!(block.kind, BlockKind::Table { .. }) {
+                guess.extra += px(TABLE_CONTROL_SIZE);
+            }
+            guess
+        })
         .collect();
     let mut kept = keep.to_vec();
     kept.extend(selection.map(|selection| selection.head.block));
@@ -512,6 +542,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         toggle,
         image,
         image_overlay,
+        image_overlay_corner,
+        table_controls,
         copy,
         base: base.map(Path::to_path_buf),
         highlight,
@@ -540,6 +572,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 toggle: owned.toggle.as_ref(),
                 image: owned.image.as_ref(),
                 image_overlay: owned.image_overlay.as_ref(),
+                image_overlay_corner: owned.image_overlay_corner,
+                table_controls: owned.table_controls,
                 copy: owned.copy,
                 base: owned.base.as_deref(),
                 highlight: owned.highlight,
@@ -571,6 +605,8 @@ struct Owned {
     toggle: Option<Toggle>,
     image: Option<OnImage>,
     image_overlay: Option<ImageOverlay>,
+    image_overlay_corner: ImageOverlayCorner,
+    table_controls: bool,
     copy: CopyButton,
     base: Option<std::path::PathBuf>,
     highlight: crate::HighlightPaint,
@@ -626,8 +662,9 @@ fn block_box(
 
 /// What a block's height is cached under: its content and the type it is set
 /// in, so an edit elsewhere that shifts its index keeps the height.
-fn block_key(block: &Block, typography: &Typography) -> u64 {
+fn block_key(block: &Block, typography: &Typography, table_controls: bool) -> u64 {
     let mut hasher = DefaultHasher::new();
+    table_controls.hash(&mut hasher);
     block.hash(&mut hasher);
     typography.body.size().to_bits().hash(&mut hasher);
     typography.body.line_height().to_bits().hash(&mut hasher);

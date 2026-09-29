@@ -19,8 +19,8 @@ use crate::editor::{Editor, HANDLE_SIZE, Line};
 /// What a row of a table line's menu does.
 type TableAction = Box<dyn Fn(&mut Editor, &mut Context<Editor>)>;
 
-/// How thick a table's `+` strips are.
-const TABLE_STRIP: f32 = 16.0;
+/// Add controls occupy reserved lanes inside the table block.
+const TABLE_STRIP: f32 = markdown::render::TABLE_CONTROL_SIZE;
 /// A table row or column handle, across and along the edge it sits on.
 const TABLE_HANDLE_THIN: f32 = 12.0;
 const TABLE_HANDLE_LONG: f32 = 20.0;
@@ -194,6 +194,7 @@ impl Editor {
             |id: &'static str, add: fn(&mut Self, usize, usize, &mut Context<Self>), at: usize| {
                 div()
                     .id(id)
+                    .debug_selector(|| id.to_string())
                     .absolute()
                     .flex()
                     .items_center()
@@ -225,16 +226,16 @@ impl Editor {
                 .h(bounds.size.height)
                 .child(
                     strip("table-add-column", Self::add_column, columns)
-                        .left(bounds.size.width)
+                        .left(bounds.size.width - px(TABLE_STRIP))
                         .top(px(0.0))
                         .w(px(TABLE_STRIP))
-                        .h(bounds.size.height),
+                        .h(bounds.size.height - px(TABLE_STRIP)),
                 )
                 .child(
                     strip("table-add-row", Self::add_row, end_row)
                         .left(px(0.0))
-                        .top(bounds.size.height)
-                        .w(bounds.size.width)
+                        .top(bounds.size.height - px(TABLE_STRIP))
+                        .w(bounds.size.width - px(TABLE_STRIP))
                         .h(px(TABLE_STRIP)),
                 )
                 .into_any_element(),
@@ -264,6 +265,7 @@ impl Editor {
         let handle = |id: &'static str, glyph: &'static str, line: Line, anchor: Point<Pixels>| {
             let trigger = div()
                 .id(id)
+                .debug_selector(|| id.to_string())
                 .absolute()
                 .flex()
                 .items_center()
@@ -343,6 +345,7 @@ impl Editor {
                 Some(Fade::new(view, format!("table-{label}"))),
             )
             .id(SharedString::from(format!("table-row-{label}")))
+            .debug_selector(|| label.to_string())
             .child(label)
             .on_click(cx.listener(move |this, _, _, cx| {
                 ui::popover::close_popup(this, cx, |this| &mut this.table_menu);

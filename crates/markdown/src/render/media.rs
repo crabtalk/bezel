@@ -34,6 +34,7 @@ pub(super) fn image(
     };
     let picture = if url.is_empty() {
         div()
+            .cursor(CursorStyle::Arrow)
             .h(px(IMAGE_EMPTY_HEIGHT))
             .flex()
             .items_center()
@@ -51,13 +52,14 @@ pub(super) fn image(
         let ix = overlay.block;
         let box_ = div()
             .id(ElementId::named_usize("md-picture", ix))
+            .cursor(CursorStyle::Arrow)
             .relative()
             .rounded(px(Theme::button_radius()))
             .overflow_hidden()
             .border_1()
             .border_color(theme.border)
             .when_some(overlay.image.cloned(), |el, on_image| {
-                el.cursor_pointer().on_click(move |event, window, cx| {
+                el.on_click(move |event, window, cx| {
                     if let ClickEvent::Mouse(click) = event
                         && (click.up.position - click.down.position).magnitude() > DRAG_SLOP
                     {
@@ -100,8 +102,14 @@ pub(super) fn image(
                         div()
                             .id("image-overlay")
                             .absolute()
-                            .bottom(px(6.0))
-                            .right(px(6.0))
+                            .map(|el| match overlay.image_overlay_corner {
+                                ImageOverlayCorner::TopLeft => el.top(px(6.0)).left(px(6.0)),
+                                ImageOverlayCorner::TopRight => el.top(px(6.0)).right(px(6.0)),
+                                ImageOverlayCorner::BottomLeft => el.bottom(px(6.0)).left(px(6.0)),
+                                ImageOverlayCorner::BottomRight => {
+                                    el.bottom(px(6.0)).right(px(6.0))
+                                }
+                            })
                             .invisible()
                             .group_hover(group, |style| style.visible())
                             .on_any_mouse_down(|_, _, cx| cx.stop_propagation())

@@ -24,6 +24,7 @@ struct Page {
     clicked: Rc<RefCell<Vec<usize>>>,
     hooked: bool,
     overlay: Option<ImageOverlay>,
+    overlay_anchor: markdown::ImageOverlayCorner,
     presses: usize,
     virtualized: bool,
 }
@@ -40,6 +41,7 @@ impl Render for Page {
             scroll: Some(&self.scroll),
             image,
             image_overlay: self.overlay.clone(),
+            image_overlay_corner: self.overlay_anchor,
             ..Editing::default()
         };
         let body = match &self.source {
@@ -72,6 +74,7 @@ fn open(
         clicked: Rc::new(RefCell::new(Vec::new())),
         hooked,
         overlay: None,
+        overlay_anchor: markdown::ImageOverlayCorner::BottomRight,
         presses: 0,
         virtualized: true,
     });
@@ -212,7 +215,15 @@ fn a_picture_without_a_hook_takes_nothing(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn the_picture_overlay_is_inset_and_owns_its_presses(cx: &mut TestAppContext) {
-    for virtualized in [true, false] {
+    for (virtualized, anchor) in [true, false].into_iter().flat_map(|virtualized| {
+        [
+            markdown::ImageOverlayCorner::TopLeft,
+            markdown::ImageOverlayCorner::TopRight,
+            markdown::ImageOverlayCorner::BottomLeft,
+            markdown::ImageOverlayCorner::BottomRight,
+        ]
+        .map(|anchor| (virtualized, anchor))
+    }) {
         let doc = picture_doc();
         let (page, mut cx) = open(&doc, false, true, cx);
         let original = picture(&page, &mut cx);
@@ -223,6 +234,7 @@ fn the_picture_overlay_is_inset_and_owns_its_presses(cx: &mut TestAppContext) {
         cx.update(|_, cx| {
             page.update(cx, |page, cx| {
                 page.virtualized = virtualized;
+                page.overlay_anchor = anchor;
                 page.overlay = Some(Rc::new(move |ix, url, _, _| {
                     assert_eq!(ix, 1);
                     assert!(url.ends_with(".png"));
@@ -254,8 +266,20 @@ fn the_picture_overlay_is_inset_and_owns_its_presses(cx: &mut TestAppContext) {
         cx.simulate_mouse_move(original.center(), None, Modifiers::default());
         settle(&mut cx);
         let control = painted.borrow().expect("painted on picture hover");
-        assert!((original.right() - control.right() - px(6.0)).abs() < px(1.0));
-        assert!((original.bottom() - control.bottom() - px(6.0)).abs() < px(1.0));
+        let horizontal = match anchor {
+            markdown::ImageOverlayCorner::TopLeft | markdown::ImageOverlayCorner::BottomLeft => {
+                control.left() - original.left()
+            }
+            _ => original.right() - control.right(),
+        };
+        let vertical = match anchor {
+            markdown::ImageOverlayCorner::TopLeft | markdown::ImageOverlayCorner::TopRight => {
+                control.top() - original.top()
+            }
+            _ => original.bottom() - control.bottom(),
+        };
+        assert!((horizontal - px(6.0)).abs() < px(1.0));
+        assert!((vertical - px(6.0)).abs() < px(1.0));
         cx.simulate_click(control.center(), Modifiers::default());
         assert_eq!(*hits.borrow(), 1);
         assert!(clicked(&page, &mut cx).is_empty());

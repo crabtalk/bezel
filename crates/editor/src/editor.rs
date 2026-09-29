@@ -372,6 +372,8 @@ pub struct Editor {
     text_size: Option<f32>,
     /// The directory relative image paths resolve against.
     base: Option<std::path::PathBuf>,
+    image_overlay: Option<markdown::ImageOverlay>,
+    image_overlay_corner: markdown::ImageOverlayCorner,
 }
 
 #[derive(Clone, Copy)]
@@ -425,6 +427,8 @@ impl Editor {
             handle_at: None,
             text_size: None,
             base: None,
+            image_overlay: None,
+            image_overlay_corner: markdown::ImageOverlayCorner::default(),
         }
     }
 
@@ -453,6 +457,38 @@ impl Editor {
     pub fn with_chrome(mut self, chrome: Chrome) -> Self {
         self.chrome = chrome;
         self
+    }
+
+    /// Adds an app-provided hover control to pictures in rich mode.
+    pub fn with_image_overlay(mut self, overlay: markdown::ImageOverlay) -> Self {
+        self.image_overlay = Some(overlay);
+        self
+    }
+
+    /// Replaces or removes the picture hover control.
+    pub fn set_image_overlay(
+        &mut self,
+        overlay: Option<markdown::ImageOverlay>,
+        cx: &mut Context<Self>,
+    ) {
+        self.image_overlay = overlay;
+        cx.notify();
+    }
+
+    /// Positions picture hover controls; bottom-right by default.
+    pub fn with_image_overlay_corner(mut self, corner: markdown::ImageOverlayCorner) -> Self {
+        self.image_overlay_corner = corner;
+        self
+    }
+
+    /// Repositions the picture hover control.
+    pub fn set_image_overlay_corner(
+        &mut self,
+        corner: markdown::ImageOverlayCorner,
+        cx: &mut Context<Self>,
+    ) {
+        self.image_overlay_corner = corner;
+        cx.notify();
     }
 
     /// What is painting now, for an app whose own bar mirrors it.
