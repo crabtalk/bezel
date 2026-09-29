@@ -2,10 +2,39 @@
 
 use super::*;
 use gpui::ClickEvent;
+use std::sync::Arc;
 
 /// How far a press may travel before its release is a drag, not a click on a
 /// picture.
 const DRAG_SLOP: f64 = 2.0;
+
+/// The last image each picture on disk or the web decoded to.
+#[derive(Default)]
+struct Shown(std::collections::HashMap<gpui::Resource, Arc<gpui::RenderImage>>);
+
+impl gpui::Global for Shown {}
+
+/// `source` as it should paint this frame: what it loaded to, or while it is
+/// loading again — its cached copy dropped because the file changed — or
+/// failing on a half-written file, the image it last loaded to. A picture
+/// never loaded yet paints as gpui paints any loading image.
+fn steady(source: ImageSource, window: &mut Window, cx: &mut App) -> ImageSource {
+    let ImageSource::Resource(resource) = &source else {
+        return source;
+    };
+    match window.use_asset::<gpui::ImgResourceLoader>(resource, cx) {
+        Some(Ok(image)) => {
+            cx.default_global::<Shown>()
+                .0
+                .insert(resource.clone(), image.clone());
+            ImageSource::Render(image)
+        }
+        _ => match cx.default_global::<Shown>().0.get(resource) {
+            Some(image) => ImageSource::Render(image.clone()),
+            None => source,
+        },
+    }
+}
 
 /// A picture and the caption under it, which is the alt text a caret can reach.
 ///
@@ -48,7 +77,7 @@ pub(super) fn image(
             .child(IMAGE_EMPTY)
             .into_any_element()
     } else {
-        let picture = img(image_source(url, overlay.base));
+        let picture = img(steady(image_source(url, overlay.base), window, cx));
         let ix = overlay.block;
         let box_ = div()
             .id(ElementId::named_usize("md-picture", ix))
@@ -87,9 +116,9 @@ pub(super) fn image(
                 .max_w_full()
                 .w(px(width as f32))
                 .child(picture.w(px(width as f32)).max_w_full()),
-            // Unstated, the picture scales itself against the column, which
-            // is a percentage and so needs a box that spans one to measure.
-            None => box_.child(picture.max_w_full()),
+            // Unstated, the box hugs the picture at its own size, held inside
+            // the page.
+            None => box_.self_start().max_w_full().child(picture.max_w_full()),
         };
         match overlay
             .image_overlay

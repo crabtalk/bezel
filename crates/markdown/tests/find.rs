@@ -309,3 +309,26 @@ fn declining_an_overlay_leaves_picture_presses_alone(cx: &mut TestAppContext) {
     assert_eq!(clicked(&page, &mut cx), vec![1]);
     assert_eq!(cx.update(|_, cx| page.read(cx).presses), 1);
 }
+
+/// A picture `width` wide with no width stated, as block 1.
+fn unsized_doc(width: u32) -> String {
+    let path =
+        std::env::temp_dir().join(format!("bezel-unsized-{}-{width}.svg", std::process::id()));
+    let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20"/>"#);
+    std::fs::write(&path, svg).unwrap();
+    format!("before\n\n![a picture]({})\n\nafter", path.display())
+}
+
+#[gpui::test]
+fn an_unsized_picture_s_frame_hugs_it(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&unsized_doc(40), false, false, cx);
+
+    assert!(picture(&page, &mut cx).size.width < px(60.0));
+}
+
+#[gpui::test]
+fn an_unsized_picture_wider_than_the_page_stays_on_it(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&unsized_doc(1000), false, false, cx);
+
+    assert!(picture(&page, &mut cx).size.width <= px(WIDTH));
+}

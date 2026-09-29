@@ -211,21 +211,31 @@ impl SplitButton {
     /// The control, with `menu` hung off it when there is one.
     pub fn build(self, menu: Option<gpui::AnyElement>) -> Div {
         let radius = px(self.size.radius());
+        self.frame()
+            .child(self.main.rounded_l(radius))
+            .child(self.more.rounded_r(radius))
+            .children(menu)
+    }
+
+    /// The label side alone, in the same frame: no chevron and no menu.
+    pub fn build_alone(self) -> Div {
+        let radius = px(self.size.radius());
+        self.frame().child(self.main.rounded(radius))
+    }
+
+    fn frame(&self) -> Div {
         div()
             .relative()
             .flex_none()
             .flex()
             .items_stretch()
             .h(px(self.size.height()))
-            .rounded(radius)
+            .rounded(px(self.size.radius()))
             .border_1()
             .border_color(self.border)
             .bg(self.fill)
             .text_style(self.size.text())
             .text_color(self.text)
-            .child(self.main.rounded_l(radius))
-            .child(self.more.rounded_r(radius))
-            .children(menu)
     }
 }
 
