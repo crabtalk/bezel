@@ -17,7 +17,7 @@
 
 use gpui::{
     App, Bounds, CursorStyle, Decorations, Div, HitboxBehavior, IntoElement, MouseButton, Pixels,
-    Point, ResizeEdge, Size, Window, canvas, div, point, prelude::*, px, size,
+    Point, ResizeEdge, Size, Tiling, Window, canvas, div, point, prelude::*, px, size,
 };
 
 use theme::Theme;
@@ -34,10 +34,16 @@ use theme::Theme;
 /// band in the wrong place.
 ///
 /// An edge `tiling` reports flush — against a screen edge, or another window
-/// in a tile — keeps its square corner and gives up its band.
+/// in a tile — keeps its square corner and gives up its band. A maximized
+/// window counts as flush on every edge: X11 window managers do not always
+/// report tiling for one.
 pub fn frame(child: impl IntoElement, window: &mut Window, cx: &App) -> Div {
     let Decorations::Client { tiling } = window.window_decorations() else {
         return div().size_full().child(child);
+    };
+    let tiling = match window.is_maximized() {
+        true => Tiling::tiled(),
+        false => tiling,
     };
 
     let inset = px(Theme::CLIENT_INSET);
@@ -51,9 +57,13 @@ pub fn frame(child: impl IntoElement, window: &mut Window, cx: &App) -> Div {
             canvas(
                 move |_, window, _| {
                     let size = window.window_bounds().get_bounds().size;
-                    bands(size, inset).map(|(edge, band)| {
-                        (edge, window.insert_hitbox(band, HitboxBehavior::Normal))
-                    })
+                    bands(size, inset)
+                        .into_iter()
+                        .filter(|(edge, _)| live(*edge, tiling))
+                        .map(|(edge, band)| {
+                            (edge, window.insert_hitbox(band, HitboxBehavior::Normal))
+                        })
+                        .collect::<Vec<_>>()
                 },
                 |_, bands, window, _| {
                     for (edge, band) in bands {
@@ -70,7 +80,9 @@ pub fn frame(child: impl IntoElement, window: &mut Window, cx: &App) -> Div {
         .when(!tiling.right, |frame| frame.pr(inset))
         .on_mouse_down(MouseButton::Left, move |event, window, _| {
             let size = window.window_bounds().get_bounds().size;
-            if let Some(edge) = resize_edge(event.position, inset, size) {
+            if let Some(edge) =
+                resize_edge(event.position, inset, size).filter(|edge| live(*edge, tiling))
+            {
                 window.start_window_resize(edge);
             }
         })
@@ -148,6 +160,21 @@ fn bands(window: Size<Pixels>, inset: Pixels) -> [(ResizeEdge, Bounds<Pixels>); 
         (ResizeEdge::Left, band(zero, inset, inset, span_y)),
         (ResizeEdge::Right, band(far_x, inset, inset, span_y)),
     ]
+}
+
+/// Whether `edge` resizes: none of the sides it touches is flush.
+pub fn live(edge: ResizeEdge, tiling: Tiling) -> bool {
+    let (top, bottom, left, right) = match edge {
+        ResizeEdge::Top => (true, false, false, false),
+        ResizeEdge::Bottom => (false, true, false, false),
+        ResizeEdge::Left => (false, false, true, false),
+        ResizeEdge::Right => (false, false, false, true),
+        ResizeEdge::TopLeft => (true, false, true, false),
+        ResizeEdge::TopRight => (true, false, false, true),
+        ResizeEdge::BottomLeft => (false, true, true, false),
+        ResizeEdge::BottomRight => (false, true, false, true),
+    };
+    !(top && tiling.top || bottom && tiling.bottom || left && tiling.left || right && tiling.right)
 }
 
 /// The pointer an edge shows.
