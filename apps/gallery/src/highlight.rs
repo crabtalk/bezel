@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use theme::HighlightKind;
 
-/// Install with `markdown::set_highlighter(cx, highlight::spans, highlight::languages())`.
+/// Install with `cx.set_highlighter(highlight::spans, highlight::languages())`.
 #[cfg(not(target_family = "wasm"))]
 pub fn spans(language: &str, code: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
     install();

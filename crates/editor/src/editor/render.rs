@@ -1,13 +1,15 @@
 use super::*;
+use crate::AppExt as _;
+use ui::AppExt as _;
 
 impl Render for Editor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
-        let layout = Layout::of(cx);
+        let layout = cx.editor_layout();
         let focused = self.focus_handle.is_focused(window);
         // The only place the blink starts: `caret_moved` drops the task, so the
         // next render brings it back in phase, lit beat first.
-        if focused && ui::input::caret_blink(cx) {
+        if focused && cx.caret_blink() {
             if self.blink.is_none() {
                 self.start_blink(cx);
             }
@@ -367,7 +369,7 @@ impl Render for Editor {
                                     &[]
                                 },
                                 scroll: self.scroll.as_ref(),
-                                typography: Some(markdown::Typography::of(cx).scaled(
+                                typography: Some(cx.typography().scaled(
                                     text_size::resolve(self.text_size, cx)
                                         / theme::base_text_size(),
                                 )),
@@ -390,7 +392,7 @@ impl Render for Editor {
                                 // The size is absolute, so the factor the ladder
                                 // is already scaled by comes back out of it —
                                 // otherwise the app's size and this one multiply.
-                                typography: Some(markdown::Typography::of(cx).scaled(
+                                typography: Some(cx.typography().scaled(
                                     text_size::resolve(self.text_size, cx)
                                         / theme::base_text_size(),
                                 )),

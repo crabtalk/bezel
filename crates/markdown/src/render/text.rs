@@ -1,6 +1,7 @@
 //! Inline text: flattening to runs, painting, carets and selection rects.
 
 use super::*;
+use ui::AppExt as _;
 
 /// Inline content flattened for shaping: one string, its runs, and the ranges
 /// that need painting underneath (link clicks, inline-code washes, mentions).
@@ -434,7 +435,7 @@ pub(super) fn painted_text(
             if let Some(offset) = caret
                 && let Some(head) = layout.position_for_index(offset)
             {
-                let shape = ui::input::caret_shape(cx);
+                let shape = cx.caret_shape();
                 window.paint_quad(
                     shape.quad(
                         caret_quad(head, size, layout.line_height()),

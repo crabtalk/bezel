@@ -36,20 +36,20 @@
 //!
 //! [`transient`] is the same bar, shown only while its content moves.
 //! [`Overlay`] manages its own state and supports either axis. Its default is
-//! [`Visibility::Scrolling`]; [`set_visibility`] updates all default overlays,
+//! [`Visibility::Scrolling`]; [`crate::AppExt::set_scrollbar_visibility`] updates all default overlays,
 //! including Markdown code blocks and tables. [`Viewport`] also owns the handle.
 
 mod bar;
 mod claim;
 mod drift;
 mod follow;
-mod overlay;
+pub(crate) mod overlay;
 
 pub use bar::*;
 pub use claim::*;
 pub use drift::*;
 pub use follow::*;
-pub use overlay::{Overlay, Viewport, Visibility, set_visibility, visibility};
+pub use overlay::{Overlay, Viewport, Visibility};
 
 use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 

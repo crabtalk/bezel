@@ -1,6 +1,7 @@
 //! Typing, deletion, block splits, indent and text size.
 
 use super::*;
+use crate::AppExt as _;
 
 impl Editor {
     /// Replace whatever is selected with `text`, applying a markdown prefix if
@@ -521,7 +522,7 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.step_text_size(TextSize::of(cx).step, cx);
+        self.step_text_size(cx.editor_text_size().step, cx);
     }
 
     pub(super) fn decrease_text_size(
@@ -530,7 +531,7 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.step_text_size(-TextSize::of(cx).step, cx);
+        self.step_text_size(-cx.editor_text_size().step, cx);
     }
 
     pub(super) fn reset_text_size(
@@ -539,7 +540,7 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        text_size::reset_text_size(cx);
+        cx.reset_editor_text_size();
     }
 
     /// Sizing is not an edit: it changes nothing about the document, so it
@@ -550,7 +551,9 @@ impl Editor {
     /// to work back through on the way down.
     pub(super) fn step_text_size(&mut self, by: f32, cx: &mut Context<Self>) {
         let base = self.text_size.unwrap_or_else(theme::base_text_size);
-        let next = TextSize::of(cx).clamp(text_size::resolve(self.text_size, cx) + by);
+        let next = cx
+            .editor_text_size()
+            .clamp(text_size::resolve(self.text_size, cx) + by);
         text_size::set_adjustment(next - base, cx);
     }
 

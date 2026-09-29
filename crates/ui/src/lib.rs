@@ -5,6 +5,9 @@
 //! SwiftUI views read `@Environment`. Motion comes from the named
 //! `motion` catalog.
 
+mod app;
+pub use app::AppExt;
+
 use std::borrow::Cow;
 
 use gpui::App;

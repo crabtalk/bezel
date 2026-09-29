@@ -82,7 +82,7 @@ pub fn init(mode: AppearanceMode, cx: &mut App) {
 }
 
 /// The mode currently in effect (defaults to `System` before [`init`]).
-pub fn mode(cx: &App) -> AppearanceMode {
+pub(crate) fn mode(cx: &App) -> AppearanceMode {
     cx.try_global::<AppearanceState>()
         .map(|s| s.mode)
         .unwrap_or_default()
@@ -90,7 +90,7 @@ pub fn mode(cx: &App) -> AppearanceMode {
 
 /// Change the user's preference and repaint if that changed the palette.
 /// Persisting the choice is the caller's job.
-pub fn set_mode(mode: AppearanceMode, cx: &mut App) {
+pub(crate) fn set_mode(mode: AppearanceMode, cx: &mut App) {
     if !cx.has_global::<AppearanceState>() {
         return;
     }
@@ -149,7 +149,7 @@ pub fn reports_the_os(mode: AppearanceMode) -> bool {
 /// Only what [`reports_the_os`] will vouch for: recording an override read
 /// back would overwrite what the OS said with what we asked for, and the first
 /// switch to `System` would resolve to the mode just left. Nothing is lost by
-/// skipping — a pinned mode ignores the OS anyway, and [`set_mode`] re-reads it
+/// skipping — a pinned mode ignores the OS anyway, and [`crate::AppExt::set_appearance_mode`] re-reads it
 /// on the way back.
 fn sync(system: Appearance, cx: &mut App) {
     if !cx.has_global::<AppearanceState>() {

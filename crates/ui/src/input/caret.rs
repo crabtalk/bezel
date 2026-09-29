@@ -13,12 +13,12 @@ pub enum CaretShape {
 
 impl Global for CaretShape {}
 
-pub fn caret_shape(cx: &App) -> CaretShape {
+pub(crate) fn caret_shape(cx: &App) -> CaretShape {
     cx.try_global::<CaretShape>().copied().unwrap_or_default()
 }
 
 /// Changes the shape and repaints open windows.
-pub fn set_caret_shape(shape: CaretShape, cx: &mut App) {
+pub(crate) fn set_caret_shape(shape: CaretShape, cx: &mut App) {
     cx.set_global(shape);
     cx.refresh_windows();
 }

@@ -21,14 +21,14 @@ struct Installed {
 
 impl Global for Installed {}
 
-/// `markdown::set_highlighter(cx, my_highlighter, my_languages)` — call once at
+/// `cx.set_highlighter(my_highlighter, my_languages)` — call once at
 /// boot. Without it every fenced block paints in one plain run, which is what a
 /// document looks like before anyone has an opinion about its code.
 ///
 /// The names travel with the function because they are the same fact twice: a
 /// picker that offers a language nothing can color is a promise the highlighter
 /// does not keep.
-pub fn set_highlighter(
+pub(crate) fn set_highlighter(
     cx: &mut App,
     highlighter: Highlighter,
     languages: impl IntoIterator<Item = impl Into<SharedString>>,
@@ -41,7 +41,7 @@ pub fn set_highlighter(
 
 /// What the installed highlighter can color — the list a language picker
 /// offers, empty until someone installs one.
-pub fn languages(cx: &App) -> &[SharedString] {
+pub(crate) fn languages(cx: &App) -> &[SharedString] {
     cx.try_global::<Installed>()
         .map_or(&[], |installed| &installed.languages)
 }

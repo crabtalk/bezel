@@ -3,10 +3,11 @@
 //! Xcode's and Zed's split — the app owns a base size, the reader owns an
 //! adjustment over it, and a reset clears the adjustment.
 
-use editor::{Editor, TextSize};
+use editor::{AppExt as _, Editor, TextSize};
 use gpui::{
     AppContext as _, Entity, Focusable, Pixels, TestAppContext, VisualTestContext, px, size,
 };
+use theme::AppExt as _;
 
 #[cfg(target_os = "macos")]
 const PRIMARY: &str = "cmd";
@@ -28,7 +29,7 @@ fn open_at(
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
         if let Some(sizing) = sizing {
-            editor::set_text_size(cx, sizing);
+            cx.set_editor_text_size(sizing);
         }
     });
     let window = cx.add_window(|_, cx| {
@@ -66,7 +67,7 @@ fn painted(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> Pixels {
 }
 
 fn adjustment(cx: &mut VisualTestContext) -> f32 {
-    cx.update(|_, cx| editor::text_size_adjustment(cx))
+    cx.update(|_, cx| cx.editor_text_size_adjustment())
 }
 
 #[gpui::test]
@@ -128,7 +129,7 @@ fn every_open_document_moves_together(cx: &mut TestAppContext) {
 fn a_base_in_points_ignores_the_apps_interface_size(cx: &mut TestAppContext) {
     let (editor, mut cx) = open_at(None, Some(20.0), cx);
     let before = painted(&editor, &mut cx);
-    cx.update(|_, cx| theme::set_base_text_size(18.0, cx));
+    cx.update(|_, cx| cx.set_base_text_size(18.0));
     cx.run_until_parked();
     assert_eq!(
         painted(&editor, &mut cx),
@@ -177,11 +178,11 @@ fn a_host_can_read_the_adjustment_and_put_it_back(cx: &mut TestAppContext) {
     let stored = adjustment(&mut cx);
     let painted_at = painted(&editor, &mut cx);
 
-    cx.update(|_, cx| editor::reset_text_size(cx));
+    cx.update(|_, cx| cx.reset_editor_text_size());
     cx.run_until_parked();
     assert_ne!(painted(&editor, &mut cx), painted_at);
 
-    cx.update(|_, cx| editor::adjust_text_size(cx, stored));
+    cx.update(|_, cx| cx.adjust_editor_text_size(stored));
     cx.run_until_parked();
     assert_eq!(painted(&editor, &mut cx), painted_at, "restored");
 }

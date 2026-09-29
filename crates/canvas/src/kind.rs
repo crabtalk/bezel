@@ -8,7 +8,7 @@
 //! CanvasView::new(doc, cx).with_kinds(Kinds::new().with_root(vault).with("session", session(store)))
 //! ```
 //!
-//! Keyed by the node's `type`, per view; [`set_kinds`] names them for every
+//! Keyed by the node's `type`, per view; [`crate::AppExt::set_canvas_kinds`] names them for every
 //! view that names none. A kind is closures, so it holds what it needs. Its
 //! [`Rules`] are what the canvas reads without a window; its render and open
 //! need one.
@@ -16,6 +16,7 @@
 //! replaceable, and a type nothing names is [`unknown`]. [`chrome`] dresses a
 //! box the way they do.
 
+use markdown::AppExt as _;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -27,7 +28,7 @@ use gpui::{
     AnyElement, App, Div, Global, Hsla, ObjectFit, Rgba, Styled, StyledImage, Window, div, img,
     prelude::*, px,
 };
-use markdown::{Doc, Editing, Marks, Typography};
+use markdown::{Doc, Editing};
 use theme::{TextStyle, Theme};
 
 use crate::{
@@ -362,11 +363,11 @@ struct Installed(Kinds);
 impl Global for Installed {}
 
 /// The kinds every view that names none paints with.
-pub fn set_kinds(cx: &mut App, kinds: Kinds) {
+pub(crate) fn set_kinds(cx: &mut App, kinds: Kinds) {
     cx.set_global(Installed(kinds));
 }
 
-/// What [`set_kinds`] named, else the spec's.
+/// What [`crate::AppExt::set_canvas_kinds`] named, else the spec's.
 pub(crate) fn installed(cx: &App) -> Kinds {
     cx.try_global::<Installed>()
         .map_or_else(Kinds::new, |installed| installed.0.clone())
@@ -620,14 +621,14 @@ fn render_text(
                 if parsed.len() >= PARSED {
                     parsed.clear();
                 }
-                let doc = Rc::new(markdown::parse_with(source, &Marks::of(cx)));
+                let doc = Rc::new(markdown::parse_with(source, &cx.marks()));
                 parsed.insert(node.id.clone(), (source.to_owned(), doc.clone()));
                 doc
             }
         }
     };
     let editing = Editing {
-        typography: Some(Typography::of(cx).scaled(zoom)),
+        typography: Some(cx.typography().scaled(zoom)),
         ..Editing::default()
     };
     markdown::render_with(&doc, editing, window, cx)

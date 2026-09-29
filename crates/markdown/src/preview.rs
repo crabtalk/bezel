@@ -38,10 +38,10 @@ struct Installed(LinkPreview);
 
 impl Global for Installed {}
 
-/// `markdown::set_link_preview(cx, my_previews)` — call once at boot. Without
+/// `cx.set_link_preview(my_previews)` — call once at boot. Without
 /// it a bookmark shows its host and its URL, which is what a link looks like
 /// before anyone has resolved it.
-pub fn set_link_preview(cx: &mut App, preview: LinkPreview) {
+pub(crate) fn set_link_preview(cx: &mut App, preview: LinkPreview) {
     cx.set_global(Installed(preview));
 }
 

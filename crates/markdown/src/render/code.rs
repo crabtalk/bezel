@@ -1,6 +1,7 @@
 //! Code blocks, source mode, and the copy button.
 
 use super::*;
+use ui::AppExt as _;
 
 /// Paint a document's own markdown source: a fence's caret, selection and hit
 /// testing, without a fence's box, band or copy button.
@@ -21,7 +22,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         ..
     } = editing;
     let theme = Theme::of(cx).clone();
-    let typography = typography.unwrap_or_else(|| Typography::of(cx));
+    let typography = typography.unwrap_or_else(|| cx.typography());
     let overlay = Overlay {
         block: 0,
         part: Part::Code,
@@ -40,7 +41,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         highlight: crate::marks::highlight_paint_of(cx),
         find: crate::find::find_paint_of(cx),
     };
-    let style = crate::SourceStyle::of(cx);
+    let style = cx.source_style();
     let count = code.split('\n').count();
     let gutter = Gutter::new(&style, count, &typography, &theme);
 
@@ -377,7 +378,7 @@ impl RowPaint {
         if let Some(offset) = self.caret.filter(|at| span.contains(at) || *at == span.end)
             && let Some(head) = layout.position_for_index(offset - span.start)
         {
-            let shape = ui::input::caret_shape(cx);
+            let shape = cx.caret_shape();
             window.paint_quad(
                 shape.quad(
                     caret_quad(head, self.code_size, layout.line_height()),
@@ -402,7 +403,13 @@ pub(super) fn code_block(
 ) -> AnyElement {
     let ix = overlay.block;
     let (underlay, lines) = code_lines(language, code, overlay, typography, theme, cx);
-    let body = code_body(ix, underlay, lines, typography, Layout::of(cx).wrap_code);
+    let body = code_body(
+        ix,
+        underlay,
+        lines,
+        typography,
+        cx.markdown_layout().wrap_code,
+    );
 
     div()
         .rounded(px(Theme::panel_radius()))

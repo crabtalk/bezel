@@ -12,8 +12,8 @@ struct Installed(LinkHandler);
 
 impl Global for Installed {}
 
-/// `markdown::set_link_handler(cx, my_links)` — call once at boot.
-pub fn set_link_handler(cx: &mut App, handler: LinkHandler) {
+/// `cx.set_link_handler(my_links)` — call once at boot.
+pub(crate) fn set_link_handler(cx: &mut App, handler: LinkHandler) {
     cx.set_global(Installed(handler));
 }
 

@@ -1,5 +1,5 @@
 use gpui::{Context, Hsla, Render, TestAppContext, VisualTestContext, Window, div, prelude::*};
-use markdown::{Annotation, BlockLayouts, Cursor, Editing, Part, Selection};
+use markdown::{Annotation, AppExt as _, BlockLayouts, Cursor, Editing, Part, Selection};
 use theme::{Appearance, Theme};
 
 struct Page {
@@ -84,9 +84,9 @@ fn find_washes_reach_every_render_path(cx: &mut TestAppContext) {
                 assert_eq!(markdown::default_find(&theme), defaults);
                 assert!(defaults.1.a > defaults.0.a);
                 assert_washes(&mut visual, defaults);
-                visual.update(|_, cx| markdown::set_find_paint(cx, custom));
+                visual.update(|_, cx| cx.set_find_paint(custom));
                 assert_washes(&mut visual, custom(&theme));
-                visual.update(|_, cx| markdown::set_find_paint(cx, markdown::default_find));
+                visual.update(|_, cx| cx.set_find_paint(markdown::default_find));
                 assert_washes(&mut visual, defaults);
             }
         }

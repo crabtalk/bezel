@@ -59,7 +59,7 @@ const SOURCE: &str = r##"{
 /// The sample's root, the one node the page will not let go.
 const ROOT: &str = "root";
 
-/// Installed with `canvas::set_kinds` under `"session"`.
+/// Installed with `canvas::AppExt::set_canvas_kinds` under `"session"`.
 pub fn session_kind() -> Kind {
     Kind::new(session).edit(Field::new(title, set_title))
 }

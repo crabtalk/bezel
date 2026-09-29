@@ -15,8 +15,8 @@ use gpui::{
     KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
 };
 use markdown::{
-    Annotation, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Splice,
-    Text, edit, edit::shortcut,
+    Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part,
+    Selection, Splice, Text, edit, edit::shortcut,
 };
 use std::{ops::Range, time::Duration};
 use theme::Theme;
@@ -24,10 +24,9 @@ use theme::Theme;
 use crate::{
     anchor::{Anchor, AnchorId, Delta},
     history::{EditKind, History},
-    layout::Layout,
     link::{self, Choice},
     slash::Slash,
-    text_size::{self, TextSize},
+    text_size,
 };
 
 mod anchors;
@@ -57,7 +56,7 @@ use keys::{
 pub const CONTEXT: &str = "BezelEditor";
 
 /// The custom mark [`ToggleHighlight`] toggles. It does nothing until the app
-/// registers a mark under this name with [`markdown::set_marks`].
+/// registers a mark under this name with [`markdown::AppExt::set_marks`].
 pub const HIGHLIGHT_MARK: &str = "highlight";
 
 /// [`CONTEXT`], which every binding in [`keys`] is scoped to, plus the mark
@@ -384,7 +383,7 @@ struct VerticalGoal {
 
 impl Editor {
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
-        let marks = markdown::Marks::of(cx);
+        let marks = cx.marks();
         let mut doc = markdown::parse_with(source, &marks);
         ensure_block(&mut doc);
         Self {
@@ -439,7 +438,7 @@ impl Editor {
     }
 
     /// Read and write this document with marks of its own, rather than the ones
-    /// [`markdown::set_marks`] installed. For an app whose editors do not all
+    /// [`markdown::AppExt::set_marks`] installed. For an app whose editors do not all
     /// speak the same dialect.
     pub fn with_marks(mut self, marks: markdown::Marks) -> Self {
         let source = self.source();
@@ -490,7 +489,7 @@ impl Editor {
     }
 
     /// The base the app set, if any. Add
-    /// [`text_size_adjustment`](crate::text_size_adjustment) for what is on
+    /// [`crate::AppExt::editor_text_size_adjustment`](crate::AppExt::editor_text_size_adjustment) for what is on
     /// screen.
     pub fn text_size(&self) -> Option<f32> {
         self.text_size

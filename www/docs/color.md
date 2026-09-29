@@ -25,11 +25,12 @@ Once at boot, before the first window opens — later than that and the first fr
 ## Replacing a token
 
 ```rust
-theme::set_palette(|appearance| {
+use bezel::theme::AppExt as _;
+cx.set_palette(|appearance| {
     let mut theme = Theme::for_appearance(appearance);
     theme.danger = my_red(appearance);
     theme
-}, cx); // before appearance::init
+}); // before appearance::init
 ```
 
 Register the builder rather than installing one theme: `appearance::apply` rebuilds the palette from scratch on every light/dark switch, and a theme installed on its own lasts only until then.

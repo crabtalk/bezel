@@ -267,7 +267,7 @@ pub(super) struct MentionCard {
 
 impl MentionCard {
     pub(super) fn view(url: &str, cx: &mut App) -> gpui::AnyView {
-        let typography = Typography::of(cx);
+        let typography = cx.typography();
         cx.new(|_| Self {
             url: url.to_string(),
             typography,

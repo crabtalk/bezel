@@ -1,7 +1,7 @@
 //! Painted fenced blocks for `markdown`.
 //!
 //! ```ignore
-//! markdown::set_block_renderer(cx, blocks::render);   // once, at boot
+//! cx.set_block_renderer(blocks::render);   // once, at boot
 //! ```
 //!
 //! A fence already round trips byte for byte, already holds a caret, and

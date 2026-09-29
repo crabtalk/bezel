@@ -1,5 +1,6 @@
 //! Installing a palette as the gpui global, and the per-app palette builder.
 
+use crate::AppExt as _;
 use gpui::{App, Global};
 
 use crate::{
@@ -13,13 +14,13 @@ impl Theme {
     /// change — setting the global directly leaves
     /// [`current_appearance`](crate::paint::current_appearance) stale.
     ///
-    /// Which palette that is comes from [`set_palette`], so an app with its own
+    /// Which palette that is comes from [`crate::AppExt::set_palette`], so an app with its own
     /// colours keeps them across a light/dark switch.
     pub fn install(appearance: Appearance, cx: &mut App) {
         let build = cx
             .try_global::<Palette>()
             .map_or(Self::for_appearance as fn(Appearance) -> Theme, |p| p.0);
-        let brand = crate::brand(cx);
+        let brand = cx.brand();
         let mut theme = build(appearance);
         brand.apply(&mut theme);
         layout::set_base_radius(brand.radius);
@@ -39,7 +40,7 @@ impl Theme {
     /// One-shot: [`appearance::apply`] rebuilds the palette whenever the
     /// appearance changes, so what is installed here is replaced on a light/dark
     /// switch. For colours that survive that, register a builder with
-    /// [`set_palette`] instead.
+    /// [`crate::AppExt::set_palette`] instead.
     ///
     /// [`appearance::apply`]: crate::appearance::apply
     /// [`ink`]: crate::paint::ink
@@ -64,7 +65,7 @@ impl Theme {
     }
 }
 
-/// How the app builds a palette for an appearance. See [`set_palette`].
+/// How the app builds a palette for an appearance. See [`crate::AppExt::set_palette`].
 struct Palette(fn(Appearance) -> Theme);
 
 impl Global for Palette {}
@@ -82,7 +83,7 @@ impl Global for Palette {}
 ///     theme.accent = my_brand_accent(appearance);
 ///     theme
 /// }
-/// theme::set_palette(palette, cx);          // before appearance::init
+/// cx.set_palette(palette);          // before appearance::init
 /// ```
 ///
 /// Call it before [`appearance::init`], which installs the first palette. Later
@@ -90,6 +91,6 @@ impl Global for Palette {}
 ///
 /// [`appearance::init`]: crate::appearance::init
 /// [`appearance::apply`]: crate::appearance::apply
-pub fn set_palette(build: fn(Appearance) -> Theme, cx: &mut App) {
+pub(crate) fn set_palette(build: fn(Appearance) -> Theme, cx: &mut App) {
     cx.set_global(Palette(build));
 }

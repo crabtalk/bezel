@@ -4,17 +4,15 @@ description: Pick a hue, a chroma and a radius, watch every component repaint, a
 ---
 
 ```rust
-use bezel::theme::{self, Brand, Tint};
+use bezel::theme::AppExt as _;
+use bezel::theme::{Brand, Tint};
 
-theme::set_brand(
-    Brand {
+cx.set_brand(Brand {
         tint: Tint::new(257.417, 0.046),
         accent: Tint::new(276.935, 0.182),
         radius: 8.0,
         ..Brand::default()
-    },
-    cx,
-); // before appearance::init
+    }); // before appearance::init
 ```
 
 A `Brand` is what an app changes about the shipped palette without redesigning it: one hue for the greys, one for the accent, one base radius.
@@ -24,8 +22,12 @@ A `Brand` is what an app changes about the shipped palette without redesigning i
 ```rust
 // theme
 
-/// Before `appearance::init`.
-pub fn set_brand(brand: Brand, cx: &mut App);
+pub trait AppExt {
+    /// Before `appearance::init`.
+    fn set_brand(&mut self, brand: Brand);
+    /// The builder runs first; the brand rotates whatever it returns.
+    fn set_palette(&mut self, build: fn(Appearance) -> Theme);
+}
 
 pub struct Brand {
     /// The hue every grey in the palette carries. A token that already carries
@@ -50,9 +52,6 @@ impl Tint {
     pub const fn new(hue: f32, chroma: f32) -> Self;
 }
 
-/// For colours a hue rotation cannot reach. It runs first, and a brand rotates
-/// whatever it returns.
-pub fn set_palette(build: fn(Appearance) -> Theme, cx: &mut App);
 
 // ...
 ```

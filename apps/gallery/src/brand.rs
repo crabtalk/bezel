@@ -2,7 +2,7 @@
 //! that reproduces what you are looking at.
 //!
 //! The page keeps no palette of its own. Every knob writes
-//! [`theme::set_brand`], every readout builds from
+//! [`theme::AppExt::set_brand`], every readout builds from
 //! [`Theme::branded`](theme::Theme::branded), and the snippet at the bottom
 //! prints the same [`Brand`] both of those used — so the code you copy is the
 //! thing on screen rather than a second description of it.
@@ -10,7 +10,7 @@
 use gpui::{
     AnyElement, App, Context, DragMoveEvent, Empty, SharedString, Window, div, prelude::*, px,
 };
-use theme::{Appearance, BASE_COLORS, Brand, TextStyle, Theme, Typeset};
+use theme::{AppExt as _, Appearance, BASE_COLORS, Brand, TextStyle, Theme, Typeset};
 use ui::{
     focus, popover,
     widgets::{self, ButtonStyle, Buttons, Content, Controls, SliderDrag},
@@ -112,7 +112,7 @@ pub fn page(
     window: &mut Window,
     cx: &mut Context<Gallery>,
 ) -> AnyElement {
-    let brand = theme::brand(cx);
+    let brand = cx.brand();
     stack()
         .child(popover::menu_heading(theme, "Base color"))
         .child(presets(theme, &brand, cx))
@@ -143,7 +143,7 @@ fn presets(theme: &Theme, brand: &Brand, cx: &mut Context<Gallery>) -> AnyElemen
                 .id(SharedString::from(*name))
                 .cursor_pointer()
                 .on_click(cx.listener(move |_, _, _, cx| {
-                    theme::set_brand(next, cx);
+                    cx.set_brand(next);
                     cx.notify();
                 }))
         }))
@@ -160,10 +160,10 @@ fn slider(
 ) -> AnyElement {
     let value = (knob.read)(brand);
     let nudge = move |cx: &mut Context<Gallery>, by: f32| {
-        let mut next = theme::brand(cx);
+        let mut next = cx.brand();
         let value = ((knob.read)(&next) + by).clamp(0.0, knob.max);
         (knob.write)(&mut next, value);
-        theme::set_brand(next, cx);
+        cx.set_brand(next);
         cx.notify();
     };
     div()
@@ -193,9 +193,9 @@ fn slider(
                         let Some(fraction) = widgets::slider_fraction(event, knob.id, cx) else {
                             return;
                         };
-                        let mut next = theme::brand(cx);
+                        let mut next = cx.brand();
                         (knob.write)(&mut next, fraction * knob.max);
-                        theme::set_brand(next, cx);
+                        cx.set_brand(next);
                         cx.notify();
                     }),
                 )
@@ -363,16 +363,15 @@ fn source(file: usize, brand: &Brand) -> String {
 
 fn call(brand: &Brand) -> String {
     format!(
-        "use bezel::theme::{{self, Brand, Tint}};\n\n\
+        "use bezel::theme::{{AppExt as _, Brand, Tint}};\n\n\
          // Before `appearance::init`, which installs the first palette.\n\
-         theme::set_brand(\n    \
+         cx.set_brand(\n    \
              Brand {{\n        \
                  tint: Tint::new({:.3}, {:.3}),\n        \
                  accent: Tint::new({:.3}, {:.3}),\n        \
                  radius: {:.1},\n        \
                  glass: {:.2},\n    \
              }},\n    \
-             cx,\n\
          );",
         brand.tint.hue,
         brand.tint.chroma,

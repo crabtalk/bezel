@@ -53,7 +53,8 @@ Same editor, same focus, same undo history. The caret crosses with it — exact 
 ## Pasted images
 
 ```rust
-editor::set_image_store(cx, |source| match source {
+use editor::AppExt as _;
+cx.set_image_store(|source| match source {
     editor::Source::File(path) => Some(path.to_string_lossy().into_owned()),
     editor::Source::Bytes(image) => save_somewhere(image),  // your assets, your URL
 });
@@ -99,7 +100,7 @@ impl Editor {
     /// the same place.
     pub fn with_chrome(self, chrome: Chrome) -> Self;
 
-    /// One editor's own dialect, rather than the one `markdown::set_marks`
+    /// One editor's own dialect, rather than the one `markdown::AppExt::set_marks`
     /// installed.
     pub fn with_marks(self, marks: markdown::Marks) -> Self;
 
@@ -121,7 +122,9 @@ impl Editor {
 /// `set_block`.
 pub fn turns() -> Vec<(SharedString, BlockKind)>;
 
-pub fn set_image_store(cx: &mut App, store: ImageStore);
+pub trait AppExt {
+    fn set_image_store(&mut self, store: ImageStore);
+}
 ```
 
 Moving, duplicating and deleting a block ship as actions with no chord — `editor::keys` is the whole set. The slash menu, gutter handle, drag-to-reorder, language picker, link menu, undo and the clipboard need no wiring. `Mark::Code` over more than one line makes a fence instead of an inline span, and the same call takes it back out.

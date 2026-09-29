@@ -42,7 +42,7 @@ fn main() {}
 ```
 ````
 
-A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing claims paints plain and never fails. `markdown::set_block_renderer` hands a tag and its source to a function of yours, so ` ```chart ` paints as a chart and still holds a caret, still round trips byte for byte, and still degrades to its own source where the renderer is not installed.
+A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing claims paints plain and never fails. `markdown::AppExt::set_block_renderer` hands a tag and its source to a function of yours, so ` ```chart ` paints as a chart and still holds a caret, still round trips byte for byte, and still degrades to its own source where the renderer is not installed.
 
 ## Links and pictures
 
@@ -53,7 +53,7 @@ A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing 
 ![A caption is the alt text|480](https://example.com/cover.png)
 ```
 
-A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::set_link_preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
+A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::AppExt::set_link_preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
 
 ## Limits
 

@@ -36,7 +36,7 @@ mod element;
 mod ime;
 mod text;
 
-pub use caret::{CaretShape, caret_shape, set_caret_shape};
+pub use caret::CaretShape;
 pub use element::*;
 pub use text::*;
 
@@ -168,13 +168,13 @@ impl Global for CaretBlink {}
 
 /// Whether a caret blinks or is held solid. Read where a blink would start:
 /// [`TextField`] here, and the editor's own caret.
-pub fn caret_blink(cx: &App) -> bool {
+pub(crate) fn caret_blink(cx: &App) -> bool {
     cx.try_global::<CaretBlink>().is_none_or(|blink| blink.0)
 }
 
 /// A caret held solid is still a caret — turning the blink off stops the task
 /// and leaves the caret lit, never caught on the half of the beat that hides it.
-pub fn set_caret_blink(blink: bool, cx: &mut App) {
+pub(crate) fn set_caret_blink(blink: bool, cx: &mut App) {
     cx.set_global(CaretBlink(blink));
     cx.refresh_windows();
 }
@@ -412,7 +412,7 @@ pub struct TextField {
     /// box would be a second frame inside the row's own.
     frame: bool,
     /// What the text is set in. Its leading is a multiple of the painted size,
-    /// so the whole line box follows [`theme::set_base_text_size`].
+    /// so the whole line box follows [`theme::AppExt::set_base_text_size`].
     metrics: Metrics,
     /// Which half of the blink the caret is in. Flipped by [`Self::start_blink`].
     caret_on: bool,
@@ -519,7 +519,7 @@ impl TextField {
     }
 
     /// Set the text in something other than body copy —
-    /// `Typography::of(cx).h1` sets a field the way a document sets its own
+    /// `cx.typography().h1` sets a field the way a document sets its own
     /// heading.
     pub fn with_metrics(mut self, metrics: Metrics) -> Self {
         self.metrics = metrics;

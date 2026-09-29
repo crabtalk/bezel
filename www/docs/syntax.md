@@ -12,11 +12,12 @@ Spans in document order, in bytes; everything outside them is plain text. A tag 
 ## Installing it
 
 ```rust
+use markdown::AppExt as _;
 fn spans(language: &str, code: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
     syntax::highlight(code, language)
 }
 
-markdown::set_highlighter(cx, spans, syntax::lang::LANGS.iter().map(|lang| lang.name));
+cx.set_highlighter(spans, syntax::lang::LANGS.iter().map(|lang| lang.name));
 ```
 
 `markdown` does not depend on `syntax` — the two meet at that function pointer. Note the argument order flips: `Highlighter` takes the language first, `syntax::highlight` takes the source first, and both are `&str`, so a swap compiles and silently colours nothing.
@@ -77,11 +78,13 @@ impl Lang {
 // markdown — the seam. Nothing about it is tree-sitter: `Range<usize>` and
 // `HighlightKind` are the whole vocabulary, so syntect or a regex pass is the
 // same function with a different body.
-pub fn set_highlighter(
-    cx: &mut App,
-    highlighter: Highlighter,
-    languages: impl IntoIterator<Item = impl Into<SharedString>>,
-);
+pub trait AppExt {
+    fn set_highlighter(
+        &mut self,
+        highlighter: Highlighter,
+        languages: impl IntoIterator<Item = impl Into<SharedString>>,
+    );
+}
 
 // ...
 ```

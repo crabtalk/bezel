@@ -7,6 +7,7 @@
 //!
 //! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
 
+use crate::AppExt as _;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -27,7 +28,6 @@ use theme::{TextStyle, Theme, Typeset};
 use crate::{
     block,
     doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, QuoteKind, Text},
-    layout::Layout,
     preview,
     select::{Cursor, Selection},
     typography::Typography,
@@ -144,7 +144,7 @@ pub enum Annotation {
     Resolved,
     /// The one whose thread the reader has in front of them.
     Active,
-    /// A reader's highlight, in the wash [`crate::set_highlight_paint`]
+    /// A reader's highlight, in the wash [`crate::AppExt::set_highlight_paint`]
     /// gives its colour.
     Highlight(crate::HighlightColor),
     /// A find hit.
@@ -393,7 +393,7 @@ pub fn image_source(url: &str, base: Option<&Path>) -> ImageSource {
 
 /// Parse and render in one step — the common case for read-only content.
 pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
-    let doc = crate::parse_with(source, &crate::Marks::of(cx));
+    let doc = crate::parse_with(source, &cx.marks());
     render(&doc, Caption::default(), window, cx)
 }
 
@@ -436,7 +436,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
-    let typography = typography.unwrap_or_else(|| Typography::of(cx));
+    let typography = typography.unwrap_or_else(|| cx.typography());
     let highlight = crate::marks::highlight_paint_of(cx);
     let find = crate::find::find_paint_of(cx);
     let gaps: Vec<Pixels> = doc

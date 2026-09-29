@@ -1,7 +1,7 @@
 use gpui::{
     Context, Render, TestAppContext, VisualTestContext, Window, div, point, prelude::*, px, size,
 };
-use markdown::{BlockLayouts, Cursor, Editing, Part, render_source};
+use markdown::{AppExt as _, BlockLayouts, Cursor, Editing, Part, render_source};
 
 struct Page {
     source: String,
@@ -107,7 +107,7 @@ fn host_styles_resize_and_hide_the_gutter(cx: &mut TestAppContext) {
     };
     let before = cx.update(|_, cx| x(&page, cx));
     cx.update(|_, cx| {
-        markdown::set_source_style(cx, |_| markdown::SourceStyle {
+        cx.set_source_style(|_| markdown::SourceStyle {
             gutter_min_digits: 4,
             gutter_gap: 2.0,
             ..Default::default()
@@ -116,7 +116,7 @@ fn host_styles_resize_and_hide_the_gutter(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.update(|_, cx| x(&page, cx)) > before);
     cx.update(|_, cx| {
-        markdown::set_source_style(cx, |_| markdown::SourceStyle {
+        cx.set_source_style(|_| markdown::SourceStyle {
             line_numbers: false,
             ..Default::default()
         })
@@ -128,14 +128,14 @@ fn host_styles_resize_and_hide_the_gutter(cx: &mut TestAppContext) {
 #[gpui::test]
 fn host_colors_follow_theme_changes(cx: &mut TestAppContext) {
     cx.update(|cx| {
-        markdown::set_source_style(cx, |theme| markdown::SourceStyle {
+        cx.set_source_style(|theme| markdown::SourceStyle {
             gutter_color: Some(theme.text_muted),
             ..Default::default()
         });
         for appearance in [theme::Appearance::Dark, theme::Appearance::Light] {
             theme::Theme::install(appearance, cx);
             assert_eq!(
-                markdown::SourceStyle::of(cx).gutter_color,
+                cx.source_style().gutter_color,
                 Some(theme::Theme::of(cx).text_muted),
             );
         }

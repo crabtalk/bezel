@@ -23,7 +23,7 @@ const KNOWN: &[(&str, &str, &str, &str)] = &[(
     "https://crabtalk.ai/og-home.png",
 )];
 
-/// Install with `markdown::set_link_preview(cx, preview::of)`.
+/// Install with `cx.set_link_preview(preview::of)`.
 ///
 /// A const table rather than a cache, so there is nothing in the app to read.
 pub fn of(url: &str, _: &App) -> Option<Preview> {

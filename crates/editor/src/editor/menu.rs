@@ -4,19 +4,17 @@
 //! All four are placed from positions `markdown::BlockLayouts` recorded as it
 //! painted, so none of them can drift from the text it points at.
 
+use crate::AppExt as _;
 use gpui::{
     AnyElement, App, Context, CursorStyle, MouseButton, Pixels, Point, SharedString, Window, div,
     prelude::*, px,
 };
-use markdown::{BlockKind, Part};
+use markdown::{AppExt as _, BlockKind, Part};
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
 use ui::menu::Hit;
 
-use crate::{
-    editor::{Editor, HANDLE_SIZE, Line},
-    layout::Layout,
-};
+use crate::editor::{Editor, HANDLE_SIZE, Line};
 
 /// What a row of a table line's menu does.
 type TableAction = Box<dyn Fn(&mut Editor, &mut Context<Editor>)>;
@@ -67,7 +65,7 @@ impl Editor {
             None => bounds.origin.y,
         };
         Some(gpui::point(
-            bounds.origin.x - self.origin.x - px(Layout::of(cx).text_inset),
+            bounds.origin.x - self.origin.x - px(cx.editor_layout().text_inset),
             top - self.origin.y,
         ))
     }
@@ -499,7 +497,8 @@ impl Editor {
             None,
             current.is_none(),
         );
-        let rows: Vec<AnyElement> = markdown::languages(cx)
+        let rows: Vec<AnyElement> = cx
+            .highlight_languages()
             .to_vec()
             .into_iter()
             .map(|name| {

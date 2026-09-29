@@ -52,17 +52,15 @@ Most apps want the shipped palette in their own hues. That is a `Brand` — one
 hue for the greys, one for the accent, one base radius:
 
 ```rust
-use bezel::theme::{self, Brand, Tint};
+use bezel::theme::AppExt as _;
+use bezel::theme::{Brand, Tint};
 
 // before appearance::init
-theme::set_brand(
-    Brand {
+cx.set_brand(Brand {
         tint: Tint::new(257.417, 0.046),
         accent: Tint::new(276.935, 0.182),
         radius: 8.0,
-    },
-    cx,
-);
+    });
 ```
 
 Lightness is not a knob, so a branded palette keeps the contrast ratios the
@@ -73,13 +71,14 @@ For colors a hue rotation cannot reach, register a palette builder instead — i
 runs first, and a brand rotates whatever it returns:
 
 ```rust
-use bezel::theme::{Theme, set_palette};
+use bezel::theme::AppExt as _;
+use bezel::theme::Theme;
 
-theme::set_palette(|appearance| {
+cx.set_palette(|appearance| {
     let mut theme = Theme::for_appearance(appearance);
     theme.danger = my_red(appearance);
     theme
-}, cx);
+});
 ```
 
 ## Build an app

@@ -1,7 +1,7 @@
 use gpui::{Context, Render, TestAppContext, VisualTestContext, Window, div, prelude::*, px};
 use markdown::{BlockLayouts, Cursor, Editing, Part, Selection};
 use theme::{Appearance, Theme};
-use ui::input::{CaretShape, set_caret_shape};
+use ui::{AppExt as _, input::CaretShape};
 
 struct Page {
     mode: usize,
@@ -49,7 +49,7 @@ impl Render for Page {
 }
 
 fn caret(cx: &mut VisualTestContext, shape: CaretShape) -> gpui::Quad {
-    cx.update(|_, cx| set_caret_shape(shape, cx));
+    cx.update(|_, cx| cx.set_caret_shape(shape));
     cx.run_until_parked();
     cx.update(|window, cx| {
         let color = Theme::of(cx).caret;

@@ -12,6 +12,7 @@
 //! all real. Column *values* here are therefore arbitrary; their relationships
 //! are not, and the relationships are what broke.
 
+use editor::AppExt as _;
 use std::sync::Mutex;
 
 use editor::{Editor, ImageStore, Source};
@@ -912,13 +913,10 @@ fn copy_file(path: &str, cx: &mut VisualTestContext) {
 fn the_store_is_told_which_editor_is_asking(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("", cx);
     cx.update(|_, cx| {
-        editor::set_image_store(
-            cx,
-            ImageStore {
-                keep,
-                ..ImageStore::default()
-            },
-        )
+        cx.set_image_store(ImageStore {
+            keep,
+            ..ImageStore::default()
+        })
     });
     copy_file("/My Notes/shot.png", &mut cx);
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
@@ -937,13 +935,10 @@ fn the_store_is_told_which_editor_is_asking(cx: &mut TestAppContext) {
 fn a_store_decides_for_itself_what_a_picture_is(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("", cx);
     cx.update(|_, cx| {
-        editor::set_image_store(
-            cx,
-            ImageStore {
-                keep,
-                accepts: |path| path.extension().is_some_and(|ext| ext == "heic"),
-            },
-        )
+        cx.set_image_store(ImageStore {
+            keep,
+            accepts: |path| path.extension().is_some_and(|ext| ext == "heic"),
+        })
     });
     copy_file("/My Notes/shot.heic", &mut cx);
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
@@ -956,13 +951,10 @@ fn a_store_decides_for_itself_what_a_picture_is(cx: &mut TestAppContext) {
 fn a_file_the_store_refuses_pastes_as_its_path(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("", cx);
     cx.update(|_, cx| {
-        editor::set_image_store(
-            cx,
-            ImageStore {
-                keep,
-                accepts: |path| path.extension().is_some_and(|ext| ext == "heic"),
-            },
-        )
+        cx.set_image_store(ImageStore {
+            keep,
+            accepts: |path| path.extension().is_some_and(|ext| ext == "heic"),
+        })
     });
     copy_file("/My Notes/shot.png", &mut cx);
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
@@ -1467,13 +1459,10 @@ fn a_copy_inside_a_code_block_is_the_code(cx: &mut TestAppContext) {
 fn the_store_is_handed_the_editors_base(cx: &mut TestAppContext) {
     let (editor, mut cx) = open_built("", |editor| editor.with_base("/notes/article"), cx);
     cx.update(|_, cx| {
-        editor::set_image_store(
-            cx,
-            ImageStore {
-                keep,
-                ..ImageStore::default()
-            },
-        )
+        cx.set_image_store(ImageStore {
+            keep,
+            ..ImageStore::default()
+        })
     });
     copy_file("/My Notes/shot.png", &mut cx);
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));

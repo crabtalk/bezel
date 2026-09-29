@@ -1,7 +1,7 @@
 //! Kinds and the change filter, through the keys a reader presses.
 
 use canvas::{
-    Canvas, CanvasView, Change, Kinds,
+    AppExt as _, Canvas, CanvasView, Change, Kinds,
     kind::{Field, Kind},
     layout, mindmap,
     model::Node,
@@ -38,7 +38,7 @@ fn open(
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
         canvas::init(cx);
-        canvas::set_kinds(cx, Kinds::new().with("card", card()));
+        cx.set_canvas_kinds(Kinds::new().with("card", card()));
     });
     let window = cx.add_window(|_, cx| {
         view(CanvasView::new(

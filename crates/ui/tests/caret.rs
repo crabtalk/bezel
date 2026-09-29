@@ -3,7 +3,10 @@ use gpui::{
     px,
 };
 use theme::{Appearance, Theme};
-use ui::input::{CaretShape, TextField, caret_shape, set_caret_blink, set_caret_shape};
+use ui::{
+    AppExt as _,
+    input::{CaretShape, TextField},
+};
 
 struct Page(Entity<TextField>);
 
@@ -14,7 +17,7 @@ impl Render for Page {
 }
 
 fn caret(cx: &mut VisualTestContext, shape: CaretShape) -> gpui::Quad {
-    cx.update(|_, cx| set_caret_shape(shape, cx));
+    cx.update(|_, cx| cx.set_caret_shape(shape));
     cx.run_until_parked();
     cx.update(|window, cx| {
         let color = Theme::of(cx).caret;
@@ -35,8 +38,8 @@ fn caret(cx: &mut VisualTestContext, shape: CaretShape) -> gpui::Quad {
 fn field_shapes_follow_character_width_and_stay_inside_the_clip(cx: &mut TestAppContext) {
     cx.update(|cx| {
         Theme::install(Appearance::Dark, cx);
-        assert_eq!(caret_shape(cx), CaretShape::Bar);
-        set_caret_blink(false, cx);
+        assert_eq!(cx.caret_shape(), CaretShape::Bar);
+        cx.set_caret_blink(false);
     });
     let window = cx.add_window(|_, cx| Page(cx.new(|cx| TextField::new(cx).with_frame(false))));
     let page = window.root(cx).unwrap();

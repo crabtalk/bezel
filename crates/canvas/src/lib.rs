@@ -15,6 +15,9 @@
 //! window — document, selection, history, the part in view — and
 //! [`CanvasView`] paints it and turns keys and the pointer into its commands.
 
+mod app;
+pub use app::AppExt;
+
 pub mod change;
 pub mod clip;
 pub mod contain;
@@ -37,7 +40,7 @@ pub use change::Change;
 pub use edge::{EdgeKind, EdgeKinds};
 pub use edit::{CanvasEditor, CanvasEvent, Item};
 pub use handle::Handle;
-pub use kind::{Kind, Kinds, set_kinds, text_style};
+pub use kind::{Kind, Kinds, text_style};
 pub use layout::Layout;
 pub use minimap::minimap;
 pub use model::Canvas;

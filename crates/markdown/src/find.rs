@@ -13,7 +13,7 @@ impl Global for Installed {}
 
 /// Installs the find washes for editors and previews. Without it they use
 /// [`default_find`]. Call again to replace the paint when preferences change.
-pub fn set_find_paint(cx: &mut App, paint: FindPaint) {
+pub(crate) fn set_find_paint(cx: &mut App, paint: FindPaint) {
     cx.set_global(Installed(paint));
 }
 

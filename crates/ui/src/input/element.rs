@@ -1,6 +1,7 @@
 //! Shaping and painting: runs, rows, selection and caret.
 
 use super::*;
+use crate::AppExt as _;
 
 /// What gets painted, and whether it is the placeholder — which is the only
 /// reason the colour differs.
@@ -220,7 +221,7 @@ impl Render for TextField {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The only place the blink starts: `caret_moved` drops the task, so the
         // next render brings it back in phase, solid beat first.
-        if self.focus_handle.is_focused(_window) && caret_blink(cx) {
+        if self.focus_handle.is_focused(_window) && cx.caret_blink() {
             if self.blink.is_none() {
                 self.start_blink(cx);
             }
@@ -429,7 +430,7 @@ impl Element for TextFieldElement {
             .cloned()
             .collect();
         let scrolled = field.scroll;
-        let caret_shape = caret_shape(cx);
+        let caret_shape = cx.caret_shape();
         let follow_caret = field.follow_caret || caret_shape != field.last_caret_shape;
         let style = window.text_style();
 

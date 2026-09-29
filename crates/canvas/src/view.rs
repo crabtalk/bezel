@@ -118,7 +118,7 @@ fn command<A: 'static>(
 }
 
 impl CanvasView {
-    /// `layout` places the nodes; the kinds are what [`kind::set_kinds`]
+    /// `layout` places the nodes; the kinds are what [`crate::AppExt::set_canvas_kinds`]
     /// named, else the spec's.
     pub fn new(canvas: Canvas, layout: Layout, cx: &mut Context<Self>) -> Self {
         Self {

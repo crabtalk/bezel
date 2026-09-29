@@ -23,8 +23,8 @@ struct Installed(BlockRenderer);
 
 impl Global for Installed {}
 
-/// `markdown::set_block_renderer(cx, my_blocks)` — call once at boot.
-pub fn set_block_renderer(cx: &mut App, renderer: BlockRenderer) {
+/// `cx.set_block_renderer(my_blocks)` — call once at boot.
+pub(crate) fn set_block_renderer(cx: &mut App, renderer: BlockRenderer) {
     cx.set_global(Installed(renderer));
 }
 

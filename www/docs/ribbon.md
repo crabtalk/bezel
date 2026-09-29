@@ -26,8 +26,9 @@ Matched on kind alone, so a numbered list at 7 and a fence tagged `rs` still rep
 ## Marks the library does not have
 
 ```rust
-markdown::set_marks(cx, markdown::Marks::new().with("highlight", "==").with("underline", "++"));
-markdown::set_mark_paint(cx, paint);
+use markdown::AppExt as _;
+cx.set_marks(markdown::Marks::new().with("highlight", "==").with("underline", "++"));
+cx.set_mark_paint(paint);
 ```
 
 `toggle_mark(Mark::Custom("highlight".into()))` is the same call bold takes, and the editor never learns what the name means.

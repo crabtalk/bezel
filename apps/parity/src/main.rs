@@ -15,7 +15,8 @@ use gpui::{
 };
 use motion::Painter;
 use theme::{
-    Appearance, Glass, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset as _, Vibrancy,
+    AppExt as _, Appearance, Glass, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset as _,
+    Vibrancy,
     appearance::{self, AppearanceMode},
 };
 use ui::{
@@ -103,9 +104,9 @@ fn main() {
             cx,
         );
         if opaque {
-            let mut brand = theme::brand(cx);
+            let mut brand = cx.brand();
             brand.vibrancy = Vibrancy::Off;
-            theme::set_brand(brand, cx);
+            cx.set_brand(brand);
         }
         focus::init(cx);
         cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
@@ -259,12 +260,12 @@ impl Parity {
     /// stay where they are, so the card is the one thing that has not changed
     /// between the two shots.
     fn set_frosted(on: bool, cx: &mut App) {
-        let mut brand = theme::brand(cx);
+        let mut brand = cx.brand();
         brand.vibrancy = match on {
             true => Vibrancy::On,
             false => Vibrancy::Off,
         };
-        theme::set_brand(brand, cx);
+        cx.set_brand(brand);
     }
 }
 
@@ -444,11 +445,11 @@ impl Render for Parity {
                                 )))
                                 .child(div().w(px(12.0)))
                                 .child(pick("dark", dark).on_click(cx.listener(|_, _, _, cx| {
-                                    appearance::set_mode(AppearanceMode::Dark, cx);
+                                    cx.set_appearance_mode(AppearanceMode::Dark);
                                     cx.notify();
                                 })))
                                 .child(pick("light", !dark).on_click(cx.listener(|_, _, _, cx| {
-                                    appearance::set_mode(AppearanceMode::Light, cx);
+                                    cx.set_appearance_mode(AppearanceMode::Light);
                                     cx.notify();
                                 })))
                                 .child(div().w(px(12.0)))
