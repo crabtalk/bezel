@@ -55,6 +55,8 @@ fn editor_forwards_picture_controls_and_can_replace_move_and_remove_them(cx: &mu
     let control = visual
         .debug_bounds("article-image-control")
         .expect("editor forwards overlay");
+    // What the editor holds, which on Windows is the path re-escaped.
+    let source = visual.update(|_, cx| editor.read(cx).source());
     assert_eq!(control.top(), picture.top() + px(6.0));
     let selection = visual.update(|_, cx| editor.read(cx).selection());
     visual.simulate_click(control.center(), Modifiers::default());
