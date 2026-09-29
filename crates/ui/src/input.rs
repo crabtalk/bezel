@@ -30,11 +30,13 @@ use unicode_segmentation::UnicodeSegmentation as _;
 
 use theme::{HighlightKind, Metrics, SyntaxPalette, TextStyle, Theme};
 
+pub mod caret;
 mod edit;
 mod element;
 mod ime;
 mod text;
 
+pub use caret::{CaretShape, caret_shape, set_caret_shape};
 pub use element::*;
 pub use text::*;
 
@@ -423,6 +425,7 @@ pub struct TextField {
     /// unconditionally would snap the view back to it on the very next frame,
     /// so scrolling away to read would be impossible.
     follow_caret: bool,
+    last_caret_shape: CaretShape,
     /// Byte ranges to paint in a syntax colour, in document order — see
     /// [`Self::set_spans`]. Empty for every field that is prose.
     spans: Vec<(Range<usize>, HighlightKind)>,
@@ -458,6 +461,7 @@ impl TextField {
             caret_on: true,
             blink: None,
             follow_caret: false,
+            last_caret_shape: CaretShape::Bar,
             spans: Vec::new(),
             matches: Vec::new(),
         }
