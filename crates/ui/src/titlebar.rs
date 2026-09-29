@@ -39,7 +39,7 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     App, Div, ElementId, MAX_BUTTONS_PER_SIDE, MouseButton, Stateful, Window, WindowButton,
-    WindowButtonLayout, WindowControlArea, div, prelude::*, px, rgb,
+    WindowButtonLayout, WindowControlArea, WindowControls, div, prelude::*, px, rgb,
 };
 
 use theme::Theme;
@@ -49,11 +49,60 @@ use theme::Theme;
 pub enum CaptionStyle {
     #[default]
     Rectangular,
-    /// Colored discs within the same full-size caption targets.
+    /// Left-aligned close, minimise, zoom discs within full-size caption targets.
     Lights,
 }
 
 impl gpui::Global for CaptionStyle {}
+
+impl CaptionStyle {
+    /// Resolves button order and permissions. Only rectangular captions use the desktop layout.
+    pub fn button_layout(
+        self,
+        desktop: Option<WindowButtonLayout>,
+        allowed: WindowControls,
+    ) -> WindowButtonLayout {
+        let mut layout = match self {
+            Self::Rectangular => desktop.unwrap_or(TRAILING),
+            Self::Lights => WindowButtonLayout {
+                left: [
+                    Some(WindowButton::Close),
+                    Some(WindowButton::Minimize),
+                    Some(WindowButton::Maximize),
+                ],
+                right: [None; MAX_BUTTONS_PER_SIDE],
+            },
+        };
+        for button in layout.left.iter_mut().chain(layout.right.iter_mut()) {
+            if matches!(button, Some(WindowButton::Minimize) if !allowed.minimize)
+                || matches!(button, Some(WindowButton::Maximize) if !allowed.maximize)
+            {
+                *button = None;
+            }
+        }
+        layout
+    }
+}
+
+/// Full left strip for three lights, including the space around their discs.
+/// Targets keep the platform caption width and reach the left edge without padding.
+pub const LIGHTS_WIDTH: f32 = 3.0 * Theme::CAPTION_BUTTON_WIDTH;
+
+/// Width occupied by left-side lights for this window, accounting for permissions
+/// and fullscreen. Reserve it only when positioning controls as an overlay;
+/// [`controls`] already occupies this space in normal layout.
+pub fn lights_width(window: &Window) -> f32 {
+    if window.is_fullscreen() {
+        return 0.0;
+    }
+    CaptionStyle::Lights
+        .button_layout(None, window.window_controls())
+        .left
+        .into_iter()
+        .flatten()
+        .count() as f32
+        * Theme::CAPTION_BUTTON_WIDTH
+}
 
 pub(crate) fn caption_style(cx: &App) -> CaptionStyle {
     cx.try_global::<CaptionStyle>().copied().unwrap_or_default()
@@ -156,9 +205,8 @@ pub enum CaptionSide {
 /// The caption buttons, for a window whose system caption is gone —
 /// `appears_transparent` on Windows, `Decorations::Client` on Linux.
 ///
-/// Call it at both ends of the bar and let the desktop decide which end fills:
-/// `App::button_layout` reads GNOME's `gtk-decoration-layout`, and a platform
-/// that reports no layout at all puts the three on the right.
+/// Call it at both ends. Rectangular captions follow `App::button_layout`,
+/// falling back to the right. Lights always use close/minimise/zoom on the left.
 ///
 /// Empty in full screen, and short whatever `Window::window_controls` says the
 /// compositor will refuse. Close is never refused.
@@ -185,24 +233,15 @@ pub fn controls(side: CaptionSide, window: &Window, cx: &App) -> Div {
         return row;
     }
 
-    let allowed = window.window_controls();
-    let layout = cx.button_layout().unwrap_or(TRAILING);
+    let layout = caption_style(cx).button_layout(cx.button_layout(), window.window_controls());
     let buttons = match side {
         CaptionSide::Left => layout.left,
         CaptionSide::Right => layout.right,
     };
 
-    buttons
-        .into_iter()
-        .flatten()
-        .filter(|button| match button {
-            WindowButton::Close => true,
-            WindowButton::Maximize => allowed.maximize,
-            WindowButton::Minimize => allowed.minimize,
-        })
-        .fold(row, |row, button| {
-            row.child(caption_button(button, window, cx))
-        })
+    buttons.into_iter().flatten().fold(row, |row, button| {
+        row.child(caption_button(button, window, cx))
+    })
 }
 
 /// What a platform with no layout of its own gets: all three, trailing.
