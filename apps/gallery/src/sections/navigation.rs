@@ -1,4 +1,5 @@
 use crate::*;
+use ui::AppExt as _;
 
 impl Gallery {
     pub(crate) fn navigation(
@@ -312,6 +313,7 @@ impl Gallery {
             }
 
             "titlebar" => {
+                let caption_style = cx.caption_style();
                 let frame = |body: gpui::Div| {
                     body.w_full()
                         .rounded(px(Theme::panel_radius()))
@@ -328,6 +330,32 @@ impl Gallery {
                         .child(copy)
                 };
                 section
+                    .child(row().children([
+                        ("Rectangular", titlebar::CaptionStyle::Rectangular),
+                        ("Lights", titlebar::CaptionStyle::Lights),
+                    ].map(|(label, style)| {
+                        pressable(
+                            theme.button(
+                                label,
+                                if caption_style == style {
+                                    ButtonStyle::Prominent
+                                } else {
+                                    ButtonStyle::Ghost
+                                },
+                                None,
+                            ),
+                            label,
+                            cx,
+                            move |_, cx| cx.set_caption_style(style),
+                        )
+                    })))
+                    .child(hint(&theme, "App-wide caption style for Windows and Linux. The controls below operate this window; macOS keeps its native titlebar buttons."))
+                    .child(frame(div()).child(
+                        titlebar::titlebar("caption-style-demo", false, window)
+                            .child(titlebar::controls(titlebar::CaptionSide::Left, window, cx))
+                            .child(caption("Caption buttons"))
+                            .child(titlebar::controls(titlebar::CaptionSide::Right, window, cx)),
+                    ))
                     .child(hint(
                         &theme,
                         "Drag the bare stretch of either strip to move the \

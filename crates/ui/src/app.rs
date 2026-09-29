@@ -4,6 +4,12 @@ use gpui::App;
 
 /// Configuration carried by the application. Import as `use ui::AppExt as _;`.
 pub trait AppExt {
+    /// Reads the caption button style. Defaults to `Rectangular`.
+    fn caption_style(&self) -> crate::titlebar::CaptionStyle;
+
+    /// Sets the caption button style and refreshes windows.
+    fn set_caption_style(&mut self, style: crate::titlebar::CaptionStyle);
+
     /// Reads caret blink.
     fn caret_blink(&self) -> bool;
 
@@ -31,6 +37,15 @@ pub trait AppExt {
 }
 
 impl AppExt for App {
+    fn caption_style(&self) -> crate::titlebar::CaptionStyle {
+        crate::titlebar::caption_style(self)
+    }
+
+    fn set_caption_style(&mut self, style: crate::titlebar::CaptionStyle) {
+        self.set_global(style);
+        self.refresh_windows();
+    }
+
     fn caret_blink(&self) -> bool {
         crate::input::caret_blink(self)
     }

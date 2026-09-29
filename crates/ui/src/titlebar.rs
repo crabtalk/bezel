@@ -39,10 +39,27 @@ use std::{cell::Cell, rc::Rc};
 
 use gpui::{
     App, Div, ElementId, MAX_BUTTONS_PER_SIDE, MouseButton, Stateful, Window, WindowButton,
-    WindowButtonLayout, WindowControlArea, div, prelude::*, px,
+    WindowButtonLayout, WindowControlArea, div, prelude::*, px, rgb,
 };
 
 use theme::Theme;
+
+/// Appearance of app-drawn caption buttons; native window actions stay the same.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CaptionStyle {
+    #[default]
+    Rectangular,
+    /// Colored discs within the same full-size caption targets.
+    Lights,
+}
+
+impl gpui::Global for CaptionStyle {}
+
+pub(crate) fn caption_style(cx: &App) -> CaptionStyle {
+    cx.try_global::<CaptionStyle>().copied().unwrap_or_default()
+}
+
+const CAPTION_GROUP: &str = "caption-controls";
 
 /// Whether the press on a [`grip`] is still a candidate for a window move.
 ///
@@ -157,7 +174,13 @@ pub enum CaptionSide {
 ///     .child(titlebar::controls(CaptionSide::Right, window, cx))
 /// ```
 pub fn controls(side: CaptionSide, window: &Window, cx: &App) -> Div {
-    let row = div().flex().flex_row().items_center().h_full();
+    let row = div()
+        .group(CAPTION_GROUP)
+        .flex()
+        .flex_row()
+        .flex_none()
+        .items_center()
+        .h_full();
     if window.is_fullscreen() {
         return row;
     }
@@ -224,17 +247,46 @@ fn caption_button(button: WindowButton, window: &Window, cx: &App) -> Stateful<D
 
     div()
         .id(button.id())
+        .debug_selector(move || format!("caption-{}", button.id()))
         .flex()
+        .flex_none()
         .items_center()
         .justify_center()
         .w(px(Theme::CAPTION_BUTTON_WIDTH))
         .h_full()
-        .hover(|button| button.bg(hover))
-        .child(
-            icons::icon(glyph)
-                .size(px(CAPTION_GLYPH))
-                .text_color(theme.text),
-        )
+        .map(|control| match caption_style(cx) {
+            CaptionStyle::Rectangular => control.hover(|button| button.bg(hover)).child(
+                icons::icon(glyph)
+                    .size(px(CAPTION_GLYPH))
+                    .text_color(theme.text),
+            ),
+            CaptionStyle::Lights => {
+                let (color, mark) = match button {
+                    WindowButton::Close => (0xff5f57, icons::glyph::X),
+                    WindowButton::Minimize => (0xfebc2e, icons::glyph::Minus),
+                    WindowButton::Maximize => (0x28c840, icons::glyph::Plus),
+                };
+                control.child(
+                    div()
+                        .size(px(12.0))
+                        .rounded_full()
+                        .bg(rgb(if window.is_window_active() {
+                            color
+                        } else {
+                            0x999999
+                        }))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            div()
+                                .invisible()
+                                .group_hover(CAPTION_GROUP, |mark| mark.visible())
+                                .child(icons::icon(mark).size(px(8.0)).text_color(rgb(0x333333))),
+                        ),
+                )
+            }
+        })
         .window_control_area(area)
         .when(!cfg!(target_os = "windows"), |control| {
             control.on_click(move |_, window, _| match button {
