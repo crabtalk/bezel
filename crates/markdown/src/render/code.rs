@@ -35,6 +35,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         // The source view is one fence and holds no task block.
         toggle: None,
         image: None,
+        image_overlay: None,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
         base: None,

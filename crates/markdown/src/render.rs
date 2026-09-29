@@ -175,6 +175,9 @@ pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 /// Handed the image block whose picture was clicked — see [`Editing::image`].
 pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
+/// Builds a picture's hover control from its block index and original URL.
+pub type ImageOverlay = Rc<dyn Fn(usize, &str, &mut Window, &mut App) -> Option<AnyElement>>;
+
 /// Who answers a press on a task block's checkbox.
 ///
 /// Either variant paints the box as a control — the pointer over it is a hand.
@@ -228,6 +231,9 @@ pub struct Editing<'a> {
     /// press and release more than a couple of pixels apart is a drag and
     /// calls nothing. The press still reaches whatever is under the picture.
     pub image: Option<OnImage>,
+    /// An app control inset at the picture's bottom-right, visible on hover.
+    /// Its presses do not reach the picture. `None` adds no listeners.
+    pub image_overlay: Option<ImageOverlay>,
     /// Whether a fence offers to copy itself.
     pub copy: CopyButton,
     /// The directory a relative image path is joined onto. `None` leaves it
@@ -258,6 +264,7 @@ impl Default for Editing<'_> {
             typography: None,
             toggle: None,
             image: None,
+            image_overlay: None,
             copy: CopyButton::default(),
             base: None,
             keep: &[],
@@ -288,6 +295,7 @@ struct Overlay<'a> {
     /// press listener that needs an owned handle.
     toggle: Option<&'a Toggle>,
     image: Option<&'a OnImage>,
+    image_overlay: Option<&'a ImageOverlay>,
     copy: CopyButton,
     base: Option<&'a Path>,
     highlight: crate::HighlightPaint,
@@ -428,6 +436,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         typography,
         toggle,
         image,
+        image_overlay,
         copy,
         base,
         keep,
@@ -466,6 +475,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caption,
                 toggle: toggle.as_ref(),
                 image: image.as_ref(),
+                image_overlay: image_overlay.as_ref(),
                 copy,
                 base,
                 highlight,
@@ -501,6 +511,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         caption,
         toggle,
         image,
+        image_overlay,
         copy,
         base: base.map(Path::to_path_buf),
         highlight,
@@ -528,6 +539,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caption: owned.caption,
                 toggle: owned.toggle.as_ref(),
                 image: owned.image.as_ref(),
+                image_overlay: owned.image_overlay.as_ref(),
                 copy: owned.copy,
                 base: owned.base.as_deref(),
                 highlight: owned.highlight,
@@ -558,6 +570,7 @@ struct Owned {
     caption: Caption,
     toggle: Option<Toggle>,
     image: Option<OnImage>,
+    image_overlay: Option<ImageOverlay>,
     copy: CopyButton,
     base: Option<std::path::PathBuf>,
     highlight: crate::HighlightPaint,
@@ -796,7 +809,7 @@ fn block_element(
             }
         }
         BlockKind::Image { url, alt, width } => {
-            image(url, alt, *width, overlay, typography, theme, cx)
+            image(url, alt, *width, overlay, typography, theme, window, cx)
         }
         BlockKind::Bookmark { url, form } => {
             bookmark(overlay.block, url, *form, typography, theme, cx)

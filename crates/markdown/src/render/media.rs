@@ -13,6 +13,10 @@ const DRAG_SLOP: f64 = 2.0;
 /// type, so a document being read is not a column of pictures each trailing a
 /// blank line. With no URL yet the picture is a dashed row instead — the shape
 /// the slash menu makes, waiting to be told what to show.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a picture, its overlay, and what paints them"
+)]
 pub(super) fn image(
     url: &str,
     alt: &Text,
@@ -20,7 +24,8 @@ pub(super) fn image(
     overlay: Overlay,
     typography: &Typography,
     theme: &Theme,
-    cx: &App,
+    window: &mut Window,
+    cx: &mut App,
 ) -> AnyElement {
     let hint = SharedString::new_static(CAPTION_HINT);
     let overlay = Overlay {
@@ -70,7 +75,7 @@ pub(super) fn image(
                 .absolute()
                 .size_full()
             }));
-        match width {
+        let box_ = match width {
             // A stated width is the box's: it hugs, so the border is around
             // the picture rather than around the column beside it, and the
             // picture fills what the box settled on — which `max_w_full`
@@ -83,8 +88,30 @@ pub(super) fn image(
             // Unstated, the picture scales itself against the column, which
             // is a percentage and so needs a box that spans one to measure.
             None => box_.child(picture.max_w_full()),
+        };
+        match overlay
+            .image_overlay
+            .and_then(|build| build(ix, url, window, cx))
+        {
+            Some(control) => {
+                let group = SharedString::from(format!("md-picture-overlay-{ix}"));
+                box_.group(group.clone())
+                    .child(
+                        div()
+                            .id("image-overlay")
+                            .absolute()
+                            .bottom(px(6.0))
+                            .right(px(6.0))
+                            .invisible()
+                            .group_hover(group, |style| style.visible())
+                            .on_any_mouse_down(|_, _, cx| cx.stop_propagation())
+                            .on_click(|_, _, cx| cx.stop_propagation())
+                            .child(control),
+                    )
+                    .into_any_element()
+            }
+            None => box_.into_any_element(),
         }
-        .into_any_element()
     };
     div()
         .flex()
