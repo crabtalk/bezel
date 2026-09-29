@@ -18,6 +18,7 @@ use gpui::App;
 /// painting gpui, component library or not.
 pub use icons;
 
+pub mod color;
 pub mod combobox;
 pub mod control_bar;
 pub mod cover;

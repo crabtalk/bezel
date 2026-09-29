@@ -46,10 +46,29 @@ gpui.workspace = true
 unicode-segmentation = "1"
 web-time.workspace = true
 
-# `getrusage` for the process CPU reading in `stats`. Nothing else in the
-# library calls the platform.
+# `getrusage` for the process CPU reading in `stats`.
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2-core-foundation",
+    "NSColor",
+    "NSColorPanel",
+    "NSColorSpace",
+    "NSPanel",
+    "NSResponder",
+    "NSWindow",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "NSNotification",
+    "NSOperation",
+] }
 
 # The same two readings on Windows: `GetProcessTimes` and
 # `GetProcessMemoryInfo`.

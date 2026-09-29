@@ -268,6 +268,7 @@ pub const COMPONENTS: &[Group] = &[
                 "crates/ui/src/widgets/controls.rs",
             ),
             section("slider", "Slider", "crates/ui/src/widgets/controls.rs"),
+            section("color-picker", "Color picker", "crates/ui/src/color.rs"),
             section("date-picker", "Date picker", "crates/ui/src/date.rs"),
         ],
     },

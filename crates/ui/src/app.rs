@@ -21,6 +21,13 @@ pub trait AppExt {
 
     /// Sets default scrollbar visibility and refreshes windows.
     fn set_scrollbar_visibility(&mut self, value: crate::scroll::Visibility);
+
+    /// Reads the preset color set pickers offer.
+    fn color_swatches(&self) -> std::rc::Rc<[crate::color::Swatch]>;
+
+    /// Replaces the preset color set and refreshes windows. Defaults to
+    /// [`crate::color::default_swatches`].
+    fn set_color_swatches(&mut self, set: impl Into<std::rc::Rc<[crate::color::Swatch]>>);
 }
 
 impl AppExt for App {
@@ -46,5 +53,13 @@ impl AppExt for App {
 
     fn set_scrollbar_visibility(&mut self, value: crate::scroll::Visibility) {
         crate::scroll::overlay::set_visibility(value, self)
+    }
+
+    fn color_swatches(&self) -> std::rc::Rc<[crate::color::Swatch]> {
+        crate::color::swatches(self)
+    }
+
+    fn set_color_swatches(&mut self, set: impl Into<std::rc::Rc<[crate::color::Swatch]>>) {
+        crate::color::set_swatches(set, self)
     }
 }

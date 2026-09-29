@@ -1,7 +1,7 @@
-//! Display-only controls — toggle, checkbox, radio, progress, slider, select
-//! face, segmented control. State is always the caller's; each control is the
-//! paint plus its gesture contract, and the caller adds `.id(..)` / handlers —
-//! but for [`Controls::segmented`], which takes them.
+//! Display-only controls — toggle, checkbox, radio, progress, slider, color
+//! well, select face, segmented control. State is always the caller's; each
+//! control is the paint plus its gesture contract, and the caller adds
+//! `.id(..)` / handlers — but for [`Controls::segmented`], which takes them.
 //!
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`,
@@ -200,6 +200,46 @@ pub trait Controls: ThemeExt {
             )
     }
 
+    /// Display-only color well: a 20px ring holding `color`. The caller adds
+    /// `.id(..)` and an `.on_click(..)` that calls
+    /// [`crate::color::open_panel`].
+    fn color_well(&self, color: gpui::Hsla) -> Div {
+        well(self.theme().ink(0.25), color)
+    }
+
+    /// A row of preset colors, wired: a click on one reports its index to
+    /// `on_pick`. The ring marks `selected`; none is marked when it is out of
+    /// range or `None`.
+    ///
+    /// ```ignore
+    /// let swatches = cx.color_swatches();
+    /// theme.swatch_picker("tint", &swatches, self.tint,
+    ///     cx.listener(|view, ix: &usize, _, cx| view.pick_tint(*ix, cx)))
+    /// ```
+    fn swatch_picker(
+        &self,
+        id: impl Into<ElementId>,
+        swatches: &[crate::color::Swatch],
+        selected: Option<usize>,
+        on_pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
+    ) -> Stateful<Div> {
+        let theme = self.theme();
+        let on_pick = Rc::new(on_pick);
+        stack::row()
+            .id(id)
+            .gap(px(4.0))
+            .children(swatches.iter().enumerate().map(|(ix, swatch)| {
+                let on_pick = on_pick.clone();
+                let ring = match selected == Some(ix) {
+                    true => theme.text,
+                    false => crate::widgets::RING_SLOT,
+                };
+                well(ring, swatch.resolve(theme))
+                    .id(ix)
+                    .on_click(move |_, window, cx| on_pick(&ix, window, cx))
+            }))
+    }
+
     /// The face of a select: current value plus a chevron, shaped and toned like
     /// [`crate::input::TextField`] so a form of fields and selects reads as one
     /// system. One look, open or shut — the menu hanging under it is what says
@@ -313,6 +353,19 @@ pub trait Controls: ThemeExt {
                     }),
             )
     }
+}
+
+/// A 20px ring in `ring` around a disc of `color`.
+fn well(ring: gpui::Hsla, color: gpui::Hsla) -> Div {
+    div()
+        .flex_none()
+        .size(px(20.0))
+        .p(px(2.0))
+        .rounded_full()
+        .border_1()
+        .border_color(ring)
+        .cursor_pointer()
+        .child(div().size_full().rounded_full().bg(color))
 }
 
 /// What a segment looks like in each of its two states, before whatever it
