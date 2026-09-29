@@ -207,13 +207,13 @@ pub trait Controls: ThemeExt {
         well(self.theme().ink(0.25), color)
     }
 
-    /// A row of preset colors, wired: a click on one reports its index to
-    /// `on_pick`. The ring marks `selected`; none is marked when it is out of
-    /// range or `None`.
+    /// Preset colors, wired: a click on one reports its index to `on_pick`.
+    /// The ring marks `selected`; none is marked when it is out of range or
+    /// `None`. One row when `columns` is `None`; otherwise rows of `columns`.
     ///
     /// ```ignore
     /// let swatches = cx.color_swatches();
-    /// theme.swatch_picker("tint", &swatches, self.tint,
+    /// theme.swatch_picker("tint", &swatches, self.tint, Some(6),
     ///     cx.listener(|view, ix: &usize, _, cx| view.pick_tint(*ix, cx)))
     /// ```
     fn swatch_picker(
@@ -221,14 +221,15 @@ pub trait Controls: ThemeExt {
         id: impl Into<ElementId>,
         swatches: &[crate::color::Swatch],
         selected: Option<usize>,
+        columns: Option<usize>,
         on_pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
     ) -> Stateful<Div> {
         let theme = self.theme();
         let on_pick = Rc::new(on_pick);
-        stack::row()
-            .id(id)
-            .gap(px(4.0))
-            .children(swatches.iter().enumerate().map(|(ix, swatch)| {
+        let wells: Vec<_> = swatches
+            .iter()
+            .enumerate()
+            .map(|(ix, swatch)| {
                 let on_pick = on_pick.clone();
                 let ring = match selected == Some(ix) {
                     true => theme.text,
@@ -237,7 +238,15 @@ pub trait Controls: ThemeExt {
                 well(ring, swatch.resolve(theme))
                     .id(ix)
                     .on_click(move |_, window, cx| on_pick(&ix, window, cx))
-            }))
+            })
+            .collect();
+        let width = columns.filter(|n| *n > 0).unwrap_or(wells.len().max(1));
+        let mut wells = wells.into_iter();
+        let rows = std::iter::from_fn(|| {
+            let row: Vec<_> = wells.by_ref().take(width).collect();
+            (!row.is_empty()).then(|| stack::row().gap(px(4.0)).children(row))
+        });
+        stack::column().id(id).gap(px(4.0)).children(rows)
     }
 
     /// The face of a select: current value plus a chevron, shaped and toned like
@@ -251,6 +260,16 @@ pub trait Controls: ThemeExt {
     /// state and the selection. Wrapping that in a struct would buy an
     /// abstraction and cost the caller its control over both.
     fn select_trigger(&self, label: impl Into<SharedString>) -> Div {
+        self.select_trigger_with(None::<Div>, label)
+    }
+
+    /// [`Self::select_trigger`] with `leading` drawn before the label — a
+    /// swatch or a sample of the value.
+    fn select_trigger_with(
+        &self,
+        leading: Option<impl IntoElement>,
+        label: impl Into<SharedString>,
+    ) -> Div {
         let theme = self.theme();
         stack::row()
             .justify_between()
@@ -263,7 +282,13 @@ pub trait Controls: ThemeExt {
             .text_style(TextStyle::Body)
             .text_color(theme.text)
             .cursor_pointer()
-            .child(div().min_w_0().truncate().child(label.into()))
+            .child(
+                stack::row()
+                    .min_w_0()
+                    .gap(px(8.0))
+                    .children(leading.map(|leading| div().flex_none().child(leading)))
+                    .child(div().min_w_0().truncate().child(label.into())),
+            )
             .child(
                 crate::icons::icon(crate::icons::glyph::ChevronDown)
                     .size(px(14.0))

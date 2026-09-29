@@ -258,6 +258,7 @@ impl Gallery {
                                 "swatches",
                                 &swatches,
                                 self.controls.swatch,
+                                None,
                                 cx.listener(|view, ix: &usize, _, cx| {
                                     view.controls.swatch = Some(*ix);
                                     cx.notify();
