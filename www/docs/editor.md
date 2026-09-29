@@ -54,13 +54,37 @@ Same editor, same focus, same undo history. The caret crosses with it — exact 
 
 ```rust
 use editor::AppExt as _;
-cx.set_image_store(|source| match source {
-    editor::Source::File(path) => Some(path.to_string_lossy().into_owned()),
-    editor::Source::Bytes(image) => save_somewhere(image),  // your assets, your URL
+cx.set_image_store(editor::ImageStore {
+    keep: |source, _editor, _base, _cx| match source {
+        editor::Source::File(path) => Some(path.to_string_lossy().into_owned()),
+        editor::Source::Bytes(image) => save_somewhere(image),  // your assets, your URL
+    },
+    ..Default::default()
 });
 ```
 
 Only a screenshot needs this — bytes have no address and a document holds one. With no store installed, a screenshot cannot be pasted at all.
+
+## Paste policy
+
+```rust
+use editor::{AppExt as _, PasteContent};
+
+cx.set_paste_handler(|item, _editor, _destination, _cx| {
+    item.text().map(PasteContent::Literal)
+});
+```
+
+The handler runs before default clipboard handling. Return `Literal` to insert
+plain text, `Markdown` to use normal text-paste rules, or `None` to fall back.
+Markdown uses the editor's marks and URL handling; it stays literal inside a
+fence or in source mode. Insertion uses the normal selection and undo history.
+
+The destination supplies `mode`, `in_fence`, and `base`. The editor entity is
+already being updated: use it only as an identity, without reading or updating
+it. To retain media, call `(cx.image_store().keep)(source, editor,
+destination.base, cx)` and return the text your app wants inserted. No handler
+means unchanged paste behavior. File drops use their existing separate path.
 
 ## API
 
@@ -124,6 +148,8 @@ pub fn turns() -> Vec<(SharedString, BlockKind)>;
 
 pub trait AppExt {
     fn set_image_store(&mut self, store: ImageStore);
+    fn image_store(&self) -> ImageStore;
+    fn set_paste_handler(&mut self, handler: PasteHandler);
 }
 ```
 

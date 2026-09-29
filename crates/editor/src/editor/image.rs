@@ -97,7 +97,7 @@ pub(crate) fn set_image_store(cx: &mut App, store: ImageStore) {
 
 /// The installed store, or the one that keeps nothing — which is what a build
 /// that installed none behaves as.
-fn store(cx: &App) -> ImageStore {
+pub(crate) fn store(cx: &App) -> ImageStore {
     cx.try_global::<Installed>().map_or_else(
         ImageStore::default,
         // Copied out before the call: a store reads its own globals off the

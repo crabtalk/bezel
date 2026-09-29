@@ -19,6 +19,13 @@ pub trait AppExt {
     /// Installs the image store used when pasting pictures.
     fn set_image_store(&mut self, store: crate::ImageStore);
 
+    /// Returns the installed image store, or the default that keeps nothing.
+    fn image_store(&self) -> crate::ImageStore;
+
+    /// Overrides clipboard paste; returning `None` keeps the default behavior.
+    /// File drops are not passed to this handler.
+    fn set_paste_handler(&mut self, handler: crate::PasteHandler);
+
     /// Adjusts every open document by the given points and refreshes windows.
     fn adjust_editor_text_size(&mut self, points: f32);
 
@@ -48,6 +55,14 @@ impl AppExt for App {
 
     fn set_image_store(&mut self, store: crate::ImageStore) {
         crate::editor::image::set_image_store(self, store)
+    }
+
+    fn image_store(&self) -> crate::ImageStore {
+        crate::editor::image::store(self)
+    }
+
+    fn set_paste_handler(&mut self, handler: crate::PasteHandler) {
+        self.set_global(crate::paste::Installed(handler));
     }
 
     fn adjust_editor_text_size(&mut self, points: f32) {
