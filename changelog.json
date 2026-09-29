@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.2.5",
+    "date": "2026-09-29",
+    "summary": "Configurable find washes and caret shapes, app-provided paste handling and picture overlays, split buttons, and app configuration through extension traits.",
+    "new": [
+      "`markdown::AppExt::set_find_paint` installs the match and current-match washes for editors and previews. Defaults remain the accent at 22% and 48% opacity.",
+      "`ui::AppExt::set_caret_shape` selects `CaretShape::Bar`, `Block`, or `Underline` for text fields, markdown text, and code blocks. The default bar is unchanged; terminal cursors remain controlled by the terminal program.",
+      "`editor::AppExt::set_paste_handler` lets the app return literal text, markdown, or `None` for existing paste behavior. The handler receives the clipboard, editor identity, mode, fence state, and base path; `cx.image_store()` exposes the installed media store. File drops remain separate.",
+      "`markdown::Editing::image_overlay` builds an app control from a picture's block index and URL. It appears at the bottom-right on hover and stops presses from reaching the picture. Unset rendering is unchanged.",
+      "`Buttons::split_button` provides separately interactive main and menu halves, sized by `ControlSize`."
+    ],
+    "changed": [
+      "App-owned configuration in `theme`, `ui`, `markdown`, `editor`, and `canvas` now uses crate-root `AppExt` traits implemented for `gpui::App`. Import the relevant trait and call methods on `cx`; previous public free-function settings APIs are removed. For example, use `cx.set_caret_shape(CaretShape::Block)` instead of `ui::input::set_caret_shape(CaretShape::Block, cx)`.",
+      "`markdown::Editing` has an `image_overlay` field; struct literals without `..Default::default()` must include it."
+    ]
+  },
+  {
     "version": "0.2.4",
     "date": "2026-09-28",
     "summary": "Tabs that reorder live under the pointer with a drop mark for other drops, a host-installed link handler in markdown, WebView data stores, cache-bypassing reload and back/forward availability, a wired segmented control, and a client-decorated frame whose shadow fits its window.",
