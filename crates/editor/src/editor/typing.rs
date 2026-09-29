@@ -560,6 +560,11 @@ impl Editor {
     /// Escape closes an open menu, and otherwise collapses a selection — the
     /// things there are to back out of, innermost first.
     pub(super) fn dismiss(&mut self, _: &Dismiss, _: &mut Window, cx: &mut Context<Self>) {
+        if self.table_drag.take().is_some() {
+            self.table_dragged = true;
+            cx.notify();
+            return;
+        }
         if self.pasted.take().is_none() && self.slash.take().is_none() {
             self.selection = Selection::at(self.selection.head);
         }

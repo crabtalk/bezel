@@ -68,6 +68,11 @@ impl Anchor {
 /// an anchor mapped through the wrong shift points at the wrong words and
 /// nothing complains.
 pub(crate) enum Delta {
+    CellsMoved {
+        block: usize,
+        from: crate::editor::Line,
+        to: usize,
+    },
     /// Text went in, out, or both.
     Spliced(Splice),
     /// A run of blocks left `at`, and arrived at `to` unless it went away.
@@ -92,8 +97,29 @@ pub(crate) enum Delta {
 
 impl Delta {
     /// Where `at` ends up, and `None` when the block under it went away.
-    fn cursor(&self, at: Cursor) -> Option<Cursor> {
+    pub(crate) fn cursor(&self, at: Cursor) -> Option<Cursor> {
         match self {
+            Self::CellsMoved { block, from, to } => {
+                let mut at = at;
+                if at.block == *block
+                    && let Part::Cell { row, column } = &mut at.part
+                {
+                    let (index, from) = match from {
+                        crate::editor::Line::Row(from) => (row, *from),
+                        crate::editor::Line::Column(from) => (column, *from),
+                    };
+                    *index = if *index == from {
+                        *to
+                    } else if from < *index && *index <= *to {
+                        *index - 1
+                    } else if *to <= *index && *index < from {
+                        *index + 1
+                    } else {
+                        *index
+                    };
+                }
+                Some(at)
+            }
             Self::Spliced(splice) => {
                 let (start, end) = splice.removed.ordered();
                 if at < start {

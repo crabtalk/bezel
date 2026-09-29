@@ -14,7 +14,7 @@ use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
 use ui::menu::Hit;
 
-use crate::editor::{Editor, HANDLE_SIZE, Line};
+use crate::editor::{Editor, HANDLE_SIZE, Line, TableTarget};
 
 /// What a row of a table line's menu does.
 type TableAction = Box<dyn Fn(&mut Editor, &mut Context<Editor>)>;
@@ -22,7 +22,7 @@ type TableAction = Box<dyn Fn(&mut Editor, &mut Context<Editor>)>;
 /// Add controls occupy reserved lanes inside the table block.
 const TABLE_STRIP: f32 = markdown::render::TABLE_CONTROL_SIZE;
 /// A table row or column handle, across and along the edge it sits on.
-const TABLE_HANDLE_THIN: f32 = 12.0;
+const TABLE_HANDLE_THIN: f32 = TABLE_STRIP;
 const TABLE_HANDLE_LONG: f32 = 20.0;
 
 /// How far the language chip reaches past the word it wraps.
@@ -227,15 +227,15 @@ impl Editor {
                 .child(
                     strip("table-add-column", Self::add_column, columns)
                         .left(bounds.size.width - px(TABLE_STRIP))
-                        .top(px(0.0))
+                        .top(px(TABLE_STRIP))
                         .w(px(TABLE_STRIP))
-                        .h(bounds.size.height - px(TABLE_STRIP)),
+                        .h(bounds.size.height - px(2.0 * TABLE_STRIP)),
                 )
                 .child(
                     strip("table-add-row", Self::add_row, end_row)
-                        .left(px(0.0))
+                        .left(px(TABLE_STRIP))
                         .top(bounds.size.height - px(TABLE_STRIP))
-                        .w(bounds.size.width - px(TABLE_STRIP))
+                        .w(bounds.size.width - px(2.0 * TABLE_STRIP))
                         .h(px(TABLE_STRIP)),
                 )
                 .into_any_element(),
@@ -262,48 +262,78 @@ impl Editor {
         };
         let table = self.layouts.block_bounds(ix)?;
         let cell = self.layouts.cell_bounds(ix, part)?;
-        let handle = |id: &'static str, glyph: &'static str, line: Line, anchor: Point<Pixels>| {
-            let trigger = div()
-                .id(id)
-                .debug_selector(|| id.to_string())
-                .absolute()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.0))
-                .bg(theme.surface)
-                .border_1()
-                .border_color(theme.border)
-                .cursor(CursorStyle::PointingHand)
-                .text_style(TextStyle::Caption)
-                .text_color(theme.text_faint)
-                .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
-                .child(glyph)
-                .on_mouse_move(|_, _, cx| cx.stop_propagation())
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &gpui::MouseDownEvent, _, _| this.press_claimed = true),
-                );
-            ui::popover::menu_trigger_matching(
-                trigger,
-                |this| &mut this.table_menu,
-                move |&(block, at, _)| block == ix && at == line,
-                move |_| (ix, line, anchor),
-                cx,
-            )
-        };
+        let handle =
+            |id: &'static str, glyph: &'static str, line: TableTarget, anchor: Point<Pixels>| {
+                let trigger = div()
+                    .id(id)
+                    .debug_selector(|| id.to_string())
+                    .absolute()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.0))
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .cursor(CursorStyle::PointingHand)
+                    .text_style(TextStyle::Caption)
+                    .text_color(theme.text_faint)
+                    .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
+                    .child(glyph)
+                    .on_mouse_move(|_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                            this.press_claimed = true;
+                            this.table_dragged = false;
+                            let from = match line {
+                                TableTarget::Row(row) => Line::Row(row),
+                                TableTarget::Column(column) => Line::Column(column),
+                                TableTarget::Cell { .. } => unreachable!(),
+                            };
+                            this.table_drag = Some(super::table::TableDrag {
+                                block: ix,
+                                line: from,
+                                start: event.position,
+                                to: None,
+                            });
+                            cx.notify();
+                        }),
+                    );
+                ui::popover::trigger_press_matching(
+                    trigger,
+                    |this| &mut this.table_menu,
+                    move |&(block, at, _)| block == ix && at == line,
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if this.table_dragged {
+                        return;
+                    }
+                    if this.table_menu.take_press_was_open() {
+                        ui::popover::close_popup(this, cx, |this| &mut this.table_menu);
+                    } else {
+                        this.table_menu.open((ix, line, anchor));
+                        cx.notify();
+                    }
+                }))
+            };
         let row_mid = cell.origin.y + cell.size.height / 2.0;
         let column_mid = cell.origin.x + cell.size.width / 2.0;
         Some(
             div()
+                .absolute()
+                .top(px(0.0))
+                .left(px(0.0))
+                .size_full()
                 .child(
                     handle(
                         "table-row-handle",
-                        "⋮",
-                        Line::Row(row),
+                        "⠿",
+                        TableTarget::Row(row),
                         gpui::point(table.origin.x, row_mid),
                     )
-                    .left(table.origin.x - self.origin.x - px(TABLE_HANDLE_THIN / 2.0))
+                    .left(table.origin.x - self.origin.x)
                     .top(row_mid - self.origin.y - px(TABLE_HANDLE_LONG / 2.0))
                     .w(px(TABLE_HANDLE_THIN))
                     .h(px(TABLE_HANDLE_LONG)),
@@ -311,12 +341,12 @@ impl Editor {
                 .child(
                     handle(
                         "table-column-handle",
-                        "⋯",
-                        Line::Column(column),
+                        "⠿",
+                        TableTarget::Column(column),
                         gpui::point(column_mid, table.origin.y),
                     )
                     .left(column_mid - self.origin.x - px(TABLE_HANDLE_LONG / 2.0))
-                    .top(table.origin.y - self.origin.y - px(TABLE_HANDLE_THIN / 2.0))
+                    .top(table.origin.y - self.origin.y)
                     .w(px(TABLE_HANDLE_LONG))
                     .h(px(TABLE_HANDLE_THIN)),
                 )
@@ -352,8 +382,43 @@ impl Editor {
                 run(this, cx);
             }))
         };
-        let rows: Vec<_> = match line {
-            Line::Row(row) => [
+        let mut items: Vec<_> = match line {
+            TableTarget::Cell { row, column } => [
+                (row > 0).then(|| {
+                    action(
+                        "Insert above",
+                        Box::new(move |this, cx| this.add_row(ix, row, cx)),
+                    )
+                }),
+                Some(action(
+                    "Insert below",
+                    Box::new(move |this, cx| this.add_row(ix, row + 1, cx)),
+                )),
+                Some(action(
+                    "Insert left",
+                    Box::new(move |this, cx| this.add_column(ix, column, cx)),
+                )),
+                Some(action(
+                    "Insert right",
+                    Box::new(move |this, cx| this.add_column(ix, column + 1, cx)),
+                )),
+                (row > 0).then(|| {
+                    action(
+                        "Delete row",
+                        Box::new(move |this, cx| this.remove_row(ix, row, cx)),
+                    )
+                }),
+                (width > 1).then(|| {
+                    action(
+                        "Delete column",
+                        Box::new(move |this, cx| this.remove_column(ix, column, cx)),
+                    )
+                }),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+            TableTarget::Row(row) => [
                 (row > 0).then(|| {
                     action(
                         "Insert above",
@@ -374,7 +439,7 @@ impl Editor {
             .into_iter()
             .flatten()
             .collect(),
-            Line::Column(column) => [
+            TableTarget::Column(column) => [
                 Some(action(
                     "Insert left",
                     Box::new(move |this, cx| this.add_column(ix, column, cx)),
@@ -394,6 +459,42 @@ impl Editor {
             .flatten()
             .collect(),
         };
+        let row = match line {
+            TableTarget::Row(row) | TableTarget::Cell { row, .. } => Some(row),
+            _ => None,
+        };
+        let column = match line {
+            TableTarget::Column(column) | TableTarget::Cell { column, .. } => Some(column),
+            _ => None,
+        };
+        if let Some(row) = row {
+            if row > 1 {
+                items.push(action(
+                    "Move up",
+                    Box::new(move |this, cx| this.move_row(ix, row, row - 1, cx)),
+                ));
+            }
+            if row > 0 && row < rows.len() {
+                items.push(action(
+                    "Move down",
+                    Box::new(move |this, cx| this.move_row(ix, row, row + 1, cx)),
+                ));
+            }
+        }
+        if let Some(column) = column {
+            if column > 0 {
+                items.push(action(
+                    "Move left",
+                    Box::new(move |this, cx| this.move_column(ix, column, column - 1, cx)),
+                ));
+            }
+            if column + 1 < width {
+                items.push(action(
+                    "Move right",
+                    Box::new(move |this, cx| this.move_column(ix, column, column + 1, cx)),
+                ));
+            }
+        }
         Some(ui::popover::menu_at(
             "table-menu",
             at,
@@ -402,7 +503,7 @@ impl Editor {
                 |this| &mut this.table_menu,
                 cx,
             )
-            .children(rows)
+            .children(items)
             .into_any_element(),
             self.table_menu.closing_since(),
         ))

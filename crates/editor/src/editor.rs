@@ -40,6 +40,7 @@ pub(crate) mod menu;
 mod mode;
 mod pointer;
 mod render;
+mod table;
 mod typing;
 
 pub use keys::init;
@@ -269,6 +270,14 @@ fn source_doc(source: &str) -> Doc {
 /// without one a trigger's click on the *release* reopens what it just shut.
 pub(crate) type MenuPopup = ui::popover::Popup<(usize, gpui::Point<gpui::Pixels>)>;
 
+/// The row, column, or cell whose table menu is open.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TableTarget {
+    Row(usize),
+    Column(usize),
+    Cell { row: usize, column: usize },
+}
+
 /// A table's row or column, as [`markdown::Part::Cell`] numbers them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Line {
@@ -325,7 +334,9 @@ pub struct Editor {
     /// The table cell the pointer is over, whose row and column show handles.
     hovered_cell: Option<(usize, Part)>,
     /// A table row's or column's menu: the table, the line and where it hangs.
-    table_menu: ui::popover::Popup<(usize, Line, gpui::Point<gpui::Pixels>)>,
+    table_drag: Option<table::TableDrag>,
+    table_dragged: bool,
+    table_menu: ui::popover::Popup<(usize, TableTarget, gpui::Point<gpui::Pixels>)>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
     /// An image being dragged wider or narrower by its edge handle, and the
@@ -412,6 +423,8 @@ impl Editor {
             hovered: None,
             hovered_cell: None,
             table_menu: Default::default(),
+            table_drag: None,
+            table_dragged: false,
             lifted: None,
             resizing: None,
             block_menu: MenuPopup::default(),

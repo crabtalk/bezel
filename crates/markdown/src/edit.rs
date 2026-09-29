@@ -405,6 +405,54 @@ impl Doc {
         true
     }
 
+    /// Move a body row to its final row index. The header stays at row zero.
+    pub fn move_row(&mut self, ix: usize, from: usize, to: usize) -> bool {
+        let Some(BlockKind::Table { rows, .. }) =
+            self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        else {
+            return false;
+        };
+        if from == to || from == 0 || to == 0 || from > rows.len() || to > rows.len() {
+            return false;
+        }
+        let row = rows.remove(from - 1);
+        rows.insert(to - 1, row);
+        true
+    }
+
+    /// Move a column, including its header, alignment, and every body cell.
+    pub fn move_column(&mut self, ix: usize, from: usize, to: usize) -> bool {
+        let Some(BlockKind::Table {
+            align,
+            header,
+            rows,
+        }) = self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        else {
+            return false;
+        };
+        let width = rows
+            .iter()
+            .map(Vec::len)
+            .chain([header.len()])
+            .max()
+            .unwrap_or(0);
+        if from == to || from >= width || to >= width {
+            return false;
+        }
+        for cells in std::iter::once(&mut *header)
+            .filter(|cells| !cells.is_empty())
+            .chain(rows.iter_mut())
+        {
+            cells.resize(width, Text::default());
+            let cell = cells.remove(from);
+            cells.insert(to, cell);
+        }
+        align.resize(width, crate::Align::Left);
+        let alignment = align.remove(from);
+        align.insert(to, alignment);
+        true
+    }
+
     pub fn set_language(&mut self, ix: usize, language: Option<String>) {
         if let Some(BlockKind::Code { language: tag, .. }) =
             self.blocks.get_mut(ix).map(|block| &mut block.kind)

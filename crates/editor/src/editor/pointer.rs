@@ -65,11 +65,17 @@ impl Editor {
     /// Whether a press is being dragged: a selection, a lifted block or an
     /// image resize.
     pub(super) fn in_drag(&self) -> bool {
-        self.dragging || self.lifted.is_some() || self.resizing.is_some()
+        self.dragging
+            || self.lifted.is_some()
+            || self.resizing.is_some()
+            || self.table_drag.is_some()
     }
 
     /// Follow a dragged pointer, wherever in the window it is.
     pub(super) fn drag_to(&mut self, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        if self.table_drag.is_some() {
+            return self.drag_table_to(position, cx);
+        }
         // A lifted block follows the pointer.
         if let Some((from, _)) = self.lifted {
             if let Some(to) = self.layouts.block_at(position) {

@@ -248,7 +248,7 @@ pub struct Editing<'a> {
     pub image_overlay: Option<ImageOverlay>,
     /// Corner for the picture control; defaults to bottom-right.
     pub image_overlay_corner: ImageOverlayCorner,
-    /// Reserves right and bottom lanes inside tables for editor controls.
+    /// Reserves lanes around tables for editor controls.
     pub table_controls: bool,
     /// Whether a fence offers to copy itself.
     pub copy: CopyButton,
@@ -523,7 +523,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         .map(|block| {
             let mut guess = guess(block, &typography);
             if table_controls && matches!(block.kind, BlockKind::Table { .. }) {
-                guess.extra += px(TABLE_CONTROL_SIZE);
+                guess.extra += px(2.0 * TABLE_CONTROL_SIZE);
             }
             guess
         })

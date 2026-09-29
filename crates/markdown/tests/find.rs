@@ -332,3 +332,11 @@ fn an_unsized_picture_wider_than_the_page_stays_on_it(cx: &mut TestAppContext) {
 
     assert!(picture(&page, &mut cx).size.width <= px(WIDTH));
 }
+
+#[gpui::test]
+fn a_picture_narrowed_to_the_page_keeps_its_proportions(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&unsized_doc(1000), false, false, cx);
+
+    let frame = picture(&page, &mut cx).size;
+    assert!(frame.height < px(12.0), "{frame:?}");
+}

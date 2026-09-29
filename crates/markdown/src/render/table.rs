@@ -149,8 +149,7 @@ pub(super) fn table(
     if overlay.table_controls {
         div()
             .w_full()
-            .pr(px(TABLE_CONTROL_SIZE))
-            .pb(px(TABLE_CONTROL_SIZE))
+            .p(px(TABLE_CONTROL_SIZE))
             .child(table)
             .into_any_element()
     } else {

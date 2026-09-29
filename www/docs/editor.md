@@ -65,6 +65,16 @@ cx.set_image_store(editor::ImageStore {
 
 Only a screenshot needs this — bytes have no address and a document holds one. With no store installed, a screenshot cannot be pasted at all.
 
+## Table controls
+
+Hover a cell to reveal six-dot handles in the table's left and top lanes.
+Click one to insert, delete, or move its row or column one step. Drag a handle
+to reorder within the table; a line marks the drop position. Escape or dropping
+outside the table cancels. Right-click a cell to open
+both sets of actions, including when the table header is scrolled out of view.
+The bottom and right `+` strips append rows and columns. The header row and
+last column cannot be deleted; table edits support undo.
+
 ## Picture controls
 
 Article editors can use the same hover controls as markdown previews:
