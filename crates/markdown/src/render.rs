@@ -154,14 +154,14 @@ pub enum Annotation {
 }
 
 impl Annotation {
-    fn wash(self, theme: &Theme, highlight: crate::HighlightPaint) -> Hsla {
+    fn wash(self, theme: &Theme, highlight: crate::HighlightPaint, find: crate::FindPaint) -> Hsla {
         match self {
             Self::Open => theme.warning.opacity(0.20),
             Self::Resolved => theme.warning.opacity(0.08),
             Self::Active => theme.warning.opacity(0.38),
             Self::Highlight(color) => highlight(color, theme),
-            Self::Match => theme.accent.opacity(0.22),
-            Self::Current => theme.accent.opacity(0.48),
+            Self::Match => find(theme).0,
+            Self::Current => find(theme).1,
         }
     }
 }
@@ -291,6 +291,7 @@ struct Overlay<'a> {
     copy: CopyButton,
     base: Option<&'a Path>,
     highlight: crate::HighlightPaint,
+    find: crate::FindPaint,
 }
 
 impl<'a> Overlay<'a> {
@@ -330,7 +331,10 @@ impl<'a> Overlay<'a> {
         self.annotations
             .iter()
             .filter_map(|(range, kind)| {
-                Some((self.clip(*range, len)?, kind.wash(theme, self.highlight)))
+                Some((
+                    self.clip(*range, len)?,
+                    kind.wash(theme, self.highlight, self.find),
+                ))
             })
             .collect()
     }
@@ -434,6 +438,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     let theme = Theme::of(cx).clone();
     let typography = typography.unwrap_or_else(|| Typography::of(cx));
     let highlight = crate::marks::highlight_paint_of(cx);
+    let find = crate::find::find_paint_of(cx);
     let gaps: Vec<Pixels> = doc
         .blocks
         .iter()
@@ -464,6 +469,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 copy,
                 base,
                 highlight,
+                find,
             };
             column = column
                 .child(block_box(block, overlay, &typography, &theme, window, cx).mt(gaps[ix]));
@@ -498,6 +504,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         copy,
         base: base.map(Path::to_path_buf),
         highlight,
+        find,
         typography,
         theme,
     };
@@ -524,6 +531,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 copy: owned.copy,
                 base: owned.base.as_deref(),
                 highlight: owned.highlight,
+                find: owned.find,
             };
             block_box(
                 &owned.blocks[ix],
@@ -553,6 +561,7 @@ struct Owned {
     copy: CopyButton,
     base: Option<std::path::PathBuf>,
     highlight: crate::HighlightPaint,
+    find: crate::FindPaint,
     typography: Typography,
     theme: Theme,
 }

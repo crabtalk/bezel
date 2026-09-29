@@ -38,6 +38,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         copy: CopyButton::Hidden,
         base: None,
         highlight: crate::marks::highlight_paint_of(cx),
+        find: crate::find::find_paint_of(cx),
     };
     let style = crate::SourceStyle::of(cx);
     let count = code.split('\n').count();

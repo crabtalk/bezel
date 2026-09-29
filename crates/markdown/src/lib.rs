@@ -27,6 +27,7 @@
 pub mod block;
 pub mod doc;
 pub mod edit;
+pub mod find;
 pub mod highlight;
 pub mod layout;
 pub mod link;
@@ -45,6 +46,7 @@ pub mod typography;
 pub use block::{BlockRenderer, set_block_renderer};
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Text};
 pub use edit::{Shortcut, Splice, shortcut};
+pub use find::{FindPaint, default_find, set_find_paint};
 pub use highlight::{Highlighter, languages, set_highlighter};
 pub use layout::{Layout, set_layout};
 pub use link::{LinkHandler, set_link_handler};
