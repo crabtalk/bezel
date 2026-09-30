@@ -64,3 +64,7 @@ An enum can represent the different item ids; ids remain unique across the group
 Lists measure mounted children, including varying sizes; this is not a
 virtualized-list adapter. [Tab strips](/docs/tab-strip) use this same component
 with one horizontal list and movement constrained to its axis.
+
+Attach `.docking(&dock)` to hand items outside compatible lists to
+[a pane docking surface](/docs/docking). Local list drops keep `on_drop`;
+the docking surface handles detached releases.

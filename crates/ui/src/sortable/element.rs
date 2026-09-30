@@ -58,8 +58,12 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element for
         let axis = list.model.axis;
         let carried = if self.floating {
             state.drag.as_ref().map(|drag| {
-                let mut origin = drag.pointer - drag.grab;
-                if state.axis_locked {
+                let mut origin = if state.docking.is_some() && drag.detached {
+                    drag.carry_bounds().origin
+                } else {
+                    drag.pointer - drag.grab
+                };
+                if state.axis_locked && !(state.docking.is_some() && drag.detached) {
                     match axis {
                         Axis::Horizontal => origin.y = drag.origin.y,
                         Axis::Vertical => origin.x = drag.origin.x,
@@ -103,6 +107,8 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element for
         slot.bounds = Some(bounds);
         slot.painted = bounds.origin + offset;
         slot.origin = origin;
+        slot.returning =
+            !self.floating && slot.slide.is_some() && (slot.floating || slot.returning);
         slot.floating = self.floating;
         let sliding = slot.slide.is_some();
         drop(state);
@@ -165,11 +171,29 @@ pub(super) fn listen<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'sta
                 cx.stop_propagation();
                 return;
             }
+            let docking = state.docking.clone();
             let release = state.release(event.position, cx);
             state.restore_focus(window, cx);
-            release
+            (release, docking)
         };
-        if let Some((drag, movement)) = release {
+        if let (Some((drag, movement)), docking) = release {
+            if let Some(docking) = docking {
+                if drag.detached {
+                    docking.release(
+                        super::Carry {
+                            item: drag.item.clone(),
+                            pointer: event.position,
+                            bounds: drag.carry_bounds(),
+                            detached: true,
+                        },
+                        window,
+                        cx,
+                    );
+                    cx.stop_propagation();
+                    return;
+                }
+                docking.cancel(cx);
+            }
             if let Some(movement) = movement
                 && let Some(callback) = &moved
             {

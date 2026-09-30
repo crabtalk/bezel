@@ -5,7 +5,8 @@ use gpui::{
 use motion::{Painter, TAB_SLIDE};
 use web_time::Instant;
 
-use super::{Move, Position};
+use super::{Carry, CarryTarget, Move, Position};
+use std::rc::Rc;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct Model<L, I> {
@@ -34,6 +35,15 @@ pub(super) struct Drag<L, I> {
     pub grab: Point<Pixels>,
     pub origin: Point<Pixels>,
     pub started: bool,
+    pub detached: bool,
+}
+
+impl<L, I> Drag<L, I> {
+    pub fn carry_bounds(&self) -> Bounds<Pixels> {
+        let size = gpui::size(self.size.width.min(px(180.)), self.size.height.min(px(32.)));
+        let grab = point(self.grab.x.min(size.width), self.grab.y.min(size.height));
+        Bounds::new(self.pointer - grab, size)
+    }
 }
 
 pub(super) struct Slot<I> {
@@ -43,6 +53,7 @@ pub(super) struct Slot<I> {
     pub painted: Point<Pixels>,
     pub origin: Point<Pixels>,
     pub floating: bool,
+    pub returning: bool,
     pub slide: Option<Slide>,
 }
 
@@ -68,6 +79,7 @@ pub(super) struct State<L, I> {
     pub slots: Vec<Slot<I>>,
     pub drag: Option<Drag<L, I>>,
     pub axis_locked: bool,
+    pub docking: Option<Rc<dyn CarryTarget<I>>>,
     pub focus: Option<FocusHandle>,
     pub previous_focus: Option<FocusHandle>,
     pub focus_captured: bool,
@@ -99,6 +111,7 @@ impl<L: Clone + PartialEq, I: Clone + PartialEq> State<L, I> {
             drag: None,
             next_serial: 0,
             axis_locked: false,
+            docking: None,
             focus: None,
             previous_focus: None,
             focus_captured: false,
@@ -165,6 +178,7 @@ impl<L: Clone + PartialEq, I: Clone + PartialEq> State<L, I> {
             painted: Point::default(),
             origin: Point::default(),
             floating: false,
+            returning: false,
             slide: None,
         });
         serial
@@ -196,6 +210,7 @@ impl<L: Clone + PartialEq, I: Clone + PartialEq> State<L, I> {
             grab: pointer - slot.painted,
             origin: slot.painted,
             started: false,
+            detached: false,
         });
         self.suppress_release = false;
         cx.stop_propagation();
@@ -211,17 +226,34 @@ impl<L: Clone + PartialEq, I: Clone + PartialEq> State<L, I> {
         }
         drag.started = true;
         self.aim();
+        self.report_carry(cx);
         self.painter.notify(cx);
         true
     }
 
     fn target(&self, drag: &Drag<L, I>) -> Option<usize> {
         let kind = &self.list(&drag.from.list)?.model.kind;
+        let mut pointer = drag.pointer;
+        if self.axis_locked && self.docking.is_some() && !drag.detached {
+            let source = self.list(&drag.from.list)?;
+            match source.model.axis {
+                Axis::Horizontal => {
+                    pointer.y = pointer
+                        .y
+                        .clamp(source.viewport.top(), source.viewport.bottom())
+                }
+                Axis::Vertical => {
+                    pointer.x = pointer
+                        .x
+                        .clamp(source.viewport.left(), source.viewport.right())
+                }
+            }
+        }
         self.lists.iter().rposition(|list| {
             &list.model.kind == kind
                 && list.viewport.size.width > px(0.)
                 && list.viewport.size.height > px(0.)
-                && list.viewport.contains(&drag.pointer)
+                && list.viewport.contains(&pointer)
         })
     }
 
@@ -230,6 +262,29 @@ impl<L: Clone + PartialEq, I: Clone + PartialEq> State<L, I> {
         let Some(drag) = self.drag.as_ref().filter(|drag| drag.started) else {
             return false;
         };
+        let detached = if self.axis_locked && self.docking.is_some() {
+            self.list(&drag.from.list).is_some_and(|source| {
+                let (at, start, end) = match source.model.axis {
+                    Axis::Horizontal => (
+                        drag.pointer.y,
+                        source.viewport.top(),
+                        source.viewport.bottom(),
+                    ),
+                    Axis::Vertical => (
+                        drag.pointer.x,
+                        source.viewport.left(),
+                        source.viewport.right(),
+                    ),
+                };
+                (drag.detached && !source.viewport.contains(&drag.pointer))
+                    || at < start - px(12.)
+                    || at > end + px(12.)
+            })
+        } else {
+            self.target(drag).is_none()
+        };
+        self.drag.as_mut().unwrap().detached = detached;
+        let drag = self.drag.as_ref().unwrap();
         let target = self.target(drag).map(|index| &self.lists[index]);
         let to = target.map(|list| {
             let axis = list.model.axis;
@@ -273,6 +328,24 @@ impl<L: Clone + PartialEq, I: Clone + PartialEq> State<L, I> {
         true
     }
 
+    pub fn carry(&self) -> Option<Carry<I>> {
+        let drag = self.drag.as_ref().filter(|drag| drag.started)?;
+        Some(Carry {
+            item: drag.item.clone(),
+            pointer: drag.pointer,
+            bounds: drag.carry_bounds(),
+            detached: drag.detached,
+        })
+    }
+
+    pub fn report_carry(&self, cx: &mut App) {
+        if let Some(target) = &self.docking
+            && let Some(carry) = self.carry()
+        {
+            target.update(carry, cx);
+        }
+    }
+
     pub fn restore_focus(&mut self, window: &mut Window, cx: &mut App) {
         if !std::mem::take(&mut self.focus_captured) {
             return;
@@ -292,6 +365,9 @@ impl<L: Clone + PartialEq, I: Clone + PartialEq> State<L, I> {
 
     pub fn cancel(&mut self, cx: &mut App) {
         if let Some(drag) = self.drag.take() {
+            if let Some(target) = &self.docking {
+                target.cancel(cx);
+            }
             self.suppress_release = drag.started;
             self.painter.notify(cx);
         }

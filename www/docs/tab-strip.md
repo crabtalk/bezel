@@ -129,3 +129,7 @@ strip order also cancel.
 
 This is the horizontal, single-list adapter for [sortable lists](/docs/sortable).
 Use that component for animated moves between lists.
+
+For pane splits and joins, attach `.docking(&dock)` and mount the strips inside
+[a docking surface](/docs/docking). It owns the tear-off threshold, animated
+landing preview, Escape return and post-drop settle.

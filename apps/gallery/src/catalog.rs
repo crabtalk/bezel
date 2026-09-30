@@ -300,6 +300,7 @@ pub const COMPONENTS: &[Group] = &[
             ),
             section("tabs", "Tabs", "crates/ui/src/widgets/layout.rs"),
             section("tab-strip", "Tab strip", "crates/ui/src/tabs.rs"),
+            section("docking", "Pane docking", "crates/ui/src/docking.rs"),
             section("sortable", "Sortable lists", "crates/ui/src/sortable.rs"),
             section("nav-row", "Nav row", "crates/ui/src/widgets/layout.rs"),
             section(

@@ -2,6 +2,7 @@
 
 use crate::*;
 
+mod docking;
 pub(crate) mod controls;
 pub(crate) mod data;
 pub(crate) mod foundations;

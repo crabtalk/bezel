@@ -39,6 +39,7 @@ pub mod pending;
 pub mod popover;
 pub mod scroll;
 mod search;
+pub mod docking;
 pub mod sortable;
 pub mod stack;
 pub mod stats;

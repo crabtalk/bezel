@@ -66,6 +66,15 @@ pub struct Bar<Id: Clone + PartialEq + 'static> {
 }
 
 impl<Id: Clone + PartialEq + 'static> Bar<Id> {
+    /// Tear tabs into a docking surface after leaving the strip by 12px.
+    pub fn docking<P: Clone + PartialEq + 'static>(
+        mut self,
+        dock: &crate::docking::Dock<P, Id>,
+    ) -> Self {
+        self.group = self.group.docking(dock);
+        self
+    }
+
     /// Apply the final move synchronously. Accepts `cx.listener`.
     pub fn on_reorder(mut self, moved: impl Fn(&Move, &mut Window, &mut App) + 'static) -> Self {
         self.group = self.group.on_drop(move |event, window, cx| {

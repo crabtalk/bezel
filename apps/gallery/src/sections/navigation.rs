@@ -111,6 +111,11 @@ impl Gallery {
                 )
                 .into_any_element(),
 
+            "docking" => section
+                .child(hint(&theme, "Pull a tab away from its strip, then drop at a pane edge to split or in the centre to join. Escape returns it home. Illustrative workspace."))
+                .child(div().w_full().h(px(360.)).child(self.navigation.docking.clone()))
+                .into_any_element(),
+
             "sortable" => section
                 .child(hint(&theme, "Drag tasks between lanes; reference notes stay in their own list. Release commits the preview, Escape cancels. Illustrative project data."))
                 .child(self.navigation.sortable.group("sortable-demo", self.navigation.sorting.iter().enumerate().map(|(lane, cards)| {
@@ -718,6 +723,7 @@ pub(crate) struct State {
     /// What each opens is [`STRIP_TABS`].
     pub(crate) strip: tabs::Strip<&'static str>,
     pub(crate) reorder: tabs::Reorder<&'static str>,
+    pub(crate) docking: gpui::Entity<super::docking::Demo>,
     pub(crate) sortable: ui::sortable::Sortable<usize, &'static str>,
     pub(crate) sorting: [Vec<&'static str>; 4],
     pub(crate) nav_choice: usize,
@@ -732,6 +738,7 @@ impl State {
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             tab_choice: 0,
             reorder: tabs::Reorder::new(motion::Painter::of(cx)),
+            docking: cx.new(super::docking::Demo::new),
             sortable: ui::sortable::Sortable::new(motion::Painter::of(cx)),
             sorting: [
                 vec![

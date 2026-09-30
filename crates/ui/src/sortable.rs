@@ -4,9 +4,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Axis, ElementId, IntoElement, MouseButton, ParentElement, Pixels, Point,
-    Refineable, RenderOnce, ScrollHandle, SharedString, StyleRefinement, Styled, Window, canvas,
-    deferred, div, prelude::*, px,
+    AnyElement, App, Axis, Bounds, ElementId, IntoElement, MouseButton, ParentElement, Pixels,
+    Point, Refineable, RenderOnce, ScrollHandle, SharedString, StyleRefinement, Styled, Window,
+    canvas, deferred, div, prelude::*, px,
 };
 use motion::Painter;
 
@@ -38,6 +38,24 @@ pub struct OutsideDrop<ItemId> {
     pub position: Point<Pixels>,
 }
 
+/// Internal handoff shared by tab strips and general sortable lists.
+#[derive(Clone, PartialEq)]
+pub(crate) struct Carry<I> {
+    pub item: I,
+    pub pointer: Point<Pixels>,
+    pub bounds: Bounds<Pixels>,
+    pub detached: bool,
+}
+
+pub(crate) type CancelCarry = dyn Fn(&mut Window, &mut App);
+
+pub(crate) trait CarryTarget<I> {
+    fn watch(&self, cancel: Rc<CancelCarry>);
+    fn update(&self, carry: Carry<I>, cx: &mut App);
+    fn cancel(&self, cx: &mut App);
+    fn release(&self, carry: Carry<I>, window: &mut Window, cx: &mut App);
+}
+
 /// Shared state for all lists in one drag domain. Keep it on the owning view.
 pub struct Sortable<ListId, ItemId>(Rc<RefCell<State<ListId, ItemId>>>);
 
@@ -67,6 +85,7 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Sortable<L,
             style: StyleRefinement::default(),
             drag_style: StyleRefinement::default(),
             axis_locked: false,
+            docking: None,
         }
     }
 
@@ -170,6 +189,7 @@ pub struct Group<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static>
     style: StyleRefinement,
     axis_locked: bool,
     drag_style: StyleRefinement,
+    docking: Option<Rc<dyn CarryTarget<I>>>,
 }
 
 impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Group<L, I> {
@@ -183,6 +203,15 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Group<L, I>
         outside: impl Fn(&OutsideDrop<I>, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.outside = Some(Rc::new(outside));
+        self
+    }
+
+    /// Hand detached items to a pane docking surface.
+    pub fn docking<P: Clone + PartialEq + 'static>(
+        mut self,
+        dock: &crate::docking::Dock<P, I>,
+    ) -> Self {
+        self.docking = Some(Rc::new(dock.clone()));
         self
     }
 
@@ -210,7 +239,14 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce 
         let focus = window.use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle());
         let focus = focus.read(cx).clone();
         self.sortable.0.borrow_mut().focus = Some(focus.clone());
-        let enabled = self.moved.is_some();
+        let enabled = self.moved.is_some() || self.docking.is_some() || self.outside.is_some();
+        {
+            let mut state = self.sortable.0.borrow_mut();
+            if state.docking.is_some() && self.docking.is_none() {
+                state.cancel(cx);
+            }
+            state.docking = self.docking;
+        }
         let models = self
             .lists
             .iter()
@@ -228,6 +264,22 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce 
             .sync(models, self.axis_locked, cx);
         if self.sortable.0.borrow().drag.is_none() {
             self.sortable.0.borrow_mut().restore_focus(window, cx);
+        }
+        if self
+            .sortable
+            .0
+            .borrow()
+            .drag
+            .as_ref()
+            .is_some_and(|drag| drag.started)
+            && let Some(target) = &self.sortable.0.borrow().docking
+        {
+            let weak = Rc::downgrade(&self.sortable.0);
+            target.watch(Rc::new(move |window, cx| {
+                if let Some(state) = weak.upgrade() {
+                    Sortable(state).cancel(window, cx);
+                }
+            }));
         }
         let cancelled = self.sortable.clone();
         let mut root = div()
@@ -280,6 +332,11 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce 
                 if carried {
                     child = child.cursor_grabbing();
                     child.style().refine(&self.drag_style);
+                    if drag.as_ref().is_some_and(|drag| drag.detached)
+                        && self.sortable.0.borrow().docking.is_some()
+                    {
+                        child = child.opacity(0.);
+                    }
                 }
                 let child = Placed {
                     state: self.sortable.clone(),
@@ -297,7 +354,17 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce 
                         .child(child);
                     floating = Some(deferred(carried));
                 } else {
-                    children.push(child.into_any_element());
+                    let returning = self
+                        .sortable
+                        .0
+                        .borrow()
+                        .slot(&child.id)
+                        .is_some_and(|slot| slot.floating || slot.returning);
+                    children.push(if returning {
+                        deferred(child).into_any_element()
+                    } else {
+                        child.into_any_element()
+                    });
                 }
             }
             if let Some(target) = target {
@@ -369,6 +436,7 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce 
                         window.defer(cx, move |_, cx| painter.notify(cx));
                     }
                     state.drift(cx);
+                    state.report_carry(cx);
                 },
                 move |_, _, window, _| element::listen(state, self.moved, self.outside, window),
             )
