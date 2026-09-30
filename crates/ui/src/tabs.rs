@@ -42,7 +42,10 @@ use theme::{TextStyle, Theme, Typeset};
 
 use crate::widgets::{self, Buttons as _};
 
+mod bar;
 mod reorder;
+
+pub use bar::TabBar;
 
 pub use reorder::{Bar, Move, OutsideDrop, Reorder};
 
@@ -332,15 +335,8 @@ const TAB_PAD: f32 = 8.0;
 /// It scrolls sideways once the tabs no longer fit. `min_w_0` is what allows
 /// that — a flex child's `min-width: auto` refuses to shrink below its content,
 /// so without it the strip grows past its row instead of scrolling.
-pub fn bar(id: impl Into<ElementId>) -> Stateful<Div> {
-    div()
-        .id(id)
-        .min_w_0()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(GAP))
-        .overflow_x_scroll()
+pub fn bar(id: impl Into<ElementId>) -> TabBar {
+    TabBar::new(id.into())
 }
 
 /// One tab, up to the `×`: pass the same `key` to [`close`] and chain the

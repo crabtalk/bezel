@@ -32,7 +32,14 @@ impl<Id: Clone + PartialEq + 'static> Reorder<Id> {
     ) -> Bar<Id> {
         let tabs: Vec<_> = tabs.into_iter().collect();
         debug_assert!(tabs.iter().map(|(id, _)| id).eq(strip.tabs()));
-        let list = sortable::List::new("tabs", (), Axis::Horizontal, tabs).gap(px(GAP));
+        let list = sortable::List::new("tabs", (), Axis::Horizontal, tabs)
+            .flex_1()
+            .gap(px(GAP))
+            .wrap_viewport(|viewport, scroll| {
+                super::bar("tab-bar")
+                    .viewport(viewport, scroll)
+                    .into_any_element()
+            });
         Bar {
             group: self.0.group(id, [list]).axis_locked(),
         }

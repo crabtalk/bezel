@@ -61,7 +61,7 @@ A strip with tabs in it always has one in front: `active` is `None` only while `
 ```rust
 /// Tabs go in it; a `+`, a `···` and anything else on the row are the
 /// caller's, outside this. It scrolls sideways once the tabs stop fitting.
-pub fn bar(id: impl Into<ElementId>) -> Stateful<Div>;
+pub fn bar(id: impl Into<ElementId>) -> TabBar;
 
 /// One tab, up to the `×`.
 pub fn tab(theme: &Theme, key: impl Into<SharedString>, label: Label, state: State) -> Stateful<Div>;
@@ -69,6 +69,11 @@ pub fn tab(theme: &Theme, key: impl Into<SharedString>, label: Label, state: Sta
 /// The `×` for the `key` its tab was built with.
 pub fn close(theme: &Theme, key: impl Into<SharedString>, when: Close) -> Stateful<Div>;
 ```
+
+Both `bar` and `Reorder::bar` own a horizontal overlay scrollbar. It follows the
+app's scrollbar visibility setting, takes no layout space, and disappears when
+the tabs fit. Plain `bar` keeps its offset across renders; `track_scroll` is
+optional for programmatic access. No host wrapper is needed.
 
 One `key` names both the element and the hover group `Close::OnHover` reads, so the two cannot drift apart.
 

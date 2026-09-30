@@ -88,6 +88,7 @@ pub struct List<L, I> {
     gap: Pixels,
     scroll: Option<ScrollHandle>,
     header: Option<AnyElement>,
+    viewport: Option<Box<Viewport>>,
     style: StyleRefinement,
 }
 
@@ -110,6 +111,7 @@ impl<L, I> List<L, I> {
             gap: px(0.),
             scroll: None,
             header: None,
+            viewport: None,
             style: StyleRefinement::default(),
         }
     }
@@ -117,6 +119,14 @@ impl<L, I> List<L, I> {
     /// Only lists with equal kinds exchange items. Untagged lists share one kind.
     pub fn kind(mut self, kind: impl Into<SharedString>) -> Self {
         self.kind = kind.into();
+        self
+    }
+
+    pub(crate) fn wrap_viewport(
+        mut self,
+        wrap: impl FnOnce(AnyElement, &ScrollHandle) -> AnyElement + 'static,
+    ) -> Self {
+        self.viewport = Some(Box::new(wrap));
         self
     }
 
@@ -143,6 +153,8 @@ impl<L, I> Styled for List<L, I> {
         &mut self.style
     }
 }
+
+type Viewport = dyn FnOnce(AnyElement, &ScrollHandle) -> AnyElement;
 
 type OnMove<L, I> = dyn Fn(&Move<L, I>, &mut Window, &mut App);
 type OnOutside<I> = dyn Fn(&OutsideDrop<I>, &mut Window, &mut App);
@@ -319,14 +331,23 @@ impl<L: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce 
                 .min_h_0()
                 .flex_1()
                 .track_scroll(&scroll)
-                .when(list.axis == Axis::Horizontal, |el| el.overflow_x_scroll())
-                .when(list.axis == Axis::Vertical, |el| el.overflow_y_scroll())
+                .flex()
+                .when(list.axis == Axis::Horizontal, |el| {
+                    el.flex_row().overflow_x_scroll()
+                })
+                .when(list.axis == Axis::Vertical, |el| {
+                    el.flex_col().overflow_y_scroll()
+                })
                 .child(content);
             let viewport = element::MeasuredList {
                 state: self.sortable.clone(),
                 list: list.id,
                 viewport: true,
                 child: viewport.into_any_element(),
+            };
+            let viewport = match list.viewport {
+                Some(wrap) => wrap(viewport.into_any_element(), &scroll),
+                None => viewport.into_any_element(),
             };
             let mut frame = div()
                 .id(list.element_id)
