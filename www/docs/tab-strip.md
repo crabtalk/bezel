@@ -107,8 +107,8 @@ self.reorder.bar("panel-tabs", &self.strip,
 ```
 
 Supply children in model order with stable keys. Keep activation and close
-handlers on the tabs. Apply each move synchronously: its indices refer to the
-order immediately before that event. The active tab stays active.
+handlers on the tabs. The preview moves live, but `on_reorder` fires once on
+release. Apply that move synchronously; the active tab stays active.
 
 The carried tab follows the pointer without a gpui drag preview. Neighbours
 slide into the gap; releasing settles the tab. Reduced motion skips slides.
@@ -119,5 +119,8 @@ already does, so pressing them does not pick up the tab.
 For cross-pane moves, add `.on_drop_outside(cx.listener(...))`. It receives an
 `OutsideDrop<Id>` with the tab id and the release position in window coordinates;
 the host resolves the destination pane and moves its data. Without this hook,
-an outside release keeps the tab in its current strip. Removing a carried tab
-cancels its gesture.
+an outside release cancels the local reorder. Escape and host edits to the
+strip order also cancel.
+
+This is the horizontal, single-list adapter for [sortable lists](/docs/sortable).
+Use that component for animated moves between lists.

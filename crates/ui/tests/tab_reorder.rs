@@ -91,9 +91,9 @@ fn reorder_is_live_and_the_carried_tab_stays_under_the_pointer(cx: &mut TestAppC
     let at = start + point(px(160.), px(0.));
     travel(at, &mut cx);
     cx.update(|_, cx| {
-        assert_eq!(host.read(cx).strip.tabs(), &["b", "a", "c"]);
+        assert_eq!(host.read(cx).strip.tabs(), &["a", "b", "c"]);
         assert_eq!(host.read(cx).strip.active(), Some(&"a"));
-        assert_eq!(host.read(cx).moves, [tabs::Move { from: 0, to: 1 }]);
+        assert!(host.read(cx).moves.is_empty());
         assert!(
             !cx.has_active_drag(),
             "the strip must not create a gpui ghost"
@@ -101,7 +101,11 @@ fn reorder_is_live_and_the_carried_tab_stays_under_the_pointer(cx: &mut TestAppC
     });
     assert_eq!(cx.debug_bounds("tab-a").unwrap().left(), at.x - px(10.));
     up(at, &mut cx);
-    assert_eq!(cx.update(|_, cx| host.read(cx).clicks), 0);
+    cx.update(|_, cx| {
+        assert_eq!(host.read(cx).clicks, 0);
+        assert_eq!(host.read(cx).strip.tabs(), &["b", "a", "c"]);
+        assert_eq!(host.read(cx).moves, [tabs::Move { from: 0, to: 1 }]);
+    });
 }
 
 #[gpui::test]
@@ -113,13 +117,14 @@ fn several_samples_before_paint_use_the_latest_order(cx: &mut TestAppContext) {
         cx.simulate_mouse_move(point(px(x), at.y), MouseButton::Left, Modifiers::default());
     }
     cx.update(|_, cx| {
-        assert_eq!(host.read(cx).strip.tabs(), &["b", "c", "a"]);
-        assert_eq!(
-            host.read(cx).moves,
-            [tabs::Move { from: 0, to: 1 }, tabs::Move { from: 1, to: 2 }]
-        );
+        assert_eq!(host.read(cx).strip.tabs(), &["a", "b", "c"]);
+        assert!(host.read(cx).moves.is_empty());
     });
     up(point(px(290.), at.y), &mut cx);
+    cx.update(|_, cx| {
+        assert_eq!(host.read(cx).strip.tabs(), &["b", "c", "a"]);
+        assert_eq!(host.read(cx).moves, [tabs::Move { from: 0, to: 2 }]);
+    });
 }
 
 #[gpui::test]
@@ -145,7 +150,7 @@ fn outside_release_reports_the_tab_and_ends_the_gesture(cx: &mut TestAppContext)
     cx.simulate_mouse_move(point(px(280.), px(10.)), None, Modifiers::default());
     cx.update(|_, cx| {
         assert_eq!(host.read(cx).outside, ["a"]);
-        assert_eq!(host.read(cx).strip.tabs(), &["b", "a", "c"]);
+        assert_eq!(host.read(cx).strip.tabs(), &["a", "b", "c"]);
         assert_eq!(host.read(cx).clicks, 0);
     });
 }

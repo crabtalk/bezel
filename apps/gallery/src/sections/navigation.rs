@@ -111,6 +111,25 @@ impl Gallery {
                 )
                 .into_any_element(),
 
+            "sortable" => section
+                .child(hint(&theme, "Drag tasks between lanes; reference notes stay in their own list. Release commits the preview, Escape cancels. Illustrative project data."))
+                .child(self.navigation.sortable.group("sortable-demo", self.navigation.sorting.iter().enumerate().map(|(lane, cards)| {
+                    ui::sortable::List::new(("sort-lane", lane), lane, gpui::Axis::Vertical,
+                        cards.iter().map(|&title| (title, div()
+                            .p(px(12.)).rounded(px(Theme::control_radius()))
+                            .bg(theme.surface_raised).border_1().border_color(theme.border)
+                            .child(title)))
+                    ).kind(if lane == 3 { "notes" } else { "tasks" })
+                        .gap(px(8.)).w(px(176.)).h(px(280.))
+                        .header(div().pb(px(10.)).text_color(theme.text_muted)
+                            .child(["Planned", "In progress", "Done", "Reference"][lane]))
+                })).gap(px(16.)).on_drop(cx.listener(|view, event: &ui::sortable::Move<usize, &'static str>, _, cx| {
+                    let card = view.navigation.sorting[event.from.list].remove(event.from.index);
+                    view.navigation.sorting[event.to.list].insert(event.to.index, card);
+                    cx.notify();
+                })))
+                .into_any_element(),
+
             "tab-strip" => section
                 .child(hint(
                     &theme,
@@ -699,6 +718,8 @@ pub(crate) struct State {
     /// What each opens is [`STRIP_TABS`].
     pub(crate) strip: tabs::Strip<&'static str>,
     pub(crate) reorder: tabs::Reorder<&'static str>,
+    pub(crate) sortable: ui::sortable::Sortable<usize, &'static str>,
+    pub(crate) sorting: [Vec<&'static str>; 4],
     pub(crate) nav_choice: usize,
     pub(crate) titlebar_drag: titlebar::DragState,
 }
@@ -711,6 +732,17 @@ impl State {
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             tab_choice: 0,
             reorder: tabs::Reorder::new(motion::Painter::of(cx)),
+            sortable: ui::sortable::Sortable::new(motion::Painter::of(cx)),
+            sorting: [
+                vec![
+                    "Sketch the new sidebar",
+                    "Explore keyboard navigation across panes",
+                    "Review empty states",
+                ],
+                vec!["Build the tab strip", "Polish card spacing"],
+                vec![],
+                vec!["Interview notes", "Keyboard shortcut reference"],
+            ],
             strip: STRIP_TABS[..3].iter().map(|(name, ..)| *name).collect(),
             nav_choice: 0,
             titlebar_drag: titlebar::DragState::default(),
