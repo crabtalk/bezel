@@ -4,7 +4,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Bounds, Div, Pixels, Point, Stateful, canvas, deferred, prelude::*, px,
+    AnyElement, App, Bounds, DispatchPhase, Div, ElementId, IntoElement, MouseButton,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderOnce, Stateful, Window, canvas, deferred,
+    prelude::*, px,
 };
 use motion::{Painter, TAB_SLIDE};
 use theme::Theme;
@@ -22,6 +24,7 @@ struct Carried<Id> {
     grab: Pixels,
     /// The pointer's last `x`. `None` until the first drag move.
     pointer: Option<Pixels>,
+    press: Point<Pixels>,
 }
 
 /// One tab's place, as the last frame measured it.
@@ -59,6 +62,8 @@ struct State<Id> {
     painter: Painter,
     carried: Option<Carried<Id>>,
     slots: Vec<Slot<Id>>,
+    order: Strip<Id>,
+    bounds: Bounds<Pixels>,
 }
 
 impl<Id: PartialEq> State<Id> {
@@ -73,46 +78,14 @@ impl<Id: PartialEq> State<Id> {
     /// Where the carried tab sits against its slot, if `id` is the one carried.
     fn carried_offset(&self, id: &Id) -> Option<Pixels> {
         let carried = self.carried.as_ref().filter(|carried| carried.id == *id)?;
-        let home = self.slot(id).and_then(|slot| slot.home);
-        Some(match (carried.pointer, home) {
-            (Some(pointer), Some(home)) => pointer - carried.grab - home,
-            _ => px(0.0),
-        })
+        let pointer = carried.pointer?;
+        let home = self.slot(id)?.home?;
+        Some(pointer - carried.grab - home)
     }
 }
 
-/// A strip's tabs in motion: the one being dragged, and the ones sliding
-/// aside for it. Kept by the view beside its [`Strip`], one per strip.
-///
-/// The order changes while the drag is held, so a drop needs no handler: the
-/// tab is already where it was let go. Four places to wire:
-///
-/// ```ignore
-/// tabs::bar("panel-tabs")
-///     .on_drag_move(cx.listener(|view, event: &DragMoveEvent<TabDrag>, _, cx| {
-///         view.reorder.follow(&mut view.strip, event.event.position, cx);
-///         cx.notify();
-///     }))
-///     .children(self.strip.tabs().iter().map(|id| {
-///         let tab = tabs::tab(&theme, key, label, state).on_drag(TabDrag(*id), {
-///             let (reorder, id) = (self.reorder.clone(), *id);
-///             move |_, at, _, cx| {
-///                 reorder.grab(id, at);
-///                 cx.new(|_| gpui::Empty)
-///             }
-///         });
-///         self.reorder.tab(id, tab, &theme, cx)
-///     }))
-/// ```
-///
-/// The ghost `on_drag` returns is still painted at the pointer; an empty one
-/// leaves the carried tab as the only thing that moves.
-///
-/// `follow` runs for every move of the drag, wherever the pointer is. Pointer
-/// travel off the strip's axis is ignored.
-///
-/// The carried tab paints deferred, over its neighbours and outside the
-/// strip's clip.
+/// Persistent gesture and animation state, one per strip. Mount with [`Self::bar`].
+/// The host applies each [`Move`] to its data before the next render.
 pub struct Reorder<Id>(Rc<RefCell<State<Id>>>);
 
 impl<Id> Clone for Reorder<Id> {
@@ -129,22 +102,69 @@ impl<Id: Clone + PartialEq + 'static> Reorder<Id> {
             painter,
             carried: None,
             slots: Vec::new(),
+            order: Strip::new(),
+            bounds: Bounds::default(),
         })))
     }
 
-    /// Pick `id` up. Call it from the tab's `on_drag` constructor, with the
-    /// press offset that constructor is handed.
-    pub fn grab(&self, id: Id, at: Point<Pixels>) {
-        self.0.borrow_mut().carried = Some(Carried {
+    /// Render tabs in `strip` order. Each child is `(tab_id, tabs::tab(...))`.
+    /// Do not attach gpui drag handlers; the bar owns the gesture.
+    pub fn bar(
+        &self,
+        id: impl Into<ElementId>,
+        strip: &Strip<Id>,
+        tabs: impl IntoIterator<Item = (Id, Stateful<Div>)>,
+    ) -> Bar<Id> {
+        let mut state = self.0.borrow_mut();
+        state.slots.retain(|slot| strip.contains(&slot.id));
+        if state
+            .carried
+            .as_ref()
+            .is_some_and(|held| !strip.contains(&held.id))
+        {
+            state.carried = None;
+        }
+        state.order = strip.clone();
+        Bar {
+            id: id.into(),
+            reorder: self.clone(),
+            tabs: tabs.into_iter().collect(),
+            moved: None,
+            outside: None,
+        }
+    }
+
+    fn press(&self, id: Id, at: Point<Pixels>) {
+        let mut state = self.0.borrow_mut();
+        let Some(slot) = state.slot(&id) else { return };
+        let Some(home) = slot.home else { return };
+        let grab = at.x - home - slot.painted;
+        state.carried = Some(Carried {
             id,
-            grab: at.x,
+            grab,
             pointer: None,
+            press: at,
         });
+    }
+
+    fn release(&self, cx: &mut App) -> Option<Id> {
+        let mut state = self.0.borrow_mut();
+        let carried = state.carried.take()?;
+        let pointer = carried.pointer?;
+        if let Some(slot) = state.slot_mut(&carried.id) {
+            let from = pointer - carried.grab - slot.home.unwrap_or(pointer);
+            slot.slide = (!cx.reduce_motion() && from != px(0.0)).then_some(Slide {
+                from,
+                since: cx.background_executor().now(),
+            });
+        }
+        state.painter.notify(cx);
+        Some(carried.id)
     }
 
     /// Carry the held tab to `pointer`, reordering `strip` as it passes its
     /// neighbours. `true` when the order changed.
-    pub fn follow(&self, strip: &mut Strip<Id>, pointer: Point<Pixels>, cx: &App) -> bool {
+    fn follow(&self, strip: &mut Strip<Id>, pointer: Point<Pixels>, cx: &App) -> bool {
         let mut state = self.0.borrow_mut();
         state.slots.retain(|slot| strip.contains(&slot.id));
         let Some(carried) = state.carried.as_mut() else {
@@ -196,26 +216,9 @@ impl<Id: Clone + PartialEq + 'static> Reorder<Id> {
 
     /// `tab`, placed: at the pointer while carried, sliding while it makes way,
     /// in its slot otherwise.
-    pub fn tab(&self, id: &Id, tab: Stateful<Div>, theme: &Theme, cx: &mut App) -> AnyElement {
+    fn tab(&self, id: &Id, tab: Stateful<Div>, theme: &Theme, cx: &mut App) -> AnyElement {
         let now = cx.background_executor().now();
         let mut state = self.0.borrow_mut();
-
-        // The drag going away is the end of the gesture, however it ended.
-        if !cx.has_active_drag()
-            && let Some(carried) = state.carried.take()
-        {
-            let home = state.slot(&carried.id).and_then(|slot| slot.home);
-            let from = match (carried.pointer, home) {
-                (Some(pointer), Some(home)) => pointer - carried.grab - home,
-                _ => px(0.0),
-            };
-            if let Some(slot) = state.slot_mut(&carried.id)
-                && !cx.reduce_motion()
-                && from != px(0.0)
-            {
-                slot.slide = Some(Slide { from, since: now });
-            }
-        }
 
         let carried = state.carried_offset(id);
         if state.slot(id).is_none() {
@@ -272,5 +275,134 @@ impl<Id: Clone + PartialEq + 'static> Reorder<Id> {
             Some(_) => deferred(tab.bg(theme.surface_raised)).into_any_element(),
             None => tab.into_any_element(),
         }
+    }
+}
+
+/// A live move, using indices immediately before this event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Move {
+    pub from: usize,
+    pub to: usize,
+}
+
+/// A carried tab released outside its strip, in window coordinates.
+#[derive(Clone, Debug)]
+pub struct OutsideDrop<Id> {
+    pub id: Id,
+    pub position: Point<Pixels>,
+}
+
+type Moved = dyn Fn(&Move, &mut Window, &mut App);
+type Outside<Id> = dyn Fn(&OutsideDrop<Id>, &mut Window, &mut App);
+
+/// A strip that owns pointer capture, live ordering and slide animations.
+#[derive(IntoElement)]
+pub struct Bar<Id: Clone + PartialEq + 'static> {
+    id: ElementId,
+    reorder: Reorder<Id>,
+    tabs: Vec<(Id, Stateful<Div>)>,
+    moved: Option<Rc<Moved>>,
+    outside: Option<Rc<Outside<Id>>>,
+}
+
+impl<Id: Clone + PartialEq + 'static> Bar<Id> {
+    /// Apply this move to the host's strip/data synchronously. Accepts `cx.listener`.
+    pub fn on_reorder(mut self, moved: impl Fn(&Move, &mut Window, &mut App) + 'static) -> Self {
+        self.moved = Some(Rc::new(moved));
+        self
+    }
+
+    /// Route a tab to another pane on release. Without this hook it stays in this strip.
+    pub fn on_drop_outside(
+        mut self,
+        outside: impl Fn(&OutsideDrop<Id>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.outside = Some(Rc::new(outside));
+        self
+    }
+}
+
+impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = Theme::of(cx).clone();
+        let enabled = self.moved.is_some();
+        let mut bar = super::bar(self.id).relative();
+        for (id, tab) in self.tabs {
+            let tab = if enabled {
+                let reorder = self.reorder.clone();
+                let pressed = id.clone();
+                tab.on_mouse_down(MouseButton::Left, move |event, _, _| {
+                    reorder.press(pressed.clone(), event.position);
+                })
+            } else {
+                tab
+            };
+            bar = bar.child(self.reorder.tab(&id, tab, &theme, cx));
+        }
+        let reorder = self.reorder;
+        bar.child(
+            canvas(
+                {
+                    let reorder = reorder.clone();
+                    move |bounds, _, _| reorder.0.borrow_mut().bounds = bounds
+                },
+                move |_, _, window, _| {
+                    let moving = reorder.clone();
+                    let moved = self.moved;
+                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                        if phase != DispatchPhase::Capture {
+                            return;
+                        }
+                        if event.pressed_button != Some(MouseButton::Left) {
+                            moving.release(cx);
+                            return;
+                        }
+                        let mut state = moving.0.borrow_mut();
+                        let Some(held) = &state.carried else { return };
+                        if held.pointer.is_none()
+                            && (event.position - held.press).magnitude() <= 2.0
+                        {
+                            return;
+                        }
+                        let id = held.id.clone();
+                        let mut order = state.order.clone();
+                        let from = order.index_of(&id);
+                        drop(state);
+                        let changed = moving.follow(&mut order, event.position, cx);
+                        let to = order.index_of(&id);
+                        state = moving.0.borrow_mut();
+                        state.order = order;
+                        let painter = state.painter;
+                        drop(state);
+                        if changed && let (Some(from), Some(to), Some(moved)) = (from, to, &moved) {
+                            moved(&Move { from, to }, window, cx);
+                        }
+                        painter.notify(cx);
+                        cx.stop_propagation();
+                    });
+                    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                        if phase != DispatchPhase::Capture || event.button != MouseButton::Left {
+                            return;
+                        }
+                        if let Some(id) = reorder.release(cx) {
+                            let outside = !reorder.0.borrow().bounds.contains(&event.position);
+                            if outside && let Some(callback) = &self.outside {
+                                callback(
+                                    &OutsideDrop {
+                                        id,
+                                        position: event.position,
+                                    },
+                                    window,
+                                    cx,
+                                );
+                            }
+                            cx.stop_propagation();
+                        }
+                    });
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
     }
 }

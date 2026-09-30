@@ -44,7 +44,7 @@ use crate::widgets::{self, Buttons as _};
 
 mod reorder;
 
-pub use reorder::Reorder;
+pub use reorder::{Bar, Move, OutsideDrop, Reorder};
 
 /// An ordered set of tabs, one of them active.
 ///
@@ -423,6 +423,7 @@ pub fn close(theme: &Theme, key: impl Into<SharedString>, when: Close) -> Statef
             "tab-close-{key}"
         ))))
         .flex_none()
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .p(px(2.0))
         .child(
             crate::icons::icon(crate::icons::glyph::X)

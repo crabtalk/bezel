@@ -89,4 +89,35 @@ The mark is whatever the tab has to say beside its name — unsaved work, a runn
 
 The badge does not truncate — keep it to a few characters.
 
-Drag is the caller's: the payload belongs to the app, and a bar that is itself a drop target is a pane layout's business rather than every strip's.
+## Live reordering
+
+Keep a `tabs::Reorder<Id>` beside the model, initialized with
+`tabs::Reorder::new(motion::Painter::of(cx))`. It owns the pointer gesture and
+animations; the host applies moves to its data:
+
+```rust
+self.reorder.bar("panel-tabs", &self.strip,
+    self.strip.tabs().iter().map(|id| {
+        (id.clone(), tabs::tab(&theme, self.key(id), self.label(id), self.state(id)))
+    }),
+).on_reorder(cx.listener(|view, movement: &tabs::Move, _, cx| {
+    view.strip.reorder(movement.from, movement.to);
+    cx.notify();
+}))
+```
+
+Supply children in model order with stable keys. Keep activation and close
+handlers on the tabs. Apply each move synchronously: its indices refer to the
+order immediately before that event. The active tab stays active.
+
+The carried tab follows the pointer without a gpui drag preview. Neighbours
+slide into the gap; releasing settles the tab. Reduced motion skips slides.
+Do not add `on_drag`, `drag_over`, or `on_drop` handlers for local reordering.
+Custom buttons inside a tab should stop mouse-down propagation, as `tabs::close`
+already does, so pressing them does not pick up the tab.
+
+For cross-pane moves, add `.on_drop_outside(cx.listener(...))`. It receives an
+`OutsideDrop<Id>` with the tab id and the release position in window coordinates;
+the host resolves the destination pane and moves its data. Without this hook,
+an outside release keeps the tab in its current strip. Removing a carried tab
+cancels its gesture.

@@ -127,46 +127,57 @@ impl Gallery {
                         .flex_row()
                         .items_center()
                         .gap(px(6.0))
-                        .child(tabs::bar("demo-strip").children(
-                            self.navigation.strip.tabs().iter().map(|open| {
-                                let key = *open;
-                                let front = self.navigation.strip.active() == Some(&key);
-                                let mut label = tabs::Label::new(key);
-                                if let Some((_, icon, dirty, badge)) =
-                                    STRIP_TABS.iter().find(|(name, ..)| *name == key)
-                                {
-                                    label = label.with_icon(*icon);
-                                    if *dirty {
-                                        label = label.mark(icons::Icon::glyph(STRIP_MARK).solid());
-                                    }
-                                    if !badge.is_empty() {
-                                        label = label.with_badge(*badge);
-                                    }
-                                }
-                                tabs::tab(
-                                    &theme,
-                                    key,
-                                    label,
-                                    match front {
-                                        true => tabs::State::Focused,
-                                        false => tabs::State::Resting,
-                                    },
-                                )
-                                .on_click(cx.listener(move |view, _, _, cx| {
-                                    view.navigation.strip.activate(&key);
-                                    cx.notify();
-                                }))
-                                .child(
-                                    tabs::close(&theme, key, tabs::Close::OnHover).on_click(
-                                        cx.listener(move |view, _, _, cx| {
-                                            cx.stop_propagation();
-                                            view.navigation.strip.close(&key);
+                        .child(
+                            self.navigation
+                                .reorder
+                                .bar(
+                                    "demo-strip",
+                                    &self.navigation.strip,
+                                    self.navigation.strip.tabs().iter().map(|open| {
+                                        let key = *open;
+                                        let front = self.navigation.strip.active() == Some(&key);
+                                        let mut label = tabs::Label::new(key);
+                                        if let Some((_, icon, dirty, badge)) =
+                                            STRIP_TABS.iter().find(|(name, ..)| *name == key)
+                                        {
+                                            label = label.with_icon(*icon);
+                                            if *dirty {
+                                                label = label
+                                                    .mark(icons::Icon::glyph(STRIP_MARK).solid());
+                                            }
+                                            if !badge.is_empty() {
+                                                label = label.with_badge(*badge);
+                                            }
+                                        }
+                                        let tab = tabs::tab(
+                                            &theme,
+                                            key,
+                                            label,
+                                            match front {
+                                                true => tabs::State::Focused,
+                                                false => tabs::State::Resting,
+                                            },
+                                        )
+                                        .on_click(cx.listener(move |view, _, _, cx| {
+                                            view.navigation.strip.activate(&key);
                                             cx.notify();
-                                        }),
-                                    ),
+                                        }))
+                                        .child(
+                                            tabs::close(&theme, key, tabs::Close::OnHover)
+                                                .on_click(cx.listener(move |view, _, _, cx| {
+                                                    cx.stop_propagation();
+                                                    view.navigation.strip.close(&key);
+                                                    cx.notify();
+                                                })),
+                                        );
+                                        (key, tab)
+                                    }),
                                 )
-                            }),
-                        ))
+                                .on_reorder(cx.listener(|view, movement: &tabs::Move, _, cx| {
+                                    view.navigation.strip.reorder(movement.from, movement.to);
+                                    cx.notify();
+                                })),
+                        )
                         .child(
                             theme
                                 .ghost("strip-add")
@@ -687,6 +698,7 @@ pub(crate) struct State {
     /// The tab-strip demo's open tabs, in order, with one of them in front.
     /// What each opens is [`STRIP_TABS`].
     pub(crate) strip: tabs::Strip<&'static str>,
+    pub(crate) reorder: tabs::Reorder<&'static str>,
     pub(crate) nav_choice: usize,
     pub(crate) titlebar_drag: titlebar::DragState,
 }
@@ -698,6 +710,7 @@ impl State {
             split_dragging: false,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             tab_choice: 0,
+            reorder: tabs::Reorder::new(motion::Painter::of(cx)),
             strip: STRIP_TABS[..3].iter().map(|(name, ..)| *name).collect(),
             nav_choice: 0,
             titlebar_drag: titlebar::DragState::default(),
