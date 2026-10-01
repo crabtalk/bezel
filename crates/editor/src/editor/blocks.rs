@@ -159,6 +159,93 @@ impl Editor {
         });
     }
 
+    /// Point every picture at `from` to `to`: an image block's URL, or in
+    /// source mode each `](from)` and `](<from>)` in the text. One undo step,
+    /// and the caret keeps its place in the text around it. Nothing pointing
+    /// at `from` is no edit.
+    pub fn relink(&mut self, from: &str, to: &str, cx: &mut Context<Self>) {
+        if self.blocks() {
+            let found: Vec<(usize, BlockKind)> = self
+                .doc
+                .blocks
+                .iter()
+                .enumerate()
+                .filter_map(|(ix, block)| match &block.kind {
+                    BlockKind::Image { url, alt, width } if url == from => Some((
+                        ix,
+                        BlockKind::Image {
+                            url: to.to_owned(),
+                            alt: alt.clone(),
+                            width: *width,
+                        },
+                    )),
+                    _ => None,
+                })
+                .collect();
+            if found.is_empty() {
+                return;
+            }
+            self.edit(EditKind::Structure, cx, |this| {
+                for (ix, kind) in found {
+                    this.doc.set_kind(ix, kind);
+                }
+                this.selection = this.selection.clamp(&this.doc);
+                vec![]
+            });
+            return;
+        }
+        let source = self.source_text();
+        let mut hits: Vec<(Range<usize>, String)> = [
+            (format!("]({from})"), format!("]({to})")),
+            (format!("](<{from}>)"), format!("](<{to}>)")),
+        ]
+        .into_iter()
+        .flat_map(|(old, new)| {
+            source
+                .match_indices(&old)
+                .map(|(at, _)| (at..at + old.len(), new.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+        if hits.is_empty() {
+            return;
+        }
+        // Last first, so each splice leaves the offsets before it standing.
+        hits.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
+        let moved = |cursor: Cursor| {
+            let offset = hits
+                .iter()
+                .fold(cursor.offset as isize, |at, (range, new)| {
+                    if cursor.offset >= range.end {
+                        at + new.len() as isize - range.len() as isize
+                    } else if cursor.offset > range.start {
+                        at - (cursor.offset - range.start) as isize
+                    } else {
+                        at
+                    }
+                });
+            Cursor {
+                offset: offset.max(0) as usize,
+                ..cursor
+            }
+        };
+        let selection = Selection::new(moved(self.selection.anchor), moved(self.selection.head));
+        self.edit(EditKind::Structure, cx, |this| {
+            let at = |offset| Cursor::new(0, Part::Code, offset);
+            let splices = hits
+                .iter()
+                .map(|(range, new)| {
+                    Delta::Spliced(this.doc.replace(
+                        Selection::new(at(range.start), at(range.end)),
+                        Text::plain(new.as_str()),
+                    ))
+                })
+                .collect();
+            this.selection = selection.clamp(&this.doc);
+            splices
+        });
+    }
+
     /// Check or uncheck the task block at `ix`. Does nothing to a block that
     /// is not one.
     ///

@@ -5,16 +5,15 @@ use gpui::{Global, Hsla, SharedString};
 use crate::{Appearance, paint};
 
 mod glass;
-mod install;
+pub(crate) mod install;
 mod layout;
 mod palettes;
 mod syntax;
-mod typography;
+pub(crate) mod typography;
 
-pub use install::set_palette;
 pub use layout::{ControlSize, Sizing};
 pub use syntax::{HighlightKind, SyntaxPalette};
-pub use typography::{Metrics, TextStyle, Typeset, base_text_size, set_base_text_size};
+pub use typography::{Metrics, TextStyle, Typeset, base_text_size};
 
 /// The two shipped glasses — SwiftUI's `Glass.regular` and `Glass.clear`. A
 /// closed variant rather than knobs: Apple exposes no numbers on glass either,
@@ -255,7 +254,7 @@ pub struct Theme {
     /// theme.accent = my_brand_accent(appearance);
     /// ```
     ///
-    /// See [`set_palette`](crate::theme::install::set_palette), which is what
+    /// See [`crate::AppExt::set_palette`](crate::AppExt::set_palette), which is what
     /// makes an override survive an appearance switch.
     pub accent: Hsla,
     /// Stronger accent for fills that carry [`Self::on_accent`] text. Neutral by

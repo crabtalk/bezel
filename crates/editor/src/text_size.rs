@@ -8,12 +8,13 @@
 //!
 //! Nothing here is persisted: storage is the app's, not a component library's.
 //! The base comes from whatever settings the app keeps, and an app that wants
-//! the adjustment to outlive the process stores [`text_size_adjustment`]
+//! the adjustment to outlive the process stores [`crate::AppExt::editor_text_size_adjustment`]
 //! beside it — beside, not folded into the base, or a reset has nowhere left
 //! to return to.
 //!
 //! [`Editor::with_text_size`]: crate::Editor::with_text_size
 
+use crate::AppExt as _;
 use gpui::{App, Global};
 
 use theme::TextStyle;
@@ -32,7 +33,7 @@ pub struct TextSize {
 impl TextSize {
     /// How the editor sizes, or [`TextSize::default`] before anything is
     /// installed. Mirrors [`theme::Theme::of`].
-    pub fn of(cx: &App) -> Self {
+    pub(crate) fn of(cx: &App) -> Self {
         cx.try_global::<Installed>()
             .map_or_else(Self::default, |installed| installed.0)
     }
@@ -60,8 +61,8 @@ struct Installed(TextSize);
 
 impl Global for Installed {}
 
-/// `editor::set_text_size(cx, my_steps)` — call once at boot.
-pub fn set_text_size(cx: &mut App, text_size: TextSize) {
+/// `cx.set_editor_text_size(my_steps)` — call once at boot.
+pub(crate) fn set_text_size(cx: &mut App, text_size: TextSize) {
     cx.set_global(Installed(text_size));
 }
 
@@ -69,18 +70,18 @@ pub fn set_text_size(cx: &mut App, text_size: TextSize) {
 ///
 /// Zero unless a reader has reached for the chords. A host showing the size in
 /// a status bar reads this; one that does not care never has to know it exists.
-pub fn text_size_adjustment(cx: &App) -> f32 {
+pub(crate) fn text_size_adjustment(cx: &App) -> f32 {
     cx.try_global::<Adjustment>().map_or(0.0, |held| held.0)
 }
 
 /// Move every open document by `points`, each staying inside the range against
 /// its own base.
-pub fn adjust_text_size(cx: &mut App, points: f32) {
-    set_adjustment(text_size_adjustment(cx) + points, cx);
+pub(crate) fn adjust_text_size(cx: &mut App, points: f32) {
+    set_adjustment(cx.editor_text_size_adjustment() + points, cx);
 }
 
 /// Give every document back to the size its app set it at.
-pub fn reset_text_size(cx: &mut App) {
+pub(crate) fn reset_text_size(cx: &mut App) {
     set_adjustment(0.0, cx);
 }
 
@@ -94,7 +95,8 @@ pub(crate) fn set_adjustment(points: f32, cx: &mut App) {
 /// The size a document with this base is actually set at.
 pub(crate) fn resolve(base: Option<f32>, cx: &App) -> f32 {
     let base = base.unwrap_or_else(theme::base_text_size);
-    TextSize::of(cx).clamp(base + text_size_adjustment(cx))
+    cx.editor_text_size()
+        .clamp(base + cx.editor_text_size_adjustment())
 }
 
 struct Adjustment(f32);

@@ -37,8 +37,10 @@ use gpui::{
 };
 use markdown::{BlockKind, Doc};
 use theme::{TextStyle, Theme, Typeset};
-use ui::scroll::{self, Axes};
-use ui::widgets::Controls;
+use ui::{
+    scroll::{self, Axes},
+    widgets::{ButtonStyle, Buttons, Controls},
+};
 
 /// The document on the page. Canonical markdown — `serialize(parse(SOURCE))`
 /// returns it unchanged, which the gallery's tests assert, so the Source
@@ -72,6 +74,12 @@ What a card shows past the URL comes from `set_link_preview`. A `"chip"` title p
 An `"embed"` title is the bigger card, with the picture across its width:
 
 [https://github.com/zed-industries/zed](https://github.com/zed-industries/zed "embed")
+
+## Pictures
+
+![bezel repository|320](https://opengraph.githubassets.com/1/crabtalk/bezel)
+
+Hover the picture to reveal an app-provided control.
 
 ## Quoting
 
@@ -182,6 +190,16 @@ impl Render for Document {
                 markdown::Editing {
                     caption: markdown::Caption::Shown,
                     toggle: Some(markdown::Toggle::Handled(on_toggle)),
+                    image_overlay: Some(Rc::new(|ix, url, _, cx| {
+                        let url = url.to_string();
+                        Some(
+                            Theme::of(cx)
+                                .button("Open image", ButtonStyle::Prominent, None)
+                                .id(ElementId::named_usize("open-picture", ix))
+                                .on_click(move |_, _, cx| cx.open_url(&url))
+                                .into_any_element(),
+                        )
+                    })),
                     ..Default::default()
                 },
                 window,

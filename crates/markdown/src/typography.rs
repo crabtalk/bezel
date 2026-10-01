@@ -27,7 +27,7 @@ pub struct Typography {
 impl Typography {
     /// What documents are set in, or [`Typography::default`] before anything is
     /// installed. Mirrors [`theme::Theme::of`].
-    pub fn of(cx: &App) -> Self {
+    pub(crate) fn of(cx: &App) -> Self {
         cx.try_global::<Installed>()
             .map_or_else(Self::default, |installed| installed.0)
     }
@@ -78,7 +78,7 @@ struct Installed(Typography);
 
 impl Global for Installed {}
 
-/// `markdown::set_typography(cx, my_typography)` — call once at boot.
-pub fn set_typography(cx: &mut App, typography: Typography) {
+/// `cx.set_typography(my_typography)` — call once at boot.
+pub(crate) fn set_typography(cx: &mut App, typography: Typography) {
     cx.set_global(Installed(typography));
 }

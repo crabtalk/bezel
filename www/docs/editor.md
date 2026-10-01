@@ -53,13 +53,65 @@ Same editor, same focus, same undo history. The caret crosses with it — exact 
 ## Pasted images
 
 ```rust
-editor::set_image_store(cx, |source| match source {
-    editor::Source::File(path) => Some(path.to_string_lossy().into_owned()),
-    editor::Source::Bytes(image) => save_somewhere(image),  // your assets, your URL
+use editor::AppExt as _;
+cx.set_image_store(editor::ImageStore {
+    keep: |source, _editor, _base, _cx| match source {
+        editor::Source::File(path) => Some(path.to_string_lossy().into_owned()),
+        editor::Source::Bytes(image) => save_somewhere(image),  // your assets, your URL
+    },
+    ..Default::default()
 });
 ```
 
 Only a screenshot needs this — bytes have no address and a document holds one. With no store installed, a screenshot cannot be pasted at all.
+
+## Table controls
+
+Hover a cell to reveal six-dot handles in the table's left and top lanes.
+Click one to insert, delete, or move its row or column one step. Drag a handle
+to reorder within the table; a line marks the drop position. Escape or dropping
+outside the table cancels. Right-click a cell to open
+both sets of actions, including when the table header is scrolled out of view.
+The bottom and right `+` strips append rows and columns. The header row and
+last column cannot be deleted; table edits support undo.
+
+## Picture controls
+
+Article editors can use the same hover controls as markdown previews:
+
+```rust
+Editor::new(source, cx)
+    .with_image_overlay(Rc::new(|block, url, window, cx| {
+        Some(open_image_button(block, url, window, cx).into_any_element())
+    }))
+    .with_image_overlay_corner(markdown::ImageOverlayCorner::TopRight)
+```
+
+Bottom-right is the default. `set_image_overlay` replaces the callback or removes
+it with `None`; `set_image_overlay_corner` changes its position. Both take the
+editor's context. Controls appear only in rich mode, and their presses do not
+move the caret or start a selection.
+
+## Paste policy
+
+```rust
+use editor::{AppExt as _, PasteContent};
+
+cx.set_paste_handler(|item, _editor, _destination, _cx| {
+    item.text().map(PasteContent::Literal)
+});
+```
+
+The handler runs before default clipboard handling. Return `Literal` to insert
+plain text, `Markdown` to use normal text-paste rules, or `None` to fall back.
+Markdown uses the editor's marks and URL handling; it stays literal inside a
+fence or in source mode. Insertion uses the normal selection and undo history.
+
+The destination supplies `mode`, `in_fence`, and `base`. The editor entity is
+already being updated: use it only as an identity, without reading or updating
+it. To retain media, call `(cx.image_store().keep)(source, editor,
+destination.base, cx)` and return the text your app wants inserted. No handler
+means unchanged paste behavior. File drops use their existing separate path.
 
 ## API
 
@@ -99,7 +151,7 @@ impl Editor {
     /// the same place.
     pub fn with_chrome(self, chrome: Chrome) -> Self;
 
-    /// One editor's own dialect, rather than the one `markdown::set_marks`
+    /// One editor's own dialect, rather than the one `markdown::AppExt::set_marks`
     /// installed.
     pub fn with_marks(self, marks: markdown::Marks) -> Self;
 
@@ -121,7 +173,11 @@ impl Editor {
 /// `set_block`.
 pub fn turns() -> Vec<(SharedString, BlockKind)>;
 
-pub fn set_image_store(cx: &mut App, store: ImageStore);
+pub trait AppExt {
+    fn set_image_store(&mut self, store: ImageStore);
+    fn image_store(&self) -> ImageStore;
+    fn set_paste_handler(&mut self, handler: PasteHandler);
+}
 ```
 
 Moving, duplicating and deleting a block ship as actions with no chord — `editor::keys` is the whole set. The slash menu, gutter handle, drag-to-reorder, language picker, link menu, undo and the clipboard need no wiring. `Mark::Code` over more than one line makes a fence instead of an inline span, and the same call takes it back out.

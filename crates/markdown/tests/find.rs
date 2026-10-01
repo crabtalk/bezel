@@ -8,7 +8,8 @@ use gpui::{
     Window, div, point, prelude::*, px, size,
 };
 use markdown::{
-    BlockLayouts, Cursor, Doc, Editing, OnImage, Part, Selection, parse, render_source, render_with,
+    BlockLayouts, Cursor, Doc, Editing, ImageOverlay, OnImage, Part, Selection, parse,
+    render_source, render_with,
 };
 
 const WIDTH: f32 = 320.0;
@@ -22,6 +23,10 @@ struct Page {
     /// Every block the image hook was called with, in order.
     clicked: Rc<RefCell<Vec<usize>>>,
     hooked: bool,
+    overlay: Option<ImageOverlay>,
+    overlay_anchor: markdown::ImageOverlayCorner,
+    presses: usize,
+    virtualized: bool,
 }
 
 impl Render for Page {
@@ -32,9 +37,11 @@ impl Render for Page {
                 as OnImage
         });
         let editing = Editing {
-            layouts: Some(&self.layouts),
+            layouts: self.virtualized.then_some(&self.layouts),
             scroll: Some(&self.scroll),
             image,
+            image_overlay: self.overlay.clone(),
+            image_overlay_corner: self.overlay_anchor,
             ..Editing::default()
         };
         let body = match &self.source {
@@ -47,6 +54,7 @@ impl Render for Page {
             .h(px(HEIGHT))
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
+            .on_any_mouse_down(cx.listener(|this, _, _, _| this.presses += 1))
             .child(body)
     }
 }
@@ -65,6 +73,10 @@ fn open(
         scroll: ScrollHandle::new(),
         clicked: Rc::new(RefCell::new(Vec::new())),
         hooked,
+        overlay: None,
+        overlay_anchor: markdown::ImageOverlayCorner::BottomRight,
+        presses: 0,
+        virtualized: true,
     });
     let page = window.root(cx).unwrap();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
@@ -199,4 +211,132 @@ fn a_picture_without_a_hook_takes_nothing(cx: &mut TestAppContext) {
     cx.simulate_click(center, Modifiers::default());
 
     assert!(clicked(&page, &mut cx).is_empty());
+}
+
+#[gpui::test]
+fn the_picture_overlay_is_inset_and_owns_its_presses(cx: &mut TestAppContext) {
+    for (virtualized, anchor) in [true, false].into_iter().flat_map(|virtualized| {
+        [
+            markdown::ImageOverlayCorner::TopLeft,
+            markdown::ImageOverlayCorner::TopRight,
+            markdown::ImageOverlayCorner::BottomLeft,
+            markdown::ImageOverlayCorner::BottomRight,
+        ]
+        .map(|anchor| (virtualized, anchor))
+    }) {
+        let doc = picture_doc();
+        let (page, mut cx) = open(&doc, false, true, cx);
+        let original = picture(&page, &mut cx);
+        let painted = Rc::new(RefCell::new(None));
+        let hits = Rc::new(RefCell::new(0));
+        let bounds = painted.clone();
+        let clicks = hits.clone();
+        cx.update(|_, cx| {
+            page.update(cx, |page, cx| {
+                page.virtualized = virtualized;
+                page.overlay_anchor = anchor;
+                page.overlay = Some(Rc::new(move |ix, url, _, _| {
+                    assert_eq!(ix, 1);
+                    assert!(url.ends_with(".png"));
+                    let bounds = bounds.clone();
+                    let clicks = clicks.clone();
+                    Some(
+                        div()
+                            .id("app-picture-control")
+                            .size(px(24.0))
+                            .on_click(move |_, _, _| *clicks.borrow_mut() += 1)
+                            .child(
+                                gpui::canvas(
+                                    |_, _, _| (),
+                                    move |rect, _, _, _| {
+                                        *bounds.borrow_mut() = Some(rect);
+                                    },
+                                )
+                                .size_full(),
+                            )
+                            .into_any_element(),
+                    )
+                }));
+                cx.notify();
+            })
+        });
+        settle(&mut cx);
+        assert!(painted.borrow().is_none(), "hidden before hovering");
+        assert_eq!(picture(&page, &mut cx), original);
+        cx.simulate_mouse_move(original.center(), None, Modifiers::default());
+        settle(&mut cx);
+        let control = painted.borrow().expect("painted on picture hover");
+        let horizontal = match anchor {
+            markdown::ImageOverlayCorner::TopLeft | markdown::ImageOverlayCorner::BottomLeft => {
+                control.left() - original.left()
+            }
+            _ => original.right() - control.right(),
+        };
+        let vertical = match anchor {
+            markdown::ImageOverlayCorner::TopLeft | markdown::ImageOverlayCorner::TopRight => {
+                control.top() - original.top()
+            }
+            _ => original.bottom() - control.bottom(),
+        };
+        assert!((horizontal - px(6.0)).abs() < px(1.0));
+        assert!((vertical - px(6.0)).abs() < px(1.0));
+        cx.simulate_click(control.center(), Modifiers::default());
+        assert_eq!(*hits.borrow(), 1);
+        assert!(clicked(&page, &mut cx).is_empty());
+        assert_eq!(cx.update(|_, cx| page.read(cx).presses), 0);
+        *painted.borrow_mut() = None;
+        cx.simulate_mouse_move(point(px(310.0), px(390.0)), None, Modifiers::default());
+        settle(&mut cx);
+        assert!(painted.borrow().is_none(), "hidden after leaving picture");
+        cx.simulate_click(original.center(), Modifiers::default());
+        assert_eq!(clicked(&page, &mut cx), vec![1]);
+    }
+}
+
+#[gpui::test]
+fn declining_an_overlay_leaves_picture_presses_alone(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&picture_doc(), false, true, cx);
+    let original = picture(&page, &mut cx);
+    cx.update(|_, cx| {
+        page.update(cx, |page, cx| {
+            page.overlay = Some(Rc::new(|_, _, _, _| None));
+            cx.notify();
+        })
+    });
+    settle(&mut cx);
+    assert_eq!(picture(&page, &mut cx), original);
+    cx.simulate_click(original.center(), Modifiers::default());
+    assert_eq!(clicked(&page, &mut cx), vec![1]);
+    assert_eq!(cx.update(|_, cx| page.read(cx).presses), 1);
+}
+
+/// A picture `width` wide with no width stated, as block 1.
+fn unsized_doc(width: u32) -> String {
+    let path =
+        std::env::temp_dir().join(format!("bezel-unsized-{}-{width}.svg", std::process::id()));
+    let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20"/>"#);
+    std::fs::write(&path, svg).unwrap();
+    format!("before\n\n![a picture]({})\n\nafter", path.display())
+}
+
+#[gpui::test]
+fn an_unsized_picture_s_frame_hugs_it(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&unsized_doc(40), false, false, cx);
+
+    assert!(picture(&page, &mut cx).size.width < px(60.0));
+}
+
+#[gpui::test]
+fn an_unsized_picture_wider_than_the_page_stays_on_it(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&unsized_doc(1000), false, false, cx);
+
+    assert!(picture(&page, &mut cx).size.width <= px(WIDTH));
+}
+
+#[gpui::test]
+fn a_picture_narrowed_to_the_page_keeps_its_proportions(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&unsized_doc(1000), false, false, cx);
+
+    let frame = picture(&page, &mut cx).size;
+    assert!(frame.height < px(12.0), "{frame:?}");
 }

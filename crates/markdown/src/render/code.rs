@@ -1,6 +1,7 @@
 //! Code blocks, source mode, and the copy button.
 
 use super::*;
+use ui::AppExt as _;
 
 /// Paint a document's own markdown source: a fence's caret, selection and hit
 /// testing, without a fence's box, band or copy button.
@@ -21,7 +22,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         ..
     } = editing;
     let theme = Theme::of(cx).clone();
-    let typography = typography.unwrap_or_else(|| Typography::of(cx));
+    let typography = typography.unwrap_or_else(|| cx.typography());
     let overlay = Overlay {
         block: 0,
         part: Part::Code,
@@ -34,12 +35,16 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         // The source view is one fence and holds no task block.
         toggle: None,
         image: None,
+        image_overlay: None,
+        image_overlay_corner: ImageOverlayCorner::BottomRight,
+        table_controls: false,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
         base: None,
         highlight: crate::marks::highlight_paint_of(cx),
+        find: crate::find::find_paint_of(cx),
     };
-    let style = crate::SourceStyle::of(cx);
+    let style = cx.source_style();
     let count = code.split('\n').count();
     let gutter = Gutter::new(&style, count, &typography, &theme);
 
@@ -138,7 +143,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
             let (sink, paint) = (sink.clone(), paint.clone());
             let underlay = canvas(
                 |_, _, _| (),
-                move |_, _, window, _| {
+                move |_, _, window, cx| {
                     sink.record(
                         0,
                         Part::Code,
@@ -146,7 +151,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
                         layout.clone(),
                         Shown::default(),
                     );
-                    paint.paint(&span, &layout, window);
+                    paint.paint(&span, &layout, window, cx);
                 },
             )
             .absolute()
@@ -277,7 +282,7 @@ pub(super) fn code_lines(
     };
     let underlay = canvas(
         |_, _, _| (),
-        move |_, _, window, _| {
+        move |_, _, window, cx| {
             for (span, layout) in &rows {
                 if let Some(sink) = &sink {
                     sink.record(
@@ -288,7 +293,7 @@ pub(super) fn code_lines(
                         Shown::default(),
                     );
                 }
-                paint.paint(span, layout, window);
+                paint.paint(span, layout, window, cx);
             }
         },
     )
@@ -351,7 +356,7 @@ struct RowPaint {
 }
 
 impl RowPaint {
-    fn paint(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
+    fn paint(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window, cx: &App) {
         let wash = |range: &Range<usize>, color: Hsla, window: &mut Window| {
             let (from, to) = (range.start.max(span.start), range.end.min(span.end));
             if from < to {
@@ -376,14 +381,16 @@ impl RowPaint {
         if let Some(offset) = self.caret.filter(|at| span.contains(at) || *at == span.end)
             && let Some(head) = layout.position_for_index(offset - span.start)
         {
-            window.paint_quad(quad(
-                caret_quad(head, self.code_size, layout.line_height()),
-                px(0.0),
-                self.caret_color,
-                px(0.0),
-                gpui::transparent_black(),
-                BorderStyle::default(),
-            ));
+            let shape = cx.caret_shape();
+            window.paint_quad(
+                shape.quad(
+                    caret_quad(head, self.code_size, layout.line_height()),
+                    (shape != ui::input::CaretShape::Bar)
+                        .then(|| caret_advance(layout, offset - span.start))
+                        .flatten(),
+                    self.caret_color,
+                ),
+            );
         }
     }
 }
@@ -399,7 +406,13 @@ pub(super) fn code_block(
 ) -> AnyElement {
     let ix = overlay.block;
     let (underlay, lines) = code_lines(language, code, overlay, typography, theme, cx);
-    let body = code_body(ix, underlay, lines, typography, Layout::of(cx).wrap_code);
+    let body = code_body(
+        ix,
+        underlay,
+        lines,
+        typography,
+        cx.markdown_layout().wrap_code,
+    );
 
     div()
         .rounded(px(Theme::panel_radius()))

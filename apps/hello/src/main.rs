@@ -7,15 +7,13 @@ use bezel::{
         App, AppContext as _, Bounds, Context, FocusHandle, Menu, MenuItem, Window, WindowBounds,
         WindowOptions, actions, div, prelude::*, px, size,
     },
-    theme::{
-        self, Appearance, TextStyle, Theme, Typeset,
-        appearance::{self, AppearanceMode},
-    },
+    theme::{self, Appearance, TextStyle, Theme, Typeset, appearance::AppearanceMode},
     ui::{
         self, focus,
         widgets::{Button, ButtonStyle, Controls},
     },
 };
+use theme::AppExt as _;
 
 actions!(hello, [Quit]);
 
@@ -71,14 +69,11 @@ impl Render for Hello {
         // The switch's state lives in the appearance global, not in the view —
         // flipping it repaints the whole window.
         let flip = move |cx: &mut Context<Self>| {
-            appearance::set_mode(
-                if dark {
-                    AppearanceMode::Light
-                } else {
-                    AppearanceMode::Dark
-                },
-                cx,
-            );
+            cx.set_appearance_mode(if dark {
+                AppearanceMode::Light
+            } else {
+                AppearanceMode::Dark
+            });
             cx.notify();
         };
         focus::traversal(

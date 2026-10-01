@@ -34,6 +34,9 @@
 //!
 //! Installed as a gpui [`Global`](gpui::Global) at boot; read with [`Theme::of`].
 
+mod app;
+pub use app::AppExt;
+
 pub mod appearance;
 
 mod brand;
@@ -42,7 +45,7 @@ mod paint;
 mod platform;
 mod theme;
 
-pub use brand::{BASE_COLORS, Brand, Ink, TextInk, Tint, Vibrancy, brand, set_brand};
+pub use brand::{BASE_COLORS, Brand, Ink, TextInk, Tint, Vibrancy};
 
 pub use platform::{LENSED, frosted_window};
 
@@ -58,8 +61,7 @@ pub use paint::{
 };
 pub use theme::{
     ControlSize, Glass, HighlightKind, Material, MaterialSpec, Metrics, Sizing, SurfaceSpec,
-    SurfaceStyle, SyntaxPalette, TextStyle, Theme, Typeset, base_text_size, set_base_text_size,
-    set_palette,
+    SurfaceStyle, SyntaxPalette, TextStyle, Theme, Typeset, base_text_size,
 };
 
 /// The carrier seam for catalog traits: any type holding a [`Theme`] exposes

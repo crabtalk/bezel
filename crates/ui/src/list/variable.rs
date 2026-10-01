@@ -1,4 +1,5 @@
 //! Variable-height virtual lists with stable keys and viewport notifications.
+use crate::AppExt as _;
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ElementId, Empty, FocusHandle, IntoElement,
     ListAlignment, ListOffset, ListState, MouseButton, Pixels, RenderOnce, SharedString, Window,
@@ -181,7 +182,7 @@ struct Scrollbar {
 
 impl RenderOnce for Scrollbar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let mode = crate::scroll::visibility(cx);
+        let mode = cx.scrollbar_visibility();
         if mode == crate::scroll::Visibility::Never {
             return Empty.into_any_element();
         }

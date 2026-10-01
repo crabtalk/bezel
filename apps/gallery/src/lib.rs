@@ -6,16 +6,18 @@
 //! composed exactly once, so the browser is never out of date with the library
 //! it documents.
 
+use editor::AppExt as _;
 use gpui::{
     AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
     actions, div, point, prelude::*, px, relative,
 };
+use markdown::AppExt as _;
 use motion::{AppExt as _, Fade, Painter};
 use rail::{Rail, Selected};
 use std::{cell::Cell, collections::HashSet, rc::Rc};
 use theme::{
     ControlSize, Glass, Material, Sizing, SurfaceSpec, SurfaceStyle, TextStyle, Theme, Typeset,
-    appearance::{self, AppearanceMode},
+    appearance::AppearanceMode,
 };
 use ui::{
     combobox::{self, Combobox},
@@ -70,19 +72,18 @@ const APP_MENUBAR: bool = !cfg!(any(target_os = "macos", target_family = "wasm")
 /// bindings were installed natively and missing on the web, so typing worked in
 /// the browser and Backspace did not.
 pub fn init(cx: &mut App) {
-    markdown::set_highlighter(cx, highlight::spans, highlight::languages());
-    markdown::set_link_preview(cx, preview::of);
-    markdown::set_block_renderer(cx, blocks::render);
+    cx.set_highlighter(highlight::spans, highlight::languages());
+    cx.set_link_preview(preview::of);
+    cx.set_block_renderer(blocks::render);
     // The dialect this gallery reads and writes: two marks CommonMark has no
     // spelling for, registered rather than waited on. See the Ribbon page.
-    markdown::set_marks(
-        cx,
+    cx.set_marks(
         markdown::Marks::new()
             .with("highlight", "==")
             .with("underline", "++"),
     );
-    markdown::set_mark_paint(cx, patterns::ribbon::paint);
-    editor::set_image_store(cx, store::of());
+    cx.set_mark_paint(patterns::ribbon::paint);
+    cx.set_image_store(store::of());
     input::init(cx);
     editor::init(cx);
     canvas::init(cx);
@@ -124,8 +125,7 @@ mod sections;
 
 pub use catalog::*;
 pub use fixtures::*;
-use sections::*;
-use sections::{controls, data, foundations, material, navigation, overlays};
+use sections::{controls, data, foundations, material, navigation, overlays, *};
 
 /// The rail's padding — the grid its rows, its footer and the traffic lights
 /// all sit on.

@@ -9,11 +9,15 @@
 //! all of it testable without a window. What lives here is the half that needs
 //! one: focus, keys, the platform input handler, the mouse, undo, and the menus.
 
+mod app;
+pub use app::AppExt;
+
 mod anchor;
 mod editor;
 mod history;
 mod layout;
 mod link;
+mod paste;
 mod slash;
 mod text_size;
 
@@ -22,11 +26,10 @@ pub use anchor::{Anchor, AnchorId};
 pub use editor::menu::{BLOCK_HANDLE, BLOCK_MENU, SLASH_MENU};
 pub use editor::{
     CONTEXT, Chrome, Editor, EditorEvent, Formatting, HIGHLIGHT_MARK, Mode,
-    image::{ImageStore, Source, set_image_store},
+    image::{ImageStore, Source},
     init, keys, turns,
 };
 pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};
-pub use layout::{Layout, set_layout};
-pub use text_size::{
-    TextSize, adjust_text_size, reset_text_size, set_text_size, text_size_adjustment,
-};
+pub use layout::Layout;
+pub use paste::{PasteContent, PasteContext, PasteHandler};
+pub use text_size::TextSize;

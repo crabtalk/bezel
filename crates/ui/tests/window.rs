@@ -4,8 +4,8 @@
 //! Windows never report, so what a test can reach here is the classification
 //! the bands and the press handler share.
 
-use gpui::{Pixels, ResizeEdge, point, px, size};
-use ui::window::resize_edge;
+use gpui::{Pixels, ResizeEdge, Tiling, point, px, size};
+use ui::window::{live, resize_edge};
 
 /// A 200 x 100 window with a 10px band.
 fn edge_at(x: f32, y: f32) -> Option<ResizeEdge> {
@@ -73,4 +73,55 @@ fn the_band_is_the_theme_constant() {
         Some(ResizeEdge::Left)
     );
     assert_eq!(resize_edge(point(inset, px(150.0)), inset, window), None);
+}
+
+#[test]
+fn tiled_sides_disable_every_band_that_touches_them() {
+    // Bits are top, bottom, left, right; corners require both sides free.
+    let bands = [
+        (ResizeEdge::Top, 0b0001, (100.0, 2.0)),
+        (ResizeEdge::Bottom, 0b0010, (100.0, 98.0)),
+        (ResizeEdge::Left, 0b0100, (2.0, 50.0)),
+        (ResizeEdge::Right, 0b1000, (198.0, 50.0)),
+        (ResizeEdge::TopLeft, 0b0101, (2.0, 2.0)),
+        (ResizeEdge::TopRight, 0b1001, (198.0, 2.0)),
+        (ResizeEdge::BottomLeft, 0b0110, (2.0, 98.0)),
+        (ResizeEdge::BottomRight, 0b1010, (198.0, 98.0)),
+    ];
+
+    for mask in 0..16 {
+        let tiling = Tiling {
+            top: mask & 0b0001 != 0,
+            bottom: mask & 0b0010 != 0,
+            left: mask & 0b0100 != 0,
+            right: mask & 0b1000 != 0,
+        };
+        for (edge, touched_sides, (x, y)) in bands {
+            let enabled = mask & touched_sides == 0;
+            assert_eq!(live(edge, tiling), enabled, "{edge:?}, {tiling:?}");
+            assert_eq!(
+                edge_at(x, y).filter(|edge| live(*edge, tiling)),
+                enabled.then_some(edge),
+                "({x}, {y}), {tiling:?}"
+            );
+        }
+        assert_eq!(
+            edge_at(100.0, 50.0).filter(|edge| live(*edge, tiling)),
+            None
+        );
+    }
+}
+
+#[test]
+fn maximized_caption_corner_and_outer_pixels_do_not_resize() {
+    let tiling = Tiling::tiled();
+    for x in 0..200 {
+        for y in 0..100 {
+            assert_eq!(
+                edge_at(x as f32, y as f32).filter(|edge| live(*edge, tiling)),
+                None,
+                "({x}, {y})"
+            );
+        }
+    }
 }

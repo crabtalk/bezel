@@ -1,13 +1,15 @@
 use super::*;
+use crate::AppExt as _;
+use ui::AppExt as _;
 
 impl Render for Editor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
-        let layout = Layout::of(cx);
+        let layout = cx.editor_layout();
         let focused = self.focus_handle.is_focused(window);
         // The only place the blink starts: `caret_moved` drops the task, so the
         // next render brings it back in phase, lit beat first.
-        if focused && ui::input::caret_blink(cx) {
+        if focused && cx.caret_blink() {
             if self.blink.is_none() {
                 self.start_blink(cx);
             }
@@ -107,6 +109,25 @@ impl Render for Editor {
                     window.prevent_default();
                 }),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
+                    if this.blocks()
+                        && let Some((block, Part::Cell { row, column })) =
+                            this.layouts.cell_at(event.position)
+                    {
+                        this.table_menu.open((
+                            block,
+                            TableTarget::Cell { row, column },
+                            event.position,
+                        ));
+                        this.focus_handle.focus(window, cx);
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        cx.notify();
+                    }
+                }),
+            )
             // The drag has to be tracked from the container rather than from a
             // payload: a text selection has nothing to carry, and gpui's drag
             // payload is for things being dropped somewhere.
@@ -131,7 +152,14 @@ impl Render for Editor {
                     return;
                 }
                 let hovered = this.layouts.block_at(event.position);
-                let cell = this.layouts.cell_at(event.position);
+                let cell = this.layouts.cell_at(event.position).or_else(|| {
+                    // Keep the target while crossing its control lanes.
+                    this.hovered_cell.filter(|(block, _)| {
+                        this.layouts
+                            .block_bounds(*block)
+                            .is_some_and(|bounds| bounds.contains(&event.position))
+                    })
+                });
                 if hovered != this.hovered || cell != this.hovered_cell {
                     this.hovered = hovered;
                     this.hovered_cell = cell;
@@ -143,15 +171,21 @@ impl Render for Editor {
             // its stand-in picture painted over the document for good.
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, _: &gpui::MouseUpEvent, window, cx| {
+                cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
+                    this.drag_table_to(event.position, cx);
                     this.dragging = false;
                     this.drop_resize(window, cx);
+                    this.drop_table_drag(cx);
                 }),
             )
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
+                    this.drag_table_to(event.position, cx);
                     this.dragging = false;
+                    if this.drop_table_drag(cx) {
+                        return;
+                    }
                     if this.drop_resize(window, cx) {
                         return;
                     }
@@ -367,7 +401,7 @@ impl Render for Editor {
                                     &[]
                                 },
                                 scroll: self.scroll.as_ref(),
-                                typography: Some(markdown::Typography::of(cx).scaled(
+                                typography: Some(cx.typography().scaled(
                                     text_size::resolve(self.text_size, cx)
                                         / theme::base_text_size(),
                                 )),
@@ -390,7 +424,7 @@ impl Render for Editor {
                                 // The size is absolute, so the factor the ladder
                                 // is already scaled by comes back out of it —
                                 // otherwise the app's size and this one multiply.
-                                typography: Some(markdown::Typography::of(cx).scaled(
+                                typography: Some(cx.typography().scaled(
                                     text_size::resolve(self.text_size, cx)
                                         / theme::base_text_size(),
                                 )),
@@ -398,6 +432,9 @@ impl Render for Editor {
                                 // `checkbox_bounds`, which is what keeps a
                                 // toggle in the undo history.
                                 toggle: Some(markdown::Toggle::HitTested),
+                                table_controls: true,
+                                image_overlay: self.image_overlay.clone(),
+                                image_overlay_corner: self.image_overlay_corner,
                                 base: self.base.as_deref(),
                                 // A reveal owed to a caret nobody is focused on
                                 // still needs its block built to find it.
@@ -439,6 +476,7 @@ impl Render for Editor {
             .children(self.drop_indicator(&theme))
             .children(self.table_strips(&theme, cx))
             .children(self.table_handles(&theme, cx))
+            .children(self.table_drop_indicator(&theme))
             .children(self.table_menu(&theme, cx))
             .children(self.language_chip(&theme, cx))
             .children(self.block_menu(&theme, cx))

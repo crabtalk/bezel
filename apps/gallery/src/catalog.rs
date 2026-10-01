@@ -268,6 +268,7 @@ pub const COMPONENTS: &[Group] = &[
                 "crates/ui/src/widgets/controls.rs",
             ),
             section("slider", "Slider", "crates/ui/src/widgets/controls.rs"),
+            section("color-picker", "Color picker", "crates/ui/src/color.rs"),
             section("date-picker", "Date picker", "crates/ui/src/date.rs"),
         ],
     },
@@ -299,6 +300,8 @@ pub const COMPONENTS: &[Group] = &[
             ),
             section("tabs", "Tabs", "crates/ui/src/widgets/layout.rs"),
             section("tab-strip", "Tab strip", "crates/ui/src/tabs.rs"),
+            section("docking", "Pane docking", "crates/ui/src/docking.rs"),
+            section("sortable", "Sortable lists", "crates/ui/src/drag.rs"),
             section("nav-row", "Nav row", "crates/ui/src/widgets/layout.rs"),
             section(
                 "collapsible",

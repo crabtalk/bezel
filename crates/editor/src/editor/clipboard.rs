@@ -52,6 +52,26 @@ impl Editor {
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };
+        if let Some(handler) = cx
+            .try_global::<crate::paste::Installed>()
+            .map(|held| held.0)
+            && let Some(content) = handler(
+                &item,
+                &cx.entity(),
+                crate::PasteContext {
+                    mode: self.mode,
+                    in_fence: self.in_fence(),
+                    base: self.base(),
+                },
+                cx,
+            )
+        {
+            match content {
+                crate::PasteContent::Literal(text) => self.paste_literal(&text, cx),
+                crate::PasteContent::Markdown(source) => self.paste_markdown(&source, cx),
+            }
+            return;
+        }
         // Source mode included: the whole document is one fence there.
         if self.in_fence() {
             if let Some(text) = item.text() {
@@ -76,6 +96,13 @@ impl Editor {
         let Some(source) = item.text() else {
             return;
         };
+        self.paste_markdown(&source, cx);
+    }
+
+    fn paste_markdown(&mut self, source: &str, cx: &mut Context<Self>) {
+        if self.in_fence() {
+            return self.paste_literal(source, cx);
+        }
         let url = source.trim();
         if markdown::is_url(url) {
             return self.paste_url(url.to_string(), cx);
@@ -85,7 +112,7 @@ impl Editor {
             let before = this.doc.blocks.len();
             let head = this
                 .doc
-                .splice(removed, markdown::parse_with(&source, &this.marks));
+                .splice(removed, markdown::parse_with(source, &this.marks));
             this.selection = Selection::at(head.clamp(&this.doc));
             vec![Delta::Spliced(Splice {
                 removed,

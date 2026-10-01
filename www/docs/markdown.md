@@ -42,7 +42,7 @@ fn main() {}
 ```
 ````
 
-A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing claims paints plain and never fails. `markdown::set_block_renderer` hands a tag and its source to a function of yours, so ` ```chart ` paints as a chart and still holds a caret, still round trips byte for byte, and still degrades to its own source where the renderer is not installed.
+A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing claims paints plain and never fails. `markdown::AppExt::set_block_renderer` hands a tag and its source to a function of yours, so ` ```chart ` paints as a chart and still holds a caret, still round trips byte for byte, and still degrades to its own source where the renderer is not installed.
 
 ## Links and pictures
 
@@ -53,7 +53,23 @@ A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing 
 ![A caption is the alt text|480](https://example.com/cover.png)
 ```
 
-A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::set_link_preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
+A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::AppExt::set_link_preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
+
+A preview can supply `Editing::image_overlay` to build a control from a picture's
+block index and original URL:
+
+```rust
+image_overlay_corner: markdown::ImageOverlayCorner::TopRight,
+image_overlay: Some(Rc::new(|block, url, window, cx| {
+    Some(open_image_button(block, url, window, cx).into_any_element())
+})),
+```
+
+The control appears on hover with a 6px inset. `image_overlay_corner` accepts
+any `markdown::ImageOverlayCorner` corner and defaults to `BottomRight`.
+Its presses stay on the control. Return `None` to omit it for one picture;
+leaving the option unset adds no listeners or visual changes. Empty picture
+placeholders and source view have no overlay.
 
 ## Limits
 

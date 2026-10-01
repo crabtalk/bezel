@@ -1,4 +1,5 @@
 use crate::*;
+use theme::AppExt as _;
 
 impl Gallery {
     pub(crate) fn foundations(
@@ -72,7 +73,7 @@ impl Gallery {
                     let base = theme::base_text_size();
                     let nudge = move |cx: &mut Context<Self>, by: f32| {
                         let next = (theme::base_text_size() + by).clamp(floor, ceiling);
-                        theme::set_base_text_size(next, cx);
+                        cx.set_base_text_size(next);
                         cx.notify();
                     };
                     div()
@@ -109,7 +110,7 @@ impl Gallery {
                                         // Whole points: every stop is a size
                                         // you could write into the ladder.
                                         let points = (floor + fraction * span).round();
-                                        theme::set_base_text_size(points, cx);
+                                        cx.set_base_text_size(points);
                                         cx.notify();
                                     },
                                 ))

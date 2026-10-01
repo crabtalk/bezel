@@ -24,9 +24,13 @@
 //! `NullHttpClient`, and the failure is silent: the element paints the same
 //! fallback it would show while a fetch was still in flight.
 
+mod app;
+pub use app::AppExt;
+
 pub mod block;
 pub mod doc;
 pub mod edit;
+pub mod find;
 pub mod highlight;
 pub mod layout;
 pub mod link;
@@ -42,25 +46,25 @@ pub mod source;
 pub mod source_style;
 pub mod typography;
 
-pub use block::{BlockRenderer, set_block_renderer};
+pub use block::BlockRenderer;
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Text};
 pub use edit::{Shortcut, Splice, shortcut};
-pub use highlight::{Highlighter, languages, set_highlighter};
-pub use layout::{Layout, set_layout};
-pub use link::{LinkHandler, set_link_handler};
+pub use find::{FindPaint, default_find};
+pub use highlight::Highlighter;
+pub use layout::Layout;
+pub use link::LinkHandler;
 pub use marks::{
     HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, highlight_solid,
-    set_highlight_paint, set_mark_paint, set_marks,
 };
 pub use parse::{ParsedDoc, is_image, is_url, parse, parse_at, parse_ranges, parse_with};
-pub use preview::{LinkPreview, Preview, set_link_preview};
+pub use preview::{LinkPreview, Preview};
 pub use quote::Quote;
 pub use render::{
-    Annotation, BlockLayouts, Caption, CopyButton, Editing, OnImage, OnToggle, Toggle,
-    image_source, markdown, render, render_source, render_with,
+    Annotation, BlockLayouts, Caption, CopyButton, Editing, ImageOverlay, ImageOverlayCorner,
+    OnImage, OnToggle, Toggle, image_source, markdown, render, render_source, render_with,
 };
 pub use select::{Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_with};
 pub use source::spans as source_spans;
-pub use source_style::{SourceStyle, set_source_style};
-pub use typography::{Typography, set_typography};
+pub use source_style::SourceStyle;
+pub use typography::Typography;

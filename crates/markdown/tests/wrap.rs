@@ -2,7 +2,7 @@
 //! text layout, which is the only place wrapping can be seen at all.
 
 use gpui::{Context, Render, TestAppContext, VisualTestContext, Window, div, prelude::*, px, size};
-use markdown::{BlockLayouts, Cursor, Doc, Editing, Layout, Part, parse, render_with, set_layout};
+use markdown::{AppExt as _, BlockLayouts, Cursor, Doc, Editing, Layout, Part, parse, render_with};
 
 const WIDTH: f32 = 320.0;
 const HEIGHT: f32 = 400.0;
@@ -65,7 +65,7 @@ fn a_line_too_long_for_the_fence_wraps(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn the_scroller_keeps_the_line_on_one_row(cx: &mut TestAppContext) {
-    cx.update(|cx| set_layout(cx, Layout { wrap_code: false }));
+    cx.update(|cx| cx.set_markdown_layout(Layout { wrap_code: false }));
     let (page, mut cx) = open(cx);
 
     assert_eq!(

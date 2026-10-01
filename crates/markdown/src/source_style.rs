@@ -26,7 +26,7 @@ impl Default for SourceStyle {
 }
 
 impl SourceStyle {
-    pub fn of(cx: &App) -> Self {
+    pub(crate) fn of(cx: &App) -> Self {
         cx.try_global::<Installed>()
             .map_or_else(Self::default, |installed| (installed.0)(Theme::of(cx)))
     }
@@ -37,7 +37,7 @@ struct Installed(Box<dyn Fn(&Theme) -> SourceStyle>);
 impl Global for Installed {}
 
 /// Resolve styles at paint so host colors follow theme changes.
-pub fn set_source_style(cx: &mut App, style: impl Fn(&Theme) -> SourceStyle + 'static) {
+pub(crate) fn set_source_style(cx: &mut App, style: impl Fn(&Theme) -> SourceStyle + 'static) {
     cx.set_global(Installed(Box::new(style)));
     cx.refresh_windows();
 }

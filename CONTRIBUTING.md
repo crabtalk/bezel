@@ -34,9 +34,9 @@ It carries only the layers every app paints with. `markdown`, `syntax`,
 `blocks` and `terminal` are peers a consumer names itself: re-exporting `syntax`
 made every consumer compile seven C grammars to get a button and broke
 `wasm32-unknown-unknown` outright, where that C has no libc. Highlighting is a
-seam (`markdown::set_highlighter`), so tree-sitter is one answer to it rather
+seam (`markdown::AppExt::set_highlighter`), so tree-sitter is one answer to it rather
 than the answer; painting a fence is the same shape
-(`markdown::set_block_renderer`, answered by `blocks`). Neither is a feature on
+(`markdown::AppExt::set_block_renderer`, answered by `blocks`). Neither is a feature on
 the seam crate, because cargo unions features across a graph: one a dependency
 turns on is one no consumer can turn off. `gpui_platform` is carried under a
 `platform` feature, off by default — a wasm consumer reaching for the browser
@@ -76,6 +76,13 @@ are one per bundled face, off by default and forwarded to `ui`.
    A default carries what it can, so an ordinary call site writes no number at
    all — `ui::stack::row()` is the system gap, and `.gap(px(12.0))` is a
    deviation the way `VStack(spacing: 12)` is one.
+
+App-owned configuration belongs on a crate-root `AppExt` trait implemented for
+`gpui::App`: getters and setters are methods on `cx`. Do not add public free
+functions for app-owned settings. Follow `motion::AppExt`, and use domain-specific
+method names where traits could collide (for example, `set_markdown_layout`).
+Update callers and examples with the API; old free-function setters are migration
+debt, not precedent.
 
 ## The markdown model
 

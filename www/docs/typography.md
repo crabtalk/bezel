@@ -14,16 +14,17 @@ Failure is non-fatal: `font_sans_fallback` / `font_mono_fallback` name the syste
 ## Your own type
 
 ```rust
+use bezel::theme::AppExt as _;
 use std::borrow::Cow;
 
 static INTER: &[u8] = include_bytes!("../assets/Inter.ttf");
 
 cx.text_system().add_fonts(vec![Cow::Borrowed(INTER)]).ok();
-theme::set_palette(|appearance| {
+cx.set_palette(|appearance| {
     let mut theme = Theme::for_appearance(appearance);
     theme.font_sans = "Inter".into();
     theme
-}, cx);
+});
 ```
 
 The string is the family name the file declares, not a path. Go through `set_palette` — a light/dark switch rebuilds the palette, and only the registered builder is rerun.

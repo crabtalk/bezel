@@ -1,5 +1,29 @@
 [
   {
+    "version": "0.2.5",
+    "date": "2026-09-29",
+    "summary": "Configurable find washes and caret shapes, app-provided paste handling and picture overlays, split buttons, and app configuration through extension traits.",
+    "new": [
+      "Table handles support drag reordering with a drop indicator. Menus offer Move up/down for body rows and Move left/right for columns. Moves preserve column alignment, selection, anchors, and undo history; the header row stays fixed.",
+      "Tables have six-dot row and column handles in dedicated left and top lanes. Right-clicking a cell opens insertion and deletion actions for both axes, even when the table header is scrolled out of view.",
+      "Editors expose picture hover controls through `with_image_overlay` and `set_image_overlay`, with `with_image_overlay_corner` and `set_image_overlay_corner` selecting their corner. Source mode has no picture controls.",
+      "`markdown::AppExt::set_find_paint` installs the match and current-match washes for editors and previews. Defaults remain the accent at 22% and 48% opacity.",
+      "`ui::AppExt::set_caret_shape` selects `CaretShape::Bar`, `Block`, or `Underline` for text fields, markdown text, and code blocks. The default bar is unchanged; terminal cursors remain controlled by the terminal program.",
+      "`editor::AppExt::set_paste_handler` lets the app return literal text, markdown, or `None` for existing paste behavior. The handler receives the clipboard, editor identity, mode, fence state, and base path; `cx.image_store()` exposes the installed media store. File drops remain separate.",
+      "`markdown::Editing::image_overlay` builds an app control from a picture's block index and URL. It appears on hover at `image_overlay_corner` (bottom-right by default) and stops presses from reaching the picture. Unset rendering is unchanged.",
+      "`Buttons::split_button` provides separately interactive main and menu halves, sized by `ControlSize`."
+    ],
+    "changed": [
+      "App-owned configuration in `theme`, `ui`, `markdown`, `editor`, and `canvas` now uses crate-root `AppExt` traits implemented for `gpui::App`. Import the relevant trait and call methods on `cx`; previous public free-function settings APIs are removed. For example, use `cx.set_caret_shape(CaretShape::Block)` instead of `ui::input::set_caret_shape(CaretShape::Block, cx)`.",
+      "`markdown::Editing` has `image_overlay`, `image_overlay_corner`, and `table_controls` fields; struct literals without `..Default::default()` must include them. The editor reserves space inside table blocks for its add controls."
+    ],
+    "fixed": [
+      "Table row and column handles are anchored to the editor instead of the end of document flow, so they appear beside the intended cells rather than below the table.",
+      "Pictures explicitly use the arrow cursor instead of inheriting a text cursor from the surrounding page; captions remain text targets.",
+      "Table row and column handles stay reachable when the pointer crosses cell padding; their hitboxes no longer start 12px too far right and down. Add-row and add-column controls occupy reserved space inside the table block instead of extending into page margins."
+    ]
+  },
+  {
     "version": "0.2.4",
     "date": "2026-09-28",
     "summary": "Tabs that reorder live under the pointer with a drop mark for other drops, a host-installed link handler in markdown, WebView data stores, cache-bypassing reload and back/forward availability, a wired segmented control, and a client-decorated frame whose shadow fits its window.",

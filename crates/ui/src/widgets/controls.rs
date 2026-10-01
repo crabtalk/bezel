@@ -1,7 +1,7 @@
-//! Display-only controls — toggle, checkbox, radio, progress, slider, select
-//! face, segmented control. State is always the caller's; each control is the
-//! paint plus its gesture contract, and the caller adds `.id(..)` / handlers —
-//! but for [`Controls::segmented`], which takes them.
+//! Display-only controls — toggle, checkbox, radio, progress, slider, color
+//! well, select face, segmented control. State is always the caller's; each
+//! control is the paint plus its gesture contract, and the caller adds
+//! `.id(..)` / handlers — but for [`Controls::segmented`], which takes them.
 //!
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`,
@@ -200,6 +200,55 @@ pub trait Controls: ThemeExt {
             )
     }
 
+    /// Display-only color well: a 20px ring holding `color`. The caller adds
+    /// `.id(..)` and an `.on_click(..)` that calls
+    /// [`crate::color::open_panel`].
+    fn color_well(&self, color: gpui::Hsla) -> Div {
+        well(self.theme().ink(0.25), color)
+    }
+
+    /// Preset colors, wired: a click on one reports its index to `on_pick`.
+    /// The ring marks `selected`; none is marked when it is out of range or
+    /// `None`. One row when `columns` is `None`; otherwise rows of `columns`.
+    ///
+    /// ```ignore
+    /// let swatches = cx.color_swatches();
+    /// theme.swatch_picker("tint", &swatches, self.tint, Some(6),
+    ///     cx.listener(|view, ix: &usize, _, cx| view.pick_tint(*ix, cx)))
+    /// ```
+    fn swatch_picker(
+        &self,
+        id: impl Into<ElementId>,
+        swatches: &[crate::color::Swatch],
+        selected: Option<usize>,
+        columns: Option<usize>,
+        on_pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
+    ) -> Stateful<Div> {
+        let theme = self.theme();
+        let on_pick = Rc::new(on_pick);
+        let wells: Vec<_> = swatches
+            .iter()
+            .enumerate()
+            .map(|(ix, swatch)| {
+                let on_pick = on_pick.clone();
+                let ring = match selected == Some(ix) {
+                    true => theme.text,
+                    false => crate::widgets::RING_SLOT,
+                };
+                well(ring, swatch.resolve(theme))
+                    .id(ix)
+                    .on_click(move |_, window, cx| on_pick(&ix, window, cx))
+            })
+            .collect();
+        let width = columns.filter(|n| *n > 0).unwrap_or(wells.len().max(1));
+        let mut wells = wells.into_iter();
+        let rows = std::iter::from_fn(|| {
+            let row: Vec<_> = wells.by_ref().take(width).collect();
+            (!row.is_empty()).then(|| stack::row().gap(px(4.0)).children(row))
+        });
+        stack::column().id(id).gap(px(4.0)).children(rows)
+    }
+
     /// The face of a select: current value plus a chevron, shaped and toned like
     /// [`crate::input::TextField`] so a form of fields and selects reads as one
     /// system. One look, open or shut — the menu hanging under it is what says
@@ -211,6 +260,16 @@ pub trait Controls: ThemeExt {
     /// state and the selection. Wrapping that in a struct would buy an
     /// abstraction and cost the caller its control over both.
     fn select_trigger(&self, label: impl Into<SharedString>) -> Div {
+        self.select_trigger_with(None::<Div>, label)
+    }
+
+    /// [`Self::select_trigger`] with `leading` drawn before the label — a
+    /// swatch or a sample of the value.
+    fn select_trigger_with(
+        &self,
+        leading: Option<impl IntoElement>,
+        label: impl Into<SharedString>,
+    ) -> Div {
         let theme = self.theme();
         stack::row()
             .justify_between()
@@ -223,7 +282,13 @@ pub trait Controls: ThemeExt {
             .text_style(TextStyle::Body)
             .text_color(theme.text)
             .cursor_pointer()
-            .child(div().min_w_0().truncate().child(label.into()))
+            .child(
+                stack::row()
+                    .min_w_0()
+                    .gap(px(8.0))
+                    .children(leading.map(|leading| div().flex_none().child(leading)))
+                    .child(div().min_w_0().truncate().child(label.into())),
+            )
             .child(
                 crate::icons::icon(crate::icons::glyph::ChevronDown)
                     .size(px(14.0))
@@ -313,6 +378,19 @@ pub trait Controls: ThemeExt {
                     }),
             )
     }
+}
+
+/// A 20px ring in `ring` around a disc of `color`.
+fn well(ring: gpui::Hsla, color: gpui::Hsla) -> Div {
+    div()
+        .flex_none()
+        .size(px(20.0))
+        .p(px(2.0))
+        .rounded_full()
+        .border_1()
+        .border_color(ring)
+        .cursor_pointer()
+        .child(div().size_full().rounded_full().bg(color))
 }
 
 /// What a segment looks like in each of its two states, before whatever it

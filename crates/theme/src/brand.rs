@@ -165,7 +165,7 @@ impl Vibrancy {
 ///
 /// Installed as a gpui [`Global`]; [`Theme::install`] applies it to whatever
 /// palette is registered, so it survives a light/dark switch and composes with
-/// [`set_palette`](crate::set_palette) rather than competing with it.
+/// [`crate::AppExt::set_palette`](crate::AppExt::set_palette) rather than competing with it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Brand {
     /// The hue every grey in the palette carries.
@@ -353,7 +353,7 @@ fn label_on(plate: Hsla, theme: &Theme) -> Hsla {
 }
 
 /// Read the installed brand (the default before one is set).
-pub fn brand(cx: &App) -> Brand {
+pub(crate) fn brand(cx: &App) -> Brand {
     cx.try_global::<Brand>().copied().unwrap_or_default()
 }
 
@@ -362,7 +362,7 @@ pub fn brand(cx: &App) -> Brand {
 /// Colours are read imperatively at paint time, so nothing observes the theme
 /// global — the same reason [`appearance::apply`](crate::appearance::apply)
 /// refreshes rather than notifies.
-pub fn set_brand(brand: Brand, cx: &mut App) {
+pub(crate) fn set_brand(brand: Brand, cx: &mut App) {
     cx.set_global(brand);
     Theme::install(crate::paint::current_appearance(), cx);
     // Crossing 1.0 is what puts the `NSVisualEffectView` in or takes it out,

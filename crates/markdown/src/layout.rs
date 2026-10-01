@@ -15,7 +15,7 @@ pub struct Layout {
 impl Layout {
     /// How documents break lines, or [`Layout::default`] before anything is
     /// installed. Mirrors [`theme::Theme::of`].
-    pub fn of(cx: &App) -> Self {
+    pub(crate) fn of(cx: &App) -> Self {
         cx.try_global::<Installed>()
             .map_or_else(Self::default, |installed| installed.0)
     }
@@ -33,7 +33,7 @@ struct Installed(Layout);
 
 impl Global for Installed {}
 
-/// `markdown::set_layout(cx, my_layout)` — call once at boot.
-pub fn set_layout(cx: &mut App, layout: Layout) {
+/// `cx.set_markdown_layout(my_layout)` — call once at boot.
+pub(crate) fn set_layout(cx: &mut App, layout: Layout) {
     cx.set_global(Installed(layout));
 }

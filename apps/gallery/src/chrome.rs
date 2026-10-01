@@ -1,6 +1,7 @@
 //! The window around a section: nav, header and the body frame.
 
 use crate::*;
+use theme::AppExt as _;
 
 impl Gallery {
     /// The navigation rail: every component, one row each, the current one
@@ -135,14 +136,11 @@ impl Gallery {
                     .p(px(NAV_ITEM_PAD))
                     .cursor_pointer()
                     .on_click(cx.listener(move |view, _, _, cx| {
-                        appearance::set_mode(
-                            if dark {
-                                AppearanceMode::Light
-                            } else {
-                                AppearanceMode::Dark
-                            },
-                            cx,
-                        );
+                        cx.set_appearance_mode(if dark {
+                            AppearanceMode::Light
+                        } else {
+                            AppearanceMode::Dark
+                        });
                         // The probe's knobs are a look's numbers, and the two
                         // appearances do not share them: carrying dark's over
                         // paints light with dark's material and reads as the

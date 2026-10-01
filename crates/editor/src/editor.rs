@@ -15,8 +15,8 @@ use gpui::{
     KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
 };
 use markdown::{
-    Annotation, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part, Selection, Splice,
-    Text, edit, edit::shortcut,
+    Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part,
+    Selection, Splice, Text, edit, edit::shortcut,
 };
 use std::{ops::Range, time::Duration};
 use theme::Theme;
@@ -24,10 +24,9 @@ use theme::Theme;
 use crate::{
     anchor::{Anchor, AnchorId, Delta},
     history::{EditKind, History},
-    layout::Layout,
     link::{self, Choice},
     slash::Slash,
-    text_size::{self, TextSize},
+    text_size,
 };
 
 mod anchors;
@@ -41,6 +40,7 @@ pub(crate) mod menu;
 mod mode;
 mod pointer;
 mod render;
+mod table;
 mod typing;
 
 pub use keys::init;
@@ -57,7 +57,7 @@ use keys::{
 pub const CONTEXT: &str = "BezelEditor";
 
 /// The custom mark [`ToggleHighlight`] toggles. It does nothing until the app
-/// registers a mark under this name with [`markdown::set_marks`].
+/// registers a mark under this name with [`markdown::AppExt::set_marks`].
 pub const HIGHLIGHT_MARK: &str = "highlight";
 
 /// [`CONTEXT`], which every binding in [`keys`] is scoped to, plus the mark
@@ -270,6 +270,14 @@ fn source_doc(source: &str) -> Doc {
 /// without one a trigger's click on the *release* reopens what it just shut.
 pub(crate) type MenuPopup = ui::popover::Popup<(usize, gpui::Point<gpui::Pixels>)>;
 
+/// The row, column, or cell whose table menu is open.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TableTarget {
+    Row(usize),
+    Column(usize),
+    Cell { row: usize, column: usize },
+}
+
 /// A table's row or column, as [`markdown::Part::Cell`] numbers them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Line {
@@ -326,7 +334,9 @@ pub struct Editor {
     /// The table cell the pointer is over, whose row and column show handles.
     hovered_cell: Option<(usize, Part)>,
     /// A table row's or column's menu: the table, the line and where it hangs.
-    table_menu: ui::popover::Popup<(usize, Line, gpui::Point<gpui::Pixels>)>,
+    table_drag: Option<table::TableDrag>,
+    table_dragged: bool,
+    table_menu: ui::popover::Popup<(usize, TableTarget, gpui::Point<gpui::Pixels>)>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
     /// An image being dragged wider or narrower by its edge handle, and the
@@ -373,6 +383,8 @@ pub struct Editor {
     text_size: Option<f32>,
     /// The directory relative image paths resolve against.
     base: Option<std::path::PathBuf>,
+    image_overlay: Option<markdown::ImageOverlay>,
+    image_overlay_corner: markdown::ImageOverlayCorner,
 }
 
 #[derive(Clone, Copy)]
@@ -384,7 +396,7 @@ struct VerticalGoal {
 
 impl Editor {
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
-        let marks = markdown::Marks::of(cx);
+        let marks = cx.marks();
         let mut doc = markdown::parse_with(source, &marks);
         ensure_block(&mut doc);
         Self {
@@ -411,6 +423,8 @@ impl Editor {
             hovered: None,
             hovered_cell: None,
             table_menu: Default::default(),
+            table_drag: None,
+            table_dragged: false,
             lifted: None,
             resizing: None,
             block_menu: MenuPopup::default(),
@@ -426,6 +440,8 @@ impl Editor {
             handle_at: None,
             text_size: None,
             base: None,
+            image_overlay: None,
+            image_overlay_corner: markdown::ImageOverlayCorner::default(),
         }
     }
 
@@ -439,7 +455,7 @@ impl Editor {
     }
 
     /// Read and write this document with marks of its own, rather than the ones
-    /// [`markdown::set_marks`] installed. For an app whose editors do not all
+    /// [`markdown::AppExt::set_marks`] installed. For an app whose editors do not all
     /// speak the same dialect.
     pub fn with_marks(mut self, marks: markdown::Marks) -> Self {
         let source = self.source();
@@ -454,6 +470,38 @@ impl Editor {
     pub fn with_chrome(mut self, chrome: Chrome) -> Self {
         self.chrome = chrome;
         self
+    }
+
+    /// Adds an app-provided hover control to pictures in rich mode.
+    pub fn with_image_overlay(mut self, overlay: markdown::ImageOverlay) -> Self {
+        self.image_overlay = Some(overlay);
+        self
+    }
+
+    /// Replaces or removes the picture hover control.
+    pub fn set_image_overlay(
+        &mut self,
+        overlay: Option<markdown::ImageOverlay>,
+        cx: &mut Context<Self>,
+    ) {
+        self.image_overlay = overlay;
+        cx.notify();
+    }
+
+    /// Positions picture hover controls; bottom-right by default.
+    pub fn with_image_overlay_corner(mut self, corner: markdown::ImageOverlayCorner) -> Self {
+        self.image_overlay_corner = corner;
+        self
+    }
+
+    /// Repositions the picture hover control.
+    pub fn set_image_overlay_corner(
+        &mut self,
+        corner: markdown::ImageOverlayCorner,
+        cx: &mut Context<Self>,
+    ) {
+        self.image_overlay_corner = corner;
+        cx.notify();
     }
 
     /// What is painting now, for an app whose own bar mirrors it.
@@ -490,7 +538,7 @@ impl Editor {
     }
 
     /// The base the app set, if any. Add
-    /// [`text_size_adjustment`](crate::text_size_adjustment) for what is on
+    /// [`crate::AppExt::editor_text_size_adjustment`](crate::AppExt::editor_text_size_adjustment) for what is on
     /// screen.
     pub fn text_size(&self) -> Option<f32> {
         self.text_size

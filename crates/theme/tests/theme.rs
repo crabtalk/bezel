@@ -1,4 +1,4 @@
-use gpui::{WindowBackgroundAppearance, hsla};
+use gpui::{WindowBackgroundAppearance, hsla, point, px};
 use theme::*;
 
 fn srgb_u8(c: [f32; 3]) -> [u8; 3] {
@@ -721,12 +721,13 @@ fn clear_glass_has_no_flat_tone() {
 }
 
 #[test]
-fn the_frame_shadow_stays_inside_the_client_inset() {
-    for shadow in frame_shadows() {
-        let reach = f32::from(shadow.blur_radius) + f32::from(shadow.spread_radius);
-        let (x, y) = (f32::from(shadow.offset.x), f32::from(shadow.offset.y));
-        for side in [reach + x, reach - x, reach + y, reach - y] {
-            assert!(side <= Theme::CLIENT_INSET, "{shadow:?} reaches {side}px");
-        }
-    }
+fn the_frame_shadow_reserves_half_the_client_inset_for_its_tail() {
+    let shadows = frame_shadows();
+    assert_eq!(shadows.len(), 1);
+    let shadow = &shadows[0];
+    assert_eq!(shadow.color, hsla(0.0, 0.0, 0.0, 0.4));
+    assert_eq!(shadow.offset, point(px(0.0), px(0.0)));
+    assert_eq!(shadow.blur_radius, px(Theme::CLIENT_INSET / 2.0));
+    assert_eq!(shadow.spread_radius, px(0.0));
+    assert!(!shadow.inset);
 }

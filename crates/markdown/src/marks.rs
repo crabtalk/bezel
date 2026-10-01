@@ -15,7 +15,7 @@
 //!
 //! The registry is a *parameter* rather than a global because [`parse_with`]
 //! and [`serialize_with`] are pure — the same reason the highlighter is a
-//! function pointer rather than a dependency. [`set_marks`] is the gpui-side
+//! function pointer rather than a dependency. [`crate::AppExt::set_marks`] is the gpui-side
 //! half, for the editing surface, which has a `cx` and no other way to know.
 //!
 //! A delimiter markdown already spells (`*`, `_`, `` ` ``, `~`, `[`) is yours to
@@ -99,7 +99,7 @@ impl Marks {
     }
 
     /// What the editing surface reads a document with, or nothing registered.
-    pub fn of(cx: &App) -> Self {
+    pub(crate) fn of(cx: &App) -> Self {
         cx.try_global::<Installed>()
             .map_or_else(Self::default, |installed| installed.0.clone())
     }
@@ -109,9 +109,9 @@ struct Installed(Marks);
 
 impl Global for Installed {}
 
-/// `markdown::set_marks(cx, my_marks)` — call once at boot, so the editing
+/// `cx.set_marks(my_marks)` — call once at boot, so the editing
 /// surface reads and writes the same markdown the app's own calls do.
-pub fn set_marks(cx: &mut App, marks: Marks) {
+pub(crate) fn set_marks(cx: &mut App, marks: Marks) {
     cx.set_global(Installed(marks));
 }
 
@@ -135,10 +135,10 @@ struct InstalledPaint(Painter);
 
 impl Global for InstalledPaint {}
 
-/// `markdown::set_mark_paint(cx, my_paint)` — call once at boot. Without it a
+/// `cx.set_mark_paint(my_paint)` — call once at boot. Without it a
 /// custom mark round trips and paints as the text it wraps, which is what an
 /// unknown mark should look like rather than a hole.
-pub fn set_mark_paint(cx: &mut App, paint: Painter) {
+pub(crate) fn set_mark_paint(cx: &mut App, paint: Painter) {
     cx.set_global(InstalledPaint(paint));
 }
 
@@ -149,7 +149,7 @@ pub(crate) fn paint_of(cx: &App, name: &str, theme: &Theme) -> Option<MarkPaint>
 /// A reader's highlight colour, by name — the set Apple Books and Notes offer.
 ///
 /// A name rather than a colour value, so a highlight saved under one look
-/// paints under another. [`set_highlight_paint`] decides what each one paints.
+/// paints under another. [`crate::AppExt::set_highlight_paint`] decides what each one paints.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum HighlightColor {
@@ -195,9 +195,9 @@ struct InstalledHighlight(HighlightPaint);
 
 impl Global for InstalledHighlight {}
 
-/// `markdown::set_highlight_paint(cx, my_paint)` — call once at boot. Without
+/// `cx.set_highlight_paint(my_paint)` — call once at boot. Without
 /// it each colour paints [`default_highlight`].
-pub fn set_highlight_paint(cx: &mut App, paint: HighlightPaint) {
+pub(crate) fn set_highlight_paint(cx: &mut App, paint: HighlightPaint) {
     cx.set_global(InstalledHighlight(paint));
 }
 

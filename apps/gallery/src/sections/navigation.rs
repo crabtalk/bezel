@@ -1,4 +1,5 @@
 use crate::*;
+use ui::AppExt as _;
 
 impl Gallery {
     pub(crate) fn navigation(
@@ -110,6 +111,42 @@ impl Gallery {
                 )
                 .into_any_element(),
 
+            "docking" => section
+                .child(hint(&theme, "Pull a tab away from its strip, then drop at a pane edge to split or in the centre to join. Escape returns it home. Illustrative workspace."))
+                .child(div().w_full().h(px(360.)).child(self.navigation.docking.clone()))
+                .into_any_element(),
+
+            "sortable" => section
+                .child(hint(&theme, "Drag tasks between lanes; reference notes stay in their own list. Release commits the preview, Escape cancels. Illustrative project data."))
+                .child(div().flex().gap(px(16.)).children(self.navigation.sorting.iter().enumerate().map(|(lane, cards)| {
+                    let notes = lane == 3;
+                    let content = div().id(("sort-cards", lane)).size_full().flex().flex_col().gap(px(8.)).overflow_y_scroll()
+                        .children(cards.iter().map(|&title| self.navigation.sortable.handle(title, div()
+                            .id(title)
+                            .p(px(12.)).rounded(px(Theme::control_radius()))
+                            .bg(theme.surface_raised).border_1().border_color(theme.border)
+                            .child(title))));
+                    div().flex().flex_col().w(px(176.))
+                        .child(div().pb(px(10.)).text_color(theme.text_muted)
+                            .child(["Planned", "In progress", "Done", "Reference"][lane]))
+                        .child(self.navigation.sortable.region(("sort-lane", lane), lane, gpui::Axis::Vertical, content)
+                            .h(px(280.))
+                            .accepts(move |title| NOTES.contains(title) == notes)
+                            .on_drop(cx.listener(|view, event: &ui::drag::Drop<usize, &'static str>, _, cx| {
+                                let lanes = &mut view.navigation.sorting;
+                                lanes[event.from].retain(|card| *card != event.item);
+                                let to = &mut lanes[event.region];
+                                let at = match (&event.after, &event.before) {
+                                    (Some(after), _) => to.iter().position(|card| card == after).map_or(to.len(), |at| at + 1),
+                                    (None, Some(before)) => to.iter().position(|card| card == before).unwrap_or(0),
+                                    (None, None) => 0,
+                                };
+                                to.insert(at, event.item);
+                                cx.notify();
+                            })))
+                })))
+                .into_any_element(),
+
             "tab-strip" => section
                 .child(hint(
                     &theme,
@@ -126,46 +163,57 @@ impl Gallery {
                         .flex_row()
                         .items_center()
                         .gap(px(6.0))
-                        .child(tabs::bar("demo-strip").children(
-                            self.navigation.strip.tabs().iter().map(|open| {
-                                let key = *open;
-                                let front = self.navigation.strip.active() == Some(&key);
-                                let mut label = tabs::Label::new(key);
-                                if let Some((_, icon, dirty, badge)) =
-                                    STRIP_TABS.iter().find(|(name, ..)| *name == key)
-                                {
-                                    label = label.with_icon(*icon);
-                                    if *dirty {
-                                        label = label.mark(icons::Icon::glyph(STRIP_MARK).solid());
-                                    }
-                                    if !badge.is_empty() {
-                                        label = label.with_badge(*badge);
-                                    }
-                                }
-                                tabs::tab(
-                                    &theme,
-                                    key,
-                                    label,
-                                    match front {
-                                        true => tabs::State::Focused,
-                                        false => tabs::State::Resting,
-                                    },
-                                )
-                                .on_click(cx.listener(move |view, _, _, cx| {
-                                    view.navigation.strip.activate(&key);
-                                    cx.notify();
-                                }))
-                                .child(
-                                    tabs::close(&theme, key, tabs::Close::OnHover).on_click(
-                                        cx.listener(move |view, _, _, cx| {
-                                            cx.stop_propagation();
-                                            view.navigation.strip.close(&key);
+                        .child(
+                            self.navigation
+                                .reorder
+                                .bar(
+                                    "demo-strip",
+                                    &self.navigation.strip,
+                                    self.navigation.strip.tabs().iter().map(|open| {
+                                        let key = *open;
+                                        let front = self.navigation.strip.active() == Some(&key);
+                                        let mut label = tabs::Label::new(key);
+                                        if let Some((_, icon, dirty, badge)) =
+                                            STRIP_TABS.iter().find(|(name, ..)| *name == key)
+                                        {
+                                            label = label.with_icon(*icon);
+                                            if *dirty {
+                                                label = label
+                                                    .mark(icons::Icon::glyph(STRIP_MARK).solid());
+                                            }
+                                            if !badge.is_empty() {
+                                                label = label.with_badge(*badge);
+                                            }
+                                        }
+                                        let tab = tabs::tab(
+                                            &theme,
+                                            key,
+                                            label,
+                                            match front {
+                                                true => tabs::State::Focused,
+                                                false => tabs::State::Resting,
+                                            },
+                                        )
+                                        .on_click(cx.listener(move |view, _, _, cx| {
+                                            view.navigation.strip.activate(&key);
                                             cx.notify();
-                                        }),
-                                    ),
+                                        }))
+                                        .child(
+                                            tabs::close(&theme, key, tabs::Close::OnHover)
+                                                .on_click(cx.listener(move |view, _, _, cx| {
+                                                    cx.stop_propagation();
+                                                    view.navigation.strip.close(&key);
+                                                    cx.notify();
+                                                })),
+                                        );
+                                        (key, tab)
+                                    }),
                                 )
-                            }),
-                        ))
+                                .on_reorder(cx.listener(|view, movement: &tabs::Move, _, cx| {
+                                    view.navigation.strip.reorder(movement.from, movement.to);
+                                    cx.notify();
+                                })),
+                        )
                         .child(
                             theme
                                 .ghost("strip-add")
@@ -312,6 +360,7 @@ impl Gallery {
             }
 
             "titlebar" => {
+                let caption_style = cx.caption_style();
                 let frame = |body: gpui::Div| {
                     body.w_full()
                         .rounded(px(Theme::panel_radius()))
@@ -328,6 +377,32 @@ impl Gallery {
                         .child(copy)
                 };
                 section
+                    .child(row().children([
+                        ("Rectangular", titlebar::CaptionStyle::Rectangular),
+                        ("Lights", titlebar::CaptionStyle::Lights),
+                    ].map(|(label, style)| {
+                        pressable(
+                            theme.button(
+                                label,
+                                if caption_style == style {
+                                    ButtonStyle::Prominent
+                                } else {
+                                    ButtonStyle::Ghost
+                                },
+                                None,
+                            ),
+                            label,
+                            cx,
+                            move |_, cx| cx.set_caption_style(style),
+                        )
+                    })))
+                    .child(hint(&theme, "App-wide caption style for Windows and Linux. The controls below operate this window; macOS keeps its native titlebar buttons."))
+                    .child(frame(div()).child(
+                        titlebar::titlebar("caption-style-demo", false, window)
+                            .child(titlebar::controls(titlebar::CaptionSide::Left, window, cx))
+                            .child(caption("Caption buttons"))
+                            .child(titlebar::controls(titlebar::CaptionSide::Right, window, cx)),
+                    ))
                     .child(hint(
                         &theme,
                         "Drag the bare stretch of either strip to move the \
@@ -649,6 +724,9 @@ impl Gallery {
     }
 }
 
+/// The sortable demo's reference notes, which stay in their own lane.
+const NOTES: [&str; 2] = ["Interview notes", "Keyboard shortcut reference"];
+
 /// What this group's demos hold between frames.
 pub(crate) struct State {
     /// Where the split's divider sits, as a fraction of the container.
@@ -659,6 +737,10 @@ pub(crate) struct State {
     /// The tab-strip demo's open tabs, in order, with one of them in front.
     /// What each opens is [`STRIP_TABS`].
     pub(crate) strip: tabs::Strip<&'static str>,
+    pub(crate) reorder: tabs::Reorder<&'static str>,
+    pub(crate) docking: gpui::Entity<super::docking::Demo>,
+    pub(crate) sortable: ui::drag::Domain<usize, &'static str>,
+    pub(crate) sorting: [Vec<&'static str>; 4],
     pub(crate) nav_choice: usize,
     pub(crate) titlebar_drag: titlebar::DragState,
 }
@@ -670,6 +752,19 @@ impl State {
             split_dragging: false,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             tab_choice: 0,
+            reorder: tabs::Reorder::new(motion::Painter::of(cx)),
+            docking: cx.new(super::docking::Demo::new),
+            sortable: ui::drag::Domain::new(motion::Painter::of(cx)),
+            sorting: [
+                vec![
+                    "Sketch the new sidebar",
+                    "Explore keyboard navigation across panes",
+                    "Review empty states",
+                ],
+                vec!["Build the tab strip", "Polish card spacing"],
+                vec![],
+                vec!["Interview notes", "Keyboard shortcut reference"],
+            ],
             strip: STRIP_TABS[..3].iter().map(|(name, ..)| *name).collect(),
             nav_choice: 0,
             titlebar_drag: titlebar::DragState::default(),

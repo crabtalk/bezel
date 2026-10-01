@@ -2,10 +2,39 @@
 
 use super::*;
 use gpui::ClickEvent;
+use std::sync::Arc;
 
 /// How far a press may travel before its release is a drag, not a click on a
 /// picture.
 const DRAG_SLOP: f64 = 2.0;
+
+/// The last image each picture on disk or the web decoded to.
+#[derive(Default)]
+struct Shown(std::collections::HashMap<gpui::Resource, Arc<gpui::RenderImage>>);
+
+impl gpui::Global for Shown {}
+
+/// `source` as it should paint this frame: what it loaded to, or while it is
+/// loading again — its cached copy dropped because the file changed — or
+/// failing on a half-written file, the image it last loaded to. A picture
+/// never loaded yet paints as gpui paints any loading image.
+fn steady(source: ImageSource, window: &mut Window, cx: &mut App) -> ImageSource {
+    let ImageSource::Resource(resource) = &source else {
+        return source;
+    };
+    match window.use_asset::<gpui::ImgResourceLoader>(resource, cx) {
+        Some(Ok(image)) => {
+            cx.default_global::<Shown>()
+                .0
+                .insert(resource.clone(), image.clone());
+            ImageSource::Render(image)
+        }
+        _ => match cx.default_global::<Shown>().0.get(resource) {
+            Some(image) => ImageSource::Render(image.clone()),
+            None => source,
+        },
+    }
+}
 
 /// A picture and the caption under it, which is the alt text a caret can reach.
 ///
@@ -13,6 +42,10 @@ const DRAG_SLOP: f64 = 2.0;
 /// type, so a document being read is not a column of pictures each trailing a
 /// blank line. With no URL yet the picture is a dashed row instead — the shape
 /// the slash menu makes, waiting to be told what to show.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a picture, its overlay, and what paints them"
+)]
 pub(super) fn image(
     url: &str,
     alt: &Text,
@@ -20,7 +53,8 @@ pub(super) fn image(
     overlay: Overlay,
     typography: &Typography,
     theme: &Theme,
-    cx: &App,
+    window: &mut Window,
+    cx: &mut App,
 ) -> AnyElement {
     let hint = SharedString::new_static(CAPTION_HINT);
     let overlay = Overlay {
@@ -29,6 +63,7 @@ pub(super) fn image(
     };
     let picture = if url.is_empty() {
         div()
+            .cursor(CursorStyle::Arrow)
             .h(px(IMAGE_EMPTY_HEIGHT))
             .flex()
             .items_center()
@@ -42,17 +77,18 @@ pub(super) fn image(
             .child(IMAGE_EMPTY)
             .into_any_element()
     } else {
-        let picture = img(image_source(url, overlay.base));
+        let picture = img(steady(image_source(url, overlay.base), window, cx));
         let ix = overlay.block;
         let box_ = div()
             .id(ElementId::named_usize("md-picture", ix))
+            .cursor(CursorStyle::Arrow)
             .relative()
             .rounded(px(Theme::button_radius()))
             .overflow_hidden()
             .border_1()
             .border_color(theme.border)
             .when_some(overlay.image.cloned(), |el, on_image| {
-                el.cursor_pointer().on_click(move |event, window, cx| {
+                el.on_click(move |event, window, cx| {
                     if let ClickEvent::Mouse(click) = event
                         && (click.up.position - click.down.position).magnitude() > DRAG_SLOP
                     {
@@ -70,7 +106,7 @@ pub(super) fn image(
                 .absolute()
                 .size_full()
             }));
-        match width {
+        let box_ = match width {
             // A stated width is the box's: it hugs, so the border is around
             // the picture rather than around the column beside it, and the
             // picture fills what the box settled on — which `max_w_full`
@@ -80,11 +116,39 @@ pub(super) fn image(
                 .max_w_full()
                 .w(px(width as f32))
                 .child(picture.w(px(width as f32)).max_w_full()),
-            // Unstated, the picture scales itself against the column, which
-            // is a percentage and so needs a box that spans one to measure.
-            None => box_.child(picture.max_w_full()),
+            // Unstated, the box hugs the picture at its own size, held inside
+            // the page.
+            None => box_.self_start().max_w_full().child(picture.max_w_full()),
+        };
+        match overlay
+            .image_overlay
+            .and_then(|build| build(ix, url, window, cx))
+        {
+            Some(control) => {
+                let group = SharedString::from(format!("md-picture-overlay-{ix}"));
+                box_.group(group.clone())
+                    .child(
+                        div()
+                            .id("image-overlay")
+                            .absolute()
+                            .map(|el| match overlay.image_overlay_corner {
+                                ImageOverlayCorner::TopLeft => el.top(px(6.0)).left(px(6.0)),
+                                ImageOverlayCorner::TopRight => el.top(px(6.0)).right(px(6.0)),
+                                ImageOverlayCorner::BottomLeft => el.bottom(px(6.0)).left(px(6.0)),
+                                ImageOverlayCorner::BottomRight => {
+                                    el.bottom(px(6.0)).right(px(6.0))
+                                }
+                            })
+                            .invisible()
+                            .group_hover(group, |style| style.visible())
+                            .on_any_mouse_down(|_, _, cx| cx.stop_propagation())
+                            .on_click(|_, _, cx| cx.stop_propagation())
+                            .child(control),
+                    )
+                    .into_any_element()
+            }
+            None => box_.into_any_element(),
         }
-        .into_any_element()
     };
     div()
         .flex()
@@ -267,7 +331,7 @@ pub(super) struct MentionCard {
 
 impl MentionCard {
     pub(super) fn view(url: &str, cx: &mut App) -> gpui::AnyView {
-        let typography = Typography::of(cx);
+        let typography = cx.typography();
         cx.new(|_| Self {
             url: url.to_string(),
             typography,

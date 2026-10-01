@@ -1,4 +1,5 @@
 use crate::*;
+use ui::AppExt as _;
 
 impl Gallery {
     pub(crate) fn controls(
@@ -236,6 +237,49 @@ impl Gallery {
                         ))),
                 )
                 .into_any_element(),
+
+            "color-picker" => {
+                let swatches = cx.color_swatches();
+                let custom = match self.controls.swatch {
+                    Some(ix) => swatches
+                        .get(ix)
+                        .map_or(self.controls.color, |s| s.resolve(&theme)),
+                    None => self.controls.color,
+                };
+                section
+                    .child(hint(
+                        &theme,
+                        "Pick a preset, or click the last well for the system color panel \
+                         (macOS only).",
+                    ))
+                    .child(
+                        row()
+                            .child(theme.swatch_picker(
+                                "swatches",
+                                &swatches,
+                                self.controls.swatch,
+                                None,
+                                cx.listener(|view, ix: &usize, _, cx| {
+                                    view.controls.swatch = Some(*ix);
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(theme.color_well(custom).id("color-well").on_click(
+                                cx.listener(move |_, _, _, cx| {
+                                    let this = cx.entity().downgrade();
+                                    ui::color::open_panel(custom, true, cx, move |color, cx| {
+                                        this.update(cx, |view, cx| {
+                                            view.controls.swatch = None;
+                                            view.controls.color = color;
+                                            cx.notify();
+                                        })
+                                        .ok();
+                                    });
+                                }),
+                            )),
+                    )
+                    .into_any_element()
+            }
 
             "toggle-group" => section
                 .child(hint(
@@ -687,6 +731,9 @@ pub(crate) struct State {
     pub(crate) radio: usize,
     pub(crate) switched: [bool; 2],
     pub(crate) level: f32,
+    /// The preset picked, or `None` once the panel has picked `color`.
+    pub(crate) swatch: Option<usize>,
+    pub(crate) color: gpui::Hsla,
 }
 
 impl State {
@@ -726,6 +773,8 @@ impl State {
             radio: 0,
             switched: [true, false],
             level: 0.5,
+            swatch: Some(7),
+            color: gpui::rgb(0x0A84FF).into(),
         }
     }
 }

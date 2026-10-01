@@ -5,7 +5,7 @@
 //! `NSLayoutManager.defaultLineHeight(for:)` on the same fonts.
 //!
 //! One ladder on every platform. An app that wants the host's own body — 9pt
-//! Segoe UI is 12px against this 13 — calls [`set_base_text_size`], and every
+//! Segoe UI is 12px against this 13 — calls [`crate::AppExt::set_base_text_size`], and every
 //! role and every metric keyed to it moves together.
 
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -26,7 +26,7 @@ static BASE: AtomicU32 = AtomicU32::new(TextStyle::Body.size().to_bits());
 ///
 /// [`Theme::HEADER_HEIGHT`]: crate::Theme::HEADER_HEIGHT
 /// [`Theme::STATUS_STRIP_HEIGHT`]: crate::Theme::STATUS_STRIP_HEIGHT
-pub fn set_base_text_size(points: f32, cx: &mut App) {
+pub(crate) fn set_base_text_size(points: f32, cx: &mut App) {
     BASE.store(points.to_bits(), Ordering::Relaxed);
     cx.refresh_windows();
 }
@@ -68,7 +68,7 @@ impl TextStyle {
         }
     }
 
-    /// The size this role paints at, which [`set_base_text_size`] moves.
+    /// The size this role paints at, which [`crate::AppExt::set_base_text_size`] moves.
     pub fn painted(self) -> f32 {
         self.size() * base_text_size() / Self::Body.size()
     }
@@ -92,7 +92,7 @@ impl TextStyle {
         }
     }
 
-    /// The line box this role paints in, which [`set_base_text_size`] moves.
+    /// The line box this role paints in, which [`crate::AppExt::set_base_text_size`] moves.
     pub fn painted_line_height(self) -> f32 {
         self.line_height() * base_text_size() / Self::Body.size()
     }
@@ -114,7 +114,7 @@ impl TextStyle {
 pub struct Metrics {
     pub role: TextStyle,
     /// Line height as a multiple of the painted size, so leading follows the
-    /// type wherever [`set_base_text_size`] puts it.
+    /// type wherever [`crate::AppExt::set_base_text_size`] puts it.
     pub leading: f32,
     /// The ladder carries one bold cell, so a set needing several heading
     /// weights names its own here rather than reading it off the role.

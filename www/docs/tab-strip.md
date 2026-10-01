@@ -61,7 +61,7 @@ A strip with tabs in it always has one in front: `active` is `None` only while `
 ```rust
 /// Tabs go in it; a `+`, a `···` and anything else on the row are the
 /// caller's, outside this. It scrolls sideways once the tabs stop fitting.
-pub fn bar(id: impl Into<ElementId>) -> Stateful<Div>;
+pub fn bar(id: impl Into<ElementId>) -> TabBar;
 
 /// One tab, up to the `×`.
 pub fn tab(theme: &Theme, key: impl Into<SharedString>, label: Label, state: State) -> Stateful<Div>;
@@ -69,6 +69,11 @@ pub fn tab(theme: &Theme, key: impl Into<SharedString>, label: Label, state: Sta
 /// The `×` for the `key` its tab was built with.
 pub fn close(theme: &Theme, key: impl Into<SharedString>, when: Close) -> Stateful<Div>;
 ```
+
+Both `bar` and `Reorder::bar` own a horizontal overlay scrollbar. It follows the
+app's scrollbar visibility setting, takes no layout space, and disappears when
+the tabs fit. Plain `bar` keeps its offset across renders; `track_scroll` is
+optional for programmatic access. No host wrapper is needed.
 
 One `key` names both the element and the hover group `Close::OnHover` reads, so the two cannot drift apart.
 
@@ -89,4 +94,43 @@ The mark is whatever the tab has to say beside its name — unsaved work, a runn
 
 The badge does not truncate — keep it to a few characters.
 
-Drag is the caller's: the payload belongs to the app, and a bar that is itself a drop target is a pane layout's business rather than every strip's.
+## Live reordering
+
+Keep a `tabs::Reorder<Id>` beside the model, initialized with
+`tabs::Reorder::new(motion::Painter::of(cx))`. It owns the pointer gesture and
+animations; the host applies moves to its data:
+
+```rust
+self.reorder.bar("panel-tabs", &self.strip,
+    self.strip.tabs().iter().map(|id| {
+        (id.clone(), tabs::tab(&theme, self.key(id), self.label(id), self.state(id)))
+    }),
+).on_reorder(cx.listener(|view, movement: &tabs::Move, _, cx| {
+    view.strip.reorder(movement.from, movement.to);
+    cx.notify();
+}))
+```
+
+Supply children in model order with stable keys. Keep activation and close
+handlers on the tabs. The preview moves live, but `on_reorder` fires once on
+release. Apply that move synchronously; the active tab stays active.
+
+The drag is gpui's, carrying a `drag::Carry<Id>`; its preview is empty and
+the carried tab follows the pointer in place. Neighbours slide into the gap;
+releasing settles the tab. Reduced motion skips slides. Do not add `on_drag`
+to the tabs.
+Custom buttons inside a tab should stop mouse-down propagation, as `tabs::close`
+already does, so pressing them does not pick up the tab.
+
+For cross-pane moves, add `.on_drop_outside(cx.listener(...))`. It receives an
+`OutsideDrop<Id>` with the tab id and the release position in window coordinates;
+the host resolves the destination pane and moves its data. Without this hook,
+an outside release cancels the local reorder. Escape and host edits to the
+strip order also cancel.
+
+This is one axis-locked region of [sortable lists](/docs/sortable). Use that
+component for moves between lists.
+
+For pane splits and joins, mount the strips inside
+[a docking surface](/docs/docking) of the same item type. A tab leaves its
+strip once the pointer is 12px off it across the strip's axis.

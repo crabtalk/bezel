@@ -2,8 +2,8 @@ use gpui::{
     Context, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext, Window, div,
     prelude::*, px, size,
 };
-use markdown::{BlockLayouts, Cursor, Doc, Editing, Layout, Part, parse, render_with, set_layout};
-use ui::scroll::{Visibility, set_visibility};
+use markdown::{AppExt as _, BlockLayouts, Cursor, Doc, Editing, Layout, Part, parse, render_with};
+use ui::{AppExt as _, scroll::Visibility};
 
 struct Page {
     doc: Doc,
@@ -26,8 +26,8 @@ impl Render for Page {
 fn open(source: &str, cx: &mut TestAppContext) -> (gpui::Entity<Page>, VisualTestContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
-        set_layout(cx, Layout { wrap_code: false });
-        set_visibility(Visibility::Always, cx);
+        cx.set_markdown_layout(Layout { wrap_code: false });
+        cx.set_scrollbar_visibility(Visibility::Always);
     });
     let window = cx.add_window(|_, _| Page {
         doc: parse(source),
@@ -75,7 +75,7 @@ fn code_scrollbar_moves_text_and_respects_visibility(cx: &mut TestAppContext) {
     let before = x(&page, Part::Code, &mut cx);
     drag_track("md-code-scroll-0-track", &mut cx);
     assert!(x(&page, Part::Code, &mut cx) < before);
-    cx.update(|_, cx| set_visibility(Visibility::Never, cx));
+    cx.update(|_, cx| cx.set_scrollbar_visibility(Visibility::Never));
     cx.run_until_parked();
     assert!(cx.debug_bounds("md-code-scroll-0-track").is_none());
 }
@@ -102,7 +102,7 @@ fn short_or_wrapped_code_has_no_horizontal_bar(cx: &mut TestAppContext) {
     let (page, mut cx) = open("```\nshort\n```", cx);
     assert!(cx.debug_bounds("md-code-scroll-0-track").is_none());
     cx.update(|_, cx| {
-        set_layout(cx, Layout { wrap_code: true });
+        cx.set_markdown_layout(Layout { wrap_code: true });
         page.update(cx, |page, cx| {
             page.doc = parse(&format!("```\n{}\n```", "long_code_identifier ".repeat(30)));
             cx.notify();

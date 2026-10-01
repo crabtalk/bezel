@@ -6,7 +6,7 @@
 //! saves nothing, so it writes beside the temporary files and hands back the
 //! path — enough to paint, and gone with the next reboot.
 //!
-//! Install with `editor::set_image_store(cx, store::of())`.
+//! Install with `cx.set_image_store(store::of())`.
 
 use editor::{Editor, ImageStore, Source};
 use gpui::{App, Entity};

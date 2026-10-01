@@ -11,7 +11,7 @@
 use gpui::{Div, ElementId, SharedString, Stateful, div, prelude::*, px};
 use icons::Icon;
 use motion::{self, Fade};
-use theme::{ControlSize, Sizing, Theme, ThemeExt};
+use theme::{ControlSize, Sizing, Theme, ThemeExt, Typeset as _};
 
 /// The shipped looks (the reference `btnGhost` / `btnPrimary` /
 /// `btnDestructive`).
@@ -128,6 +128,56 @@ pub trait Buttons: ThemeExt {
             .border_color(theme.border)
     }
 
+    /// `[icon] Label | ▾`: a press on the label side, a chevron beside it, in
+    /// one bordered frame at `size`. The halves come back open for the
+    /// caller's handlers; [`SplitButton::build`] puts them together.
+    ///
+    /// `icon` is the caller's, sized by the caller: it may be an image.
+    fn split_button(
+        &self,
+        main: impl Into<ElementId>,
+        more: impl Into<ElementId>,
+        icon: impl IntoElement,
+        label: impl Into<SharedString>,
+        size: ControlSize,
+    ) -> SplitButton {
+        let theme = self.theme();
+        let pad = size.pad_x();
+        let main = div()
+            .id(main)
+            .flex()
+            .items_center()
+            .gap(px(pad / 2.0 + 1.0))
+            .pl(px(pad / 2.0 + 1.0))
+            .pr(px(pad))
+            .cursor_pointer()
+            .hover(|el| el.bg(theme.element_hover))
+            .child(icon)
+            .child(label.into());
+        let more = div()
+            .id(more)
+            .flex()
+            .items_center()
+            .px(px(pad / 2.0))
+            .border_l_1()
+            .border_color(theme.border)
+            .cursor_pointer()
+            .hover(|el| el.bg(theme.element_hover))
+            .child(
+                crate::icons::icon(crate::icons::arrows::ChevronDown)
+                    .size(px(12.0))
+                    .text_color(theme.text_muted),
+            );
+        SplitButton {
+            main,
+            more,
+            size,
+            border: theme.border,
+            fill: theme.surface_raised,
+            text: theme.text,
+        }
+    }
+
     /// A quiet control: nothing at rest, a wash on hover. Stateful, so it
     /// carries its own click and tooltip; padding and children are the
     /// caller's, which is what lets a glyph sit before the text.
@@ -145,6 +195,49 @@ pub trait Buttons: ThemeExt {
 }
 
 impl Buttons for Theme {}
+
+/// The halves of a [`Buttons::split_button`], for handlers before
+/// [`Self::build`].
+pub struct SplitButton {
+    pub main: Stateful<Div>,
+    pub more: Stateful<Div>,
+    size: ControlSize,
+    border: gpui::Hsla,
+    fill: gpui::Hsla,
+    text: gpui::Hsla,
+}
+
+impl SplitButton {
+    /// The control, with `menu` hung off it when there is one.
+    pub fn build(self, menu: Option<gpui::AnyElement>) -> Div {
+        let radius = px(self.size.radius());
+        self.frame()
+            .child(self.main.rounded_l(radius))
+            .child(self.more.rounded_r(radius))
+            .children(menu)
+    }
+
+    /// The label side alone, in the same frame: no chevron and no menu.
+    pub fn build_alone(self) -> Div {
+        let radius = px(self.size.radius());
+        self.frame().child(self.main.rounded(radius))
+    }
+
+    fn frame(&self) -> Div {
+        div()
+            .relative()
+            .flex_none()
+            .flex()
+            .items_stretch()
+            .h(px(self.size.height()))
+            .rounded(px(self.size.radius()))
+            .border_1()
+            .border_color(self.border)
+            .bg(self.fill)
+            .text_style(self.size.text())
+            .text_color(self.text)
+    }
+}
 
 /// Purpose is independent of emphasis: a destructive action may be quiet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

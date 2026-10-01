@@ -1,6 +1,7 @@
 //! Inline text: flattening to runs, painting, carets and selection rects.
 
 use super::*;
+use ui::AppExt as _;
 
 /// Inline content flattened for shaping: one string, its runs, and the ranges
 /// that need painting underneath (link clicks, inline-code washes, mentions).
@@ -434,14 +435,16 @@ pub(super) fn painted_text(
             if let Some(offset) = caret
                 && let Some(head) = layout.position_for_index(offset)
             {
-                window.paint_quad(quad(
-                    caret_quad(head, size, layout.line_height()),
-                    px(0.0),
-                    caret_color,
-                    px(0.0),
-                    gpui::transparent_black(),
-                    BorderStyle::default(),
-                ));
+                let shape = cx.caret_shape();
+                window.paint_quad(
+                    shape.quad(
+                        caret_quad(head, size, layout.line_height()),
+                        (shape != ui::input::CaretShape::Bar)
+                            .then(|| caret_advance(&layout, offset))
+                            .flatten(),
+                        caret_color,
+                    ),
+                );
             }
             for range in &code_ranges {
                 for rect in range_rects(&layout, range, INLINE_CODE_PAD_X, INLINE_CODE_INSET_Y) {
@@ -575,4 +578,18 @@ pub(super) fn range_rects(
         line_start += line.len() + 1;
     }
     rects
+}
+
+/// Resolve the advance in the same shaped line that owns the caret position.
+pub(super) fn caret_advance(layout: &TextLayout, offset: usize) -> Option<Pixels> {
+    let text = layout.text();
+    let mut start = 0;
+    for line in layout.line_layouts() {
+        let end = start + line.len();
+        if offset <= end {
+            return ui::input::caret::character_advance(&line, &text[start..end], offset - start);
+        }
+        start = end + 1;
+    }
+    None
 }

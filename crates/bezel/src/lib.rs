@@ -21,7 +21,7 @@
 //! The layers here are the ones every app paints with. `markdown`, `syntax` and
 //! `terminal` are peer crates a consumer names itself, because each is an
 //! *implementation* behind a seam the library already opens —
-//! `markdown::set_highlighter` takes any `fn(&str, &str)`, so tree-sitter is one
+//! `markdown::AppExt::set_highlighter` takes any `fn(&str, &str)`, so tree-sitter is one
 //! answer and not the answer. Re-exporting `syntax` made every consumer of this
 //! crate compile seven C grammars to get a button, and made the facade
 //! unbuildable for `wasm32-unknown-unknown`, where that C has no libc — the very

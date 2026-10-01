@@ -7,6 +7,7 @@
 //!
 //! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
 
+use crate::AppExt as _;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -27,7 +28,6 @@ use theme::{TextStyle, Theme, Typeset};
 use crate::{
     block,
     doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, QuoteKind, Text},
-    layout::Layout,
     preview,
     select::{Cursor, Selection},
     typography::Typography,
@@ -90,6 +90,8 @@ const CAPTION_HINT: &str = "Write a caption";
 /// Table metrics. The design is frameless: hairlines between rows are the only
 /// chrome — no outer box, no header fill, no rounding.
 const TABLE_CELL_PADDING: f32 = 12.0;
+/// Reserved lane for editor table controls, inside the block bounds.
+pub const TABLE_CONTROL_SIZE: f32 = 16.0;
 const TABLE_DIVIDER: f32 = 1.0;
 /// Floor for a column's max-content share, so a short column ("1k") beside a
 /// prose column keeps a readable width.
@@ -144,7 +146,7 @@ pub enum Annotation {
     Resolved,
     /// The one whose thread the reader has in front of them.
     Active,
-    /// A reader's highlight, in the wash [`crate::set_highlight_paint`]
+    /// A reader's highlight, in the wash [`crate::AppExt::set_highlight_paint`]
     /// gives its colour.
     Highlight(crate::HighlightColor),
     /// A find hit.
@@ -154,14 +156,14 @@ pub enum Annotation {
 }
 
 impl Annotation {
-    fn wash(self, theme: &Theme, highlight: crate::HighlightPaint) -> Hsla {
+    fn wash(self, theme: &Theme, highlight: crate::HighlightPaint, find: crate::FindPaint) -> Hsla {
         match self {
             Self::Open => theme.warning.opacity(0.20),
             Self::Resolved => theme.warning.opacity(0.08),
             Self::Active => theme.warning.opacity(0.38),
             Self::Highlight(color) => highlight(color, theme),
-            Self::Match => theme.accent.opacity(0.22),
-            Self::Current => theme.accent.opacity(0.48),
+            Self::Match => find(theme).0,
+            Self::Current => find(theme).1,
         }
     }
 }
@@ -174,6 +176,19 @@ pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
 /// Handed the image block whose picture was clicked — see [`Editing::image`].
 pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Builds a picture's hover control from its block index and original URL.
+pub type ImageOverlay = Rc<dyn Fn(usize, &str, &mut Window, &mut App) -> Option<AnyElement>>;
+
+/// The picture corner holding an app's hover control.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ImageOverlayCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    #[default]
+    BottomRight,
+}
 
 /// Who answers a press on a task block's checkbox.
 ///
@@ -224,10 +239,17 @@ pub struct Editing<'a> {
     /// Makes a task block's checkbox a control, and says who answers the
     /// press. `None` paints a mark.
     pub toggle: Option<Toggle>,
-    /// Makes a picture a control: a click on it calls this with its block. A
+    /// Handles a picture click with its block index, keeping the arrow cursor. A
     /// press and release more than a couple of pixels apart is a drag and
     /// calls nothing. The press still reaches whatever is under the picture.
     pub image: Option<OnImage>,
+    /// An app control inset at `image_overlay_corner`, visible on hover.
+    /// Its presses do not reach the picture. `None` adds no listeners.
+    pub image_overlay: Option<ImageOverlay>,
+    /// Corner for the picture control; defaults to bottom-right.
+    pub image_overlay_corner: ImageOverlayCorner,
+    /// Reserves lanes around tables for editor controls.
+    pub table_controls: bool,
     /// Whether a fence offers to copy itself.
     pub copy: CopyButton,
     /// The directory a relative image path is joined onto. `None` leaves it
@@ -258,6 +280,9 @@ impl Default for Editing<'_> {
             typography: None,
             toggle: None,
             image: None,
+            image_overlay: None,
+            image_overlay_corner: ImageOverlayCorner::BottomRight,
+            table_controls: false,
             copy: CopyButton::default(),
             base: None,
             keep: &[],
@@ -288,9 +313,13 @@ struct Overlay<'a> {
     /// press listener that needs an owned handle.
     toggle: Option<&'a Toggle>,
     image: Option<&'a OnImage>,
+    image_overlay: Option<&'a ImageOverlay>,
+    image_overlay_corner: ImageOverlayCorner,
+    table_controls: bool,
     copy: CopyButton,
     base: Option<&'a Path>,
     highlight: crate::HighlightPaint,
+    find: crate::FindPaint,
 }
 
 impl<'a> Overlay<'a> {
@@ -330,7 +359,10 @@ impl<'a> Overlay<'a> {
         self.annotations
             .iter()
             .filter_map(|(range, kind)| {
-                Some((self.clip(*range, len)?, kind.wash(theme, self.highlight)))
+                Some((
+                    self.clip(*range, len)?,
+                    kind.wash(theme, self.highlight, self.find),
+                ))
             })
             .collect()
     }
@@ -389,7 +421,7 @@ pub fn image_source(url: &str, base: Option<&Path>) -> ImageSource {
 
 /// Parse and render in one step — the common case for read-only content.
 pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
-    let doc = crate::parse_with(source, &crate::Marks::of(cx));
+    let doc = crate::parse_with(source, &cx.marks());
     render(&doc, Caption::default(), window, cx)
 }
 
@@ -424,6 +456,9 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         typography,
         toggle,
         image,
+        image_overlay,
+        image_overlay_corner,
+        table_controls,
         copy,
         base,
         keep,
@@ -432,8 +467,9 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
     let theme = Theme::of(cx).clone();
-    let typography = typography.unwrap_or_else(|| Typography::of(cx));
+    let typography = typography.unwrap_or_else(|| cx.typography());
     let highlight = crate::marks::highlight_paint_of(cx);
+    let find = crate::find::find_paint_of(cx);
     let gaps: Vec<Pixels> = doc
         .blocks
         .iter()
@@ -461,9 +497,13 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caption,
                 toggle: toggle.as_ref(),
                 image: image.as_ref(),
+                image_overlay: image_overlay.as_ref(),
+                image_overlay_corner,
+                table_controls,
                 copy,
                 base,
                 highlight,
+                find,
             };
             column = column
                 .child(block_box(block, overlay, &typography, &theme, window, cx).mt(gaps[ix]));
@@ -474,13 +514,19 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     let keys: Vec<u64> = doc
         .blocks
         .iter()
-        .map(|block| block_key(block, &typography))
+        .map(|block| block_key(block, &typography, table_controls))
         .collect();
     layouts.prune(&keys);
     let guesses: Vec<Guess> = doc
         .blocks
         .iter()
-        .map(|block| guess(block, &typography))
+        .map(|block| {
+            let mut guess = guess(block, &typography);
+            if table_controls && matches!(block.kind, BlockKind::Table { .. }) {
+                guess.extra += px(2.0 * TABLE_CONTROL_SIZE);
+            }
+            guess
+        })
         .collect();
     let mut kept = keep.to_vec();
     kept.extend(selection.map(|selection| selection.head.block));
@@ -495,9 +541,13 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         caption,
         toggle,
         image,
+        image_overlay,
+        image_overlay_corner,
+        table_controls,
         copy,
         base: base.map(Path::to_path_buf),
         highlight,
+        find,
         typography,
         theme,
     };
@@ -521,9 +571,13 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caption: owned.caption,
                 toggle: owned.toggle.as_ref(),
                 image: owned.image.as_ref(),
+                image_overlay: owned.image_overlay.as_ref(),
+                image_overlay_corner: owned.image_overlay_corner,
+                table_controls: owned.table_controls,
                 copy: owned.copy,
                 base: owned.base.as_deref(),
                 highlight: owned.highlight,
+                find: owned.find,
             };
             block_box(
                 &owned.blocks[ix],
@@ -550,9 +604,13 @@ struct Owned {
     caption: Caption,
     toggle: Option<Toggle>,
     image: Option<OnImage>,
+    image_overlay: Option<ImageOverlay>,
+    image_overlay_corner: ImageOverlayCorner,
+    table_controls: bool,
     copy: CopyButton,
     base: Option<std::path::PathBuf>,
     highlight: crate::HighlightPaint,
+    find: crate::FindPaint,
     typography: Typography,
     theme: Theme,
 }
@@ -604,8 +662,9 @@ fn block_box(
 
 /// What a block's height is cached under: its content and the type it is set
 /// in, so an edit elsewhere that shifts its index keeps the height.
-fn block_key(block: &Block, typography: &Typography) -> u64 {
+fn block_key(block: &Block, typography: &Typography, table_controls: bool) -> u64 {
     let mut hasher = DefaultHasher::new();
+    table_controls.hash(&mut hasher);
     block.hash(&mut hasher);
     typography.body.size().to_bits().hash(&mut hasher);
     typography.body.line_height().to_bits().hash(&mut hasher);
@@ -787,7 +846,7 @@ fn block_element(
             }
         }
         BlockKind::Image { url, alt, width } => {
-            image(url, alt, *width, overlay, typography, theme, cx)
+            image(url, alt, *width, overlay, typography, theme, window, cx)
         }
         BlockKind::Bookmark { url, form } => {
             bookmark(overlay.block, url, *form, typography, theme, cx)

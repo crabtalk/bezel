@@ -2,7 +2,10 @@ use gpui::{
     Axis, Context, Modifiers, MouseButton, Render, ScrollHandle, TestAppContext, VisualTestContext,
     Window, div, point, prelude::*, px, size,
 };
-use ui::scroll::{self as scrollbars, Visibility as Scrollbars};
+use ui::{
+    AppExt as _,
+    scroll::{self as scrollbars, Visibility as Scrollbars},
+};
 
 struct Host {
     handle: ScrollHandle,
@@ -48,7 +51,7 @@ impl Render for Host {
 }
 
 fn open(axis: Axis, cx: &mut TestAppContext) -> (gpui::Entity<Host>, VisualTestContext) {
-    cx.update(|cx| scrollbars::set_visibility(Scrollbars::Always, cx));
+    cx.update(|cx| cx.set_scrollbar_visibility(Scrollbars::Always));
     let window = cx.add_window(|_, _| Host {
         handle: ScrollHandle::new(),
         axis,
@@ -113,7 +116,7 @@ fn vertical_thumb_drags_and_never_mode_removes_it(cx: &mut TestAppContext) {
     let (host, mut cx) = open(Axis::Vertical, cx);
     for mode in [Scrollbars::Always, Scrollbars::Never] {
         cx.update(|window, cx| {
-            scrollbars::set_visibility(mode, cx);
+            cx.set_scrollbar_visibility(mode);
             host.read(cx).handle.set_offset(point(px(0.), px(0.)));
             window.refresh();
         });
@@ -171,7 +174,7 @@ impl Render for Framed {
 
 #[gpui::test]
 fn frame_keeps_distinct_handle_and_scrollbar_state(cx: &mut TestAppContext) {
-    cx.update(|cx| scrollbars::set_visibility(Scrollbars::Always, cx));
+    cx.update(|cx| cx.set_scrollbar_visibility(Scrollbars::Always));
     let window = cx.add_window(|_, _| Framed);
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(200.), px(200.)));
@@ -188,7 +191,7 @@ fn frame_keeps_distinct_handle_and_scrollbar_state(cx: &mut TestAppContext) {
 fn horizontal_scrollbar_reserves_no_layout_space(cx: &mut TestAppContext) {
     let (host, mut cx) = open(Axis::Horizontal, cx);
     cx.update(|window, cx| {
-        scrollbars::set_visibility(Scrollbars::Never, cx);
+        cx.set_scrollbar_visibility(Scrollbars::Never);
         window.refresh();
     });
     cx.run_until_parked();
@@ -197,7 +200,7 @@ fn horizontal_scrollbar_reserves_no_layout_space(cx: &mut TestAppContext) {
     let overflow = cx.update(|_, cx| host.read(cx).handle.max_offset());
     for mode in [Scrollbars::Always, Scrollbars::Scrolling] {
         cx.update(|window, cx| {
-            scrollbars::set_visibility(mode, cx);
+            cx.set_scrollbar_visibility(mode);
             window.refresh();
         });
         cx.run_until_parked();
@@ -213,7 +216,7 @@ fn horizontal_scrollbar_reserves_no_layout_space(cx: &mut TestAppContext) {
 #[gpui::test]
 fn transient_horizontal_bar_fades_and_returns_when_scrolled(cx: &mut TestAppContext) {
     let (host, mut cx) = open(Axis::Horizontal, cx);
-    cx.update(|_, cx| scrollbars::set_visibility(Scrollbars::Scrolling, cx));
+    cx.update(|_, cx| cx.set_scrollbar_visibility(Scrollbars::Scrolling));
     cx.run_until_parked();
     assert!(
         cx.debug_bounds("test-bar-thumb")
@@ -253,7 +256,7 @@ fn pane_visibility_overrides_the_global_default(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.debug_bounds("test-bar-thumb").is_none());
     cx.update(|window, cx| {
-        scrollbars::set_visibility(Scrollbars::Never, cx);
+        cx.set_scrollbar_visibility(Scrollbars::Never);
         host.update(cx, |host, cx| {
             host.visibility = Some(Scrollbars::Always);
             cx.notify();
@@ -435,7 +438,7 @@ fn a_bar_fades_after_the_pointer_leaves_the_window_across_its_track(cx: &mut Tes
         (Axis::Horizontal, point(px(100.), px(196.))),
     ] {
         let (_host, mut cx) = open(axis, cx);
-        cx.update(|_, cx| scrollbars::set_visibility(Scrollbars::Scrolling, cx));
+        cx.update(|_, cx| cx.set_scrollbar_visibility(Scrollbars::Scrolling));
         cx.run_until_parked();
         cx.simulate_mouse_move(on_track, None, Modifiers::default());
         idle(&mut cx);

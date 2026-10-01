@@ -4,8 +4,8 @@
 //! and the slash menu already name a place to fetch from. A dropped file names
 //! one on disk. A pasted screenshot names nothing at all — it is bytes, and
 //! bytes have to be put somewhere before a document can point at them, which is
-//! the app's decision and not this library's. Hence [`set_image_store`],
-//! installed once at boot like `markdown::set_link_preview`.
+//! the app's decision and not this library's. Hence [`crate::AppExt::set_image_store`],
+//! installed once at boot like `markdown::AppExt::set_link_preview`.
 
 use std::path::{Path, PathBuf};
 
@@ -88,16 +88,16 @@ struct Installed(ImageStore);
 
 impl Global for Installed {}
 
-/// `editor::set_image_store(cx, my_store)` — call once at boot. Without it a
+/// `cx.set_image_store(my_store)` — call once at boot. Without it a
 /// screenshot cannot be pasted at all: there is nowhere to put the bytes, and
 /// a document holds a URL.
-pub fn set_image_store(cx: &mut App, store: ImageStore) {
+pub(crate) fn set_image_store(cx: &mut App, store: ImageStore) {
     cx.set_global(Installed(store));
 }
 
 /// The installed store, or the one that keeps nothing — which is what a build
 /// that installed none behaves as.
-fn store(cx: &App) -> ImageStore {
+pub(crate) fn store(cx: &App) -> ImageStore {
     cx.try_global::<Installed>().map_or_else(
         ImageStore::default,
         // Copied out before the call: a store reads its own globals off the

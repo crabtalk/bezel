@@ -167,6 +167,7 @@ impl Editor {
         self.url_prompt = None;
         self.hovered = None;
         self.lifted = None;
+        self.table_drag = None;
         self.dropping = None;
     }
 }

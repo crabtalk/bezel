@@ -1,5 +1,6 @@
 //! A clicked link goes to the handler the app installed.
 
+use markdown::AppExt as _;
 use std::sync::Mutex;
 
 use gpui::{
@@ -31,7 +32,7 @@ impl Render for Page {
 fn a_clicked_link_goes_to_the_installed_handler(cx: &mut TestAppContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
-        markdown::set_link_handler(cx, record);
+        cx.set_link_handler(record);
     });
     let window = cx.add_window(|_, _| {
         Page(parse(

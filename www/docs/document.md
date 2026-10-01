@@ -48,16 +48,16 @@ pub fn serialize_at(doc: &Doc, at: Cursor, marks: &Marks) -> (String, usize);
 // The gpui-side half the editing surface reads. `set_mark_paint` is paint only
 // — colour, background, weight, italic, underline, strike. A name nothing
 // paints round trips and reads as the text it wraps.
-pub fn set_marks(cx: &mut App, marks: Marks);
-pub fn set_mark_paint(cx: &mut App, paint: Painter);
+pub trait AppExt {
+    fn set_marks(&mut self, marks: Marks);
+    fn set_mark_paint(&mut self, paint: Painter);
+    /// Long fence lines wrap by default.
+    fn set_markdown_layout(&mut self, layout: Layout);
+}
 
 /// Classifies markdown *source* without a grammar, which is what gives a
 /// source view colour in a browser build.
 pub fn source_spans(source: &str) -> Vec<(Range<usize>, HighlightKind)>;
-
-/// A long fence line wraps by default, since the caret reads a fence in the
-/// editor and a sideways scroller can hold it off the right edge.
-pub fn set_layout(cx: &mut App, layout: Layout);
 
 /// `toggle` makes a task block's checkbox a control: `Toggle::Handled` has the
 /// box take the press, stop it, and hand you the block it belongs to, and
