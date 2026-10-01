@@ -2,9 +2,9 @@
 
 use crate::*;
 
-mod docking;
 pub(crate) mod controls;
 pub(crate) mod data;
+mod docking;
 pub(crate) mod foundations;
 pub(crate) mod material;
 pub(crate) mod navigation;
