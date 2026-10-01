@@ -1,7 +1,9 @@
 use super::{Dock, OnDrop, Target, Tween};
+use crate::drag::Carry;
 use gpui::{
-    AnyElement, App, AvailableSpace, Bounds, ContentMask, Element, ElementId, GlobalElementId,
-    InspectorElementId, IntoElement, LayoutId, Pixels, RenderOnce, Window, div, prelude::*, px,
+    AnyElement, App, AvailableSpace, Bounds, ContentMask, DragMoveEvent, Element, ElementId,
+    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, RenderOnce, Window, div,
+    prelude::*, px,
 };
 use std::rc::Rc;
 
@@ -27,11 +29,21 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Surface<P, 
 impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce for Surface<P, I> {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         self.dock.0.borrow_mut().dropped = self.dropped;
+        let moved = self.dock.clone();
+        let dropped = self.dock.clone();
         SurfaceElement {
             dock: self.dock,
             child: div()
                 .id(self.id)
                 .size_full()
+                .on_drag_move(move |event: &DragMoveEvent<Carry<I>>, _, cx| {
+                    let carry = event.drag(cx);
+                    let (item, gesture) = (carry.item().clone(), carry.gesture.clone());
+                    moved.update(item, gesture, event.event.position, cx);
+                })
+                .on_drop(move |carry: &Carry<I>, window, cx| {
+                    dropped.release(carry, window.mouse_position(), window, cx);
+                })
                 .child(self.child)
                 .into_any_element(),
         }
@@ -81,27 +93,11 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
         window: &mut Window,
         cx: &mut App,
     ) -> Option<AnyElement> {
-        {
-            let mut state = self.dock.0.borrow_mut();
-            state.targets.clear();
-            state.carry_seen = false;
+        self.dock.0.borrow_mut().targets.clear();
+        if !cx.has_active_drag() {
+            self.dock.clear(cx);
         }
         self.child.prepaint(window, cx);
-        // A source removed from this surface cannot leave a live preview behind.
-        let cancel = {
-            let mut state = self.dock.0.borrow_mut();
-            if state.carry.is_some() && !state.carry_seen {
-                state.carry = None;
-                state.preview = None;
-                state.landing = None;
-                state.cancel_source.take()
-            } else {
-                None
-            }
-        };
-        if let Some(cancel) = cancel {
-            cancel(window, cx);
-        }
         let mut state = self.dock.0.borrow_mut();
         state.aim(cx);
         let theme = theme::Theme::of(cx);
@@ -144,10 +140,13 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
                 })
         });
         let carried = state
-            .carry
+            .carried
             .as_ref()
-            .filter(|carry| carry.detached)
-            .map(|carry| (carry.item.clone(), carry.bounds, 0.));
+            .filter(|carried| carried.detached())
+            .map(|carried| {
+                carried.gesture.hosted.set(true);
+                (carried.item.clone(), carried.ghost_bounds(), 0.)
+            });
         let render_ghost = state.ghost.clone();
         if let Some((_, _, progress)) = &ghost {
             if *progress >= 1. {
@@ -166,7 +165,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
             && progress < 1.
         {
             let offset = rect.origin - bounds.origin;
-            let selector = if progress == 0. && self.dock.0.borrow().carry.is_some() {
+            let selector = if progress == 0. && self.dock.0.borrow().carried.is_some() {
                 "dock-carry-ghost"
             } else {
                 "dock-settle-ghost"

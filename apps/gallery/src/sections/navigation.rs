@@ -118,20 +118,32 @@ impl Gallery {
 
             "sortable" => section
                 .child(hint(&theme, "Drag tasks between lanes; reference notes stay in their own list. Release commits the preview, Escape cancels. Illustrative project data."))
-                .child(self.navigation.sortable.group("sortable-demo", self.navigation.sorting.iter().enumerate().map(|(lane, cards)| {
-                    ui::sortable::List::new(("sort-lane", lane), lane, gpui::Axis::Vertical,
-                        cards.iter().map(|&title| (title, div()
+                .child(div().flex().gap(px(16.)).children(self.navigation.sorting.iter().enumerate().map(|(lane, cards)| {
+                    let notes = lane == 3;
+                    let content = div().id(("sort-cards", lane)).size_full().flex().flex_col().gap(px(8.)).overflow_y_scroll()
+                        .children(cards.iter().map(|&title| self.navigation.sortable.handle(title, div()
+                            .id(title)
                             .p(px(12.)).rounded(px(Theme::control_radius()))
                             .bg(theme.surface_raised).border_1().border_color(theme.border)
-                            .child(title)))
-                    ).kind(if lane == 3 { "notes" } else { "tasks" })
-                        .gap(px(8.)).w(px(176.)).h(px(280.))
-                        .header(div().pb(px(10.)).text_color(theme.text_muted)
+                            .child(title))));
+                    div().flex().flex_col().w(px(176.))
+                        .child(div().pb(px(10.)).text_color(theme.text_muted)
                             .child(["Planned", "In progress", "Done", "Reference"][lane]))
-                })).gap(px(16.)).on_drop(cx.listener(|view, event: &ui::sortable::Move<usize, &'static str>, _, cx| {
-                    let card = view.navigation.sorting[event.from.list].remove(event.from.index);
-                    view.navigation.sorting[event.to.list].insert(event.to.index, card);
-                    cx.notify();
+                        .child(self.navigation.sortable.region(("sort-lane", lane), lane, gpui::Axis::Vertical, content)
+                            .h(px(280.))
+                            .accepts(move |title| NOTES.contains(title) == notes)
+                            .on_drop(cx.listener(|view, event: &ui::drag::Drop<usize, &'static str>, _, cx| {
+                                let lanes = &mut view.navigation.sorting;
+                                lanes[event.from].retain(|card| *card != event.item);
+                                let to = &mut lanes[event.region];
+                                let at = match (&event.after, &event.before) {
+                                    (Some(after), _) => to.iter().position(|card| card == after).map_or(to.len(), |at| at + 1),
+                                    (None, Some(before)) => to.iter().position(|card| card == before).unwrap_or(0),
+                                    (None, None) => 0,
+                                };
+                                to.insert(at, event.item);
+                                cx.notify();
+                            })))
                 })))
                 .into_any_element(),
 
@@ -712,6 +724,9 @@ impl Gallery {
     }
 }
 
+/// The sortable demo's reference notes, which stay in their own lane.
+const NOTES: [&str; 2] = ["Interview notes", "Keyboard shortcut reference"];
+
 /// What this group's demos hold between frames.
 pub(crate) struct State {
     /// Where the split's divider sits, as a fraction of the container.
@@ -724,7 +739,7 @@ pub(crate) struct State {
     pub(crate) strip: tabs::Strip<&'static str>,
     pub(crate) reorder: tabs::Reorder<&'static str>,
     pub(crate) docking: gpui::Entity<super::docking::Demo>,
-    pub(crate) sortable: ui::sortable::Sortable<usize, &'static str>,
+    pub(crate) sortable: ui::drag::Domain<usize, &'static str>,
     pub(crate) sorting: [Vec<&'static str>; 4],
     pub(crate) nav_choice: usize,
     pub(crate) titlebar_drag: titlebar::DragState,
@@ -739,7 +754,7 @@ impl State {
             tab_choice: 0,
             reorder: tabs::Reorder::new(motion::Painter::of(cx)),
             docking: cx.new(super::docking::Demo::new),
-            sortable: ui::sortable::Sortable::new(motion::Painter::of(cx)),
+            sortable: ui::drag::Domain::new(motion::Painter::of(cx)),
             sorting: [
                 vec![
                     "Sketch the new sidebar",

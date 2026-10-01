@@ -40,7 +40,7 @@ pub mod popover;
 pub mod scroll;
 mod search;
 pub mod docking;
-pub mod sortable;
+pub mod drag;
 pub mod stack;
 pub mod stats;
 pub mod surface;

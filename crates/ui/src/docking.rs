@@ -136,14 +136,29 @@ struct Settling<P, I> {
     since: Instant,
 }
 
+struct Carried<I> {
+    item: I,
+    gesture: Rc<crate::drag::Gesture>,
+    pointer: Point<Pixels>,
+}
+
+impl<I> Carried<I> {
+    /// Off every region of its domain: this surface's to take.
+    fn detached(&self) -> bool {
+        !self.gesture.claimed.get()
+    }
+
+    fn ghost_bounds(&self) -> Bounds<Pixels> {
+        self.gesture.ghost_bounds(self.pointer)
+    }
+}
+
 struct State<P, I> {
     painter: Painter,
     ghost: Rc<Ghost<I>>,
     dropped: Option<Rc<OnDrop<P, I>>>,
     targets: Vec<Target<P>>,
-    carry: Option<crate::sortable::Carry<I>>,
-    carry_seen: bool,
-    cancel_source: Option<Rc<crate::sortable::CancelCarry>>,
+    carried: Option<Carried<I>>,
     landing: Option<(P, Zone)>,
     preview: Option<Tween>,
     settling: Option<Settling<P, I>>,
@@ -160,9 +175,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Dock<P, I> 
             ghost: Rc::new(ghost),
             dropped: None,
             targets: Vec::new(),
-            carry: None,
-            carry_seen: false,
-            cancel_source: None,
+            carried: None,
             landing: None,
             preview: None,
             settling: None,
@@ -193,15 +206,15 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Dock<P, I> 
 impl<P: Clone + PartialEq, I: Clone + PartialEq> State<P, I> {
     fn aim(&mut self, cx: &mut App) {
         let target = self
-            .carry
+            .carried
             .as_ref()
-            .filter(|carry| carry.detached)
-            .and_then(|carry| {
+            .filter(|carried| carried.detached())
+            .and_then(|carried| {
                 self.targets.iter().rev().find_map(|target| {
-                    if !target.visible.contains(&carry.pointer) {
+                    if !target.visible.contains(&carried.pointer) {
                         return None;
                     }
-                    zone(target.bounds, target.bar_height, carry.pointer)
+                    zone(target.bounds, target.bar_height, carried.pointer)
                         .map(|zone| (target.id.clone(), zone, preview_bounds(target.bounds, zone)))
                 })
             });
@@ -230,64 +243,71 @@ impl<P: Clone + PartialEq, I: Clone + PartialEq> State<P, I> {
     }
 }
 
-impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> crate::sortable::CarryTarget<I>
-    for Dock<P, I>
-{
-    fn watch(&self, cancel: Rc<crate::sortable::CancelCarry>) {
-        self.0.borrow_mut().cancel_source = Some(cancel);
-    }
-
-    fn update(&self, carry: crate::sortable::Carry<I>, cx: &mut App) {
+impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Dock<P, I> {
+    fn update(
+        &self,
+        item: I,
+        gesture: Rc<crate::drag::Gesture>,
+        pointer: Point<Pixels>,
+        cx: &mut App,
+    ) {
         let mut state = self.0.borrow_mut();
-        state.carry_seen = true;
-        if state.carry.as_ref() == Some(&carry) {
-            return;
-        }
-        state.carry = Some(carry);
+        state.carried = Some(Carried {
+            item,
+            gesture,
+            pointer,
+        });
         state.settling = None;
         state.aim(cx);
         state.painter.notify(cx);
     }
 
-    fn cancel(&self, cx: &mut App) {
+    fn clear(&self, cx: &mut App) {
         let mut state = self.0.borrow_mut();
-        state.cancel_source = None;
-        if state.carry.take().is_some() {
+        if state.carried.take().is_some() {
             state.landing = None;
             state.preview = None;
             state.painter.notify(cx);
         }
     }
 
-    fn release(&self, carry: crate::sortable::Carry<I>, window: &mut Window, cx: &mut App) {
-        self.update(carry.clone(), cx);
-        let proposal =
-            {
-                let state = self.0.borrow();
-                state.landing.as_ref().zip(state.dropped.as_ref()).map(
-                    |((pane, zone), callback)| {
-                        (
-                            Drop {
-                                item: carry.item.clone(),
-                                pane: pane.clone(),
-                                zone: *zone,
-                            },
-                            callback.clone(),
-                            state.preview.as_ref().unwrap().bounds(cx),
-                        )
-                    },
-                )
-            };
-        self.cancel(cx);
-        if let Some((event, callback, preview)) = proposal
+    fn release(
+        &self,
+        carry: &crate::drag::Carry<I>,
+        pointer: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.update(carry.item().clone(), carry.gesture.clone(), pointer, cx);
+        let proposal = {
+            let state = self.0.borrow();
+            let carried = state.carried.as_ref().filter(|carried| carried.detached());
+            carried
+                .zip(state.landing.as_ref())
+                .zip(state.dropped.as_ref())
+                .map(|((carried, (pane, zone)), callback)| {
+                    (
+                        Drop {
+                            item: carried.item.clone(),
+                            pane: pane.clone(),
+                            zone: *zone,
+                        },
+                        callback.clone(),
+                        state.preview.as_ref().unwrap().bounds(cx),
+                        carried.ghost_bounds(),
+                    )
+                })
+        };
+        self.clear(cx);
+        if let Some((event, callback, preview, ghost)) = proposal
             && let Some(pane) = callback(&event, window, cx)
         {
             let mut state = self.0.borrow_mut();
             state.settling = Some(Settling {
                 pane,
-                item: carry.item,
+                item: event.item,
                 preview,
-                ghost: carry.bounds,
+                ghost,
                 since: cx.background_executor().now(),
             });
             state.painter.notify(cx);

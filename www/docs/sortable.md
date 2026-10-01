@@ -1,70 +1,44 @@
 ---
 title: Sortable lists
-description: Animated reordering along either axis and between lists, committed on drop.
+description: Drag items within and between host-laid-out regions, committed on drop.
 ---
 
-Keep one `sortable::Sortable<ListId, ItemId>` per drag domain, initialized with
-`Sortable::new(motion::Painter::of(cx))`. The host owns the data; the component
-owns the gesture, temporary order, gap, animation, and edge scrolling.
+`ui::drag` runs on gpui's active drag. The payload is `drag::Carry<ItemId>`; any element can join the same drag with `on_drag_move::<Carry<ItemId>>` and `on_drop::<Carry<ItemId>>`.
+
+Keep one `drag::Domain<RegionId, ItemId>` on the view that renders all of its regions, initialized with `Domain::new(motion::Painter::of(cx))`. The host lays out, scrolls and virtualizes each region; the domain owns landing, displacement, edge scrolling and cancellation.
 
 ```rust
-use gpui::{Axis, px};
-use ui::sortable::{List, Move};
+use gpui::Axis;
+use ui::drag::Drop;
 
-self.sortable.group("board", self.lanes.iter().map(|lane| {
-    List::new(self.element_key(lane), lane.id, Axis::Vertical,
-        lane.cards.iter().map(|card| (card.id, self.card(card))),
+self.domain
+    .region(("lane", lane.id), lane.id, Axis::Vertical,
+        div().id(("cards", lane.id)).size_full().flex().flex_col().gap(px(8.))
+            .overflow_y_scroll().track_scroll(&lane.scroll)
+            .children(lane.cards.iter().map(|card| {
+                self.domain.handle(card.id, self.card(card))
+            })),
     )
-    .kind("cards")
-    .gap(px(8.))
-    .w(px(240.))
-    .h(px(400.))
     .track_scroll(&lane.scroll)
-    .header(self.heading(lane))
-})).on_drop(cx.listener(|view, event: &Move<LaneId, CardId>, _, cx| {
-    let card = view.lanes[event.from.list].cards.remove(event.from.index);
-    view.lanes[event.to.list].cards.insert(event.to.index, card);
-    cx.notify();
-}))
+    .h(px(400.))
+    .on_drop(cx.listener(|view, event: &Drop<LaneId, CardId>, _, cx| {
+        view.move_card(event.item, event.region, event.after, event.before);
+        cx.notify();
+    }))
 ```
 
-- List ids and item ids must be stable. Item ids are unique across the group.
-- Supply all participating lists together, including empty ones. Give empty
-  lists a visible size so they can accept a drop.
-- `from.index` addresses the original source. `to.index` is the insertion index
-  **after removing the source item**, including for a move within one list.
-- Apply a move synchronously. No callback fires for a no-op or cancelled move.
-  The host order stays unchanged until release.
-- `Axis::Horizontal` and `Axis::Vertical` use the same gesture. The group lays
-  lists in a row by default; style it with the usual flex methods.
-- Only visible viewport bounds accept drops. A held item near a list edge
-  scrolls that list, and scrolling updates the target without pointer movement.
-- `header` stays outside the scrolling area. It is not a drop target.
+- `handle(item, element)` puts `on_drag` on `element`, which must not have one of its own. Item ids are unique within a domain. A handle is painted inside a region.
+- `Drop { item, from, region, after, before }` names the landing by the painted neighbours on either side; one is `None` at an end of what was painted. Apply it synchronously. No callback fires for a cancelled drag or a release where the item started.
+- Landings are computed only among handles painted in the last frame. A region's visible bounds are where it takes the pointer.
+- `accepts(|item| …)` limits what a region takes. It takes every item by default.
+- `lands(|item, after, before| …)` limits where in a region an item lands. The pointer's spot moves to the nearest allowed gap among painted items; with none allowed the region still holds the item and a release commits nothing.
+- `carries(|item| …)` names the items that go along with `item` when it is picked up in that region, such as a heading's rows. They hide with it, and the gap it opens and closes is theirs too.
+- `Domain::fixed(item, element)` is measured and moves aside like a handle but cannot be picked up.
+- `feedback(Feedback::Indicator)` draws a line in the gap instead of moving neighbours. `Feedback::Displace`, the default, slides them aside and assumes every row between them is a handle.
+- `track_scroll(&handle)` scrolls the region while the pointer rests near its visible edge (24px, or a quarter of a shorter region).
+- `on_drop_outside` on the source region receives `Outside { item, position }` for a release over no accepting region.
+- `Domain::with_ghost(painter, render)` hides the carried element in its slot and has gpui paint `render` under the pointer. `Domain::new` paints the carried element in place.
+- Escape, `Domain::cancel`, or the drag ending elsewhere cancels without a drop. Custom controls inside a handle stop mouse-down propagation. Reduced motion skips slides.
+- `Carry::claimed` is false while no region of the source domain holds the pointer; [docking](/docs/docking) takes the item only then.
 
-Escape, releasing outside every compatible list, or host edits to list
-membership, order, or kind cancel the preview. `cancel(window, cx)` cancels explicitly. An optional
-`on_drop_outside` receives the item and window position for external routing,
-including releases over an incompatible list. Escape and host edits do not
-emit an outside drop.
-Use `drag_style` for an additional surface or shadow on the carried item.
-Custom controls inside an item should stop mouse-down propagation to avoid
-starting a drag. Reduced motion skips slides.
-
-## Item kinds
-
-Lists exchange items only when their `.kind(...)` tags match by value. Untagged
-lists share the empty tag. Incompatible lists open no gap and do not edge-scroll;
-the item continues following the pointer past them.
-
-A sidebar can use `"project-headings"` and `"space-headings"` for its heading
-lists, and `.kind(format!("entries:{group_id}"))` to keep entry rows within their
-own group. Use a shared entry kind instead when moves between groups are allowed.
-An enum can represent the different item ids; ids remain unique across the group.
-
-Lists measure mounted children, including varying sizes; this is not a
-virtualized-list adapter. [Tab strips](/docs/tab-strip) use this same component
-with one horizontal list and movement constrained to its axis.
-
-Attach `.docking(&dock)` to hand items outside compatible lists to
-[a pane docking surface](/docs/docking). Local list drops keep `on_drop`;
-the docking surface handles detached releases.
+[Tab strips](/docs/tab-strip) are one axis-locked region of this component.

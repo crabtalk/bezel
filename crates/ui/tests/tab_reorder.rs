@@ -94,10 +94,7 @@ fn reorder_is_live_and_the_carried_tab_stays_under_the_pointer(cx: &mut TestAppC
         assert_eq!(host.read(cx).strip.tabs(), &["a", "b", "c"]);
         assert_eq!(host.read(cx).strip.active(), Some(&"a"));
         assert!(host.read(cx).moves.is_empty());
-        assert!(
-            !cx.has_active_drag(),
-            "the strip must not create a gpui ghost"
-        );
+        assert!(cx.has_active_drag(), "the gesture is gpui's drag");
     });
     assert_eq!(cx.debug_bounds("tab-a").unwrap().left(), at.x - px(10.));
     up(at, &mut cx);

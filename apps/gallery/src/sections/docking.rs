@@ -190,7 +190,6 @@ impl Demo {
                             )
                         }),
                     )
-                    .docking(&self.dock)
                     .on_reorder(cx.listener(move |view, movement: &tabs::Move, _, cx| {
                         if let Some(pane) = view.panes.iter_mut().find(|pane| pane.id == id) {
                             pane.tabs.reorder(movement.from, movement.to);

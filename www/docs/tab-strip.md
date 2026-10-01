@@ -115,9 +115,10 @@ Supply children in model order with stable keys. Keep activation and close
 handlers on the tabs. The preview moves live, but `on_reorder` fires once on
 release. Apply that move synchronously; the active tab stays active.
 
-The carried tab follows the pointer without a gpui drag preview. Neighbours
-slide into the gap; releasing settles the tab. Reduced motion skips slides.
-Do not add `on_drag`, `drag_over`, or `on_drop` handlers for local reordering.
+The drag is gpui's, carrying a `drag::Carry<Id>`; its preview is empty and
+the carried tab follows the pointer in place. Neighbours slide into the gap;
+releasing settles the tab. Reduced motion skips slides. Do not add `on_drag`
+to the tabs.
 Custom buttons inside a tab should stop mouse-down propagation, as `tabs::close`
 already does, so pressing them does not pick up the tab.
 
@@ -127,9 +128,9 @@ the host resolves the destination pane and moves its data. Without this hook,
 an outside release cancels the local reorder. Escape and host edits to the
 strip order also cancel.
 
-This is the horizontal, single-list adapter for [sortable lists](/docs/sortable).
-Use that component for animated moves between lists.
+This is one axis-locked region of [sortable lists](/docs/sortable). Use that
+component for moves between lists.
 
-For pane splits and joins, attach `.docking(&dock)` and mount the strips inside
-[a docking surface](/docs/docking). It owns the tear-off threshold, animated
-landing preview, Escape return and post-drop settle.
+For pane splits and joins, mount the strips inside
+[a docking surface](/docs/docking) of the same item type. A tab leaves its
+strip once the pointer is 12px off it across the strip's axis.

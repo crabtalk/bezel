@@ -20,10 +20,11 @@ Mount the workspace in `dock.surface(id, child)`, and wrap each pane with
 measure their window coordinates and visible bounds. Render participating
 strips and panes in the controller's owning view.
 
-Attach `.docking(&dock)` to `Reorder::bar` or a `sortable::Group`. Tabs stay on
-the strip until the pointer crosses 12px beyond it, then the gap closes and a
-compact ghost follows the pointer. Returning to the original strip resumes
-reordering. General sortable items detach when they leave compatible lists.
+The surface takes any gpui drag carrying a `drag::Carry<ItemId>` while
+`Carry::claimed` is false: a tab more than 12px off its strip, or an item of a
+[sortable](/docs/sortable) domain over no region that accepts it. While it
+shows its ghost, the carried element is hidden. Returning to a region resumes
+reordering there.
 
 ```rust
 let owner = cx.entity().downgrade();
@@ -52,6 +53,5 @@ a rejected drop returns the item home. Reduced motion snaps to final positions.
 The ghost renderer is used while detached and during settling, within a
 180×32px maximum frame.
 
-With docking attached, detached releases belong to the docking surface;
-`on_drop_outside` remains the fallback for strips without docking. Plain
-reorders and compatible cross-list drops retain their existing callbacks.
+A release off every region also reaches the source region's
+`on_drop_outside`, if it has one.
