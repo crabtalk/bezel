@@ -333,9 +333,7 @@ fn an_unsized_picture_wider_than_the_page_stays_on_it(cx: &mut TestAppContext) {
     assert!(picture(&page, &mut cx).size.width <= px(WIDTH));
 }
 
-// TODO: gpui's `img` keeps its natural height under a max width; zed DEV-2.
 #[gpui::test]
-#[ignore]
 fn a_picture_narrowed_to_the_page_keeps_its_proportions(cx: &mut TestAppContext) {
     let (page, mut cx) = open(&unsized_doc(1000), false, false, cx);
 
