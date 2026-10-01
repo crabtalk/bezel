@@ -2,7 +2,7 @@
   {
     "version": "0.2.5",
     "date": "2026-09-29",
-    "summary": "Configurable find washes and caret shapes, app-provided paste handling and picture overlays, split buttons, and app configuration through extension traits.",
+    "summary": "Configurable find washes and caret shapes, app-provided paste handling and picture overlays, split buttons, a color picker, traffic light captions, drag and drop with pane docking, and app configuration through extension traits.",
     "new": [
       "Table handles support drag reordering with a drop indicator. Menus offer Move up/down for body rows and Move left/right for columns. Moves preserve column alignment, selection, anchors, and undo history; the header row stays fixed.",
       "Tables have six-dot row and column handles in dedicated left and top lanes. Right-clicking a cell opens insertion and deletion actions for both axes, even when the table header is scrolled out of view.",
@@ -11,16 +11,32 @@
       "`ui::AppExt::set_caret_shape` selects `CaretShape::Bar`, `Block`, or `Underline` for text fields, markdown text, and code blocks. The default bar is unchanged; terminal cursors remain controlled by the terminal program.",
       "`editor::AppExt::set_paste_handler` lets the app return literal text, markdown, or `None` for existing paste behavior. The handler receives the clipboard, editor identity, mode, fence state, and base path; `cx.image_store()` exposes the installed media store. File drops remain separate.",
       "`markdown::Editing::image_overlay` builds an app control from a picture's block index and URL. It appears on hover at `image_overlay_corner` (bottom-right by default) and stops presses from reaching the picture. Unset rendering is unchanged.",
-      "`Buttons::split_button` provides separately interactive main and menu halves, sized by `ControlSize`."
+      "`Buttons::split_button` provides separately interactive main and menu halves, sized by `ControlSize`.",
+      "`ui::drag` reorders items within and across regions over gpui's active drag. A `Domain` builds `Region`s and `Handle`s; regions filter with `accepts` and `lands`, carry groups with `carries`, follow a `ScrollHandle` with `track_scroll`, and report `Drop` and `Outside` through `on_drop` and `on_drop_outside`. `Domain::with_ghost` draws a custom drag preview.",
+      "`ui::docking` previews pane docking for dragged tabs. `Dock::surface` and `Dock::pane` wrap the host's layout, a `Zone` names the join or split edge under the pointer, and `Surface::on_drop` hands the host one `Drop` to apply. Torn-off tabs show a preview and panes settle with an animation.",
+      "Reorderable tab bars animate tabs live as they are dragged and report drops outside the bar through `Bar::on_drop_outside`.",
+      "Tab bars draw their own horizontal overlay scrollbar. `TabBar::track_scroll` takes a `ScrollHandle` for programmatic scrolling.",
+      "`ui::color` adds preset `Swatch`es with light and dark values and `color::open_panel` for the macOS system color panel; it returns `false` on other platforms. `cx.set_color_swatches` replaces the preset set, which defaults to `color::default_swatches()`.",
+      "`color_well` draws a color ring, `swatch_picker` lays swatches in one row or in rows of a given column count, and `select_trigger_with` draws a leading element such as a swatch before the select label.",
+      "`cx.set_caption_style(CaptionStyle::Lights)` draws close, minimise, and zoom as left-aligned traffic lights in full-size caption targets. `titlebar::lights_width` returns the width they occupy for overlay layouts. The default `Rectangular` style is unchanged.",
+      "`Editor::relink` points every picture at one URL to another in one undo step, in both rich and source modes.",
+      "`SplitButton::build_alone` builds the label side without the chevron or menu."
     ],
     "changed": [
       "App-owned configuration in `theme`, `ui`, `markdown`, `editor`, and `canvas` now uses crate-root `AppExt` traits implemented for `gpui::App`. Import the relevant trait and call methods on `cx`; previous public free-function settings APIs are removed. For example, use `cx.set_caret_shape(CaretShape::Block)` instead of `ui::input::set_caret_shape(CaretShape::Block, cx)`.",
-      "`markdown::Editing` has `image_overlay`, `image_overlay_corner`, and `table_controls` fields; struct literals without `..Default::default()` must include them. The editor reserves space inside table blocks for its add controls."
+      "`markdown::Editing` has `image_overlay`, `image_overlay_corner`, and `table_controls` fields; struct literals without `..Default::default()` must include them. The editor reserves space inside table blocks for its add controls.",
+      "`tabs::Reorder` is built on `ui::drag`. `Reorder::bar` takes the strip and its tabs in model order and returns a `Bar` that reports `Move { from, to }` through `on_reorder`; `grab`, `follow`, and `tab` are removed.",
+      "`tabs::bar` returns a `TabBar` instead of a `Stateful<Div>`.",
+      "Client-decorated windows cast a single centered frame shadow that fits inside `Theme::CLIENT_INSET`.",
+      "gpui is updated to 0.3.14."
     ],
     "fixed": [
       "Table row and column handles are anchored to the editor instead of the end of document flow, so they appear beside the intended cells rather than below the table.",
       "Pictures explicitly use the arrow cursor instead of inheriting a text cursor from the surrounding page; captions remain text targets.",
-      "Table row and column handles stay reachable when the pointer crosses cell padding; their hitboxes no longer start 12px too far right and down. Add-row and add-column controls occupy reserved space inside the table block instead of extending into page margins."
+      "Table row and column handles stay reachable when the pointer crosses cell padding; their hitboxes no longer start 12px too far right and down. Add-row and add-column controls occupy reserved space inside the table block instead of extending into page margins.",
+      "A picture whose file changes keeps showing its last decoded image while it reloads or while the file is half-written, instead of painting as a loading image.",
+      "Pictures without a stated size display at their own size, held within the page, instead of scaling to the column.",
+      "Window edges flush against a tile or screen edge no longer resize, and maximized windows count as flush on every edge."
     ]
   },
   {
