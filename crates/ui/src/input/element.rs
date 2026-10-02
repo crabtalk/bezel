@@ -654,7 +654,7 @@ impl Element for TextFieldElement {
         // cleared with the frame that installed it.
         let dragged = self.field.clone();
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, _window, cx| {
-            // The button being down is what makes this a drag. `is_selecting`
+            // The button being down is what makes this a drag. `selecting`
             // is only cleared on the release, so a press whose release went
             // somewhere we never heard about would otherwise leave a plain
             // hover dragging the run around.

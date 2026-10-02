@@ -1014,6 +1014,52 @@ fn typing_in_the_source_is_typing_in_the_document(cx: &mut TestAppContext) {
     );
 }
 
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn ctrl_k_in_the_source_kills_to_the_end_of_the_line(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("# Title\n\nbody", cx);
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("home ctrl-k");
+    assert_eq!(
+        source(&editor, &mut cx),
+        "\n\nbody",
+        "the line, not the rest"
+    );
+    cx.simulate_keystrokes("ctrl-k");
+    assert_eq!(
+        source(&editor, &mut cx),
+        "\nbody",
+        "at its end, the newline"
+    );
+}
+
+#[gpui::test]
+fn a_triple_click_in_the_source_selects_one_line(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("# Title\n\nbody", cx);
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    let at = cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        let (at, line_height) = editor.layouts().position(editor.selection().head).unwrap();
+        point(at.x, at.y + line_height / 2.)
+    });
+    cx.simulate_event(gpui::MouseDownEvent {
+        position: at,
+        button: gpui::MouseButton::Left,
+        modifiers: gpui::Modifiers::default(),
+        click_count: 3,
+        first_mouse: false,
+    });
+    cx.simulate_mouse_up(at, gpui::MouseButton::Left, gpui::Modifiers::default());
+    let (start, end) = cx.update(|_, cx| editor.read(cx).selection().ordered());
+    assert_eq!(
+        (start.offset, end.offset),
+        (0, "# Title".len()),
+        "the line, not the source"
+    );
+}
+
 #[gpui::test]
 fn enter_in_the_source_is_a_newline_and_undo_crosses_the_switch(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("# Title", cx);

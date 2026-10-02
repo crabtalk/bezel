@@ -15,6 +15,9 @@ impl Editor {
     /// Hand over the whole list — the app keeps the threads, this keeps their
     /// ranges. One entry point rather than add/remove/update, since the app is
     /// already holding the list that decides all three.
+    ///
+    /// Ranges are positions in [`Self::doc`] as it stands: the source fence in
+    /// [`Mode::Source`], the blocks otherwise.
     pub fn set_anchors(&mut self, anchors: Vec<Anchor>, cx: &mut Context<Self>) {
         self.anchors = anchors;
         cx.notify();

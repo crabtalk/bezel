@@ -389,6 +389,10 @@ pub(crate) const MENU_PAD: f32 = 4.0;
 /// room and is snapped back inside it.
 pub(crate) const SNAP: f32 = 8.0;
 
+/// How far a [`menu_row`]'s text sits in from its own edge. Content that is
+/// not a row lines up with the rows' text by insetting this much.
+pub const MENU_ROW_INSET: f32 = 8.0;
+
 /// A [`menu_row`]'s padding above and below its line box. Named because a
 /// list that caps itself at a row count has to know how tall a row is.
 pub(crate) const MENU_ROW_PAD_Y: f32 = 6.0;

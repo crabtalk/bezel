@@ -201,8 +201,7 @@ pub trait Controls: ThemeExt {
     }
 
     /// Display-only color well: a 20px ring holding `color`. The caller adds
-    /// `.id(..)` and an `.on_click(..)` that calls
-    /// [`crate::color::open_panel`].
+    /// `.id(..)` and `.on_click(..)`.
     fn color_well(&self, color: gpui::Hsla) -> Div {
         well(self.theme().ink(0.25), color)
     }

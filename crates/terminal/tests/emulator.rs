@@ -300,6 +300,39 @@ fn line_selection_takes_the_whole_row() {
     assert_eq!(e.selection_text().as_deref(), Some("second row\n"));
 }
 
+/// A drag from a double-click takes whole words, keeping the first one.
+#[test]
+fn a_word_selection_drags_by_words() {
+    let mut e = emu(30, 2);
+    e.feed(b"alpha beta gamma");
+    e.start_selection(
+        terminal::view::selection_type(2),
+        e.grid_point(0, 7),
+        Side::Left,
+    );
+    e.update_selection(e.grid_point(0, 12), Side::Left);
+    assert_eq!(e.selection_text().as_deref(), Some("beta gamma"));
+    e.update_selection(e.grid_point(0, 1), Side::Left);
+    assert_eq!(e.selection_text().as_deref(), Some("alpha beta"));
+}
+
+/// A drag from a triple-click takes whole rows.
+#[test]
+fn a_line_selection_drags_by_rows() {
+    let mut e = emu(30, 3);
+    e.feed(b"first row\r\nsecond row");
+    e.start_selection(
+        terminal::view::selection_type(3),
+        e.grid_point(1, 3),
+        Side::Left,
+    );
+    e.update_selection(e.grid_point(0, 2), Side::Left);
+    assert_eq!(
+        e.selection_text().as_deref(),
+        Some("first row\nsecond row\n")
+    );
+}
+
 /// A selection made across a line break keeps the newline, so pasting the
 /// copy reproduces the rows.
 #[test]

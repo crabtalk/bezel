@@ -25,11 +25,15 @@ const PRIMARY: &str = "cmd";
 const PRIMARY: &str = "ctrl";
 
 fn open(cx: &mut TestAppContext) -> (Entity<Editor>, VisualTestContext) {
+    open_with(SOURCE, cx)
+}
+
+fn open_with(source: &str, cx: &mut TestAppContext) -> (Entity<Editor>, VisualTestContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
     });
-    let window = cx.add_window(|_, cx| Editor::new(SOURCE, cx));
+    let window = cx.add_window(|_, cx| Editor::new(source, cx));
     let editor = window.root(cx).unwrap();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
     visual.simulate_resize(size(px(360.0), px(600.0)));
@@ -284,5 +288,69 @@ fn an_inline_rule_takes_its_delimiters_off_the_anchor(cx: &mut TestAppContext) {
         anchored(&editor, &mut cx),
         (0, 7, 10),
         "one bold letter is what is left ahead of the word"
+    );
+}
+
+/// The words an anchor points at, read out of whichever form is shown.
+fn anchored_text(editor: &Entity<Editor>, cx: &mut VisualTestContext) -> String {
+    cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        let (start, end) = editor.anchors()[0].range.ordered();
+        let text = editor.doc().blocks[start.block]
+            .text_at(start.part)
+            .unwrap();
+        text.text[start.offset..end.offset].to_string()
+    })
+}
+
+fn toggle_source(editor: &Entity<Editor>, cx: &mut VisualTestContext) {
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn an_anchor_follows_the_source_and_comes_back(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    // "two" in `bravo two`.
+    anchor(&editor, &mut cx, (1, 6, 9), at(0, 0));
+    toggle_source(&editor, &mut cx);
+    assert_eq!(
+        anchored_text(&editor, &mut cx),
+        "two",
+        "the same words in the source"
+    );
+
+    // The caret crossed at the very start.
+    cx.simulate_input("XX");
+    assert_eq!(
+        anchored_text(&editor, &mut cx),
+        "two",
+        "a source edit carries it along"
+    );
+
+    toggle_source(&editor, &mut cx);
+    assert_eq!(anchored(&editor, &mut cx), (1, 6, 9));
+    assert_eq!(
+        anchored_text(&editor, &mut cx),
+        "two",
+        "and back onto the blocks"
+    );
+}
+
+#[gpui::test]
+fn an_anchor_end_in_the_markup_comes_back_detached(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open_with("# Title", cx);
+    toggle_source(&editor, &mut cx);
+    // Between `#` and its space: no block owns that position.
+    let code = |offset| Cursor::new(0, Part::Code, offset);
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_anchors(vec![Anchor::new(ID, Selection::new(code(1), code(7)))], cx)
+        })
+    });
+    toggle_source(&editor, &mut cx);
+    assert!(
+        detached(&editor, &mut cx),
+        "not stretched from the document start"
     );
 }

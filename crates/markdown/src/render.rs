@@ -335,13 +335,15 @@ impl<'a> Overlay<'a> {
         Cursor::new(self.block, self.part, 0)
     }
 
-    /// The caret to paint: where it is, and only on the blink's lit half.
+    /// The caret to paint: where it is, only on the blink's lit half, and
+    /// never over a non-empty selection.
     ///
     /// Separate from [`Self::caret`] because the blink must not reach anything
     /// but the quad — a block whose paint depends on holding the caret would
     /// otherwise swap itself out twice a second.
     fn caret_painted(&self) -> Option<usize> {
-        self.caret_on.then(|| self.caret()).flatten()
+        let collapsed = self.selection.is_some_and(|s| s.is_collapsed());
+        (self.caret_on && collapsed).then(|| self.caret()).flatten()
     }
 
     fn caret_hollow(&self) -> bool {

@@ -65,7 +65,7 @@ impl Editor {
     /// Whether a press is being dragged: a selection, a lifted block or an
     /// image resize.
     pub(super) fn in_drag(&self) -> bool {
-        self.dragging
+        self.dragging.is_some()
             || self.lifted.is_some()
             || self.resizing.is_some()
             || self.table_drag.is_some()
@@ -93,10 +93,11 @@ impl Editor {
             }
             return;
         }
-        if self.dragging
+        if let Some((unit, pressed)) = self.dragging.clone()
             && let Some(hit) = self.layouts.hit(position)
         {
-            self.selection = self.selection.extend_to(hit).clamp(&self.doc);
+            let (anchor, head) = ui::input::drag_selection(pressed, hit.span(unit, &self.doc));
+            self.selection = Selection::new(anchor, head).clamp(&self.doc);
             cx.notify();
         }
     }
@@ -127,16 +128,21 @@ impl Editor {
         let Some(hit) = self.layouts.hit(position) else {
             return cx.notify();
         };
-        self.selection = match click_count {
-            // Shift extends from wherever the anchor already is,
-            // which is what makes click-then-shift-click a range.
-            _ if modifiers.shift => self.selection.extend_to(hit),
-            1 => Selection::at(hit),
-            2 => Selection::new(hit.word_left(&self.doc), hit.word_right(&self.doc)),
-            _ => Selection::new(hit.home(), hit.end(&self.doc)),
+        let unit = ui::input::Granularity::of_clicks(click_count);
+        // Shift extends from wherever the anchor already is, which is what
+        // makes click-then-shift-click a range.
+        self.selection = match modifiers.shift {
+            true => self.selection.extend_to(hit),
+            false => {
+                let span = hit.span(unit, &self.doc);
+                Selection::new(span.start, span.end)
+            }
         }
         .clamp(&self.doc);
-        self.dragging = click_count == 1 && !modifiers.shift;
+        self.dragging = (!modifiers.shift).then(|| {
+            let (start, end) = self.selection.ordered();
+            (unit, start..end)
+        });
         self.history.interrupt();
         self.caret_moved();
         // Only the editor sees the press, so only the editor can

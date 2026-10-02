@@ -240,44 +240,26 @@ impl Gallery {
 
             "color-picker" => {
                 let swatches = cx.color_swatches();
-                let custom = match self.controls.swatch {
-                    Some(ix) => swatches
-                        .get(ix)
-                        .map_or(self.controls.color, |s| s.resolve(&theme)),
-                    None => self.controls.color,
-                };
                 section
                     .child(hint(
                         &theme,
-                        "Pick a preset, or click the last well for the system color panel \
-                         (macOS only).",
+                        "Pick a preset, or drag in the picker under it; a preset moves the picker.",
                     ))
-                    .child(
-                        row()
-                            .child(theme.swatch_picker(
-                                "swatches",
-                                &swatches,
-                                self.controls.swatch,
-                                None,
-                                cx.listener(|view, ix: &usize, _, cx| {
-                                    view.controls.swatch = Some(*ix);
-                                    cx.notify();
-                                }),
-                            ))
-                            .child(theme.color_well(custom).id("color-well").on_click(
-                                cx.listener(move |_, _, _, cx| {
-                                    let this = cx.entity().downgrade();
-                                    ui::color::open_panel(custom, true, cx, move |color, cx| {
-                                        this.update(cx, |view, cx| {
-                                            view.controls.swatch = None;
-                                            view.controls.color = color;
-                                            cx.notify();
-                                        })
-                                        .ok();
-                                    });
-                                }),
-                            )),
-                    )
+                    .child(theme.swatch_picker(
+                        "swatches",
+                        &swatches,
+                        self.controls.swatch,
+                        None,
+                        cx.listener(move |view, ix: &usize, _, cx| {
+                            view.controls.swatch = Some(*ix);
+                            let color = cx.color_swatches()[*ix].resolve(Theme::of(cx));
+                            view.controls
+                                .picker
+                                .update(cx, |picker, cx| picker.set_color(color, cx));
+                            cx.notify();
+                        }),
+                    ))
+                    .child(div().w(px(220.0)).child(self.controls.picker.clone()))
                     .into_any_element()
             }
 
@@ -731,13 +713,19 @@ pub(crate) struct State {
     pub(crate) radio: usize,
     pub(crate) switched: [bool; 2],
     pub(crate) level: f32,
-    /// The preset picked, or `None` once the panel has picked `color`.
+    /// The preset picked, or `None` once the picker has moved off it.
     pub(crate) swatch: Option<usize>,
-    pub(crate) color: gpui::Hsla,
+    pub(crate) picker: Entity<ui::color::ColorPicker>,
+    _picker: gpui::Subscription,
 }
 
 impl State {
     pub(crate) fn new(cx: &mut Context<Gallery>) -> Self {
+        let picker = cx.new(|cx| ui::color::ColorPicker::new(gpui::rgb(0x0A84FF).into(), true, cx));
+        let _picker = cx.subscribe(&picker, |view, _, _: &ui::color::ColorPickerEvent, cx| {
+            view.controls.swatch = None;
+            cx.notify();
+        });
         Self {
             search: cx.new(|cx| TextField::new(cx).with_placeholder("Search components…")),
             filled: cx.new(|cx| {
@@ -774,7 +762,8 @@ impl State {
             switched: [true, false],
             level: 0.5,
             swatch: Some(7),
-            color: gpui::rgb(0x0A84FF).into(),
+            picker,
+            _picker,
         }
     }
 }

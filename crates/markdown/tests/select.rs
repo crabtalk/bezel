@@ -255,3 +255,50 @@ fn typing_after_a_mention_stays_outside_it() {
         .expect("the mention survives");
     assert_eq!(mention.range, 2..end);
 }
+
+#[test]
+fn a_word_span_stays_in_its_part() {
+    let doc = parse("one two\n\nthree");
+    assert_eq!(
+        body(0, 5).span(ui::input::Granularity::Word, &doc),
+        body(0, 4)..body(0, 7)
+    );
+    assert_eq!(
+        body(0, 3).span(ui::input::Granularity::Word, &doc),
+        body(0, 0)..body(0, 3)
+    );
+    assert_eq!(
+        body(1, 0).span(ui::input::Granularity::Word, &doc),
+        body(1, 0)..body(1, 5)
+    );
+    assert_eq!(
+        body(0, 2).span(ui::input::Granularity::Line, &doc),
+        body(0, 0)..body(0, 7)
+    );
+}
+
+#[test]
+fn a_word_drag_extends_by_words_across_blocks() {
+    let doc = parse("one two\n\nthree four");
+    let pressed = body(0, 4)..body(0, 7);
+    let span = body(1, 2).span(ui::input::Granularity::Word, &doc);
+    assert_eq!(
+        ui::input::drag_selection(pressed.clone(), span),
+        (body(0, 4), body(1, 5))
+    );
+    let span = body(0, 1).span(ui::input::Granularity::Word, &doc);
+    assert_eq!(
+        ui::input::drag_selection(pressed, span),
+        (body(0, 7), body(0, 0))
+    );
+}
+
+#[test]
+fn a_line_span_stops_at_newlines_in_its_part() {
+    let doc = parse("```\none\ntwo\n```");
+    let code = |offset| Cursor::new(0, Part::Code, offset);
+    assert_eq!(
+        code(5).span(ui::input::Granularity::Line, &doc),
+        code(4)..code(7)
+    );
+}

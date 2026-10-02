@@ -181,13 +181,7 @@ impl Editor {
             .record(kind, self.mode, &self.doc, self.selection, &self.anchors);
         // A list rather than one: Enter clears a selection *and* splits, and an
         // anchor mapped through only half of that lands in the wrong place.
-        // Source mode maps nothing: its deltas are about one fence, and an
-        // anchor dragged through those would point at the markup. They are
-        // clamped back onto the document on the way out instead.
         for delta in edit(self) {
-            if !self.blocks() {
-                continue;
-            }
             for anchor in &mut self.anchors {
                 anchor.map(&delta);
             }

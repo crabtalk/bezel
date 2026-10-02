@@ -20,7 +20,7 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
         .flex_row()
         .items_center()
         .gap(px(10.0))
-        .px(px(8.0))
+        .px(px(MENU_ROW_INSET))
         .py(px(MENU_ROW_PAD_Y))
         // Concentric with the card it sits in rather than a radius of its own:
         // 12 − 4 = 8, which is where the crate's most-repeated corner value
@@ -218,7 +218,7 @@ pub fn kbd_hint(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div {
 pub fn search_line(theme: &Theme, input: AnyElement) -> gpui::Div {
     stack::row()
         .mx(px(-MENU_PAD))
-        .px(px(MENU_PAD + 8.0))
+        .px(px(MENU_PAD + MENU_ROW_INSET))
         .py(px(7.0))
         .mb(px(MENU_PAD))
         .border_b_1()

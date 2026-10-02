@@ -2,22 +2,35 @@
   {
     "version": "0.2.6",
     "date": "2026-10-02",
-    "summary": "Configurable window blur, drag-region scrolling over lists, and solid block carets.",
+    "summary": "Configurable window blur, drag-region scrolling over lists, solid block carets, a cross-platform color picker, word and line selection by double and triple click, and find and comment washes in source mode.",
     "new": [
       "`Brand::window_blur` and `Theme::window_blur` set the blur radius behind a translucent window, starting from `Theme::WINDOW_BLUR` (60). Zero leaves the window transparent and unblurred. macOS only; other platforms ignore it.",
       "`ui::scroll::Scroller` wraps a div's `ScrollHandle` or a `gpui::list`'s `ListState`, so scrollbars, `follow`, and drag regions also work over lists.",
-      "While dragging, every region under the pointer scrolls near its visible edges, whether or not it accepts the dragged item."
+      "While dragging, every region under the pointer scrolls near its visible edges, whether or not it accepts the dragged item.",
+      "`ui::color::ColorPicker` is a saturation/value field, hue strip, optional alpha strip and hex field drawn in gpui on every platform. It emits `ColorPickerEvent::Changed` on every drag step and every hex entry that parses; `set_color` moves it without emitting. `color::to_hex` and `color::parse_hex` convert between colors and hex strings.",
+      "`popover::MENU_ROW_INSET` is the inset of a menu row's text, for content that lines up with the rows.",
+      "Text fields select a word on double-click and a line on triple-click. In text fields and the editor, dragging after either extends the selection by word or line in both directions while keeping the clicked word or line selected.",
+      "`ui::input::Granularity` (`Char`, `Word`, `Line`) is what a press selects by, with `Granularity::of_clicks` and `Granularity::around`; `ui::input::drag_selection` gives the selection a drag holds from a pressed range. `markdown::Cursor::span` gives the word or line around a document position.",
+      "`terminal::view::selection_type` maps a press's click count to the terminal's `SelectionType`: simple, word or line.",
+      "`markdown::serialize_at_many` and `markdown::parse_at_many` map many positions between a document and its markdown in one pass. A position that cannot be placed comes back `None`."
     ],
     "changed": [
       "`Brand` and `Theme` have a `window_blur` field; struct literals must include it.",
       "`Region::track_scroll`, `scroll::follow`, and `scroll::Overlay::new` take `impl Into<Scroller>` instead of `&ScrollHandle`.",
       "Terminal block cursors are opaque, with the glyph underneath drawn in the cell's background color.",
-      "gpui is updated to 0.3.15."
+      "gpui is updated to 0.3.15.",
+      "`color::open_panel` and the macOS system color panel are removed, along with the `objc2` dependencies; use `ColorPicker`.",
+      "`markdown::selectable::Pointer::Down` carries the press's `Granularity` as a second field.",
+      "Editor anchors are positions in the document currently shown: the source text in source mode, the blocks otherwise. They follow edits in source mode and are converted on each mode switch; an anchor with an end that cannot be placed after the switch comes back detached.",
+      "`ctrl-k` in the editor deletes to the end of the current line rather than the end of the block."
     ],
     "fixed": [
       "Block carets in text fields, markdown text, and code blocks are solid and fill the line height, with the glyph underneath cut out in the background color. They are drawn hollow while the window is inactive.",
       "Wrapping text fields no longer scroll sideways.",
-      "A pane's scroll offset never reads past its range, even before the next layout clamps it."
+      "A pane's scroll offset never reads past its range, even before the next layout clamps it.",
+      "A triple-click in the editor's source mode selects one line instead of the whole document.",
+      "The caret is not drawn over a non-empty selection.",
+      "Find hits and comments paint in the editor's source mode, so a hit stepped to from a focused find field shows there."
     ]
   },
   {

@@ -126,7 +126,7 @@ fn a_drag_off_the_text_keeps_extending_the_selection(cx: &mut gpui::TestAppConte
                     cx,
                     |view: &mut Reader, pointer, cx| {
                         match pointer {
-                            selectable::Pointer::Down(cursor) => {
+                            selectable::Pointer::Down(cursor, _) => {
                                 view.selection = Some(Selection::at(cursor));
                                 view.dragging = true;
                             }
@@ -183,5 +183,68 @@ fn a_drag_off_the_text_keeps_extending_the_selection(cx: &mut gpui::TestAppConte
         selection.head,
         Cursor::new(0, Part::Body, TEXT.len()),
         "past the last line resolves to the end of the text"
+    );
+}
+
+#[gpui::test]
+fn a_double_click_reports_word_granularity(cx: &mut gpui::TestAppContext) {
+    use gpui::{
+        Context, Modifiers, MouseButton, MouseDownEvent, Render, Window, div, prelude::*, px,
+    };
+    use ui::input::Granularity;
+
+    struct Reader {
+        doc: Doc,
+        layouts: BlockLayouts,
+        pressed: Vec<Granularity>,
+    }
+    impl Render for Reader {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("page")
+                .debug_selector(|| "page".into())
+                .size_full()
+                .child(selectable::render(
+                    "reader",
+                    &self.doc,
+                    &self.layouts.clone(),
+                    None,
+                    false,
+                    window,
+                    cx,
+                    |view: &mut Reader, pointer, _| {
+                        if let selectable::Pointer::Down(_, unit) = pointer {
+                            view.pressed.push(unit);
+                        }
+                    },
+                ))
+        }
+    }
+
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let window = cx.add_window(|_, _| Reader {
+        doc: parse("some words to press on"),
+        layouts: BlockLayouts::default(),
+        pressed: Vec::new(),
+    });
+    let reader = window.root(cx).unwrap();
+    let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+    visual.run_until_parked();
+
+    let page = visual.debug_bounds("page").expect("the page painted");
+    let position = gpui::point(page.left() + px(5.), page.top() + px(5.));
+    for click_count in [1, 2, 3] {
+        visual.simulate_event(MouseDownEvent {
+            button: MouseButton::Left,
+            position,
+            modifiers: Modifiers::default(),
+            click_count,
+            first_mouse: false,
+        });
+    }
+    visual.run_until_parked();
+    assert_eq!(
+        visual.update(|_, cx| reader.read(cx).pressed.clone()),
+        [Granularity::Char, Granularity::Word, Granularity::Line]
     );
 }

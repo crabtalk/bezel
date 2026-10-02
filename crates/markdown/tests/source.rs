@@ -93,3 +93,32 @@ fn the_source_view_holds_the_whole_document() {
     assert_eq!(back, doc);
     assert!(matches!(back.blocks[0].kind, BlockKind::Heading { .. }));
 }
+
+#[test]
+fn every_caret_crosses_in_one_pass() {
+    for source in DOCUMENTS {
+        let doc = parse(source);
+        let at = carets(&doc);
+        let (written, offsets) = markdown::serialize_at_many(&doc, &at, &Marks::default());
+        assert_eq!(written, serialize(&doc), "the source is the plain one");
+        let offsets: Vec<usize> = offsets.into_iter().map(|o| o.expect("placed")).collect();
+        let (back, landed) = markdown::parse_at_many(&written, &offsets, &Marks::default());
+        assert_eq!(back, doc, "the document survives the trip: {source:?}");
+        let landed: Vec<Cursor> = landed.into_iter().map(|c| c.expect("placed")).collect();
+        assert_eq!(landed, at, "and so does every caret, in {written:?}");
+    }
+}
+
+#[test]
+fn one_offset_in_the_markup_costs_only_itself() {
+    let (doc, landed) = markdown::parse_at_many("# Title", &[1, 2, 7], &Marks::default());
+    assert_eq!(doc, parse("# Title"));
+    assert_eq!(
+        landed,
+        vec![
+            None,
+            Some(Cursor::new(0, Part::Body, 0)),
+            Some(Cursor::new(0, Part::Body, 5))
+        ]
+    );
+}

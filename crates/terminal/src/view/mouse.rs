@@ -21,6 +21,18 @@ pub struct CellHit {
     pub side: Side,
 }
 
+/// What a press of `click_count` selects by: a click a run of cells, a
+/// double-click a word, a triple-click a row. A selection started with it
+/// extends by the same as [`crate::emulator::Emulator::update_selection`] drags it.
+pub fn selection_type(click_count: usize) -> crate::emulator::SelectionType {
+    use crate::emulator::SelectionType;
+    match click_count {
+        0 | 1 => SelectionType::Simple,
+        2 => SelectionType::Semantic,
+        _ => SelectionType::Lines,
+    }
+}
+
 /// Map a position *relative to the grid's top-left glyph* onto a cell.
 ///
 /// Positions outside the grid clamp to the nearest cell rather than returning
