@@ -1,25 +1,17 @@
-//! Color picking: a preset [`Swatch`] set the app configures, and the system
-//! color panel for anything outside it.
+//! Color picking: a preset [`Swatch`] set the app configures, and
+//! [`ColorPicker`] for anything outside it.
 //!
 //! The set is read through [`crate::AppExt::color_swatches`] and replaced with
 //! [`crate::AppExt::set_color_swatches`]; until then it is [`default_swatches`].
-//!
-//! The panel is macOS only: [`open_panel`] returns `false` everywhere else and
-//! nothing is shown. It is one per process. The latest [`open_panel`] owns it:
-//! its `on_change` hears every pick from then on, and the previous owner's
-//! stops.
-//!
-//! ```ignore
-//! let this = cx.entity().downgrade();
-//! color::open_panel(self.color, true, cx, move |color, cx| {
-//!     this.update(cx, |view, cx| { view.color = color; cx.notify(); }).ok();
-//! });
-//! ```
+
+mod picker;
 
 use std::rc::Rc;
 
 use gpui::{App, Global, Hsla, SharedString};
 use theme::{Appearance, Theme};
+
+pub use picker::{ColorPicker, ColorPickerEvent, parse_hex, to_hex};
 
 /// One preset color, with a value per appearance.
 #[derive(Clone, Debug, PartialEq)]
@@ -91,127 +83,4 @@ pub(crate) fn swatches(cx: &App) -> Rc<[Swatch]> {
 pub(crate) fn set_swatches(set: impl Into<Rc<[Swatch]>>, cx: &mut App) {
     cx.set_global(Swatches(set.into()));
     cx.refresh_windows();
-}
-
-/// Show the panel at `color` and report each change to `on_change`, with an
-/// opacity slider when `opacity` is set. Colors cross in sRGB.
-///
-/// `on_change` runs on a later tick than the pick, never inside the caller's
-/// update.
-pub fn open_panel(
-    color: Hsla,
-    opacity: bool,
-    cx: &mut App,
-    on_change: impl Fn(Hsla, &mut App) + 'static,
-) -> bool {
-    imp::open(color, opacity, cx, on_change)
-}
-
-#[cfg(target_os = "macos")]
-mod imp {
-    use std::ptr::NonNull;
-
-    use block2::RcBlock;
-    use gpui::{App, Global, Hsla, Rgba};
-    use objc2::MainThreadMarker;
-    use objc2::rc::Retained;
-    use objc2::runtime::{NSObjectProtocol, ProtocolObject};
-    use objc2_app_kit::{
-        NSColor, NSColorPanel, NSColorPanelColorDidChangeNotification, NSColorSpace,
-    };
-    use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue};
-
-    /// The observer the current owner registered; dropping it unregisters.
-    struct Owner(Retained<ProtocolObject<dyn NSObjectProtocol>>);
-
-    impl Drop for Owner {
-        fn drop(&mut self) {
-            // SAFETY: the token came from this center's `addObserverForName`.
-            unsafe { NSNotificationCenter::defaultCenter().removeObserver(self.0.as_ref()) };
-        }
-    }
-
-    impl Global for Owner {}
-
-    pub(super) fn open(
-        color: Hsla,
-        opacity: bool,
-        cx: &mut App,
-        on_change: impl Fn(Hsla, &mut App) + 'static,
-    ) -> bool {
-        let Some(mtm) = MainThreadMarker::new() else {
-            return false;
-        };
-        // Unregister first: `setColor` posts the change notification, and the
-        // previous owner must not hear the new owner's starting color.
-        if cx.has_global::<Owner>() {
-            cx.remove_global::<Owner>();
-        }
-        let panel = NSColorPanel::sharedColorPanel(mtm);
-        panel.setShowsAlpha(opacity);
-        panel.setContinuous(true);
-        panel.setColor(&to_ns(color));
-
-        let async_cx = cx.to_async();
-        let on_change = std::rc::Rc::new(on_change);
-        let source = panel.clone();
-        let block = RcBlock::new(move |_: NonNull<NSNotification>| {
-            let Some(color) = from_ns(&source.color()) else {
-                return;
-            };
-            let on_change = on_change.clone();
-            async_cx
-                .spawn(async move |cx| cx.update(|cx| on_change(color, cx)))
-                .detach();
-        });
-        // SAFETY: the main queue runs the block on the main thread, the one
-        // thread it and everything it captures belong to.
-        let token = unsafe {
-            NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
-                Some(NSColorPanelColorDidChangeNotification),
-                Some(&panel),
-                Some(&NSOperationQueue::mainQueue()),
-                &block,
-            )
-        };
-        cx.set_global(Owner(token));
-        panel.orderFront(None);
-        true
-    }
-
-    fn to_ns(color: Hsla) -> Retained<NSColor> {
-        let Rgba { r, g, b, a } = color.to_rgb();
-        NSColor::colorWithSRGBRed_green_blue_alpha(r.into(), g.into(), b.into(), a.into())
-    }
-
-    /// `None` for a pattern color, which has no sRGB form.
-    fn from_ns(color: &NSColor) -> Option<Hsla> {
-        let color = color.colorUsingColorSpace(&NSColorSpace::sRGBColorSpace())?;
-        let (mut r, mut g, mut b, mut a) = (0.0, 0.0, 0.0, 0.0);
-        // SAFETY: four valid out-pointers, on an RGB-space color.
-        unsafe { color.getRed_green_blue_alpha(&mut r, &mut g, &mut b, &mut a) };
-        Some(
-            Rgba {
-                r: r as f32,
-                g: g as f32,
-                b: b as f32,
-                a: a as f32,
-            }
-            .into(),
-        )
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use gpui::{App, Hsla};
-
-    pub(super) fn open(
-        _color: Hsla,
-        _opacity: bool,
-        _cx: &mut App,
-        _on_change: impl Fn(Hsla, &mut App) + 'static,
-    ) -> bool {
-        false
-    }
 }
