@@ -335,33 +335,21 @@ impl Render for ColorPicker {
         }
         .to_hsla();
 
+        // Square: rounded layers each antialias their own corner, and the
+        // lower ones show through the black at the bottom.
         let field = div()
             .w_full()
             .h(px(FIELD_HEIGHT))
-            .rounded(px(4.0))
-            .bg(pure)
-            .child(
-                div()
-                    .absolute()
-                    .size_full()
-                    .rounded(px(4.0))
-                    .bg(linear_gradient(
-                        90.0,
-                        linear_color_stop(gpui::white(), 0.0),
-                        linear_color_stop(gpui::white().opacity(0.0), 1.0),
-                    )),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .size_full()
-                    .rounded(px(4.0))
-                    .bg(linear_gradient(
-                        180.0,
-                        linear_color_stop(gpui::black().opacity(0.0), 0.0),
-                        linear_color_stop(gpui::black(), 1.0),
-                    )),
-            )
+            .bg(linear_gradient(
+                90.0,
+                linear_color_stop(gpui::white(), 0.0),
+                linear_color_stop(pure, 1.0),
+            ))
+            .child(div().absolute().size_full().bg(linear_gradient(
+                180.0,
+                linear_color_stop(gpui::black().opacity(0.0), 0.0),
+                linear_color_stop(gpui::black(), 1.0),
+            )))
             .child(field_knob(s, 1.0 - v));
 
         // gpui gradients take two stops, so the hue runs as six segments.
