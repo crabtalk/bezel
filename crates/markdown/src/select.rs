@@ -282,7 +282,7 @@ impl Cursor {
 
     /// The span of `unit` holding the caret, inside its own part. A word is
     /// the run of alphanumerics the caret touches, or of anything else when it
-    /// touches none; a line is the whole part. A mention is never split.
+    /// touches none; a line runs between the part's newlines. A mention is never split.
     pub fn span(self, unit: Granularity, doc: &Doc) -> Range<Self> {
         let here = self.clamp(doc);
         let Some(text) = doc
@@ -294,7 +294,10 @@ impl Cursor {
         };
         let (start, end) = match unit {
             Granularity::Char => return here..here,
-            Granularity::Line => (0, text.text.len()),
+            Granularity::Line => (
+                ui::input::line_start(&text.text, here.offset),
+                ui::input::line_end(&text.text, here.offset),
+            ),
             Granularity::Word => {
                 let (head, tail) = text.text.split_at(here.offset);
                 let word = head.chars().next_back().is_some_and(char::is_alphanumeric)

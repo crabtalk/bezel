@@ -292,3 +292,13 @@ fn a_word_drag_extends_by_words_across_blocks() {
         (body(0, 7), body(0, 0))
     );
 }
+
+#[test]
+fn a_line_span_stops_at_newlines_in_its_part() {
+    let doc = parse("```\none\ntwo\n```");
+    let code = |offset| Cursor::new(0, Part::Code, offset);
+    assert_eq!(
+        code(5).span(ui::input::Granularity::Line, &doc),
+        code(4)..code(7)
+    );
+}

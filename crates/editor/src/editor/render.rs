@@ -234,9 +234,7 @@ impl Render for Editor {
             )
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
-            .on_action(
-                cx.listener(|this, _: &KillLine, _, cx| this.delete_to(true, line_end, cx)),
-            )
+            .on_action(cx.listener(|this, _: &KillLine, _, cx| this.delete_to(true, line_end, cx)))
             .on_action(cx.listener(|this, _: &DeleteWordLeft, _, cx| {
                 this.delete_to(false, Cursor::word_left, cx)
             }))
