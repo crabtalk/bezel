@@ -1,5 +1,26 @@
 [
   {
+    "version": "0.2.6",
+    "date": "2026-10-02",
+    "summary": "Configurable window blur, drag-region scrolling over lists, and solid block carets.",
+    "new": [
+      "`Brand::window_blur` and `Theme::window_blur` set the blur radius behind a translucent window, starting from `Theme::WINDOW_BLUR` (60). Zero leaves the window transparent and unblurred. macOS only; other platforms ignore it.",
+      "`ui::scroll::Scroller` wraps a div's `ScrollHandle` or a `gpui::list`'s `ListState`, so scrollbars, `follow`, and drag regions also work over lists.",
+      "While dragging, every region under the pointer scrolls near its visible edges, whether or not it accepts the dragged item."
+    ],
+    "changed": [
+      "`Brand` and `Theme` have a `window_blur` field; struct literals must include it.",
+      "`Region::track_scroll`, `scroll::follow`, and `scroll::Overlay::new` take `impl Into<Scroller>` instead of `&ScrollHandle`.",
+      "Terminal block cursors are opaque, with the glyph underneath drawn in the cell's background color.",
+      "gpui is updated to 0.3.15."
+    ],
+    "fixed": [
+      "Block carets in text fields, markdown text, and code blocks are solid and fill the line height, with the glyph underneath cut out in the background color. They are drawn hollow while the window is inactive.",
+      "Wrapping text fields no longer scroll sideways.",
+      "A pane's scroll offset never reads past its range, even before the next layout clamps it."
+    ]
+  },
+  {
     "version": "0.2.5",
     "date": "2026-09-29",
     "summary": "Configurable find washes and caret shapes, app-provided paste handling and picture overlays, split buttons, a color picker, traffic light captions, drag and drop with pane docking, and app configuration through extension traits.",
