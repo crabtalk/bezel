@@ -62,6 +62,7 @@ impl Theme {
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::frosted_window(),
             glass: crate::LENSED,
             // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
@@ -211,6 +212,7 @@ impl Theme {
             diff_del: color::oklch(0.577, 0.245, 27.325),  // red-600
             diff_hunk_bg: hsla(0.6, 0.35, 0.35, 0.07),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::frosted_window(),
             glass: crate::LENSED,
             // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The

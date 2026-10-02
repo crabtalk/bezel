@@ -342,6 +342,10 @@ pub struct Theme {
     // nothing here is a parameter on a component.
     /// How opaque the tint over the blurred window is.
     pub vibrancy_alpha: f32,
+    /// The blur behind a translucent window, in native filter pixels with no
+    /// scale conversion. Zero leaves the window transparent and unblurred.
+    /// macOS alone; other platforms ignore it.
+    pub window_blur: f32,
     /// Whether the window composites translucent, so the desktop reaches what
     /// is painted over it — AppKit's vibrancy.
     pub vibrancy: bool,
