@@ -17,11 +17,15 @@
 
 use gpui::{ClipboardItem, Context, Render, SharedString, Window, div, prelude::*, px};
 use markdown::{
-    BlockLayouts, Doc, Selection,
+    BlockLayouts, Cursor, Doc, Selection,
     selectable::{self, Pointer},
 };
+use std::ops::Range;
 use theme::{TextStyle, Theme, Typeset};
-use ui::widgets::{ButtonStyle, Buttons};
+use ui::{
+    input::{Granularity, drag_selection},
+    widgets::{ButtonStyle, Buttons},
+};
 
 const SOURCE: &str = r#"## Selectable prose
 
@@ -29,6 +33,7 @@ Press anywhere in this text and drag. The selection is painted by the same
 renderer the editor uses, and resolves against the same layouts — what is new
 is only that nobody has to own an editor to get it.
 
+- A double-click takes a word and a triple-click a line; a drag after one extends by it
 - A drag that leaves the paragraph still selects to its end
 - Crossing a block puts a newline where the block ended
 - What copies out is the text, not the `**markup**` under it
@@ -40,9 +45,10 @@ pub struct Selectable {
     /// against.
     layouts: BlockLayouts,
     selection: Option<Selection>,
-    /// A move only extends a selection a press started — otherwise the pointer
-    /// would drag one just by crossing the text.
-    dragging: bool,
+    /// The unit a press selected by and the span it took. A move only extends
+    /// a selection a press started — otherwise the pointer would drag one just
+    /// by crossing the text.
+    pressed: Option<(Granularity, Range<Cursor>)>,
     copied: Option<SharedString>,
 }
 
@@ -52,25 +58,27 @@ impl Selectable {
             doc: markdown::parse(SOURCE),
             layouts: BlockLayouts::default(),
             selection: None,
-            dragging: false,
+            pressed: None,
             copied: None,
         }
     }
 
-    /// Answer the pointer. A press starts a selection, a move drags its head,
-    /// and a release leaves whatever it became.
+    /// Answer the pointer. A press selects the unit under it, a move extends
+    /// by that unit, and a release leaves whatever it became.
     fn point(&mut self, pointer: Pointer, cx: &mut Context<Self>) {
         match pointer {
-            Pointer::Down(cursor) => {
-                self.selection = Some(Selection::at(cursor));
-                self.dragging = true;
+            Pointer::Down(cursor, unit) => {
+                let span = cursor.span(unit, &self.doc);
+                self.selection = Some(Selection::new(span.start, span.end));
+                self.pressed = Some((unit, span));
             }
             Pointer::Move(cursor) => {
-                if let Some(selection) = self.selection {
-                    self.selection = Some(selection.extend_to(cursor));
+                if let Some((unit, pressed)) = self.pressed.clone() {
+                    let (anchor, head) = drag_selection(pressed, cursor.span(unit, &self.doc));
+                    self.selection = Some(Selection::new(anchor, head));
                 }
             }
-            Pointer::Up => self.dragging = false,
+            Pointer::Up => self.pressed = None,
         }
         cx.notify();
     }
@@ -107,7 +115,7 @@ impl Render for Selectable {
                     &self.doc,
                     &self.layouts,
                     self.selection,
-                    self.dragging,
+                    self.pressed.is_some(),
                     window,
                     cx,
                     |view, pointer, cx| view.point(pointer, cx),

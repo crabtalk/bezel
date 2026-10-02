@@ -9,11 +9,13 @@ use gpui::{
     MouseMoveEvent, Window, canvas, div, prelude::*,
 };
 use std::rc::Rc;
+use ui::input::Granularity;
 
 /// What the pointer did over the text.
 pub enum Pointer {
-    /// Pressed here — the start of a selection.
-    Down(Cursor),
+    /// Pressed here — the start of a selection, by the unit the click count
+    /// asks for.
+    Down(Cursor, Granularity),
     /// Moved here with the button still down.
     Move(Cursor),
     /// Let go. Whatever the selection had become is what it is.
@@ -95,7 +97,8 @@ pub fn render_with<V: 'static>(
             MouseButton::Left,
             cx.listener(move |view, event: &MouseDownEvent, _, cx| {
                 if let Some(cursor) = at_down.hit(event.position) {
-                    down(view, Pointer::Down(cursor), cx);
+                    let unit = Granularity::of_clicks(event.click_count);
+                    down(view, Pointer::Down(cursor, unit), cx);
                 }
             }),
         )
