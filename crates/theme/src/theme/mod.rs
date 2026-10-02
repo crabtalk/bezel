@@ -301,7 +301,8 @@ pub struct Theme {
     /// accent: `NSColor.selectedTextBackgroundColor` is `#B3D7FF` light and
     /// `#3F638B` dark.
     pub selection: Hsla,
-    /// Terminal block cursor.
+    /// Terminal block cursor. Opaque: the glyph under it is drawn in the
+    /// cell's background colour.
     pub cursor: Hsla,
     /// Text caret — [`Self::accent`]'s lightness.
     ///

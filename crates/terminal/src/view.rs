@@ -471,6 +471,8 @@ impl gpui::Element for TerminalElement {
             .collect();
         images.sort_by_key(|painted| painted.order);
 
+        // A block cursor is solid only while its window is the active one.
+        let solid = self.focused && window.is_window_active();
         let mut bg_quads = Vec::new();
         let mut sel_quads = Vec::new();
         let mut lines = Vec::with_capacity(snapshot.lines.len());
@@ -524,7 +526,14 @@ impl gpui::Element for TerminalElement {
                     _ => {}
                 }
             }
-            lines.push(shape_row(row, &theme, &mono, font_size, window));
+            match snapshot.cursor.filter(|c| solid && c.row == row_ix) {
+                Some(c) if c.col < row.len() => {
+                    let mut row = row.clone();
+                    row[c.col] = row[c.col].under_cursor();
+                    lines.push(shape_row(&row, &theme, &mono, font_size, window));
+                }
+                _ => lines.push(shape_row(row, &theme, &mono, font_size, window)),
+            }
         }
 
         let cursor = snapshot.cursor.map(|c| {
@@ -535,8 +544,7 @@ impl gpui::Element for TerminalElement {
                 ),
                 size(cell_w, line_h),
             );
-            if self.focused {
-                // Translucent block: the glyph underneath stays legible.
+            if solid {
                 fill(cursor_bounds, theme.cursor)
             } else {
                 outline(cursor_bounds, theme.cursor, gpui::BorderStyle::Solid)
@@ -587,6 +595,10 @@ impl gpui::Element for TerminalElement {
                 window.paint_quad(quad);
             }
             paint_layer(Layer::UnderText, window);
+            // Under the text: the glyph in the cursor cell is cut out of it.
+            if let Some(cursor) = prepaint.cursor.take() {
+                window.paint_quad(cursor);
+            }
             let cell_w = prepaint.cell_w;
             for (ix, segments) in prepaint.lines.iter().enumerate() {
                 let y = origin.y + line_h * ix as f32;
@@ -602,9 +614,6 @@ impl gpui::Element for TerminalElement {
                 }
             }
             paint_layer(Layer::OverText, window);
-            if let Some(cursor) = prepaint.cursor.take() {
-                window.paint_quad(cursor);
-            }
         });
     }
 }

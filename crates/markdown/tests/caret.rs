@@ -53,15 +53,15 @@ fn caret(cx: &mut VisualTestContext, shape: CaretShape) -> gpui::Quad {
     cx.run_until_parked();
     cx.update(|window, cx| {
         let color = Theme::of(cx).caret;
-        let color = if shape == CaretShape::Block {
-            color.opacity(0.35)
-        } else {
-            color
-        };
+        // Solid in the caret's own colour; a block in an inactive window is
+        // its outline.
         window
             .painted_quads()
             .into_iter()
-            .find(|quad| quad.background == color.into())
+            .find(|quad| {
+                quad.background == color.into()
+                    || (shape == CaretShape::Block && quad.border_color == color)
+            })
             .expect("caret is painted")
     })
 }
@@ -88,15 +88,17 @@ fn document_carets_share_shapes_in_all_render_paths(cx: &mut TestAppContext) {
                 );
                 let block = caret(&mut visual, CaretShape::Block);
                 let underline = caret(&mut visual, CaretShape::Underline);
-                assert_eq!(block.bounds.origin, bar.bounds.origin);
-                assert_eq!(block.bounds.size.height, bar.bounds.size.height);
+                // A block fills the line; the bar is the font's height inside it.
+                assert_eq!(block.bounds.origin.x, bar.bounds.origin.x);
+                assert!(block.bounds.size.height > bar.bounds.size.height);
+                assert!((block.bounds.center().y.0 - bar.bounds.center().y.0).abs() <= 1.0);
                 assert!(block.bounds.size.width > bar.bounds.size.width);
                 assert_eq!(underline.bounds.size.width, block.bounds.size.width);
                 assert_eq!(
                     underline.bounds.size.height,
                     gpui::ScaledPixels(2.0 * visual.update(|window, _| window.scale_factor()))
                 );
-                assert_eq!(underline.bounds.bottom(), block.bounds.bottom());
+                assert_eq!(underline.bounds.bottom(), bar.bounds.bottom());
                 visual.update(|_, cx| {
                     page.update(cx, |page, cx| {
                         page.offset = 1;
@@ -107,6 +109,15 @@ fn document_carets_share_shapes_in_all_render_paths(cx: &mut TestAppContext) {
                 if mode == 0 {
                     assert!(narrow.bounds.size.width < block.bounds.size.width);
                 }
+                // Where no character follows, a block is as wide as a `0`.
+                visual.update(|_, cx| {
+                    page.update(cx, |page, cx| {
+                        page.text = "0".into();
+                        page.offset = 0;
+                        cx.notify();
+                    })
+                });
+                let zero = caret(&mut visual, CaretShape::Block).bounds.size.width;
                 for empty in [false, true] {
                     visual.update(|_, cx| {
                         page.update(cx, |page, cx| {
@@ -118,7 +129,8 @@ fn document_carets_share_shapes_in_all_render_paths(cx: &mut TestAppContext) {
                         })
                     });
                     let end = caret(&mut visual, CaretShape::Block);
-                    assert_eq!(end.bounds.size.width, end.bounds.size.height / 2.0);
+                    // Painted quads snap to device pixels.
+                    assert!((end.bounds.size.width.0 - zero.0).abs() <= 1.0);
                 }
             }
         }

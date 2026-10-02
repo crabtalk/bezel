@@ -1,7 +1,6 @@
 //! Code blocks, source mode, and the copy button.
 
 use super::*;
-use ui::AppExt as _;
 
 /// Paint a document's own markdown source: a fence's caret, selection and hit
 /// testing, without a fence's box, band or copy button.
@@ -28,6 +27,9 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         part: Part::Code,
         selection,
         caret_on,
+        caret_shape: cx.caret_shape(),
+        // No window reaches here; a source view's rows read their own below.
+        window_active: cx.active_window().is_some(),
         layouts,
         annotations,
         placeholder: None,
@@ -114,14 +116,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
             indent,
         })
         .collect();
-    let paint = RowPaint {
-        caret: overlay.caret_painted(),
-        selected: overlay.selected(code.len()),
-        annotated: overlay.annotated(code.len(), &theme),
-        caret_color: theme.caret,
-        selection_color: theme.selection,
-        code_size: typography.code.size(),
-    };
+    let paint = RowPaint::new(&overlay, code, typography.code.size(), &theme);
     let code: Rc<str> = code.into();
     let sink = layouts.clone();
     let ranges: Rc<[Range<usize>]> = ranges.into();
@@ -136,14 +131,24 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
             let ranges = ranges.clone();
             Box::new(move |at| ranges.partition_point(|line| line.end < at.offset))
         },
-        build: Box::new(move |index, _, _| {
+        build: Box::new(move |index, window, _| {
             let span = ranges[index].clone();
-            let styled = code_line(&code[span.clone()], span.start, spans.as_deref(), &theme);
+            let paint = RowPaint {
+                hollow: !window.is_window_active(),
+                ..paint.clone()
+            };
+            let styled = code_line(
+                &code[span.clone()],
+                span.start,
+                spans.as_deref(),
+                paint.cut(),
+                &theme,
+            );
             let layout = styled.layout().clone();
-            let (sink, paint) = (sink.clone(), paint.clone());
+            let sink = sink.clone();
             let underlay = canvas(
                 |_, _, _| (),
-                move |_, _, window, cx| {
+                move |_, _, window, _| {
                     sink.record(
                         0,
                         Part::Code,
@@ -151,7 +156,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
                         layout.clone(),
                         Shown::default(),
                     );
-                    paint.paint(&span, &layout, window, cx);
+                    paint.paint(&span, &layout, window);
                 },
             )
             .absolute()
@@ -253,6 +258,7 @@ pub(super) fn code_lines(
     // the caret and a click both resolve through these. A wrapped line is
     // several rows of one layout, which is the case `range_rects` already
     // walks for a paragraph.
+    let paint = RowPaint::new(&overlay, code, typography.code.size(), theme);
     let mut rows: Vec<(Range<usize>, TextLayout)> = Vec::new();
     let mut offset = 0usize;
     let lines: Vec<AnyElement> = code
@@ -260,29 +266,16 @@ pub(super) fn code_lines(
         .map(|line| {
             let start = offset;
             offset += line.len() + 1;
-            let styled = code_line(line, start, spans.as_deref(), theme);
+            let styled = code_line(line, start, spans.as_deref(), paint.cut(), theme);
             rows.push((start..start + line.len(), styled.layout().clone()));
             styled.into_any_element()
         })
         .collect();
 
-    let caret = overlay.caret_painted();
-    let selected = overlay.selected(code.len());
     let sink = overlay.layouts.cloned();
-    let code_size = typography.code.size();
-    let annotated = overlay.annotated(code.len(), theme);
-    let (caret_color, selection_color) = (theme.caret, theme.selection);
-    let paint = RowPaint {
-        caret,
-        selected,
-        annotated,
-        caret_color,
-        selection_color,
-        code_size,
-    };
     let underlay = canvas(
         |_, _, _| (),
-        move |_, _, window, cx| {
+        move |_, _, window, _| {
             for (span, layout) in &rows {
                 if let Some(sink) = &sink {
                     sink.record(
@@ -293,7 +286,7 @@ pub(super) fn code_lines(
                         Shown::default(),
                     );
                 }
-                paint.paint(span, layout, window, cx);
+                paint.paint(span, layout, window);
             }
         },
     )
@@ -310,7 +303,15 @@ type Span = (Range<usize>, theme::HighlightKind);
 ///
 /// Runs are measured within the line; spans are byte ranges over the whole
 /// text, so every span is clipped to the line and rebased.
-fn code_line(line: &str, start: usize, spans: Option<&[Span]>, theme: &Theme) -> StyledText {
+/// `glyph`, over the whole text, is recoloured to the background where it
+/// falls in the line.
+fn code_line(
+    line: &str,
+    start: usize,
+    spans: Option<&[Span]>,
+    glyph: Option<&Range<usize>>,
+    theme: &Theme,
+) -> StyledText {
     let mono = font(theme.font_mono.clone());
     let run = |len: usize, color: Hsla| TextRun {
         len,
@@ -340,6 +341,12 @@ fn code_line(line: &str, start: usize, spans: Option<&[Span]>, theme: &Theme) ->
     if runs.is_empty() {
         runs.push(run(0, theme.text));
     }
+    if let Some(glyph) =
+        glyph.filter(|glyph| glyph.start >= start && glyph.end <= start + line.len())
+    {
+        runs =
+            ui::input::caret::recoloured(runs, &(glyph.start - start..glyph.end - start), theme.bg);
+    }
     StyledText::new(SharedString::from(line.to_string())).with_runs(runs)
 }
 
@@ -348,6 +355,11 @@ fn code_line(line: &str, start: usize, spans: Option<&[Span]>, theme: &Theme) ->
 #[derive(Clone)]
 struct RowPaint {
     caret: Option<usize>,
+    /// The grapheme after the caret, over the whole text.
+    glyph: Option<Range<usize>>,
+    shape: ui::input::CaretShape,
+    hollow: bool,
+    font: SharedString,
     selected: Option<Range<usize>>,
     annotated: Vec<(Range<usize>, Hsla)>,
     caret_color: Hsla,
@@ -356,7 +368,30 @@ struct RowPaint {
 }
 
 impl RowPaint {
-    fn paint(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window, cx: &App) {
+    fn new(overlay: &Overlay, code: &str, code_size: f32, theme: &Theme) -> Self {
+        let caret = overlay.caret_painted();
+        Self {
+            caret,
+            glyph: caret.and_then(|offset| glyph_at(code, offset)),
+            shape: overlay.caret_shape,
+            hollow: overlay.caret_hollow(),
+            font: theme.font_mono.clone(),
+            selected: overlay.selected(code.len()),
+            annotated: overlay.annotated(code.len(), theme),
+            caret_color: theme.caret,
+            selection_color: theme.selection,
+            code_size,
+        }
+    }
+
+    /// The grapheme a solid block covers, recoloured to the background.
+    fn cut(&self) -> Option<&Range<usize>> {
+        self.glyph
+            .as_ref()
+            .filter(|_| self.shape.cuts_out(self.hollow))
+    }
+
+    fn paint(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
         let wash = |range: &Range<usize>, color: Hsla, window: &mut Window| {
             let (from, to) = (range.start.max(span.start), range.end.min(span.end));
             if from < to {
@@ -378,18 +413,22 @@ impl RowPaint {
         if let Some(range) = &self.selected {
             wash(range, self.selection_color, window);
         }
-        if let Some(offset) = self.caret.filter(|at| span.contains(at) || *at == span.end)
-            && let Some(head) = layout.position_for_index(offset - span.start)
-        {
-            let shape = cx.caret_shape();
-            window.paint_quad(
-                shape.quad(
-                    caret_quad(head, self.code_size, layout.line_height()),
-                    (shape != ui::input::CaretShape::Bar)
-                        .then(|| caret_advance(layout, offset - span.start))
-                        .flatten(),
-                    self.caret_color,
-                ),
+        if let Some(offset) = self.caret.filter(|at| span.contains(at) || *at == span.end) {
+            let glyph = self
+                .cut()
+                .map(|glyph| glyph.start - span.start..glyph.end - span.start);
+            paint_caret(
+                layout,
+                offset - span.start,
+                glyph.as_ref(),
+                CaretPaint {
+                    shape: self.shape,
+                    hollow: self.hollow,
+                    color: self.caret_color,
+                    size: self.code_size,
+                    face: font(self.font.clone()),
+                },
+                window,
             );
         }
     }

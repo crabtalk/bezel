@@ -46,7 +46,7 @@ impl Theme {
             band: paint::band_for(Appearance::Dark),
             input_bg: hsla(0.0, 0.0, 1.0, 0.03),
             selection: rgb(0x3f638b).into(),
-            cursor: hsla(0.0, 0.0, 1.0, 0.35),
+            cursor: color::neutral(0.94), // near-white, opaque
             caret: color::neutral(0.673), // the accent
             ring: paint::hairline_for(Appearance::Dark, 0.35), // ~2.5× border_strong
             drop_line: color::neutral(0.55),
@@ -195,8 +195,8 @@ impl Theme {
             band: paint::band_for(Appearance::Light),
             input_bg: color::grey(0xff),
             selection: rgb(0xb3d7ff).into(),
-            cursor: hsla(0.0, 0.0, 0.0, 0.55),
-            caret: color::neutral(0.511), // the accent
+            cursor: color::neutral(0.205), // near-black, opaque
+            caret: color::neutral(0.511),  // the accent
             ring: paint::hairline_for(Appearance::Light, 0.35),
             drop_line: color::neutral(0.62),
             danger_strong: color::oklch(0.51, 0.20, 25.0),
