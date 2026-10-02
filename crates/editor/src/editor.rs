@@ -360,8 +360,8 @@ pub struct Editor {
     /// ceiling, and no drag could ever widen it again.
     origin: gpui::Point<gpui::Pixels>,
     width: gpui::Pixels,
-    /// Whether the pointer is dragging out a selection.
-    dragging: bool,
+    /// The press being dragged out: what it selects by, and what it selected.
+    dragging: Option<(ui::input::Granularity, Range<Cursor>)>,
     /// Whether the pointer is over painted text, which is the only place the
     /// editor claims an I-beam.
     over_text: bool,
@@ -432,7 +432,7 @@ impl Editor {
             press_claimed: false,
             origin: gpui::Point::default(),
             width: gpui::Pixels::ZERO,
-            dragging: false,
+            dragging: None,
             over_text: false,
             scroll: None,
             reveal: false,

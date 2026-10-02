@@ -7,6 +7,8 @@ struct Page {
     mode: usize,
     text: String,
     offset: usize,
+    /// Where the selection's anchor sits; `None` collapses it on the caret.
+    anchor: Option<usize>,
     layouts: BlockLayouts,
     virtualized: bool,
 }
@@ -23,7 +25,14 @@ impl Render for Page {
             self.offset,
         );
         let editing = Editing {
-            selection: Some(Selection::new(cursor, cursor)),
+            selection: Some(Selection::new(
+                Cursor::new(
+                    cursor.block,
+                    cursor.part,
+                    self.anchor.unwrap_or(self.offset),
+                ),
+                cursor,
+            )),
             layouts: self.virtualized.then_some(&self.layouts),
             ..Editing::default()
         };
@@ -76,6 +85,7 @@ fn document_carets_share_shapes_in_all_render_paths(cx: &mut TestAppContext) {
                     mode,
                     text: "Wi中".into(),
                     offset: 0,
+                    anchor: None,
                     layouts: BlockLayouts::default(),
                     virtualized,
                 });
@@ -133,6 +143,37 @@ fn document_carets_share_shapes_in_all_render_paths(cx: &mut TestAppContext) {
                     assert!((end.bounds.size.width.0 - zero.0).abs() <= 1.0);
                 }
             }
+        }
+    }
+}
+
+#[gpui::test]
+fn no_caret_over_a_selection_in_any_render_path(cx: &mut TestAppContext) {
+    cx.update(|cx| Theme::install(Appearance::Dark, cx));
+    for mode in 0..3 {
+        for shape in [CaretShape::Bar, CaretShape::Block, CaretShape::Underline] {
+            let window = cx.add_window(|_, _| Page {
+                mode,
+                text: "Wide".into(),
+                offset: 2,
+                anchor: Some(0),
+                layouts: BlockLayouts::default(),
+                virtualized: false,
+            });
+            let mut visual = VisualTestContext::from_window(window.into(), cx);
+            visual.update(|_, cx| cx.set_caret_shape(shape));
+            visual.run_until_parked();
+            let painted = visual.update(|window, cx| {
+                let color = Theme::of(cx).caret;
+                window
+                    .painted_quads()
+                    .into_iter()
+                    .any(|quad| quad.background == color.into() || quad.border_color == color)
+            });
+            assert!(
+                !painted,
+                "caret painted over a selection: mode {mode}, {shape:?}"
+            );
         }
     }
 }

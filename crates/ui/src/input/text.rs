@@ -146,3 +146,56 @@ pub fn next_word_boundary(text: &str, offset: usize) -> usize {
         .map(|(start, segment)| start + segment.len())
         .unwrap_or(text.len())
 }
+
+/// What a press selects by — a click places a caret, a double-click takes a
+/// word, a triple-click a line — and what a drag from that press extends by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Granularity {
+    Char,
+    Word,
+    Line,
+}
+
+impl Granularity {
+    pub fn of_clicks(click_count: usize) -> Self {
+        match click_count {
+            0 | 1 => Self::Char,
+            2 => Self::Word,
+            _ => Self::Line,
+        }
+    }
+
+    /// The span of this unit holding `offset`. A word is the word-bound
+    /// segment touching `offset`, preferring one with alphanumeric content; a
+    /// line is the logical line.
+    pub fn around(self, text: &str, offset: usize) -> Range<usize> {
+        match self {
+            Self::Char => offset..offset,
+            Self::Word => {
+                let segments = || {
+                    text.split_word_bound_indices()
+                        .map(|(start, segment)| (start..start + segment.len(), is_word(segment)))
+                };
+                let after = segments().find(|(range, _)| range.contains(&offset));
+                let before = segments().find(|(range, _)| range.end == offset);
+                match (after, before) {
+                    (Some((range, true)), _) | (_, Some((range, true))) => range,
+                    (Some((range, _)), _) | (_, Some((range, _))) => range,
+                    (None, None) => offset..offset,
+                }
+            }
+            Self::Line => line_start(text, offset)..line_end(text, offset),
+        }
+    }
+}
+
+/// The `(anchor, head)` a drag holds once the pointer is over `span`, the unit
+/// under it, from a press that selected `pressed`. All of `pressed` stays
+/// selected whichever way the drag goes.
+pub fn drag_selection<T: Ord + std::marker::Copy>(pressed: Range<T>, span: Range<T>) -> (T, T) {
+    if span.start < pressed.start {
+        (pressed.end, span.start)
+    } else {
+        (pressed.start, span.end.max(pressed.end))
+    }
+}

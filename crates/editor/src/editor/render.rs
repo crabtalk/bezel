@@ -173,7 +173,7 @@ impl Render for Editor {
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
                     this.drag_table_to(event.position, cx);
-                    this.dragging = false;
+                    this.dragging = None;
                     this.drop_resize(window, cx);
                     this.drop_table_drag(cx);
                 }),
@@ -182,7 +182,7 @@ impl Render for Editor {
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseUpEvent, window, cx| {
                     this.drag_table_to(event.position, cx);
-                    this.dragging = false;
+                    this.dragging = None;
                     if this.drop_table_drag(cx) {
                         return;
                     }
@@ -235,7 +235,7 @@ impl Render for Editor {
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
             .on_action(
-                cx.listener(|this, _: &KillLine, _, cx| this.delete_to(true, Cursor::end, cx)),
+                cx.listener(|this, _: &KillLine, _, cx| this.delete_to(true, line_end, cx)),
             )
             .on_action(cx.listener(|this, _: &DeleteWordLeft, _, cx| {
                 this.delete_to(false, Cursor::word_left, cx)
@@ -368,7 +368,7 @@ impl Render for Editor {
             // an image and a card, none of which a caret can be put into.
             // Where it has nothing to say it stays quiet rather than
             // overriding the page with an arrow of its own.
-            .when(self.over_text || self.dragging, |el| {
+            .when(self.over_text || self.dragging.is_some(), |el| {
                 el.cursor(CursorStyle::IBeam)
             })
             // No focus ring. A ring says *widget*, and a document is not one —

@@ -383,7 +383,8 @@ pub struct TextField {
     /// the first paint.
     last_layout: Vec<WrappedLine>,
     last_bounds: Option<Bounds<Pixels>>,
-    is_selecting: bool,
+    /// The press being dragged out: what it selects by, and what it selected.
+    selecting: Option<(Granularity, Range<usize>)>,
     /// The column vertical motion is trying to keep, in pixels from the left of
     /// the row. Held across a run of up/down so that walking through a short
     /// line and out the other side returns to the column you started in, and
@@ -451,7 +452,7 @@ impl TextField {
             marked_range: None,
             last_layout: Vec::new(),
             last_bounds: None,
-            is_selecting: false,
+            selecting: None,
             goal_x: None,
             scroll: Point::default(),
             history: crate::history::SnapshotHistory::new(DEFAULT_UNDO_LIMIT),
@@ -737,6 +738,24 @@ impl TextField {
         } else {
             self.selected_range.end
         }
+    }
+
+    fn anchor_offset(&self) -> usize {
+        if self.selection_reversed {
+            self.selected_range.end
+        } else {
+            self.selected_range.start
+        }
+    }
+
+    /// Select from `anchor` to `head`, the caret at `head`.
+    fn select_span(&mut self, anchor: usize, head: usize, cx: &mut Context<Self>) {
+        self.selected_range = anchor.min(head)..anchor.max(head);
+        self.selection_reversed = head < anchor;
+        self.goal_x = None;
+        self.caret_moved();
+        cx.emit(FieldEvent::Moved);
+        cx.notify()
     }
 
     /// The row height every mapping between a screen point and a byte offset

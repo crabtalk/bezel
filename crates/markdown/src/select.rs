@@ -12,6 +12,10 @@
 //!
 //! This half is pure, so the motion is testable without a window.
 
+use std::ops::Range;
+
+use ui::input::Granularity;
+
 use crate::doc::{Doc, Part};
 
 /// A caret: which block, which part of it, and how far into that part.
@@ -272,6 +276,47 @@ impl Cursor {
         let offset = here.offset + skipped + word;
         Self {
             offset: text.mention_around(offset).map_or(offset, |m| m.end),
+            ..here
+        }
+    }
+
+    /// The span of `unit` holding the caret, inside its own part. A word is
+    /// the run of alphanumerics the caret touches, or of anything else when it
+    /// touches none; a line is the whole part. A mention is never split.
+    pub fn span(self, unit: Granularity, doc: &Doc) -> Range<Self> {
+        let here = self.clamp(doc);
+        let Some(text) = doc
+            .blocks
+            .get(here.block)
+            .and_then(|b| b.text_at(here.part))
+        else {
+            return here..here;
+        };
+        let (start, end) = match unit {
+            Granularity::Char => return here..here,
+            Granularity::Line => (0, text.text.len()),
+            Granularity::Word => {
+                let (head, tail) = text.text.split_at(here.offset);
+                let word = head.chars().next_back().is_some_and(char::is_alphanumeric)
+                    || tail.chars().next().is_some_and(char::is_alphanumeric);
+                let same = |c: &char| c.is_alphanumeric() == word;
+                let back: usize = head
+                    .chars()
+                    .rev()
+                    .take_while(same)
+                    .map(char::len_utf8)
+                    .sum();
+                let ahead: usize = tail.chars().take_while(same).map(char::len_utf8).sum();
+                (here.offset - back, here.offset + ahead)
+            }
+        };
+        let start = text.mention_around(start).map_or(start, |m| m.start);
+        let end = text.mention_around(end).map_or(end, |m| m.end);
+        Self {
+            offset: start,
+            ..here
+        }..Self {
+            offset: end,
             ..here
         }
     }

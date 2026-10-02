@@ -261,3 +261,33 @@ fn utf16_offsets_count_surrogate_pairs_as_two() {
     assert_eq!(offset_to_utf16("中", 3), 1);
     assert_eq!(offset_from_utf16("中", 1), 3);
 }
+
+#[test]
+fn a_word_press_takes_the_word_it_touches() {
+    let text = "foo bar, baz";
+    assert_eq!(Granularity::Word.around(text, 1), 0..3, "inside a word");
+    assert_eq!(Granularity::Word.around(text, 3), 0..3, "just past a word");
+    assert_eq!(Granularity::Word.around(text, 4), 4..7, "at a word's start");
+    assert_eq!(Granularity::Word.around(text, 12), 9..12, "at the end");
+    assert_eq!(Granularity::Word.around("a  b", 2), 1..3, "between words");
+    assert_eq!(Granularity::Word.around("", 0), 0..0);
+}
+
+#[test]
+fn a_line_press_takes_the_logical_line() {
+    assert_eq!(Granularity::Line.around("ab\ncd\nef", 4), 3..5);
+}
+
+#[test]
+fn a_drag_keeps_the_pressed_range_either_way() {
+    // "foo bar baz", the press took "bar".
+    let pressed = 4..7;
+    assert_eq!(
+        drag_selection(pressed.clone(), 8..11),
+        (4, 11),
+        "forward to baz"
+    );
+    assert_eq!(drag_selection(pressed.clone(), 0..3), (7, 0), "back to foo");
+    assert_eq!(drag_selection(pressed.clone(), 4..7), (4, 7), "inside it");
+    assert_eq!(drag_selection(5..5, 2..2), (5, 2), "a click drags by char");
+}

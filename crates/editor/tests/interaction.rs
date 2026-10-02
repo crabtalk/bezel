@@ -1014,6 +1014,18 @@ fn typing_in_the_source_is_typing_in_the_document(cx: &mut TestAppContext) {
     );
 }
 
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn ctrl_k_in_the_source_kills_to_the_end_of_the_line(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("# Title\n\nbody", cx);
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.toggle_source(cx)));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("home ctrl-k");
+    assert_eq!(source(&editor, &mut cx), "\n\nbody", "the line, not the rest");
+    cx.simulate_keystrokes("ctrl-k");
+    assert_eq!(source(&editor, &mut cx), "\nbody", "at its end, the newline");
+}
+
 #[gpui::test]
 fn enter_in_the_source_is_a_newline_and_undo_crosses_the_switch(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("# Title", cx);

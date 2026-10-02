@@ -227,17 +227,22 @@ impl TextField {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.is_selecting = true;
         let offset = self.index_for_mouse_position(event.position, self.line_height());
         if event.modifiers.shift {
-            self.select_to(offset, cx);
-        } else {
-            self.move_to(offset, cx)
+            self.selecting = Some((
+                Granularity::Char,
+                self.anchor_offset()..self.anchor_offset(),
+            ));
+            return self.select_to(offset, cx);
         }
+        let unit = Granularity::of_clicks(event.click_count);
+        let span = unit.around(&self.content, offset);
+        self.selecting = Some((unit, span.clone()));
+        self.select_span(span.start, span.end, cx);
     }
 
     pub(super) fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
-        self.is_selecting = false;
+        self.selecting = None;
     }
 
     /// Scrolling is the one thing that moves the view without moving the caret,
@@ -264,14 +269,15 @@ impl TextField {
         line_height: Pixels,
         cx: &mut Context<Self>,
     ) {
-        if !self.is_selecting {
+        let Some((unit, pressed)) = self.selecting.clone() else {
             return;
-        }
+        };
         let offset = self.index_for_mouse_position(position, line_height);
+        let (anchor, head) = drag_selection(pressed, unit.around(&self.content, offset));
         // A pointer crossing a character is the event worth having; the twenty
         // samples it takes to cross one are not.
-        if offset != self.cursor_offset() {
-            self.select_to(offset, cx);
+        if (anchor, head) != (self.anchor_offset(), self.cursor_offset()) {
+            self.select_span(anchor, head, cx);
         }
     }
 
