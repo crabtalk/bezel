@@ -171,7 +171,7 @@ impl ScrollbarState {
         }
     }
 
-    fn begin(&self, handle: &ScrollHandle, event: &gpui::MouseDownEvent, end_inset: Pixels) {
+    fn begin(&self, handle: &Scroller, event: &gpui::MouseDownEvent, end_inset: Pixels) {
         let viewport = handle.bounds().size.height;
         if let Some(range) = thumb_in_track(
             viewport,
@@ -196,7 +196,7 @@ impl ScrollbarState {
     fn drag(
         &self,
         track_id: &SharedString,
-        handle: &ScrollHandle,
+        handle: &Scroller,
         event: &DragMoveEvent<ScrollbarDrag>,
         end_inset: Pixels,
         cx: &mut App,
@@ -287,15 +287,15 @@ impl Place {
 /// the appearance on its own. A parameter it ignored would be worse than none.
 pub fn scrollbar(
     id: impl Into<SharedString>,
-    handle: &ScrollHandle,
+    handle: impl Into<Scroller>,
     state: &ScrollbarState,
 ) -> gpui::AnyElement {
-    scrollbar_placed(id.into(), handle, state, Place::default())
+    scrollbar_placed(id.into(), &handle.into(), state, Place::default())
 }
 
 pub(super) fn scrollbar_placed(
     id: SharedString,
-    handle: &ScrollHandle,
+    handle: &Scroller,
     state: &ScrollbarState,
     place: Place,
 ) -> gpui::AnyElement {
@@ -467,16 +467,22 @@ impl TransientState {
 /// animate, so it renders as the always-on bar.
 pub fn transient(
     id: impl Into<SharedString>,
-    handle: &ScrollHandle,
+    handle: impl Into<Scroller>,
     state: &TransientState,
     reduce_motion: bool,
 ) -> gpui::AnyElement {
-    transient_placed(id.into(), handle, state, reduce_motion, Place::default())
+    transient_placed(
+        id.into(),
+        &handle.into(),
+        state,
+        reduce_motion,
+        Place::default(),
+    )
 }
 
 pub(super) fn transient_placed(
     id: SharedString,
-    handle: &ScrollHandle,
+    handle: &Scroller,
     state: &TransientState,
     reduce_motion: bool,
     place: Place,

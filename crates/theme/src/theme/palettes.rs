@@ -46,7 +46,7 @@ impl Theme {
             band: paint::band_for(Appearance::Dark),
             input_bg: hsla(0.0, 0.0, 1.0, 0.03),
             selection: rgb(0x3f638b).into(),
-            cursor: hsla(0.0, 0.0, 1.0, 0.35),
+            cursor: color::neutral(0.94), // near-white, opaque
             caret: color::neutral(0.673), // the accent
             ring: paint::hairline_for(Appearance::Dark, 0.35), // ~2.5× border_strong
             drop_line: color::neutral(0.55),
@@ -62,6 +62,7 @@ impl Theme {
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::frosted_window(),
             glass: crate::LENSED,
             // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
@@ -195,8 +196,8 @@ impl Theme {
             band: paint::band_for(Appearance::Light),
             input_bg: color::grey(0xff),
             selection: rgb(0xb3d7ff).into(),
-            cursor: hsla(0.0, 0.0, 0.0, 0.55),
-            caret: color::neutral(0.511), // the accent
+            cursor: color::neutral(0.205), // near-black, opaque
+            caret: color::neutral(0.511),  // the accent
             ring: paint::hairline_for(Appearance::Light, 0.35),
             drop_line: color::neutral(0.62),
             danger_strong: color::oklch(0.51, 0.20, 25.0),
@@ -211,6 +212,7 @@ impl Theme {
             diff_del: color::oklch(0.577, 0.245, 27.325),  // red-600
             diff_hunk_bg: hsla(0.6, 0.35, 0.35, 0.07),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::frosted_window(),
             glass: crate::LENSED,
             // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The

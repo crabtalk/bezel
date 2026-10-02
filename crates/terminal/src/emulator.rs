@@ -161,6 +161,19 @@ impl CellSnapshot {
         };
         if self.hidden { (bg, bg) } else { (fg, bg) }
     }
+
+    /// This cell under a solid block cursor: its glyph in its own background
+    /// colour.
+    pub fn under_cursor(self) -> Self {
+        let (_, bg) = self.display_colors();
+        Self {
+            fg: bg,
+            bg,
+            inverse: false,
+            dim: false,
+            ..self
+        }
+    }
 }
 
 /// Where an image sits on the grid: its top-left cell in viewport

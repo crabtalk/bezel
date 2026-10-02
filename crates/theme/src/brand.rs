@@ -179,6 +179,8 @@ pub struct Brand {
     /// How opaque the tint over the blurred window is. See
     /// [`Theme::VIBRANCY_ALPHA`], where it starts, and [`Theme::vibrancy_tint`].
     pub vibrancy_alpha: f32,
+    /// The blur behind the translucent window. See [`Theme::window_blur`].
+    pub window_blur: f32,
     /// Whether the window composites translucent, which is a question about
     /// the appearance as much as about the app — see [`Vibrancy`].
     pub vibrancy: Vibrancy,
@@ -202,6 +204,7 @@ impl Default for Brand {
             accent: Tint::NONE,
             radius: Theme::BASE_RADIUS,
             vibrancy_alpha: Theme::VIBRANCY_ALPHA,
+            window_blur: Theme::WINDOW_BLUR,
             vibrancy: Vibrancy::Auto,
             glass: crate::LENSED,
             ink: Ink::APPKIT,
@@ -244,6 +247,7 @@ impl Brand {
         // wants the coverage it tuned, not a value that was overwritten while
         // nothing was looking at it.
         theme.vibrancy_alpha = self.vibrancy_alpha;
+        theme.window_blur = self.window_blur;
         theme.glass = self.glass;
         self.ink.for_appearance(theme.appearance).paint(theme);
         // Every colour token, with the rule doing the choosing: a token that is

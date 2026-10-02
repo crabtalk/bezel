@@ -97,6 +97,9 @@ impl Theme {
     /// A coverage, not a switch: whether a window frosts at all is
     /// [`frosted_window`](crate::frosted_window).
     pub const VIBRANCY_ALPHA: f32 = 0.80;
+    /// The radius [`Brand::window_blur`](crate::Brand::window_blur) starts
+    /// from: gpui's own default for a `Blurred` window.
+    pub const WINDOW_BLUR: f32 = 60.0;
     /// Main-panel header height (the reference `h-11`) — in-card headers (changes pane).
     pub const HEADER_HEIGHT: f32 = 44.0;
     /// The unified window titlebar (traffic lights + cluster + tabs). Content

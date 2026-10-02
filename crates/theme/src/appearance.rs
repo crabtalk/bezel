@@ -253,9 +253,9 @@ pub fn keep_background(window: &Window, cx: &mut App) {
 /// theme answers `Opaque`: its corners and resize band (`ui::window::frame`)
 /// must stay unpainted, and its content paints its own background.
 pub fn reapply_window_background(cx: &mut App) {
-    let Some(wanted) = cx
+    let Some((wanted, blur)) = cx
         .try_global::<Theme>()
-        .map(|theme| theme.window_background_appearance())
+        .map(|theme| (theme.window_background_appearance(), theme.window_blur))
     else {
         return;
     };
@@ -283,6 +283,7 @@ pub fn reapply_window_background(cx: &mut App) {
         if window
             .update(cx, |_, window, _| {
                 window.set_background_appearance(background_for(wanted, window));
+                window.set_background_blur(blur.into());
             })
             .is_err()
         {
@@ -290,6 +291,7 @@ pub fn reapply_window_background(cx: &mut App) {
                 window
                     .update(cx, |_, window, _| {
                         window.set_background_appearance(background_for(wanted, window));
+                        window.set_background_blur(blur.into());
                     })
                     .ok();
             });

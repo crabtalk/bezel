@@ -565,3 +565,29 @@ fn a_report_that_is_not_a_path_keeps_the_last_one() {
     e.feed(b"\x1b]7;https://example.com/\x07\x1b]9;a notification\x07");
     assert_eq!(e.directory(), Some(std::path::Path::new("/tmp")));
 }
+
+#[test]
+fn a_cell_under_the_cursor_paints_its_glyph_in_its_background() {
+    let cell = CellSnapshot {
+        ch: 'x',
+        fg: CellColor::Indexed(1),
+        bg: CellColor::Rgb(1, 2, 3),
+        bold: false,
+        dim: true,
+        italic: false,
+        underline: false,
+        inverse: false,
+        hidden: false,
+        wide: false,
+        wide_spacer: false,
+        selected: false,
+    };
+    let under = cell.under_cursor();
+    assert_eq!(under.display_colors(), (cell.bg, cell.bg));
+    assert!(!under.dim);
+    let inverse = CellSnapshot {
+        inverse: true,
+        ..cell
+    };
+    assert_eq!(inverse.under_cursor().display_colors(), (cell.fg, cell.fg));
+}

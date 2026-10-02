@@ -16,6 +16,7 @@ use std::{
     path::Path,
     rc::Rc,
 };
+use ui::AppExt as _;
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
@@ -302,6 +303,9 @@ struct Overlay<'a> {
     part: Part,
     selection: Option<Selection>,
     caret_on: bool,
+    caret_shape: ui::input::CaretShape,
+    /// A block caret is hollow, and cuts no glyph out, while this is false.
+    window_active: bool,
     layouts: Option<&'a BlockLayouts>,
     /// Ranges washed under the text, in the order the caller gave them.
     annotations: &'a [(Selection, Annotation)],
@@ -338,6 +342,10 @@ impl<'a> Overlay<'a> {
     /// otherwise swap itself out twice a second.
     fn caret_painted(&self) -> Option<usize> {
         self.caret_on.then(|| self.caret()).flatten()
+    }
+
+    fn caret_hollow(&self) -> bool {
+        !self.window_active
     }
 
     /// The caret's byte offset, if the head is in *this* text.
@@ -491,6 +499,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 part: Part::Body,
                 selection,
                 caret_on,
+                caret_shape: cx.caret_shape(),
+                window_active: window.is_window_active(),
                 layouts: None,
                 annotations,
                 placeholder: placeholder.as_ref(),
@@ -565,6 +575,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 part: Part::Body,
                 selection: owned.selection,
                 caret_on: owned.caret_on,
+                caret_shape: cx.caret_shape(),
+                window_active: window.is_window_active(),
                 layouts: Some(&owned.layouts),
                 annotations: &owned.annotations,
                 placeholder: owned.placeholder.as_ref(),

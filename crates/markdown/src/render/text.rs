@@ -1,7 +1,6 @@
 //! Inline text: flattening to runs, painting, carets and selection rects.
 
 use super::*;
-use ui::AppExt as _;
 
 /// Inline content flattened for shaping: one string, its runs, and the ranges
 /// that need painting underneath (link clicks, inline-code washes, mentions).
@@ -339,7 +338,15 @@ pub(super) fn painted_text(
                 .text_color(theme.text_faint)
                 .child(hint.clone())
         });
-    let styled = StyledText::new(flat.text).with_runs(flat.runs);
+    let (shape, hollow) = (overlay.caret_shape, overlay.caret_hollow());
+    let glyph = caret
+        .filter(|_| shape.cuts_out(hollow))
+        .and_then(|offset| glyph_at(&flat.text, offset));
+    let runs = match &glyph {
+        Some(glyph) => ui::input::caret::recoloured(flat.runs, glyph, theme.bg),
+        None => flat.runs,
+    };
+    let styled = StyledText::new(flat.text).with_runs(runs);
     let layout = styled.layout().clone();
 
     let mentions = flat.mentions;
@@ -432,18 +439,20 @@ pub(super) fn painted_text(
                     ));
                 }
             }
-            if let Some(offset) = caret
-                && let Some(head) = layout.position_for_index(offset)
-            {
-                let shape = cx.caret_shape();
-                window.paint_quad(
-                    shape.quad(
-                        caret_quad(head, size, layout.line_height()),
-                        (shape != ui::input::CaretShape::Bar)
-                            .then(|| caret_advance(&layout, offset))
-                            .flatten(),
-                        caret_color,
-                    ),
+            if let Some(offset) = caret {
+                let face = font(Theme::of(cx).font_body.clone());
+                paint_caret(
+                    &layout,
+                    offset,
+                    glyph.as_ref(),
+                    CaretPaint {
+                        shape,
+                        hollow,
+                        color: caret_color,
+                        size,
+                        face,
+                    },
+                    window,
                 );
             }
             for range in &code_ranges {
@@ -527,6 +536,58 @@ pub(super) fn caret_quad(head: Point<Pixels>, size: f32, line_height: Pixels) ->
         head + point(px(0.0), inset),
         gpui::size(px(CARET_WIDTH), px(size)),
     )
+}
+
+/// The grapheme after `offset` on its line, if there is one.
+pub(super) fn glyph_at(text: &str, offset: usize) -> Option<Range<usize>> {
+    (offset < text.len() && text.is_char_boundary(offset) && !text[offset..].starts_with('\n'))
+        .then(|| offset..ui::input::next_boundary(text, offset))
+}
+
+/// How a caret is drawn, apart from where.
+pub(super) struct CaretPaint {
+    pub shape: ui::input::CaretShape,
+    pub hollow: bool,
+    pub color: Hsla,
+    /// The text's font size, in pixels.
+    pub size: f32,
+    /// The font a wide caret measures its empty slot in.
+    pub face: gpui::Font,
+}
+
+/// Paints the caret at `offset` in `layout`. A `glyph` — the range recoloured
+/// for a solid block — is what the block covers, on whichever row it shaped.
+pub(super) fn paint_caret(
+    layout: &TextLayout,
+    offset: usize,
+    glyph: Option<&Range<usize>>,
+    paint: CaretPaint,
+    window: &mut Window,
+) {
+    let line_height = layout.line_height();
+    let covered = glyph.and_then(|glyph| range_rects(layout, glyph, 0.0, 0.0).into_iter().next());
+    let (head, width) = match covered {
+        Some(rect) => (rect.origin, rect.size.width),
+        None => {
+            let Some(head) = layout.position_for_index(offset) else {
+                return;
+            };
+            let width = match paint.shape {
+                ui::input::CaretShape::Bar => px(0.0),
+                _ => caret_advance(layout, offset).unwrap_or_else(|| {
+                    ui::input::caret::zero_width(paint.face, px(paint.size), window)
+                }),
+            };
+            (head, width)
+        }
+    };
+    window.paint_quad(paint.shape.quad(
+        caret_quad(head, paint.size, line_height),
+        line_height,
+        width,
+        paint.color,
+        paint.hollow,
+    ));
 }
 
 /// The rectangles a byte range occupies, one per visual row.

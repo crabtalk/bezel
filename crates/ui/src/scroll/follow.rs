@@ -78,8 +78,8 @@ impl FollowState {
 /// old offset before this runs — which is why it asks for that frame. At a
 /// streaming cadence it is invisible, and it converges rather than spinning:
 /// once pinned and at the end, nothing is requested.
-pub fn follow(handle: &ScrollHandle, state: &FollowState) -> gpui::AnyElement {
-    let handle = handle.clone();
+pub fn follow(handle: impl Into<Scroller>, state: &FollowState) -> gpui::AnyElement {
+    let handle = handle.into();
     let state = state.clone();
     canvas(
         move |_, window, _| {
@@ -94,7 +94,7 @@ pub fn follow(handle: &ScrollHandle, state: &FollowState) -> gpui::AnyElement {
             };
 
             if pinned && (offset + max_offset).abs() > px(0.5) {
-                handle.set_offset(point(handle.offset().x, -max_offset));
+                handle.scroll_to_end();
                 window.request_animation_frame();
             }
             state.0.set((pinned, max_offset));

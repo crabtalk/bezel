@@ -3,9 +3,11 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, Axis, Bounds, DispatchPhase, Element, ElementId, GlobalElementId,
     InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, Refineable, RenderOnce, ScrollHandle, StyleRefinement, Styled,
-    Window, div, fill, point, prelude::*, px, size,
+    MouseUpEvent, Pixels, Point, Refineable, RenderOnce, StyleRefinement, Styled, Window, div,
+    fill, point, prelude::*, px, size,
 };
+
+use crate::scroll::Scroller;
 
 use super::{
     Domain, Drop, Feedback, Outside,
@@ -26,7 +28,7 @@ pub struct Region<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static
     carries: Option<Box<Carries<I>>>,
     feedback: Feedback,
     axis_locked: bool,
-    scroll: Option<ScrollHandle>,
+    scroll: Option<Scroller>,
     dropped: Option<Rc<OnDrop<R, I>>>,
     outside: Option<Rc<OnOutside<I>>>,
     style: StyleRefinement,
@@ -94,8 +96,8 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Region<R, I
 
     /// The handle scrolling this region's content. Holding an item near the
     /// region's visible edges scrolls it.
-    pub fn track_scroll(mut self, handle: &ScrollHandle) -> Self {
-        self.scroll = Some(handle.clone());
+    pub fn track_scroll(mut self, handle: impl Into<Scroller>) -> Self {
+        self.scroll = Some(handle.into());
         self
     }
 
@@ -219,6 +221,7 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
         cx: &mut App,
     ) {
         let visible = bounds.intersect(&window.content_mask().bounds);
+        self.domain.0.borrow_mut().drift(cx);
         let previous = self.domain.0.borrow_mut().enter(
             self.id.clone(),
             self.axis,
@@ -229,7 +232,6 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
         self.child.prepaint(window, cx);
         let mut state = self.domain.0.borrow_mut();
         state.leave(previous);
-        state.drift(cx);
     }
     fn paint(
         &mut self,

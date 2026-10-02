@@ -1,12 +1,11 @@
 use std::{cell::Cell, rc::Rc, time::Duration};
 
-use gpui::{
-    App, Axis, Bounds, FocusHandle, Pixels, Point, ScrollHandle, Size, Window, point, px, size,
-};
+use gpui::{App, Axis, Bounds, FocusHandle, Pixels, Point, Size, Window, point, px, size};
 use motion::{Painter, TAB_SLIDE};
 use web_time::Instant;
 
 use super::{Drop, Feedback, Ghost, Outside};
+use crate::scroll::Scroller;
 
 /// Shared through the payload with every target of the drag.
 #[derive(Default)]
@@ -39,7 +38,7 @@ pub(super) struct Config<R, I> {
     pub carries: Option<Box<Carries<I>>>,
     pub feedback: Feedback,
     pub axis_locked: bool,
-    pub scroll: Option<ScrollHandle>,
+    pub scroll: Option<Scroller>,
     pub dropped: Option<Rc<OnDrop<R, I>>>,
     pub outside: Option<Rc<OnOutside<I>>>,
     pub focus: FocusHandle,
@@ -81,6 +80,9 @@ pub(super) struct Frame<R, I> {
     pub id: R,
     pub axis: Axis,
     pub origin: Point<Pixels>,
+    /// The region's scroll offset as it entered the frame. Read once there:
+    /// a list holds its state for the whole of its items' prepaint.
+    pub scrolled: Point<Pixels>,
     pub visible: Bounds<Pixels>,
     pub handles: Vec<Mark<I>>,
     pub config: Rc<Config<R, I>>,
@@ -99,13 +101,7 @@ impl<R, I: PartialEq> Frame<R, I> {
     }
 
     fn reference(&self) -> Point<Pixels> {
-        self.origin
-            + self
-                .config
-                .scroll
-                .as_ref()
-                .map(|scroll| scroll.offset())
-                .unwrap_or_default()
+        self.origin + self.scrolled
     }
 }
 
@@ -180,6 +176,9 @@ pub(super) struct State<R, I> {
     prepainted: bool,
     slots: Vec<Slot<I>>,
     drift_since: Option<Instant>,
+    /// Whether this frame has drifted yet: once, before the first region lays
+    /// out, so every region in the frame reads the same offsets.
+    drifted: bool,
 }
 
 pub(super) fn along(axis: Axis, point: Point<Pixels>) -> Pixels {
@@ -224,6 +223,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             prepainted: false,
             slots: Vec::new(),
             drift_since: None,
+            drifted: false,
         }
     }
 
@@ -234,6 +234,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             return;
         }
         self.prepainted = false;
+        self.drifted = false;
         self.frames = std::mem::take(&mut self.building);
         self.slots.retain(|slot| slot.seen);
         for slot in &mut self.slots {
@@ -256,6 +257,11 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             id,
             axis,
             origin: bounds.origin,
+            scrolled: config
+                .scroll
+                .as_ref()
+                .map(|scroll| scroll.offset())
+                .unwrap_or_default(),
             visible,
             handles: Vec::new(),
             config,
@@ -671,55 +677,61 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         ))
     }
 
-    /// Scroll the landing region while the pointer rests near its edges.
+    /// Scroll every region under the pointer while it rests near that
+    /// region's visible edges, whether or not the region accepts the item.
     pub fn drift(&mut self, cx: &mut App) {
-        let Some(live) = self.live.as_ref() else {
-            self.drift_since = None;
+        if std::mem::replace(&mut self.drifted, true) {
             return;
-        };
-        let Some(frame) = live
-            .landing
-            .as_ref()
-            .and_then(|landing| self.frames.iter().find(|frame| frame.id == landing.region))
-        else {
-            self.drift_since = None;
-            return;
-        };
-        let Some(scroll) = frame.config.scroll.clone() else {
+        }
+        let Some(pointer) = self.live.as_ref().map(|live| live.pointer) else {
             self.drift_since = None;
             return;
         };
         let now = cx.background_executor().now();
         let dt = self
             .drift_since
-            .replace(now)
             .map(|since| now.saturating_duration_since(since).as_secs_f32().min(0.05))
             .unwrap_or(0.);
-        let axis = frame.axis;
-        let start = along(axis, frame.visible.origin);
-        let end = start + length(axis, frame.visible.size);
-        let edge = px(24.).min((end - start) / 4.);
-        let at = along(axis, live.pointer);
-        let speed = if at < start + edge {
-            ((start + edge - at) / edge) * 600.
-        } else if at > end - edge {
-            -((at - end + edge) / edge) * 600.
-        } else {
-            0.
-        };
-        let old = scroll.offset();
-        let max = along(axis, scroll.max_offset());
-        let value = (along(axis, old) + px(speed * dt)).clamp(-max, px(0.));
-        let can_move =
-            (speed > 0. && along(axis, old) < px(0.)) || (speed < 0. && along(axis, old) > -max);
-        if can_move {
+        let mut drifting = false;
+        for frame in &self.frames {
+            let Some(scroll) = frame.config.scroll.as_ref() else {
+                continue;
+            };
+            if !frame.visible.contains(&pointer) {
+                continue;
+            }
+            let axis = frame.axis;
+            let start = along(axis, frame.visible.origin);
+            let end = start + length(axis, frame.visible.size);
+            let edge = px(24.).min((end - start) / 4.);
+            let at = along(axis, pointer);
+            let speed = if at < start + edge {
+                ((start + edge - at) / edge) * 600.
+            } else if at > end - edge {
+                -((at - end + edge) / edge) * 600.
+            } else {
+                0.
+            };
+            let old = scroll.offset();
+            let max = along(axis, scroll.max_offset());
+            let can_move = (speed > 0. && along(axis, old) < px(0.))
+                || (speed < 0. && along(axis, old) > -max);
+            if !can_move {
+                continue;
+            }
+            drifting = true;
+            let value = (along(axis, old) + px(speed * dt)).clamp(-max, px(0.));
             scroll.set_offset(match axis {
                 Axis::Horizontal => point(value, old.y),
                 Axis::Vertical => point(old.x, value),
             });
-            self.painter.lease(120., Duration::from_millis(100), cx);
-        } else {
-            self.drift_since = None;
+        }
+        match drifting {
+            true => {
+                self.drift_since = Some(now);
+                self.painter.lease(120., Duration::from_millis(100), cx);
+            }
+            false => self.drift_since = None,
         }
     }
 }

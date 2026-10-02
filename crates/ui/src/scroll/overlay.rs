@@ -1,6 +1,6 @@
 //! Stateful overlays for either scroll axis.
 
-use super::{self as scroll, ScrollbarState, TransientState};
+use super::{self as scroll, ScrollbarState, Scroller, TransientState};
 use crate::AppExt as _;
 use gpui::{
     self, Animation, AnimationExt, AnyElement, App, Axis, Div, DragMoveEvent, Empty, Global,
@@ -34,7 +34,7 @@ pub(crate) fn set_visibility(value: Visibility, cx: &mut App) {
 #[derive(IntoElement)]
 pub struct Overlay {
     id: SharedString,
-    handle: ScrollHandle,
+    handle: Scroller,
     axis: Axis,
     visibility: Option<Visibility>,
     place: scroll::Place,
@@ -42,10 +42,10 @@ pub struct Overlay {
 
 impl Overlay {
     /// Mount beside the scroller in a relative wrapper of the same size.
-    pub fn new(id: impl Into<SharedString>, handle: &ScrollHandle, axis: Axis) -> Self {
+    pub fn new(id: impl Into<SharedString>, handle: impl Into<Scroller>, axis: Axis) -> Self {
         Self {
             id: id.into(),
-            handle: handle.clone(),
+            handle: handle.into(),
             axis,
             visibility: None,
             place: scroll::Place::default(),
@@ -213,7 +213,7 @@ struct HorizontalDrag(SharedString);
 
 fn horizontal(
     id: SharedString,
-    handle: &ScrollHandle,
+    handle: &Scroller,
     state: Rc<Cell<Horizontal>>,
     hover: Rc<Cell<scroll::Hover>>,
     always: bool,
