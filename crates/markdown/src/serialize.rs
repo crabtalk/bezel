@@ -686,9 +686,36 @@ fn escape_span(out: &mut String, s: &str, marks: &Marks) {
     }
 }
 
-/// A mark nothing escapes, nothing renders and no document carries: the
-/// private-use codepoint both directions of the caret mapping ride on.
-pub(crate) const SENTINEL: char = '\u{E000}';
+/// The private-use codepoints the position mapping rides on, one per
+/// position: plane 15, clear of the ones [`crate::parse`] lifts marks to.
+const SENTINELS: std::ops::RangeInclusive<u32> = 0xF0000..=0xFFFFD;
+
+/// The sentinel standing for position `ix`, or `None` past the last one.
+pub(crate) fn sentinel(ix: usize) -> Option<char> {
+    let code = SENTINELS.start().checked_add(u32::try_from(ix).ok()?)?;
+    SENTINELS
+        .contains(&code)
+        .then(|| char::from_u32(code))
+        .flatten()
+}
+
+/// Which position a sentinel stands for.
+pub(crate) fn sentinel_index(c: char) -> Option<usize> {
+    SENTINELS
+        .contains(&(c as u32))
+        .then(|| (c as u32 - SENTINELS.start()) as usize)
+}
+
+/// Whether any text in `doc` already holds a sentinel.
+fn carries_sentinel(doc: &Doc) -> bool {
+    doc.blocks.iter().any(|block| {
+        block.parts().into_iter().any(|part| {
+            block
+                .text_at(part)
+                .is_some_and(|text| text.text.chars().any(|c| sentinel_index(c).is_some()))
+        })
+    })
+}
 
 /// The document as markdown, and where `at` landed in it.
 ///
@@ -697,31 +724,58 @@ pub(crate) const SENTINEL: char = '\u{E000}';
 /// sentinel came out is the answer. The string comes back without it.
 ///
 /// The offset is the end of the output for a caret this cannot place — a
-/// document already carrying the sentinel, or a part that no longer exists.
+/// document already carrying a sentinel, or a part that no longer exists.
 pub fn serialize_at(doc: &Doc, at: Cursor, marks: &Marks) -> (String, usize) {
+    let (source, offsets) = serialize_at_many(doc, &[at], marks);
+    let end = source.len();
+    (source, offsets[0].unwrap_or(end))
+}
+
+/// [`serialize_at`] for many positions in one pass: where each of `at`
+/// landed, in the same order, `None` for one this cannot place.
+pub fn serialize_at_many(doc: &Doc, at: &[Cursor], marks: &Marks) -> (String, Vec<Option<usize>>) {
     let mut doc = doc.clone();
-    let placed = doc
-        .blocks
-        .get_mut(at.block)
-        .and_then(|block| block.text_at_mut(at.part))
-        .filter(|text| !text.text.contains(SENTINEL))
-        .map(|text| {
-            text.insert(
-                at.offset.min(text.text.len()),
-                SENTINEL.encode_utf8(&mut [0; 4]),
-            )
-        })
-        .is_some();
-    // Normalized *after* the sentinel goes in, so the string this returns is
-    // the one the offset indexes into — a trailing space is only trailing
+    let mut placed = vec![false; at.len()];
+    if !carries_sentinel(&doc) {
+        // Back to front, so each insert leaves the offsets still to come where
+        // they were.
+        let mut order: Vec<usize> = (0..at.len()).collect();
+        order.sort_by_key(|&ix| std::cmp::Reverse(at[ix]));
+        for ix in order {
+            let Some(mark) = sentinel(ix) else { continue };
+            let Some(text) = doc
+                .blocks
+                .get_mut(at[ix].block)
+                .and_then(|block| block.text_at_mut(at[ix].part))
+            else {
+                continue;
+            };
+            let offset = at[ix].offset.min(text.text.len());
+            if text.text.is_char_boundary(offset) {
+                text.insert(offset, mark.encode_utf8(&mut [0; 4]));
+                placed[ix] = true;
+            }
+        }
+    }
+    // Normalized *after* the sentinels go in, so the string this returns is
+    // the one the offsets index into — a trailing space is only trailing
     // while nothing sits after it.
     doc.normalize_with(marks);
-    let mut source = serialize_with(&doc, marks);
-    let Some(offset) = placed.then(|| source.find(SENTINEL)).flatten() else {
-        source = source.replace(SENTINEL, "");
-        let end = source.len();
-        return (source, end);
-    };
-    source.remove(offset);
-    (source, offset)
+    let written = serialize_with(&doc, marks);
+    if !placed.contains(&true) {
+        return (written, vec![None; at.len()]);
+    }
+    let mut source = String::with_capacity(written.len());
+    let mut offsets = vec![None; at.len()];
+    for c in written.chars() {
+        match sentinel_index(c) {
+            Some(ix) => {
+                if placed.get(ix) == Some(&true) {
+                    offsets[ix] = Some(source.len());
+                }
+            }
+            None => source.push(c),
+        }
+    }
+    (source, offsets)
 }

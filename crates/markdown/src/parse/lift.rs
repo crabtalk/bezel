@@ -10,46 +10,104 @@ use super::*;
 ///
 /// The caret is the start of the document where the sentinel would have
 /// changed what the source *means* — between a `#` and its space, inside a
-/// fence's delimiter — because a caret in the right place is worth less than a
-/// document that is still the one you were editing.
+/// fence's delimiter.
 pub fn parse_at(source: &str, offset: usize, marks: &Marks) -> (Doc, Cursor) {
-    let plain = parse_with(source, marks);
-    let start = || (plain.clone(), Cursor::default().clamp(&plain));
-    if source.contains(crate::serialize::SENTINEL) {
-        return start();
-    }
-    let mut marked = String::with_capacity(source.len() + 3);
-    let offset = offset.min(source.len());
-    if !source.is_char_boundary(offset) {
-        return start();
-    }
-    marked.push_str(&source[..offset]);
-    marked.push(crate::serialize::SENTINEL);
-    marked.push_str(&source[offset..]);
-
-    let mut doc = parse_with(&marked, marks);
-    let Some(at) = find(&doc) else { return start() };
-    let Some(text) = doc
-        .blocks
-        .get_mut(at.block)
-        .and_then(|block| block.text_at_mut(at.part))
-    else {
-        return start();
-    };
-    text.remove(at.offset..at.offset + crate::serialize::SENTINEL.len_utf8());
-    // The sentinel is a character like any other to the parser, so a document
-    // it changed the shape of is not the one the caller handed in.
-    if doc != plain { start() } else { (doc, at) }
+    let (doc, at) = parse_at_many(source, &[offset], marks);
+    let at = at[0].unwrap_or_else(|| Cursor::default().clamp(&doc));
+    (doc, at)
 }
 
-/// Where the sentinel sits, in document order.
-pub(super) fn find(doc: &Doc) -> Option<Cursor> {
-    doc.blocks.iter().enumerate().find_map(|(ix, block)| {
-        block.parts().into_iter().find_map(|part| {
-            let at = block.text_at(part)?.text.find(crate::serialize::SENTINEL)?;
-            Some(Cursor::new(ix, part, at))
-        })
-    })
+/// [`parse_at`] for many offsets: where each landed, in the same order, `None`
+/// for one whose sentinel would change what the source means or that is not
+/// on a character boundary.
+pub fn parse_at_many(source: &str, offsets: &[usize], marks: &Marks) -> (Doc, Vec<Option<Cursor>>) {
+    let plain = parse_with(source, marks);
+    let mut at = vec![None; offsets.len()];
+    if !source
+        .chars()
+        .any(|c| crate::serialize::sentinel_index(c).is_some())
+    {
+        let offset = |ix: usize| offsets[ix].min(source.len());
+        let mut which: Vec<usize> = (0..offsets.len())
+            .filter(|&ix| {
+                source.is_char_boundary(offset(ix)) && crate::serialize::sentinel(ix).is_some()
+            })
+            .collect();
+        which.sort_by_key(|&ix| offset(ix));
+        place(source, &offset, &which, &plain, marks, &mut at);
+    }
+    (plain, at)
+}
+
+/// Place each of `which` with one parse, halving the set wherever its
+/// sentinels change the document, so one offset in the markup costs only
+/// itself.
+fn place(
+    source: &str,
+    offset: &impl Fn(usize) -> usize,
+    which: &[usize],
+    plain: &Doc,
+    marks: &Marks,
+    out: &mut [Option<Cursor>],
+) {
+    if which.is_empty() {
+        return;
+    }
+    if let Some(found) = lifted(source, offset, which, plain, marks) {
+        for (ix, at) in found {
+            out[ix] = Some(at);
+        }
+    } else if which.len() > 1 {
+        let (left, right) = which.split_at(which.len() / 2);
+        place(source, offset, left, plain, marks, out);
+        place(source, offset, right, plain, marks, out);
+    }
+}
+
+/// Parse with a sentinel at each of `which`, sorted by offset: where each
+/// landed, or `None` when the sentinels made a different document.
+fn lifted(
+    source: &str,
+    offset: &impl Fn(usize) -> usize,
+    which: &[usize],
+    plain: &Doc,
+    marks: &Marks,
+) -> Option<Vec<(usize, Cursor)>> {
+    let mut marked = String::with_capacity(source.len() + 4 * which.len());
+    let mut from = 0;
+    for &ix in which {
+        marked.push_str(&source[from..offset(ix)]);
+        marked.push(crate::serialize::sentinel(ix)?);
+        from = offset(ix);
+    }
+    marked.push_str(&source[from..]);
+
+    let mut doc = parse_with(&marked, marks);
+    let mut found = Vec::with_capacity(which.len());
+    for (block_ix, block) in doc.blocks.iter_mut().enumerate() {
+        for part in block.parts() {
+            let Some(text) = block.text_at_mut(part) else {
+                continue;
+            };
+            let hits: Vec<(usize, char)> = text
+                .text
+                .char_indices()
+                .filter(|(_, c)| crate::serialize::sentinel_index(*c).is_some())
+                .collect();
+            let mut removed = 0;
+            for &(at, c) in &hits {
+                let ix = crate::serialize::sentinel_index(c)?;
+                found.push((ix, Cursor::new(block_ix, part, at - removed)));
+                removed += c.len_utf8();
+            }
+            for &(at, c) in hits.iter().rev() {
+                text.remove(at..at + c.len_utf8());
+            }
+        }
+    }
+    // A sentinel is a character like any other to the parser, so a document
+    // one changed the shape of is not the one the caller handed in.
+    (found.len() == which.len() && doc == *plain).then_some(found)
 }
 
 /// A registered mark, lifted out of the source and into two private-use

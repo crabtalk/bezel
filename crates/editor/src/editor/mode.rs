@@ -55,9 +55,8 @@ impl Editor {
     /// One undo step, and one the history knows the mode of: stepping back
     /// over a switch puts the document back in the form it was edited in.
     ///
-    /// A comment anchor does not follow an edit made to the source — there are
-    /// no blocks there to anchor to — and is clamped back onto the document on
-    /// the way out.
+    /// Anchors cross with it, into the coordinates of the form switched to. One
+    /// with an end that cannot be placed there comes out detached.
     pub fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
         if mode == self.mode {
             return;
@@ -84,20 +83,32 @@ impl Editor {
     pub(super) fn switch(&mut self, mode: Mode) {
         match mode {
             Mode::Source => {
-                let (source, offset) =
-                    markdown::serialize_at(&self.doc, self.cursor(), &self.marks);
+                let ends = self.anchor_ends();
+                let mut at = vec![self.cursor()];
+                at.extend(ends.iter().flat_map(|(start, end)| [*start, *end]));
+                let (source, offsets) = markdown::serialize_at_many(&self.doc, &at, &self.marks);
                 self.doc = source_doc(&source);
-                self.selection = Selection::at(Cursor::new(0, Part::Code, offset));
+                let place =
+                    |ix: usize| offsets[ix].map(|offset| Cursor::new(0, Part::Code, offset));
+                let caret = place(0).unwrap_or(Cursor::new(0, Part::Code, source.len()));
+                self.selection = Selection::at(caret);
+                self.place_anchors(|ix| place(ix + 1));
             }
             Mode::Blocks => {
-                let (doc, at) =
-                    markdown::parse_at(self.source_text(), self.cursor().offset, &self.marks);
+                let ends = self.anchor_ends();
+                let mut offsets = vec![self.cursor().offset];
+                offsets.extend(
+                    ends.iter()
+                        .flat_map(|(start, end)| [start.offset, end.offset]),
+                );
+                let (doc, at) = markdown::parse_at_many(self.source_text(), &offsets, &self.marks);
                 self.doc = doc;
                 ensure_block(&mut self.doc);
-                self.selection = Selection::at(at.clamp(&self.doc));
-                for anchor in &mut self.anchors {
-                    anchor.range = anchor.range.clamp(&self.doc);
-                }
+                let place = |ix: usize| at[ix].map(|at: Cursor| at.clamp(&self.doc));
+                let caret = place(0).unwrap_or_else(|| Cursor::default().clamp(&self.doc));
+                self.selection = Selection::at(caret);
+                let ends: Vec<_> = (1..at.len()).map(place).collect();
+                self.place_anchors(|ix| ends[ix]);
             }
         }
         self.mode = mode;
@@ -157,6 +168,29 @@ impl Editor {
         let offset = self.selection.head.offset.min(source.len());
         self.doc = source_doc(&source);
         self.selection = Selection::at(Cursor::new(0, Part::Code, offset));
+        for anchor in &mut self.anchors {
+            anchor.range = anchor.range.clamp(&self.doc);
+        }
+    }
+
+    /// Each anchor's ends, in document order.
+    fn anchor_ends(&self) -> Vec<(Cursor, Cursor)> {
+        self.anchors
+            .iter()
+            .map(|anchor| anchor.range.ordered())
+            .collect()
+    }
+
+    /// Put each anchor at the ends `place` gives for it, indexed as
+    /// [`Self::anchor_ends`] flattened: start, end, start, end. An anchor with
+    /// an end `place` cannot give collapses onto the other, detached.
+    fn place_anchors(&mut self, place: impl Fn(usize) -> Option<Cursor>) {
+        for (ix, anchor) in self.anchors.iter_mut().enumerate() {
+            anchor.range = match (place(2 * ix), place(2 * ix + 1)) {
+                (Some(start), Some(end)) => Selection::new(start, end),
+                (surviving, other) => Selection::at(surviving.or(other).unwrap_or_default()),
+            };
+        }
     }
 
     /// Shut everything floating. A switch of mode is a new document as far as

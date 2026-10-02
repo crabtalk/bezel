@@ -393,6 +393,7 @@ impl Render for Editor {
                                 selection,
                                 caret_on: self.caret_on,
                                 layouts: Some(&self.layouts),
+                                annotations: &self.annotations(),
                                 keep: if self.reveal {
                                     std::slice::from_ref(&reveal_line)
                                 } else {
