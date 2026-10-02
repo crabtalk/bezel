@@ -662,7 +662,7 @@ impl Gallery {
                             ))
                             .child(scroll::scrollbar(
                                 "virtual-bar",
-                                &list::scroll_handle(&self.data.rows_scroll),
+                                list::scroll_handle(&self.data.rows_scroll),
                                 &self.data.rows_bar,
                             )),
                     )

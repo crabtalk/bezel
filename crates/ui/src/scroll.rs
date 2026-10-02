@@ -44,12 +44,14 @@ mod claim;
 mod drift;
 mod follow;
 pub(crate) mod overlay;
+mod scroller;
 
 pub use bar::*;
 pub use claim::*;
 pub use drift::*;
 pub use follow::*;
 pub use overlay::{Overlay, Viewport, Visibility};
+pub use scroller::Scroller;
 
 use std::{cell::Cell, ops::Range, rc::Rc, time::Duration};
 
