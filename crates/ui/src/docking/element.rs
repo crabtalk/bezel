@@ -149,8 +149,9 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
             .as_ref()
             .filter(|carried| carried.detached())
             .map(|carried| {
-                carried.gesture.hosted.set(true);
-                (carried.item.clone(), carried.ghost_bounds(), 0.)
+                let rect = carried.ghost_bounds();
+                carried.gesture.host(rect.origin);
+                (carried.item.clone(), rect, 0.)
             });
         let render_ghost = state.ghost.clone();
         if let Some((_, _, progress)) = &ghost {

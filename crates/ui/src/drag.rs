@@ -51,9 +51,9 @@ impl<I> Carry<I> {
     }
 
     /// Hides the in-place item while unclaimed. For a target that draws its
-    /// own ghost; called on every frame the target shows it.
-    pub fn host(&self) {
-        self.gesture.hosted.set(true);
+    /// own ghost at `origin`; called on every frame the target shows it.
+    pub fn host(&self, origin: Point<Pixels>) {
+        self.gesture.host(origin);
     }
 }
 
@@ -223,12 +223,25 @@ impl Render for Ghosted {
     fn render(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let hosted = self.gesture.hosted.get() && !self.gesture.claimed.get();
         match self.render.as_ref().filter(|_| !hosted) {
-            Some(render) => gpui::div()
-                .relative()
-                .left(self.shift.x)
-                .top(self.shift.y)
-                .child(render(window, cx))
-                .into_any_element(),
+            Some(render) => {
+                let gesture = self.gesture.clone();
+                gpui::div()
+                    .relative()
+                    .ml(self.shift.x)
+                    .mt(self.shift.y)
+                    .child(render(window, cx))
+                    .child(
+                        gpui::canvas(
+                            move |bounds, _, _| gesture.shown.set(Some(bounds.origin)),
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full(),
+                    )
+                    .into_any_element()
+            }
             None => gpui::Empty.into_any_element(),
         }
     }

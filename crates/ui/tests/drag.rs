@@ -454,3 +454,181 @@ fn a_heading_carries_its_rows_and_an_entry_stays_in_its_group(cx: &mut TestAppCo
         assert_eq!(drops[1].before, Some("G2"));
     });
 }
+
+/// A column that applies its drops. A row named `G…` carries the rows after it
+/// up to the next `G…`.
+struct Stack {
+    domain: Domain<(), &'static str>,
+    rows: Vec<&'static str>,
+    skip: Option<&'static str>,
+}
+
+fn members(rows: &[&'static str], item: &str) -> Vec<&'static str> {
+    match item.starts_with('G') {
+        true => rows
+            .iter()
+            .skip_while(|at| **at != item)
+            .skip(1)
+            .take_while(|at| !at.starts_with('G'))
+            .copied()
+            .collect(),
+        false => Vec::new(),
+    }
+}
+
+impl Render for Stack {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let skip = self.skip;
+        let content = div().flex().flex_col().children(
+            self.rows
+                .iter()
+                .filter(|row| Some(**row) != skip)
+                .map(|&row| {
+                    self.domain.handle(
+                        row,
+                        div()
+                            .id(row)
+                            .debug_selector(move || row.into())
+                            .w_full()
+                            .h(px(30.)),
+                    )
+                }),
+        );
+        let rows = self.rows.clone();
+        self.domain
+            .region("stack", (), Axis::Vertical, content)
+            .w(px(120.))
+            .h(px(300.))
+            .carries(move |item| members(&rows, item))
+            .on_drop(
+                cx.listener(|view, event: &drag::Drop<(), &'static str>, _, cx| {
+                    let moved: Vec<_> = std::iter::once(event.item)
+                        .chain(members(&view.rows, event.item))
+                        .collect();
+                    view.rows.retain(|row| !moved.contains(row));
+                    let at = match (event.after, event.before) {
+                        (Some(after), _) => {
+                            view.rows.iter().position(|row| *row == after).unwrap() + 1
+                        }
+                        (None, Some(before)) => {
+                            view.rows.iter().position(|row| *row == before).unwrap()
+                        }
+                        (None, None) => 0,
+                    };
+                    view.rows.splice(at..at, moved);
+                    cx.notify();
+                }),
+            )
+    }
+}
+
+fn stack(
+    rows: Vec<&'static str>,
+    ghost: bool,
+    cx: &mut TestAppContext,
+) -> (Entity<Stack>, VisualTestContext) {
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let window = cx.add_window(|_, cx| {
+        let painter = motion::Painter::of(cx);
+        Stack {
+            domain: match ghost {
+                true => Domain::with_ghost(painter, |_, _, _| {
+                    div()
+                        .debug_selector(|| "ghost".into())
+                        .w(px(120.))
+                        .h(px(30.))
+                        .into_any_element()
+                }),
+                false => Domain::new(painter),
+            },
+            rows,
+            skip: None,
+        }
+    });
+    let view = window.root(cx).unwrap();
+    let cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(size(px(300.), px(400.)));
+    cx.run_until_parked();
+    (view, cx)
+}
+
+fn top(id: &'static str, cx: &mut VisualTestContext) -> f32 {
+    cx.debug_bounds(id).unwrap().top().into()
+}
+
+#[gpui::test]
+fn a_floating_item_settles_from_where_it_was_released(cx: &mut TestAppContext) {
+    let (view, mut cx) = stack(vec!["a", "b", "c"], false, cx);
+    down(10., 10., &mut cx);
+    travel(10., 70., &mut cx);
+    travel(10., 75., &mut cx);
+    settle(&mut cx);
+    assert_eq!(top("a", &mut cx), 65.);
+    up(10., 75., &mut cx);
+    cx.update(|_, cx| assert_eq!(view.read(cx).rows, ["b", "c", "a"]));
+    assert_eq!(top("a", &mut cx), 65.);
+    assert_eq!((top("b", &mut cx), top("c", &mut cx)), (0., 30.));
+    settle(&mut cx);
+    assert_eq!(top("a", &mut cx), 60.);
+}
+
+#[gpui::test]
+fn a_ghosted_item_settles_from_its_ghost(cx: &mut TestAppContext) {
+    let (view, mut cx) = stack(vec!["a", "b", "c"], true, cx);
+    down(10., 10., &mut cx);
+    travel(10., 70., &mut cx);
+    travel(10., 75., &mut cx);
+    settle(&mut cx);
+    let ghost = top("ghost", &mut cx);
+    assert_eq!(ghost, 65.);
+    up(10., 75., &mut cx);
+    cx.update(|_, cx| assert_eq!(view.read(cx).rows, ["b", "c", "a"]));
+    assert_eq!(top("a", &mut cx), ghost);
+    assert_eq!((top("b", &mut cx), top("c", &mut cx)), (0., 30.));
+    settle(&mut cx);
+    assert_eq!(top("a", &mut cx), 60.);
+}
+
+#[gpui::test]
+fn a_carried_member_appears_in_place(cx: &mut TestAppContext) {
+    let (view, mut cx) = stack(vec!["G1", "a", "G2", "b"], false, cx);
+    down(10., 10., &mut cx);
+    travel(10., 100., &mut cx);
+    travel(10., 110., &mut cx);
+    settle(&mut cx);
+    up(10., 110., &mut cx);
+    cx.update(|_, cx| assert_eq!(view.read(cx).rows, ["G2", "b", "G1", "a"]));
+    assert_eq!(top("G1", &mut cx), 100.);
+    assert_eq!(top("a", &mut cx), 90.);
+}
+
+#[gpui::test]
+fn an_item_dropped_where_it_started_settles_home(cx: &mut TestAppContext) {
+    let (view, mut cx) = stack(vec!["a", "b", "c"], false, cx);
+    down(10., 10., &mut cx);
+    travel(10., 50., &mut cx);
+    travel(10., 14., &mut cx);
+    settle(&mut cx);
+    up(10., 14., &mut cx);
+    cx.update(|_, cx| assert_eq!(view.read(cx).rows, ["a", "b", "c"]));
+    assert_eq!(top("a", &mut cx), 4.);
+    settle(&mut cx);
+    assert_eq!(top("a", &mut cx), 0.);
+}
+
+#[gpui::test]
+fn an_item_not_painted_last_frame_does_not_slide(cx: &mut TestAppContext) {
+    let (view, mut cx) = stack(vec!["a", "b", "c"], false, cx);
+    view.update(&mut cx, |view, cx| {
+        view.skip = Some("b");
+        cx.notify();
+    });
+    cx.run_until_parked();
+    view.update(&mut cx, |view, cx| {
+        view.skip = None;
+        view.rows = vec!["b", "a", "c"];
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert_eq!(top("b", &mut cx), 0.);
+}
