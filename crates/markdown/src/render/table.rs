@@ -81,7 +81,7 @@ pub(super) fn table(
         .iter()
         .map(|natural| natural.min(TABLE_MIN_COLUMN_WIDTH))
         .collect();
-    let hairline = theme.hairline(0.10);
+    let hairline = theme.border;
 
     let mut inner = div()
         .flex()

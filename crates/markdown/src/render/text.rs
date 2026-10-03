@@ -25,6 +25,8 @@ pub struct Mention {
     /// The favicon slot: one em space.
     pub icon: Range<usize>,
     pub favicon: Option<SharedString>,
+    /// The app's mark, painted in the slot instead of a favicon.
+    pub glyph: Option<ui::icons::Icon>,
     /// What stands in the slot while no favicon has loaded.
     pub initial: SharedString,
 }
@@ -232,6 +234,7 @@ pub fn flatten_with(
                 range: from..to,
                 icon: from..from + ICON_SLOT.len(),
                 favicon: described.icon,
+                glyph: described.glyph,
                 initial: host
                     .chars()
                     .next()
@@ -338,7 +341,11 @@ pub(super) fn painted_text(
                 .text_color(theme.text_faint)
                 .child(hint.clone())
         });
-    let (shape, hollow) = (overlay.caret_shape, overlay.caret_hollow());
+    let (shape, height, hollow) = (
+        overlay.caret_shape,
+        overlay.caret_height,
+        overlay.caret_hollow(),
+    );
     let glyph = caret
         .filter(|_| shape.cuts_out(hollow))
         .and_then(|offset| glyph_at(&flat.text, offset));
@@ -357,6 +364,7 @@ pub(super) fn painted_text(
             let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
             let hovered: Vec<(Range<usize>, String)> = mentions
                 .iter()
+                .filter(|mention| mention.glyph.is_none())
                 .map(|mention| (mention.range.clone(), mention.url.clone()))
                 .collect();
             let text = InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
@@ -447,6 +455,7 @@ pub(super) fn painted_text(
                     glyph.as_ref(),
                     CaretPaint {
                         shape,
+                        height,
                         hollow,
                         color: caret_color,
                         size,
@@ -477,6 +486,20 @@ pub(super) fn painted_text(
                     gpui::size(side, side),
                 );
                 let radius = gpui::Corners::all(side / 4.0);
+                if let Some(data) = mention.glyph.as_ref().and_then(|glyph| glyph.data()) {
+                    let path = SharedString::from(format!("markdown-glyph-{:p}", data.as_ptr()));
+                    window
+                        .paint_svg(
+                            icon,
+                            path,
+                            Some(data),
+                            gpui::TransformationMatrix::unit(),
+                            icon_color,
+                            cx,
+                        )
+                        .ok();
+                    continue;
+                }
                 if let Some(favicon) = favicon {
                     window
                         .paint_image(icon, icon, radius, favicon, 0, false)
@@ -547,6 +570,7 @@ pub(super) fn glyph_at(text: &str, offset: usize) -> Option<Range<usize>> {
 /// How a caret is drawn, apart from where.
 pub(super) struct CaretPaint {
     pub shape: ui::input::CaretShape,
+    pub height: ui::input::CaretHeight,
     pub hollow: bool,
     pub color: Hsla,
     /// The text's font size, in pixels.
@@ -584,6 +608,7 @@ pub(super) fn paint_caret(
     window.paint_quad(paint.shape.quad(
         caret_quad(head, paint.size, line_height),
         line_height,
+        paint.height,
         width,
         paint.color,
         paint.hollow,

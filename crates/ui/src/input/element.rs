@@ -431,6 +431,7 @@ impl Element for TextFieldElement {
             .collect();
         let scrolled = field.scroll;
         let caret_shape = cx.caret_shape();
+        let caret_height = cx.caret_height();
         let follow_caret = field.follow_caret || caret_shape != field.last_caret_shape;
         let style = window.text_style();
 
@@ -527,6 +528,7 @@ impl Element for TextFieldElement {
                     gpui::size(CARET_WIDTH, font_size),
                 ),
                 line_height,
+                caret_height,
                 advance.unwrap_or_default(),
                 theme.caret,
                 hollow,
@@ -596,6 +598,7 @@ impl Element for TextFieldElement {
                         gpui::size(CARET_WIDTH, font_size),
                     ),
                     line_height,
+                    caret_height,
                     advance.unwrap_or_default(),
                     theme.caret,
                     hollow,

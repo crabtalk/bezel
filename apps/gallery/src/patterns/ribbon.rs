@@ -338,7 +338,7 @@ impl Render for RibbonDemo {
                     .gap(px(12.0))
                     .pb(px(12.0))
                     .border_b_1()
-                    .border_color(theme.hairline(0.10))
+                    .border_color(theme.border)
                     .child(self.turns(&formatting, &theme, cx))
                     .child(self.marks(&formatting, &theme, cx))
                     .child(fence)

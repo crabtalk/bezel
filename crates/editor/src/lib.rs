@@ -17,6 +17,7 @@ mod editor;
 mod history;
 mod layout;
 mod link;
+mod mention;
 mod paste;
 mod slash;
 mod text_size;
@@ -31,5 +32,7 @@ pub use editor::{
 };
 pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};
 pub use layout::Layout;
+pub use mention::{Mention, MentionSource};
 pub use paste::{PasteContent, PasteContext, PasteHandler};
+pub use slash::{SlashAction, SlashAt, SlashItem, SlashRow, SlashRun, defaults as slash_defaults};
 pub use text_size::TextSize;

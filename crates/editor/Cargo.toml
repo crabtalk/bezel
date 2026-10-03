@@ -24,6 +24,8 @@ markdown.workspace = true
 theme.workspace = true
 motion.workspace = true
 ui.workspace = true
+# `Lightbulb`, the Tip callout's slash glyph.
+icons = { workspace = true, features = ["photography"] }
 gpui.workspace = true
 
 # The editing surface is the half that needs a window, so it is the half a pure

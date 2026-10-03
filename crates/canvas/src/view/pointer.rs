@@ -191,7 +191,7 @@ impl CanvasView {
                         .size(px(self.style.handle))
                         .rounded_full()
                         .border_1()
-                        .border_color(theme.accent)
+                        .border_color(theme.ring)
                         .bg(theme.surface_card)
                         .cursor(CursorStyle::Crosshair)
                         .on_mouse_down(

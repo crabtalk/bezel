@@ -28,6 +28,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         selection,
         caret_on,
         caret_shape: cx.caret_shape(),
+        caret_height: cx.caret_height(),
         // No window reaches here; a source view's rows read their own below.
         window_active: cx.active_window().is_some(),
         layouts,
@@ -39,6 +40,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         image: None,
         image_overlay: None,
         image_overlay_corner: ImageOverlayCorner::BottomRight,
+        fence: None,
         table_controls: false,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
@@ -358,6 +360,7 @@ struct RowPaint {
     /// The grapheme after the caret, over the whole text.
     glyph: Option<Range<usize>>,
     shape: ui::input::CaretShape,
+    height: ui::input::CaretHeight,
     hollow: bool,
     font: SharedString,
     selected: Option<Range<usize>>,
@@ -374,6 +377,7 @@ impl RowPaint {
             caret,
             glyph: caret.and_then(|offset| glyph_at(code, offset)),
             shape: overlay.caret_shape,
+            height: overlay.caret_height,
             hollow: overlay.caret_hollow(),
             font: theme.font_mono.clone(),
             selected: overlay.selected(code.len()),
@@ -423,6 +427,7 @@ impl RowPaint {
                 glyph.as_ref(),
                 CaretPaint {
                     shape: self.shape,
+                    height: self.height,
                     hollow: self.hollow,
                     color: self.caret_color,
                     size: self.code_size,

@@ -159,6 +159,57 @@ impl Editor {
         });
     }
 
+    /// Replace a fenced block's code, as one undo step — what a painted fence
+    /// writes through [`markdown::Fence::rewrite`].
+    pub fn set_code(&mut self, ix: usize, code: String, cx: &mut Context<Self>) {
+        if !self.blocks() {
+            return;
+        }
+        self.edit(EditKind::Structure, cx, |this| {
+            this.doc.set_code(ix, code);
+            this.selection = this.selection.clamp(&this.doc);
+            vec![]
+        });
+    }
+
+    /// Turn the block at `ix` into `kind` and put the caret after it — what a
+    /// [`crate::SlashAction::Run`] row does with a block the caret cannot sit
+    /// in.
+    /// The block is replaced as given, not converted: nothing of what it held
+    /// carries over.
+    pub fn place_block(&mut self, ix: usize, kind: BlockKind, cx: &mut Context<Self>) {
+        if !self.blocks() || ix >= self.doc.blocks.len() {
+            return;
+        }
+        self.edit(EditKind::Structure, cx, |this| {
+            this.doc.blocks[ix].kind = kind;
+            this.selection = this.selection.clamp(&this.doc);
+            vec![]
+        });
+        self.step_past(ix, cx);
+    }
+
+    /// Put the caret at the start of the block after `ix`, making an empty
+    /// paragraph when `ix` ends the document.
+    pub(super) fn step_past(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if self.doc.blocks.len() <= ix + 1 {
+            self.edit(EditKind::Structure, cx, |this| {
+                this.doc
+                    .blocks
+                    .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
+                vec![]
+            });
+        }
+        let at = Cursor::new(ix + 1, Part::Body, 0).clamp(&self.doc);
+        self.select(Selection::at(at), cx);
+    }
+
+    /// Focus back from inside the painted fence at `ix`, the caret after it.
+    pub(super) fn leave_block(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus_handle.focus(window, cx);
+        self.step_past(ix, cx);
+    }
+
     /// Point every picture at `from` to `to`: an image block's URL, or in
     /// source mode each `](from)` and `](<from>)` in the text. One undo step,
     /// and the caret keeps its place in the text around it. Nothing pointing

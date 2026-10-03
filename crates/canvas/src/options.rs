@@ -197,7 +197,7 @@ impl Default for Overlays {
 /// The corners a box and the ring around it are rounded to, in canvas units.
 const RADIUS: f32 = crate::kind::RADIUS;
 
-/// An accent ring, outside the box it marks.
+/// A ring outside the box it marks.
 pub fn ring(mark: &Mark, _: &mut Window, cx: &mut App) -> AnyElement {
     let out = mark.style.ring;
     div()
@@ -207,8 +207,8 @@ pub fn ring(mark: &Mark, _: &mut Window, cx: &mut App) -> AnyElement {
         .right(px(-out))
         .bottom(px(-out))
         .rounded(px(RADIUS * mark.zoom + out))
-        .border_2()
-        .border_color(Theme::of(cx).accent)
+        .border_1()
+        .border_color(Theme::of(cx).ring)
         .into_any_element()
 }
 
@@ -224,13 +224,13 @@ pub fn drop_wash(mark: &Mark, _: &mut Window, cx: &mut App) -> AnyElement {
         .into_any_element()
 }
 
-/// A small accent box, which the view places where the handle sits.
+/// A small box, which the view places where the handle sits.
 pub fn handle(mark: &Mark, _: &mut Window, cx: &mut App) -> AnyElement {
     let theme = Theme::of(cx);
     div()
         .size(px(mark.style.handle))
         .border_1()
-        .border_color(theme.accent)
+        .border_color(theme.ring)
         .bg(theme.surface_card)
         .into_any_element()
 }

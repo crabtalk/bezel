@@ -215,5 +215,27 @@ pub fn bindings() -> Vec<KeyBinding> {
         // library does not get to claim.
     ]);
 
+    // Inside a painted fence every chord above is taken away, so a control the
+    // block paints keeps what it does not bind itself, and escape leaves it.
+    let painted = Some(markdown::PAINTED_CONTEXT);
+    let mut taken: Vec<String> = Vec::new();
+    for binding in &bindings {
+        let chord = binding
+            .keystrokes()
+            .iter()
+            .map(|keystroke| keystroke.unparse())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if chord != "escape" && !taken.contains(&chord) {
+            taken.push(chord);
+        }
+    }
+    bindings.extend(
+        taken
+            .iter()
+            .map(|chord| KeyBinding::new(chord, gpui::NoAction, painted)),
+    );
+    bindings.push(KeyBinding::new("escape", markdown::LeaveBlock, painted));
+
     bindings
 }

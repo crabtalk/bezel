@@ -144,7 +144,8 @@ impl Editor {
                 .doc
                 .replace(Selection::new(target, at), Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
-            this.track_slash("");
+            this.track_slash("", Vec::new());
+            this.track_mention("");
             vec![Delta::Spliced(splice)]
         });
     }
@@ -236,6 +237,10 @@ impl Editor {
         }
         if let Some(slash) = &mut self.slash {
             slash.step(delta);
+            return cx.notify();
+        }
+        if let Some(mention) = &mut self.mention {
+            mention.step(delta);
             return cx.notify();
         }
         let head = self.selection.head;

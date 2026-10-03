@@ -14,9 +14,18 @@ pub(crate) struct Gesture {
     pub size: Cell<Size<Pixels>>,
     pub claimed: Cell<bool>,
     pub hosted: Cell<bool>,
+    /// Where the ghost standing in for the item was last drawn.
+    pub shown: Cell<Option<Point<Pixels>>>,
 }
 
 impl Gesture {
+    /// Hides the in-place item while unclaimed, for a target drawing its own
+    /// ghost at `origin` this frame.
+    pub fn host(&self, origin: Point<Pixels>) {
+        self.hosted.set(true);
+        self.shown.set(Some(origin));
+    }
+
     pub fn ghost_bounds(&self, pointer: Point<Pixels>) -> Bounds<Pixels> {
         let full = self.size.get();
         let grab = self.grab.get();
@@ -131,6 +140,8 @@ pub(super) struct Live<R, I> {
 struct Slide {
     from: Point<Pixels>,
     since: Instant,
+    /// Drawn above its region, as the floating item or ghost it settles from.
+    lifted: bool,
 }
 
 impl Slide {
@@ -144,14 +155,27 @@ impl Slide {
     }
 }
 
+/// What represented an item on screen in the last frame it was placed.
+enum Seen {
+    /// Drawn in its slot, heading for `target`.
+    Slot {
+        target: Point<Pixels>,
+        painted: Point<Pixels>,
+    },
+    /// Drawn in place, following the pointer.
+    Floating(Point<Pixels>),
+    /// Hidden while a ghost stood in for it, wherever the ghost reported.
+    Ghost(Rc<Gesture>),
+    /// Not drawn.
+    Hidden,
+}
+
 struct Slot<I> {
     item: I,
-    target: Point<Pixels>,
-    painted: Point<Pixels>,
+    seen_at: Seen,
+    /// The region's reference when `seen_at` was recorded.
     reference: Point<Pixels>,
     slide: Option<Slide>,
-    floating: bool,
-    returning: bool,
     seen: bool,
 }
 
@@ -317,25 +341,24 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         let frame = &self.building[ix];
         let reference = frame.reference();
         let axis = frame.axis;
-        let mut floating = false;
-        let mut hidden = false;
+        let mut seen = None;
         let target = match &self.live {
             Some(live) if &live.item == item => {
                 let gesture = &live.gesture;
                 if self.ghost.is_some() || (gesture.hosted.get() && !gesture.claimed.get()) {
-                    hidden = true;
+                    seen = Some(Seen::Ghost(gesture.clone()));
                     bounds.origin
                 } else {
-                    floating = true;
                     let mut at = pointer - gesture.grab.get();
                     if frame.config.axis_locked && !live.detached {
                         at += on(axis.invert(), across(axis, live.origin - at));
                     }
+                    seen = Some(Seen::Floating(at));
                     at
                 }
             }
             Some(live) if live.members.contains(item) => {
-                hidden = true;
+                seen = Some(Seen::Hidden);
                 bounds.origin
             }
             Some(live) if frame.config.feedback == Feedback::Displace => {
@@ -359,25 +382,34 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             None => {
                 self.slots.push(Slot {
                     item: item.clone(),
-                    target,
-                    painted: target,
+                    seen_at: Seen::Hidden,
                     reference,
                     slide: None,
-                    floating: false,
-                    returning: false,
                     seen: false,
                 });
                 self.slots.last_mut().unwrap()
             }
         };
-        if floating || hidden {
+        let hidden = matches!(seen, Some(Seen::Ghost(_) | Seen::Hidden));
+        if seen.is_some() {
             slot.slide = None;
         } else {
             let moved = reference - slot.reference;
-            if slot.target + moved != target {
-                slot.slide = Some(Slide {
-                    from: slot.painted + moved - target,
+            let from = match &slot.seen_at {
+                Seen::Slot {
+                    target: last,
+                    painted,
+                } => (*last + moved != target).then(|| (*painted + moved, false)),
+                Seen::Floating(at) => Some((*at, true)),
+                Seen::Ghost(gesture) => gesture.shown.get().map(|at| (at, true)),
+                Seen::Hidden => None,
+            };
+            if let Some((from, lifted)) = from {
+                let lifted = lifted || slot.slide.as_ref().is_some_and(|slide| slide.lifted);
+                slot.slide = (from != target).then(|| Slide {
+                    from: from - target,
                     since: now,
+                    lifted,
                 });
             }
         }
@@ -391,19 +423,20 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
                 Point::default()
             }
         };
-        slot.returning = !floating && slot.slide.is_some() && (slot.floating || slot.returning);
-        slot.floating = floating;
-        slot.target = target;
-        slot.painted = target + sliding;
+        let floating = matches!(seen, Some(Seen::Floating(_)))
+            || slot.slide.as_ref().is_some_and(|slide| slide.lifted);
+        slot.seen_at = seen.unwrap_or(Seen::Slot {
+            target,
+            painted: target + sliding,
+        });
         slot.reference = reference;
         slot.seen = true;
-        let returning = slot.returning;
         if slot.slide.is_some() {
             painter.lease(120., TAB_SLIDE.total(), cx);
         }
         Placement {
             offset: target + sliding - bounds.origin,
-            floating: floating || returning,
+            floating,
             hidden,
         }
     }
@@ -412,7 +445,11 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         self.slots
             .iter()
             .find(|slot| &slot.item == item)
-            .map(|slot| slot.painted)
+            .and_then(|slot| match slot.seen_at {
+                Seen::Slot { painted, .. } => Some(painted),
+                Seen::Floating(at) => Some(at),
+                Seen::Ghost(_) | Seen::Hidden => None,
+            })
     }
 
     pub fn start(

@@ -5,7 +5,7 @@ use gpui::{
 use theme::{Appearance, Theme};
 use ui::{
     AppExt as _,
-    input::{CaretShape, TextField},
+    input::{CaretHeight, CaretShape, TextField},
 };
 
 struct Page(Entity<TextField>);
@@ -209,4 +209,32 @@ fn recoloured_cuts_runs_at_the_range() {
     let runs = ui::input::caret::recoloured(vec![run(3, red), run(3, blue)], &(2..4), bg);
     let pieces: Vec<_> = runs.iter().map(|run| (run.len, run.color)).collect();
     assert_eq!(pieces, [(2, red), (1, bg), (1, bg), (2, blue)]);
+}
+
+#[gpui::test]
+fn a_text_height_block_stands_where_the_bar_does(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::install(Appearance::Dark, cx);
+        assert_eq!(cx.caret_height(), CaretHeight::Line);
+        cx.set_caret_blink(false);
+    });
+    let window = cx.add_window(|_, cx| Page(cx.new(|cx| TextField::new(cx).with_frame(false))));
+    let page = window.root(cx).unwrap();
+    let field = cx.update(|cx| page.read(cx).0.clone());
+    let mut visual = VisualTestContext::from_window(window.into(), cx);
+    visual.update(|window, cx| window.focus(&field.read(cx).focus_handle(cx), cx));
+    visual.update(|_, cx| {
+        field.update(cx, |field, cx| {
+            field.set_content("W", cx);
+            field.select(0..0, cx);
+        })
+    });
+    let line = caret(&mut visual, CaretShape::Block);
+    visual.update(|_, cx| cx.set_caret_height(CaretHeight::Text));
+    let bar = caret(&mut visual, CaretShape::Bar);
+    let text = caret(&mut visual, CaretShape::Block);
+    assert!(text.bounds.size.height < line.bounds.size.height);
+    assert_eq!(text.bounds.origin.y, bar.bounds.origin.y);
+    assert_eq!(text.bounds.size.height, bar.bounds.size.height);
+    assert_eq!(text.bounds.size.width, line.bounds.size.width);
 }

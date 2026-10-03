@@ -25,7 +25,7 @@ use crate::{
     anchor::{Anchor, AnchorId, Delta},
     history::{EditKind, History},
     link::{self, Choice},
-    slash::Slash,
+    slash::{Slash, SlashAction, SlashAt},
     text_size,
 };
 
@@ -117,6 +117,8 @@ pub struct Chrome {
     /// The menu a pasted URL drops — leave it, or make a card, a chip or the
     /// picture it points at.
     pub paste: bool,
+    /// The `@` menu over the app's [`crate::MentionSource`]. Off by default.
+    pub mention: bool,
 }
 
 impl Default for Chrome {
@@ -126,6 +128,7 @@ impl Default for Chrome {
             slash: true,
             language: true,
             paste: true,
+            mention: false,
         }
     }
 }
@@ -323,6 +326,7 @@ pub struct Editor {
     stored: Vec<Mark>,
     /// The open slash menu, if `/` started one.
     slash: Option<Slash>,
+    mention: Option<crate::mention::MentionMenu>,
     /// The open paste menu, if a URL landed in a block of its own.
     pasted: Option<link::Paste>,
     /// The open prompt, if an image is waiting to be told where to look.
@@ -417,6 +421,7 @@ impl Editor {
             anchors: Vec::new(),
             stored: Vec::new(),
             slash: None,
+            mention: None,
             pasted: None,
             url_prompt: None,
             dropping: None,

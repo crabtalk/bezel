@@ -83,10 +83,14 @@ pub fn tracked_upper(label: &str) -> String {
 
 /// Hairline divider between menu sections (the reference `MenuSeparator`:
 /// `mx-1 my-1 h-px bg-white/[0.07]`).
-pub fn divider() -> gpui::Div {
+pub fn divider(theme: &Theme) -> gpui::Div {
     // Full-bleed: negative margins cancel the card's p-1 inset so the hairline
     // runs border to border (user request).
-    div().h(px(1.0)).mx(px(-4.0)).my(px(4.0)).bg(hairline(0.07))
+    div()
+        .h(px(1.0))
+        .mx(px(-4.0))
+        .my(px(4.0))
+        .bg(theme.border_faint)
 }
 
 /// The recessed band tone for a palette/picker header or footer strip — a
@@ -184,7 +188,7 @@ pub fn key_hint_pair(
                         .size(px(12.5))
                         .text_color(theme.text_muted.opacity(0.7)),
                 )
-                .child(div().w(px(1.0)).h(px(11.0)).bg(hairline(0.10)))
+                .child(div().w(px(1.0)).h(px(11.0)).bg(theme.border))
                 .child(
                     crate::icons::icon(second)
                         .size(px(12.5))
@@ -222,7 +226,7 @@ pub fn search_line(theme: &Theme, input: AnyElement) -> gpui::Div {
         .py(px(7.0))
         .mb(px(MENU_PAD))
         .border_b_1()
-        .border_color(hairline(0.07))
+        .border_color(theme.border_faint)
         .text_style(TextStyle::Body)
         .child(
             icons::icon(icons::glyph::Search)
@@ -236,12 +240,12 @@ pub fn search_line(theme: &Theme, input: AnyElement) -> gpui::Div {
 /// branch-picker worktree block: `mt-1 flex flex-col gap-0.5 border-t
 /// border-white/[0.06] pt-1` — the hairline runs edge-to-edge of the card's
 /// p-1 inset, unlike [`divider`]'s mx-1).
-pub fn menu_section() -> gpui::Div {
+pub fn menu_section(theme: &Theme) -> gpui::Div {
     div()
         .mt(px(4.0))
         .pt(px(4.0))
         .border_t_1()
-        .border_color(hairline(0.06))
+        .border_color(theme.border_faint)
         .flex()
         .flex_col()
         .gap(px(2.0))
@@ -260,7 +264,7 @@ pub fn dialog_card(theme: &Theme) -> gpui::Div {
         .rounded(px(DIALOG_RADIUS))
         .bg(theme.surface_dialog)
         .border_1()
-        .border_color(hairline(0.10))
+        .border_color(theme.border)
         .shadow_lg()
         .flex()
         .flex_col()
@@ -286,14 +290,14 @@ pub fn dialog_body(theme: &Theme, copy: impl Into<SharedString>) -> gpui::Div {
 
 /// Dialog text-field frame: `rounded-lg border border-white/[0.08]
 /// bg-white/[0.04] px-3 py-2`.
-pub fn dialog_field(input: AnyElement) -> gpui::Div {
+pub fn dialog_field(theme: &Theme, input: AnyElement) -> gpui::Div {
     div()
         .w_full()
         .px(px(12.0))
         .py(px(8.0))
         .rounded(px(Theme::button_radius()))
         .border_1()
-        .border_color(hairline(0.08))
+        .border_color(theme.border)
         .bg(ink(0.04))
         .text_style(TextStyle::Body)
         .child(input)

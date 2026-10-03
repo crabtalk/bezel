@@ -56,15 +56,36 @@ impl Doc {
     /// Split block `ix` at byte offset `at`, returning the new block's index.
     ///
     /// The tail keeps the block's kind where a continued Enter means "another of
-    /// these" — a list item, for example. A heading titles what follows. A
-    /// quote keeps its kind on whichever side still holds text: split at the
-    /// end of one and what opens below is plain body text, split at its start
-    /// and what opens above is.
+    /// these" — a list item, for example; anything else continues as body
+    /// text, and a quote only while it carries text. At the start of a block
+    /// holding text the block moves down whole, under an empty one of the same
+    /// list kind or an empty paragraph, and the returned index is the block.
     pub fn split(&mut self, ix: usize, at: usize) -> usize {
         if ix >= self.blocks.len() {
             return ix;
         }
         let indent = self.blocks[ix].indent;
+        if at == 0
+            && self.blocks[ix]
+                .text_at(Part::Body)
+                .is_some_and(|text| !text.text.is_empty())
+        {
+            let above = match &self.blocks[ix].kind {
+                BlockKind::Bullet(_) => BlockKind::Bullet(Text::default()),
+                BlockKind::Ordered { .. } => BlockKind::Ordered {
+                    number: 1,
+                    text: Text::default(),
+                },
+                BlockKind::Task { .. } => BlockKind::Task {
+                    checked: false,
+                    text: Text::default(),
+                },
+                _ => BlockKind::Paragraph(Text::default()),
+            };
+            self.blocks.insert(ix, Block::at(above, indent));
+            self.repair();
+            return ix + 1;
+        }
         // Nothing to cut for a block with no body — Enter after an atomic
         // block opens a paragraph.
         let tail = self.blocks[ix]
@@ -87,15 +108,6 @@ impl Doc {
             },
             _ => BlockKind::Paragraph(tail),
         };
-        // A quote that pushed all its text down keeps none of its own: an
-        // alert's marker written twice is two alerts, the first one empty.
-        if matches!(kind, BlockKind::Quote { .. })
-            && self.blocks[ix]
-                .text_at(Part::Body)
-                .is_none_or(|text| text.text.is_empty())
-        {
-            self.blocks[ix].kind = BlockKind::Paragraph(Text::default());
-        }
         self.blocks.insert(ix + 1, Block::at(kind, indent));
         self.repair();
         ix + 1
@@ -458,6 +470,15 @@ impl Doc {
             self.blocks.get_mut(ix).map(|block| &mut block.kind)
         {
             *tag = language;
+        }
+    }
+
+    /// Replace a fenced block's code. Anything but a fence is left alone.
+    pub fn set_code(&mut self, ix: usize, code: String) {
+        if let Some(BlockKind::Code { code: held, .. }) =
+            self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        {
+            *held = Text::plain(code);
         }
     }
 

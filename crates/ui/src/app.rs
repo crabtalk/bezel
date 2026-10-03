@@ -22,6 +22,12 @@ pub trait AppExt {
     /// Sets text caret shape and refreshes windows. Defaults to `Bar`.
     fn set_caret_shape(&mut self, shape: crate::input::CaretShape);
 
+    /// Reads block caret height.
+    fn caret_height(&self) -> crate::input::CaretHeight;
+
+    /// Sets block caret height and refreshes windows. Defaults to `Line`.
+    fn set_caret_height(&mut self, height: crate::input::CaretHeight);
+
     /// Reads scrollbar visibility.
     fn scrollbar_visibility(&self) -> crate::scroll::Visibility;
 
@@ -60,6 +66,14 @@ impl AppExt for App {
 
     fn set_caret_shape(&mut self, shape: crate::input::CaretShape) {
         crate::input::caret::set_caret_shape(shape, self)
+    }
+
+    fn caret_height(&self) -> crate::input::CaretHeight {
+        crate::input::caret::caret_height(self)
+    }
+
+    fn set_caret_height(&mut self, height: crate::input::CaretHeight) {
+        crate::input::caret::set_caret_height(height, self)
     }
 
     fn scrollbar_visibility(&self) -> crate::scroll::Visibility {

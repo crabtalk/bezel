@@ -26,6 +26,14 @@ pub trait AppExt {
     /// File drops are not passed to this handler.
     fn set_paste_handler(&mut self, handler: crate::PasteHandler);
 
+    /// Replaces the slash menu's items, which are [`crate::slash_defaults`]
+    /// until this is called.
+    fn set_slash_items(&mut self, items: Vec<crate::SlashItem>);
+
+    /// Installs what the `@` menu lists, in editors whose
+    /// [`crate::Chrome::mention`] is on.
+    fn set_mention_source(&mut self, source: crate::MentionSource);
+
     /// Adjusts every open document by the given points and refreshes windows.
     fn adjust_editor_text_size(&mut self, points: f32);
 
@@ -63,6 +71,14 @@ impl AppExt for App {
 
     fn set_paste_handler(&mut self, handler: crate::PasteHandler) {
         self.set_global(crate::paste::Installed(handler));
+    }
+
+    fn set_mention_source(&mut self, source: crate::MentionSource) {
+        self.set_global(crate::mention::Installed(source));
+    }
+
+    fn set_slash_items(&mut self, items: Vec<crate::SlashItem>) {
+        self.set_global(crate::slash::Installed(items));
     }
 
     fn adjust_editor_text_size(&mut self, points: f32) {

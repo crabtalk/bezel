@@ -29,7 +29,7 @@ use gpui::{
 };
 use icons::Icon;
 use motion::{self as motion, AnimationExt as _, Fade, PULSE, Painter};
-use theme::{TextStyle, Theme, Typeset, hairline, ink};
+use theme::{TextStyle, Theme, Typeset, ink};
 
 // ---------------------------------------------------------------------------
 // Loadable — async slot state shared by pickers/settings pages
@@ -418,7 +418,7 @@ pub fn popover_card(theme: &Theme) -> gpui::Div {
     } else {
         card.bg(theme.surface_overlay)
             .border_1()
-            .border_color(hairline(0.10))
+            .border_color(theme.border)
             .shadow_lg()
     }
 }

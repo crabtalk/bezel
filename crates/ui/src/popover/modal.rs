@@ -144,15 +144,15 @@ pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
         Side::Left => card
             .rounded_r(px(DIALOG_RADIUS))
             .border_r_1()
-            .border_color(hairline(0.10)),
+            .border_color(theme.border),
         Side::Right => card
             .rounded_l(px(DIALOG_RADIUS))
             .border_l_1()
-            .border_color(hairline(0.10)),
+            .border_color(theme.border),
         Side::Bottom => card
             .rounded_t(px(DIALOG_RADIUS))
             .border_t_1()
-            .border_color(hairline(0.10)),
+            .border_color(theme.border),
     };
     if theme.glass {
         card.bg(theme.glass_overlay())

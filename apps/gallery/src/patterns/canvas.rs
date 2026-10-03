@@ -470,7 +470,7 @@ impl CanvasDemo {
             .gap(px(12.0))
             .pb(px(12.0))
             .border_b_1()
-            .border_color(theme.hairline(0.10))
+            .border_color(theme.border)
             .child(add)
             .child(history)
             .child(

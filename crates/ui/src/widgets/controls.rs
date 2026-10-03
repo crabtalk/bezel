@@ -108,7 +108,7 @@ pub trait Controls: ThemeExt {
             .rounded_full()
             .border_1()
             .border_color(if selected {
-                theme.text
+                theme.ring
             } else {
                 theme.ink(0.25)
             })

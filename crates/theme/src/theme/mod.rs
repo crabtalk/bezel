@@ -212,6 +212,8 @@ pub struct Theme {
     pub element_hover: Hsla,
     /// Active/selected wash, one rung over the hover — `--color-active`.
     pub element_active: Hsla,
+    /// Faintest hairline: dividers inside a card, nested frames.
+    pub border_faint: Hsla,
     /// Hairline border.
     pub border: Hsla,
     /// Stronger border for focused/raised edges.
@@ -317,6 +319,9 @@ pub struct Theme {
     pub ring: Hsla,
     /// Where a dragged block would land in the block editor.
     pub drop_line: Hsla,
+    /// Fill of the region a dragged pane would dock into, where no material
+    /// paints it. Translucent: the pane under it stays visible.
+    pub drop_target: Hsla,
     /// Destructive-action button fill (danger plate, carries [`Self::on_accent`]).
     pub danger_strong: Hsla,
 

@@ -99,6 +99,9 @@ pub const INK_FILL_SCALE: f32 = 1.0;
 /// keeps separators legible instead of dissolving into the panel.
 pub const INK_HAIRLINE_SCALE: f32 = 1.35;
 
+/// Lightness of [`hairline`] ink, dark then light.
+const HAIRLINE_TONE: (f32, f32) = (0.75, 0.25);
+
 /// Translucent **fill** ink for interactive states and chip plates: soft-white on
 /// dark, soft-black on light at [`INK_FILL_SCALE`] of the alpha.
 ///
@@ -122,8 +125,9 @@ pub(crate) fn ink_for(appearance: Appearance, alpha: f32) -> Hsla {
     }
 }
 
-/// Translucent **hairline** ink for borders, dividers and rings: white on dark,
-/// black on light at [`INK_HAIRLINE_SCALE`] of the alpha.
+/// Translucent **hairline** ink for borders, dividers and rings: a light grey on
+/// dark, a dark grey on light at [`INK_HAIRLINE_SCALE`] of the alpha. Never
+/// pure white or black.
 ///
 /// Separate from [`ink`] because edges and fills scale in opposite directions
 /// when the field brightens — a 1px line needs *more* ink on white, a plate needs
@@ -134,8 +138,13 @@ pub fn hairline(alpha: f32) -> Hsla {
 
 pub(crate) fn hairline_for(appearance: Appearance, alpha: f32) -> Hsla {
     match appearance {
-        Appearance::Dark => hsla(0.0, 0.0, 1.0, alpha),
-        Appearance::Light => hsla(0.0, 0.0, 0.0, (alpha * INK_HAIRLINE_SCALE).min(0.5)),
+        Appearance::Dark => hsla(0.0, 0.0, HAIRLINE_TONE.0, alpha),
+        Appearance::Light => hsla(
+            0.0,
+            0.0,
+            HAIRLINE_TONE.1,
+            (alpha * INK_HAIRLINE_SCALE).min(0.5),
+        ),
     }
 }
 
@@ -232,7 +241,7 @@ pub(crate) fn card_selected_bg_for(appearance: Appearance) -> Hsla {
 /// a 5% fill they showed straight through as an opaque dark plate with a
 /// greyed ring (user report) — nothing may paint behind a glass chip.
 ///
-/// Light pins the ring at a flat 7% black rather than the scaled hairline:
+/// Light pins the ring at a flat 7% rather than the scaled hairline:
 /// heavier rings (the [`INK_HAIRLINE_SCALE`]d value, then 12%) outlined every
 /// selected chip in a dark box (user reports) — the ring should define the
 /// chip the way dark's 9% white ring does, not frame it.
@@ -296,7 +305,7 @@ pub fn frame_shadows() -> Vec<BoxShadow> {
 pub fn card_selected_shadows() -> Vec<BoxShadow> {
     let color = match current_appearance() {
         Appearance::Dark => hairline(0.09),
-        Appearance::Light => hsla(0.0, 0.0, 0.0, 0.07),
+        Appearance::Light => hsla(0.0, 0.0, HAIRLINE_TONE.1, 0.07),
     };
     vec![BoxShadow {
         color,

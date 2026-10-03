@@ -34,7 +34,7 @@ const ROW_PAD_Y: f32 = 10.0;
 /// Clear space between the frame and the selection ring.
 const RING_GAP: f32 = 2.0;
 /// Thickness of the selection ring.
-const RING_WIDTH: f32 = 2.0;
+const RING_WIDTH: f32 = 1.0;
 
 pub trait Scaffolding: ThemeExt {
     /// Centered page column: `mx-auto w-full max-w-3xl px-6 pb-16 pt-8`.
@@ -148,11 +148,13 @@ pub trait Scaffolding: ThemeExt {
                     .w_full()
                     .rounded(px(OPTION_CARD_RADIUS + RING_GAP + RING_WIDTH))
                     .p(px(RING_GAP))
-                    .border_2()
-                    .border_color(if selected {
-                        theme.accent
-                    } else {
-                        gpui::transparent_black()
+                    .border_1()
+                    .when(selected, |ring| {
+                        ring.bg(theme.card_selected_bg())
+                            .border_color(theme.border_strong)
+                    })
+                    .when(!selected, |ring| {
+                        ring.border_color(gpui::transparent_black())
                     })
                     .child(frame),
             )

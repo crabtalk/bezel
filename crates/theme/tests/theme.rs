@@ -375,13 +375,13 @@ fn neutrals_are_achromatic() {
 fn hairlines_and_washes_flip_tone_with_appearance() {
     let _guard = lock_appearance();
     set_current_appearance(Appearance::Dark);
-    assert_eq!(hairline(0.1).l, 1.0, "dark hairlines are white");
+    assert!(hairline(0.1).l < 1.0, "dark hairlines are grey, not white");
     assert_eq!(ink(0.1).l, 1.0, "dark fills are white");
     assert_eq!(ink(0.1).a, 0.1, "dark alphas pass through untouched");
     assert_eq!(wash(0.14).l, 0.92, "dark washes are soft-white");
 
     set_current_appearance(Appearance::Light);
-    assert_eq!(hairline(0.1).l, 0.0, "light hairlines are black");
+    assert!(hairline(0.1).l > 0.0, "light hairlines are grey, not black");
     assert_eq!(ink(0.1).l, 0.0, "light fills are black");
     assert_eq!(wash(0.14).l, 0.10, "light washes are soft-black");
     // Fills keep their alpha; only hairlines are scaled.

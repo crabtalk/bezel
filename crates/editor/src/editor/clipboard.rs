@@ -104,7 +104,7 @@ impl Editor {
             return self.paste_literal(source, cx);
         }
         let url = source.trim();
-        if markdown::is_url(url) {
+        if markdown::is_link(url) {
             return self.paste_url(url.to_string(), cx);
         }
         self.edit(EditKind::Structure, cx, |this| {
