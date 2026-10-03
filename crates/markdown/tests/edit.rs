@@ -92,6 +92,32 @@ fn enter_after_a_heading_gives_body_text() {
 }
 
 #[test]
+fn enter_at_the_start_of_a_heading_moves_it_down_whole() {
+    let mut doc = parse("## abc");
+    assert_eq!(doc.split(0, 0), 1, "the caret stays with the heading");
+    assert!(matches!(doc.blocks[0].kind, BlockKind::Paragraph(_)));
+    assert!(text_of(&doc, 0).text.is_empty());
+    assert!(matches!(
+        doc.blocks[1].kind,
+        BlockKind::Heading { level: 2, .. }
+    ));
+    assert_eq!(text_of(&doc, 1).text, "abc");
+}
+
+#[test]
+fn enter_in_a_heading_gives_its_tail_to_body_text() {
+    let mut doc = parse("## abc");
+    doc.split(0, 1);
+    assert!(matches!(
+        doc.blocks[0].kind,
+        BlockKind::Heading { level: 2, .. }
+    ));
+    assert_eq!(text_of(&doc, 0).text, "a");
+    assert!(matches!(doc.blocks[1].kind, BlockKind::Paragraph(_)));
+    assert_eq!(text_of(&doc, 1).text, "bc");
+}
+
+#[test]
 fn backspace_walks_out_before_it_merges() {
     // Indented bullet: outdent, then unmarker, then merge.
     let mut doc = parse("- a\n    - b");
