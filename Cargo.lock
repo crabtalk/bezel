@@ -635,6 +635,7 @@ name = "bezel-editor"
 version = "0.2.6"
 dependencies = [
  "bezel-gpui",
+ "bezel-icons",
  "bezel-markdown",
  "bezel-motion",
  "bezel-theme",

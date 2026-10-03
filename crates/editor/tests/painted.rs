@@ -40,8 +40,10 @@ fn open(source: &str, cx: &mut TestAppContext) -> (Entity<Editor>, VisualTestCon
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
         cx.set_block_renderer(paint);
-        cx.set_slash_items(vec![editor::SlashItem::Group {
+        let mut items = editor::slash_defaults();
+        items.push(editor::SlashItem::Group {
             label: "Widget".into(),
+            icon: None,
             rows: vec![
                 editor::SlashRow {
                     label: "Blue".into(),
@@ -62,7 +64,8 @@ fn open(source: &str, cx: &mut TestAppContext) -> (Entity<Editor>, VisualTestCon
                     action: editor::SlashAction::Block(BlockKind::Paragraph(Text::plain("green"))),
                 },
             ],
-        }]);
+        });
+        cx.set_slash_items(items);
     });
     let window = cx.add_window(|_, cx| Editor::new(source, cx));
     let editor = window.root(cx).unwrap();

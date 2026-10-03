@@ -26,7 +26,8 @@ pub trait AppExt {
     /// File drops are not passed to this handler.
     fn set_paste_handler(&mut self, handler: crate::PasteHandler);
 
-    /// Adds rows to the slash menu after its own.
+    /// Replaces the slash menu's items, which are [`crate::slash_defaults`]
+    /// until this is called.
     fn set_slash_items(&mut self, items: Vec<crate::SlashItem>);
 
     /// Installs what the `@` menu lists, in editors whose
@@ -77,7 +78,7 @@ impl AppExt for App {
     }
 
     fn set_slash_items(&mut self, items: Vec<crate::SlashItem>) {
-        self.set_global(crate::slash::AppItems(items));
+        self.set_global(crate::slash::Installed(items));
     }
 
     fn adjust_editor_text_size(&mut self, points: f32) {

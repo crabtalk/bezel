@@ -10,7 +10,7 @@ impl Editor {
     /// Typing, backspace, delete and IME all land here, so none of them has to
     /// ask whether a selection was empty.
     pub(super) fn insert(&mut self, text: &str, cx: &mut Context<Self>) {
-        let app_items = crate::slash::app_items(cx);
+        let items = crate::slash::installed(cx);
         self.edit(EditKind::Insert, cx, |this| {
             let mut typed = Text::plain(text);
             // A stored mark applies to what is typed next and to nothing else,
@@ -26,7 +26,7 @@ impl Editor {
             let shortcut = this.apply_shortcut();
             let promoted = this.promote_quote_marker();
             let inline = this.apply_inline_rule();
-            this.track_slash(text, app_items);
+            this.track_slash(text, items);
             this.track_mention(text);
             std::iter::once(Delta::Spliced(splice))
                 .chain(shortcut)
@@ -41,7 +41,7 @@ impl Editor {
     /// The query is the text between the `/` and the caret, so there is no
     /// second field and no focus to hand over — typing filters because typing
     /// is what it already was.
-    pub(super) fn track_slash(&mut self, typed: &str, app_items: Vec<crate::SlashItem>) {
+    pub(super) fn track_slash(&mut self, typed: &str, items: Vec<crate::SlashItem>) {
         if !self.chrome.slash {
             return;
         }
@@ -71,7 +71,7 @@ impl Editor {
                         offset: slash,
                         ..at
                     },
-                    app_items,
+                    items,
                 ));
             }
             return;
