@@ -42,18 +42,26 @@ fn open(source: &str, cx: &mut TestAppContext) -> (Entity<Editor>, VisualTestCon
         cx.set_block_renderer(paint);
         cx.set_slash_items(vec![editor::SlashItem::Group {
             label: "Widget".into(),
-            rows: vec![(
-                "Blue".into(),
-                editor::SlashAction::Run(std::rc::Rc::new(|at, _, cx| {
-                    let kind = BlockKind::Code {
-                        language: Some("widget".to_owned()),
-                        code: Text::plain("blue"),
-                    };
-                    at.editor
-                        .update(cx, |editor, cx| editor.place_block(at.block, kind, cx))
-                        .ok();
-                })),
-            )],
+            rows: vec![
+                editor::SlashRow {
+                    label: "Blue".into(),
+                    icon: None,
+                    action: editor::SlashAction::Run(std::rc::Rc::new(|at, _, cx| {
+                        let kind = BlockKind::Code {
+                            language: Some("widget".to_owned()),
+                            code: Text::plain("blue"),
+                        };
+                        at.editor
+                            .update(cx, |editor, cx| editor.place_block(at.block, kind, cx))
+                            .ok();
+                    })),
+                },
+                editor::SlashRow {
+                    label: "Green".into(),
+                    icon: None,
+                    action: editor::SlashAction::Block(BlockKind::Paragraph(Text::plain("green"))),
+                },
+            ],
         }]);
     });
     let window = cx.add_window(|_, cx| Editor::new(source, cx));
@@ -107,4 +115,15 @@ fn keys_inside_a_painted_fence_stay_out_of_the_document(cx: &mut TestAppContext)
     cx.simulate_keystrokes("escape");
     let focused = cx.update(|window, cx| editor.read(cx).focus_handle(cx).is_focused(window));
     assert!(focused, "escape hands the keyboard back to the document");
+}
+
+#[gpui::test]
+fn a_query_matching_a_group_keeps_its_rows_behind_it(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open("# Title", cx);
+    cx.simulate_keystrokes("end enter");
+    cx.simulate_input("/widget");
+    // Enter opens the group; the second Enter picks its first row.
+    cx.simulate_keystrokes("enter enter");
+    cx.run_until_parked();
+    assert_eq!(source(&editor, &mut cx), "# Title\n\n```widget\nblue\n```");
 }

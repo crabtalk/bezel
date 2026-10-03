@@ -150,18 +150,23 @@ pub struct SlashAt {
     pub block: usize,
 }
 
-/// A row an app adds to the slash menu, after the editor's own.
+/// One row an app adds.
+#[derive(Clone)]
+pub struct SlashRow {
+    pub label: SharedString,
+    pub icon: Option<ui::icons::Icon>,
+    pub action: SlashAction,
+}
+
+/// What an app adds to the slash menu, after the editor's own.
 #[derive(Clone)]
 pub enum SlashItem {
-    Row {
-        label: SharedString,
-        action: SlashAction,
-    },
-    /// Rows behind a submenu. A query ranks them flat, each called
-    /// `Group (row)`.
+    Row(SlashRow),
+    /// Rows behind a submenu. A query matches them as `Group (row)`; several
+    /// matches stay behind the submenu, and a lone one stands as its own row.
     Group {
         label: SharedString,
-        rows: Vec<(SharedString, SlashAction)>,
+        rows: Vec<SlashRow>,
     },
 }
 
@@ -184,15 +189,17 @@ struct Entry {
     label: SharedString,
     short: SharedString,
     group: Option<SharedString>,
+    icon: Option<ui::icons::Icon>,
     action: SlashAction,
 }
 
 /// [`items`] and then the app's, flattened.
 fn entries(app: Vec<SlashItem>) -> Vec<Entry> {
-    let grouped = |group: &str, short: SharedString, action| Entry {
+    let grouped = |group: &str, short: SharedString, icon, action| Entry {
         label: format!("{group} ({short})").into(),
         short,
         group: Some(SharedString::from(group.to_owned())),
+        icon,
         action,
     };
     let mut entries: Vec<Entry> = items()
@@ -203,17 +210,19 @@ fn entries(app: Vec<SlashItem>) -> Vec<Entry> {
                 .and_then(|rest| rest.strip_suffix(')'))
                 .map(|short| SharedString::from(short.to_owned()));
             match quoted {
-                Some(short) => grouped("Quote", short, SlashAction::Block(kind)),
+                Some(short) => grouped("Quote", short, None, SlashAction::Block(kind)),
                 None if matches!(kind, BlockKind::Quote { .. }) => Entry {
                     label: label.clone(),
                     short: label,
                     group: Some("Quote".into()),
+                    icon: None,
                     action: SlashAction::Block(kind),
                 },
                 None => Entry {
                     label: label.clone(),
                     short: label,
                     group: None,
+                    icon: None,
                     action: SlashAction::Block(kind),
                 },
             }
@@ -221,15 +230,16 @@ fn entries(app: Vec<SlashItem>) -> Vec<Entry> {
         .collect();
     for item in app {
         match item {
-            SlashItem::Row { label, action } => entries.push(Entry {
-                label: label.clone(),
-                short: label,
+            SlashItem::Row(row) => entries.push(Entry {
+                label: row.label.clone(),
+                short: row.label,
                 group: None,
-                action,
+                icon: row.icon,
+                action: row.action,
             }),
             SlashItem::Group { label, rows } => entries.extend(
                 rows.into_iter()
-                    .map(|(short, action)| grouped(&label, short, action)),
+                    .map(|row| grouped(&label, row.label, row.icon, row.action)),
             ),
         }
     }
@@ -287,25 +297,12 @@ impl Slash {
         slash
     }
 
-    /// With no query a group sits behind one row where its first entry is; a
-    /// query ranks every entry flat.
+    /// A group sits behind one row where its first entry is. A query ranks
+    /// the entries, and a group's row stands where its best match does,
+    /// holding the matches in rank order — or, holding one, is that row.
     pub fn refilter(&mut self, query: &str) {
-        self.rows = if query.is_empty() {
-            let mut rows: Vec<Row> = Vec::new();
-            for (ix, entry) in self.entries.iter().enumerate() {
-                let Some(group) = &entry.group else {
-                    rows.push(Row::Block(ix));
-                    continue;
-                };
-                match rows
-                    .iter_mut()
-                    .find(|row| matches!(row, Row::Group(label, _) if label == group))
-                {
-                    Some(Row::Group(_, held)) => held.push(ix),
-                    _ => rows.push(Row::Group(group.clone(), vec![ix])),
-                }
-            }
-            rows
+        let order: Vec<usize> = if query.is_empty() {
+            (0..self.entries.len()).collect()
         } else {
             let labels: Vec<SharedString> = self
                 .entries
@@ -313,10 +310,28 @@ impl Slash {
                 .map(|entry| entry.label.clone())
                 .collect();
             filter_indices(query, &labels)
-                .into_iter()
-                .map(Row::Block)
-                .collect()
         };
+        let mut rows: Vec<Row> = Vec::new();
+        for ix in order {
+            let Some(group) = &self.entries[ix].group else {
+                rows.push(Row::Block(ix));
+                continue;
+            };
+            match rows
+                .iter_mut()
+                .find(|row| matches!(row, Row::Group(label, _) if label == group))
+            {
+                Some(Row::Group(_, held)) => held.push(ix),
+                _ => rows.push(Row::Group(group.clone(), vec![ix])),
+            }
+        }
+        self.rows = rows
+            .into_iter()
+            .map(|row| match row {
+                Row::Group(_, held) if !query.is_empty() && held.len() == 1 => Row::Block(held[0]),
+                row => row,
+            })
+            .collect();
         self.cursor.clear();
         self.cursor.step(&self.menu(), 1);
     }
@@ -326,16 +341,24 @@ impl Slash {
         self.rows
             .iter()
             .map(|row| match row {
-                Row::Block(ix) => Item::action(self.entries[*ix].label.clone()),
+                Row::Block(ix) => self.item(*ix, &self.entries[*ix].label),
                 Row::Group(label, group) => Item::submenu(
                     label.clone(),
                     group
                         .iter()
-                        .map(|ix| Item::action(self.entries[*ix].short.clone()))
+                        .map(|ix| self.item(*ix, &self.entries[*ix].short))
                         .collect(),
                 ),
             })
             .collect()
+    }
+
+    fn item(&self, ix: usize, label: &SharedString) -> Item {
+        let item = Item::action(label.clone());
+        match self.entries[ix].icon.clone() {
+            Some(icon) => item.with_icon(icon),
+            None => item,
+        }
     }
 
     /// Walk the rows of the innermost open panel.

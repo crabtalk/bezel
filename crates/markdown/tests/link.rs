@@ -49,3 +49,30 @@ fn a_clicked_link_goes_to_the_installed_handler(cx: &mut TestAppContext) {
     assert_eq!(*OPENED.lock().unwrap(), ["https://example.com"]);
     assert_eq!(cx.cx.opened_url(), None);
 }
+
+#[test]
+fn any_scheme_is_a_link_but_only_http_links_itself() {
+    assert!(markdown::is_link("cydonia://cydonia#43"));
+    assert!(!markdown::is_url("cydonia://cydonia#43"));
+    assert!(!markdown::is_link("cydonia://"));
+    assert!(!markdown::is_link("not a link://x"));
+}
+
+#[test]
+fn an_app_link_alone_on_a_line_is_a_bookmark() {
+    let doc = markdown::parse("[cydonia://cydonia#43](cydonia://cydonia#43 \"embed\")");
+    assert!(matches!(
+        &doc.blocks[0].kind,
+        markdown::BlockKind::Bookmark { url, form: markdown::Form::Embed } if url == "cydonia://cydonia#43"
+    ));
+    assert_eq!(
+        markdown::serialize(&doc),
+        "[cydonia://cydonia#43](cydonia://cydonia#43 \"embed\")"
+    );
+}
+
+#[test]
+fn an_app_link_in_bare_text_stays_text() {
+    let doc = markdown::parse("see cydonia://cydonia#43");
+    assert_eq!(markdown::serialize(&doc), "see cydonia://cydonia#43");
+}

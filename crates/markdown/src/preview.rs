@@ -6,7 +6,7 @@
 //! anyway. Installed once at boot like the highlighter and read at paint: the
 //! app answers from its own cache and notifies when a fetch lands.
 
-use gpui::{App, Global, SharedString};
+use gpui::{AnyElement, App, Global, SharedString, Window};
 
 /// What a bookmark paints beyond the URL it already has.
 ///
@@ -22,6 +22,35 @@ pub struct Preview {
     /// repository, a subreddit. Which path names a *unit* is the app's
     /// knowledge, not this crate's.
     pub label: Option<SharedString>,
+    /// An app's own mark for a link it owns, painted in the text colour where
+    /// a favicon would go. A chip with one opens no hover card.
+    pub glyph: Option<ui::icons::Icon>,
+}
+
+/// The card an app paints for a link it owns, in place of the bookmark — see
+/// [`crate::AppExt::set_link_card`]. `None` for a link it leaves to the web
+/// preview.
+///
+/// The element sits inside [`crate::render::PAINTED_CONTEXT`]. A press it does
+/// not stop reaches the editor.
+pub type LinkCard = fn(url: &str, form: crate::Form, &mut Window, &mut App) -> Option<AnyElement>;
+
+struct InstalledCard(LinkCard);
+
+impl Global for InstalledCard {}
+
+pub(crate) fn set_link_card(cx: &mut App, card: LinkCard) {
+    cx.set_global(InstalledCard(card));
+}
+
+pub(crate) fn card(
+    url: &str,
+    form: crate::Form,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<AnyElement> {
+    let card = cx.try_global::<InstalledCard>()?.0;
+    card(url, form, window, cx)
 }
 
 /// `None` for a URL the caller has nothing for *yet*: the card paints its host

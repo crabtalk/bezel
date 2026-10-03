@@ -155,7 +155,7 @@ impl ParseState {
             && range.end == text.text.len()
             && *form != Form::Chip
             && text.text == *url
-            && is_url(url)
+            && is_link(url)
         {
             let (url, form) = (url.clone(), *form);
             self.flush_marker();

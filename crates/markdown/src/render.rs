@@ -922,9 +922,22 @@ fn block_element(
         BlockKind::Image { url, alt, width } => {
             image(url, alt, *width, overlay, typography, theme, window, cx)
         }
-        BlockKind::Bookmark { url, form } => {
-            bookmark(overlay.block, url, *form, typography, theme, cx)
-        }
+        BlockKind::Bookmark { url, form } => match crate::preview::card(url, *form, window, cx) {
+            // The app's own, painted where a fence's would be and kept apart
+            // from the editor's keys the same way.
+            Some(element) => div()
+                .key_context(PAINTED_CONTEXT)
+                .when_some(overlay.fence, |el, host| {
+                    let (leave, ix) = (host.leave.clone(), overlay.block);
+                    el.on_action(move |_: &LeaveBlock, window, cx| leave(ix, window, cx))
+                })
+                .when(overlay.covers_block(), |el| {
+                    el.rounded(px(4.0)).bg(theme.selection)
+                })
+                .child(element)
+                .into_any_element(),
+            None => bookmark(overlay.block, url, *form, typography, theme, cx),
+        },
         BlockKind::Table {
             align,
             header,

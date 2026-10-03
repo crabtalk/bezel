@@ -25,6 +25,8 @@ pub struct Mention {
     /// The favicon slot: one em space.
     pub icon: Range<usize>,
     pub favicon: Option<SharedString>,
+    /// The app's mark, painted in the slot instead of a favicon.
+    pub glyph: Option<ui::icons::Icon>,
     /// What stands in the slot while no favicon has loaded.
     pub initial: SharedString,
 }
@@ -232,6 +234,7 @@ pub fn flatten_with(
                 range: from..to,
                 icon: from..from + ICON_SLOT.len(),
                 favicon: described.icon,
+                glyph: described.glyph,
                 initial: host
                     .chars()
                     .next()
@@ -361,6 +364,7 @@ pub(super) fn painted_text(
             let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
             let hovered: Vec<(Range<usize>, String)> = mentions
                 .iter()
+                .filter(|mention| mention.glyph.is_none())
                 .map(|mention| (mention.range.clone(), mention.url.clone()))
                 .collect();
             let text = InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
@@ -482,6 +486,20 @@ pub(super) fn painted_text(
                     gpui::size(side, side),
                 );
                 let radius = gpui::Corners::all(side / 4.0);
+                if let Some(data) = mention.glyph.as_ref().and_then(|glyph| glyph.data()) {
+                    let path = SharedString::from(format!("markdown-glyph-{:p}", data.as_ptr()));
+                    window
+                        .paint_svg(
+                            icon,
+                            path,
+                            Some(data),
+                            gpui::TransformationMatrix::unit(),
+                            icon_color,
+                            cx,
+                        )
+                        .ok();
+                    continue;
+                }
                 if let Some(favicon) = favicon {
                     window
                         .paint_image(icon, icon, radius, favicon, 0, false)

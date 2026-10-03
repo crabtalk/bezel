@@ -43,7 +43,7 @@ pub(crate) fn is_shorthand(text: &Text, ix: usize) -> bool {
     };
     *form == Form::Auto
         && text.text.get(span.range.clone()) == Some(url.as_str())
-        && is_url(url)
+        && is_link(url)
         && text.alone(ix)
 }
 
@@ -83,6 +83,20 @@ pub(crate) fn urls(text: &str) -> Vec<Range<usize>> {
         at = stop.max(start + 1);
     }
     found
+}
+
+/// Whether `source` is one URL of any scheme, `scheme://rest` — what an
+/// explicit link may hold, the way a CommonMark autolink takes any scheme.
+/// [`is_url`] is the narrower question of what bare text links itself as.
+pub fn is_link(source: &str) -> bool {
+    let Some((scheme, rest)) = source.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        && !rest.is_empty()
+        && !source.contains(char::is_whitespace)
 }
 
 /// Whether `source` is exactly one bare URL, and nothing else.

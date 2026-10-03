@@ -34,5 +34,5 @@ pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};
 pub use layout::Layout;
 pub use mention::{Mention, MentionSource};
 pub use paste::{PasteContent, PasteContext, PasteHandler};
-pub use slash::{SlashAction, SlashAt, SlashItem, SlashRun};
+pub use slash::{SlashAction, SlashAt, SlashItem, SlashRow, SlashRun};
 pub use text_size::TextSize;

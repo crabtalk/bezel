@@ -35,6 +35,9 @@ pub trait AppExt {
     /// Installs the provider for link cards, chips and embeds.
     fn set_link_preview(&mut self, preview: crate::LinkPreview);
 
+    /// Installs the painter of cards for links the app owns.
+    fn set_link_card(&mut self, card: crate::LinkCard);
+
     /// Resolves source styles against the current theme and refreshes windows.
     fn set_source_style(&mut self, style: impl Fn(&theme::Theme) -> crate::SourceStyle + 'static);
 
@@ -96,6 +99,10 @@ impl AppExt for App {
 
     fn set_link_preview(&mut self, preview: crate::LinkPreview) {
         crate::preview::set_link_preview(self, preview)
+    }
+
+    fn set_link_card(&mut self, card: crate::LinkCard) {
+        crate::preview::set_link_card(self, card)
     }
 
     fn set_source_style(&mut self, style: impl Fn(&theme::Theme) -> crate::SourceStyle + 'static) {

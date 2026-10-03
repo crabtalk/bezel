@@ -57,9 +57,9 @@ pub use marks::{
     HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, highlight_solid,
 };
 pub use parse::{
-    ParsedDoc, is_image, is_url, parse, parse_at, parse_at_many, parse_ranges, parse_with,
+    ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges, parse_with,
 };
-pub use preview::{LinkPreview, Preview};
+pub use preview::{LinkCard, LinkPreview, Preview};
 pub use quote::Quote;
 pub use render::{
     Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,

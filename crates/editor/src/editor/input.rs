@@ -72,7 +72,7 @@ impl EntityInputHandler for Editor {
         // event to this handler rather than to the `Paste` action. Typing
         // cannot reach here — a URL typed by hand arrives a character at a
         // time, and none of those characters is a URL.
-        if range.is_none() && self.marked.is_none() && markdown::is_url(text.trim()) {
+        if range.is_none() && self.marked.is_none() && markdown::is_link(text.trim()) {
             return self.paste_url(text.trim().to_string(), cx);
         }
         // The platform's range is within the caret's own text, so it becomes a
