@@ -36,7 +36,7 @@ mod element;
 mod ime;
 mod text;
 
-pub use caret::CaretShape;
+pub use caret::{CaretHeight, CaretShape};
 pub use element::*;
 pub use text::*;
 

@@ -304,6 +304,7 @@ struct Overlay<'a> {
     selection: Option<Selection>,
     caret_on: bool,
     caret_shape: ui::input::CaretShape,
+    caret_height: ui::input::CaretHeight,
     /// A block caret is hollow, and cuts no glyph out, while this is false.
     window_active: bool,
     layouts: Option<&'a BlockLayouts>,
@@ -502,6 +503,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 selection,
                 caret_on,
                 caret_shape: cx.caret_shape(),
+                caret_height: cx.caret_height(),
                 window_active: window.is_window_active(),
                 layouts: None,
                 annotations,
@@ -578,6 +580,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 selection: owned.selection,
                 caret_on: owned.caret_on,
                 caret_shape: cx.caret_shape(),
+                caret_height: cx.caret_height(),
                 window_active: window.is_window_active(),
                 layouts: Some(&owned.layouts),
                 annotations: &owned.annotations,

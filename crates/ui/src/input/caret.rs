@@ -28,14 +28,37 @@ pub(crate) fn set_caret_shape(shape: CaretShape, cx: &mut App) {
     cx.refresh_windows();
 }
 
+/// How tall the app-wide block caret stands.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CaretHeight {
+    /// The line's height, leading included.
+    #[default]
+    Line,
+    /// The bar's height: the text's font size.
+    Text,
+}
+
+impl Global for CaretHeight {}
+
+pub(crate) fn caret_height(cx: &App) -> CaretHeight {
+    cx.try_global::<CaretHeight>().copied().unwrap_or_default()
+}
+
+/// Changes the height and repaints open windows.
+pub(crate) fn set_caret_height(height: CaretHeight, cx: &mut App) {
+    cx.set_global(height);
+    cx.refresh_windows();
+}
+
 impl CaretShape {
     /// Adapts a renderer's existing bar, centred in a line `line_height` tall,
-    /// to `width`, which a bar ignores. A block fills the line's height, solid
-    /// or, when `hollow`, outlined.
+    /// to `width`, which a bar ignores. A block stands as tall as `height`
+    /// says, solid or, when `hollow`, outlined.
     pub fn quad(
         self,
         mut bar: Bounds<Pixels>,
         line_height: Pixels,
+        height: CaretHeight,
         width: Pixels,
         color: Hsla,
         hollow: bool,
@@ -46,8 +69,10 @@ impl CaretShape {
         match self {
             Self::Bar => fill(bar, color),
             Self::Block => {
-                bar.origin.y -= (line_height - bar.size.height) / 2.0;
-                bar.size.height = line_height;
+                if height == CaretHeight::Line {
+                    bar.origin.y -= (line_height - bar.size.height) / 2.0;
+                    bar.size.height = line_height;
+                }
                 match hollow {
                     true => outline(bar, color, BorderStyle::Solid),
                     false => fill(bar, color),

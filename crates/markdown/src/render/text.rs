@@ -338,7 +338,11 @@ pub(super) fn painted_text(
                 .text_color(theme.text_faint)
                 .child(hint.clone())
         });
-    let (shape, hollow) = (overlay.caret_shape, overlay.caret_hollow());
+    let (shape, height, hollow) = (
+        overlay.caret_shape,
+        overlay.caret_height,
+        overlay.caret_hollow(),
+    );
     let glyph = caret
         .filter(|_| shape.cuts_out(hollow))
         .and_then(|offset| glyph_at(&flat.text, offset));
@@ -447,6 +451,7 @@ pub(super) fn painted_text(
                     glyph.as_ref(),
                     CaretPaint {
                         shape,
+                        height,
                         hollow,
                         color: caret_color,
                         size,
@@ -547,6 +552,7 @@ pub(super) fn glyph_at(text: &str, offset: usize) -> Option<Range<usize>> {
 /// How a caret is drawn, apart from where.
 pub(super) struct CaretPaint {
     pub shape: ui::input::CaretShape,
+    pub height: ui::input::CaretHeight,
     pub hollow: bool,
     pub color: Hsla,
     /// The text's font size, in pixels.
@@ -584,6 +590,7 @@ pub(super) fn paint_caret(
     window.paint_quad(paint.shape.quad(
         caret_quad(head, paint.size, line_height),
         line_height,
+        paint.height,
         width,
         paint.color,
         paint.hollow,
