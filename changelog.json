@@ -1,5 +1,35 @@
 [
   {
+    "version": "0.2.7",
+    "date": "2026-10-03",
+    "summary": "App-owned slash menus with icons and groups, @ mentions, painted fences, app link cards and any-scheme links, searchable submenus, block caret height, and grey hairlines.",
+    "new": [
+      "`editor::AppExt::set_slash_items` replaces the slash menu's items, which are `editor::slash_defaults()` until it is called. A `SlashItem` is a `Row(SlashRow)` with a label, optional icon and `SlashAction`, or a `Group` of rows behind a submenu with its own icon. `SlashAction::Block` turns the block into a `BlockKind`; `SlashAction::Run` hands the app a `SlashAt` with the editor and block index.",
+      "The default slash rows carry block glyphs, with quotes and callouts behind one `Quote` group. A query ranks rows across groups; a group with several matches stays a submenu and a lone match stands as its own row.",
+      "`Chrome::mention` turns on an `@` menu over the rows from `editor::AppExt::set_mention_source`. Picking a `Mention` replaces `@query` with a chip linking its URL.",
+      "`markdown::BlockRenderer` receives a `Fence` with its language, code and an optional `rewrite` that writes new code as an undoable edit. Painted fences sit inside `PAINTED_CONTEXT`, so keys typed into their controls stay there; `LeaveBlock` returns focus to the document. `Editing::fence` takes a `FenceHost`, and `Editor::set_code`, `Editor::place_block` and `Doc::set_code` back it.",
+      "`markdown::AppExt::set_link_card` installs a `LinkCard` painter for links the app owns, in place of the bookmark. `LinkPreview::glyph` paints an app icon where a favicon would go; a chip with one opens no hover card.",
+      "Explicit links and autolinks accept any `scheme://` URL. `markdown::is_link` tests for one; `is_url` still decides what bare text links itself as.",
+      "`Item::searchable` opens a submenu with a focused query field that narrows its rows by label and description and scrolls past `SEARCH_ROWS`. `ui::menu::init` installs its keys; `ui::menu::bindings` returns them.",
+      "`ui::AppExt::set_caret_height` makes block carets fill the line (`CaretHeight::Line`, the default) or stand as tall as the text (`CaretHeight::Text`).",
+      "`Theme::border_faint` is the faintest hairline, and `Theme::drop_target` fills a pane docking preview when no material paints it."
+    ],
+    "changed": [
+      "`BlockRenderer` takes `&Fence` instead of separate language and code arguments.",
+      "`Theme` has `border_faint` and `drop_target` fields; struct literals must include them.",
+      "Hairline ink is a light grey on dark and a dark grey on light instead of pure white or black.",
+      "`popover::divider`, `popover::menu_section` and `popover::dialog_field` take `&Theme`.",
+      "Canvas selection rings and handles are 1px in the theme's `ring` color instead of the accent.",
+      "The pane docking preview is a thin material where materials are on, and `Theme::drop_target` otherwise.",
+      "`drag::Carry::host` takes the origin the target draws the ghost at.",
+      "gpui is updated to 0.3.16."
+    ],
+    "fixed": [
+      "Enter at the start of a block moves the whole block down under an empty paragraph, so a heading keeps its level.",
+      "Dropped drag items, including custom ghosts and tabs hosted by a dock, settle from where they were last drawn."
+    ]
+  },
+  {
     "version": "0.2.6",
     "date": "2026-10-02",
     "summary": "Configurable window blur, drag-region scrolling over lists, solid block carets, a cross-platform color picker, word and line selection by double and triple click, and find and comment washes in source mode.",
