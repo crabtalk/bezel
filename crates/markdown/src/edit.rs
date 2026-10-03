@@ -461,6 +461,15 @@ impl Doc {
         }
     }
 
+    /// Replace a fenced block's code. Anything but a fence is left alone.
+    pub fn set_code(&mut self, ix: usize, code: String) {
+        if let Some(BlockKind::Code { code: held, .. }) =
+            self.blocks.get_mut(ix).map(|block| &mut block.kind)
+        {
+            *held = Text::plain(code);
+        }
+    }
+
     /// Turn what a selection covers into one code block, leaving whatever it
     /// did not cover as blocks of its own.
     ///

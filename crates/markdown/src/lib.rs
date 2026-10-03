@@ -46,7 +46,7 @@ pub mod source;
 pub mod source_style;
 pub mod typography;
 
-pub use block::BlockRenderer;
+pub use block::{BlockRenderer, Fence, Rewrite};
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Text};
 pub use edit::{Shortcut, Splice, shortcut};
 pub use find::{FindPaint, default_find};
@@ -62,8 +62,9 @@ pub use parse::{
 pub use preview::{LinkPreview, Preview};
 pub use quote::Quote;
 pub use render::{
-    Annotation, BlockLayouts, Caption, CopyButton, Editing, ImageOverlay, ImageOverlayCorner,
-    OnImage, OnToggle, Toggle, image_source, markdown, render, render_source, render_with,
+    Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,
+    ImageOverlayCorner, LeaveBlock, OnImage, OnLeave, OnRewrite, OnToggle, PAINTED_CONTEXT, Toggle,
+    image_source, markdown, render, render_source, render_with,
 };
 pub use select::{Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_at_many, serialize_with};

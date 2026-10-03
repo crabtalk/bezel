@@ -1,9 +1,13 @@
 use super::*;
 use crate::AppExt as _;
+use std::rc::Rc;
 use ui::AppExt as _;
 
 impl Render for Editor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(mention) = &mut self.mention {
+            mention.refresh(cx);
+        }
         let theme = Theme::of(cx).clone();
         let layout = cx.editor_layout();
         let focused = self.focus_handle.is_focused(window);
@@ -434,6 +438,26 @@ impl Render for Editor {
                                 table_controls: true,
                                 image_overlay: self.image_overlay.clone(),
                                 image_overlay_corner: self.image_overlay_corner,
+                                fence: Some(markdown::FenceHost {
+                                    rewrite: {
+                                        let editor = cx.entity().downgrade();
+                                        Rc::new(move |ix, code, _, cx| {
+                                            editor
+                                                .update(cx, |this, cx| this.set_code(ix, code, cx))
+                                                .ok();
+                                        })
+                                    },
+                                    leave: {
+                                        let editor = cx.entity().downgrade();
+                                        Rc::new(move |ix, window, cx| {
+                                            editor
+                                                .update(cx, |this, cx| {
+                                                    this.leave_block(ix, window, cx)
+                                                })
+                                                .ok();
+                                        })
+                                    },
+                                }),
                                 base: self.base.as_deref(),
                                 // A reveal owed to a caret nobody is focused on
                                 // still needs its block built to find it.
@@ -466,6 +490,7 @@ impl Render for Editor {
                 .size(gpui::px(0.0)),
             )
             .children(self.slash_menu(&theme, window, cx))
+            .children(self.mention_menu(&theme, window, cx))
             .children(self.paste_menu(&theme, cx))
             .children(self.url_prompt(&theme, cx))
             .children(self.image_target(cx))

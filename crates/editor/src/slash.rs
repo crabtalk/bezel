@@ -1,14 +1,13 @@
-//! The slash menu: `/` at an empty block, then the block vocabulary.
-//!
-//! [`markdown::BlockKind`] says it is closed by design because *this* is what
-//! it is for — the menu is the enum, and a consumer that needs another block
-//! widens the enum rather than registering something here.
+//! The slash menu: `/` at an empty block, then the block vocabulary and the
+//! rows an app adds with [`crate::AppExt::set_slash_items`].
 //!
 //! The editor keeps focus while the menu is open and the query is the text
 //! typed after the `/`, which is how Notion does it and why there is no second
 //! field to hand focus to.
 
-use gpui::SharedString;
+use std::rc::Rc;
+
+use gpui::{App, Global, SharedString, WeakEntity, Window};
 use ui::{
     menu::{self, Item},
     popover::filter_indices,
@@ -131,6 +130,112 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
     ]
 }
 
+/// What a [`SlashAction::Run`] row calls.
+pub type SlashRun = Rc<dyn Fn(SlashAt, &mut Window, &mut App)>;
+
+/// What picking a slash row does.
+#[derive(Clone)]
+pub enum SlashAction {
+    /// Turn the block the `/` was typed in into this one.
+    Block(BlockKind),
+    /// Hand the block to the app. The `/query` is gone from it by then; what
+    /// the block becomes, and where the caret goes, is the app's.
+    Run(SlashRun),
+}
+
+/// The block a [`SlashAction::Run`] row was picked in.
+#[derive(Clone)]
+pub struct SlashAt {
+    pub editor: WeakEntity<crate::Editor>,
+    pub block: usize,
+}
+
+/// A row an app adds to the slash menu, after the editor's own.
+#[derive(Clone)]
+pub enum SlashItem {
+    Row {
+        label: SharedString,
+        action: SlashAction,
+    },
+    /// Rows behind a submenu. A query ranks them flat, each called
+    /// `Group (row)`.
+    Group {
+        label: SharedString,
+        rows: Vec<(SharedString, SlashAction)>,
+    },
+}
+
+/// What the app installed.
+pub(crate) struct AppItems(pub Vec<SlashItem>);
+
+impl Global for AppItems {}
+
+/// The rows the app installed, or none.
+pub(crate) fn app_items(cx: &App) -> Vec<SlashItem> {
+    cx.try_global::<AppItems>()
+        .map(|AppItems(items)| items.clone())
+        .unwrap_or_default()
+}
+
+/// One row the open menu can offer: what a query matches, what a submenu
+/// shows, the group it sits in, and what picking it does.
+#[derive(Clone)]
+struct Entry {
+    label: SharedString,
+    short: SharedString,
+    group: Option<SharedString>,
+    action: SlashAction,
+}
+
+/// [`items`] and then the app's, flattened.
+fn entries(app: Vec<SlashItem>) -> Vec<Entry> {
+    let grouped = |group: &str, short: SharedString, action| Entry {
+        label: format!("{group} ({short})").into(),
+        short,
+        group: Some(SharedString::from(group.to_owned())),
+        action,
+    };
+    let mut entries: Vec<Entry> = items()
+        .into_iter()
+        .map(|(label, kind)| {
+            let quoted = label
+                .strip_prefix("Quote (")
+                .and_then(|rest| rest.strip_suffix(')'))
+                .map(|short| SharedString::from(short.to_owned()));
+            match quoted {
+                Some(short) => grouped("Quote", short, SlashAction::Block(kind)),
+                None if matches!(kind, BlockKind::Quote { .. }) => Entry {
+                    label: label.clone(),
+                    short: label,
+                    group: Some("Quote".into()),
+                    action: SlashAction::Block(kind),
+                },
+                None => Entry {
+                    label: label.clone(),
+                    short: label,
+                    group: None,
+                    action: SlashAction::Block(kind),
+                },
+            }
+        })
+        .collect();
+    for item in app {
+        match item {
+            SlashItem::Row { label, action } => entries.push(Entry {
+                label: label.clone(),
+                short: label,
+                group: None,
+                action,
+            }),
+            SlashItem::Group { label, rows } => entries.extend(
+                rows.into_iter()
+                    .map(|(short, action)| grouped(&label, short, action)),
+            ),
+        }
+    }
+    entries
+}
+
 /// What [`items`] calls this block, and `None` for one the menu does not offer
 /// — a bookmark, which needs a URL nobody can type into a menu row.
 ///
@@ -152,8 +257,8 @@ fn same(row: &BlockKind, kind: &BlockKind) -> bool {
     }
 }
 
-/// A row of the open menu: one block, or a group of them behind a submenu.
-/// Indices are into [`items`].
+/// A row of the open menu: one entry, or a group of them behind a submenu.
+/// Indices are into the menu's entries.
 enum Row {
     Block(usize),
     Group(SharedString, Vec<usize>),
@@ -165,45 +270,48 @@ pub struct Slash {
     /// backspacing onto it closes the menu.
     pub at: Cursor,
     rows: Vec<Row>,
+    /// Read once at open.
+    entries: Vec<Entry>,
     pub cursor: menu::Cursor,
 }
 
 impl Slash {
-    pub fn open(at: Cursor) -> Self {
+    pub fn open(at: Cursor, app_items: Vec<SlashItem>) -> Self {
         let mut slash = Self {
             at,
             rows: Vec::new(),
+            entries: entries(app_items),
             cursor: menu::Cursor::default(),
         };
         slash.refilter("");
         slash
     }
 
-    /// With no query the quotes sit behind one row; a query ranks every block
-    /// flat.
+    /// With no query a group sits behind one row where its first entry is; a
+    /// query ranks every entry flat.
     pub fn refilter(&mut self, query: &str) {
-        let items = items();
         self.rows = if query.is_empty() {
-            let mut rows = Vec::new();
-            let mut quotes = Vec::new();
-            for (ix, (_, kind)) in items.iter().enumerate() {
-                if !matches!(kind, BlockKind::Quote { .. }) {
+            let mut rows: Vec<Row> = Vec::new();
+            for (ix, entry) in self.entries.iter().enumerate() {
+                let Some(group) = &entry.group else {
                     rows.push(Row::Block(ix));
                     continue;
+                };
+                match rows
+                    .iter_mut()
+                    .find(|row| matches!(row, Row::Group(label, _) if label == group))
+                {
+                    Some(Row::Group(_, held)) => held.push(ix),
+                    _ => rows.push(Row::Group(group.clone(), vec![ix])),
                 }
-                if quotes.is_empty() {
-                    rows.push(Row::Group("Quote".into(), Vec::new()));
-                }
-                quotes.push(ix);
-            }
-            if let Some(Row::Group(_, group)) =
-                rows.iter_mut().find(|row| matches!(row, Row::Group(..)))
-            {
-                *group = quotes;
             }
             rows
         } else {
-            let labels: Vec<SharedString> = items.into_iter().map(|(label, _)| label).collect();
+            let labels: Vec<SharedString> = self
+                .entries
+                .iter()
+                .map(|entry| entry.label.clone())
+                .collect();
             filter_indices(query, &labels)
                 .into_iter()
                 .map(Row::Block)
@@ -215,23 +323,15 @@ impl Slash {
 
     /// The rows as [`ui::menu::card`] paints them.
     pub fn menu(&self) -> Vec<Item> {
-        let items = items();
         self.rows
             .iter()
             .map(|row| match row {
-                Row::Block(ix) => Item::action(items[*ix].0.clone()),
+                Row::Block(ix) => Item::action(self.entries[*ix].label.clone()),
                 Row::Group(label, group) => Item::submenu(
                     label.clone(),
                     group
                         .iter()
-                        .map(|ix| {
-                            let label = &items[*ix].0;
-                            let short = label
-                                .strip_prefix("Quote (")
-                                .and_then(|rest| rest.strip_suffix(')'))
-                                .unwrap_or(label);
-                            Item::action(short.to_string())
-                        })
+                        .map(|ix| Item::action(self.entries[*ix].short.clone()))
                         .collect(),
                 ),
             })
@@ -260,19 +360,14 @@ impl Slash {
         })
     }
 
-    /// The block confirming right now would make.
-    pub fn choice(&self) -> Option<BlockKind> {
-        self.kind_at(&self.cursor.path()?)
-    }
-
-    /// The block the row at `path` makes, and `None` for a group.
-    pub fn kind_at(&self, path: &[usize]) -> Option<BlockKind> {
+    /// What the row at `path` does, and `None` for a group.
+    pub fn action_at(&self, path: &[usize]) -> Option<SlashAction> {
         let ix = match (self.rows.get(*path.first()?)?, path.get(1)) {
             (Row::Block(ix), None) => *ix,
             (Row::Group(_, group), Some(row)) => *group.get(*row)?,
             _ => return None,
         };
-        items().into_iter().nth(ix).map(|(_, kind)| kind)
+        self.entries.get(ix).map(|entry| entry.action.clone())
     }
 
     /// What has been typed since the `/`, or `None` when the caret has left

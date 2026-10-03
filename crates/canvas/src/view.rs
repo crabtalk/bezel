@@ -390,6 +390,7 @@ impl CanvasView {
                     slash: false,
                     language: false,
                     paste: false,
+                    mention: false,
                 })
                 .with_text_size(size)
         })

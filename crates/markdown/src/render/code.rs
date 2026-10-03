@@ -40,6 +40,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         image: None,
         image_overlay: None,
         image_overlay_corner: ImageOverlayCorner::BottomRight,
+        fence: None,
         table_controls: false,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,

@@ -9,15 +9,33 @@
 //!
 //! Installed once at boot like the highlighter, and read at paint.
 
+use std::rc::Rc;
+
 use gpui::{AnyElement, App, Global, Window};
+
+/// Replaces the painted fence's code — see [`Fence::rewrite`].
+pub type Rewrite = Rc<dyn Fn(String, &mut Window, &mut App)>;
+
+/// The fence a [`BlockRenderer`] is asked to paint.
+pub struct Fence<'a> {
+    /// The info string.
+    pub language: &'a str,
+    pub code: &'a str,
+    /// Writes new code into this fence through the editor holding it, as an
+    /// undoable edit. `None` in a document nobody is editing.
+    pub rewrite: Option<Rewrite>,
+}
 
 /// Paints the block a fence's info string names, or `None` to leave it to the
 /// ordinary code block.
 ///
 /// One answer for a language nothing paints, a renderer that has not been
 /// installed, and a renderer that looked at the code and declined.
-pub type BlockRenderer =
-    fn(language: &str, code: &str, &mut Window, &mut App) -> Option<AnyElement>;
+///
+/// The element sits inside [`crate::render::PAINTED_CONTEXT`]. A press it does
+/// not stop reaches the editor, which puts the caret in the fence and shows its
+/// source.
+pub type BlockRenderer = fn(&Fence<'_>, &mut Window, &mut App) -> Option<AnyElement>;
 
 struct Installed(BlockRenderer);
 
@@ -28,14 +46,9 @@ pub(crate) fn set_block_renderer(cx: &mut App, renderer: BlockRenderer) {
     cx.set_global(Installed(renderer));
 }
 
-pub(crate) fn render(
-    language: Option<&str>,
-    code: &str,
-    window: &mut Window,
-    cx: &mut App,
-) -> Option<AnyElement> {
+pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
     // Copied out before the call: the renderer reads the theme and its own
     // globals off the same `cx` this borrows.
     let renderer = cx.try_global::<Installed>()?.0;
-    renderer(language?, code, window, cx)
+    renderer(fence, window, cx)
 }

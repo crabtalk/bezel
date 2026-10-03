@@ -16,6 +16,17 @@ use crate::{
 /// would have to be restated every time their metrics move.
 const MAX_ROWS: f32 = 12.0;
 
+/// The field a [`popover::search_line`] holds: unframed, the line is its
+/// frame.
+pub(crate) fn query_field(
+    placeholder: impl Into<SharedString>,
+    cx: &mut Context<TextField>,
+) -> TextField {
+    TextField::new(cx)
+        .with_placeholder(placeholder)
+        .with_frame(false)
+}
+
 pub(crate) struct SearchList {
     pub query: Entity<TextField>,
     pub filter: popover::Filter,
@@ -35,11 +46,7 @@ impl SearchList {
         get: fn(&mut V) -> &mut Self,
         cx: &mut Context<V>,
     ) -> Self {
-        let query = cx.new(|cx| {
-            TextField::new(cx)
-                .with_placeholder(placeholder)
-                .with_frame(false)
-        });
+        let query = cx.new(|cx| query_field(placeholder, cx));
         cx.subscribe(&query, move |view, query, event: &FieldEvent, cx| {
             if matches!(event, FieldEvent::Changed(_)) {
                 let search = get(view);

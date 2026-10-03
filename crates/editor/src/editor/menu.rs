@@ -744,7 +744,7 @@ impl Editor {
             &slash.cursor,
             window,
             cx,
-            |this: &mut Self, hit, _, cx| match hit {
+            |this: &mut Self, hit, window, cx| match hit {
                 Hit::Point(path) => {
                     if let Some(slash) = this.slash.as_mut()
                         && slash.cursor.point_at(&slash.menu(), &path)
@@ -753,8 +753,7 @@ impl Editor {
                     }
                 }
                 Hit::Choose(path) => {
-                    let kind = this.slash.as_ref().and_then(|slash| slash.kind_at(&path));
-                    this.confirm_slash(kind, cx);
+                    this.confirm_slash(Some(path.to_vec()), window, cx);
                 }
                 Hit::Dismiss => {
                     this.slash = None;
@@ -770,6 +769,53 @@ impl Editor {
         .max_h(px(280.0));
         Some(ui::popover::menu_at(
             "slash-menu",
+            gpui::point(point.x, point.y + line_height),
+            card.into_any_element(),
+            None,
+        ))
+    }
+
+    /// The `@` menu, under the `@` the way [`Self::slash_menu`] hangs under
+    /// its `/`. Nothing while the source has no rows for the query.
+    pub(super) fn mention_menu(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let mention = self.mention.as_ref()?;
+        let items = mention.menu();
+        if items.is_empty() {
+            return None;
+        }
+        let (point, line_height) = self.layouts.position(mention.at)?;
+        let card = ui::menu::card(
+            theme,
+            "mention",
+            &items,
+            &mention.cursor,
+            window,
+            cx,
+            |this: &mut Self, hit, _, cx| match hit {
+                Hit::Point(path) => {
+                    if let Some(mention) = this.mention.as_mut()
+                        && mention.cursor.point_at(&mention.menu(), &path)
+                    {
+                        cx.notify();
+                    }
+                }
+                Hit::Choose(path) => {
+                    this.confirm_mention(path.first().copied(), cx);
+                }
+                Hit::Dismiss => {
+                    this.mention = None;
+                    cx.notify();
+                }
+            },
+        )
+        .max_h(px(280.0));
+        Some(ui::popover::menu_at(
+            "mention-menu",
             gpui::point(point.x, point.y + line_height),
             card.into_any_element(),
             None,

@@ -181,6 +181,36 @@ pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 /// Builds a picture's hover control from its block index and original URL.
 pub type ImageOverlay = Rc<dyn Fn(usize, &str, &mut Window, &mut App) -> Option<AnyElement>>;
 
+/// Handed a fence's block index and its new code — see [`FenceHost::rewrite`].
+pub type OnRewrite = Rc<dyn Fn(usize, String, &mut Window, &mut App)>;
+
+/// Handed the block a painted fence is leaving — see [`FenceHost::leave`].
+pub type OnLeave = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// What an editor lends the blocks an installed [`crate::BlockRenderer`]
+/// paints — see [`Editing::fence`].
+#[derive(Clone)]
+pub struct FenceHost {
+    /// Replaces the code of the fence at a block index, as an edit of the
+    /// document.
+    pub rewrite: OnRewrite,
+    /// Hands the keyboard back to the document from inside the painted block
+    /// at a block index. Dispatched by [`LeaveBlock`].
+    pub leave: OnLeave,
+}
+
+/// The key context around every painted fence. An editor's bindings stop at
+/// it, so keys typed into a control the block paints stay that control's.
+pub const PAINTED_CONTEXT: &str = "MarkdownPaintedBlock";
+
+gpui::actions!(
+    markdown,
+    [
+        /// Return focus from inside a painted fence to the document around it.
+        LeaveBlock
+    ]
+);
+
 /// The picture corner holding an app's hover control.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ImageOverlayCorner {
@@ -249,6 +279,9 @@ pub struct Editing<'a> {
     pub image_overlay: Option<ImageOverlay>,
     /// Corner for the picture control; defaults to bottom-right.
     pub image_overlay_corner: ImageOverlayCorner,
+    /// Lets a painted fence rewrite its own code and give the keyboard back.
+    /// `None` paints a fence that can do neither.
+    pub fence: Option<FenceHost>,
     /// Reserves lanes around tables for editor controls.
     pub table_controls: bool,
     /// Whether a fence offers to copy itself.
@@ -283,6 +316,7 @@ impl Default for Editing<'_> {
             image: None,
             image_overlay: None,
             image_overlay_corner: ImageOverlayCorner::BottomRight,
+            fence: None,
             table_controls: false,
             copy: CopyButton::default(),
             base: None,
@@ -320,6 +354,7 @@ struct Overlay<'a> {
     image: Option<&'a OnImage>,
     image_overlay: Option<&'a ImageOverlay>,
     image_overlay_corner: ImageOverlayCorner,
+    fence: Option<&'a FenceHost>,
     table_controls: bool,
     copy: CopyButton,
     base: Option<&'a Path>,
@@ -469,6 +504,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         image,
         image_overlay,
         image_overlay_corner,
+        fence,
         table_controls,
         copy,
         base,
@@ -513,6 +549,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 image: image.as_ref(),
                 image_overlay: image_overlay.as_ref(),
                 image_overlay_corner,
+                fence: fence.as_ref(),
                 table_controls,
                 copy,
                 base,
@@ -557,6 +594,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         image,
         image_overlay,
         image_overlay_corner,
+        fence,
         table_controls,
         copy,
         base: base.map(Path::to_path_buf),
@@ -590,6 +628,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 image: owned.image.as_ref(),
                 image_overlay: owned.image_overlay.as_ref(),
                 image_overlay_corner: owned.image_overlay_corner,
+                fence: owned.fence.as_ref(),
                 table_controls: owned.table_controls,
                 copy: owned.copy,
                 base: owned.base.as_deref(),
@@ -623,6 +662,7 @@ struct Owned {
     image: Option<OnImage>,
     image_overlay: Option<ImageOverlay>,
     image_overlay_corner: ImageOverlayCorner,
+    fence: Option<FenceHost>,
     table_controls: bool,
     copy: CopyButton,
     base: Option<std::path::PathBuf>,
@@ -840,12 +880,29 @@ fn block_element(
             let painted = overlay
                 .caret()
                 .is_none()
-                .then(|| block::render(language.as_deref(), &code.text, window, cx))
+                .then(|| {
+                    let fence = block::Fence {
+                        language: language.as_deref()?,
+                        code: &code.text,
+                        rewrite: overlay.fence.map(|host| {
+                            let (rewrite, ix) = (host.rewrite.clone(), overlay.block);
+                            Rc::new(move |code: String, window: &mut Window, cx: &mut App| {
+                                rewrite(ix, code, window, cx)
+                            }) as block::Rewrite
+                        }),
+                    };
+                    block::render(&fence, window, cx)
+                })
                 .flatten();
             match painted {
                 // Painted, there is no text under the selection to carry it —
                 // the wash an opaque block gets at the container comes here.
                 Some(element) => div()
+                    .key_context(PAINTED_CONTEXT)
+                    .when_some(overlay.fence, |el, host| {
+                        let (leave, ix) = (host.leave.clone(), overlay.block);
+                        el.on_action(move |_: &LeaveBlock, window, cx| leave(ix, window, cx))
+                    })
                     .when(overlay.covers_block(), |el| {
                         el.rounded(px(4.0)).bg(theme.selection)
                     })

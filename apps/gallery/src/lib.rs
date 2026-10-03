@@ -74,7 +74,9 @@ const APP_MENUBAR: bool = !cfg!(any(target_os = "macos", target_family = "wasm")
 pub fn init(cx: &mut App) {
     cx.set_highlighter(highlight::spans, highlight::languages());
     cx.set_link_preview(preview::of);
-    cx.set_block_renderer(blocks::render);
+    cx.set_block_renderer(|fence, window, cx| {
+        blocks::render(fence.language, fence.code, window, cx)
+    });
     // The dialect this gallery reads and writes: two marks CommonMark has no
     // spelling for, registered rather than waited on. See the Ribbon page.
     cx.set_marks(
@@ -89,6 +91,7 @@ pub fn init(cx: &mut App) {
     canvas::init(cx);
     palette::init(cx);
     combobox::init(cx);
+    ui::menu::init(cx);
     date::init(cx);
     focus::init(cx);
     menubar::init(cx);

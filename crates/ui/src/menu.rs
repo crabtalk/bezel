@@ -11,10 +11,15 @@
 //! can never disagree about which row an open submenu hangs off. What the
 //! pointer did comes back as a [`Hit`]; acting on it stays the caller's.
 
-use crate::{icons, keys, popover, scroll, tooltip::Tooltip};
+use crate::{
+    icons,
+    input::{FieldEvent, TextField},
+    keys, popover, scroll,
+    tooltip::Tooltip,
+};
 use gpui::{
-    Action, Axis, Context, MouseDownEvent, Pixels, Point, ScrollHandle, SharedString, Size, Window,
-    div, prelude::*, px,
+    Action, App, Axis, Context, Entity, Focusable as _, KeyBinding, MouseDownEvent, Pixels, Point,
+    ScrollHandle, SharedString, Size, Subscription, Window, actions, div, prelude::*, px,
 };
 use icons::Icon;
 use std::{cell::Cell, rc::Rc};
@@ -34,6 +39,33 @@ const PANEL_MIN: f32 = 180.0;
 /// line, the panel needs a ceiling to clip it against rather than growing to
 /// whatever the longest one measures.
 const PANEL_DESCRIBED: f32 = 280.0;
+
+/// How many rows a searchable submenu shows before it scrolls.
+const SEARCH_ROWS: f32 = 10.0;
+
+actions!(bezel_menu, [SelectNext, SelectPrevious, Confirm, Dismiss]);
+
+/// The key context around a searchable submenu's query field. Typing goes to
+/// the field; the arrows, enter and escape fall through to the menu.
+pub const SEARCH_CONTEXT: &str = "MenuSearch";
+
+/// The keymap a searchable submenu answers to, as data — see [`crate::keys`].
+pub fn bindings() -> Vec<KeyBinding> {
+    let ctx = Some(SEARCH_CONTEXT);
+    vec![
+        KeyBinding::new("down", SelectNext, ctx),
+        KeyBinding::new("up", SelectPrevious, ctx),
+        KeyBinding::new("ctrl-n", SelectNext, ctx),
+        KeyBinding::new("ctrl-p", SelectPrevious, ctx),
+        KeyBinding::new("enter", Confirm, ctx),
+        KeyBinding::new("escape", Dismiss, ctx),
+    ]
+}
+
+/// Install [`bindings`]. Call once at startup.
+pub fn init(cx: &mut App) {
+    cx.bind_keys(bindings());
+}
 
 /// A row in a menu.
 ///
@@ -76,6 +108,11 @@ pub enum Item {
         icon: Option<Icon>,
         enabled: bool,
         items: Vec<Item>,
+        /// The placeholder of the query field the panel opens with, focused.
+        /// Typing narrows its rows by label and description; the panel shows
+        /// [`SEARCH_ROWS`] rows and scrolls past them. `None` opens a plain
+        /// panel.
+        search: Option<SharedString>,
     },
     /// Options side by side in one row, each a glyph over its label, the
     /// `selected` one highlighted. A pick is a [`Hit::Choose`] whose path is
@@ -123,7 +160,17 @@ impl Item {
             icon: None,
             enabled: true,
             items,
+            search: None,
         }
+    }
+
+    /// Open the submenu with a query field — see [`Item::Submenu::search`].
+    /// No-ops on anything but a submenu row.
+    pub fn searchable(mut self, placeholder: impl Into<SharedString>) -> Self {
+        if let Item::Submenu { search, .. } = &mut self {
+            *search = Some(placeholder.into());
+        }
+        self
     }
 
     pub fn segmented(segments: impl IntoIterator<Item = Segment>, selected: usize) -> Self {
@@ -272,6 +319,28 @@ impl Item {
             Item::Segmented {
                 segments, selected, ..
             } if !segments.is_empty() => Some((*selected).min(segments.len() - 1)),
+            _ => None,
+        }
+    }
+
+    /// What a query is matched against: the label, then the description.
+    fn keywords(&self) -> String {
+        match self {
+            Item::Action {
+                label, description, ..
+            } => match description {
+                Some(description) => format!("{label} {description}"),
+                None => label.to_string(),
+            },
+            Item::Submenu { label, .. } => label.to_string(),
+            Item::Segmented { .. } | Item::Separator => String::new(),
+        }
+    }
+
+    /// The placeholder of the query field this row's submenu opens with.
+    fn search(&self) -> Option<&SharedString> {
+        match self {
+            Item::Submenu { search, .. } => search.as_ref(),
             _ => None,
         }
     }
@@ -558,7 +627,16 @@ pub fn card<V: 'static>(
         chain: popover::Chain::default(),
         on: Rc::new(on),
     };
-    tree.panel(theme, items, cursor, &[], window, cx)
+    tree.panel(theme, items, cursor, &[], None, window, cx)
+}
+
+/// A searchable panel's query: its field, and whether it has been focused
+/// yet. Held in the panel's element state, so it lives while the panel is
+/// down and a panel opened again starts empty.
+struct Query {
+    field: Entity<TextField>,
+    focused: bool,
+    _changed: Subscription,
 }
 
 /// A gpui mouse listener, boxed: `Context::listener` borrows the context it is
@@ -583,12 +661,14 @@ struct Tree<V: 'static> {
 }
 
 impl<V: 'static> Tree<V> {
+    #[allow(clippy::too_many_arguments)]
     fn panel(
         &self,
         theme: &Theme,
         items: &[Item],
         cursor: &Cursor,
         prefix: &[usize],
+        search: Option<&SharedString>,
         window: &mut Window,
         cx: &mut Context<V>,
     ) -> gpui::Div {
@@ -604,6 +684,22 @@ impl<V: 'static> Tree<V> {
             )
             .read(cx)
             .clone();
+        let query = search.map(|placeholder| self.query(&rows_id, placeholder, window, cx));
+        let text = query
+            .as_ref()
+            .map(|query| query.read(cx).field.read(cx).content().trim().to_owned())
+            .unwrap_or_default();
+        // The rows on show, by index into `items`, in the order they paint. A
+        // query ranks them and drops what it does not match.
+        let visible: Vec<usize> = if text.is_empty() {
+            (0..items.len()).collect()
+        } else {
+            let words: Vec<String> = items.iter().map(Item::keywords).collect();
+            popover::filter_indices(&text, &words)
+                .into_iter()
+                .filter(|&row| items[row].selectable())
+                .collect()
+        };
         // Only a change of live row or of the viewport's size scrolls: a wheel
         // that carried the live row out of view is left where it put it. gpui
         // drops a request made before the rows have been laid out, and measures
@@ -611,8 +707,8 @@ impl<V: 'static> Tree<V> {
         let size = handle.bounds().size;
         if size.height > Pixels::ZERO && shown.get() != Some((lit, size)) {
             shown.set(Some((lit, size)));
-            if let Some(lit) = lit {
-                handle.scroll_to_item(lit);
+            if let Some(at) = lit.and_then(|lit| visible.iter().position(|&row| row == lit)) {
+                handle.scroll_to_item(at);
             }
         }
         let inset = px(popover::SNAP) + window.client_inset().unwrap_or(Pixels::ZERO);
@@ -622,8 +718,11 @@ impl<V: 'static> Tree<V> {
         let gutter = items.iter().any(Item::has_icon);
         let described = items.iter().any(Item::has_description);
         let rows =
-            div().id(rows_id.clone()).p(px(popover::MENU_PAD)).children(
-                items.iter().enumerate().map(|(row, item)| {
+            div()
+                .id(rows_id.clone())
+                .p(px(popover::MENU_PAD))
+                .children(visible.iter().map(|&row| {
+                    let item = &items[row];
                     if matches!(item, Item::Separator) {
                         return popover::divider().into_any_element();
                     }
@@ -720,7 +819,7 @@ impl<V: 'static> Tree<V> {
                             item.opens().filter(|_| down == Some(path[depth])),
                             |parent, inner| {
                                 let panel = self
-                                    .panel(theme, inner, cursor, &path, window, cx)
+                                    .panel(theme, inner, cursor, &path, item.search(), window, cx)
                                     .into_any_element();
                                 parent.relative().child(popover::anchored_submenu(
                                     SharedString::from(format!("{id}-panel")),
@@ -730,8 +829,7 @@ impl<V: 'static> Tree<V> {
                             },
                         )
                         .into_any_element()
-                }),
-            );
+                }));
         popover::popover_card(theme)
             .p_0()
             .flex()
@@ -742,11 +840,140 @@ impl<V: 'static> Tree<V> {
                 false => card.min_w(px(PANEL_MIN)),
             })
             .on_mouse_down_out(self.dismissal(cx))
-            .child(
-                scroll::Viewport::new(rows_id, rows, Axis::Vertical)
-                    .track_scroll(&handle)
-                    .fill(),
+            .map(|card| match query {
+                None => card.child(
+                    scroll::Viewport::new(rows_id, rows, Axis::Vertical)
+                        .track_scroll(&handle)
+                        .fill(),
+                ),
+                Some(query) => {
+                    let field = query.read(cx).field.clone();
+                    let rows = rows.max_h(px(
+                        SEARCH_ROWS * popover::menu_row_height() + 2.0 * popover::MENU_PAD
+                    ));
+                    card.child(
+                        div()
+                            .key_context(SEARCH_CONTEXT)
+                            .px(px(popover::MENU_PAD))
+                            .pt(px(popover::MENU_PAD))
+                            .map(|el| self.keys(el, items, &visible, lit, prefix, cx))
+                            .child(popover::search_line(theme, field.into_any_element())),
+                    )
+                    .child(match visible.is_empty() {
+                        true => div()
+                            .px(px(popover::MENU_PAD + popover::MENU_ROW_INSET))
+                            .pb(px(8.0))
+                            .text_style(TextStyle::Body)
+                            .text_color(theme.text_muted)
+                            .child("No matches")
+                            .into_any_element(),
+                        false => scroll::Viewport::new(rows_id, rows, Axis::Vertical)
+                            .track_scroll(&handle)
+                            .into_any_element(),
+                    })
+                }
+            })
+    }
+
+    /// The query of the searchable panel at `key`, focused the first time it
+    /// paints. Each edit repaints the view the menu is drawn in.
+    fn query(
+        &self,
+        key: &SharedString,
+        placeholder: &SharedString,
+        window: &mut Window,
+        cx: &mut Context<V>,
+    ) -> Entity<Query> {
+        let host = cx.entity_id();
+        let placeholder = placeholder.clone();
+        let query = window.use_keyed_state(
+            SharedString::from(format!("{key}-query")),
+            cx,
+            move |_, cx| {
+                let field = cx.new(|cx| crate::search::query_field(placeholder, cx));
+                let _changed = cx.subscribe(&field, move |_, _, _: &FieldEvent, cx| {
+                    let app: &mut App = cx;
+                    app.notify(host);
+                });
+                Query {
+                    field,
+                    focused: false,
+                    _changed,
+                }
+            },
+        );
+        if !query.read(cx).focused {
+            query.update(cx, |query, _| query.focused = true);
+            let handle = query.read(cx).field.focus_handle(cx);
+            window.focus(&handle, cx);
+        }
+        query
+    }
+
+    /// The arrows, enter and escape on a searchable panel's query: they walk
+    /// and choose among the rows on show, and report it as the pointer would.
+    fn keys(
+        &self,
+        el: gpui::Div,
+        items: &[Item],
+        shown: &[usize],
+        lit: Option<usize>,
+        prefix: &[usize],
+        cx: &mut Context<V>,
+    ) -> gpui::Div {
+        let landable: Rc<Vec<usize>> = Rc::new(
+            shown
+                .iter()
+                .copied()
+                .filter(|&row| items[row].selectable())
+                .collect(),
+        );
+        let at = lit.and_then(|lit| landable.iter().position(|&row| row == lit));
+        let path = {
+            let prefix = prefix.to_vec();
+            move |row: usize| prefix.iter().copied().chain([row]).collect::<Vec<_>>()
+        };
+        let step = |delta: isize| {
+            let count = landable.len() as isize;
+            (count > 0).then(|| {
+                let next = match at {
+                    Some(at) => (at as isize + delta).rem_euclid(count),
+                    None if delta > 0 => 0,
+                    None => count - 1,
+                };
+                landable[next as usize]
+            })
+        };
+        let next = step(1).map(&path);
+        let previous = step(-1).map(&path);
+        let chosen = at
+            .map(|at| landable[at])
+            .or_else(|| landable.first().copied())
+            .map(|row| match items[row].opens() {
+                Some(_) => Hit::Point(path(row)),
+                None => Hit::Choose(path(row)),
+            });
+        let on = self.on.clone();
+        let report = move |hit: Option<Hit>| {
+            let on = on.clone();
+            move |view: &mut V, window: &mut Window, cx: &mut Context<V>| {
+                if let Some(hit) = hit.clone() {
+                    on(view, hit, window, cx);
+                }
+            }
+        };
+        let (down, up, enter, escape) = (
+            report(next.map(Hit::Point)),
+            report(previous.map(Hit::Point)),
+            report(chosen),
+            report(Some(Hit::Dismiss)),
+        );
+        el.on_action(cx.listener(move |view, _: &SelectNext, window, cx| down(view, window, cx)))
+            .on_action(
+                cx.listener(move |view, _: &SelectPrevious, window, cx| up(view, window, cx)),
             )
+            .on_action(cx.listener(move |view, _: &Confirm, window, cx| enter(view, window, cx)))
+            .on_action(cx.listener(move |view, _: &Dismiss, window, cx| escape(view, window, cx)))
     }
 
     /// An [`Item::Segmented`] row: its segments share the row's width, the
