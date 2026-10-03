@@ -225,20 +225,25 @@ impl Render for Ghosted {
         match self.render.as_ref().filter(|_| !hosted) {
             Some(render) => {
                 let gesture = self.gesture.clone();
+                // gpui lays the drag view out as a root, which drops its own
+                // insets and margins, so the shift sits one level down.
                 gpui::div()
-                    .relative()
-                    .ml(self.shift.x)
-                    .mt(self.shift.y)
-                    .child(render(window, cx))
                     .child(
-                        gpui::canvas(
-                            move |bounds, _, _| gesture.shown.set(Some(bounds.origin)),
-                            |_, _, _, _| {},
-                        )
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full(),
+                        gpui::div()
+                            .relative()
+                            .left(self.shift.x)
+                            .top(self.shift.y)
+                            .child(render(window, cx))
+                            .child(
+                                gpui::canvas(
+                                    move |bounds, _, _| gesture.shown.set(Some(bounds.origin)),
+                                    |_, _, _, _| {},
+                                )
+                                .absolute()
+                                .top_0()
+                                .left_0()
+                                .size_full(),
+                            ),
                     )
                     .into_any_element()
             }

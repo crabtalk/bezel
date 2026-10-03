@@ -86,7 +86,11 @@ pub fn tracked_upper(label: &str) -> String {
 pub fn divider(theme: &Theme) -> gpui::Div {
     // Full-bleed: negative margins cancel the card's p-1 inset so the hairline
     // runs border to border (user request).
-    div().h(px(1.0)).mx(px(-4.0)).my(px(4.0)).bg(theme.border_faint)
+    div()
+        .h(px(1.0))
+        .mx(px(-4.0))
+        .my(px(4.0))
+        .bg(theme.border_faint)
 }
 
 /// The recessed band tone for a palette/picker header or footer strip — a
