@@ -1101,7 +1101,7 @@ fn row_id(id: &SharedString, path: &[usize]) -> SharedString {
 
 /// The leading column: the row's glyph, or the room one would have taken, so a
 /// menu of mixed rows keeps its labels on one edge.
-fn glyph_slot(theme: &Theme, icon: Option<Icon>, enabled: bool) -> gpui::Div {
+pub fn glyph_slot(theme: &Theme, icon: Option<Icon>, enabled: bool) -> gpui::Div {
     div()
         .flex_none()
         .size(px(GLYPH))

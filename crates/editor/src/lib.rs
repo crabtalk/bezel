@@ -13,7 +13,9 @@ mod app;
 pub use app::AppExt;
 
 mod anchor;
+mod block_menu;
 mod editor;
+mod handles;
 mod history;
 mod layout;
 mod link;
@@ -23,6 +25,7 @@ mod slash;
 mod text_size;
 
 pub use anchor::{Anchor, AnchorId};
+pub use block_menu::{BlockMenuItem, defaults as block_menu_defaults};
 #[doc(hidden)]
 pub use editor::menu::{BLOCK_HANDLE, BLOCK_MENU, SLASH_MENU};
 pub use editor::{
@@ -30,6 +33,7 @@ pub use editor::{
     image::{ImageStore, Source},
     init, keys, turns,
 };
+pub use handles::Handles;
 pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};
 pub use layout::Layout;
 pub use mention::{Mention, MentionSource};

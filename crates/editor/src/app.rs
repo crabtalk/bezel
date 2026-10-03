@@ -30,6 +30,14 @@ pub trait AppExt {
     /// until this is called.
     fn set_slash_items(&mut self, items: Vec<crate::SlashItem>);
 
+    /// Replaces the block menu's items, which are
+    /// [`crate::block_menu_defaults`] until this is called.
+    fn set_block_menu_items(&mut self, items: Vec<crate::BlockMenuItem>);
+
+    /// Replaces the glyphs the block and table handles paint, which are
+    /// [`crate::Handles::default`] until this is called.
+    fn set_handles(&mut self, handles: crate::Handles);
+
     /// Installs what the `@` menu lists, in editors whose
     /// [`crate::Chrome::mention`] is on.
     fn set_mention_source(&mut self, source: crate::MentionSource);
@@ -79,6 +87,14 @@ impl AppExt for App {
 
     fn set_slash_items(&mut self, items: Vec<crate::SlashItem>) {
         self.set_global(crate::slash::Installed(items));
+    }
+
+    fn set_block_menu_items(&mut self, items: Vec<crate::BlockMenuItem>) {
+        self.set_global(crate::block_menu::Installed(items));
+    }
+
+    fn set_handles(&mut self, handles: crate::Handles) {
+        self.set_global(crate::handles::Installed(handles));
     }
 
     fn adjust_editor_text_size(&mut self, points: f32) {

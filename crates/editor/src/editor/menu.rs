@@ -12,9 +12,10 @@ use gpui::{
 use markdown::{AppExt as _, BlockKind, Part};
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
-use ui::menu::Hit;
+use ui::{icons::Icon, menu::Hit, surface::Surfaced as _};
 
 use crate::editor::{Editor, HANDLE_SIZE, Line, TableTarget};
+use crate::{BlockMenuItem, SlashAction, SlashAt, SlashRow};
 
 /// What a row of a table line's menu does.
 type TableAction = Box<dyn Fn(&mut Editor, &mut Context<Editor>)>;
@@ -24,6 +25,8 @@ const TABLE_STRIP: f32 = markdown::render::TABLE_CONTROL_SIZE;
 /// A table row or column handle, across and along the edge it sits on.
 const TABLE_HANDLE_THIN: f32 = TABLE_STRIP;
 const TABLE_HANDLE_LONG: f32 = 20.0;
+const TABLE_HANDLE_GLYPH: f32 = 12.0;
+const BLOCK_HANDLE_GLYPH: f32 = 14.0;
 
 /// How far the language chip reaches past the word it wraps.
 const CHIP_PAD_X: f32 = 6.0;
@@ -92,8 +95,10 @@ impl Editor {
         // not there.
         self.handle_at = placed.map(|(_, at)| at);
         let (ix, at) = placed?;
+        let glyph = crate::handles::installed(cx).block;
         let handle = div()
             .id(BLOCK_HANDLE)
+            .group(BLOCK_HANDLE)
             .debug_selector(|| BLOCK_HANDLE.to_string())
             .absolute()
             .left(at.x)
@@ -105,10 +110,12 @@ impl Editor {
             .justify_center()
             .rounded(px(4.0))
             .cursor(CursorStyle::OpenHand)
-            .text_style(TextStyle::Callout)
-            .text_color(theme.text_faint)
-            .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
-            .child("⠿")
+            .child(
+                ui::icons::icon(glyph)
+                    .size(px(BLOCK_HANDLE_GLYPH))
+                    .text_color(theme.text_faint)
+                    .group_hover(BLOCK_HANDLE, |el| el.text_color(theme.text_muted)),
+            )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {
@@ -131,6 +138,7 @@ impl Editor {
                 move |&(block, _)| block == ix,
                 cx,
             )
+            .surface(theme, theme.popover_surface)
             .into_any_element(),
         )
     }
@@ -262,62 +270,62 @@ impl Editor {
         };
         let table = self.layouts.block_bounds(ix)?;
         let cell = self.layouts.cell_bounds(ix, part)?;
-        let handle =
-            |id: &'static str, glyph: &'static str, line: TableTarget, anchor: Point<Pixels>| {
-                let trigger = div()
-                    .id(id)
-                    .debug_selector(|| id.to_string())
-                    .absolute()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(4.0))
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .cursor(CursorStyle::PointingHand)
-                    .text_style(TextStyle::Caption)
-                    .text_color(theme.text_faint)
-                    .hover(|el| el.bg(theme.element_hover).text_color(theme.text_muted))
-                    .child(glyph)
-                    .on_mouse_move(|_, _, cx| cx.stop_propagation())
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
-                            this.press_claimed = true;
-                            this.table_dragged = false;
-                            let from = match line {
-                                TableTarget::Row(row) => Line::Row(row),
-                                TableTarget::Column(column) => Line::Column(column),
-                                TableTarget::Cell { .. } => unreachable!(),
-                            };
-                            this.table_drag = Some(super::table::TableDrag {
-                                block: ix,
-                                line: from,
-                                start: event.position,
-                                to: None,
-                            });
-                            cx.notify();
-                        }),
-                    );
-                ui::popover::trigger_press_matching(
-                    trigger,
-                    |this| &mut this.table_menu,
-                    move |&(block, at, _)| block == ix && at == line,
-                    cx,
+        let glyphs = crate::handles::installed(cx);
+        let handle = |id: &'static str, glyph: Icon, line: TableTarget, anchor: Point<Pixels>| {
+            let trigger = div()
+                .id(id)
+                .group(id)
+                .debug_selector(|| id.to_string())
+                .absolute()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(4.0))
+                .cursor(CursorStyle::PointingHand)
+                .child(
+                    ui::icons::icon(glyph)
+                        .size(px(TABLE_HANDLE_GLYPH))
+                        .text_color(theme.text_faint)
+                        .group_hover(id, |el| el.text_color(theme.text_muted)),
                 )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if this.table_dragged {
-                        return;
-                    }
-                    if this.table_menu.take_press_was_open() {
-                        ui::popover::close_popup(this, cx, |this| &mut this.table_menu);
-                    } else {
-                        this.table_menu.open((ix, line, anchor));
+                .on_mouse_move(|_, _, cx| cx.stop_propagation())
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                        this.press_claimed = true;
+                        this.table_dragged = false;
+                        let from = match line {
+                            TableTarget::Row(row) => Line::Row(row),
+                            TableTarget::Column(column) => Line::Column(column),
+                            TableTarget::Cell { .. } => unreachable!(),
+                        };
+                        this.table_drag = Some(super::table::TableDrag {
+                            block: ix,
+                            line: from,
+                            start: event.position,
+                            to: None,
+                        });
                         cx.notify();
-                    }
-                }))
-            };
+                    }),
+                );
+            ui::popover::trigger_press_matching(
+                trigger,
+                |this| &mut this.table_menu,
+                move |&(block, at, _)| block == ix && at == line,
+                cx,
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if this.table_dragged {
+                    return;
+                }
+                if this.table_menu.take_press_was_open() {
+                    ui::popover::close_popup(this, cx, |this| &mut this.table_menu);
+                } else {
+                    this.table_menu.open((ix, line, anchor));
+                    cx.notify();
+                }
+            }))
+        };
         let row_mid = cell.origin.y + cell.size.height / 2.0;
         let column_mid = cell.origin.x + cell.size.width / 2.0;
         Some(
@@ -329,26 +337,28 @@ impl Editor {
                 .child(
                     handle(
                         "table-row-handle",
-                        "⠿",
+                        glyphs.row.clone(),
                         TableTarget::Row(row),
                         gpui::point(table.origin.x, row_mid),
                     )
                     .left(table.origin.x - self.origin.x)
                     .top(row_mid - self.origin.y - px(TABLE_HANDLE_LONG / 2.0))
                     .w(px(TABLE_HANDLE_THIN))
-                    .h(px(TABLE_HANDLE_LONG)),
+                    .h(px(TABLE_HANDLE_LONG))
+                    .surface(theme, theme.popover_surface),
                 )
                 .child(
                     handle(
                         "table-column-handle",
-                        "⠿",
+                        glyphs.column.clone(),
                         TableTarget::Column(column),
                         gpui::point(column_mid, table.origin.y),
                     )
                     .left(column_mid - self.origin.x - px(TABLE_HANDLE_LONG / 2.0))
                     .top(table.origin.y - self.origin.y)
                     .w(px(TABLE_HANDLE_LONG))
-                    .h(px(TABLE_HANDLE_THIN)),
+                    .h(px(TABLE_HANDLE_THIN))
+                    .surface(theme, theme.popover_surface),
                 )
                 .into_any_element(),
         )
@@ -636,29 +646,29 @@ impl Editor {
         }
         let view = Painter::of(cx);
         let &(ix, at) = self.block_menu.get()?;
-        let turns = crate::slash::items();
-        let rows = turns.into_iter().map(|(label, kind)| {
-            ui::popover::menu_row(theme, false, Some(Fade::new(view, format!("turn-{label}"))))
-                .id(SharedString::from(format!("turn-row-{label}")))
-                .child(label)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
-                    this.set_block(ix, kind.clone(), cx);
-                }))
+        let items = crate::block_menu::installed(cx);
+        // As in `ui::menu`: no room for a glyph unless a row carries one.
+        let gutter = items
+            .iter()
+            .any(|item| matches!(item, BlockMenuItem::Row(SlashRow { icon: Some(_), .. })));
+        let items = items.into_iter().enumerate().map(|(i, item)| match item {
+            BlockMenuItem::Heading(label) => {
+                ui::popover::menu_heading(theme, label).into_any_element()
+            }
+            BlockMenuItem::Row(row) => {
+                ui::popover::menu_row(theme, false, Some(Fade::new(view, format!("block-{i}"))))
+                    .id(SharedString::from(format!("block-row-{i}")))
+                    .when(gutter, |el| {
+                        el.child(ui::menu::glyph_slot(theme, row.icon, true))
+                    })
+                    .child(row.label)
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
+                        this.block_menu_action(ix, row.action.clone(), window, cx);
+                    }))
+                    .into_any_element()
+            }
         });
-        let action = |label: &'static str, run: fn(&mut Self, usize, &mut Context<Self>)| {
-            ui::popover::menu_row(
-                theme,
-                false,
-                Some(Fade::new(view, format!("block-{label}"))),
-            )
-            .id(SharedString::from(format!("block-row-{label}")))
-            .child(label)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
-                run(this, ix, cx);
-            }))
-        };
         Some(ui::popover::menu_at(
             BLOCK_MENU,
             at,
@@ -672,17 +682,30 @@ impl Editor {
             .child(
                 ui::scroll::pane("block-menu-rows", ui::scroll::Axes::Vertical)
                     .max_h(px(320.0))
-                    .child(ui::popover::menu_heading(theme, "Turn into"))
-                    .children(rows)
-                    .child(ui::popover::menu_heading(theme, "Block"))
-                    .child(action("Duplicate", |this, ix, cx| {
-                        this.duplicate_block(ix, cx)
-                    }))
-                    .child(action("Delete", |this, ix, cx| this.remove_block(ix, cx))),
+                    .children(items),
             )
             .into_any_element(),
             self.block_menu.closing_since(),
         ))
+    }
+
+    fn block_menu_action(
+        &mut self,
+        ix: usize,
+        action: SlashAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match action {
+            SlashAction::Block(kind) => self.set_block(ix, kind, cx),
+            SlashAction::Run(run) => {
+                // After this update ends: the app edits this editor.
+                let editor = cx.entity().downgrade();
+                window.defer(cx, move |window, cx| {
+                    run(SlashAt { editor, block: ix }, window, cx)
+                });
+            }
+        }
     }
 
     /// What a pasted URL could be, under the block it landed in.

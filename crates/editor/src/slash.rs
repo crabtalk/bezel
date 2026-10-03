@@ -134,17 +134,18 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
 /// What a [`SlashAction::Run`] row calls.
 pub type SlashRun = Rc<dyn Fn(SlashAt, &mut Window, &mut App)>;
 
-/// What picking a slash row does.
+/// What picking a slash or block menu row does.
 #[derive(Clone)]
 pub enum SlashAction {
-    /// Turn the block the `/` was typed in into this one.
+    /// Turn the block the row was picked for into this one.
     Block(BlockKind),
-    /// Hand the block to the app. The `/query` is gone from it by then; what
-    /// the block becomes, and where the caret goes, is the app's.
+    /// Hand the block to the app, after the menu's own update ends. From the
+    /// slash menu the `/query` is gone from the block by then; what the block
+    /// becomes, and where the caret goes, is the app's.
     Run(SlashRun),
 }
 
-/// The block a [`SlashAction::Run`] row was picked in.
+/// The block a [`SlashAction::Run`] row was picked for.
 #[derive(Clone)]
 pub struct SlashAt {
     pub editor: WeakEntity<crate::Editor>,
@@ -280,6 +281,20 @@ fn entries(items: Vec<SlashItem>) -> Vec<Entry> {
         }
     }
     entries
+}
+
+/// The [`SlashAction::Block`] rows of `items`, flattened, each under its full
+/// label.
+pub(crate) fn turns(items: Vec<SlashItem>) -> Vec<SlashRow> {
+    entries(items)
+        .into_iter()
+        .filter(|entry| matches!(entry.action, SlashAction::Block(_)))
+        .map(|entry| SlashRow {
+            label: entry.label,
+            icon: entry.icon,
+            action: entry.action,
+        })
+        .collect()
 }
 
 /// What [`items`] calls this block, and `None` for one the menu does not offer
