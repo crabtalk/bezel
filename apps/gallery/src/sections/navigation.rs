@@ -653,7 +653,7 @@ impl Gallery {
                         popover::menu_row(&theme, true, Some(Fade::new(view, "m-active")))
                             .child("Active item")
                             .into_any_element(),
-                        popover::divider().into_any_element(),
+                        popover::divider(&theme).into_any_element(),
                         popover::menu_row(&theme, false, Some(Fade::new(view, "m-third")))
                             .child("Third item")
                             .into_any_element(),

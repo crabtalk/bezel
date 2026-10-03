@@ -724,7 +724,7 @@ impl<V: 'static> Tree<V> {
                 .children(visible.iter().map(|&row| {
                     let item = &items[row];
                     if matches!(item, Item::Separator) {
-                        return popover::divider().into_any_element();
+                        return popover::divider(theme).into_any_element();
                     }
                     let path: Vec<usize> = prefix.iter().copied().chain([row]).collect();
                     if let Item::Segmented {

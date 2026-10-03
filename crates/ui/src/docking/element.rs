@@ -1,11 +1,13 @@
 use super::{Dock, OnDrop, Target, Tween};
 use crate::drag::Carry;
+use crate::surface::Surfaced;
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, ContentMask, DragMoveEvent, Element, ElementId,
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, RenderOnce, Window, div,
     prelude::*, px,
 };
 use std::rc::Rc;
+use theme::{Material, SurfaceStyle};
 
 #[derive(IntoElement)]
 pub struct Surface<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> {
@@ -110,19 +112,22 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
         if let Some(preview) = &state.preview {
             let rect = preview.bounds(cx);
             let offset = rect.origin - bounds.origin;
-            overlay = overlay.child(
-                div()
-                    .debug_selector(|| "dock-preview".into())
-                    .absolute()
-                    .left(offset.x)
-                    .top(offset.y)
-                    .w(rect.size.width)
-                    .h(rect.size.height)
-                    .rounded(px(6.))
-                    .bg(theme.accent.opacity(0.16))
-                    .border_2()
-                    .border_color(theme.accent.opacity(0.7)),
-            );
+            let target = div()
+                .debug_selector(|| "dock-preview".into())
+                .absolute()
+                .left(offset.x)
+                .top(offset.y)
+                .w(rect.size.width)
+                .h(rect.size.height)
+                .rounded(px(6.));
+            // The surface's flat fallback is opaque and would hide the pane.
+            overlay = overlay.child(if crate::surface::lensed(theme) {
+                target
+                    .surface(theme, SurfaceStyle::Material(Material::Thin))
+                    .into_any_element()
+            } else {
+                target.bg(theme.drop_target).into_any_element()
+            });
             active |= preview.progress(cx) < 1.;
         }
         let ghost = state.settling.as_ref().and_then(|settle| {

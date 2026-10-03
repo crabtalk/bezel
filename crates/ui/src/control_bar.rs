@@ -43,7 +43,7 @@
 
 use gpui::{AnyElement, IntoElement, ParentElement as _, Styled as _, div, px};
 use icons::Icon;
-use theme::{TextStyle, Theme, Typeset, hairline};
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::surface::Surfaced as _;
 
@@ -97,7 +97,7 @@ pub fn control_bar(
         .h(px(BAR_HEIGHT))
         .rounded(px(radius))
         .border_1()
-        .border_color(hairline(0.10))
+        .border_color(theme.border)
         .shadow_lg()
         .overflow_hidden()
         .px(px(BAR_GAP))

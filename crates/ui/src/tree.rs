@@ -29,7 +29,7 @@
 
 use gpui::{App, KeyBinding, actions, div, prelude::*, px};
 
-use theme::{TextStyle, Theme, Typeset, hairline};
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::widgets::Layout;
 
@@ -188,7 +188,7 @@ pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui:
                 .w(px(INDENT))
                 .h(px(18.0))
                 .border_l_1()
-                .border_color(hairline(0.08))
+                .border_color(theme.border)
         }))
         .child(
             div()

@@ -20,7 +20,7 @@ use terminal::{
         terminal_panel_bg,
     },
 };
-use theme::{TextStyle, Theme, Typeset, hairline};
+use theme::{TextStyle, Theme, Typeset};
 
 /// Timer tick, driving the wall-clock script playback.
 const TICK_MS: u64 = 80;
@@ -251,7 +251,7 @@ impl Terminal {
             .bg(terminal_panel_bg(theme))
             .border_1()
             .border_b_0()
-            .border_color(hairline(0.08))
+            .border_color(theme.border)
             .child(div().size(px(8.0)).rounded_full().bg(theme.success))
             .child(
                 div()
@@ -328,7 +328,7 @@ impl Render for Terminal {
                         .bg(terminal_panel_bg(&theme))
                         .border_1()
                         .border_t_0()
-                        .border_color(hairline(0.08))
+                        .border_color(theme.border)
                         .child(grid),
                 ),
         )

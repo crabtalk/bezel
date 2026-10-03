@@ -145,7 +145,7 @@ impl Render for Dialect {
                     .gap(px(24.0))
                     .py(px(10.0))
                     .border_t_1()
-                    .border_color(theme.hairline(0.08))
+                    .border_color(theme.border)
                     .child(
                         div()
                             .flex_none()

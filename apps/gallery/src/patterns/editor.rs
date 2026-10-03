@@ -295,7 +295,7 @@ impl EditorDemo {
                         .w(px(1.0))
                         .h(px(16.0))
                         .mx(px(3.0))
-                        .bg(theme.hairline(0.14)),
+                        .bg(theme.border_strong),
                 )
                 .child(comment)
                 .into_any_element(),
@@ -397,7 +397,7 @@ impl Render for EditorDemo {
                     .flex_row()
                     .gap(px(24.0))
                     .child(document)
-                    .child(div().flex_none().w(px(1.0)).bg(theme.hairline(0.10)))
+                    .child(div().flex_none().w(px(1.0)).bg(theme.border))
                     .child(
                         div()
                             .flex_1()

@@ -271,7 +271,7 @@ impl CanvasView {
                     .px(px(PAD / 2.0 * z))
                     .rounded(px(RADIUS * z))
                     .border_1()
-                    .border_color(if picked { theme.accent } else { theme.border })
+                    .border_color(if picked { theme.ring } else { theme.border })
                     .bg(theme.surface_card)
                     .child(body)
                     .on_mouse_down(
