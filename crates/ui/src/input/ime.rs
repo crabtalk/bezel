@@ -155,7 +155,7 @@ impl EntityInputHandler for TextField {
     ) -> Option<usize> {
         self.last_bounds?.localize(&point)?;
         let origin = self.text_origin()?;
-        let offset = offset_for_position(&self.last_layout, point - origin, self.line_height());
+        let offset = self.offset_at(point - origin, self.line_height());
         Some(self.offset_to_utf16(offset))
     }
 }

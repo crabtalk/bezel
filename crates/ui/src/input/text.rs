@@ -199,3 +199,63 @@ pub fn drag_selection<T: Ord + std::marker::Copy>(pressed: Range<T>, span: Range
         (pressed.start, span.end.max(pressed.end))
     }
 }
+
+/// Where atoms — ranges of a source text painted as something else — line up
+/// between that text and the text painted for it, in document order, as
+/// `(source, shown)` pairs.
+///
+/// An offset inside an atom's source has no place in what it shows, and one
+/// inside what it shows has none in the source: each lands on an end.
+#[derive(Clone, Debug, Default)]
+pub struct Shown(std::rc::Rc<[(Range<usize>, Range<usize>)]>);
+
+impl Shown {
+    /// `pairs` must be in document order and must not overlap.
+    pub fn new(pairs: Vec<(Range<usize>, Range<usize>)>) -> Self {
+        Self(pairs.into())
+    }
+
+    /// Where a source offset shows. One inside an atom lands on its start.
+    pub fn at(&self, offset: usize) -> usize {
+        self.map(offset, false)
+    }
+
+    /// Where a source range shows. An end inside an atom takes all of it.
+    pub fn range(&self, range: &Range<usize>) -> Range<usize> {
+        self.map(range.start, false)..self.map(range.end, true)
+    }
+
+    fn map(&self, offset: usize, end: bool) -> usize {
+        let mut shift = 0isize;
+        for (source, shown) in self.0.iter() {
+            if offset <= source.start {
+                break;
+            }
+            if offset < source.end {
+                return if end { shown.end } else { shown.start };
+            }
+            shift = shown.end as isize - source.end as isize;
+        }
+        offset.saturating_add_signed(shift)
+    }
+
+    /// The source offset of a shown one. One inside an atom lands on the
+    /// nearer end.
+    pub fn offset(&self, shown: usize) -> usize {
+        let mut shift = 0isize;
+        for (source, painted) in self.0.iter() {
+            if shown <= painted.start {
+                break;
+            }
+            if shown < painted.end {
+                return if shown - painted.start <= painted.end - shown {
+                    source.start
+                } else {
+                    source.end
+                };
+            }
+            shift = source.end as isize - painted.end as isize;
+        }
+        shown.saturating_add_signed(shift)
+    }
+}
