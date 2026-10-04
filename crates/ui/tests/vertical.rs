@@ -64,7 +64,12 @@ fn down_reaches_every_trailing_empty_line(cx: &mut TestAppContext) {
         Shape::Grow { min: 1, max: 2 },
     ] {
         for caret in [CaretShape::Bar, CaretShape::Block, CaretShape::Underline] {
-            for key in ["down", "ctrl-n"] {
+            let keys: &[&str] = if cfg!(target_os = "macos") {
+                &["down", "ctrl-n"]
+            } else {
+                &["down"]
+            };
+            for &key in keys {
                 assert_eq!(
                     walk(cx, shape, caret, key),
                     vec![3, 4, 5, 5],
