@@ -77,8 +77,7 @@ impl TextField {
             return;
         }
         let line_height = self.line_height();
-        let Some(at) = position_for_offset(&self.last_layout, self.cursor_offset(), line_height)
-        else {
+        let Some(at) = self.position_of(self.cursor_offset(), line_height) else {
             return;
         };
         let goal = self.goal_x.unwrap_or(at.x);
@@ -88,7 +87,7 @@ impl TextField {
         let offset = if target < px(0.) {
             0
         } else {
-            offset_for_position(&self.last_layout, gpui::point(goal, target), line_height)
+            self.offset_at(gpui::point(goal, target), line_height)
         };
 
         if extend {
@@ -227,7 +226,8 @@ impl TextField {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let offset = self.index_for_mouse_position(event.position, self.line_height());
+        let line_height = self.line_height();
+        let offset = self.index_for_mouse_position(event.position, line_height);
         if event.modifiers.shift {
             self.selecting = Some((
                 Granularity::Char,
@@ -236,9 +236,24 @@ impl TextField {
             return self.select_to(offset, cx);
         }
         let unit = Granularity::of_clicks(event.click_count);
-        let span = unit.around(&self.content, offset);
+        let span = self.unit_at(unit, event.position, offset, line_height);
         self.selecting = Some((unit, span.clone()));
         self.select_span(span.start, span.end, cx);
+    }
+
+    /// The `unit` a press at `position`, which lands on `offset`, takes: the
+    /// chip under it whole, for anything wider than a character.
+    fn unit_at(
+        &self,
+        unit: Granularity,
+        position: Point<Pixels>,
+        offset: usize,
+        line_height: Pixels,
+    ) -> Range<usize> {
+        match self.chip_at(position, line_height) {
+            Some(chip) if unit != Granularity::Char => chip,
+            _ => unit.around(&self.content, offset),
+        }
     }
 
     pub(super) fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
@@ -273,7 +288,8 @@ impl TextField {
             return;
         };
         let offset = self.index_for_mouse_position(position, line_height);
-        let (anchor, head) = drag_selection(pressed, unit.around(&self.content, offset));
+        let span = self.unit_at(unit, position, offset, line_height);
+        let (anchor, head) = drag_selection(pressed, span);
         // A pointer crossing a character is the event worth having; the twenty
         // samples it takes to cross one are not.
         if (anchor, head) != (self.anchor_offset(), self.cursor_offset()) {
@@ -318,6 +334,7 @@ impl TextField {
             content: self.content.clone(),
             selection: self.selected_range.clone(),
             reversed: self.selection_reversed,
+            chips: self.chips.clone(),
         }
     }
 
@@ -331,6 +348,7 @@ impl TextField {
         self.last_edit = None;
         self.caret_moved();
         self.edited(edit, cx);
+        self.chips = point.chips;
         cx.notify();
     }
 

@@ -31,59 +31,7 @@ pub struct Mention {
     pub initial: SharedString,
 }
 
-/// Where a mention's range in a [`Text`] and its range in a [`Flat`] line up,
-/// in document order, as `(text, flat)` pairs.
-///
-/// An offset inside a mention's text has no place in what it shows, and one
-/// inside what it shows has none in the text: each lands on an end.
-#[derive(Clone, Debug, Default)]
-pub struct Shown(Rc<[(Range<usize>, Range<usize>)]>);
-
-impl Shown {
-    /// Where a text offset shows. One inside a mention lands on its start.
-    pub fn at(&self, offset: usize) -> usize {
-        self.map(offset, false)
-    }
-
-    /// Where a text range shows. An end inside a mention takes all of it.
-    pub fn range(&self, range: &Range<usize>) -> Range<usize> {
-        self.map(range.start, false)..self.map(range.end, true)
-    }
-
-    fn map(&self, offset: usize, end: bool) -> usize {
-        let mut shift = 0isize;
-        for (text, flat) in self.0.iter() {
-            if offset <= text.start {
-                break;
-            }
-            if offset < text.end {
-                return if end { flat.end } else { flat.start };
-            }
-            shift = flat.end as isize - text.end as isize;
-        }
-        offset.saturating_add_signed(shift)
-    }
-
-    /// The text offset of a shown one. One inside a mention lands on the
-    /// nearer end.
-    pub fn offset(&self, shown: usize) -> usize {
-        let mut shift = 0isize;
-        for (text, flat) in self.0.iter() {
-            if shown <= flat.start {
-                break;
-            }
-            if shown < flat.end {
-                return if shown - flat.start <= flat.end - shown {
-                    text.start
-                } else {
-                    text.end
-                };
-            }
-            shift = text.end as isize - flat.end as isize;
-        }
-        shown.saturating_add_signed(shift)
-    }
-}
+pub use ui::input::Shown;
 
 /// What stands in a mention's favicon slot. An em space is as wide as the
 /// type is tall.
@@ -287,7 +235,7 @@ pub fn flatten_with(
         links,
         code,
         mentions,
-        shown: Shown(map.into()),
+        shown: Shown::new(map),
     }
 }
 

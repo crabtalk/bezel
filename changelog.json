@@ -1,5 +1,33 @@
 [
   {
+    "version": "0.2.8",
+    "date": "2026-10-04",
+    "summary": "App-owned block menus and handle glyphs, mention triggers with icons, chips in text fields, menu row indents, terminal cursor shapes, and a browser console and inspector.",
+    "new": [
+      "`editor::AppExt::set_block_menu_items` replaces the block handle's menu, which is `editor::block_menu_defaults()` until it is called: the slash menu's blocks under \"Turn into\", then Duplicate and Delete. A `BlockMenuItem` is a `Heading` or a `Row(SlashRow)`.",
+      "`editor::AppExt::set_handles` replaces the glyphs the block handle and table row and column handles paint, which are `Handles::default()` grips until it is called. The block handle sits on the popover surface.",
+      "`Mention` rows carry an optional `icon`.",
+      "`TextField::set_chips` paints ranges of a field's content as a glyph and title, edited as one unit; `TextField::chips` reads them back. `ui::input::Shown` maps between content and shown offsets.",
+      "`Item::indented` moves a menu row in by levels of the app's `MenuIndent`, which `ui::AppExt::set_menu_indent` sets (12px by default).",
+      "The terminal honours DECSCUSR cursor shape and blink. `CursorSnapshot::style` carries a `CursorStyle` (`CursorShape::Block`, `Beam` or `Underline`, and `blinking`); `Emulator::set_cursor_override` pins a host style, and `TerminalElement::with_cursor_on` sets the blink phase.",
+      "`WebView::with_console` reports the page's console calls, uncaught errors and unhandled rejections as `WebViewEvent::Console(ConsoleMessage)`.",
+      "The `inspector` feature of `bezel-browser` adds `WebView::with_inspector` and `WebView::open_inspector`.",
+      "`ui::menu::glyph_slot` is public."
+    ],
+    "changed": [
+      "`editor::AppExt::set_mention_source` takes the trigger character first; each trigger keeps its own source.",
+      "`Mention` has an `icon` field and `CursorSnapshot` a `style` field; struct literals must include them.",
+      "`markdown::Shown` is a re-export of `ui::input::Shown`.",
+      "The block handle's menu is built from the installed block menu items instead of a fixed list."
+    ],
+    "fixed": [
+      "A growing text field measures its rows in its own font, so the browser gallery no longer panics resolving `.SystemUIFont`.",
+      "The browser gallery paints in Geist.",
+      "A drag ghost narrower than its item stays under the pointer.",
+      "Menu item labels truncate to one line instead of wrapping."
+    ]
+  },
+  {
     "version": "0.2.7",
     "date": "2026-10-03",
     "summary": "App-owned slash menus with icons and groups, @ mentions, painted fences, app link cards and any-scheme links, searchable submenus, block caret height, and grey hairlines.",

@@ -31,12 +31,14 @@ use unicode_segmentation::UnicodeSegmentation as _;
 use theme::{HighlightKind, Metrics, SyntaxPalette, TextStyle, Theme};
 
 pub mod caret;
+mod chip;
 mod edit;
 mod element;
 mod ime;
 mod text;
 
 pub use caret::{CaretHeight, CaretShape};
+pub use chip::Chip;
 pub use element::*;
 pub use text::*;
 
@@ -356,6 +358,7 @@ struct Snapshot {
     content: SharedString,
     selection: Range<usize>,
     reversed: bool,
+    chips: Vec<Chip>,
 }
 
 /// Which way an edit went, so a run of the same kind can coalesce into one
@@ -382,6 +385,8 @@ pub struct TextField {
     /// One entry per hard newline; each wraps into rows of its own. Empty until
     /// the first paint.
     last_layout: Vec<WrappedLine>,
+    /// Where the content's offsets land in `last_layout`'s.
+    last_shown: Shown,
     last_bounds: Option<Bounds<Pixels>>,
     /// The press being dragged out: what it selects by, and what it selected.
     selecting: Option<(Granularity, Range<usize>)>,
@@ -432,6 +437,8 @@ pub struct TextField {
     spans: Vec<(Range<usize>, HighlightKind)>,
     /// Byte ranges washed behind the text — see [`Self::set_matches`].
     matches: Vec<Range<usize>>,
+    /// In document order, none overlapping — see [`Self::set_chips`].
+    chips: Vec<Chip>,
 }
 
 impl EventEmitter<FieldEvent> for TextField {}
@@ -451,6 +458,7 @@ impl TextField {
             selection_reversed: false,
             marked_range: None,
             last_layout: Vec::new(),
+            last_shown: Shown::default(),
             last_bounds: None,
             selecting: None,
             goal_x: None,
@@ -465,6 +473,7 @@ impl TextField {
             last_caret_shape: CaretShape::Bar,
             spans: Vec::new(),
             matches: Vec::new(),
+            chips: Vec::new(),
         }
     }
 
@@ -577,6 +586,7 @@ impl TextField {
         // Colours describe text this field no longer holds.
         self.spans.clear();
         self.matches.clear();
+        self.chips.clear();
         // A programmatic reset is not something the user did, so there is
         // nothing here for them to undo back past.
         self.history.clear();
@@ -596,13 +606,21 @@ impl TextField {
         self.set_content("", cx);
     }
 
-    /// Carry the spans through an edit just applied, and say so.
+    /// Carry the spans and chips through an edit just applied, and say so.
     fn edited(&mut self, edit: Edit, cx: &mut Context<Self>) {
         let spans = std::mem::take(&mut self.spans);
         self.spans = spans
             .into_iter()
             .filter_map(|(range, kind)| Some((edit.map(range)?, kind)))
             .collect();
+        self.chips
+            .retain_mut(|chip| match chip::follow(edit, &chip.range) {
+                Some(range) => {
+                    chip.range = range;
+                    true
+                }
+                None => false,
+            });
         cx.emit(FieldEvent::Changed(edit));
     }
 
@@ -631,12 +649,47 @@ impl TextField {
         cx.notify();
     }
 
+    /// Paint these ranges of the content as chips — see [`Chip`].
+    ///
+    /// The content keeps the source text; only painting and editing change. The
+    /// caret steps over a chip, a selection that cuts one takes all of it, and
+    /// one delete removes it. Each edit moves the chips with the text, and an
+    /// edit reaching inside one drops it. Undo and redo bring back the chips
+    /// each step had.
+    ///
+    /// A caret inside a chip moves to its end. [`Self::set_content`] clears
+    /// them.
+    pub fn set_chips(&mut self, mut chips: Vec<Chip>, cx: &mut Context<Self>) {
+        chips.sort_by_key(|chip| chip.range.start);
+        self.chips = chips;
+        self.selected_range = match self.selected_range.is_empty() {
+            true => {
+                let at = chip::outside(&self.chips, self.selected_range.start, false);
+                at..at
+            }
+            false => chip::widen(&self.chips, self.selected_range.clone()),
+        };
+        cx.notify();
+    }
+
+    /// The chips this field is painting — see [`Self::set_chips`].
+    pub fn chips(&self) -> &[Chip] {
+        &self.chips
+    }
+
     /// Select `range` and scroll it into view, with the caret at its end.
-    /// Clamped to the content and to char boundaries.
+    /// Clamped to the content and to char boundaries, and grown over any chip
+    /// it cuts.
     pub fn select(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
         let end = floor_boundary(&self.content, range.end);
         let start = floor_boundary(&self.content, range.start.min(end));
-        self.selected_range = start..end;
+        self.selected_range = match start == end {
+            true => {
+                let at = chip::outside(&self.chips, start, false);
+                at..at
+            }
+            false => chip::widen(&self.chips, start..end),
+        };
         self.selection_reversed = false;
         self.marked_range = None;
         self.goal_x = None;
@@ -716,6 +769,7 @@ impl TextField {
         range: Range<usize>,
         line_height: Pixels,
     ) -> Option<Bounds<Pixels>> {
+        let range = self.last_shown.range(&range);
         let start = position_for_offset(&self.last_layout, range.start, line_height)?;
         let end = position_for_offset(&self.last_layout, range.end, line_height)?;
         Some(Bounds::from_corners(
@@ -724,7 +778,10 @@ impl TextField {
         ))
     }
 
+    /// Put the caret at `offset`, or past the chip it falls inside in the
+    /// direction it moved.
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
+        let offset = chip::outside(&self.chips, offset, offset < self.cursor_offset());
         self.selected_range = offset..offset;
         self.goal_x = None;
         self.caret_moved();
@@ -750,7 +807,7 @@ impl TextField {
 
     /// Select from `anchor` to `head`, the caret at `head`.
     fn select_span(&mut self, anchor: usize, head: usize, cx: &mut Context<Self>) {
-        self.selected_range = anchor.min(head)..anchor.max(head);
+        self.selected_range = chip::widen(&self.chips, anchor.min(head)..anchor.max(head));
         self.selection_reversed = head < anchor;
         self.goal_x = None;
         self.caret_moved();
@@ -785,10 +842,41 @@ impl TextField {
         let Some(origin) = self.text_origin() else {
             return 0;
         };
-        offset_for_position(&self.last_layout, position - origin, line_height)
+        self.offset_at(position - origin, line_height)
     }
 
+    /// The chip under a window point, if any.
+    fn chip_at(&self, position: Point<Pixels>, line_height: Pixels) -> Option<Range<usize>> {
+        let at = offset_for_position(
+            &self.last_layout,
+            position - self.text_origin()?,
+            line_height,
+        );
+        self.chips
+            .iter()
+            .map(|chip| chip.range.clone())
+            .find(|range| self.last_shown.range(range).contains(&at))
+    }
+
+    /// Where `offset` sits in the last frame, relative to the text origin.
+    fn position_of(&self, offset: usize, line_height: Pixels) -> Option<Point<Pixels>> {
+        position_for_offset(&self.last_layout, self.last_shown.at(offset), line_height)
+    }
+
+    /// The offset closest to a point relative to the text origin in the last
+    /// frame. A point on a chip lands on its nearer end.
+    fn offset_at(&self, position: Point<Pixels>, line_height: Pixels) -> usize {
+        self.last_shown.offset(offset_for_position(
+            &self.last_layout,
+            position,
+            line_height,
+        ))
+    }
+
+    /// Extend the selection to `offset`, or past the chip it falls inside in
+    /// the direction it moved.
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
+        let offset = chip::outside(&self.chips, offset, offset < self.cursor_offset());
         self.goal_x = None;
         self.caret_moved();
         if self.selection_reversed {

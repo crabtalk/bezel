@@ -5,12 +5,23 @@ use crate::AppExt as _;
 
 /// What gets painted, and whether it is the placeholder — which is the only
 /// reason the colour differs.
-pub(super) fn display_text(field: &TextField) -> (SharedString, bool) {
+pub(super) fn display_text(field: &TextField) -> (chip::Chipped, bool) {
     if field.content.is_empty() {
-        (field.placeholder.clone(), true)
+        (chip::Chipped::plain(field.placeholder.clone()), true)
     } else {
-        (field.content.clone(), false)
+        (chip::chipped(&field.content, &field.chips), false)
     }
+}
+
+/// `runs` with each chip in `chipped` painted: the glyph's slot empty, the
+/// title underlined, both in `color` whatever the spans said.
+fn chip_runs(mut runs: Vec<TextRun>, chipped: &chip::Chipped, color: gpui::Hsla) -> Vec<TextRun> {
+    for ((slot, _), title) in chipped.slots.iter().zip(&chipped.titles) {
+        runs = caret::recoloured(runs, &(slot.start..title.end), color);
+        runs = caret::recoloured(runs, slot, gpui::transparent_black());
+        runs = underlined(runs, title);
+    }
+    runs
 }
 
 /// One run per span, the text between them in the field's own colour.
@@ -307,6 +318,11 @@ pub(super) struct TextFieldElement {
 
 pub(super) struct FieldPrepaint {
     lines: Vec<WrappedLine>,
+    shown: Shown,
+    /// Each chip's glyph and the slot it is painted in, in `lines`' offsets.
+    glyphs: Vec<(Range<usize>, icons::Icon)>,
+    glyph_color: gpui::Hsla,
+    font_size: Pixels,
     /// Top-left of the text, which is the box moved up by the scroll offset.
     origin: Point<Pixels>,
     cursor: Option<PaintQuad>,
@@ -366,10 +382,12 @@ impl Element for TextFieldElement {
             Shape::Grow { min, max } => (min.max(1), max.max(min.max(1))),
         };
 
-        let text = display_text(field).0;
+        let text = display_text(field).0.text;
+        // Measuring runs after the element's text style is popped, where the
+        // window reports gpui's default font instead.
+        let text_style = window.text_style();
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
         let id = window.request_measured_layout(style, move |known, available, window, _cx| {
-            let text_style = window.text_style();
-            let font_size = text_style.font_size.to_pixels(window.rem_size());
             // Prefer the width layout has already settled on. Taffy also probes
             // with min/max-content, where there is no width to wrap against —
             // and counting rows off unwrapped text under-reports them, which
@@ -415,10 +433,13 @@ impl Element for TextFieldElement {
     ) -> FieldPrepaint {
         let theme = Theme::of(cx).clone();
         let field = self.field.read(cx);
-        let selected_range = field.selected_range.clone();
-        let cursor = field.cursor_offset();
+        let (chipped, is_placeholder) = display_text(field);
+        // Everything from here on is in the offsets of the text painted.
+        let shown = chipped.shown.clone();
+        let selected_range = shown.range(&field.selected_range);
+        let cursor = shown.at(field.cursor_offset());
         let shape = field.shape;
-        let marked_range = field.marked_range.clone();
+        let marked_range = field.marked_range.as_ref().map(|range| shown.range(range));
         let matches: Vec<_> = field
             .matches
             .iter()
@@ -427,7 +448,7 @@ impl Element for TextFieldElement {
                     && field.content.is_char_boundary(range.start)
                     && field.content.is_char_boundary(range.end)
             })
-            .cloned()
+            .map(|range| shown.range(range))
             .collect();
         let scrolled = field.scroll;
         let caret_shape = cx.caret_shape();
@@ -435,7 +456,7 @@ impl Element for TextFieldElement {
         let follow_caret = field.follow_caret || caret_shape != field.last_caret_shape;
         let style = window.text_style();
 
-        let (text, is_placeholder) = display_text(field);
+        let text = chipped.text.clone();
         let text_color = if is_placeholder {
             theme.text_faint
         } else {
@@ -456,7 +477,16 @@ impl Element for TextFieldElement {
         let runs = if is_placeholder {
             vec![run]
         } else {
-            coloured(&text, &field.spans, &run, &theme.syntax)
+            let spans: Vec<_> = field
+                .spans
+                .iter()
+                .map(|(range, kind)| (shown.range(range), *kind))
+                .collect();
+            chip_runs(
+                coloured(&text, &spans, &run, &theme.syntax),
+                &chipped,
+                text_color,
+            )
         };
         let runs = match marked_range.as_ref() {
             Some(marked) => underlined(runs, marked),
@@ -621,6 +651,10 @@ impl Element for TextFieldElement {
 
         FieldPrepaint {
             lines,
+            shown,
+            glyphs: chipped.slots,
+            glyph_color: theme.text_muted,
+            font_size,
             origin,
             cursor,
             matches,
@@ -697,10 +731,38 @@ impl Element for TextFieldElement {
                     .ok();
                 top.y += line.size(line_height).height;
             }
+
+            for (slot, glyph) in &prepaint.glyphs {
+                let Some(data) = glyph.data() else { continue };
+                let (Some(start), Some(end)) = (
+                    position_for_offset(&lines, slot.start, line_height),
+                    position_for_offset(&lines, slot.end, line_height),
+                ) else {
+                    continue;
+                };
+                let side = (end.x - start.x).min(prepaint.font_size);
+                let bounds = Bounds::new(
+                    origin + start + gpui::point(px(0.), (line_height - side) / 2.),
+                    gpui::size(side, side),
+                );
+                let path = SharedString::from(format!("field-glyph-{:p}", data.as_ptr()));
+                window
+                    .paint_svg(
+                        bounds,
+                        path,
+                        Some(data),
+                        gpui::TransformationMatrix::unit(),
+                        prepaint.glyph_color,
+                        cx,
+                    )
+                    .ok();
+            }
         });
 
+        let shown = std::mem::take(&mut prepaint.shown);
         self.field.update(cx, |field, _| {
             field.last_layout = lines;
+            field.last_shown = shown;
             field.last_bounds = Some(bounds);
         });
     }

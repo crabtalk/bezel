@@ -67,6 +67,30 @@ pub enum WebViewEvent {
     /// `target="_blank"` link or `window.open`. No window opens and the page
     /// stays where it is; where the URL goes is the host's.
     NewWindow(String),
+    /// The page logged, with a page built [`WebView::with_console`].
+    Console(ConsoleMessage),
+}
+
+/// One `console` call, uncaught error or unhandled rejection in the page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConsoleMessage {
+    pub level: ConsoleLevel,
+    /// The logged values, each a string as is, an error as its stack, and
+    /// anything else as JSON, joined by spaces.
+    pub text: String,
+    /// The URL of the frame that logged.
+    pub source: String,
+}
+
+/// The `console` method a [`ConsoleMessage`] came from. Uncaught errors and
+/// unhandled rejections are `Error`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsoleLevel {
+    Debug,
+    Log,
+    Info,
+    Warn,
+    Error,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,12 +200,37 @@ impl WebView {
         self
     }
 
+    /// Reports the page's console as [`WebViewEvent::Console`]. Read at the
+    /// first paint. Engine messages such as failed loads are not console
+    /// calls and are not reported. In the inspector, every console message
+    /// is attributed to the script that reports it.
+    pub fn with_console(self) -> Self {
+        self.page.console.set(true);
+        self
+    }
+
     /// The store the page is built with, in place of the platform's default.
     /// Read at the first paint. A page keeps the store it was built with: a
     /// different store takes a new `WebView`.
     pub fn with_data_store(self, store: DataStore) -> Self {
         *self.page.store.borrow_mut() = store;
         self
+    }
+
+    /// Builds the page inspectable. Read at the first paint. On macOS 13.3+
+    /// Safari's Develop menu lists the page, and the page's context menu has
+    /// Inspect Element.
+    #[cfg(feature = "inspector")]
+    pub fn with_inspector(self) -> Self {
+        self.page.inspector.set(true);
+        self
+    }
+
+    /// Opens the inspector of a page built with [`Self::with_inspector`].
+    /// Does nothing before the first paint.
+    #[cfg(feature = "inspector")]
+    pub fn open_inspector(&self) {
+        self.page.open_inspector();
     }
 
     /// Before the first paint, replaces the URL the page is built with.
@@ -297,6 +346,7 @@ impl WebView {
                 }
             }
             Report::Opened(url) => cx.emit(WebViewEvent::NewWindow(url)),
+            Report::Console(message) => cx.emit(WebViewEvent::Console(message)),
             Report::Still(still) => {
                 self.page.captured(still);
                 cx.notify();

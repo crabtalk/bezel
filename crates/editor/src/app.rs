@@ -30,9 +30,18 @@ pub trait AppExt {
     /// until this is called.
     fn set_slash_items(&mut self, items: Vec<crate::SlashItem>);
 
-    /// Installs what the `@` menu lists, in editors whose
-    /// [`crate::Chrome::mention`] is on.
-    fn set_mention_source(&mut self, source: crate::MentionSource);
+    /// Replaces the block menu's items, which are
+    /// [`crate::block_menu_defaults`] until this is called.
+    fn set_block_menu_items(&mut self, items: Vec<crate::BlockMenuItem>);
+
+    /// Replaces the glyphs the block and table handles paint, which are
+    /// [`crate::Handles::default`] until this is called.
+    fn set_handles(&mut self, handles: crate::Handles);
+
+    /// Installs what the menu `trigger` opens lists, in editors whose
+    /// [`crate::Chrome::mention`] is on. Replaces the source already installed
+    /// for `trigger`; sources for other characters stay.
+    fn set_mention_source(&mut self, trigger: char, source: crate::MentionSource);
 
     /// Adjusts every open document by the given points and refreshes windows.
     fn adjust_editor_text_size(&mut self, points: f32);
@@ -73,12 +82,22 @@ impl AppExt for App {
         self.set_global(crate::paste::Installed(handler));
     }
 
-    fn set_mention_source(&mut self, source: crate::MentionSource) {
-        self.set_global(crate::mention::Installed(source));
+    fn set_mention_source(&mut self, trigger: char, source: crate::MentionSource) {
+        let installed = &mut self.default_global::<crate::mention::Installed>().0;
+        installed.retain(|(installed, _)| *installed != trigger);
+        installed.push((trigger, source));
     }
 
     fn set_slash_items(&mut self, items: Vec<crate::SlashItem>) {
         self.set_global(crate::slash::Installed(items));
+    }
+
+    fn set_block_menu_items(&mut self, items: Vec<crate::BlockMenuItem>) {
+        self.set_global(crate::block_menu::Installed(items));
+    }
+
+    fn set_handles(&mut self, handles: crate::Handles) {
+        self.set_global(crate::handles::Installed(handles));
     }
 
     fn adjust_editor_text_size(&mut self, points: f32) {

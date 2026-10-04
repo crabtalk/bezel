@@ -14,8 +14,21 @@ use gpui::{
     App, AppContext as _, Application, ApplicationHandle, Bounds, Entity, WindowBounds,
     WindowOptions, px, size,
 };
-use theme::appearance::{self, AppearanceMode};
+use theme::{
+    AppExt as _, Appearance, Theme,
+    appearance::{self, AppearanceMode},
+};
 use wasm_bindgen::{JsCast as _, prelude::Closure, prelude::wasm_bindgen};
+
+/// The built-in palette, set in the Geist faces `ui::register_fonts` loads: the
+/// theme's defaults name system fonts, and the browser gives gpui none.
+fn palette(appearance: Appearance) -> Theme {
+    let mut theme = Theme::for_appearance(appearance);
+    theme.font_sans = "Geist".into();
+    theme.font_body = "Geist".into();
+    theme.font_mono = "Geist Mono".into();
+    theme
+}
 
 thread_local! {
     /// The whole app, and the reason it stays alive.
@@ -96,6 +109,7 @@ pub fn start() {
             if let Err(err) = ui::register_fonts(cx) {
                 log::error!("font registration failed: {err:?}");
             }
+            cx.set_palette(palette);
             appearance::init(AppearanceMode::System, cx);
             gallery::init(cx);
             let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);

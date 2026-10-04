@@ -40,6 +40,13 @@ pub trait AppExt {
     /// Replaces the preset color set and refreshes windows. Defaults to
     /// [`crate::color::default_swatches`].
     fn set_color_swatches(&mut self, set: impl Into<std::rc::Rc<[crate::color::Swatch]>>);
+
+    /// Reads the menu indent step.
+    fn menu_indent(&self) -> crate::menu::MenuIndent;
+
+    /// Sets how far each [`crate::menu::Item::indented`] level moves a row in,
+    /// and refreshes windows. Defaults to 12px.
+    fn set_menu_indent(&mut self, indent: crate::menu::MenuIndent);
 }
 
 impl AppExt for App {
@@ -90,5 +97,13 @@ impl AppExt for App {
 
     fn set_color_swatches(&mut self, set: impl Into<std::rc::Rc<[crate::color::Swatch]>>) {
         crate::color::set_swatches(set, self)
+    }
+
+    fn menu_indent(&self) -> crate::menu::MenuIndent {
+        crate::menu::indent(self)
+    }
+
+    fn set_menu_indent(&mut self, indent: crate::menu::MenuIndent) {
+        crate::menu::set_indent(indent, self)
     }
 }

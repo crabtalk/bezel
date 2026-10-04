@@ -5,10 +5,7 @@
 mod common;
 
 use common::*;
-use terminal::{
-    emulator::{CursorSnapshot, Emulator},
-    kitty::Format,
-};
+use terminal::{emulator::Emulator, kitty::Format};
 
 // ---------------------------------------------------------------------------
 // Transmission
@@ -503,7 +500,7 @@ fn no_cursor_movement_reserves_nothing_and_moves_nothing() {
     // Two rows tall: without `C=1` the cursor would end up on row 2.
     emulator.feed(&display_keys(1, 10, 40, ",C=1"));
 
-    assert_eq!(emulator.cursor(), Some(CursorSnapshot { row: 0, col: 2 }));
+    assert_eq!(emulator.cursor().map(|c| (c.row, c.col)), Some((0, 2)));
     let placement = emulator.placements()[0];
     assert_eq!((placement.row, placement.col), (0, 2));
     assert_eq!((placement.cols, placement.rows), (1, 2));

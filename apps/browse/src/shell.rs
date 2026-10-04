@@ -26,6 +26,7 @@ actions!(
         PreviousTab,
         FocusAddress,
         Reload,
+        Inspect,
         Back,
         Forward,
         ToggleSidebar,
@@ -79,6 +80,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-w", CloseTab, app),
         KeyBinding::new("secondary-l", FocusAddress, app),
         KeyBinding::new("secondary-r", Reload, app),
+        KeyBinding::new("secondary-alt-i", Inspect, app),
         KeyBinding::new("secondary-[", Back, app),
         KeyBinding::new("secondary-]", Forward, app),
         KeyBinding::new("secondary-shift-l", ToggleSidebar, app),
@@ -153,13 +155,23 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (Entity<WebView>, Subscription) {
-        let page = cx.new(|cx| WebView::new(url, window, cx));
+        let page = cx.new(|cx| {
+            WebView::new(url, window, cx)
+                .with_inspector()
+                .with_console()
+        });
         let events = cx.subscribe_in(&page, window, |this, page, event, window, cx| {
             match event {
                 WebViewEvent::Title(title) if this.front_page().as_ref() == Some(page) => {
                     window.set_window_title(title);
                 }
                 WebViewEvent::NewWindow(url) => this.open(Some(url.clone()), window, cx),
+                WebViewEvent::Console(message) => {
+                    eprintln!(
+                        "[{:?}] {} ({})",
+                        message.level, message.text, message.source
+                    );
+                }
                 _ => {}
             }
             cx.notify();
@@ -292,6 +304,12 @@ impl Shell {
     fn reload(&mut self, _: &Reload, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(page) = self.front_page() {
             page.update(cx, |page, _| page.reload());
+        }
+    }
+
+    fn inspect(&mut self, _: &Inspect, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(page) = self.front_page() {
+            page.read(cx).open_inspector();
         }
     }
 
@@ -668,6 +686,7 @@ impl Render for Shell {
             .on_action(cx.listener(Self::previous_tab))
             .on_action(cx.listener(Self::focus_address))
             .on_action(cx.listener(Self::reload))
+            .on_action(cx.listener(Self::inspect))
             .on_action(cx.listener(Self::back))
             .on_action(cx.listener(Self::forward))
             .on_action(cx.listener(Self::toggle_sidebar))

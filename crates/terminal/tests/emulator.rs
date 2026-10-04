@@ -11,7 +11,7 @@ fn plain_text_lands_on_row_zero() {
     let mut e = emu(20, 5);
     e.feed(b"hello");
     assert_eq!(e.row_text(0), "hello");
-    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 0, col: 5 }));
+    assert_eq!(e.cursor().map(|c| (c.row, c.col)), Some((0, 5)));
 }
 
 #[test]
@@ -80,11 +80,11 @@ fn cursor_addressing_and_relative_moves() {
     e.feed(b"\x1b[3;5Hx");
     // CSI H is 1-based; cell written at row 2, col 4; cursor advanced by 1.
     assert_eq!(e.line(2)[4].ch, 'x');
-    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 2, col: 5 }));
+    assert_eq!(e.cursor().map(|c| (c.row, c.col)), Some((2, 5)));
     e.feed(b"\x1b[2D"); // left twice
-    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 2, col: 3 }));
+    assert_eq!(e.cursor().map(|c| (c.row, c.col)), Some((2, 3)));
     e.feed(b"\x1b[A"); // up
-    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 1, col: 3 }));
+    assert_eq!(e.cursor().map(|c| (c.row, c.col)), Some((1, 3)));
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn clear_screen_and_home() {
     for row in 0..4 {
         assert_eq!(e.row_text(row), "");
     }
-    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 0, col: 0 }));
+    assert_eq!(e.cursor().map(|c| (c.row, c.col)), Some((0, 0)));
     e.feed(b"fresh");
     assert_eq!(e.row_text(0), "fresh");
 }
@@ -217,6 +217,57 @@ fn hidden_cursor_mode() {
 }
 
 #[test]
+fn decscusr_sets_the_cursor_shape_and_blink() {
+    let mut e = emu(10, 2);
+    let style = |e: &Emulator| e.cursor().map(|c| c.style);
+    assert_eq!(style(&e), Some(CursorStyle::default()));
+    e.feed(b"\x1b[5 q");
+    assert_eq!(
+        style(&e),
+        Some(CursorStyle {
+            shape: CursorShape::Beam,
+            blinking: true,
+        })
+    );
+    e.feed(b"\x1b[4 q");
+    assert_eq!(
+        style(&e),
+        Some(CursorStyle {
+            shape: CursorShape::Underline,
+            blinking: false,
+        })
+    );
+}
+
+#[test]
+fn a_cursor_override_outranks_decscusr_until_cleared() {
+    let mut e = emu(10, 2);
+    let host = CursorStyle {
+        shape: CursorShape::Underline,
+        blinking: true,
+    };
+    e.set_cursor_override(Some(host));
+    e.feed(b"\x1b[2 q");
+    assert_eq!(e.cursor().map(|c| c.style), Some(host));
+    e.set_cursor_override(None);
+    assert_eq!(e.cursor().map(|c| c.style), Some(CursorStyle::default()));
+}
+
+#[test]
+fn a_cursor_override_shows_during_a_render_hold() {
+    let mut e = emu(10, 2);
+    let host = CursorStyle {
+        shape: CursorShape::Beam,
+        blinking: false,
+    };
+    e.feed(b"\x1b[?2026h");
+    e.set_cursor_override(Some(host));
+    assert_eq!(e.cursor().map(|c| c.style), Some(host));
+    e.set_cursor_override(None);
+    assert_eq!(e.cursor().map(|c| c.style), Some(CursorStyle::default()));
+}
+
+#[test]
 fn resize_preserves_content_and_reflows_cursor() {
     let mut e = emu(20, 5);
     e.feed(b"keepme\r\nsecond");
@@ -237,7 +288,7 @@ fn wide_chars_occupy_two_cells_with_spacer() {
     assert!(line[1].wide_spacer);
     assert_eq!(line[2].ch, 'w');
     assert_eq!(e.row_text(0), "宽w");
-    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 0, col: 3 }));
+    assert_eq!(e.cursor().map(|c| (c.row, c.col)), Some((0, 3)));
 }
 
 /// Viewport row → grid line, which is the translation every selection
@@ -391,12 +442,12 @@ fn a_synchronized_update_holds_the_frame_it_began_on() {
 
     e.feed(b"during");
     assert_eq!(e.row_text(1), "", "the held frame moved");
-    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 1, col: 0 }));
+    assert_eq!(e.cursor().map(|c| (c.row, c.col)), Some((1, 0)));
 
     e.feed(b"\x1b[?2026l");
     assert!(!e.render_hold());
     assert_eq!(e.row_text(1), "during");
-    assert_eq!(e.cursor(), Some(CursorSnapshot { row: 1, col: 6 }));
+    assert_eq!(e.cursor().map(|c| (c.row, c.col)), Some((1, 6)));
 }
 
 #[test]
