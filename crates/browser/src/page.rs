@@ -1,4 +1,4 @@
-use crate::{DataStore, LoadState, host::Surface};
+use crate::{ConsoleMessage, DataStore, LoadState, host::Surface};
 use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
 use std::{
     cell::{Cell, RefCell},
@@ -26,6 +26,7 @@ pub(crate) enum Report {
     Title(String),
     /// The page asked for a window of its own, for this URL.
     Opened(String),
+    Console(ConsoleMessage),
     /// A still of the page, taken for a cover; `None` if the capture failed.
     Still(Option<Arc<RenderImage>>),
 }
@@ -61,6 +62,8 @@ pub(crate) struct Page {
     pub(crate) user_agent: RefCell<Option<String>>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) store: RefCell<DataStore>,
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    pub(crate) console: Cell<bool>,
     #[cfg(feature = "inspector")]
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) inspector: Cell<bool>,
@@ -95,6 +98,7 @@ impl Page {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
             store: RefCell::new(DataStore::default()),
+            console: Cell::new(false),
             #[cfg(feature = "inspector")]
             inspector: Cell::new(false),
             #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -196,6 +200,39 @@ impl Page {
         addEventListener('hashchange', moved);
     })();";
 
+    /// Run in every frame. wry defines `window.ipc` in the main frame only on
+    /// macOS, so this posts to the handler behind it. Each message is
+    /// `{level, text}` as JSON.
+    // TODO: whether `chrome.webview` exists in a WebView2 iframe is unchecked.
+    const CONSOLE: &str = "(() => {
+        const handler = window.webkit?.messageHandlers?.ipc ?? window.chrome?.webview;
+        if (!handler) return;
+        const text = (value) => {
+            if (typeof value === 'string') return value;
+            if (value instanceof Error) return value.stack || String(value);
+            try {
+                return JSON.stringify(value) ?? String(value);
+            } catch {
+                return String(value);
+            }
+        };
+        const send = (level, values) => {
+            try {
+                handler.postMessage(JSON.stringify({ level, text: values.map(text).join(' ') }));
+            } catch {}
+        };
+        for (const level of ['debug', 'log', 'info', 'warn', 'error']) {
+            const original = console[level];
+            console[level] = function (...values) {
+                send(level, values);
+                return original.apply(this, values);
+            };
+        }
+        addEventListener('error', (event) => send('error', [event.error ?? event.message]));
+        addEventListener('unhandledrejection', (event) =>
+            send('error', ['Uncaught (in promise)', event.reason]));
+    })();";
+
     fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
         self.uncover();
         let view = self.view.get_or_init(|| self.build(bounds, window));
@@ -244,7 +281,10 @@ impl Page {
                 .with_ipc_handler(move |request| {
                     let report = match request.body().as_str() {
                         "moved" => Report::Moved,
-                        _ => return,
+                        body => match logged(body, request.uri().to_string()) {
+                            Some(message) => Report::Console(message),
+                            None => return,
+                        },
                     };
                     let _ = ipc.try_send(report);
                 })
@@ -270,6 +310,11 @@ impl Page {
             let builder = match user_agent {
                 Some(user_agent) => builder.with_user_agent(user_agent),
                 None => builder,
+            };
+            let builder = if self.console.get() {
+                builder.with_initialization_script_for_main_only(Self::CONSOLE, false)
+            } else {
+                builder
             };
             #[cfg(feature = "inspector")]
             let builder = builder.with_devtools(self.inspector.get());
@@ -419,6 +464,31 @@ impl Page {
     }
 }
 
+/// A console message the [`Page::CONSOLE`] script posted from `source`.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn logged(body: &str, source: String) -> Option<ConsoleMessage> {
+    #[derive(serde::Deserialize)]
+    struct Logged {
+        level: String,
+        text: String,
+    }
+    let Logged { level, text } = serde_json::from_str(body).ok()?;
+    use crate::ConsoleLevel;
+    let level = match level.as_str() {
+        "debug" => ConsoleLevel::Debug,
+        "log" => ConsoleLevel::Log,
+        "info" => ConsoleLevel::Info,
+        "warn" => ConsoleLevel::Warn,
+        "error" => ConsoleLevel::Error,
+        _ => return None,
+    };
+    Some(ConsoleMessage {
+        level,
+        text,
+        source,
+    })
+}
+
 /// Runs `build` with the context for `directory`, or with none, which has wry
 /// make the page its own.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -480,5 +550,29 @@ fn rect(bounds: Bounds<Pixels>) -> wry::Rect {
             f64::from(f32::from(bounds.size.height)),
         )
         .into(),
+    }
+}
+
+#[cfg(all(test, any(target_os = "macos", target_os = "windows")))]
+mod tests {
+    use super::logged;
+    use crate::ConsoleLevel;
+
+    #[test]
+    fn reads_a_posted_message() {
+        let message = logged(
+            r#"{"level":"warn","text":"low disk"}"#,
+            "https://a.test/".into(),
+        );
+        let message = message.expect("a console message");
+        assert_eq!(message.level, ConsoleLevel::Warn);
+        assert_eq!(message.text, "low disk");
+        assert_eq!(message.source, "https://a.test/");
+    }
+
+    #[test]
+    fn ignores_what_is_not_one() {
+        assert!(logged("moved", String::new()).is_none());
+        assert!(logged(r#"{"level":"trace","text":""}"#, String::new()).is_none());
     }
 }

@@ -155,13 +155,23 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (Entity<WebView>, Subscription) {
-        let page = cx.new(|cx| WebView::new(url, window, cx).with_inspector());
+        let page = cx.new(|cx| {
+            WebView::new(url, window, cx)
+                .with_inspector()
+                .with_console()
+        });
         let events = cx.subscribe_in(&page, window, |this, page, event, window, cx| {
             match event {
                 WebViewEvent::Title(title) if this.front_page().as_ref() == Some(page) => {
                     window.set_window_title(title);
                 }
                 WebViewEvent::NewWindow(url) => this.open(Some(url.clone()), window, cx),
+                WebViewEvent::Console(message) => {
+                    eprintln!(
+                        "[{:?}] {} ({})",
+                        message.level, message.text, message.source
+                    );
+                }
                 _ => {}
             }
             cx.notify();

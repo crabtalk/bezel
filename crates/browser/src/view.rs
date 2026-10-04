@@ -67,6 +67,30 @@ pub enum WebViewEvent {
     /// `target="_blank"` link or `window.open`. No window opens and the page
     /// stays where it is; where the URL goes is the host's.
     NewWindow(String),
+    /// The page logged, with a page built [`WebView::with_console`].
+    Console(ConsoleMessage),
+}
+
+/// One `console` call, uncaught error or unhandled rejection in the page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConsoleMessage {
+    pub level: ConsoleLevel,
+    /// The logged values, each a string as is, an error as its stack, and
+    /// anything else as JSON, joined by spaces.
+    pub text: String,
+    /// The URL of the frame that logged.
+    pub source: String,
+}
+
+/// The `console` method a [`ConsoleMessage`] came from. Uncaught errors and
+/// unhandled rejections are `Error`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsoleLevel {
+    Debug,
+    Log,
+    Info,
+    Warn,
+    Error,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,6 +197,15 @@ impl WebView {
     /// installed Safari's version.
     pub fn with_user_agent(self, user_agent: impl Into<String>) -> Self {
         *self.page.user_agent.borrow_mut() = Some(user_agent.into());
+        self
+    }
+
+    /// Reports the page's console as [`WebViewEvent::Console`]. Read at the
+    /// first paint. Engine messages such as failed loads are not console
+    /// calls and are not reported. In the inspector, every console message
+    /// is attributed to the script that reports it.
+    pub fn with_console(self) -> Self {
+        self.page.console.set(true);
         self
     }
 
@@ -313,6 +346,7 @@ impl WebView {
                 }
             }
             Report::Opened(url) => cx.emit(WebViewEvent::NewWindow(url)),
+            Report::Console(message) => cx.emit(WebViewEvent::Console(message)),
             Report::Still(still) => {
                 self.page.captured(still);
                 cx.notify();
