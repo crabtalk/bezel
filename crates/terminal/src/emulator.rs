@@ -42,7 +42,10 @@ use alacritty_terminal::{
     index::{Column, Line, Point},
     selection::{Selection, SelectionRange},
     term::{Config, Term, TermMode, cell::Flags},
-    vte::ansi::{Color as AnsiColor, CursorShape, NamedColor, Processor, Rgb as AnsiRgb, Timeout},
+    vte::ansi::{
+        Color as AnsiColor, CursorShape as AnsiCursorShape, NamedColor, Processor, Rgb as AnsiRgb,
+        Timeout,
+    },
 };
 
 /// Grid coordinates and selection granularity, re-exported so the host and view
@@ -293,11 +296,32 @@ struct Located {
 /// The longest chain of relative placements, counting the one being made.
 const MAX_RELATIVE_DEPTH: usize = 8;
 
-/// Cursor position in viewport coordinates (row 0 = top of the visible grid).
+/// Cursor position in viewport coordinates (row 0 = top of the visible grid),
+/// and how it is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CursorSnapshot {
     pub row: usize,
     pub col: usize,
+    pub style: CursorStyle,
+}
+
+/// How the cursor is drawn: what the program asked for with DECSCUSR
+/// (`CSI n q`), or the host's [`Emulator::set_cursor_override`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CursorStyle {
+    pub shape: CursorShape,
+    pub blinking: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CursorShape {
+    /// The whole cell.
+    #[default]
+    Block,
+    /// A bar at the cell's left edge.
+    Beam,
+    /// A line along the cell's bottom.
+    Underline,
 }
 
 /// Which kitty keyboard protocol enhancements the running program turned on.
@@ -444,6 +468,8 @@ pub struct Emulator {
     cell: Option<(f32, f32)>,
     /// The frame served while a render hold is on.
     held: Option<Held>,
+    /// The host's cursor style, which DECSCUSR does not move while it is set.
+    cursor_override: Option<CursorStyle>,
 }
 
 impl Emulator {
@@ -475,6 +501,7 @@ impl Emulator {
             advertise_sixel: false,
             cell: None,
             held: None,
+            cursor_override: None,
         }
     }
 
@@ -620,6 +647,13 @@ impl Emulator {
             cursor: self.live_cursor(),
             placements: self.live_placements(),
         });
+    }
+
+    /// Draw the cursor in `style` whatever the program asks for, or with
+    /// `None` go back to the program's DECSCUSR, a steady block until it sends
+    /// one.
+    pub fn set_cursor_override(&mut self, style: Option<CursorStyle>) {
+        self.cursor_override = style;
     }
 
     pub fn cols(&self) -> usize {

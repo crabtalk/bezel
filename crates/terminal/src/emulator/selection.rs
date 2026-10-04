@@ -161,17 +161,28 @@ impl Emulator {
 
     /// Cursor in viewport coordinates; `None` when hidden or scrolled out.
     pub fn cursor(&self) -> Option<CursorSnapshot> {
-        match &self.held {
+        let cursor = match &self.held {
             Some(held) => held.cursor,
             None => self.live_cursor(),
-        }
+        }?;
+        Some(CursorSnapshot {
+            style: self.cursor_override.unwrap_or(cursor.style),
+            ..cursor
+        })
     }
 
     pub(super) fn live_cursor(&self) -> Option<CursorSnapshot> {
         let content = self.term.renderable_content();
-        if content.cursor.shape == CursorShape::Hidden {
-            return None;
-        }
+        let shape = match content.cursor.shape {
+            AnsiCursorShape::Hidden => return None,
+            AnsiCursorShape::Block | AnsiCursorShape::HollowBlock => CursorShape::Block,
+            AnsiCursorShape::Beam => CursorShape::Beam,
+            AnsiCursorShape::Underline => CursorShape::Underline,
+        };
+        let style = CursorStyle {
+            shape,
+            blinking: self.term.cursor_style().blinking,
+        };
         let Point { line, column } = content.cursor.point;
         let row = line.0 + self.display_offset() as i32;
         if row < 0 || row >= self.rows() as i32 {
@@ -180,6 +191,7 @@ impl Emulator {
         Some(CursorSnapshot {
             row: row as usize,
             col: column.0,
+            style,
         })
     }
 
