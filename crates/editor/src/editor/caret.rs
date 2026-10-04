@@ -145,7 +145,7 @@ impl Editor {
                 .replace(Selection::new(target, at), Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             this.track_slash("", Vec::new());
-            this.track_mention("");
+            this.track_mention(None);
             vec![Delta::Spliced(splice)]
         });
     }

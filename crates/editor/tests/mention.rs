@@ -1,4 +1,4 @@
-//! The `@` menu over an app's mention source.
+//! The mention menus over an app's mention sources.
 
 use editor::{AppExt as _, Chrome, Editor, Mention};
 use gpui::{App, Entity, Focusable, TestAppContext, VisualTestContext, px, size};
@@ -8,6 +8,7 @@ fn source(query: &str, _: &App) -> Vec<Mention> {
         .into_iter()
         .filter(|(label, _)| label.to_lowercase().starts_with(&query.to_lowercase()))
         .map(|(label, url)| Mention {
+            icon: None,
             label: label.into(),
             description: None,
             url: url.to_owned(),
@@ -15,11 +16,21 @@ fn source(query: &str, _: &App) -> Vec<Mention> {
         .collect()
 }
 
+fn entries(query: &str, _: &App) -> Vec<Mention> {
+    vec![Mention {
+        icon: None,
+        label: format!("Entry {query}").into(),
+        description: None,
+        url: format!("app://entry/{query}"),
+    }]
+}
+
 fn open(mention: bool, cx: &mut TestAppContext) -> (Entity<Editor>, VisualTestContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
-        cx.set_mention_source(source);
+        cx.set_mention_source('@', source);
+        cx.set_mention_source('#', entries);
     });
     let window = cx.add_window(|_, cx| {
         Editor::new("", cx).with_chrome(Chrome {
@@ -73,4 +84,25 @@ fn an_editor_without_mentions_keeps_the_at(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_keystrokes("enter");
     assert!(source_of(&editor, &mut cx).starts_with("@rel"));
+}
+
+#[gpui::test]
+fn each_trigger_opens_its_own_source(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(true, cx);
+    cx.simulate_input("see #12");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    assert_eq!(
+        source_of(&editor, &mut cx),
+        "see [app://entry/12](app://entry/12 \"chip\")"
+    );
+}
+
+#[gpui::test]
+fn a_character_with_no_source_opens_nothing(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(true, cx);
+    cx.simulate_input("$rel");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    assert!(source_of(&editor, &mut cx).starts_with("$rel"));
 }

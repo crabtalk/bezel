@@ -117,7 +117,8 @@ pub struct Chrome {
     /// The menu a pasted URL drops — leave it, or make a card, a chip or the
     /// picture it points at.
     pub paste: bool,
-    /// The `@` menu over the app's [`crate::MentionSource`]. Off by default.
+    /// The mention menus over the app's [`crate::MentionSource`]s. Off by
+    /// default.
     pub mention: bool,
 }
 

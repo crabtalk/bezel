@@ -11,6 +11,7 @@ impl Editor {
     /// ask whether a selection was empty.
     pub(super) fn insert(&mut self, text: &str, cx: &mut Context<Self>) {
         let items = crate::slash::installed(cx);
+        let trigger = crate::mention::Installed::source(cx, text);
         self.edit(EditKind::Insert, cx, |this| {
             let mut typed = Text::plain(text);
             // A stored mark applies to what is typed next and to nothing else,
@@ -27,7 +28,7 @@ impl Editor {
             let promoted = this.promote_quote_marker();
             let inline = this.apply_inline_rule();
             this.track_slash(text, items);
-            this.track_mention(text);
+            this.track_mention(trigger);
             std::iter::once(Delta::Spliced(splice))
                 .chain(shortcut)
                 .chain(promoted)
@@ -88,9 +89,10 @@ impl Editor {
         }
     }
 
-    /// Open the `@` menu on a typed `@` that starts a word, and keep its query
-    /// in step afterwards — [`Self::track_slash`]'s rules.
-    pub(super) fn track_mention(&mut self, typed: &str) {
+    /// Open the mention menu on `typed`, a trigger just typed, when it starts
+    /// a word, and keep its query in step afterwards — [`Self::track_slash`]'s
+    /// rules.
+    pub(super) fn track_mention(&mut self, typed: Option<(char, crate::MentionSource)>) {
         if !self.chrome.mention {
             return;
         }
@@ -103,22 +105,23 @@ impl Editor {
             .map(|text| text.text.clone())
             .unwrap_or_default();
         let Some(menu) = &mut self.mention else {
-            let opened = at.offset.checked_sub(1).filter(|_| typed == "@");
-            let starts_word = opened.is_none_or(|sign| {
-                text[..sign]
+            let opened = typed.and_then(|typed| {
+                let sign = at.offset.checked_sub(typed.0.len_utf8())?;
+                let starts_word = text[..sign]
                     .chars()
                     .next_back()
-                    .is_none_or(char::is_whitespace)
+                    .is_none_or(char::is_whitespace);
+                (starts_word && at.part == Part::Body).then_some((sign, typed))
             });
-            if let Some(sign) = opened.filter(|_| starts_word && at.part == Part::Body) {
-                self.mention = Some(crate::mention::MentionMenu::open(Cursor {
-                    offset: sign,
-                    ..at
-                }));
+            if let Some((sign, source)) = opened {
+                self.mention = Some(crate::mention::MentionMenu::open(
+                    Cursor { offset: sign, ..at },
+                    source,
+                ));
             }
             return;
         };
-        let start = menu.at.offset + 1;
+        let start = menu.at.offset + menu.trigger.len_utf8();
         let query = (at.block == menu.at.block && at.part == menu.at.part && at.offset >= start)
             .then(|| text.get(start..at.offset))
             .flatten()
@@ -129,7 +132,7 @@ impl Editor {
         }
     }
 
-    /// Replace the `@query` with a chip linking the row at `ix`, or the live
+    /// Replace the trigger and query with a chip linking the row at `ix`, or the live
     /// one, and a space after it.
     pub(super) fn confirm_mention(&mut self, ix: Option<usize>, cx: &mut Context<Self>) -> bool {
         let Some(menu) = self.mention.take() else {
@@ -452,7 +455,7 @@ impl Editor {
             // Deleting narrows the query too, and backspacing onto the slash
             // itself is what closes the menu.
             this.track_slash("", Vec::new());
-            this.track_mention("");
+            this.track_mention(None);
             vec![Delta::Spliced(splice)]
         });
     }
