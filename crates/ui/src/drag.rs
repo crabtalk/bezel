@@ -16,8 +16,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Axis, ElementId, IntoElement, Pixels, Point, Render,
-    StatefulInteractiveElement, Window, prelude::*,
+    AnyElement, App, Axis, Bounds, Element, ElementId, GlobalElementId, InspectorElementId,
+    IntoElement, LayoutId, Pixels, Point, Render, StatefulInteractiveElement, Window, point,
+    prelude::*,
 };
 use motion::Painter;
 
@@ -202,8 +203,8 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Domain<R, I
         let gesture = carry.gesture.clone();
         cx.new(|_| Ghosted {
             gesture,
-            // gpui places the view at the pointer less `cursor`.
-            shift: cursor - grab,
+            cursor,
+            grab,
             render: ghost.map(|ghost| {
                 Rc::new(move |window: &mut Window, cx: &mut App| ghost(&item, window, cx))
                     as Rc<Paint>
@@ -215,7 +216,10 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Domain<R, I
 /// The view gpui paints under the pointer: the domain's ghost, or nothing.
 pub struct Ghosted {
     gesture: Rc<Gesture>,
-    shift: Point<Pixels>,
+    /// Where gpui places the view: at the pointer less this.
+    cursor: Point<Pixels>,
+    /// Where the item was pressed, within the item.
+    grab: Point<Pixels>,
     render: Option<Rc<Paint>>,
 }
 
@@ -228,11 +232,10 @@ impl Render for Ghosted {
                 // gpui lays the drag view out as a root, which drops its own
                 // insets and margins, so the shift sits one level down.
                 gpui::div()
-                    .child(
-                        gpui::div()
-                            .relative()
-                            .left(self.shift.x)
-                            .top(self.shift.y)
+                    .child(AtGrab {
+                        cursor: self.cursor,
+                        grab: self.grab,
+                        child: gpui::div()
                             .child(render(window, cx))
                             .child(
                                 gpui::canvas(
@@ -243,11 +246,80 @@ impl Render for Ghosted {
                                 .top_0()
                                 .left_0()
                                 .size_full(),
-                            ),
-                    )
+                            )
+                            .into_any_element(),
+                    })
                     .into_any_element()
             }
             None => gpui::Empty.into_any_element(),
         }
+    }
+}
+
+/// The ghost, shifted so the pointer holds it where the item was grabbed —
+/// clamped to the ghost's own laid-out size, which only exists after layout.
+struct AtGrab {
+    cursor: Point<Pixels>,
+    grab: Point<Pixels>,
+    child: AnyElement,
+}
+
+impl IntoElement for AtGrab {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for AtGrab {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, ()) {
+        (self.child.request_layout(window, cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let grab = point(
+            self.grab.x.clamp(Pixels::ZERO, bounds.size.width),
+            self.grab.y.clamp(Pixels::ZERO, bounds.size.height),
+        );
+        window.with_element_offset(self.cursor - grab, |window| self.child.prepaint(window, cx));
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut (),
+        _prepaint: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.child.paint(window, cx);
     }
 }

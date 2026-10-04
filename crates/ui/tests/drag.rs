@@ -524,7 +524,7 @@ impl Render for Stack {
 
 fn stack(
     rows: Vec<&'static str>,
-    ghost: bool,
+    ghost: Option<f32>,
     cx: &mut TestAppContext,
 ) -> (Entity<Stack>, VisualTestContext) {
     cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
@@ -532,14 +532,14 @@ fn stack(
         let painter = motion::Painter::of(cx);
         Stack {
             domain: match ghost {
-                true => Domain::with_ghost(painter, |_, _, _| {
+                Some(width) => Domain::with_ghost(painter, move |_, _, _| {
                     div()
                         .debug_selector(|| "ghost".into())
-                        .w(px(120.))
+                        .w(px(width))
                         .h(px(30.))
                         .into_any_element()
                 }),
-                false => Domain::new(painter),
+                None => Domain::new(painter),
             },
             rows,
             skip: None,
@@ -558,7 +558,7 @@ fn top(id: &'static str, cx: &mut VisualTestContext) -> f32 {
 
 #[gpui::test]
 fn a_floating_item_settles_from_where_it_was_released(cx: &mut TestAppContext) {
-    let (view, mut cx) = stack(vec!["a", "b", "c"], false, cx);
+    let (view, mut cx) = stack(vec!["a", "b", "c"], None, cx);
     down(10., 10., &mut cx);
     travel(10., 70., &mut cx);
     travel(10., 75., &mut cx);
@@ -574,7 +574,7 @@ fn a_floating_item_settles_from_where_it_was_released(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn a_ghosted_item_settles_from_its_ghost(cx: &mut TestAppContext) {
-    let (view, mut cx) = stack(vec!["a", "b", "c"], true, cx);
+    let (view, mut cx) = stack(vec!["a", "b", "c"], Some(120.), cx);
     down(10., 10., &mut cx);
     travel(10., 70., &mut cx);
     travel(10., 75., &mut cx);
@@ -590,8 +590,19 @@ fn a_ghosted_item_settles_from_its_ghost(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_ghost_narrower_than_its_item_stays_under_the_pointer(cx: &mut TestAppContext) {
+    let (_, mut cx) = stack(vec!["a", "b", "c"], Some(40.), cx);
+    down(100., 10., &mut cx);
+    travel(100., 70., &mut cx);
+    travel(100., 75., &mut cx);
+    settle(&mut cx);
+    let ghost = cx.debug_bounds("ghost").unwrap();
+    assert_eq!((f32::from(ghost.left()), f32::from(ghost.top())), (60., 65.));
+}
+
+#[gpui::test]
 fn a_carried_member_appears_in_place(cx: &mut TestAppContext) {
-    let (view, mut cx) = stack(vec!["G1", "a", "G2", "b"], false, cx);
+    let (view, mut cx) = stack(vec!["G1", "a", "G2", "b"], None, cx);
     down(10., 10., &mut cx);
     travel(10., 100., &mut cx);
     travel(10., 110., &mut cx);
@@ -604,7 +615,7 @@ fn a_carried_member_appears_in_place(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn an_item_dropped_where_it_started_settles_home(cx: &mut TestAppContext) {
-    let (view, mut cx) = stack(vec!["a", "b", "c"], false, cx);
+    let (view, mut cx) = stack(vec!["a", "b", "c"], None, cx);
     down(10., 10., &mut cx);
     travel(10., 50., &mut cx);
     travel(10., 14., &mut cx);
@@ -618,7 +629,7 @@ fn an_item_dropped_where_it_started_settles_home(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn an_item_not_painted_last_frame_does_not_slide(cx: &mut TestAppContext) {
-    let (view, mut cx) = stack(vec!["a", "b", "c"], false, cx);
+    let (view, mut cx) = stack(vec!["a", "b", "c"], None, cx);
     view.update(&mut cx, |view, cx| {
         view.skip = Some("b");
         cx.notify();
