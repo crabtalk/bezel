@@ -1,13 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-	<defs>
-		<linearGradient id="berm" x1="0" y1="156" x2="0" y2="356" gradientUnits="userSpaceOnUse">
-			<stop offset="0" stop-color="#ededed" />
-			<stop offset="1" stop-color="#8c8c8c" />
-		</linearGradient>
-	</defs>
-	<rect width="512" height="512" rx="112" fill="#000" />
-	<path
-		d="M56 356 A200 200 0 0 1 456 356 L369.86 356 A98.08 98.08 0 0 1 299.38 301.57 A106.56 106.56 0 0 0 96.87 356 Z"
-		fill="url(#berm)"
-	/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="115 114 1024 1024">
+  <title>Metallic folded square</title>
+  <defs>
+    <path id="shape" fill-rule="evenodd" d="M454 308H803C875 308 934 367 934 440V726L875 826C839 889 812 914 756 934C735 941 712 943 689 943H454C380 943 320 885 320 811V441C320 367 380 308 454 308ZM476 400C437 400 408 429 408 467V785C408 824 435 852 476 852H633C685 852 720 831 758 793C791 759 814 739 847 726V468C847 429 820 400 780 400H476Z"/>
+    <clipPath id="outline"><use href="#shape"/></clipPath>
+    <linearGradient id="silver" x1="627" y1="308" x2="627" y2="944" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e9e7e8"/>
+      <stop offset=".13" stop-color="#e4e3e4"/>
+      <stop offset=".34" stop-color="#bdbdbf"/>
+      <stop offset=".63" stop-color="#a0a1a3"/>
+      <stop offset=".85" stop-color="#a8a9ab"/>
+      <stop offset="1" stop-color="#bfc0c1"/>
+    </linearGradient>
+    <radialGradient id="shine" cx=".78" cy=".04" r=".7">
+      <stop stop-color="#fff" stop-opacity=".6"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="400" y1="310" x2="840" y2="944" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".95"/>
+      <stop offset=".48" stop-color="#fff" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".85"/>
+    </linearGradient>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="3" seed="12" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+    <filter id="soft-edge" x="-2%" y="-2%" width="104%" height="104%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+  </defs>
+  <rect x="115" y="114" width="1024" height="1024" rx="224" fill="#000"/>
+  <use href="#shape" fill="url(#silver)"/>
+  <use href="#shape" fill="url(#shine)"/>
+  <g clip-path="url(#outline)">
+    <path d="M320 811V441C320 367 380 308 454 308H803C875 308 934 367 934 440M408 785V467M476 852H633C685 852 720 831 758 793C791 759 814 739 847 726M454 943H689C712 943 735 941 756 934" fill="none" stroke="#fff" stroke-opacity=".32" stroke-width="7" filter="url(#soft-edge)"/>
+    <path d="M319 307H935V944H319Z" opacity=".065" filter="url(#grain)"/>
+  </g>
+  <use href="#shape" fill="none" stroke="url(#rim)" stroke-width="1.6"/>
 </svg>
