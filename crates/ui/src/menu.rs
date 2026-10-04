@@ -833,7 +833,7 @@ impl<V: 'static> Tree<V> {
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .child(label)
+                        .child(div().truncate().child(label))
                         .children(
                             description
                                 .map(|description| description_line(theme, description, enabled)),
