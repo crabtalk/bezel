@@ -597,7 +597,10 @@ fn a_ghost_narrower_than_its_item_stays_under_the_pointer(cx: &mut TestAppContex
     travel(100., 75., &mut cx);
     settle(&mut cx);
     let ghost = cx.debug_bounds("ghost").unwrap();
-    assert_eq!((f32::from(ghost.left()), f32::from(ghost.top())), (60., 65.));
+    assert_eq!(
+        (f32::from(ghost.left()), f32::from(ghost.top())),
+        (60., 65.)
+    );
 }
 
 #[gpui::test]
