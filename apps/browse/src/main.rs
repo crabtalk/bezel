@@ -38,6 +38,7 @@ fn main() {
                 Menu::new("View").items([
                     MenuItem::action("Toggle Sidebar", shell::ToggleSidebar),
                     MenuItem::action("Reload Page", shell::Reload),
+                    MenuItem::action("Show Web Inspector", shell::Inspect),
                 ]),
                 Menu::new("History").items([
                     MenuItem::action("Back", shell::Back),

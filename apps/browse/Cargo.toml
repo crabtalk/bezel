@@ -9,7 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
-browser.workspace = true
+browser = { workspace = true, features = ["inspector"] }
 theme.workspace = true
 ui.workspace = true
 icons = { workspace = true, features = [

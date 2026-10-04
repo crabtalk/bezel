@@ -19,6 +19,12 @@ name = "browser"
 [lints]
 workspace = true
 
+[features]
+default = []
+# `WebView::with_inspector` and `open_inspector`. On macOS this compiles in
+# wry's calls to private WebKit API (`developerExtrasEnabled`, `_inspector`).
+inspector = ["wry/devtools"]
+
 [dependencies]
 gpui.workspace = true
 ui.workspace = true

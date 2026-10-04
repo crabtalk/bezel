@@ -61,6 +61,9 @@ pub(crate) struct Page {
     pub(crate) user_agent: RefCell<Option<String>>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) store: RefCell<DataStore>,
+    #[cfg(feature = "inspector")]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    pub(crate) inspector: Cell<bool>,
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// Where the page last sat; `None` before the first paint and while parked.
@@ -92,6 +95,8 @@ impl Page {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
             store: RefCell::new(DataStore::default()),
+            #[cfg(feature = "inspector")]
+            inspector: Cell::new(false),
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             view: std::cell::OnceCell::new(),
             placed: Cell::new(None),
@@ -266,6 +271,8 @@ impl Page {
                 Some(user_agent) => builder.with_user_agent(user_agent),
                 None => builder,
             };
+            #[cfg(feature = "inspector")]
+            let builder = builder.with_devtools(self.inspector.get());
             let builder = platform::store(builder, store.identifier);
             platform::build(builder, window)?
                 .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
@@ -357,6 +364,13 @@ impl Page {
 
     pub(crate) fn location(&self) -> Option<String> {
         self.built()?.url().ok()
+    }
+
+    #[cfg(feature = "inspector")]
+    pub(crate) fn open_inspector(&self) {
+        if let Some(view) = self.built() {
+            view.open_devtools();
+        }
     }
 
     /// Whether the script was handed to the page.

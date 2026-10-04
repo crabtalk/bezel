@@ -184,6 +184,22 @@ impl WebView {
         self
     }
 
+    /// Builds the page inspectable. Read at the first paint. On macOS 13.3+
+    /// Safari's Develop menu lists the page, and the page's context menu has
+    /// Inspect Element.
+    #[cfg(feature = "inspector")]
+    pub fn with_inspector(self) -> Self {
+        self.page.inspector.set(true);
+        self
+    }
+
+    /// Opens the inspector of a page built with [`Self::with_inspector`].
+    /// Does nothing before the first paint.
+    #[cfg(feature = "inspector")]
+    pub fn open_inspector(&self) {
+        self.page.open_inspector();
+    }
+
     /// Before the first paint, replaces the URL the page is built with.
     /// After it, navigates the page.
     pub fn load(&mut self, url: impl Into<String>) {

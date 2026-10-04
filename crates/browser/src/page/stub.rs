@@ -50,6 +50,9 @@ impl Page {
         None
     }
 
+    #[cfg(feature = "inspector")]
+    pub(crate) fn open_inspector(&self) {}
+
     pub(crate) fn eval(&self, _script: &str, _done: impl Fn(String) + Send + 'static) -> bool {
         false
     }
