@@ -383,9 +383,11 @@ impl Element for TextFieldElement {
         };
 
         let text = display_text(field).0.text;
+        // Measuring runs after the element's text style is popped, where the
+        // window reports gpui's default font instead.
+        let text_style = window.text_style();
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
         let id = window.request_measured_layout(style, move |known, available, window, _cx| {
-            let text_style = window.text_style();
-            let font_size = text_style.font_size.to_pixels(window.rem_size());
             // Prefer the width layout has already settled on. Taffy also probes
             // with min/max-content, where there is no width to wrap against —
             // and counting rows off unwrapped text under-reports them, which
