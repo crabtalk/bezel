@@ -18,7 +18,8 @@ gallery.workspace = true
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 theme.workspace = true
-ui.workspace = true
+# gpui-web loads no fonts of its own; these are the only faces the page has.
+ui = { workspace = true, features = ["geist-sans", "geist-mono", "geist-weights"] }
 console_error_panic_hook = "0.1"
 gpui.workspace = true
 gpui_web.workspace = true

@@ -6,7 +6,7 @@
     "catalog": "cd .. && cargo run -q -p web > www/src/lib/catalog.json",
     "wasm": "cd .. && cargo build -p web --lib --target wasm32-unknown-unknown --release && wasm-bindgen --target web --no-typescript --remove-name-section --out-dir www/static/gallery target/wasm32-unknown-unknown/release/web.wasm && node www/scripts/patch-ios-wasm-loader.js",
     "dev": "bun run wasm && bun run catalog && vite dev",
-    "build": "bun run wasm && wasm-opt -Oz -o static/gallery/web_bg.wasm static/gallery/web_bg.wasm && bun run catalog && vite build",
+    "build": "bun run wasm && wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals --enable-reference-types --enable-multivalue -o static/gallery/web_bg.wasm static/gallery/web_bg.wasm && bun run catalog && vite build && node scripts/hash-gallery.js",
     "preview": "vite preview",
     "deploy": "bun run build && wrangler pages deploy build --project-name=bezel --branch=main"
   },
