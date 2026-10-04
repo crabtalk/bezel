@@ -75,6 +75,16 @@ fn a_tooltip_is_an_action_rows_hover_text() {
 }
 
 #[test]
+fn an_indent_moves_action_and_submenu_rows() {
+    let nested = Item::action("Heading").indented(2);
+    assert!(matches!(&nested, Item::Action { indent: 2, .. }));
+    let submenu = Item::submenu("Section", vec![Item::action("a")]).indented(1);
+    assert!(matches!(&submenu, Item::Submenu { indent: 1, .. }));
+
+    assert_eq!(Item::Separator.indented(1), Item::Separator);
+}
+
+#[test]
 fn a_long_description_is_its_own_tooltip() {
     // The row clips the sentence, so the pairing is what the caller wants —
     // and one string means the two cannot drift apart.
