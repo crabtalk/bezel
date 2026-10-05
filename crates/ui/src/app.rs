@@ -28,6 +28,12 @@ pub trait AppExt {
     /// Sets block caret height and refreshes windows. Defaults to `Line`.
     fn set_caret_height(&mut self, height: crate::input::CaretHeight);
 
+    /// Reads what a block caret paints as in an inactive window.
+    fn inactive_caret(&self) -> crate::input::InactiveCaret;
+
+    /// Sets it and refreshes windows. Defaults to `Hollow`.
+    fn set_inactive_caret(&mut self, inactive: crate::input::InactiveCaret);
+
     /// Reads scrollbar visibility.
     fn scrollbar_visibility(&self) -> crate::scroll::Visibility;
 
@@ -81,6 +87,14 @@ impl AppExt for App {
 
     fn set_caret_height(&mut self, height: crate::input::CaretHeight) {
         crate::input::caret::set_caret_height(height, self)
+    }
+
+    fn inactive_caret(&self) -> crate::input::InactiveCaret {
+        crate::input::caret::inactive_caret(self)
+    }
+
+    fn set_inactive_caret(&mut self, inactive: crate::input::InactiveCaret) {
+        crate::input::caret::set_inactive_caret(inactive, self)
     }
 
     fn scrollbar_visibility(&self) -> crate::scroll::Visibility {

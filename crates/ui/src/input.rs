@@ -37,7 +37,7 @@ mod element;
 mod ime;
 mod text;
 
-pub use caret::{CaretHeight, CaretShape};
+pub use caret::{CaretHeight, CaretShape, InactiveCaret};
 pub use chip::Chip;
 pub use element::*;
 pub use text::*;

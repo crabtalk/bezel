@@ -32,6 +32,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         caret_on,
         caret_shape: cx.caret_shape(),
         caret_height: cx.caret_height(),
+        caret_inactive: cx.inactive_caret(),
         // No window reaches here; a source view's rows read their own below.
         window_active: cx.active_window().is_some(),
         layouts,

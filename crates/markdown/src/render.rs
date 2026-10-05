@@ -351,6 +351,7 @@ struct Overlay<'a> {
     caret_on: bool,
     caret_shape: ui::input::CaretShape,
     caret_height: ui::input::CaretHeight,
+    caret_inactive: ui::input::InactiveCaret,
     /// A block caret is hollow, and cuts no glyph out, while this is false.
     window_active: bool,
     layouts: Option<&'a BlockLayouts>,
@@ -459,7 +460,12 @@ impl<'a> Overlay<'a> {
     /// otherwise swap itself out twice a second.
     fn caret_painted(&self) -> Option<usize> {
         let collapsed = self.selection.is_some_and(|s| s.is_collapsed());
-        (self.caret_on && collapsed).then(|| self.caret()).flatten()
+        let shown = self
+            .caret_shape
+            .shown(self.window_active, self.caret_inactive);
+        (self.caret_on && collapsed && shown)
+            .then(|| self.caret())
+            .flatten()
     }
 
     fn caret_hollow(&self) -> bool {
@@ -621,6 +627,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caret_on,
                 caret_shape: cx.caret_shape(),
                 caret_height: cx.caret_height(),
+                caret_inactive: cx.inactive_caret(),
                 window_active: window.is_window_active(),
                 layouts: None,
                 annotations,
@@ -702,6 +709,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caret_on: owned.caret_on,
                 caret_shape: cx.caret_shape(),
                 caret_height: cx.caret_height(),
+                caret_inactive: cx.inactive_caret(),
                 window_active: window.is_window_active(),
                 layouts: Some(&owned.layouts),
                 annotations: &owned.annotations,

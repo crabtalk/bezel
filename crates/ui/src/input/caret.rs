@@ -50,7 +50,37 @@ pub(crate) fn set_caret_height(height: CaretHeight, cx: &mut App) {
     cx.refresh_windows();
 }
 
+/// What the app-wide block caret paints as while its window is inactive.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InactiveCaret {
+    /// Outlined.
+    #[default]
+    Hollow,
+    /// Nothing.
+    Hidden,
+}
+
+impl Global for InactiveCaret {}
+
+pub(crate) fn inactive_caret(cx: &App) -> InactiveCaret {
+    cx.try_global::<InactiveCaret>()
+        .copied()
+        .unwrap_or_default()
+}
+
+/// Changes it and repaints open windows.
+pub(crate) fn set_inactive_caret(inactive: InactiveCaret, cx: &mut App) {
+    cx.set_global(inactive);
+    cx.refresh_windows();
+}
+
 impl CaretShape {
+    /// Whether a caret of this shape paints at all, given whether its window
+    /// is active. Only a block changes with the window.
+    pub fn shown(self, window_active: bool, inactive: InactiveCaret) -> bool {
+        window_active || self != Self::Block || inactive == InactiveCaret::Hollow
+    }
+
     /// Adapts a renderer's existing bar, centred in a line `line_height` tall,
     /// to `width`, which a bar ignores. A block stands as tall as `height`
     /// says, solid or, when `hollow`, outlined.

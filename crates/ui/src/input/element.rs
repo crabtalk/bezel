@@ -618,23 +618,26 @@ impl Element for TextFieldElement {
                 .collect()
         };
 
+        let caret_shown = caret_shape.shown(!hollow, crate::input::caret::inactive_caret(cx));
         let (selection, cursor) = if selected_range.is_empty() {
             let at = position_for_offset(&lines, cursor, line_height).unwrap_or_default();
             (
                 Vec::new(),
-                Some(caret_shape.quad(
-                    // The font's size rather than the line's: leading is not
-                    // a bar's or an underline's to fill. A block fills it.
-                    Bounds::new(
-                        origin + at + gpui::point(px(0.), (line_height - font_size) / 2.),
-                        gpui::size(CARET_WIDTH, font_size),
-                    ),
-                    line_height,
-                    caret_height,
-                    advance.unwrap_or_default(),
-                    theme.caret,
-                    hollow,
-                )),
+                caret_shown.then(|| {
+                    caret_shape.quad(
+                        // The font's size rather than the line's: leading is not
+                        // a bar's or an underline's to fill. A block fills it.
+                        Bounds::new(
+                            origin + at + gpui::point(px(0.), (line_height - font_size) / 2.),
+                            gpui::size(CARET_WIDTH, font_size),
+                        ),
+                        line_height,
+                        caret_height,
+                        advance.unwrap_or_default(),
+                        theme.caret,
+                        hollow,
+                    )
+                }),
             )
         } else {
             (
