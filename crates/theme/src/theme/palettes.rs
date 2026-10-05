@@ -4,7 +4,9 @@ use gpui::{hsla, rgb};
 
 use crate::{
     Appearance, Ink, TextInk, color, paint,
-    theme::{Glass, MaterialSpec, SurfaceSpec, SurfaceStyle, Theme, syntax::SyntaxPalette},
+    theme::{
+        Glass, Material, MaterialSpec, SurfaceSpec, SurfaceStyle, Theme, syntax::SyntaxPalette,
+    },
 };
 
 impl Theme {
@@ -135,6 +137,7 @@ impl Theme {
             // higher bar than the dome's algebra: fitting the formula to their
             // measured curve lands ~15% short of what the shader then renders.
             popover_surface: SurfaceStyle::Glass(Glass::Regular),
+            drop_preview: SurfaceStyle::Material(Material::Thin),
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),
@@ -278,6 +281,7 @@ impl Theme {
             // At 1-3pt inside the rim the real material drags the backdrop 26pt
             // or more, and lets go by 5.5pt; on the shader's profile that is 8.
             popover_surface: SurfaceStyle::Glass(Glass::Regular),
+            drop_preview: SurfaceStyle::Material(Material::Thin),
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),

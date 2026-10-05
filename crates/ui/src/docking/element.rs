@@ -7,7 +7,6 @@ use gpui::{
     prelude::*, px,
 };
 use std::rc::Rc;
-use theme::{Material, SurfaceStyle};
 
 #[derive(IntoElement)]
 pub struct Surface<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> {
@@ -123,7 +122,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
             // The surface's flat fallback is opaque and would hide the pane.
             overlay = overlay.child(if crate::surface::lensed(theme) {
                 target
-                    .surface(theme, SurfaceStyle::Material(Material::Thin))
+                    .surface(theme, theme.drop_preview)
                     .into_any_element()
             } else {
                 target.bg(theme.drop_target).into_any_element()

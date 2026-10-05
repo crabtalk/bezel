@@ -109,7 +109,7 @@ pub trait Surfaced: Styled + IntoElement + Sized {
     /// card's own rounding: the lens dies if any of the three is wrong.
     ///
     /// It clears the card's `bg`, since the lens paints the fill. Where the
-    /// lens cannot run — every renderer but macOS Metal — it paints
+    /// lens cannot run — the DirectX renderer, or [`Theme::glass`] off — it paints
     /// [`SurfaceSpec::flat`] instead, so the surface is never invisible.
     fn surface(mut self, theme: &Theme, style: SurfaceStyle) -> Surface {
         let corners = corners_of(&mut self);
