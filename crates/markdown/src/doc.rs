@@ -218,6 +218,10 @@ pub enum BlockKind {
     Code {
         language: Option<String>,
         code: Text,
+        /// The height a painted fence stands at, in whole pixels, from a drag
+        /// off its handle in `bezel-editor`. `None` is the block's own height.
+        /// Spelled as the info string's second word: ` ```mermaid 360 `.
+        height: Option<u32>,
     },
     /// The caption is the alt text — markdown has one slot, and a reader that
     /// cannot see the picture reads the same words. Like [`BlockKind::Code`]'s,
@@ -400,23 +404,28 @@ pub struct MarkSpan {
 pub enum Form {
     Auto,
     Chip,
-    Embed,
+    /// The bigger card, at a height in whole pixels from a drag off its
+    /// handle in `bezel-editor`, or its own height for `None`. Spelled
+    /// `"embed 360"`.
+    Embed(Option<u32>),
 }
 
 impl Form {
     /// The title that spells this form, and `None` for the shorthand.
-    pub(crate) fn title(self) -> Option<&'static str> {
+    pub(crate) fn title(self) -> Option<String> {
         match self {
             Self::Auto => None,
-            Self::Chip => Some("chip"),
-            Self::Embed => Some("embed"),
+            Self::Chip => Some("chip".to_owned()),
+            Self::Embed(None) => Some("embed".to_owned()),
+            Self::Embed(Some(height)) => Some(format!("embed {height}")),
         }
     }
 
     pub(crate) fn from_title(title: &str) -> Option<Self> {
-        match title {
-            "chip" => Some(Self::Chip),
-            "embed" => Some(Self::Embed),
+        let (name, height) = crate::parse::split_size(title);
+        match (name, height) {
+            ("chip", None) => Some(Self::Chip),
+            ("embed", height) => Some(Self::Embed(height)),
             _ => None,
         }
     }

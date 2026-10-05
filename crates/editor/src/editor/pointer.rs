@@ -73,6 +73,7 @@ impl Editor {
         self.dragging.is_some()
             || self.lifted.is_some()
             || self.resizing.is_some()
+            || self.sizing.is_some()
             || self.table_drag.is_some()
     }
 
@@ -144,6 +145,9 @@ impl Editor {
                 self.lifted = Some((from, to));
                 cx.notify();
             }
+            return;
+        }
+        if self.drag_height(position.y, cx) {
             return;
         }
         // An image being resized follows the pointer the same way — the

@@ -40,6 +40,7 @@ pub(crate) mod menu;
 mod mode;
 mod pointer;
 mod render;
+mod sizing;
 mod table;
 mod typing;
 
@@ -264,6 +265,7 @@ fn source_doc(source: &str) -> Doc {
         blocks: vec![Block::new(BlockKind::Code {
             language: Some(markdown::source::LANGUAGES[0].to_string()),
             code: Text::plain(source),
+            height: None,
         })],
     }
 }
@@ -368,6 +370,8 @@ pub struct Editor {
     /// document's own value here is what makes a press that never moved
     /// read back as no change at all.
     resizing: Option<(usize, Option<u32>)>,
+    /// A painted block being dragged taller or shorter by its bottom handle.
+    sizing: Option<sizing::Sizing>,
     /// The block menu the handle opened, over the block and its rows.
     block_menu: MenuPopup<(usize, crate::slash::Rows)>,
     /// The language menu a fence's header opened, over its block.
@@ -454,6 +458,7 @@ impl Editor {
             table_dragged: false,
             lifted: None,
             resizing: None,
+            sizing: None,
             block_menu: MenuPopup::default(),
             language_menu: MenuPopup::default(),
             press_claimed: false,

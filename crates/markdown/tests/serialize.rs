@@ -176,9 +176,35 @@ fn code_containing_a_fence_gets_a_longer_one() {
         blocks: vec![Block::new(BlockKind::Code {
             language: None,
             code: Text::plain("```\nnested\n```"),
+            height: None,
         })],
     };
     assert_eq!(parse(&serialize(&doc)), doc);
+}
+
+#[test]
+fn a_fence_keeps_its_height_after_the_language() {
+    let source = "```mermaid 360\ngraph TD\n```";
+    let doc = parse(source);
+    assert!(matches!(
+        &doc.blocks[0].kind,
+        BlockKind::Code { language: Some(language), height: Some(360), .. } if language == "mermaid"
+    ));
+    assert_eq!(serialize(&doc), source);
+}
+
+#[test]
+fn an_embed_keeps_its_height_in_the_title() {
+    let source = "[cydonia://a#4](cydonia://a#4 \"embed 320\")";
+    let doc = parse(source);
+    assert!(matches!(
+        &doc.blocks[0].kind,
+        BlockKind::Bookmark {
+            form: markdown::Form::Embed(Some(320)),
+            ..
+        }
+    ));
+    assert_eq!(serialize(&doc), source);
 }
 
 #[test]

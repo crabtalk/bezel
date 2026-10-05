@@ -28,6 +28,7 @@ impl Shortcut {
             Self::Code => BlockKind::Code {
                 language: None,
                 code: Text::plain(text.text),
+                height: None,
             },
             Self::Rule => BlockKind::Rule,
         }

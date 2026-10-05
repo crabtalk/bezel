@@ -109,6 +109,7 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
             BlockKind::Code {
                 language: None,
                 code: text(),
+                height: None,
             },
         ),
         (

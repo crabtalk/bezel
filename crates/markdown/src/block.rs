@@ -24,6 +24,9 @@ pub struct Fence<'a> {
     /// The info string.
     pub language: &'a str,
     pub code: &'a str,
+    /// The height to stand at, in whole pixels, from the fence's info string
+    /// or a resize in flight. `None` is the block's own height.
+    pub height: Option<u32>,
     /// Writes new code into this fence through the editor holding it, as an
     /// undoable edit. `None` in a document nobody is editing.
     pub rewrite: Option<Rewrite>,
@@ -59,7 +62,7 @@ pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Op
     }
     #[cfg(feature = "mermaid")]
     if fence.language == crate::mermaid::LANGUAGE {
-        return crate::mermaid::render(fence.code, window, cx);
+        return crate::mermaid::render(fence.code, fence.height, window, cx);
     }
     None
 }

@@ -25,6 +25,9 @@ pub(super) struct Frames {
     /// full column and carries the caption, and a resize handle belongs on the
     /// edge of the picture itself.
     pictures: Vec<(usize, Bounds<Pixels>)>,
+    /// A painted block that can be resized: a painted fence, or a card
+    /// [`crate::Form::Embed`] spells.
+    painted: Vec<(usize, Bounds<Pixels>)>,
     /// A task block's checkbox, which is not its marker column: the column is
     /// gutter either side of the box, and a click there places a caret.
     checkboxes: Vec<(usize, Bounds<Pixels>)>,
@@ -290,6 +293,17 @@ impl BlockLayouts {
             .map(|(_, bounds)| *bounds)
     }
 
+    /// Where a resizable painted block painted last frame — a painted fence,
+    /// or an embed card — and `None` for any other block.
+    pub fn painted_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
+        self.0
+            .borrow()
+            .painted
+            .iter()
+            .find(|(at, _)| *at == ix)
+            .map(|(_, bounds)| *bounds)
+    }
+
     /// Where an image block's picture painted, which
     /// [`BlockLayouts::block_bounds`] does not give: that box spans the column
     /// and takes in the caption, so a handle placed from it sits off the edge
@@ -404,6 +418,10 @@ impl BlockLayouts {
         self.0.borrow_mut().pictures.push((ix, bounds));
     }
 
+    pub(super) fn record_painted(&self, ix: usize, bounds: Bounds<Pixels>) {
+        self.0.borrow_mut().painted.push((ix, bounds));
+    }
+
     pub(super) fn record_checkbox(&self, ix: usize, bounds: Bounds<Pixels>) {
         self.0.borrow_mut().checkboxes.push((ix, bounds));
     }
@@ -450,6 +468,7 @@ impl BlockLayouts {
         frames.blocks.clear();
         frames.languages.clear();
         frames.pictures.clear();
+        frames.painted.clear();
         frames.checkboxes.clear();
         frames.cells.clear();
     }

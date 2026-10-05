@@ -178,6 +178,7 @@ impl Render for Editor {
                     this.drag_table_to(event.position, cx);
                     this.dragging = None;
                     this.drop_resize(window, cx);
+                    this.drop_height(cx);
                     this.drop_table_drag(cx);
                 }),
             )
@@ -190,6 +191,9 @@ impl Render for Editor {
                         return;
                     }
                     if this.drop_resize(window, cx) {
+                        return;
+                    }
+                    if this.drop_height(cx) {
                         return;
                     }
                     let Some((from, to)) = this.lifted.take() else {
@@ -379,6 +383,18 @@ impl Render for Editor {
             // whole page is a second, louder signal for the same fact.
             .relative()
             .child(input)
+            // A height drag holds the resize cursor wherever the pointer
+            // runs, over the editor's text and the card's own cursors alike.
+            .when(self.sizing.is_some(), |el| {
+                el.child(
+                    canvas(
+                        |_, _, _| (),
+                        |_, _, window, _| window.set_window_cursor_style(CursorStyle::ResizeUpDown),
+                    )
+                    .absolute()
+                    .size_0(),
+                )
+            })
             // The document is inset by the gutter so the handle has somewhere
             // to sit *inside* the editor. Outside it the handle is clipped by
             // any scrolling ancestor, and a pointer over it never reaches
@@ -439,6 +455,7 @@ impl Render for Editor {
                                 table_controls: true,
                                 image_overlay: self.image_overlay.clone(),
                                 image_overlay_corner: self.image_overlay_corner,
+                                sizing: self.held_height(),
                                 fence: Some(markdown::FenceHost {
                                     rewrite: {
                                         let editor = cx.entity().downgrade();
@@ -448,6 +465,14 @@ impl Render for Editor {
                                                 .ok();
                                         })
                                     },
+                                    resize: Some({
+                                        let editor = cx.entity().downgrade();
+                                        Rc::new(move |ix, y, _, cx| {
+                                            editor
+                                                .update(cx, |this, cx| this.start_height(ix, y, cx))
+                                                .ok();
+                                        })
+                                    }),
                                     leave: {
                                         let editor = cx.entity().downgrade();
                                         Rc::new(move |ix, window, cx| {

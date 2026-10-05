@@ -171,11 +171,19 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8, marks: &Marks) {
             }
             write_lines(out, &prefix, &prefix, &body);
         }
-        BlockKind::Code { language, code } => {
+        BlockKind::Code {
+            language,
+            code,
+            height,
+        } => {
             let fence = "`".repeat(fence_width(&code.text));
             out.push_str(&pad);
             out.push_str(&fence);
             out.push_str(language.as_deref().unwrap_or(""));
+            if let Some(height) = height {
+                out.push(' ');
+                out.push_str(&height.to_string());
+            }
             for line in code.text.split('\n') {
                 out.push('\n');
                 out.push_str(&pad);
@@ -492,7 +500,7 @@ fn close_mark(out: &mut String, mark: &Mark, italic: char, marks: &Marks) {
             out.push_str("](");
             write_destination(out, url);
             out.push_str(" \"");
-            out.push_str(form.title().unwrap_or("chip"));
+            out.push_str(&form.title().unwrap_or_else(|| "chip".to_owned()));
             out.push_str("\")");
         }
         Mark::Custom(name) => out.push_str(marks.delimiter(name).unwrap_or("")),

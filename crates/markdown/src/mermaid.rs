@@ -36,7 +36,8 @@ const CACHED: usize = 64;
 const ZOOMS: [f32; 7] = [0.5, 0.67, 0.8, 1.0, 1.25, 1.5, 2.0];
 const UNZOOMED: usize = 3;
 
-/// The tallest the box stands, whatever the diagram's height.
+/// The tallest the diagram stands on its own, whatever its height. A height
+/// the fence states is the whole box's, band included, taken as it is.
 const MAX_HEIGHT: f32 = 480.0;
 
 /// Laid-out diagrams by source and text size. `None` for source that did not
@@ -86,7 +87,12 @@ fn laid_out(code: &str, size: f32, cx: &mut App) -> Option<Rc<Canvas>> {
 }
 
 /// The diagram `code` describes, or `None` to leave the fence to its source.
-pub fn render(code: &str, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+pub fn render(
+    code: &str,
+    height: Option<u32>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<AnyElement> {
     let size = TextStyle::Callout.painted();
     // The box keeps the unzoomed diagram's height, so zooming moves what is in
     // it rather than the page under it.
@@ -113,7 +119,10 @@ pub fn render(code: &str, window: &mut Window, cx: &mut App) -> Option<AnyElemen
         .debug_selector(|| LANGUAGE.into())
         .relative()
         .w_full()
-        .h(px(natural.min(MAX_HEIGHT)))
+        .map(|el| match height {
+            Some(_) => el.flex_1().min_h_0(),
+            None => el.h(px(natural.min(MAX_HEIGHT))),
+        })
         .overflow_hidden()
         .map(|el| match view.held {
             Some(_) => el.cursor_grabbing(),
@@ -151,8 +160,12 @@ pub fn render(code: &str, window: &mut Window, cx: &mut App) -> Option<AnyElemen
 
     Some(
         fence_panel(&theme)
+            .when_some(height, |el, height| {
+                el.h(px(height as f32)).flex().flex_col()
+            })
             .child(
                 fence_band(&theme)
+                    .flex_none()
                     .text_color(theme.text_muted)
                     .child(LANGUAGE),
             )

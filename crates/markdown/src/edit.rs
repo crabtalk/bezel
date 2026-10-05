@@ -519,6 +519,7 @@ impl Doc {
                 BlockKind::Code {
                     language: None,
                     code,
+                    height: None,
                 },
                 indent,
             ),

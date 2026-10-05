@@ -63,7 +63,7 @@ fn an_app_link_alone_on_a_line_is_a_bookmark() {
     let doc = markdown::parse("[cydonia://cydonia#43](cydonia://cydonia#43 \"embed\")");
     assert!(matches!(
         &doc.blocks[0].kind,
-        markdown::BlockKind::Bookmark { url, form: markdown::Form::Embed } if url == "cydonia://cydonia#43"
+        markdown::BlockKind::Bookmark { url, form: markdown::Form::Embed(None) } if url == "cydonia://cydonia#43"
     ));
     assert_eq!(
         markdown::serialize(&doc),

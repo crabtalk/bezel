@@ -52,6 +52,7 @@ fn open(source: &str, cx: &mut TestAppContext) -> (Entity<Editor>, VisualTestCon
                         let kind = BlockKind::Code {
                             language: Some("widget".to_owned()),
                             code: Text::plain("blue"),
+                            height: None,
                         };
                         at.editor
                             .update(cx, |editor, cx| editor.place_block(at.block, kind, cx))
@@ -129,4 +130,32 @@ fn a_query_matching_a_group_keeps_its_rows_behind_it(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter enter");
     cx.run_until_parked();
     assert_eq!(source(&editor, &mut cx), "# Title\n\n```widget\nblue\n```");
+}
+
+#[gpui::test]
+fn a_painted_fence_is_dragged_taller_by_its_bottom_edge(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open("text\n\n```widget\n```\n", cx);
+    for _ in 0..3 {
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+    }
+    let widget = cx
+        .update(|_, cx| editor.read(cx).layouts().painted_bounds(1))
+        .expect("painted");
+    cx.simulate_mouse_move(widget.center(), None, gpui::Modifiers::default());
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let handle = cx
+        .debug_bounds("painted-grip")
+        .expect("hovering a painted fence shows its height handle");
+    let from = handle.center();
+    cx.simulate_mouse_move(from, None, gpui::Modifiers::default());
+    cx.run_until_parked();
+    let to = from + gpui::point(px(0.0), px(160.0));
+    cx.simulate_mouse_down(from, gpui::MouseButton::Left, gpui::Modifiers::default());
+    cx.simulate_mouse_move(to, gpui::MouseButton::Left, gpui::Modifiers::default());
+    cx.simulate_mouse_up(to, gpui::MouseButton::Left, gpui::Modifiers::default());
+    cx.run_until_parked();
+    let source = source(&editor, &mut cx);
+    assert!(source.contains("```widget 2"), "{source}");
 }

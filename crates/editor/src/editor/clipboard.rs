@@ -198,7 +198,7 @@ impl Editor {
                 vec![Delta::Spliced(splice)]
             }),
             Choice::Bookmark => self.turn_into(ix, card(pasted.url, Form::Auto), cx),
-            Choice::Embed => self.turn_into(ix, card(pasted.url, Form::Embed), cx),
+            Choice::Embed => self.turn_into(ix, card(pasted.url, Form::Embed(None)), cx),
             Choice::Image => self.turn_into(
                 ix,
                 BlockKind::Image {
