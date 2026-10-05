@@ -371,6 +371,9 @@ pub struct Theme {
     /// and [`Theme::glass`] hold; elsewhere it is a [`Theme::drop_target`]
     /// wash.
     pub drop_preview: SurfaceStyle,
+    /// What a dragged item's floating copy paints on — see
+    /// `ui::drag::Carried::ghost`.
+    pub carried_surface: SurfaceStyle,
     /// Lens displacement amplitude, signed; negative inverts it.
     pub glass_magnify: f32,
     /// Per-channel spread of that displacement — the chromatic fringe.

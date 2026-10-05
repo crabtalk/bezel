@@ -132,7 +132,9 @@ struct Settling<P, I> {
     pane: P,
     item: I,
     preview: Bounds<Pixels>,
-    ghost: Bounds<Pixels>,
+    /// Where the docking ghost settles from; `None` when the source domain
+    /// drew its own.
+    ghost: Option<Bounds<Pixels>>,
     since: Instant,
 }
 
@@ -146,6 +148,11 @@ impl<I> Carried<I> {
     /// Off every region of its domain: this surface's to take.
     fn detached(&self) -> bool {
         !self.gesture.claimed.get()
+    }
+
+    /// Detached, and drawn by this surface rather than by its source domain.
+    fn hosted(&self) -> bool {
+        self.detached() && !self.gesture.ghosted.get()
     }
 
     fn ghost_bounds(&self) -> Bounds<Pixels> {
@@ -294,7 +301,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Dock<P, I> 
                         },
                         callback.clone(),
                         state.preview.as_ref().unwrap().bounds(cx),
-                        carried.ghost_bounds(),
+                        carried.hosted().then(|| carried.ghost_bounds()),
                     )
                 })
         };

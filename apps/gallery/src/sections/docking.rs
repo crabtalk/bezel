@@ -3,6 +3,7 @@ use motion::Painter;
 use theme::Theme;
 use ui::{
     docking::{Dock, Drop, Zone},
+    drag::Carried as _,
     tabs,
 };
 
@@ -77,6 +78,7 @@ impl Demo {
                     tabs::Label::new(*id),
                     tabs::State::Front,
                 )
+                .ghost(Theme::of(cx))
                 .into_any_element()
             }),
             panes: [vec!["Overview", "Notes", "Roadmap"], vec!["Preview"]]

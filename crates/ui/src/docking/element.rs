@@ -128,14 +128,15 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
             active |= preview.progress(cx) < 1.;
         }
         let ghost = state.settling.as_ref().and_then(|settle| {
+            let from = settle.ghost?;
             state
                 .targets
                 .iter()
                 .find(|target| target.id == settle.pane)
                 .map(|target| {
                     let tween = Tween {
-                        from: settle.ghost,
-                        to: Bounds::new(target.bounds.origin, settle.ghost.size),
+                        from,
+                        to: Bounds::new(target.bounds.origin, from.size),
                         since: settle.since,
                     };
                     (settle.item.clone(), tween.bounds(cx), tween.progress(cx))
@@ -144,7 +145,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
         let carried = state
             .carried
             .as_ref()
-            .filter(|carried| carried.detached())
+            .filter(|carried| carried.hosted())
             .map(|carried| {
                 let rect = carried.ghost_bounds();
                 carried.gesture.host(rect.origin);

@@ -14,6 +14,9 @@ pub(crate) struct Gesture {
     pub size: Cell<Size<Pixels>>,
     pub claimed: Cell<bool>,
     pub hosted: Cell<bool>,
+    /// The source domain draws its own ghost for the whole gesture, so no
+    /// target draws one.
+    pub ghosted: Cell<bool>,
     /// Where the ghost standing in for the item was last drawn.
     pub shown: Cell<Option<Point<Pixels>>>,
 }

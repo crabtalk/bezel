@@ -138,6 +138,7 @@ impl Theme {
             // measured curve lands ~15% short of what the shader then renders.
             popover_surface: SurfaceStyle::Glass(Glass::Regular),
             drop_preview: SurfaceStyle::Material(Material::Thin),
+            carried_surface: SurfaceStyle::Glass(Glass::Regular),
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),
@@ -282,6 +283,7 @@ impl Theme {
             // or more, and lets go by 5.5pt; on the shader's profile that is 8.
             popover_surface: SurfaceStyle::Glass(Glass::Regular),
             drop_preview: SurfaceStyle::Material(Material::Thin),
+            carried_surface: SurfaceStyle::Glass(Glass::Regular),
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),
