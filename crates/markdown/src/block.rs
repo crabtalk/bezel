@@ -7,6 +7,9 @@
 //! caret in [`crate::Part::Code`], and on a build that installs nothing it
 //! paints the source it always did.
 //!
+//! The `mermaid` feature paints a ` ```mermaid ` fence the installed renderer
+//! leaves, as a diagram.
+//!
 //! Installed once at boot like the highlighter, and read at paint.
 
 use std::rc::Rc;
@@ -21,6 +24,9 @@ pub struct Fence<'a> {
     /// The info string.
     pub language: &'a str,
     pub code: &'a str,
+    /// The height to stand at, in whole pixels, from the fence's info string
+    /// or a resize in flight. `None` is the block's own height.
+    pub height: Option<u32>,
     /// Writes new code into this fence through the editor holding it, as an
     /// undoable edit. `None` in a document nobody is editing.
     pub rewrite: Option<Rewrite>,
@@ -49,6 +55,14 @@ pub(crate) fn set_block_renderer(cx: &mut App, renderer: BlockRenderer) {
 pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
     // Copied out before the call: the renderer reads the theme and its own
     // globals off the same `cx` this borrows.
-    let renderer = cx.try_global::<Installed>()?.0;
-    renderer(fence, window, cx)
+    if let Some(renderer) = cx.try_global::<Installed>().map(|installed| installed.0)
+        && let Some(painted) = renderer(fence, window, cx)
+    {
+        return Some(painted);
+    }
+    #[cfg(feature = "mermaid")]
+    if fence.language == crate::mermaid::LANGUAGE {
+        return crate::mermaid::render(fence.code, fence.height, window, cx);
+    }
+    None
 }

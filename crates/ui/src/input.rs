@@ -37,7 +37,7 @@ mod element;
 mod ime;
 mod text;
 
-pub use caret::{CaretHeight, CaretShape};
+pub use caret::{CaretHeight, CaretShape, InactiveCaret};
 pub use chip::Chip;
 pub use element::*;
 pub use text::*;
@@ -439,6 +439,8 @@ pub struct TextField {
     matches: Vec<Range<usize>>,
     /// In document order, none overlapping — see [`Self::set_chips`].
     chips: Vec<Chip>,
+    /// The right-click menu.
+    menu: crate::context_menu::ContextMenu,
 }
 
 impl EventEmitter<FieldEvent> for TextField {}
@@ -474,6 +476,7 @@ impl TextField {
             spans: Vec::new(),
             matches: Vec::new(),
             chips: Vec::new(),
+            menu: Default::default(),
         }
     }
 

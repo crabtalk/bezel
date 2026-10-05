@@ -97,6 +97,7 @@ fn setting_a_kind_to_code_drops_the_marks_it_cannot_hold() {
         BlockKind::Code {
             language: None,
             code: Text::default(),
+            height: None,
         },
     );
     let BlockKind::Code { code, .. } = &doc.blocks[0].kind else {

@@ -420,6 +420,8 @@ impl Editor {
                 }
                 vec![]
             });
+            // Made where the handle was, not at the caret — see `drop_height`.
+            self.reveal = false;
             // Handed back its natural width, which only the paint that
             // measures it knows: the next frame still places the handle from
             // the width being left behind, and this asks for the one after,
@@ -549,5 +551,103 @@ impl Editor {
                 .into_any_element(),
             None,
         ))
+    }
+}
+
+/// What a picture's right-click menu acts on: its URL as written, and the
+/// file that resolves to when it is one.
+pub(crate) struct ImageTarget {
+    url: String,
+    file: Option<PathBuf>,
+}
+
+/// A row of a picture's right-click menu.
+#[derive(Clone, Copy)]
+enum ImageAction {
+    Open,
+    Reveal,
+    CopyImage,
+    CopyAddress,
+}
+
+impl ImageTarget {
+    /// The rows, `None` for a separator — what [`Self::items`] paints and a
+    /// chosen path indexes.
+    fn actions(&self) -> Vec<Option<ImageAction>> {
+        let mut actions = Vec::new();
+        if self.file.is_some() {
+            actions.extend([Some(ImageAction::Open), Some(ImageAction::Reveal), None]);
+            if self.format().is_some() {
+                actions.push(Some(ImageAction::CopyImage));
+            }
+        }
+        actions.push(Some(ImageAction::CopyAddress));
+        actions
+    }
+
+    pub(crate) fn items(&self) -> Vec<ui::menu::Item> {
+        self.actions()
+            .into_iter()
+            .map(|action| match action {
+                None => ui::menu::Item::Separator,
+                Some(ImageAction::Open) => ui::menu::Item::action("Open"),
+                Some(ImageAction::Reveal) => ui::menu::Item::action(if cfg!(target_os = "macos") {
+                    "Reveal in Finder"
+                } else {
+                    "Show in Folder"
+                }),
+                Some(ImageAction::CopyImage) => ui::menu::Item::action("Copy Image"),
+                Some(ImageAction::CopyAddress) => ui::menu::Item::action("Copy Image Address"),
+            })
+            .collect()
+    }
+
+    /// The file's picture format, read off its extension.
+    fn format(&self) -> Option<gpui::ImageFormat> {
+        let extension = self.file.as_ref()?.extension()?.to_str()?.to_lowercase();
+        gpui::ImageFormat::from_mime_type(&format!("image/{extension}"))
+    }
+
+    /// Run the row at `row`.
+    pub(crate) fn run(&self, row: usize, cx: &mut App) {
+        let Some(Some(action)) = self.actions().get(row).copied() else {
+            return;
+        };
+        match (action, &self.file) {
+            (ImageAction::Open, Some(file)) => cx.open_with_system(file),
+            (ImageAction::Reveal, Some(file)) => cx.reveal_path(file),
+            (ImageAction::CopyImage, Some(file)) => {
+                if let (Some(format), Ok(bytes)) = (self.format(), std::fs::read(file)) {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_image(
+                        &gpui::Image::from_bytes(format, bytes),
+                    ));
+                }
+            }
+            (ImageAction::CopyAddress, _) => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(self.url.clone()));
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Editor {
+    /// The picture under `position`, as its right-click menu's target.
+    pub(super) fn image_target_at(&self, position: Point<gpui::Pixels>) -> Option<ImageTarget> {
+        let ix = self.layouts.block_at(position)?;
+        if !self.layouts.picture_bounds(ix)?.contains(&position) {
+            return None;
+        }
+        let BlockKind::Image { url, .. } = &self.doc.blocks.get(ix)?.kind else {
+            return None;
+        };
+        let file = (!url.contains("://")).then(|| match self.base() {
+            Some(base) => base.join(url),
+            None => PathBuf::from(url),
+        });
+        Some(ImageTarget {
+            url: url.clone(),
+            file,
+        })
     }
 }

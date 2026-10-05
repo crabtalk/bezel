@@ -223,6 +223,7 @@ pub struct TerminalElement {
     grid: GridHook,
     focused: bool,
     cursor_on: bool,
+    hollow_inactive: bool,
     font_size: f32,
     inset: Edges<Pixels>,
 }
@@ -236,6 +237,7 @@ impl TerminalElement {
             grid: Box::new(grid),
             focused,
             cursor_on: true,
+            hollow_inactive: true,
             font_size: TERM_FONT_SIZE,
             inset: Edges::default(),
         }
@@ -255,6 +257,13 @@ impl TerminalElement {
     /// an unfocused one ignore it.
     pub fn with_cursor_on(mut self, on: bool) -> Self {
         self.cursor_on = on;
+        self
+    }
+
+    /// Whether a block cursor shows outlined while its window is inactive,
+    /// rather than not at all. Defaults to on.
+    pub fn with_hollow_inactive(mut self, hollow: bool) -> Self {
+        self.hollow_inactive = hollow;
         self
     }
 
@@ -484,11 +493,14 @@ impl gpui::Element for TerminalElement {
             .collect();
         images.sort_by_key(|painted| painted.order);
 
-        // A cursor takes its shape only while its window is the active one;
-        // otherwise it is an outlined block.
-        let solid = self.focused && window.is_window_active();
+        // Only a focused grid has a cursor. In an inactive window a block is
+        // outlined, or not there; a beam or an underline is unchanged.
+        let active = window.is_window_active();
+        let solid = self.focused && active;
         let cursor = snapshot
             .cursor
+            .filter(|_| self.focused)
+            .filter(|c| active || c.style.shape != CursorShape::Block || self.hollow_inactive)
             .filter(|c| !(solid && c.style.blinking && !self.cursor_on));
         let mut bg_quads = Vec::new();
         let mut sel_quads = Vec::new();
@@ -562,7 +574,7 @@ impl gpui::Element for TerminalElement {
                 ),
                 size(cell_w, line_h),
             );
-            if !solid {
+            if !solid && c.style.shape == CursorShape::Block {
                 return outline(cell, theme.cursor, gpui::BorderStyle::Solid);
             }
             let thickness = CURSOR_THICKNESS;

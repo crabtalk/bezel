@@ -277,7 +277,7 @@ pub(super) fn bookmark(
         .hover(|el| el.bg(theme.element_hover))
         .on_click(move |_, window, cx| crate::link::open(&open, window, cx));
 
-    if form == Form::Embed {
+    if matches!(form, Form::Embed(_)) {
         card.flex_col()
             .child(picture.w_full().h(px(CARD_COVER_HEIGHT)))
             .child(words.w_full())
@@ -295,7 +295,7 @@ pub(super) fn bookmark(
 pub(super) fn corners<T: Styled>(element: T, form: Form) -> T {
     let corner = px(Theme::inset_radius(Theme::button_radius(), CARD_BORDER));
     match form {
-        Form::Embed => element.rounded_t(corner),
+        Form::Embed(_) => element.rounded_t(corner),
         _ => element.rounded_r(corner),
     }
 }
@@ -346,7 +346,7 @@ impl Render for MentionCard {
         div().w(px(MENTION_CARD_WIDTH)).child(bookmark(
             0,
             &self.url,
-            Form::Embed,
+            Form::Embed(None),
             &self.typography,
             &theme,
             cx,

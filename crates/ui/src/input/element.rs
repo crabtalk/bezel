@@ -284,6 +284,7 @@ impl Render for TextField {
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::on_right_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
@@ -295,7 +296,7 @@ impl Render for TextField {
                     .rounded(px(Theme::button_radius()))
                     .bg(theme.input_bg)
                     .border_1()
-                    .border_color(if self.focus_handle.is_focused(_window) {
+                    .border_color(if self.focus_handle.contains_focused(_window, cx) {
                         theme.ring
                     } else {
                         theme.border
@@ -306,6 +307,7 @@ impl Render for TextField {
             .line_height(px(self.metrics.line_height()))
             .text_color(theme.text)
             .child(TextFieldElement { field: cx.entity() })
+            .children(self.edit_menu(_window, cx))
     }
 }
 
@@ -616,23 +618,26 @@ impl Element for TextFieldElement {
                 .collect()
         };
 
+        let caret_shown = caret_shape.shown(!hollow, crate::input::caret::inactive_caret(cx));
         let (selection, cursor) = if selected_range.is_empty() {
             let at = position_for_offset(&lines, cursor, line_height).unwrap_or_default();
             (
                 Vec::new(),
-                Some(caret_shape.quad(
-                    // The font's size rather than the line's: leading is not
-                    // a bar's or an underline's to fill. A block fills it.
-                    Bounds::new(
-                        origin + at + gpui::point(px(0.), (line_height - font_size) / 2.),
-                        gpui::size(CARET_WIDTH, font_size),
-                    ),
-                    line_height,
-                    caret_height,
-                    advance.unwrap_or_default(),
-                    theme.caret,
-                    hollow,
-                )),
+                caret_shown.then(|| {
+                    caret_shape.quad(
+                        // The font's size rather than the line's: leading is not
+                        // a bar's or an underline's to fill. A block fills it.
+                        Bounds::new(
+                            origin + at + gpui::point(px(0.), (line_height - font_size) / 2.),
+                            gpui::size(CARET_WIDTH, font_size),
+                        ),
+                        line_height,
+                        caret_height,
+                        advance.unwrap_or_default(),
+                        theme.caret,
+                        hollow,
+                    )
+                }),
             )
         } else {
             (

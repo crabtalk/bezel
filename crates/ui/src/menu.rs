@@ -71,9 +71,11 @@ pub(crate) fn set_indent(indent: MenuIndent, cx: &mut App) {
 /// the field; the arrows, enter and escape fall through to the menu.
 pub const SEARCH_CONTEXT: &str = "MenuSearch";
 
-/// The keymap a searchable submenu answers to, as data — see [`crate::keys`].
+/// The keymap a searchable submenu and a [`crate::context_menu`] answer to,
+/// as data — see [`crate::keys`].
 pub fn bindings() -> Vec<KeyBinding> {
     let ctx = Some(SEARCH_CONTEXT);
+    let context = Some(crate::context_menu::KEY_CONTEXT);
     vec![
         KeyBinding::new("down", SelectNext, ctx),
         KeyBinding::new("up", SelectPrevious, ctx),
@@ -81,6 +83,10 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-p", SelectPrevious, ctx),
         KeyBinding::new("enter", Confirm, ctx),
         KeyBinding::new("escape", Dismiss, ctx),
+        KeyBinding::new("down", SelectNext, context),
+        KeyBinding::new("up", SelectPrevious, context),
+        KeyBinding::new("enter", Confirm, context),
+        KeyBinding::new("escape", Dismiss, context),
     ]
 }
 
@@ -147,6 +153,8 @@ pub enum Item {
         selected: usize,
         enabled: bool,
     },
+    /// A section's name over the rows after it. Never lit, never chosen.
+    Heading(SharedString),
     Separator,
 }
 
@@ -208,25 +216,25 @@ impl Item {
         }
     }
 
-    /// No-ops on a separator, which has nothing to hang a glyph on, and on a
-    /// segmented row, whose glyphs are its segments'.
+    /// No-ops on a separator and a heading, which have nothing to hang a glyph
+    /// on, and on a segmented row, whose glyphs are its segments'.
     pub fn with_icon(mut self, icon: impl Into<Icon>) -> Self {
         match &mut self {
             Item::Action { icon: slot, .. } | Item::Submenu { icon: slot, .. } => {
                 *slot = Some(icon.into())
             }
-            Item::Segmented { .. } | Item::Separator => {}
+            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {}
         }
         self
     }
 
     /// Moves the row's content in by `level` steps of the app's
     /// [`MenuIndent`], so a flat list of rows can show a hierarchy. No-ops on
-    /// a separator and on a segmented row.
+    /// a separator, a heading and a segmented row.
     pub fn indented(mut self, level: usize) -> Self {
         match &mut self {
             Item::Action { indent, .. } | Item::Submenu { indent, .. } => *indent = level,
-            Item::Segmented { .. } | Item::Separator => {}
+            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {}
         }
         self
     }
@@ -315,7 +323,7 @@ impl Item {
             Item::Action { enabled, .. }
             | Item::Submenu { enabled, .. }
             | Item::Segmented { enabled, .. } => *enabled = false,
-            Item::Separator => {}
+            Item::Heading(_) | Item::Separator => {}
         }
         self
     }
@@ -330,7 +338,7 @@ impl Item {
             Item::Segmented {
                 enabled, segments, ..
             } => *enabled && !segments.is_empty(),
-            Item::Separator => false,
+            Item::Heading(_) | Item::Separator => false,
         }
     }
 
@@ -371,7 +379,7 @@ impl Item {
                 None => label.to_string(),
             },
             Item::Submenu { label, .. } => label.to_string(),
-            Item::Segmented { .. } | Item::Separator => String::new(),
+            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => String::new(),
         }
     }
 
@@ -632,10 +640,56 @@ pub enum Hit {
     Dismiss,
 }
 
+/// A row of a text surface's right-click menu, in the order [`edit_items`]
+/// lists them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edit {
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+}
+
+impl Edit {
+    /// The row a [`Hit::Choose`] path names in [`edit_items`].
+    pub fn at(path: &[usize]) -> Option<Self> {
+        match path {
+            [0] => Some(Edit::Cut),
+            [1] => Some(Edit::Copy),
+            [2] => Some(Edit::Paste),
+            [4] => Some(Edit::SelectAll),
+            _ => None,
+        }
+    }
+}
+
+/// The rows of a text surface's right-click menu. `actions` are the surface's
+/// own Cut, Copy, Paste and Select All, read for the chord each row prints.
+pub fn edit_items(
+    selected: bool,
+    pasteable: bool,
+    actions: [&dyn Action; 4],
+    window: &Window,
+) -> Vec<Item> {
+    let [cut, copy, paste, select_all] = actions;
+    let enable = |item: Item, on: bool| if on { item } else { item.disabled() };
+    vec![
+        enable(Item::action("Cut").with_shortcut(cut, window), selected),
+        enable(Item::action("Copy").with_shortcut(copy, window), selected),
+        enable(
+            Item::action("Paste").with_shortcut(paste, window),
+            pasteable,
+        ),
+        Item::Separator,
+        Item::action("Select All").with_shortcut(select_all, window),
+    ]
+}
+
 /// The panel a menu drops: every [`Item`] as a row, in a
 /// [`popover::popover_card`], with a further panel hanging off each submenu row
 /// the [`Cursor`] holds open. `id` prefixes the rows' element ids, so two menus
-/// open at once keep their hover state apart.
+/// open at once keep their hover state apart. In a test build each action and
+/// submenu row answers to the debug selector `{id}/{label}`.
 ///
 /// The root panel is returned unanchored: mount it through one of
 /// [`popover`]'s anchored layers ([`popover::anchored_menu_below`],
@@ -761,8 +815,12 @@ impl<V: 'static> Tree<V> {
             .p(px(popover::MENU_PAD))
             .children(visible.iter().map(|&row| {
                 let item = &items[row];
-                if matches!(item, Item::Separator) {
-                    return popover::divider(theme).into_any_element();
+                match item {
+                    Item::Separator => return popover::divider(theme).into_any_element(),
+                    Item::Heading(label) => {
+                        return popover::menu_heading(theme, label.clone()).into_any_element();
+                    }
+                    _ => {}
                 }
                 let path: Vec<usize> = prefix.iter().copied().chain([row]).collect();
                 if let Item::Segmented {
@@ -792,7 +850,7 @@ impl<V: 'static> Tree<V> {
                         enabled,
                         ..
                     } => (label.clone(), icon.clone(), *indent, *enabled),
-                    Item::Segmented { .. } | Item::Separator => {
+                    Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {
                         unreachable!("returned above")
                     }
                 };
@@ -820,6 +878,8 @@ impl<V: 'static> Tree<V> {
                 } else {
                     disabled_row(theme).id(id.clone())
                 };
+                let selector = format!("{}/{label}", self.id);
+                let row = row.debug_selector(move || selector);
                 let row = row.when_some(hint, |row, hint| {
                     row.tooltip(move |window, cx| Tooltip::text(hint.clone(), window, cx))
                 });

@@ -120,16 +120,17 @@ impl Render for Editor {
                         && let Some((block, Part::Cell { row, column })) =
                             this.layouts.cell_at(event.position)
                     {
-                        this.table_menu.open((
-                            block,
-                            TableTarget::Cell { row, column },
+                        this.table_menu.open(Dropped::new(
+                            (block, TableTarget::Cell { row, column }),
                             event.position,
                         ));
                         this.focus_handle.focus(window, cx);
-                        window.prevent_default();
-                        cx.stop_propagation();
-                        cx.notify();
+                    } else {
+                        this.right_pressed(event.position, window, cx);
                     }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    cx.notify();
                 }),
             )
             // The drag has to be tracked from the container rather than from a
@@ -179,6 +180,7 @@ impl Render for Editor {
                     this.drag_table_to(event.position, cx);
                     this.dragging = None;
                     this.drop_resize(window, cx);
+                    this.drop_height(cx);
                     this.drop_table_drag(cx);
                 }),
             )
@@ -193,6 +195,9 @@ impl Render for Editor {
                     if this.drop_resize(window, cx) {
                         return;
                     }
+                    if this.drop_height(cx) {
+                        return;
+                    }
                     let Some((from, to)) = this.lifted.take() else {
                         return;
                     };
@@ -202,7 +207,9 @@ impl Render for Editor {
                         // press is what dismissed it, which the note taken on
                         // the way down is the only way to tell.
                         if !this.block_menu.take_press_was_open() {
-                            this.block_menu.open((from, event.position));
+                            let rows = crate::slash::Rows::new(crate::block_menu::installed(cx));
+                            this.block_menu
+                                .open(Dropped::new((from, rows), event.position));
                         }
                         return cx.notify();
                     }
@@ -316,12 +323,12 @@ impl Render for Editor {
             // Motion is one method with a `Cursor` function and an "extend"
             // flag, so a shift variant cannot drift from the key it shadows.
             .on_action(cx.listener(|this, _: &Left, _, cx| {
-                if !this.slash_side(false, cx) {
+                if !this.menu_side(false, cx) {
                     this.moved(false, Cursor::left, cx)
                 }
             }))
             .on_action(cx.listener(|this, _: &Right, _, cx| {
-                if !this.slash_side(true, cx) {
+                if !this.menu_side(true, cx) {
                     this.moved(false, Cursor::right, cx)
                 }
             }))
@@ -378,6 +385,18 @@ impl Render for Editor {
             // whole page is a second, louder signal for the same fact.
             .relative()
             .child(input)
+            // A height drag holds the resize cursor wherever the pointer
+            // runs, over the editor's text and the card's own cursors alike.
+            .when(self.sizing.is_some(), |el| {
+                el.child(
+                    canvas(
+                        |_, _, _| (),
+                        |_, _, window, _| window.set_window_cursor_style(CursorStyle::ResizeUpDown),
+                    )
+                    .absolute()
+                    .size_0(),
+                )
+            })
             // The document is inset by the gutter so the handle has somewhere
             // to sit *inside* the editor. Outside it the handle is clipped by
             // any scrolling ancestor, and a pointer over it never reaches
@@ -438,6 +457,7 @@ impl Render for Editor {
                                 table_controls: true,
                                 image_overlay: self.image_overlay.clone(),
                                 image_overlay_corner: self.image_overlay_corner,
+                                sizing: self.held_height(),
                                 fence: Some(markdown::FenceHost {
                                     rewrite: {
                                         let editor = cx.entity().downgrade();
@@ -447,6 +467,14 @@ impl Render for Editor {
                                                 .ok();
                                         })
                                     },
+                                    resize: Some({
+                                        let editor = cx.entity().downgrade();
+                                        Rc::new(move |ix, y, _, cx| {
+                                            editor
+                                                .update(cx, |this, cx| this.start_height(ix, y, cx))
+                                                .ok();
+                                        })
+                                    }),
                                     leave: {
                                         let editor = cx.entity().downgrade();
                                         Rc::new(move |ix, window, cx| {
@@ -491,7 +519,7 @@ impl Render for Editor {
             )
             .children(self.slash_menu(&theme, window, cx))
             .children(self.mention_menu(&theme, window, cx))
-            .children(self.paste_menu(&theme, cx))
+            .children(self.paste_menu(&theme, window, cx))
             .children(self.url_prompt(&theme, cx))
             .children(self.image_target(cx))
             .children(self.resize_preview())
@@ -501,9 +529,11 @@ impl Render for Editor {
             .children(self.table_strips(&theme, cx))
             .children(self.table_handles(&theme, cx))
             .children(self.table_drop_indicator(&theme))
-            .children(self.table_menu(&theme, cx))
+            .children(self.dropdown(menu::Dropdown::Table, &theme, window, cx))
             .children(self.language_chip(&theme, cx))
-            .children(self.block_menu(&theme, cx))
-            .children(self.language_menu(&theme, cx))
+            .children(self.dropdown(menu::Dropdown::Block, &theme, window, cx))
+            .children(self.dropdown(menu::Dropdown::Language, &theme, window, cx))
+            .children(self.dropdown(menu::Dropdown::Text, &theme, window, cx))
+            .children(self.dropdown(menu::Dropdown::Image, &theme, window, cx))
     }
 }

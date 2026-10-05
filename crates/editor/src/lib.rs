@@ -25,7 +25,7 @@ mod slash;
 mod text_size;
 
 pub use anchor::{Anchor, AnchorId};
-pub use block_menu::{BlockMenuItem, defaults as block_menu_defaults};
+pub use block_menu::defaults as block_menu_defaults;
 #[doc(hidden)]
 pub use editor::menu::{BLOCK_HANDLE, BLOCK_MENU, SLASH_MENU};
 pub use editor::{

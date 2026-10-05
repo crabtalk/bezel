@@ -1,6 +1,6 @@
 use gpui::{
-    Context, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext, Window, div, point,
-    prelude::*, px, size,
+    Context, Modifiers, MouseButton, Render, ScrollDelta, ScrollWheelEvent, TestAppContext,
+    VisualTestContext, Window, div, point, prelude::*, px, size,
 };
 use ui::{AppExt as _, scroll::Visibility, tabs};
 
@@ -72,39 +72,25 @@ fn open(sortable: bool, cx: &mut TestAppContext) -> (gpui::Entity<Host>, VisualT
     (view, visual)
 }
 
-fn drag_thumb(cx: &mut VisualTestContext) {
-    let thumb = cx
-        .debug_bounds("tab-scrollbar-thumb")
-        .expect("overflowing strip has a thumb");
-    let from = thumb.center();
-    cx.simulate_mouse_move(from, None, Modifiers::default());
-    cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::default());
-    cx.simulate_mouse_move(
-        from + point(px(5.), px(0.)),
-        MouseButton::Left,
-        Modifiers::default(),
-    );
-    let to = from + point(px(40.), px(0.));
-    cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::default());
-    cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::default());
+fn wheel(cx: &mut VisualTestContext) {
+    cx.simulate_event(ScrollWheelEvent {
+        position: point(px(90.), px(10.)),
+        delta: ScrollDelta::Pixels(point(px(-40.), px(0.))),
+        modifiers: Default::default(),
+        touch_phase: Default::default(),
+    });
     cx.run_until_parked();
 }
 
 #[gpui::test]
-fn plain_bar_owns_a_persistent_overlay_without_changing_tab_height(cx: &mut TestAppContext) {
-    let (view, mut cx) = open(false, cx);
+fn an_overflowing_strip_scrolls_without_a_scrollbar(cx: &mut TestAppContext) {
+    let (_, mut cx) = open(false, cx);
+    assert!(cx.debug_bounds("tab-scrollbar-thumb").is_none());
     let before = cx.debug_bounds("a").unwrap();
-    drag_thumb(&mut cx);
+    wheel(&mut cx);
     let scrolled = cx.debug_bounds("a").unwrap();
     assert!(scrolled.left() < before.left());
     assert_eq!(scrolled.size.height, before.size.height);
-    view.update(&mut cx, |_, cx| cx.notify());
-    cx.run_until_parked();
-    assert_eq!(cx.debug_bounds("a").unwrap(), scrolled);
-    cx.simulate_resize(size(px(500.), px(140.)));
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-    assert!(cx.debug_bounds("tab-scrollbar-thumb").is_none());
 }
 
 #[gpui::test]
@@ -112,7 +98,7 @@ fn reorder_bar_scrolls_without_reordering_and_forwards_outside_coordinates(
     cx: &mut TestAppContext,
 ) {
     let (view, mut cx) = open(true, cx);
-    drag_thumb(&mut cx);
+    wheel(&mut cx);
     assert!(cx.debug_bounds("a").unwrap().left() < px(0.));
     assert_eq!(cx.update(|_, cx| view.read(cx).changes), 0);
     let source = cx.debug_bounds("b").unwrap().center();
@@ -127,14 +113,4 @@ fn reorder_bar_scrolls_without_reordering_and_forwards_outside_coordinates(
         assert_eq!(view.outside[0].id, "b");
         assert_eq!(view.outside[0].position, end);
     });
-}
-
-#[gpui::test]
-fn overlay_respects_the_app_visibility_setting(cx: &mut TestAppContext) {
-    let (_, mut cx) = open(true, cx);
-    assert!(cx.debug_bounds("tab-scrollbar-thumb").is_some());
-    cx.update(|_, cx| cx.set_scrollbar_visibility(Visibility::Never));
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-    assert!(cx.debug_bounds("tab-scrollbar-thumb").is_none());
 }

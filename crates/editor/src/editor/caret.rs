@@ -204,11 +204,11 @@ impl Editor {
         cx.notify();
     }
 
-    /// Left and right into and out of the slash menu's group, when it has one
+    /// Left and right into and out of an open menu's submenu, when it has one
     /// to open or close. `false` leaves the key to the caret.
-    pub(super) fn slash_side(&mut self, right: bool, cx: &mut Context<Self>) -> bool {
+    pub(super) fn menu_side(&mut self, right: bool, cx: &mut Context<Self>) -> bool {
         let Some(slash) = &mut self.slash else {
-            return false;
+            return self.dropdown_side(right, cx);
         };
         let moved = match right {
             true => slash.descend(),
@@ -242,6 +242,9 @@ impl Editor {
         if let Some(mention) = &mut self.mention {
             mention.step(delta);
             return cx.notify();
+        }
+        if self.dropdown_step(delta, cx) {
+            return;
         }
         let head = self.selection.head;
         let Some((at, _)) = self.layouts.position(head) else {

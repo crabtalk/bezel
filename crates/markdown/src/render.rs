@@ -17,6 +17,7 @@ use std::{
     rc::Rc,
 };
 use ui::AppExt as _;
+use ui::widgets::Layout as _;
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
@@ -187,6 +188,10 @@ pub type OnRewrite = Rc<dyn Fn(usize, String, &mut Window, &mut App)>;
 /// Handed the block a painted fence is leaving — see [`FenceHost::leave`].
 pub type OnLeave = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
+/// Handed a resizable painted block's index and where its grip was pressed —
+/// see [`FenceHost::resize`].
+pub type OnResize = Rc<dyn Fn(usize, Pixels, &mut Window, &mut App)>;
+
 /// What an editor lends the blocks an installed [`crate::BlockRenderer`]
 /// paints — see [`Editing::fence`].
 #[derive(Clone)]
@@ -197,6 +202,9 @@ pub struct FenceHost {
     /// Hands the keyboard back to the document from inside the painted block
     /// at a block index. Dispatched by [`LeaveBlock`].
     pub leave: OnLeave,
+    /// Starts a height drag off the grip along a resizable painted block's
+    /// foot, from the press's window `y`. `None` paints no grip.
+    pub resize: Option<OnResize>,
 }
 
 /// The key context around every painted fence. An editor's bindings stop at
@@ -282,6 +290,9 @@ pub struct Editing<'a> {
     /// Lets a painted fence rewrite its own code and give the keyboard back.
     /// `None` paints a fence that can do neither.
     pub fence: Option<FenceHost>,
+    /// A painted block held at a height while its resize handle is dragged:
+    /// the block index and the height, in place of the one the document says.
+    pub sizing: Option<(usize, u32)>,
     /// Reserves lanes around tables for editor controls.
     pub table_controls: bool,
     /// Whether a fence offers to copy itself.
@@ -317,6 +328,7 @@ impl Default for Editing<'_> {
             image_overlay: None,
             image_overlay_corner: ImageOverlayCorner::BottomRight,
             fence: None,
+            sizing: None,
             table_controls: false,
             copy: CopyButton::default(),
             base: None,
@@ -339,6 +351,7 @@ struct Overlay<'a> {
     caret_on: bool,
     caret_shape: ui::input::CaretShape,
     caret_height: ui::input::CaretHeight,
+    caret_inactive: ui::input::InactiveCaret,
     /// A block caret is hollow, and cuts no glyph out, while this is false.
     window_active: bool,
     layouts: Option<&'a BlockLayouts>,
@@ -355,6 +368,7 @@ struct Overlay<'a> {
     image_overlay: Option<&'a ImageOverlay>,
     image_overlay_corner: ImageOverlayCorner,
     fence: Option<&'a FenceHost>,
+    sizing: Option<(usize, u32)>,
     table_controls: bool,
     copy: CopyButton,
     base: Option<&'a Path>,
@@ -362,9 +376,76 @@ struct Overlay<'a> {
     find: crate::FindPaint,
 }
 
+/// What a resizable painted block carries besides itself: where it landed,
+/// for the height drag, and the grip along its foot that starts one, shown
+/// while the block is hovered or being sized.
+fn resizable(overlay: &Overlay, theme: &Theme) -> Vec<AnyElement> {
+    let ix = overlay.block;
+    let mut parts = Vec::new();
+    if let Some(layouts) = overlay.layouts {
+        let layouts = layouts.clone();
+        parts.push(
+            canvas(
+                move |bounds, _, _| layouts.record_painted(ix, bounds),
+                |_, _, _, _| (),
+            )
+            .absolute()
+            .size_full()
+            .into_any_element(),
+        );
+    }
+    if let Some(resize) = overlay.fence.and_then(|host| host.resize.clone()) {
+        let dragging = overlay.held_height().is_some();
+        // Inside the block's foot rather than across its edge: the grip is
+        // shown while the block is hovered, and the pointer has to stay over
+        // the block to reach it. A strip only as wide as it needs, so the
+        // controls a block keeps in its corners stay pressable.
+        parts.push(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .bottom_0()
+                .flex()
+                .justify_center()
+                .child(
+                    theme
+                        .grip_handle()
+                        .id(ElementId::named_usize("painted-grip", ix))
+                        .debug_selector(|| "painted-grip".into())
+                        .w(px(PAINTED_GRIP_WIDTH))
+                        .when(!dragging, |el| {
+                            el.invisible()
+                                .group_hover(painted_group(ix), |el| el.visible())
+                        })
+                        .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                            cx.stop_propagation();
+                            resize(ix, event.position.y, window, cx);
+                        }),
+                )
+                .into_any_element(),
+        );
+    }
+    parts
+}
+
+/// How wide the grip along a resizable painted block's foot can be pressed.
+const PAINTED_GRIP_WIDTH: f32 = 120.0;
+
+fn painted_group(ix: usize) -> SharedString {
+    SharedString::from(format!("painted-{ix}"))
+}
+
 impl<'a> Overlay<'a> {
     fn at(self, part: Part) -> Self {
         Self { part, ..self }
+    }
+
+    /// The height this block's resize handle is holding it at, if it is.
+    fn held_height(&self) -> Option<u32> {
+        self.sizing
+            .filter(|(ix, _)| *ix == self.block)
+            .map(|(_, height)| height)
     }
 
     fn here(&self) -> Cursor {
@@ -379,7 +460,12 @@ impl<'a> Overlay<'a> {
     /// otherwise swap itself out twice a second.
     fn caret_painted(&self) -> Option<usize> {
         let collapsed = self.selection.is_some_and(|s| s.is_collapsed());
-        (self.caret_on && collapsed).then(|| self.caret()).flatten()
+        let shown = self
+            .caret_shape
+            .shown(self.window_active, self.caret_inactive);
+        (self.caret_on && collapsed && shown)
+            .then(|| self.caret())
+            .flatten()
     }
 
     fn caret_hollow(&self) -> bool {
@@ -505,6 +591,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         image_overlay,
         image_overlay_corner,
         fence,
+        sizing,
         table_controls,
         copy,
         base,
@@ -540,6 +627,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caret_on,
                 caret_shape: cx.caret_shape(),
                 caret_height: cx.caret_height(),
+                caret_inactive: cx.inactive_caret(),
                 window_active: window.is_window_active(),
                 layouts: None,
                 annotations,
@@ -550,6 +638,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 image_overlay: image_overlay.as_ref(),
                 image_overlay_corner,
                 fence: fence.as_ref(),
+                sizing,
                 table_controls,
                 copy,
                 base,
@@ -595,6 +684,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         image_overlay,
         image_overlay_corner,
         fence,
+        sizing,
         table_controls,
         copy,
         base: base.map(Path::to_path_buf),
@@ -619,6 +709,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caret_on: owned.caret_on,
                 caret_shape: cx.caret_shape(),
                 caret_height: cx.caret_height(),
+                caret_inactive: cx.inactive_caret(),
                 window_active: window.is_window_active(),
                 layouts: Some(&owned.layouts),
                 annotations: &owned.annotations,
@@ -629,6 +720,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 image_overlay: owned.image_overlay.as_ref(),
                 image_overlay_corner: owned.image_overlay_corner,
                 fence: owned.fence.as_ref(),
+                sizing: owned.sizing,
                 table_controls: owned.table_controls,
                 copy: owned.copy,
                 base: owned.base.as_deref(),
@@ -663,6 +755,7 @@ struct Owned {
     image_overlay: Option<ImageOverlay>,
     image_overlay_corner: ImageOverlayCorner,
     fence: Option<FenceHost>,
+    sizing: Option<(usize, u32)>,
     table_controls: bool,
     copy: CopyButton,
     base: Option<std::path::PathBuf>,
@@ -872,8 +965,13 @@ fn block_element(
                 cx,
             ))
             .into_any_element(),
-        BlockKind::Code { language, code } => {
+        BlockKind::Code {
+            language,
+            code,
+            height,
+        } => {
             let overlay = overlay.at(Part::Code);
+            let height = overlay.held_height().or(*height);
             // The caret in the fence gives the source back. A painted block is
             // still an editable one, and typing into it otherwise edits what
             // the reader cannot see.
@@ -884,6 +982,7 @@ fn block_element(
                     let fence = block::Fence {
                         language: language.as_deref()?,
                         code: &code.text,
+                        height,
                         rewrite: overlay.fence.map(|host| {
                             let (rewrite, ix) = (host.rewrite.clone(), overlay.block);
                             Rc::new(move |code: String, window: &mut Window, cx: &mut App| {
@@ -899,6 +998,7 @@ fn block_element(
                 // the wash an opaque block gets at the container comes here.
                 Some(element) => div()
                     .key_context(PAINTED_CONTEXT)
+                    .relative()
                     .when_some(overlay.fence, |el, host| {
                         let (leave, ix) = (host.leave.clone(), overlay.block);
                         el.on_action(move |_: &LeaveBlock, window, cx| leave(ix, window, cx))
@@ -906,7 +1006,9 @@ fn block_element(
                     .when(overlay.covers_block(), |el| {
                         el.rounded(px(4.0)).bg(theme.selection)
                     })
+                    .group(painted_group(overlay.block))
                     .child(element)
+                    .children(resizable(&overlay, theme))
                     .into_any_element(),
                 None => code_block(
                     language.as_deref(),
@@ -922,11 +1024,20 @@ fn block_element(
         BlockKind::Image { url, alt, width } => {
             image(url, alt, *width, overlay, typography, theme, window, cx)
         }
-        BlockKind::Bookmark { url, form } => match crate::preview::card(url, *form, window, cx) {
+        BlockKind::Bookmark { url, form } => match crate::preview::card(
+            url,
+            match (*form, overlay.held_height()) {
+                (Form::Embed(_), Some(held)) => Form::Embed(Some(held)),
+                (form, _) => form,
+            },
+            window,
+            cx,
+        ) {
             // The app's own, painted where a fence's would be and kept apart
             // from the editor's keys the same way.
             Some(element) => div()
                 .key_context(PAINTED_CONTEXT)
+                .relative()
                 .when_some(overlay.fence, |el, host| {
                     let (leave, ix) = (host.leave.clone(), overlay.block);
                     el.on_action(move |_: &LeaveBlock, window, cx| leave(ix, window, cx))
@@ -934,7 +1045,12 @@ fn block_element(
                 .when(overlay.covers_block(), |el| {
                     el.rounded(px(4.0)).bg(theme.selection)
                 })
+                .group(painted_group(overlay.block))
                 .child(element)
+                .children(match form {
+                    Form::Embed(_) => resizable(&overlay, theme),
+                    _ => Vec::new(),
+                })
                 .into_any_element(),
             None => bookmark(overlay.block, url, *form, typography, theme, cx),
         },

@@ -39,6 +39,7 @@ fn every_kind_declares_the_parts_a_caret_can_enter() {
             BlockKind::Code {
                 language: None,
                 code: Text::default(),
+                height: None,
             },
             vec![Part::Code],
         ),

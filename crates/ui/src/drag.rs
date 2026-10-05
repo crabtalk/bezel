@@ -21,6 +21,20 @@ use gpui::{
     prelude::*,
 };
 use motion::Painter;
+use theme::Theme;
+
+use crate::surface::{Surface, Surfaced};
+
+/// A dragged item's floating copy.
+pub trait Carried: Styled + IntoElement + Sized {
+    /// A [`Domain::with_ghost`] or docking copy, on
+    /// [`Theme::carried_surface`]. It keeps the element's own rounding.
+    fn ghost(self, theme: &Theme) -> Surface {
+        self.surface(theme, theme.carried_surface)
+    }
+}
+
+impl<E: Styled + IntoElement> Carried for E {}
 
 mod element;
 mod state;
@@ -199,6 +213,7 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Domain<R, I
             let grab = state.start(&carry.item, carry.gesture.clone(), cursor, window, cx);
             (grab, state.ghost.clone())
         };
+        carry.gesture.ghosted.set(ghost.is_some());
         let item = carry.item.clone();
         let gesture = carry.gesture.clone();
         cx.new(|_| Ghosted {

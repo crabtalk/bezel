@@ -322,7 +322,7 @@ impl CanvasView {
         let nodes = canvas.lookup();
         let seen = self.editor.visible();
         let picked = self.editor.selected_edge();
-        let mut strokes: Vec<(Path, Hsla, f32)> = canvas
+        let mut strokes: Vec<(Path, Stroke, Hsla, f32)> = canvas
             .edges
             .iter()
             .filter_map(|edge| {
@@ -332,8 +332,9 @@ impl CanvasView {
                     return None;
                 }
                 let weight = self.editor.edge_kinds().get(edge).weight;
+                let stroke = edge.style.unwrap_or_default();
                 if picked == Some(edge.id.as_str()) {
-                    return Some((path, theme.accent, weight * 2.0));
+                    return Some((path, stroke, theme.accent, weight * 2.0));
                 }
                 let mut paint = edge
                     .color
@@ -343,14 +344,15 @@ impl CanvasView {
                 if cut.contains(edge.id.as_str()) {
                     paint = paint.opacity(self.style.cut);
                 }
-                Some((path, paint, weight))
+                Some((path, stroke, paint, weight))
             })
             .collect();
         strokes.extend(pending.iter().filter_map(|change| {
             let Change::AddEdge { edge, .. } = change else {
                 return None;
             };
-            Some((self.path_of(&nodes, shown, edge)?, theme.accent, 1.0))
+            let path = self.path_of(&nodes, shown, edge)?;
+            Some((path, Stroke::Solid, theme.accent, 1.0))
         }));
         // The connector being drawn, out to the pointer.
         if let Some(Sketch::Connector { from, side, to }) = self.sketch()
@@ -369,10 +371,10 @@ impl CanvasView {
                 segments: vec![(start, c0, mid), (mid, c1, to)],
                 from_out: out,
                 to_out: point(-out.x, -out.y),
-                from_arrow: false,
-                to_arrow: true,
+                from_end: End::None,
+                to_end: End::Arrow,
             };
-            strokes.push((loose, theme.accent, 1.0));
+            strokes.push((loose, Stroke::Solid, theme.accent, 1.0));
         }
         let step = self.editor.snap().grid;
         let (arrow_size, style) = (self.style.arrow, self.style);
@@ -400,35 +402,16 @@ impl CanvasView {
                 if let Some(step) = step {
                     grid(&frame, step, window, cx);
                 }
-                for (path, paint, weight) in strokes {
-                    let mut stroke = PathBuilder::stroke(px(weight * z.max(1.0)));
-                    for (ix, (a, c, b)) in path.segments.iter().enumerate() {
-                        if ix == 0 {
-                            stroke.move_to(pt(screen(*a)));
-                        }
-                        stroke.curve_to(pt(screen(*b)), pt(screen(*c)));
-                    }
-                    if let Ok(stroke) = stroke.build() {
-                        window.paint_path(stroke, paint);
-                    }
-                    if path.to_arrow {
-                        arrow(
-                            window,
-                            screen(path.end()),
-                            path.to_out,
-                            arrow_size * z,
-                            paint,
-                        );
-                    }
-                    if path.from_arrow {
-                        arrow(
-                            window,
-                            screen(path.start()),
-                            path.from_out,
-                            arrow_size * z,
-                            paint,
-                        );
-                    }
+                for (path, stroke, paint, weight) in strokes {
+                    canvas_core::paint::edge(
+                        window,
+                        &path,
+                        screen,
+                        stroke,
+                        weight * z.max(1.0),
+                        arrow_size * z,
+                        paint,
+                    );
                 }
                 guides(&frame, &caught, window, cx);
                 // Window-wide, so the hand stays closed wherever the pointer
@@ -499,21 +482,4 @@ pub(super) fn ends_of(
         from_end: edge.from_end.unwrap_or(End::None),
         to_end: edge.to_end.unwrap_or(End::Arrow),
     })
-}
-
-pub(super) fn arrow(window: &mut Window, tip: Point<f32>, out: Point<f32>, size: f32, color: Hsla) {
-    let base = point(tip.x + out.x * size, tip.y + out.y * size);
-    let half = point(-out.y * size / 2.0, out.x * size / 2.0);
-    let mut path = PathBuilder::fill();
-    path.move_to(pt(tip));
-    path.line_to(pt(point(base.x + half.x, base.y + half.y)));
-    path.line_to(pt(point(base.x - half.x, base.y - half.y)));
-    path.close();
-    if let Ok(path) = path.build() {
-        window.paint_path(path, color);
-    }
-}
-
-pub(super) fn pt(p: Point<f32>) -> Point<Pixels> {
-    point(px(p.x), px(p.y))
 }

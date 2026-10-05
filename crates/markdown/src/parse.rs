@@ -42,6 +42,19 @@ pub use inline::*;
 pub use lift::*;
 use state::*;
 
+/// A word and a size after it, as a fence's info string and a link's title
+/// spell them: `mermaid 360`, `embed 360`. A last word that is not a positive
+/// whole number is part of the first.
+pub(crate) fn split_size(spelled: &str) -> (&str, Option<u32>) {
+    let Some((name, tail)) = spelled.rsplit_once(char::is_whitespace) else {
+        return (spelled, None);
+    };
+    match tail.parse().ok().filter(|size| *size > 0) {
+        Some(size) => (name.trim_end(), Some(size)),
+        None => (spelled, None),
+    }
+}
+
 /// The extensions this crate reads. [`crate::source`] colours with the same set.
 pub(crate) const OPTIONS: Options = Options::ENABLE_TABLES
     .union(Options::ENABLE_STRIKETHROUGH)

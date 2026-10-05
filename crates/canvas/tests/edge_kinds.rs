@@ -5,7 +5,7 @@ use canvas::{
     Canvas, CanvasView, EdgeKinds,
     edge::{self, EdgeField},
     layout,
-    model::{Edge, Side},
+    model::{Edge, End, Side},
     path::{self, Ends, Rect},
 };
 use gpui::{
@@ -45,7 +45,7 @@ fn a_curve_bends_and_a_line_does_not() {
     // Halfway along, both sit between the boxes.
     assert_eq!(curve.middle(), point(300.0, 20.0));
     assert_eq!(line.middle(), point(300.0, 20.0));
-    assert!(curve.to_arrow && !curve.from_arrow);
+    assert_eq!((curve.from_end, curve.to_end), (End::None, End::Arrow));
 }
 
 #[test]

@@ -9,6 +9,8 @@ use super::*;
 /// held as one fence answers to, which is how an editor holds its source.
 /// Wrapping is not optional here: a paragraph is one line of markdown, and a
 /// source view that scrolled sideways would hide most of it.
+///
+/// Set at [`Typography::body`]'s size and leading, in [`Theme::font_body`].
 pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
     let Editing {
         selection,
@@ -20,8 +22,10 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         scroll,
         ..
     } = editing;
-    let theme = Theme::of(cx).clone();
-    let typography = typography.unwrap_or_else(|| cx.typography());
+    let mut theme = Theme::of(cx).clone();
+    theme.font_mono = theme.font_body.clone();
+    let mut typography = typography.unwrap_or_else(|| cx.typography());
+    typography.code = typography.body;
     let overlay = Overlay {
         block: 0,
         part: Part::Code,
@@ -29,6 +33,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         caret_on,
         caret_shape: cx.caret_shape(),
         caret_height: cx.caret_height(),
+        caret_inactive: cx.inactive_caret(),
         // No window reaches here; a source view's rows read their own below.
         window_active: cx.active_window().is_some(),
         layouts,
@@ -41,6 +46,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         image_overlay: None,
         image_overlay_corner: ImageOverlayCorner::BottomRight,
         fence: None,
+        sizing: None,
         table_controls: false,
         // It paints no band, so there is nowhere for the button to float.
         copy: CopyButton::Hidden,
@@ -458,28 +464,12 @@ pub(super) fn code_block(
         cx.markdown_layout().wrap_code,
     );
 
-    div()
-        .rounded(px(Theme::panel_radius()))
-        .bg(theme.ink(0.035))
-        .border_1()
-        .border_color(theme.border)
-        .overflow_hidden()
-        .relative()
+    fence_panel(theme)
         // The band is unconditional: it is where the copy button already floats,
         // and where a host puts its language control — which needs somewhere to
         // sit on a block that has no language yet.
         .child(
-            div()
-                .relative()
-                .flex()
-                .flex_row()
-                .items_center()
-                .px(px(CODE_PADDING_X))
-                .py(px(5.0))
-                .border_b_1()
-                .border_color(theme.border)
-                .bg(theme.ink(0.02))
-                .text_style(TextStyle::Subheadline)
+            fence_band(theme)
                 .text_color(match language {
                     Some(_) => theme.text_muted,
                     None => theme.text_faint,
@@ -509,6 +499,33 @@ pub(super) fn code_block(
             (overlay.copy == CopyButton::Shown).then(|| copy_button(code, ix, theme, window, cx)),
         )
         .into_any_element()
+}
+
+/// The box a fence is drawn in, painted or as code.
+pub(crate) fn fence_panel(theme: &Theme) -> gpui::Div {
+    div()
+        .rounded(px(Theme::panel_radius()))
+        .bg(theme.ink(0.035))
+        .border_1()
+        .border_color(theme.border)
+        .overflow_hidden()
+        .relative()
+}
+
+/// The band across the top of a [`fence_panel`], where its label and copy
+/// button sit.
+pub(crate) fn fence_band(theme: &Theme) -> gpui::Div {
+    div()
+        .relative()
+        .flex()
+        .flex_row()
+        .items_center()
+        .px(px(CODE_PADDING_X))
+        .py(px(5.0))
+        .border_b_1()
+        .border_color(theme.border)
+        .bg(theme.ink(0.02))
+        .text_style(TextStyle::Subheadline)
 }
 
 /// The lines of a fence, wrapped to the block or scrolling sideways under it.
@@ -560,7 +577,7 @@ pub(super) fn code_body(
 /// every host to thread a handler and a "which block is showing Copied" index
 /// through its render tree just to put a button on a code block. It resets when
 /// the pointer leaves, which needs no clock.
-pub(super) fn copy_button(
+pub(crate) fn copy_button(
     code: &str,
     ix: usize,
     theme: &Theme,

@@ -10,12 +10,15 @@ use gpui::{
     prelude::*, px,
 };
 use markdown::{AppExt as _, BlockKind, Part};
-use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
-use ui::{icons::Icon, menu::Hit, surface::Surfaced as _};
+use ui::{
+    icons::Icon,
+    menu::{Cursor, Hit, Item},
+    surface::Surfaced as _,
+};
 
-use crate::editor::{Editor, HANDLE_SIZE, Line, TableTarget};
-use crate::{BlockMenuItem, SlashAction, SlashAt, SlashRow};
+use crate::editor::{Dropped, Editor, HANDLE_SIZE, Line, TableTarget};
+use crate::{SlashAction, SlashAt};
 
 /// What a row of a table line's menu does.
 type TableAction = Box<dyn Fn(&mut Editor, &mut Context<Editor>)>;
@@ -39,6 +42,20 @@ pub const BLOCK_HANDLE: &str = "block-handle";
 /// The menu that handle opens, so a test can ask whether a second press on it
 /// left the menu shut rather than closed-and-reopened.
 pub const BLOCK_MENU: &str = "block-menu";
+const TABLE_MENU: &str = "table-menu";
+const LANGUAGE_MENU: &str = "language-menu";
+const TEXT_MENU: &str = "text-menu";
+const IMAGE_MENU: &str = "image-menu";
+
+/// One of the menus a block's chrome drops.
+#[derive(Clone, Copy)]
+pub(super) enum Dropdown {
+    Block,
+    Table,
+    Language,
+    Text,
+    Image,
+}
 
 impl Editor {
     /// The block the handle belongs on: the one being dragged, else the one
@@ -135,7 +152,7 @@ impl Editor {
             ui::popover::trigger_press_matching(
                 handle,
                 |this| &mut this.block_menu,
-                move |&(block, _)| block == ix,
+                move |menu| menu.of.0 == ix,
                 cx,
             )
             .surface(theme, theme.popover_surface)
@@ -311,7 +328,7 @@ impl Editor {
             ui::popover::trigger_press_matching(
                 trigger,
                 |this| &mut this.table_menu,
-                move |&(block, at, _)| block == ix && at == line,
+                move |menu| menu.of == (ix, line),
                 cx,
             )
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -321,7 +338,7 @@ impl Editor {
                 if this.table_menu.take_press_was_open() {
                     ui::popover::close_popup(this, cx, |this| &mut this.table_menu);
                 } else {
-                    this.table_menu.open((ix, line, anchor));
+                    this.table_menu.open(Dropped::new((ix, line), anchor));
                     cx.notify();
                 }
             }))
@@ -364,34 +381,21 @@ impl Editor {
         )
     }
 
-    /// Insert before, insert after and delete, for the line a table handle
-    /// opened.
-    pub(super) fn table_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.blocks() {
-            return None;
-        }
-        let view = Painter::of(cx);
-        let &(ix, line, at) = self.table_menu.get()?;
+    /// Insert, delete and move, for the line or cell of table `ix` a handle
+    /// or a right click opened.
+    fn table_actions(&self, ix: usize, line: TableTarget) -> Vec<(&'static str, TableAction)> {
         let Some(BlockKind::Table { header, rows, .. }) =
             self.doc.blocks.get(ix).map(|block| &block.kind)
         else {
-            return None;
+            return Vec::new();
         };
-        let width = rows.iter().map(Vec::len).chain([header.len()]).max()?;
-        let action = |label: &'static str, run: TableAction| {
-            ui::popover::menu_row(
-                theme,
-                false,
-                Some(Fade::new(view, format!("table-{label}"))),
-            )
-            .id(SharedString::from(format!("table-row-{label}")))
-            .debug_selector(|| label.to_string())
-            .child(label)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                ui::popover::close_popup(this, cx, |this| &mut this.table_menu);
-                run(this, cx);
-            }))
-        };
+        let width = rows
+            .iter()
+            .map(Vec::len)
+            .chain([header.len()])
+            .max()
+            .unwrap_or(0);
+        let action = |label: &'static str, run: TableAction| (label, run);
         let mut items: Vec<_> = match line {
             TableTarget::Cell { row, column } => [
                 (row > 0).then(|| {
@@ -505,18 +509,7 @@ impl Editor {
                 ));
             }
         }
-        Some(ui::popover::menu_at(
-            "table-menu",
-            at,
-            ui::popover::dismiss_on_out(
-                ui::popover::popover_card(theme).w(px(160.0)),
-                |this| &mut this.table_menu,
-                cx,
-            )
-            .children(items)
-            .into_any_element(),
-            self.table_menu.closing_since(),
-        ))
+        items
     }
 
     /// The click target over a fence's header, where its language sits.
@@ -565,127 +558,308 @@ impl Editor {
             ui::popover::menu_trigger_matching(
                 chip,
                 |this| &mut this.language_menu,
-                move |&(block, _)| block == ix,
-                move |_| (ix, anchor),
+                move |menu| menu.of == ix,
+                move |_| Dropped::new(ix, anchor),
                 cx,
             )
             .into_any_element(),
         )
     }
 
-    /// The languages the installed highlighter knows, at the header that asked.
-    pub(super) fn language_menu(
-        &self,
-        theme: &Theme,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        if !self.chrome().language || !self.blocks() {
-            return None;
-        }
-        let view = Painter::of(cx);
-        let &(ix, at) = self.language_menu.get()?;
-        let Some(BlockKind::Code { language, .. }) = self.doc.blocks.get(ix).map(|b| &b.kind)
-        else {
-            return None;
-        };
-        let current = language.clone();
-        let row = |label: SharedString, tag: Option<String>, lit: bool| {
-            ui::popover::menu_row(theme, false, Some(Fade::new(view, format!("lang-{label}"))))
-                .justify_between()
-                .id(SharedString::from(format!("lang-row-{label}")))
-                .child(label.clone())
-                .when(lit, |row| {
-                    row.child(
-                        ui::icons::icon(ui::icons::glyph::Check)
-                            .size(px(13.0))
-                            .text_color(theme.text),
-                    )
-                })
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    ui::popover::close_popup(this, cx, |this| &mut this.language_menu);
-                    this.set_language(ix, tag.clone(), cx);
-                }))
-        };
-        let plain = row(
-            markdown::render::PLAIN_LANGUAGE.into(),
-            None,
-            current.is_none(),
-        );
-        let rows: Vec<AnyElement> = cx
-            .highlight_languages()
-            .to_vec()
-            .into_iter()
-            .map(|name| {
-                let lit = current.as_deref() == Some(name.as_ref());
-                row(name.clone(), Some(name.to_string()), lit).into_any_element()
-            })
-            .collect();
-        Some(ui::popover::menu_at(
-            "language-menu",
-            at,
-            ui::popover::dismiss_on_out(
-                ui::popover::popover_card(theme).w(px(150.0)),
-                |this| &mut this.language_menu,
-                cx,
+    /// Plain, then the languages the installed highlighter knows, each with
+    /// the tag it writes on the fence.
+    fn languages(&self, cx: &App) -> Vec<(SharedString, Option<String>)> {
+        std::iter::once((markdown::render::PLAIN_LANGUAGE.into(), None))
+            .chain(
+                cx.highlight_languages()
+                    .iter()
+                    .map(|name| (name.clone(), Some(name.to_string()))),
             )
-            .child(
-                ui::scroll::pane("language-menu-rows", ui::scroll::Axes::Vertical)
-                    .max_h(px(280.0))
-                    .child(plain)
-                    .children(rows),
-            )
-            .into_any_element(),
-            self.language_menu.closing_since(),
-        ))
+            .collect()
     }
 
-    /// Turn into / Duplicate / Delete, at the handle that opened it.
-    pub(super) fn block_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.blocks() {
-            return None;
+    /// The rows of a dropped menu, while it is mounted.
+    fn dropdown_items(&self, which: Dropdown, cx: &App) -> Option<Vec<Item>> {
+        match which {
+            Dropdown::Text => Some(self.text_menu.get()?.of.clone()),
+            Dropdown::Image => Some(self.image_menu.get()?.of.items()),
+            _ if !self.blocks() => None,
+            Dropdown::Block => Some(self.block_menu.get()?.of.1.menu()),
+            Dropdown::Table => {
+                let (ix, line) = self.table_menu.get()?.of;
+                Some(
+                    self.table_actions(ix, line)
+                        .into_iter()
+                        .map(|(label, _)| Item::action(label))
+                        .collect(),
+                )
+            }
+            Dropdown::Language => {
+                if !self.chrome().language {
+                    return None;
+                }
+                let ix = self.language_menu.get()?.of;
+                let Some(BlockKind::Code { language, .. }) =
+                    self.doc.blocks.get(ix).map(|b| &b.kind)
+                else {
+                    return None;
+                };
+                Some(
+                    self.languages(cx)
+                        .into_iter()
+                        .map(|(label, tag)| Item::action(label).checked(tag == *language))
+                        .collect(),
+                )
+            }
         }
-        let view = Painter::of(cx);
-        let &(ix, at) = self.block_menu.get()?;
-        let items = crate::block_menu::installed(cx);
-        // As in `ui::menu`: no room for a glyph unless a row carries one.
-        let gutter = items
-            .iter()
-            .any(|item| matches!(item, BlockMenuItem::Row(SlashRow { icon: Some(_), .. })));
-        let items = items.into_iter().enumerate().map(|(i, item)| match item {
-            BlockMenuItem::Heading(label) => {
-                ui::popover::menu_heading(theme, label).into_any_element()
+    }
+
+    fn dropdown_cursor(&mut self, which: Dropdown) -> Option<&mut Cursor> {
+        match which {
+            Dropdown::Block => self.block_menu.open_mut().map(|menu| &mut menu.cursor),
+            Dropdown::Table => self.table_menu.open_mut().map(|menu| &mut menu.cursor),
+            Dropdown::Language => self.language_menu.open_mut().map(|menu| &mut menu.cursor),
+            Dropdown::Text => self.text_menu.open_mut().map(|menu| &mut menu.cursor),
+            Dropdown::Image => self.image_menu.open_mut().map(|menu| &mut menu.cursor),
+        }
+    }
+
+    fn close_dropdown(&mut self, which: Dropdown, cx: &mut Context<Self>) {
+        match which {
+            Dropdown::Block => ui::popover::close_popup(self, cx, |this| &mut this.block_menu),
+            Dropdown::Table => ui::popover::close_popup(self, cx, |this| &mut this.table_menu),
+            Dropdown::Language => {
+                ui::popover::close_popup(self, cx, |this| &mut this.language_menu)
             }
-            BlockMenuItem::Row(row) => {
-                ui::popover::menu_row(theme, false, Some(Fade::new(view, format!("block-{i}"))))
-                    .id(SharedString::from(format!("block-row-{i}")))
-                    .when(gutter, |el| {
-                        el.child(ui::menu::glyph_slot(theme, row.icon, true))
-                    })
-                    .child(row.label)
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
-                        this.block_menu_action(ix, row.action.clone(), window, cx);
-                    }))
-                    .into_any_element()
+            Dropdown::Text => ui::popover::close_popup(self, cx, |this| &mut this.text_menu),
+            Dropdown::Image => ui::popover::close_popup(self, cx, |this| &mut this.image_menu),
+        }
+    }
+
+    /// Close the menu and run the row at `path`.
+    fn choose_dropdown(
+        &mut self,
+        which: Dropdown,
+        path: &[usize],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(&row) = path.first() else { return };
+        match which {
+            Dropdown::Block => {
+                let Some(menu) = self.block_menu.as_open() else {
+                    return;
+                };
+                let (ix, action) = (menu.of.0, menu.of.1.action_at(path));
+                let Some(action) = action else { return };
+                self.close_dropdown(which, cx);
+                self.block_menu_action(ix, action, window, cx);
             }
-        });
+            Dropdown::Table => {
+                let Some(&Dropped { of: (ix, line), .. }) = self.table_menu.as_open() else {
+                    return;
+                };
+                let run = self.table_actions(ix, line).into_iter().nth(row);
+                self.close_dropdown(which, cx);
+                if let Some((_, run)) = run {
+                    run(self, cx);
+                }
+            }
+            Dropdown::Language => {
+                let Some(&Dropped { of: ix, .. }) = self.language_menu.as_open() else {
+                    return;
+                };
+                let tag = self.languages(cx).into_iter().nth(row);
+                self.close_dropdown(which, cx);
+                if let Some((_, tag)) = tag {
+                    self.set_language(ix, tag, cx);
+                }
+            }
+            Dropdown::Image => {
+                let Some(menu) = self.image_menu.as_open() else {
+                    return;
+                };
+                menu.of.run(row, cx);
+                self.close_dropdown(which, cx);
+            }
+            Dropdown::Text => {
+                self.close_dropdown(which, cx);
+                match ui::menu::Edit::at(path) {
+                    Some(ui::menu::Edit::Cut) => self.cut(&super::Cut, window, cx),
+                    Some(ui::menu::Edit::Copy) => self.copy(&super::Copy, window, cx),
+                    Some(ui::menu::Edit::Paste) => self.paste(&super::Paste, window, cx),
+                    Some(ui::menu::Edit::SelectAll) => {
+                        self.select_all(&super::SelectAll, window, cx)
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+
+    fn dropdown_hit(
+        &mut self,
+        which: Dropdown,
+        hit: Hit,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match hit {
+            Hit::Point(path) => {
+                let Some(items) = self.dropdown_items(which, cx) else {
+                    return;
+                };
+                if let Some(cursor) = self.dropdown_cursor(which)
+                    && cursor.point_at(&items, &path)
+                {
+                    cx.notify();
+                }
+            }
+            Hit::Choose(path) => self.choose_dropdown(which, &path, window, cx),
+            Hit::Dismiss => self.close_dropdown(which, cx),
+        }
+    }
+
+    /// The dropped menu the keyboard works, while one is open.
+    fn open_dropdown(&self) -> Option<Dropdown> {
+        [
+            (Dropdown::Block, self.block_menu.is_open()),
+            (Dropdown::Table, self.table_menu.is_open()),
+            (Dropdown::Language, self.language_menu.is_open()),
+            (Dropdown::Text, self.text_menu.is_open()),
+            (Dropdown::Image, self.image_menu.is_open()),
+        ]
+        .into_iter()
+        .find_map(|(which, open)| open.then_some(which))
+    }
+
+    /// Up and down in an open dropped menu. `false` when none is open.
+    pub(super) fn dropdown_step(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
+        let Some(which) = self.open_dropdown() else {
+            return false;
+        };
+        let Some(items) = self.dropdown_items(which, cx) else {
+            return false;
+        };
+        if let Some(cursor) = self.dropdown_cursor(which) {
+            cursor.step(&items, delta);
+            cx.notify();
+        }
+        true
+    }
+
+    /// Left and right out of and into an open dropped menu's submenu.
+    pub(super) fn dropdown_side(&mut self, right: bool, cx: &mut Context<Self>) -> bool {
+        let Some(which) = self.open_dropdown() else {
+            return false;
+        };
+        let Some(items) = self.dropdown_items(which, cx) else {
+            return false;
+        };
+        let Some(cursor) = self.dropdown_cursor(which) else {
+            return false;
+        };
+        let moved = match right {
+            true => cursor.descend(&items),
+            false => cursor.ascend(),
+        };
+        if moved {
+            cx.notify();
+        }
+        moved
+    }
+
+    /// Enter on an open dropped menu's live row: a submenu opens, anything
+    /// else runs. `false` when no row is live.
+    pub(super) fn dropdown_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(which) = self.open_dropdown() else {
+            return false;
+        };
+        let Some(items) = self.dropdown_items(which, cx) else {
+            return false;
+        };
+        let Some(cursor) = self.dropdown_cursor(which) else {
+            return false;
+        };
+        let Some(path) = cursor.path() else {
+            return false;
+        };
+        if cursor.descend(&items) {
+            cx.notify();
+        } else {
+            self.choose_dropdown(which, &path, window, cx);
+        }
+        true
+    }
+
+    /// Escape on an open dropped menu. `false` when none is open.
+    pub(super) fn dropdown_dismiss(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(which) = self.open_dropdown() else {
+            return false;
+        };
+        self.close_dropdown(which, cx);
+        true
+    }
+
+    /// A dropped menu, at the anchor it opened with.
+    pub(super) fn dropdown(
+        &self,
+        which: Dropdown,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let items = self.dropdown_items(which, cx)?;
+        let (id, menu, closing) = match which {
+            Dropdown::Block => {
+                let menu = self.block_menu.get()?;
+                (
+                    BLOCK_MENU,
+                    (menu.at, &menu.cursor),
+                    self.block_menu.closing_since(),
+                )
+            }
+            Dropdown::Table => {
+                let menu = self.table_menu.get()?;
+                (
+                    TABLE_MENU,
+                    (menu.at, &menu.cursor),
+                    self.table_menu.closing_since(),
+                )
+            }
+            Dropdown::Language => {
+                let menu = self.language_menu.get()?;
+                let closing = self.language_menu.closing_since();
+                (LANGUAGE_MENU, (menu.at, &menu.cursor), closing)
+            }
+            Dropdown::Text => {
+                let menu = self.text_menu.get()?;
+                let closing = self.text_menu.closing_since();
+                (TEXT_MENU, (menu.at, &menu.cursor), closing)
+            }
+            Dropdown::Image => {
+                let menu = self.image_menu.get()?;
+                let closing = self.image_menu.closing_since();
+                (IMAGE_MENU, (menu.at, &menu.cursor), closing)
+            }
+        };
+        let (at, cursor) = menu;
+        let card = ui::menu::card(
+            theme,
+            id,
+            &items,
+            cursor,
+            window,
+            cx,
+            move |this: &mut Self, hit, window, cx| this.dropdown_hit(which, hit, window, cx),
+        )
+        .debug_selector(|| id.to_string())
+        .max_h(px(320.0));
         Some(ui::popover::menu_at(
-            BLOCK_MENU,
+            id,
             at,
-            ui::popover::dismiss_on_out(
-                ui::popover::popover_card(theme)
-                    .debug_selector(|| BLOCK_MENU.to_string())
-                    .w(px(190.0)),
-                |this| &mut this.block_menu,
-                cx,
-            )
-            .child(
-                ui::scroll::pane("block-menu-rows", ui::scroll::Axes::Vertical)
-                    .max_h(px(320.0))
-                    .children(items),
-            )
-            .into_any_element(),
-            self.block_menu.closing_since(),
+            card.into_any_element(),
+            closing,
         ))
     }
 
@@ -713,37 +887,47 @@ impl Editor {
     /// Anchored at the block's start rather than at the caret: the caret is
     /// past the end of a URL, which is as far right as a line goes, and a menu
     /// hanging off there points at nothing.
-    pub(super) fn paste_menu(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn paste_menu(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let pasted = self.pasted.as_ref()?;
         let (point, line_height) = self.layouts.position(pasted.at)?;
-        let rows = pasted.rows.iter().enumerate().map(|(row, &choice)| {
-            let label = choice.label();
-            ui::popover::menu_row(theme, row == pasted.active, None)
-                .id(SharedString::from(format!("paste-row-{label}")))
-                .child(label)
-                .on_mouse_move(cx.listener(move |this: &mut Self, _, _, cx| {
+        let card = ui::menu::card(
+            theme,
+            "paste",
+            &pasted.menu(),
+            &pasted.cursor,
+            window,
+            cx,
+            |this: &mut Self, hit, _, cx| match hit {
+                Hit::Point(path) => {
                     if let Some(pasted) = this.pasted.as_mut()
-                        && pasted.active != row
+                        && pasted.cursor.point_at(&pasted.menu(), &path)
                     {
-                        pasted.active = row;
                         cx.notify();
                     }
-                }))
-                .on_click(cx.listener(move |this, _, _, cx| this.confirm_paste(choice, cx)))
-        });
+                }
+                Hit::Choose(path) => {
+                    let choice = this.pasted.as_ref().and_then(|p| p.choice(Some(&path)));
+                    if let Some(choice) = choice {
+                        this.confirm_paste(choice, cx);
+                    }
+                }
+                // Clicking away is `Dismiss`, which is a real answer: the link
+                // is already in the block and stays there.
+                Hit::Dismiss => {
+                    this.pasted = None;
+                    cx.notify();
+                }
+            },
+        );
         Some(ui::popover::menu_at(
             "paste-menu",
             gpui::point(point.x, point.y + line_height),
-            ui::popover::popover_card(theme)
-                .w(px(180.0))
-                // Clicking away is `Dismiss`, which is a real answer: the link
-                // is already in the block and stays there.
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.pasted = None;
-                    cx.notify();
-                }))
-                .children(rows)
-                .into_any_element(),
+            card.into_any_element(),
             None,
         ))
     }

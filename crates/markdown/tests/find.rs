@@ -142,6 +142,44 @@ fn a_reveal_scrolls_back_up(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_nearest_reveal_stops_at_the_bottom_edge(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&paragraphs(300), false, false, cx);
+    let range = Selection::new(
+        Cursor::new(40, Part::Body, 0),
+        Cursor::new(40, Part::Body, 9),
+    );
+    cx.update(|_, cx| {
+        page.read(cx)
+            .layouts
+            .reveal_with(range, markdown::RevealMode::Nearest)
+    });
+    settle(&mut cx);
+
+    let rows = cx.update(|_, cx| page.read(cx).layouts.rects(range));
+    let bottom = rows.first().expect("the range painted").bottom();
+    assert!(
+        bottom <= px(HEIGHT - 16.0) && bottom > px(HEIGHT - 40.0),
+        "the range sits just inside the bottom, at {bottom:?}"
+    );
+}
+
+#[gpui::test]
+fn a_nearest_reveal_leaves_a_shown_range_alone(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&paragraphs(300), false, false, cx);
+    let range = Selection::new(Cursor::new(1, Part::Body, 0), Cursor::new(1, Part::Body, 9));
+    let rects = |cx: &mut VisualTestContext| cx.update(|_, cx| page.read(cx).layouts.rects(range));
+    let before = rects(&mut cx);
+    cx.update(|_, cx| {
+        page.read(cx)
+            .layouts
+            .reveal_with(range, markdown::RevealMode::Nearest)
+    });
+    settle(&mut cx);
+
+    assert_eq!(rects(&mut cx), before);
+}
+
+#[gpui::test]
 fn a_reveal_in_source_finds_its_line(cx: &mut TestAppContext) {
     let source = paragraphs(300);
     let offset = source.find("paragraph 260").unwrap();

@@ -140,7 +140,8 @@ impl CanvasView {
         self.editor.node_under(at, &from).map(str::to_owned)
     }
 
-    /// Where an edge runs, as its kind draws it.
+    /// Where an edge runs: its route while both its nodes sit where the
+    /// document puts them, else as its kind draws it.
     pub(super) fn path_of(
         &self,
         nodes: &HashMap<&str, &Node>,
@@ -148,7 +149,16 @@ impl CanvasView {
         edge: &Edge,
     ) -> Option<Path> {
         let ends = ends_of(nodes, shown, edge, self.editor.kinds())?;
-        Some((self.editor.edge_kinds().get(edge).path)(&ends))
+        let settled = |id: &str| {
+            let node = nodes.get(id);
+            shown.get(id).is_none_or(|&(x, y)| {
+                node.is_some_and(|node| (x, y) == (node.x as f32, node.y as f32))
+            })
+        };
+        let routed = (settled(&edge.from_node) && settled(&edge.to_node))
+            .then(|| path::route(&ends, &edge.points))
+            .flatten();
+        Some(routed.unwrap_or_else(|| (self.editor.edge_kinds().get(edge).path)(&ends)))
     }
 
     /// The handles the picked edge's kind declares, along its path.

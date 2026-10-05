@@ -109,6 +109,7 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
             BlockKind::Code {
                 language: None,
                 code: text(),
+                height: None,
             },
         ),
         (
@@ -160,9 +161,12 @@ pub struct SlashRow {
     pub action: SlashAction,
 }
 
-/// An item of the slash menu.
+/// An item of the slash or block menu.
 #[derive(Clone)]
 pub enum SlashItem {
+    /// A section's name over the items after it, shown while the query is
+    /// empty.
+    Heading(SharedString),
     Row(SlashRow),
     /// Rows behind a submenu. A query matches them as `Group (row)`; several
     /// matches stay behind the submenu, and a lone one stands as its own row.
@@ -243,12 +247,14 @@ pub(crate) fn installed(cx: &App) -> Vec<SlashItem> {
 }
 
 /// One row the open menu can offer: what a query matches, what a submenu
-/// shows, the group it sits in and that group's glyph, and what picking it
-/// does.
+/// shows, the section and group it sits in, that group's glyph, and what
+/// picking it does.
 #[derive(Clone)]
 struct Entry {
     label: SharedString,
     short: SharedString,
+    /// The heading above it, numbered so two sections of one name stay apart.
+    section: Option<(usize, SharedString)>,
     group: Option<(SharedString, Option<Icon>)>,
     icon: Option<Icon>,
     action: SlashAction,
@@ -257,11 +263,14 @@ struct Entry {
 /// The installed items, flattened.
 fn entries(items: Vec<SlashItem>) -> Vec<Entry> {
     let mut entries = Vec::new();
-    for item in items {
+    let mut section = None;
+    for (ix, item) in items.into_iter().enumerate() {
         match item {
+            SlashItem::Heading(label) => section = Some((ix, label)),
             SlashItem::Row(row) => entries.push(Entry {
                 label: row.label.clone(),
                 short: row.label,
+                section: section.clone(),
                 group: None,
                 icon: row.icon,
                 action: row.action,
@@ -273,6 +282,7 @@ fn entries(items: Vec<SlashItem>) -> Vec<Entry> {
                         false => format!("{label} ({})", row.label).into(),
                     },
                     short: row.label,
+                    section: section.clone(),
                     group: Some((label.clone(), icon.clone())),
                     icon: row.icon,
                     action: row.action,
@@ -283,16 +293,18 @@ fn entries(items: Vec<SlashItem>) -> Vec<Entry> {
     entries
 }
 
-/// The [`SlashAction::Block`] rows of `items`, flattened, each under its full
-/// label.
-pub(crate) fn turns(items: Vec<SlashItem>) -> Vec<SlashRow> {
-    entries(items)
+/// The [`SlashAction::Block`] rows of `items`, groups kept, without headings.
+pub(crate) fn turns(items: Vec<SlashItem>) -> Vec<SlashItem> {
+    let turns = |row: &SlashRow| matches!(row.action, SlashAction::Block(_));
+    items
         .into_iter()
-        .filter(|entry| matches!(entry.action, SlashAction::Block(_)))
-        .map(|entry| SlashRow {
-            label: entry.label,
-            icon: entry.icon,
-            action: entry.action,
+        .filter_map(|item| match item {
+            SlashItem::Row(row) => turns(&row).then_some(SlashItem::Row(row)),
+            SlashItem::Group { label, icon, rows } => {
+                let rows: Vec<SlashRow> = rows.into_iter().filter(turns).collect();
+                (!rows.is_empty()).then_some(SlashItem::Group { label, icon, rows })
+            }
+            SlashItem::Heading(_) => None,
         })
         .collect()
 }
@@ -318,39 +330,35 @@ fn same(row: &BlockKind, kind: &BlockKind) -> bool {
     }
 }
 
-/// A row of the open menu: one entry, or a group of them behind a submenu.
-/// Indices are into the menu's entries.
+/// A row of the open menu: a heading, one entry, or a group of them behind a
+/// submenu. Indices are into the menu's entries.
 enum Row {
+    Heading(SharedString),
     Block(usize),
     Group(SharedString, Option<Icon>, Vec<usize>),
 }
 
-/// An open menu: where the `/` sits, and the rows under it.
-pub struct Slash {
-    /// The `/` itself. Everything between it and the caret is the query, and
-    /// backspacing onto it closes the menu.
-    pub at: Cursor,
+/// Installed items as the rows of an open menu.
+pub struct Rows {
     rows: Vec<Row>,
     /// Read once at open.
     entries: Vec<Entry>,
-    pub cursor: menu::Cursor,
 }
 
-impl Slash {
-    pub fn open(at: Cursor, items: Vec<SlashItem>) -> Self {
-        let mut slash = Self {
-            at,
+impl Rows {
+    pub fn new(items: Vec<SlashItem>) -> Self {
+        let mut rows = Self {
             rows: Vec::new(),
             entries: entries(items),
-            cursor: menu::Cursor::default(),
         };
-        slash.refilter("");
-        slash
+        rows.refilter("");
+        rows
     }
 
     /// A group sits behind one row where its first entry is. A query ranks
     /// the entries, and a group's row stands where its best match does,
     /// holding the matches in rank order — or, holding one, is that row.
+    /// Headings stand only over an unranked menu.
     pub fn refilter(&mut self, query: &str) {
         let order: Vec<usize> = if query.is_empty() {
             (0..self.entries.len()).collect()
@@ -363,8 +371,16 @@ impl Slash {
             filter_indices(query, &labels)
         };
         let mut rows: Vec<Row> = Vec::new();
+        let mut section = None;
         for ix in order {
-            let Some((group, icon)) = &self.entries[ix].group else {
+            let entry = &self.entries[ix];
+            if query.is_empty() && entry.section.as_ref().map(|(at, _)| *at) != section {
+                section = entry.section.as_ref().map(|(at, _)| *at);
+                if let Some((_, label)) = &entry.section {
+                    rows.push(Row::Heading(label.clone()));
+                }
+            }
+            let Some((group, icon)) = &entry.group else {
                 rows.push(Row::Block(ix));
                 continue;
             };
@@ -385,8 +401,6 @@ impl Slash {
                 row => row,
             })
             .collect();
-        self.cursor.clear();
-        self.cursor.step(&self.menu(), 1);
     }
 
     /// The rows as [`ui::menu::card`] paints them.
@@ -394,6 +408,7 @@ impl Slash {
         self.rows
             .iter()
             .map(|row| match row {
+                Row::Heading(label) => Item::Heading(label.clone()),
                 Row::Block(ix) => self.item(*ix, &self.entries[*ix].label),
                 Row::Group(label, icon, group) => {
                     let submenu = Item::submenu(
@@ -420,6 +435,56 @@ impl Slash {
         }
     }
 
+    /// Whether the row at `path` is a group, which Enter opens rather than
+    /// picks.
+    fn is_group(&self, path: &[usize]) -> bool {
+        matches!(
+            (path.first().and_then(|row| self.rows.get(*row)), path.len()),
+            (Some(Row::Group(..)), 1)
+        )
+    }
+
+    /// What the row at `path` does, and `None` for a heading or a group.
+    pub fn action_at(&self, path: &[usize]) -> Option<SlashAction> {
+        let ix = match (self.rows.get(*path.first()?)?, path.get(1)) {
+            (Row::Block(ix), None) => *ix,
+            (Row::Group(_, _, group), Some(row)) => *group.get(*row)?,
+            _ => return None,
+        };
+        self.entries.get(ix).map(|entry| entry.action.clone())
+    }
+}
+
+/// An open menu: where the `/` sits, and the rows under it.
+pub struct Slash {
+    /// The `/` itself. Everything between it and the caret is the query, and
+    /// backspacing onto it closes the menu.
+    pub at: Cursor,
+    rows: Rows,
+    pub cursor: menu::Cursor,
+}
+
+impl Slash {
+    pub fn open(at: Cursor, items: Vec<SlashItem>) -> Self {
+        let mut slash = Self {
+            at,
+            rows: Rows::new(items),
+            cursor: menu::Cursor::default(),
+        };
+        slash.refilter("");
+        slash
+    }
+
+    pub fn refilter(&mut self, query: &str) {
+        self.rows.refilter(query);
+        self.cursor.clear();
+        self.cursor.step(&self.menu(), 1);
+    }
+
+    pub fn menu(&self) -> Vec<Item> {
+        self.rows.menu()
+    }
+
     /// Walk the rows of the innermost open panel.
     pub fn step(&mut self, delta: isize) {
         let menu = self.menu();
@@ -434,22 +499,13 @@ impl Slash {
 
     /// Whether the live row is a group, which Enter opens rather than picks.
     pub fn on_group(&self) -> bool {
-        self.cursor.path().is_some_and(|path| {
-            matches!(
-                (self.rows.get(path[0]), path.len()),
-                (Some(Row::Group(..)), 1)
-            )
-        })
+        self.cursor
+            .path()
+            .is_some_and(|path| self.rows.is_group(&path))
     }
 
-    /// What the row at `path` does, and `None` for a group.
     pub fn action_at(&self, path: &[usize]) -> Option<SlashAction> {
-        let ix = match (self.rows.get(*path.first()?)?, path.get(1)) {
-            (Row::Block(ix), None) => *ix,
-            (Row::Group(_, _, group), Some(row)) => *group.get(*row)?,
-            _ => return None,
-        };
-        self.entries.get(ix).map(|entry| entry.action.clone())
+        self.rows.action_at(path)
     }
 
     /// What has been typed since the `/`, or `None` when the caret has left

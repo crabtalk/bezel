@@ -165,7 +165,8 @@ fn code_blocks_keep_their_language_and_drop_the_fence_newline() {
             0,
             BlockKind::Code {
                 language: Some("rust".into()),
-                code: Text::plain("fn main() {}")
+                code: Text::plain("fn main() {}"),
+                height: None,
             }
         )]
     );

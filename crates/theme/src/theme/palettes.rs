@@ -4,7 +4,9 @@ use gpui::{hsla, rgb};
 
 use crate::{
     Appearance, Ink, TextInk, color, paint,
-    theme::{Glass, MaterialSpec, SurfaceSpec, SurfaceStyle, Theme, syntax::SyntaxPalette},
+    theme::{
+        Glass, Material, MaterialSpec, SurfaceSpec, SurfaceStyle, Theme, syntax::SyntaxPalette,
+    },
 };
 
 impl Theme {
@@ -50,7 +52,7 @@ impl Theme {
             cursor: color::neutral(0.94), // near-white, opaque
             caret: color::neutral(0.673), // the accent
             ring: paint::hairline_for(Appearance::Dark, 0.35), // ~2.5× border_strong
-            drop_line: color::neutral(0.55),
+            drop_line: paint::hairline_for(Appearance::Dark, 0.35),
             drop_target: hsla(0.0, 0.0, 1.0, 0.10),
             danger_strong: color::oklch(0.58, 0.16, 25.0),
             code_text: color::neutral(0.94), // near-white, a shade above body text
@@ -135,6 +137,8 @@ impl Theme {
             // higher bar than the dome's algebra: fitting the formula to their
             // measured curve lands ~15% short of what the shader then renders.
             popover_surface: SurfaceStyle::Glass(Glass::Regular),
+            drop_preview: SurfaceStyle::Material(Material::Thin),
+            carried_surface: SurfaceStyle::Glass(Glass::Regular),
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),
@@ -202,7 +206,7 @@ impl Theme {
             cursor: color::neutral(0.205), // near-black, opaque
             caret: color::neutral(0.511),  // the accent
             ring: paint::hairline_for(Appearance::Light, 0.35),
-            drop_line: color::neutral(0.62),
+            drop_line: paint::hairline_for(Appearance::Light, 0.35),
             drop_target: hsla(0.0, 0.0, 0.0, 0.06),
             danger_strong: color::oklch(0.51, 0.20, 25.0),
             code_text: color::neutral(0.18), // near-black, a shade under body text
@@ -278,6 +282,8 @@ impl Theme {
             // At 1-3pt inside the rim the real material drags the backdrop 26pt
             // or more, and lets go by 5.5pt; on the shader's profile that is 8.
             popover_surface: SurfaceStyle::Glass(Glass::Regular),
+            drop_preview: SurfaceStyle::Material(Material::Thin),
+            carried_surface: SurfaceStyle::Glass(Glass::Regular),
             glass_magnify: 1.1,
             glass_dispersion: 0.005,
             font_sans: SYSTEM_SANS.into(),

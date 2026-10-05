@@ -15,7 +15,7 @@ use editor::{Chrome as EditorChrome, Editor, EditorEvent};
 use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
     EventEmitter, FocusHandle, Focusable, Hsla, KeyContext, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PathBuilder, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
+    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
     Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px, size,
 };
 use motion::{AppExt as _, LAYOUT};
@@ -31,9 +31,9 @@ use crate::{
     kind::{self, Capability, Kinds, Look, PAD, RADIUS, Sizing, color},
     layout::{Arrow, Layout},
     mindmap,
-    model::{Canvas, Edge, End, Node},
+    model::{Canvas, Edge, End, Node, Stroke},
     options::{Frame, Mark, Options, Overlays, Style},
-    path::{Ends, Path, Rect},
+    path::{self, Ends, Path, Rect},
     snap::Snap,
     tool::{self, Hand, Hit, Pointer, Sketch, Tool, Wish},
 };

@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// How often a drag held past the scroll box's edge scrolls it, and the most
+/// one tick moves however far past the pointer is.
+const EDGE_SCROLL_TICK: Duration = Duration::from_millis(16);
+const EDGE_SCROLL_MAX: f32 = 48.0;
+
 impl Editor {
     /// The task block whose checkbox `at` landed in, in window coordinates.
     ///
@@ -68,11 +73,69 @@ impl Editor {
         self.dragging.is_some()
             || self.lifted.is_some()
             || self.resizing.is_some()
+            || self.sizing.is_some()
             || self.table_drag.is_some()
     }
 
-    /// Follow a dragged pointer, wherever in the window it is.
+    /// Follow a dragged pointer, wherever in the window it is, and scroll the
+    /// host's box while a selection or a lifted block is held past its edge.
     pub(super) fn drag_to(&mut self, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        self.drag_at = Some(position);
+        if self.edge_scroll.is_none() && self.edge_step() != 0.0 {
+            self.edge_scroll = Some(cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(EDGE_SCROLL_TICK).await;
+                    let more = this.update(cx, |this, cx| this.edge_scroll_tick(cx));
+                    if !more.unwrap_or(false) {
+                        return;
+                    }
+                }
+            }));
+        }
+        self.follow(position, cx);
+    }
+
+    /// How far one edge-scroll tick moves the document: negative up, positive
+    /// down, zero while the drag is inside the scroll box or nothing is held.
+    fn edge_step(&self) -> f32 {
+        let (Some(scroll), Some(at)) = (&self.scroll, self.drag_at) else {
+            return 0.0;
+        };
+        if self.dragging.is_none() && self.lifted.is_none() {
+            return 0.0;
+        }
+        let view = scroll.bounds();
+        let past = if at.y < view.top() {
+            f32::from(at.y - view.top())
+        } else if at.y > view.bottom() {
+            f32::from(at.y - view.bottom())
+        } else {
+            return 0.0;
+        };
+        (past / 2.0).clamp(-EDGE_SCROLL_MAX, EDGE_SCROLL_MAX)
+    }
+
+    /// Scroll by one step and follow the held pointer over what scrolled under
+    /// it. Answers whether the drag is still past an edge.
+    fn edge_scroll_tick(&mut self, cx: &mut Context<Self>) -> bool {
+        let step = self.edge_step();
+        let (Some(scroll), Some(at)) = (self.scroll.clone(), self.drag_at) else {
+            return false;
+        };
+        if step == 0.0 {
+            self.edge_scroll = None;
+            return false;
+        }
+        let offset = scroll.offset();
+        let y = (offset.y - gpui::px(step)).clamp(-scroll.max_offset().y, gpui::px(0.0));
+        scroll.set_offset(gpui::point(offset.x, y));
+        self.follow(at, cx);
+        cx.notify();
+        true
+    }
+
+    /// Move whatever is being dragged to `position`.
+    fn follow(&mut self, position: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
         if self.table_drag.is_some() {
             return self.drag_table_to(position, cx);
         }
@@ -82,6 +145,9 @@ impl Editor {
                 self.lifted = Some((from, to));
                 cx.notify();
             }
+            return;
+        }
+        if self.drag_height(position.y, cx) {
             return;
         }
         // An image being resized follows the pointer the same way — the
@@ -113,6 +179,8 @@ impl Editor {
         ui::popover::close_popup(self, cx, |this| &mut this.block_menu);
         ui::popover::close_popup(self, cx, |this| &mut this.language_menu);
         ui::popover::close_popup(self, cx, |this| &mut this.table_menu);
+        ui::popover::close_popup(self, cx, |this| &mut this.text_menu);
+        ui::popover::close_popup(self, cx, |this| &mut this.image_menu);
         self.pasted = None;
         self.focus_handle.clone().focus(window, cx);
         // Ahead of the hit test, and returning without one: the
@@ -150,6 +218,40 @@ impl Editor {
         if let Some(id) = self.anchor_at(position) {
             cx.emit(EditorEvent::AnchorActivated(id));
         }
+        cx.notify();
+    }
+
+    /// A right press: the picture's menu on a picture; on text, the caret to
+    /// it unless it lands in the selection, and the edit menu at it.
+    pub(super) fn right_pressed(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        ui::popover::close_popup(self, cx, |this| &mut this.block_menu);
+        ui::popover::close_popup(self, cx, |this| &mut this.language_menu);
+        if let Some(target) = self.image_target_at(position) {
+            self.focus_handle.clone().focus(window, cx);
+            self.image_menu.open(Dropped::new(target, position));
+            return cx.notify();
+        }
+        if let Some(hit) = self.layouts.hit(position) {
+            let (start, end) = self.selection.ordered();
+            if self.selection.is_collapsed() || hit < start || hit > end {
+                self.selection = Selection::at(hit).clamp(&self.doc);
+                self.history.interrupt();
+                self.caret_moved();
+            }
+        }
+        self.focus_handle.clone().focus(window, cx);
+        let items = ui::menu::edit_items(
+            !self.selection.is_collapsed(),
+            cx.read_from_clipboard().is_some(),
+            [&Cut, &Copy, &Paste, &SelectAll],
+            window,
+        );
+        self.text_menu.open(Dropped::new(items, position));
         cx.notify();
     }
 

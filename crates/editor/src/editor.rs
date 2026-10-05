@@ -40,6 +40,7 @@ pub(crate) mod menu;
 mod mode;
 mod pointer;
 mod render;
+mod sizing;
 mod table;
 mod typing;
 
@@ -264,15 +265,33 @@ fn source_doc(source: &str) -> Doc {
         blocks: vec![Block::new(BlockKind::Code {
             language: Some(markdown::source::LANGUAGES[0].to_string()),
             code: Text::plain(source),
+            height: None,
         })],
     }
 }
 
-/// One of the two floating menus a block drops — the block it belongs to and
-/// where it hangs. A `Popup` rather than an `Option` for the exit phase, and
-/// for the press note: the card's `on_mouse_down_out` fires on the *press*, so
-/// without one a trigger's click on the *release* reopens what it just shut.
-pub(crate) type MenuPopup = ui::popover::Popup<(usize, gpui::Point<gpui::Pixels>)>;
+/// A floating menu a block drops. A `Popup` rather than an `Option` for the
+/// exit phase, and for the press note: the card's `on_mouse_down_out` fires on
+/// the *press*, so without one a trigger's click on the *release* reopens what
+/// it just shut.
+pub(crate) type MenuPopup<T> = ui::popover::Popup<Dropped<T>>;
+
+/// What a dropped menu belongs to, where it hangs, and its live row.
+pub(crate) struct Dropped<T> {
+    pub of: T,
+    pub at: gpui::Point<gpui::Pixels>,
+    pub cursor: ui::menu::Cursor,
+}
+
+impl<T> Dropped<T> {
+    pub fn new(of: T, at: gpui::Point<gpui::Pixels>) -> Self {
+        Self {
+            of,
+            at,
+            cursor: ui::menu::Cursor::default(),
+        }
+    }
+}
 
 /// The row, column, or cell whose table menu is open.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -341,7 +360,12 @@ pub struct Editor {
     /// A table row's or column's menu: the table, the line and where it hangs.
     table_drag: Option<table::TableDrag>,
     table_dragged: bool,
-    table_menu: ui::popover::Popup<(usize, TableTarget, gpui::Point<gpui::Pixels>)>,
+    table_menu: MenuPopup<(usize, TableTarget)>,
+    /// The right-click menu on text, with its rows as they stood when it
+    /// opened.
+    text_menu: MenuPopup<Vec<ui::menu::Item>>,
+    /// The right-click menu on a picture.
+    image_menu: MenuPopup<image::ImageTarget>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
     /// An image being dragged wider or narrower by its edge handle, and the
@@ -351,10 +375,12 @@ pub struct Editor {
     /// document's own value here is what makes a press that never moved
     /// read back as no change at all.
     resizing: Option<(usize, Option<u32>)>,
-    /// The block menu the handle opened, and where to anchor it.
-    block_menu: MenuPopup,
-    /// The language menu a fence's header opened, and the block it belongs to.
-    language_menu: MenuPopup,
+    /// A painted block being dragged taller or shorter by its bottom handle.
+    sizing: Option<sizing::Sizing>,
+    /// The block menu the handle opened, over the block and its rows.
+    block_menu: MenuPopup<(usize, crate::slash::Rows)>,
+    /// The language menu a fence's header opened, over its block.
+    language_menu: MenuPopup<usize>,
     /// Set by a floating layer's press — the gutter handle, the URL prompt —
     /// so the editor's own press does not undo what that press just did.
     press_claimed: bool,
@@ -374,6 +400,10 @@ pub struct Editor {
     /// owes it a reveal.
     scroll: Option<gpui::ScrollHandle>,
     reveal: bool,
+    /// Where a held drag last was, in window coordinates.
+    drag_at: Option<gpui::Point<gpui::Pixels>>,
+    /// Scrolls [`Self::scroll`] while a drag is held past its top or bottom.
+    edge_scroll: Option<Task<()>>,
     /// Where the gutter handle was placed this frame, so the frame after can
     /// tell whether the block moved out from under it.
     handle_at: Option<gpui::Point<gpui::Pixels>>,
@@ -429,10 +459,13 @@ impl Editor {
             hovered: None,
             hovered_cell: None,
             table_menu: Default::default(),
+            text_menu: Default::default(),
+            image_menu: Default::default(),
             table_drag: None,
             table_dragged: false,
             lifted: None,
             resizing: None,
+            sizing: None,
             block_menu: MenuPopup::default(),
             language_menu: MenuPopup::default(),
             press_claimed: false,
@@ -442,6 +475,8 @@ impl Editor {
             over_text: false,
             scroll: None,
             reveal: false,
+            drag_at: None,
+            edge_scroll: None,
             goal: None,
             handle_at: None,
             text_size: None,
@@ -572,7 +607,7 @@ impl Editor {
     }
 
     /// The box the document scrolls in, so typing off the bottom follows the
-    /// caret down.
+    /// caret down and a drag held past its top or bottom scrolls it.
     ///
     /// The host's rather than the editor's: a document goes in whatever pane
     /// the app gives it, and the gutter handle, the drop indicator and the

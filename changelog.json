@@ -1,5 +1,37 @@
 [
   {
+    "version": "0.2.9",
+    "date": "2026-10-05",
+    "summary": "Mermaid diagrams in markdown, an extended canvas format in the new bezel-canvas-core, resizable painted fences and embed cards, right-click menus, editor popups on ui::menu, nearest reveal, drag autoscroll, and hideable inactive carets.",
+    "new": [
+      "`bezel-canvas-core` holds the editor-free half of the canvas: the model, layouts, edits, paths and snapping, which `bezel-canvas` re-exports, and `diagram`, a read-only painter that draws a canvas at its own size. `diagram::size_of` gives that size.",
+      "The canvas format adds a `version`, a node's `Shape`, an edge's route `points` and `Stroke`, and `End::Circle` and `End::Cross`. `canvas_core::json_canvas::import` and `export` translate to and from JSON Canvas 1.0; `paint::color`, `shape`, `edge` and `end` paint its parts.",
+      "The `mermaid` feature of `bezel-canvas-core` adds `mermaid::import`, which lays out flowchart, state and class diagrams as a canvas.",
+      "The `mermaid` feature of `bezel-markdown` draws ` ```mermaid ` fences as diagrams in a fence box that pans by drag and zooms from corner controls. `markdown::mermaid::render` draws one.",
+      "Painted fences and embed cards drag taller from a grip along their foot in `bezel-editor`. The height is kept in markdown as `mermaid 360` in a fence's info string and `embed 360` in a link's title, and carried as `Fence::height` and `Form::Embed(Some(_))`. `FenceHost::resize`, `Editing::sizing` and `BlockLayouts::painted_bounds` back it.",
+      "`ui::context_menu::ContextMenu` opens a menu at the pointer that holds the keyboard until it closes. Text fields and editor text open Cut, Copy, Paste and Select All on a right press, from `ui::menu::edit_items` and `Edit`; pictures in the editor open their own menu.",
+      "`menu::Item::Heading` names a section over the rows after it.",
+      "The editor's block, table, language, link and paste menus are `ui::menu` menus walked by the keyboard. The block menu puts quotes and callouts behind one Quote submenu.",
+      "`BlockLayouts::reveal_with` takes a `RevealMode`: `Center`, as `reveal` does, or `Nearest`, the least scroll that shows the range.",
+      "A selection or a lifted block held past the editor's scroll box scrolls it.",
+      "`ui::AppExt::set_inactive_caret` makes a block caret in an inactive window outlined (`InactiveCaret::Hollow`, the default) or hidden (`InactiveCaret::Hidden`). `TerminalElement::with_hollow_inactive` does the same for a terminal's block cursor.",
+      "Focused tabs, live menu rows and selected tree rows paint the glass selection."
+    ],
+    "changed": [
+      "`editor::AppExt::set_block_menu_items` takes `Vec<SlashItem>` and `block_menu_defaults` returns one; `BlockMenuItem` is gone.",
+      "`menu::Item` has a `Heading` variant; exhaustive matches must handle it.",
+      "The link menu's `active` is a `cursor: menu::Cursor`, and its `choice` takes the chosen path and returns an `Option`.",
+      "`path::Ends` carries `from_end` and `to_end` as `End` instead of `from_arrow` and `to_arrow`.",
+      "`Canvas`, `Node` and `Edge` have new fields and `Fence` a `height` field; struct literals must include them.",
+      "`markdown::Form::Embed` carries an optional height.",
+      "An unfocused terminal draws no cursor, and a beam or underline cursor keeps its shape in an inactive window."
+    ],
+    "fixed": [
+      "Tab strips no longer draw an overlay scrollbar.",
+      "The markdown source view sets text at the body's size and leading."
+    ]
+  },
+  {
     "version": "0.2.8",
     "date": "2026-10-04",
     "summary": "App-owned block menus and handle glyphs, mention triggers with icons, chips in text fields, menu row indents, terminal cursor shapes, and a browser console and inspector.",

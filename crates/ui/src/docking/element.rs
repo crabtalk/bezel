@@ -7,7 +7,6 @@ use gpui::{
     prelude::*, px,
 };
 use std::rc::Rc;
-use theme::{Material, SurfaceStyle};
 
 #[derive(IntoElement)]
 pub struct Surface<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> {
@@ -122,23 +121,22 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
                 .rounded(px(6.));
             // The surface's flat fallback is opaque and would hide the pane.
             overlay = overlay.child(if crate::surface::lensed(theme) {
-                target
-                    .surface(theme, SurfaceStyle::Material(Material::Thin))
-                    .into_any_element()
+                target.surface(theme, theme.drop_preview).into_any_element()
             } else {
                 target.bg(theme.drop_target).into_any_element()
             });
             active |= preview.progress(cx) < 1.;
         }
         let ghost = state.settling.as_ref().and_then(|settle| {
+            let from = settle.ghost?;
             state
                 .targets
                 .iter()
                 .find(|target| target.id == settle.pane)
                 .map(|target| {
                     let tween = Tween {
-                        from: settle.ghost,
-                        to: Bounds::new(target.bounds.origin, settle.ghost.size),
+                        from,
+                        to: Bounds::new(target.bounds.origin, from.size),
                         since: settle.since,
                     };
                     (settle.item.clone(), tween.bounds(cx), tween.progress(cx))
@@ -147,7 +145,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
         let carried = state
             .carried
             .as_ref()
-            .filter(|carried| carried.detached())
+            .filter(|carried| carried.hosted())
             .map(|carried| {
                 let rect = carried.ghost_bounds();
                 carried.gesture.host(rect.origin);

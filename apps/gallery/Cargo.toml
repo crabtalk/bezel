@@ -24,7 +24,7 @@ agent.workspace = true
 browser.workspace = true
 canvas.workspace = true
 editor.workspace = true
-markdown.workspace = true
+markdown = { workspace = true, features = ["mermaid"] }
 blocks.workspace = true
 motion.workspace = true
 theme.workspace = true

@@ -145,6 +145,9 @@ pub fn bindings() -> Vec<KeyBinding> {
     bindings
 }
 
+/// How far a row sits in from either side of the tree.
+const ROW_INSET: f32 = 4.0;
+
 /// How far one level of nesting indents.
 pub const INDENT: f32 = 14.0;
 /// Width of the chevron column, kept by leaves as well so their labels line up
@@ -166,13 +169,17 @@ pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui:
         .flex()
         .flex_row()
         .items_center()
-        .w_full()
+        .mx(px(ROW_INSET))
+        .rounded(px(Theme::control_radius()))
         .py(px(3.0))
         .pr(px(8.0))
         .text_style(TextStyle::Callout)
         .cursor_pointer();
     frame = if selected {
-        frame.bg(theme.card_selected_bg()).text_color(theme.text)
+        frame
+            .bg(theme.card_selected_bg())
+            .shadow(theme::glass_selected_shadows())
+            .text_color(theme.text)
     } else if cursor {
         frame.bg(theme::wash(0.05)).text_color(theme.text)
     } else {

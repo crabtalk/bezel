@@ -22,7 +22,6 @@ workspace = true
 [dependencies]
 markdown.workspace = true
 theme.workspace = true
-motion.workspace = true
 ui.workspace = true
 # `Lightbulb`, the Tip callout's slash glyph; `Trash`, the block menu's Delete;
 # the grips, the handles' default glyphs.

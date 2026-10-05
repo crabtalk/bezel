@@ -45,7 +45,7 @@ pub(super) struct ParseState {
     quotes: Vec<OpenQuote>,
     pending_marker: Option<Marker>,
     heading: Option<u8>,
-    code: Option<(Option<String>, String)>,
+    code: Option<(Option<String>, Option<u32>, String)>,
     table: Option<TableBuild>,
     /// The event being handled. What a block that owns no inline run — an
     /// empty marker, a rule — is placed from.
@@ -193,7 +193,7 @@ impl ParseState {
             Event::End(tag) => self.end(tag),
 
             Event::Text(t) => match &mut self.code {
-                Some((_, code)) => code.push_str(&t),
+                Some((_, _, code)) => code.push_str(&t),
                 None => self.builder.text.push_str(&t),
             },
             Event::Code(t) => self.builder.wrap(Mark::Code, &t),
@@ -203,7 +203,7 @@ impl ParseState {
             // Soft and hard breaks are both just a line break in a block —
             // the distinction has no meaning in this model, or in Notion.
             Event::SoftBreak | Event::HardBreak => match &mut self.code {
-                Some((_, code)) => code.push('\n'),
+                Some((_, _, code)) => code.push('\n'),
                 None => self.builder.text.push('\n'),
             },
             Event::Rule => {
@@ -239,14 +239,15 @@ impl ParseState {
             Tag::CodeBlock(kind) => {
                 self.flush_inline();
                 self.flush_marker();
-                let language = match kind {
+                let (language, height) = match kind {
                     CodeBlockKind::Fenced(info) => {
-                        let tag = info.split_whitespace().next().unwrap_or("");
-                        (!tag.is_empty()).then(|| tag.to_string())
+                        let (tag, height) = super::split_size(info.trim());
+                        let tag = tag.split_whitespace().next().unwrap_or("");
+                        ((!tag.is_empty()).then(|| tag.to_string()), height)
                     }
-                    CodeBlockKind::Indented => None,
+                    CodeBlockKind::Indented => (None, None),
                 };
-                self.code = Some((language, String::new()));
+                self.code = Some((language, height, String::new()));
             }
             Tag::List(start) => {
                 self.flush_inline();
@@ -350,7 +351,7 @@ impl ParseState {
                 }
             }
             TagEnd::CodeBlock => {
-                if let Some((language, code)) = self.code.take() {
+                if let Some((language, height, code)) = self.code.take() {
                     let indent = self.indent();
                     // The fence swallows the final newline; storing it would
                     // grow the block by one blank line on every round trip.
@@ -359,6 +360,7 @@ impl ParseState {
                         BlockKind::Code {
                             language,
                             code: Text::plain(code),
+                            height,
                         },
                         indent,
                     );

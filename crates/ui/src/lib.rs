@@ -20,6 +20,7 @@ pub use icons;
 
 pub mod color;
 pub mod combobox;
+pub mod context_menu;
 pub mod control_bar;
 pub mod cover;
 pub mod date;

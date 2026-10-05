@@ -102,21 +102,17 @@ impl Ends {
                 .unwrap_or_else(|| self.to.anchor(self.to_side.unwrap_or(facing_to))),
         )
     }
-
-    fn arrows(&self) -> (bool, bool) {
-        (self.from_end == End::Arrow, self.to_end == End::Arrow)
-    }
 }
 
 /// An edge where it paints: quadratic segments, each start, control, end.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Path {
     pub segments: Vec<(Point<f32>, Point<f32>, Point<f32>)>,
-    /// The way out of each end, which an arrowhead points along.
+    /// The way out of each end, which an end's mark points along.
     pub from_out: Point<f32>,
     pub to_out: Point<f32>,
-    pub from_arrow: bool,
-    pub to_arrow: bool,
+    pub from_end: End,
+    pub to_end: End,
 }
 
 impl Path {
@@ -189,13 +185,12 @@ pub fn curve(ends: &Ends) -> Path {
     let c0 = point(from.x + from_out.x * reach, from.y + from_out.y * reach);
     let c1 = point(to.x + to_out.x * reach, to.y + to_out.y * reach);
     let mid = point((c0.x + c1.x) / 2.0, (c0.y + c1.y) / 2.0);
-    let (from_arrow, to_arrow) = ends.arrows();
     Path {
         segments: vec![(from, c0, mid), (mid, c1, to)],
         from_out,
         to_out,
-        from_arrow,
-        to_arrow,
+        from_end: ends.from_end,
+        to_end: ends.to_end,
     }
 }
 
@@ -203,13 +198,49 @@ pub fn curve(ends: &Ends) -> Path {
 pub fn line(ends: &Ends) -> Path {
     let ((from, from_out), (to, to_out)) = ends.anchors();
     let mid = point((from.x + to.x) / 2.0, (from.y + to.y) / 2.0);
-    let (from_arrow, to_arrow) = ends.arrows();
     Path {
         segments: vec![(from, mid, to)],
         from_out,
         to_out,
-        from_arrow,
-        to_arrow,
+        from_end: ends.from_end,
+        to_end: ends.to_end,
+    }
+}
+
+/// Straight through `points`, first to last, wearing `ends`' marks. `None`
+/// for fewer than two points.
+pub fn route(ends: &Ends, points: &[[i64; 2]]) -> Option<Path> {
+    let points: Vec<Point<f32>> = points
+        .iter()
+        .map(|&[x, y]| point(x as f32, y as f32))
+        .collect();
+    let (&first, &last) = (points.first()?, points.last()?);
+    if points.len() < 2 {
+        return None;
+    }
+    let segments = points
+        .windows(2)
+        .map(|pair| {
+            let (a, b) = (pair[0], pair[1]);
+            (a, point((a.x + b.x) / 2.0, (a.y + b.y) / 2.0), b)
+        })
+        .collect();
+    Some(Path {
+        segments,
+        from_out: unit(points[1], first),
+        to_out: unit(points[points.len() - 2], last),
+        from_end: ends.from_end,
+        to_end: ends.to_end,
+    })
+}
+
+/// The way from `to` toward `from`, one long.
+fn unit(from: Point<f32>, to: Point<f32>) -> Point<f32> {
+    let (dx, dy) = (from.x - to.x, from.y - to.y);
+    let length = (dx * dx + dy * dy).sqrt();
+    match length > 0.0 {
+        true => point(dx / length, dy / length),
+        false => point(0.0, 0.0),
     }
 }
 

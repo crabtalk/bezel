@@ -25,6 +25,9 @@ pub(super) struct Frames {
     /// full column and carries the caption, and a resize handle belongs on the
     /// edge of the picture itself.
     pictures: Vec<(usize, Bounds<Pixels>)>,
+    /// A painted block that can be resized: a painted fence, or a card
+    /// [`crate::Form::Embed`] spells.
+    painted: Vec<(usize, Bounds<Pixels>)>,
     /// A task block's checkbox, which is not its marker column: the column is
     /// gutter either side of the box, and a click there places a caret.
     checkboxes: Vec<(usize, Bounds<Pixels>)>,
@@ -36,12 +39,31 @@ pub(super) struct Frames {
     reveal: Option<Reveal>,
 }
 
+/// Where [`BlockLayouts::reveal_with`] puts a range that is not showing. A
+/// range already showing does not move either way.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RevealMode {
+    /// In the middle of the view.
+    #[default]
+    Center,
+    /// The least scroll that shows it, 16px in from the edge it came in
+    /// over. Taller than the view, its top shows.
+    Nearest,
+}
+
+/// The room [`RevealMode::Nearest`] leaves between a range and the view's
+/// edge, in pixels.
+pub(super) const REVEAL_MARGIN: f32 = 16.0;
+
 /// A range waiting to be scrolled into view.
 #[derive(Clone, Copy)]
 pub(super) struct Reveal {
     pub(super) range: Selection,
+    pub(super) mode: RevealMode,
     /// Frames it has scrolled in.
     pub(super) tries: u8,
+    /// Whether any of them moved the document.
+    pub(super) scrolled: bool,
     /// Where the column item holding it was placed last frame, in window
     /// coordinates. `None` before it has been built.
     pub(super) top: Option<Pixels>,
@@ -271,6 +293,17 @@ impl BlockLayouts {
             .map(|(_, bounds)| *bounds)
     }
 
+    /// Where a resizable painted block painted last frame — a painted fence,
+    /// or an embed card — and `None` for any other block.
+    pub fn painted_bounds(&self, ix: usize) -> Option<Bounds<Pixels>> {
+        self.0
+            .borrow()
+            .painted
+            .iter()
+            .find(|(at, _)| *at == ix)
+            .map(|(_, bounds)| *bounds)
+    }
+
     /// Where an image block's picture painted, which
     /// [`BlockLayouts::block_bounds`] does not give: that box spans the column
     /// and takes in the caption, so a handle placed from it sits off the edge
@@ -323,9 +356,16 @@ impl BlockLayouts {
     /// layouts and an [`Editing::scroll`]; without one the request is dropped
     /// at the next frame. A later call replaces an earlier one.
     pub fn reveal(&self, range: Selection) {
+        self.reveal_with(range, RevealMode::Center);
+    }
+
+    /// [`Self::reveal`], placing the start of `range` by `mode`.
+    pub fn reveal_with(&self, range: Selection, mode: RevealMode) {
         self.0.borrow_mut().reveal = Some(Reveal {
             range,
+            mode,
             tries: 0,
+            scrolled: false,
             top: None,
         });
     }
@@ -378,6 +418,10 @@ impl BlockLayouts {
         self.0.borrow_mut().pictures.push((ix, bounds));
     }
 
+    pub(super) fn record_painted(&self, ix: usize, bounds: Bounds<Pixels>) {
+        self.0.borrow_mut().painted.push((ix, bounds));
+    }
+
     pub(super) fn record_checkbox(&self, ix: usize, bounds: Bounds<Pixels>) {
         self.0.borrow_mut().checkboxes.push((ix, bounds));
     }
@@ -424,6 +468,7 @@ impl BlockLayouts {
         frames.blocks.clear();
         frames.languages.clear();
         frames.pictures.clear();
+        frames.painted.clear();
         frames.checkboxes.clear();
         frames.cells.clear();
     }
