@@ -10,7 +10,7 @@ use super::*;
 /// Wrapping is not optional here: a paragraph is one line of markdown, and a
 /// source view that scrolled sideways would hide most of it.
 ///
-/// Set at [`Typography::body`]'s size and leading, in the monospace face.
+/// Set at [`Typography::body`]'s size and leading, in [`Theme::font_body`].
 pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
     let Editing {
         selection,
@@ -22,7 +22,8 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         scroll,
         ..
     } = editing;
-    let theme = Theme::of(cx).clone();
+    let mut theme = Theme::of(cx).clone();
+    theme.font_mono = theme.font_body.clone();
     let mut typography = typography.unwrap_or_else(|| cx.typography());
     typography.code = typography.body;
     let overlay = Overlay {
