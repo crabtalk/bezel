@@ -18,33 +18,23 @@
 mod app;
 pub use app::AppExt;
 
-pub mod change;
-pub mod clip;
-pub mod contain;
-pub mod drag;
+pub use canvas_core::{
+    Canvas, Change, Handle, Layout, Snap, change, clip, contain, drag, handle, layout, mindmap,
+    model, path, snap,
+};
+
 pub mod edge;
 mod edit;
-pub mod handle;
 pub mod kind;
-pub mod layout;
-pub mod mindmap;
 mod minimap;
-pub mod model;
 pub mod options;
-pub mod path;
-pub mod snap;
 pub mod tool;
 mod view;
 
-pub use change::Change;
 pub use edge::{EdgeKind, EdgeKinds};
 pub use edit::{CanvasEditor, CanvasEvent, Item};
-pub use handle::Handle;
 pub use kind::{Kind, Kinds, text_style};
-pub use layout::Layout;
 pub use minimap::minimap;
-pub use model::Canvas;
 pub use options::{Options, Overlays, Style};
-pub use snap::Snap;
 pub use tool::Tool;
 pub use view::{CONTEXT, CanvasView, init, keys};

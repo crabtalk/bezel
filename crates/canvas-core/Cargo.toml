@@ -1,7 +1,7 @@
 [package]
-name = "bezel-canvas"
+name = "bezel-canvas-core"
 
-description = "An infinite canvas for gpui over JSON Canvas — nodes and edges in, a pannable mindmap out"
+description = "The bezel canvas document — JSON Canvas and more — its layouts and edits, and a read-only painter"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,22 +14,17 @@ categories.workspace = true
 rust-version.workspace = true
 
 [lib]
-name = "canvas"
+name = "canvas_core"
 
 [lints]
 workspace = true
 
 [dependencies]
-canvas-core.workspace = true
-editor.workspace = true
-markdown.workspace = true
 theme.workspace = true
-ui.workspace = true
-motion.workspace = true
 gpui.workspace = true
-web-time.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+

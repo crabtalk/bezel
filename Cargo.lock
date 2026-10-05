@@ -619,6 +619,7 @@ dependencies = [
 name = "bezel-canvas"
 version = "0.2.8"
 dependencies = [
+ "bezel-canvas-core",
  "bezel-editor",
  "bezel-gpui",
  "bezel-markdown",
@@ -628,6 +629,16 @@ dependencies = [
  "serde",
  "serde_json",
  "web-time",
+]
+
+[[package]]
+name = "bezel-canvas-core"
+version = "0.2.8"
+dependencies = [
+ "bezel-gpui",
+ "bezel-theme",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -53,13 +53,13 @@ pub fn containers(canvas: &Canvas, holds: impl Fn(&Node) -> bool) -> HashMap<&st
 }
 
 /// Containment shared by hit testing, carrying and paint order.
-pub(crate) struct Index {
+pub struct Index {
     held: HashMap<String, Vec<String>>,
     depths: HashMap<String, usize>,
 }
 
 impl Index {
-    pub(crate) fn new(canvas: &Canvas, holds: impl Fn(&Node) -> bool) -> Self {
+    pub fn new(canvas: &Canvas, holds: impl Fn(&Node) -> bool) -> Self {
         let parents = containers(canvas, holds);
         let mut held: HashMap<String, Vec<String>> = HashMap::new();
         for (&id, &by) in &parents {
@@ -100,11 +100,11 @@ impl Index {
         Self { held, depths }
     }
 
-    pub(crate) fn depth(&self, id: &str) -> usize {
+    pub fn depth(&self, id: &str) -> usize {
         self.depths.get(id).copied().unwrap_or(0)
     }
 
-    pub(crate) fn with_contents(&self, ids: &[String]) -> Vec<String> {
+    pub fn with_contents(&self, ids: &[String]) -> Vec<String> {
         let mut seen = HashSet::new();
         let mut all: Vec<&str> = ids
             .iter()
@@ -123,7 +123,7 @@ impl Index {
         all.into_iter().map(str::to_owned).collect()
     }
 
-    pub(crate) fn topmost<'a>(
+    pub fn topmost<'a>(
         &self,
         canvas: &'a Canvas,
         at: (i64, i64),
