@@ -1,11 +1,11 @@
 //! The shared scroll surface for plain and reorderable tab strips.
+//!
+//! The strip scrolls by wheel and trackpad only; it draws no scrollbar.
 
 use gpui::{
-    AnyElement, App, Axis, Div, ElementId, Interactivity, IntoElement, Refineable, RenderOnce,
+    AnyElement, App, Div, ElementId, Interactivity, IntoElement, Refineable, RenderOnce,
     ScrollHandle, Stateful, StyleRefinement, Window, div, prelude::*, px,
 };
-
-use crate::scroll;
 
 #[derive(IntoElement)]
 pub struct TabBar {
@@ -85,10 +85,6 @@ impl RenderOnce for TabBar {
             .flex()
             .flex_1();
         frame.style().refine(&self.style);
-        frame.child(viewport).child(scroll::Overlay::new(
-            "tab-scrollbar",
-            &handle,
-            Axis::Horizontal,
-        ))
+        frame.child(viewport)
     }
 }
