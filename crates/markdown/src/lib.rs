@@ -35,6 +35,8 @@ pub mod highlight;
 pub mod layout;
 pub mod link;
 pub mod marks;
+#[cfg(feature = "mermaid")]
+pub mod mermaid;
 pub mod parse;
 pub mod preview;
 pub mod quote;

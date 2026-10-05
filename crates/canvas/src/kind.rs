@@ -25,7 +25,7 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, Div, Global, Hsla, ObjectFit, Rgba, Styled, StyledImage, Window, div, img,
+    AnyElement, App, Div, Global, Hsla, ObjectFit, Styled, StyledImage, Window, div, img,
     prelude::*, px,
 };
 use markdown::{Doc, Editing};
@@ -34,7 +34,7 @@ use theme::{TextStyle, Theme};
 use crate::{
     handle::{self, Handle},
     mindmap::{NODE_HEIGHT, NODE_WIDTH},
-    model::{self, Node},
+    model::{self, Node, Shape},
 };
 
 /// Inside a dressed box, in canvas units.
@@ -448,6 +448,33 @@ pub fn chrome(dress: Chrome, node: &Node, zoom: f32, cx: &App) -> Div {
         .flex_grow(1.0)
         .size_full()
         .rounded(px(RADIUS * zoom));
+    let shape = node.shape.unwrap_or_default();
+    if shape != Shape::Rect && dress != Chrome::Bare {
+        // Painted behind the content rather than set as the box's own fill
+        // and border, which only come in rounded rectangles.
+        let fill = match dress {
+            Chrome::Card => theme.surface_card,
+            Chrome::Frame => tint.map_or(gpui::transparent_black(), |c| c.opacity(FRAME_WASH)),
+            Chrome::Outline | Chrome::Bare => gpui::transparent_black(),
+        };
+        let outline = gpui::canvas(
+            |_, _, _| (),
+            move |bounds, _, window, _| {
+                canvas_core::paint::shape(window, shape, bounds, RADIUS * zoom, fill, border)
+            },
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full();
+        return body
+            .relative()
+            .items_center()
+            .justify_center()
+            .text_center()
+            .when(dress != Chrome::Frame, |body| body.p(px(PAD * zoom)))
+            .child(outline);
+    }
     match dress {
         Chrome::Card => body
             .p(px(PAD * zoom))
@@ -468,25 +495,7 @@ pub fn chrome(dress: Chrome, node: &Node, zoom: f32, cx: &App) -> Div {
     }
 }
 
-/// A JSON Canvas colour: a preset, or hex. Yellow and cyan have no token, so
-/// they turn the hue of the token beside them.
-pub fn color(theme: &Theme, color: &str) -> Option<Hsla> {
-    match color {
-        "1" => Some(theme.danger),
-        "2" => Some(theme.warning),
-        "3" => Some(Hsla {
-            h: 50.0 / 360.0,
-            ..theme.warning
-        }),
-        "4" => Some(theme.success),
-        "5" => Some(Hsla {
-            h: 185.0 / 360.0,
-            ..theme.success
-        }),
-        "6" => Some(theme.accent),
-        hex => Rgba::try_from(hex).ok().map(Into::into),
-    }
-}
+pub use canvas_core::paint::color;
 
 /// Text in `style` at `zoom`: size, leading and weight together. Scaling the
 /// size alone keeps the full leading, and the text spills out of its node.

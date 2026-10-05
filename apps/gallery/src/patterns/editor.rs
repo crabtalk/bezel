@@ -48,7 +48,7 @@ Select any of this and the toolbar appears. **Bold**, _italic_ and `code` are on
 - Paste a URL on an empty line for a card, or into a sentence for a chip
 - Hover a block and drag its handle to reorder it
 - Everything on the right is what a save would write
-- Click into the chart at the bottom to see the fence it really is
+- Click into the chart or the diagram at the bottom to see the fence it really is
 
 ![A caption is the alt text, and a caret can sit in it](https://crabtalk.ai/og-home.png)
 
@@ -65,6 +65,13 @@ A fence the app knows how to paint is a block of its own — put the caret in it
 parse: 12
 render: 47
 paint: 31
+```
+
+```mermaid
+flowchart LR
+  source[Markdown] --> parse --> doc[Document]
+  doc --> paint --> window[Window]
+  doc --> serialize --> source
 ```
 "#;
 

@@ -33,7 +33,14 @@ fn reads_the_spec_and_what_it_does_not_name() {
 fn round_trips_to_a_fixed_point() {
     let once = Canvas::parse(SAMPLE).unwrap();
     let twice = Canvas::parse(&once.to_json()).unwrap();
-    assert_eq!(once, twice);
+    // The first save stamps the version, and that is all it adds.
+    assert_eq!(
+        Canvas {
+            version: None,
+            ..twice.clone()
+        },
+        once
+    );
     assert_eq!(once.to_json(), twice.to_json());
 }
 

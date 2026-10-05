@@ -32,10 +32,12 @@ pub enum Change {
     RemoveEdges {
         ids: Vec<String>,
     },
+    /// Drops the [`Edge::points`] of every edge touching a moved node.
     MoveNodes {
         moves: Vec<(String, (i64, i64))>,
     },
-    /// A node's box. The view sends its measured heights unfiltered.
+    /// A node's box. The view sends its measured heights unfiltered. Drops
+    /// the [`Edge::points`] of every edge touching it.
     Resize {
         id: String,
         size: (i64, i64),
@@ -67,6 +69,24 @@ pub fn apply_all(canvas: &mut Canvas, changes: &[Change]) -> Vec<Change> {
     // Reverse batch order while preserving each inverse batch's order.
     undo.reverse();
     undo
+}
+
+/// Clear the route of every edge touching `ids`, answering what puts them
+/// back.
+fn unroute(canvas: &mut Canvas, ids: &[&str]) -> Vec<Change> {
+    canvas
+        .edges
+        .iter_mut()
+        .filter(|edge| {
+            !edge.points.is_empty()
+                && (ids.contains(&edge.from_node.as_str()) || ids.contains(&edge.to_node.as_str()))
+        })
+        .map(|edge| {
+            let old = edge.clone();
+            edge.points.clear();
+            Change::UpdateEdge { edge: old }
+        })
+        .collect()
 }
 
 /// Apply `change`, answering the changes that undo it.
@@ -145,19 +165,25 @@ pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change> {
             // A node moved twice goes back to where it began.
             back.reverse();
             if back.is_empty() {
-                Vec::new()
-            } else {
-                vec![Change::MoveNodes { moves: back }]
+                return Vec::new();
             }
+            let moved: Vec<&str> = moves.iter().map(|(id, _)| id.as_str()).collect();
+            let mut undo = vec![Change::MoveNodes { moves: back }];
+            undo.extend(unroute(canvas, &moved));
+            undo
         }
         Change::Resize { id, size } => match canvas.node_mut(id) {
             Some(node) => {
                 let old = (node.width, node.height);
                 (node.width, node.height) = *size;
-                vec![Change::Resize {
+                let mut undo = vec![Change::Resize {
                     id: id.clone(),
                     size: old,
-                }]
+                }];
+                if old != *size {
+                    undo.extend(unroute(canvas, &[id.as_str()]));
+                }
+                undo
             }
             None => Vec::new(),
         },

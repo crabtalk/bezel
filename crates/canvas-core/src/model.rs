@@ -1,10 +1,12 @@
 //! The document: [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/), field
-//! for field.
+//! for field, plus a `version`, a node's [`Shape`], an edge's route
+//! [`Edge::points`] and [`Stroke`], and the [`End`]s past `none` and `arrow`.
+//! [`crate::json_canvas`] translates to and from the spec.
 //!
-//! A field the spec does not name lands in `extra` and is written back, so a
-//! canvas another app wrote survives a save here. A node's `type` is a string
-//! rather than an enum for the same reason — an app's own kind is a renderer
-//! away, not a fork of the format.
+//! A field neither names lands in `extra` and is written back, so a canvas
+//! another app wrote survives a save here. A node's `type` is a string rather
+//! than an enum for the same reason — an app's own kind is a renderer away, not
+//! a fork of the format.
 
 use std::collections::HashMap;
 
@@ -16,8 +18,15 @@ pub const FILE: &str = "file";
 pub const LINK: &str = "link";
 pub const GROUP: &str = "group";
 
+/// The version [`Canvas::to_json`] stamps: the release of bezel that wrote it.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Canvas {
+    /// The bezel release that wrote it. `None` for one translated from JSON
+    /// Canvas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
     /// Paint order: the first is at the bottom.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nodes: Vec<Node>,
@@ -60,6 +69,9 @@ pub struct Node {
     pub background: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_style: Option<String>,
+    /// `None` reads as [`Shape::Rect`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Shape>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -88,8 +100,49 @@ pub struct Edge {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Where it runs, end to end, in canvas units. Empty leaves the route to
+    /// its kind.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "points"
+    )]
+    pub points: Vec<[i64; 2]>,
+    /// `None` reads as [`Stroke::Solid`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<Stroke>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+/// The outline a node paints.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Shape {
+    #[default]
+    Rect,
+    /// Corners rounded past the card's.
+    Round,
+    /// Ends fully round.
+    Stadium,
+    /// The ellipse the box holds.
+    Circle,
+    Diamond,
+    Hexagon,
+    /// Leaning right.
+    Parallelogram,
+    Cylinder,
+}
+
+/// How an edge's line is drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Stroke {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+    Thick,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,6 +159,8 @@ pub enum Side {
 pub enum End {
     None,
     Arrow,
+    Circle,
+    Cross,
 }
 
 impl Canvas {
@@ -113,8 +168,13 @@ impl Canvas {
         serde_json::from_str(json)
     }
 
+    /// Stamped with [`VERSION`].
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).expect("a canvas is always valid JSON")
+        let stamped = Self {
+            version: Some(VERSION.to_owned()),
+            ..self.clone()
+        };
+        serde_json::to_string_pretty(&stamped).expect("a canvas is always valid JSON")
     }
 
     pub fn index_of(&self, id: &str) -> Option<usize> {
@@ -176,4 +236,13 @@ impl Edge {
 /// The spec says integers; some writers emit fractions anyway.
 fn int<'de, D: Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
     f64::deserialize(deserializer).map(|value| value.round() as i64)
+}
+
+fn points<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<[i64; 2]>, D::Error> {
+    Vec::<[f64; 2]>::deserialize(deserializer).map(|points| {
+        points
+            .into_iter()
+            .map(|[x, y]| [x.round() as i64, y.round() as i64])
+            .collect()
+    })
 }
