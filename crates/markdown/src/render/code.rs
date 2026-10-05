@@ -502,7 +502,7 @@ pub(super) fn code_block(
 }
 
 /// The box a fence is drawn in, painted or as code.
-pub(crate) fn fence_panel(theme: &Theme) -> gpui::Div {
+pub fn fence_panel(theme: &Theme) -> gpui::Div {
     div()
         .rounded(px(Theme::panel_radius()))
         .bg(theme.ink(0.035))
@@ -514,7 +514,7 @@ pub(crate) fn fence_panel(theme: &Theme) -> gpui::Div {
 
 /// The band across the top of a [`fence_panel`], where its label and copy
 /// button sit.
-pub(crate) fn fence_band(theme: &Theme) -> gpui::Div {
+pub fn fence_band(theme: &Theme) -> gpui::Div {
     div()
         .relative()
         .flex()

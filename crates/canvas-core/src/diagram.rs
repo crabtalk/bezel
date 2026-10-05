@@ -20,6 +20,8 @@ const PAD: f32 = 8.0;
 const MARK: f32 = 8.0;
 /// A group's wash of its colour.
 const GROUP_WASH: f32 = 0.04;
+/// A node's wash of ink, over what the diagram sits on.
+const NODE_WASH: f32 = 0.06;
 
 /// `canvas` at its own size: every node, group and edge, with its labels.
 pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
@@ -50,7 +52,7 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
                 let border = tint(node).unwrap_or(theme.border);
                 let fill = match node.kind == GROUP {
                     true => tint(node).map_or(gpui::transparent_black(), |c| c.opacity(GROUP_WASH)),
-                    false => theme.surface_card,
+                    false => theme.ink(NODE_WASH),
                 };
                 (bounds, node.shape.unwrap_or_default(), fill, border)
             })
