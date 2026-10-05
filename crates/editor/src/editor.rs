@@ -361,6 +361,11 @@ pub struct Editor {
     table_drag: Option<table::TableDrag>,
     table_dragged: bool,
     table_menu: MenuPopup<(usize, TableTarget)>,
+    /// The right-click menu on text, with its rows as they stood when it
+    /// opened.
+    text_menu: MenuPopup<Vec<ui::menu::Item>>,
+    /// The right-click menu on a picture.
+    image_menu: MenuPopup<image::ImageTarget>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
     /// An image being dragged wider or narrower by its edge handle, and the
@@ -454,6 +459,8 @@ impl Editor {
             hovered: None,
             hovered_cell: None,
             table_menu: Default::default(),
+            text_menu: Default::default(),
+            image_menu: Default::default(),
             table_drag: None,
             table_dragged: false,
             lifted: None,

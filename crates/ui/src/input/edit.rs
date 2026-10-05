@@ -241,6 +241,53 @@ impl TextField {
         self.select_span(span.start, span.end, cx);
     }
 
+    /// A right press: the caret to it unless it lands in the selection, and
+    /// the menu at it.
+    pub(super) fn on_right_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let offset = self.index_for_mouse_position(event.position, self.line_height());
+        let range = &self.selected_range;
+        if range.is_empty() || offset < range.start || offset > range.end {
+            self.move_to(offset, cx);
+        }
+        let items = crate::menu::edit_items(
+            !self.selected_range.is_empty(),
+            cx.read_from_clipboard()
+                .and_then(|item| item.text())
+                .is_some(),
+            [&Cut, &Copy, &Paste, &SelectAll],
+            window,
+        );
+        self.menu.open(event.position, items, window, cx);
+        window.prevent_default();
+        cx.stop_propagation();
+    }
+
+    /// The right-click menu, while it is open.
+    pub(super) fn edit_menu(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        self.menu.render(
+            "text-field-menu",
+            |this| &mut this.menu,
+            |this, path, window, cx| match crate::menu::Edit::at(path) {
+                Some(crate::menu::Edit::Cut) => this.cut(&Cut, window, cx),
+                Some(crate::menu::Edit::Copy) => this.copy(&Copy, window, cx),
+                Some(crate::menu::Edit::Paste) => this.paste(&Paste, window, cx),
+                Some(crate::menu::Edit::SelectAll) => this.select_all(&SelectAll, window, cx),
+                None => {}
+            },
+            window,
+            cx,
+        )
+    }
+
     /// The `unit` a press at `position`, which lands on `offset`, takes: the
     /// chip under it whole, for anything wider than a character.
     fn unit_at(

@@ -179,6 +179,8 @@ impl Editor {
         ui::popover::close_popup(self, cx, |this| &mut this.block_menu);
         ui::popover::close_popup(self, cx, |this| &mut this.language_menu);
         ui::popover::close_popup(self, cx, |this| &mut this.table_menu);
+        ui::popover::close_popup(self, cx, |this| &mut this.text_menu);
+        ui::popover::close_popup(self, cx, |this| &mut this.image_menu);
         self.pasted = None;
         self.focus_handle.clone().focus(window, cx);
         // Ahead of the hit test, and returning without one: the
@@ -216,6 +218,40 @@ impl Editor {
         if let Some(id) = self.anchor_at(position) {
             cx.emit(EditorEvent::AnchorActivated(id));
         }
+        cx.notify();
+    }
+
+    /// A right press: the picture's menu on a picture; on text, the caret to
+    /// it unless it lands in the selection, and the edit menu at it.
+    pub(super) fn right_pressed(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        ui::popover::close_popup(self, cx, |this| &mut this.block_menu);
+        ui::popover::close_popup(self, cx, |this| &mut this.language_menu);
+        if let Some(target) = self.image_target_at(position) {
+            self.focus_handle.clone().focus(window, cx);
+            self.image_menu.open(Dropped::new(target, position));
+            return cx.notify();
+        }
+        if let Some(hit) = self.layouts.hit(position) {
+            let (start, end) = self.selection.ordered();
+            if self.selection.is_collapsed() || hit < start || hit > end {
+                self.selection = Selection::at(hit).clamp(&self.doc);
+                self.history.interrupt();
+                self.caret_moved();
+            }
+        }
+        self.focus_handle.clone().focus(window, cx);
+        let items = ui::menu::edit_items(
+            !self.selection.is_collapsed(),
+            cx.read_from_clipboard().is_some(),
+            [&Cut, &Copy, &Paste, &SelectAll],
+            window,
+        );
+        self.text_menu.open(Dropped::new(items, position));
         cx.notify();
     }
 

@@ -125,10 +125,12 @@ impl Render for Editor {
                             event.position,
                         ));
                         this.focus_handle.focus(window, cx);
-                        window.prevent_default();
-                        cx.stop_propagation();
-                        cx.notify();
+                    } else {
+                        this.right_pressed(event.position, window, cx);
                     }
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    cx.notify();
                 }),
             )
             // The drag has to be tracked from the container rather than from a
@@ -531,5 +533,7 @@ impl Render for Editor {
             .children(self.language_chip(&theme, cx))
             .children(self.dropdown(menu::Dropdown::Block, &theme, window, cx))
             .children(self.dropdown(menu::Dropdown::Language, &theme, window, cx))
+            .children(self.dropdown(menu::Dropdown::Text, &theme, window, cx))
+            .children(self.dropdown(menu::Dropdown::Image, &theme, window, cx))
     }
 }

@@ -1934,3 +1934,39 @@ fn table_drags_can_be_cancelled(cx: &mut TestAppContext) {
         assert!(cx.debug_bounds("table-drop").is_none());
     }
 }
+
+/// A right press on text opens the edit menu, and its rows act on the
+/// document.
+#[gpui::test]
+fn a_right_press_on_text_opens_the_edit_menu(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open(cx);
+    let at = cx.update(|_, cx| {
+        let (at, line) = editor
+            .read(cx)
+            .layouts()
+            .position(markdown::Cursor::new(1, markdown::Part::Body, 0))
+            .unwrap();
+        at + point(px(1.0), line / 2.0)
+    });
+    cx.simulate_mouse_down(at, gpui::MouseButton::Right, gpui::Modifiers::default());
+    cx.simulate_mouse_up(at, gpui::MouseButton::Right, gpui::Modifiers::default());
+    cx.run_until_parked();
+    assert_eq!(
+        head(&editor, &mut cx).block,
+        1,
+        "the caret goes to the press"
+    );
+    let select_all = cx
+        .debug_bounds("text-menu/Select All")
+        .expect("the menu is open");
+    cx.simulate_click(select_all.center(), gpui::Modifiers::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        assert_eq!(
+            editor.selection(),
+            markdown::Selection::all(editor.doc()),
+            "Select All selected the document"
+        );
+    });
+}

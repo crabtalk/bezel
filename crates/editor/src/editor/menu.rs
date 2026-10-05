@@ -44,6 +44,8 @@ pub const BLOCK_HANDLE: &str = "block-handle";
 pub const BLOCK_MENU: &str = "block-menu";
 const TABLE_MENU: &str = "table-menu";
 const LANGUAGE_MENU: &str = "language-menu";
+const TEXT_MENU: &str = "text-menu";
+const IMAGE_MENU: &str = "image-menu";
 
 /// One of the menus a block's chrome drops.
 #[derive(Clone, Copy)]
@@ -51,6 +53,8 @@ pub(super) enum Dropdown {
     Block,
     Table,
     Language,
+    Text,
+    Image,
 }
 
 impl Editor {
@@ -576,10 +580,10 @@ impl Editor {
 
     /// The rows of a dropped menu, while it is mounted.
     fn dropdown_items(&self, which: Dropdown, cx: &App) -> Option<Vec<Item>> {
-        if !self.blocks() {
-            return None;
-        }
         match which {
+            Dropdown::Text => Some(self.text_menu.get()?.of.clone()),
+            Dropdown::Image => Some(self.image_menu.get()?.of.items()),
+            _ if !self.blocks() => None,
             Dropdown::Block => Some(self.block_menu.get()?.of.1.menu()),
             Dropdown::Table => {
                 let (ix, line) = self.table_menu.get()?.of;
@@ -615,6 +619,8 @@ impl Editor {
             Dropdown::Block => self.block_menu.open_mut().map(|menu| &mut menu.cursor),
             Dropdown::Table => self.table_menu.open_mut().map(|menu| &mut menu.cursor),
             Dropdown::Language => self.language_menu.open_mut().map(|menu| &mut menu.cursor),
+            Dropdown::Text => self.text_menu.open_mut().map(|menu| &mut menu.cursor),
+            Dropdown::Image => self.image_menu.open_mut().map(|menu| &mut menu.cursor),
         }
     }
 
@@ -625,6 +631,8 @@ impl Editor {
             Dropdown::Language => {
                 ui::popover::close_popup(self, cx, |this| &mut this.language_menu)
             }
+            Dropdown::Text => ui::popover::close_popup(self, cx, |this| &mut this.text_menu),
+            Dropdown::Image => ui::popover::close_popup(self, cx, |this| &mut this.image_menu),
         }
     }
 
@@ -667,6 +675,25 @@ impl Editor {
                     self.set_language(ix, tag, cx);
                 }
             }
+            Dropdown::Image => {
+                let Some(menu) = self.image_menu.as_open() else {
+                    return;
+                };
+                menu.of.run(row, cx);
+                self.close_dropdown(which, cx);
+            }
+            Dropdown::Text => {
+                self.close_dropdown(which, cx);
+                match ui::menu::Edit::at(path) {
+                    Some(ui::menu::Edit::Cut) => self.cut(&super::Cut, window, cx),
+                    Some(ui::menu::Edit::Copy) => self.copy(&super::Copy, window, cx),
+                    Some(ui::menu::Edit::Paste) => self.paste(&super::Paste, window, cx),
+                    Some(ui::menu::Edit::SelectAll) => {
+                        self.select_all(&super::SelectAll, window, cx)
+                    }
+                    None => {}
+                }
+            }
         }
     }
 
@@ -699,6 +726,8 @@ impl Editor {
             (Dropdown::Block, self.block_menu.is_open()),
             (Dropdown::Table, self.table_menu.is_open()),
             (Dropdown::Language, self.language_menu.is_open()),
+            (Dropdown::Text, self.text_menu.is_open()),
+            (Dropdown::Image, self.image_menu.is_open()),
         ]
         .into_iter()
         .find_map(|(which, open)| open.then_some(which))
@@ -802,6 +831,16 @@ impl Editor {
                 let menu = self.language_menu.get()?;
                 let closing = self.language_menu.closing_since();
                 (LANGUAGE_MENU, (menu.at, &menu.cursor), closing)
+            }
+            Dropdown::Text => {
+                let menu = self.text_menu.get()?;
+                let closing = self.text_menu.closing_since();
+                (TEXT_MENU, (menu.at, &menu.cursor), closing)
+            }
+            Dropdown::Image => {
+                let menu = self.image_menu.get()?;
+                let closing = self.image_menu.closing_since();
+                (IMAGE_MENU, (menu.at, &menu.cursor), closing)
             }
         };
         let (at, cursor) = menu;

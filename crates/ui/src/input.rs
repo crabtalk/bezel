@@ -439,6 +439,8 @@ pub struct TextField {
     matches: Vec<Range<usize>>,
     /// In document order, none overlapping — see [`Self::set_chips`].
     chips: Vec<Chip>,
+    /// The right-click menu.
+    menu: crate::context_menu::ContextMenu,
 }
 
 impl EventEmitter<FieldEvent> for TextField {}
@@ -474,6 +476,7 @@ impl TextField {
             spans: Vec::new(),
             matches: Vec::new(),
             chips: Vec::new(),
+            menu: Default::default(),
         }
     }
 

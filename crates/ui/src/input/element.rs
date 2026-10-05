@@ -284,6 +284,7 @@ impl Render for TextField {
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::on_right_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
@@ -295,7 +296,7 @@ impl Render for TextField {
                     .rounded(px(Theme::button_radius()))
                     .bg(theme.input_bg)
                     .border_1()
-                    .border_color(if self.focus_handle.is_focused(_window) {
+                    .border_color(if self.focus_handle.contains_focused(_window, cx) {
                         theme.ring
                     } else {
                         theme.border
@@ -306,6 +307,7 @@ impl Render for TextField {
             .line_height(px(self.metrics.line_height()))
             .text_color(theme.text)
             .child(TextFieldElement { field: cx.entity() })
+            .children(self.edit_menu(_window, cx))
     }
 }
 

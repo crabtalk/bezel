@@ -71,9 +71,11 @@ pub(crate) fn set_indent(indent: MenuIndent, cx: &mut App) {
 /// the field; the arrows, enter and escape fall through to the menu.
 pub const SEARCH_CONTEXT: &str = "MenuSearch";
 
-/// The keymap a searchable submenu answers to, as data — see [`crate::keys`].
+/// The keymap a searchable submenu and a [`crate::context_menu`] answer to,
+/// as data — see [`crate::keys`].
 pub fn bindings() -> Vec<KeyBinding> {
     let ctx = Some(SEARCH_CONTEXT);
+    let context = Some(crate::context_menu::KEY_CONTEXT);
     vec![
         KeyBinding::new("down", SelectNext, ctx),
         KeyBinding::new("up", SelectPrevious, ctx),
@@ -81,6 +83,10 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-p", SelectPrevious, ctx),
         KeyBinding::new("enter", Confirm, ctx),
         KeyBinding::new("escape", Dismiss, ctx),
+        KeyBinding::new("down", SelectNext, context),
+        KeyBinding::new("up", SelectPrevious, context),
+        KeyBinding::new("enter", Confirm, context),
+        KeyBinding::new("escape", Dismiss, context),
     ]
 }
 
@@ -632,6 +638,51 @@ pub enum Hit {
     /// left to an `.on_mouse_down_out` on the card, which sees only its own
     /// bounds and would read a click in a submenu as a click away.
     Dismiss,
+}
+
+/// A row of a text surface's right-click menu, in the order [`edit_items`]
+/// lists them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edit {
+    Cut,
+    Copy,
+    Paste,
+    SelectAll,
+}
+
+impl Edit {
+    /// The row a [`Hit::Choose`] path names in [`edit_items`].
+    pub fn at(path: &[usize]) -> Option<Self> {
+        match path {
+            [0] => Some(Edit::Cut),
+            [1] => Some(Edit::Copy),
+            [2] => Some(Edit::Paste),
+            [4] => Some(Edit::SelectAll),
+            _ => None,
+        }
+    }
+}
+
+/// The rows of a text surface's right-click menu. `actions` are the surface's
+/// own Cut, Copy, Paste and Select All, read for the chord each row prints.
+pub fn edit_items(
+    selected: bool,
+    pasteable: bool,
+    actions: [&dyn Action; 4],
+    window: &Window,
+) -> Vec<Item> {
+    let [cut, copy, paste, select_all] = actions;
+    let enable = |item: Item, on: bool| if on { item } else { item.disabled() };
+    vec![
+        enable(Item::action("Cut").with_shortcut(cut, window), selected),
+        enable(Item::action("Copy").with_shortcut(copy, window), selected),
+        enable(
+            Item::action("Paste").with_shortcut(paste, window),
+            pasteable,
+        ),
+        Item::Separator,
+        Item::action("Select All").with_shortcut(select_all, window),
+    ]
 }
 
 /// The panel a menu drops: every [`Item`] as a row, in a
