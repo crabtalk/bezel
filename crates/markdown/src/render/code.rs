@@ -9,6 +9,8 @@ use super::*;
 /// held as one fence answers to, which is how an editor holds its source.
 /// Wrapping is not optional here: a paragraph is one line of markdown, and a
 /// source view that scrolled sideways would hide most of it.
+///
+/// Set at [`Typography::body`]'s size and leading, in the monospace face.
 pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
     let Editing {
         selection,
@@ -21,7 +23,8 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         ..
     } = editing;
     let theme = Theme::of(cx).clone();
-    let typography = typography.unwrap_or_else(|| cx.typography());
+    let mut typography = typography.unwrap_or_else(|| cx.typography());
+    typography.code = typography.body;
     let overlay = Overlay {
         block: 0,
         part: Part::Code,
