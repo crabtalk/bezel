@@ -121,9 +121,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
                 .rounded(px(6.));
             // The surface's flat fallback is opaque and would hide the pane.
             overlay = overlay.child(if crate::surface::lensed(theme) {
-                target
-                    .surface(theme, theme.drop_preview)
-                    .into_any_element()
+                target.surface(theme, theme.drop_preview).into_any_element()
             } else {
                 target.bg(theme.drop_target).into_any_element()
             });
