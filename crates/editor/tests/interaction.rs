@@ -458,6 +458,34 @@ fn up_retraces_the_path_down(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_selection_held_past_the_bottom_scrolls_and_extends(cx: &mut TestAppContext) {
+    let source: String = (0..40).map(|ix| format!("line {ix}\n\n")).collect();
+    let (editor, mut cx) = open_scrolling_with(&source, cx);
+    let start = cx.update(|_, cx| {
+        let editor = editor.read(cx);
+        let (at, line) = editor
+            .layouts()
+            .position(markdown::Cursor::new(0, markdown::Part::Body, 0))
+            .unwrap();
+        at + point(px(1.0), line / 2.0)
+    });
+    cx.simulate_mouse_down(start, gpui::MouseButton::Left, gpui::Modifiers::default());
+    let past = point(start.x, px(120.0));
+    cx.simulate_mouse_move(past, gpui::MouseButton::Left, gpui::Modifiers::default());
+    // The pointer holds still; only the timer moves anything now.
+    let reached = head(&editor, &mut cx).block;
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(500));
+    cx.run_until_parked();
+    cx.simulate_mouse_up(past, gpui::MouseButton::Left, gpui::Modifiers::default());
+
+    assert!(
+        head(&editor, &mut cx).block > reached,
+        "the selection grew past block {reached}"
+    );
+}
+
+#[gpui::test]
 fn vertical_motion_keeps_its_row_while_scrolling(cx: &mut TestAppContext) {
     let source = "word ".repeat(100);
     let (editor, mut cx) = open_scrolling_with(&source, cx);

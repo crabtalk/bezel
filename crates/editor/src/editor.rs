@@ -391,6 +391,10 @@ pub struct Editor {
     /// owes it a reveal.
     scroll: Option<gpui::ScrollHandle>,
     reveal: bool,
+    /// Where a held drag last was, in window coordinates.
+    drag_at: Option<gpui::Point<gpui::Pixels>>,
+    /// Scrolls [`Self::scroll`] while a drag is held past its top or bottom.
+    edge_scroll: Option<Task<()>>,
     /// Where the gutter handle was placed this frame, so the frame after can
     /// tell whether the block moved out from under it.
     handle_at: Option<gpui::Point<gpui::Pixels>>,
@@ -459,6 +463,8 @@ impl Editor {
             over_text: false,
             scroll: None,
             reveal: false,
+            drag_at: None,
+            edge_scroll: None,
             goal: None,
             handle_at: None,
             text_size: None,
@@ -589,7 +595,7 @@ impl Editor {
     }
 
     /// The box the document scrolls in, so typing off the bottom follows the
-    /// caret down.
+    /// caret down and a drag held past its top or bottom scrolls it.
     ///
     /// The host's rather than the editor's: a document goes in whatever pane
     /// the app gives it, and the gutter handle, the drop indicator and the
