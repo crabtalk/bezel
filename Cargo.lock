@@ -972,6 +972,7 @@ version = "0.2.8"
 dependencies = [
  "bezel-canvas-core",
  "bezel-gpui",
+ "bezel-icons",
  "bezel-theme",
  "bezel-ui",
  "pulldown-cmark",

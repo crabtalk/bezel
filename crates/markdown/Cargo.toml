@@ -22,7 +22,7 @@ workspace = true
 # A painted fence that carries a parser is a feature, so a build that never
 # shows one never compiles the parser.
 [features]
-mermaid = ["dep:canvas-core", "canvas-core/mermaid"]
+mermaid = ["dep:canvas-core", "canvas-core/mermaid", "dep:icons"]
 
 [dependencies]
 theme.workspace = true
@@ -30,6 +30,7 @@ ui.workspace = true
 gpui.workspace = true
 pulldown-cmark = { version = "0.13", default-features = false }
 canvas-core = { workspace = true, optional = true }
+icons = { workspace = true, optional = true, features = ["layout"] }
 
 [dev-dependencies]
 # `TestAppContext` — a window and a text layout without a display, which is

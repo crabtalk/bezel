@@ -175,6 +175,13 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
         .children(edge_labels)
 }
 
+/// The width and height [`diagram`] draws `canvas` at, or `None` for a canvas
+/// with nothing in it.
+pub fn size_of(canvas: &Canvas) -> Option<(f32, f32)> {
+    let (x0, y0, x1, y1) = extent(canvas)?;
+    Some((x1 - x0 + 2.0 * MARGIN, y1 - y0 + 2.0 * MARGIN))
+}
+
 /// Where `edge` runs: its route, else the spec's curve between its boxes.
 fn route(
     nodes: &std::collections::HashMap<&str, &Node>,

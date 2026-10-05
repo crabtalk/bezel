@@ -59,7 +59,7 @@ pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Op
     }
     #[cfg(feature = "mermaid")]
     if fence.language == crate::mermaid::LANGUAGE {
-        return crate::mermaid::render(fence.code, cx);
+        return crate::mermaid::render(fence.code, window, cx);
     }
     None
 }
