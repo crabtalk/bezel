@@ -36,12 +36,31 @@ pub(super) struct Frames {
     reveal: Option<Reveal>,
 }
 
+/// Where [`BlockLayouts::reveal_with`] puts a range that is not showing. A
+/// range already showing does not move either way.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RevealMode {
+    /// In the middle of the view.
+    #[default]
+    Center,
+    /// The least scroll that shows it, 16px in from the edge it came in
+    /// over. Taller than the view, its top shows.
+    Nearest,
+}
+
+/// The room [`RevealMode::Nearest`] leaves between a range and the view's
+/// edge, in pixels.
+pub(super) const REVEAL_MARGIN: f32 = 16.0;
+
 /// A range waiting to be scrolled into view.
 #[derive(Clone, Copy)]
 pub(super) struct Reveal {
     pub(super) range: Selection,
+    pub(super) mode: RevealMode,
     /// Frames it has scrolled in.
     pub(super) tries: u8,
+    /// Whether any of them moved the document.
+    pub(super) scrolled: bool,
     /// Where the column item holding it was placed last frame, in window
     /// coordinates. `None` before it has been built.
     pub(super) top: Option<Pixels>,
@@ -323,9 +342,16 @@ impl BlockLayouts {
     /// layouts and an [`Editing::scroll`]; without one the request is dropped
     /// at the next frame. A later call replaces an earlier one.
     pub fn reveal(&self, range: Selection) {
+        self.reveal_with(range, RevealMode::Center);
+    }
+
+    /// [`Self::reveal`], placing the start of `range` by `mode`.
+    pub fn reveal_with(&self, range: Selection, mode: RevealMode) {
         self.0.borrow_mut().reveal = Some(Reveal {
             range,
+            mode,
             tries: 0,
+            scrolled: false,
             top: None,
         });
     }
