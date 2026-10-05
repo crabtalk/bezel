@@ -383,7 +383,10 @@ pub fn tab(
         .text_style(TextStyle::Callout)
         .text_color(tint)
         .cursor_pointer()
-        .when(state == State::Focused, |el| el.bg(theme.element_active))
+        .when(state == State::Focused, |el| {
+            el.bg(theme.card_selected_bg())
+                .shadow(theme::glass_selected_shadows())
+        })
         .when(state != State::Focused, |el| {
             el.hover(move |el| el.bg(wash))
         })

@@ -29,7 +29,10 @@ pub fn menu_row(theme: &Theme, active: bool, fade: Option<Fade>) -> gpui::Div {
         .text_style(TextStyle::Body)
         .cursor_pointer();
     match (active, fade) {
-        (true, _) => row.bg(theme.card_selected_bg()).text_color(theme.text),
+        (true, _) => row
+            .bg(theme.card_selected_bg())
+            .shadow(theme::glass_selected_shadows())
+            .text_color(theme.text),
         (false, None) => row.text_color(theme.text.opacity(0.9)),
         (false, Some(fade)) => {
             let mut row = row
