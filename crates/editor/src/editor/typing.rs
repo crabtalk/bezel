@@ -486,8 +486,13 @@ impl Editor {
     /// it is turning — and a chord the menu never sees leaves it open over a
     /// query the caret has walked away from.
     pub(super) fn menu_took_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if let Some(choice) = self.pasted.as_ref().map(link::Paste::choice) {
-            self.confirm_paste(choice, cx);
+        if let Some(pasted) = &self.pasted {
+            if let Some(choice) = pasted.choice(None) {
+                self.confirm_paste(choice, cx);
+            }
+            return true;
+        }
+        if self.dropdown_enter(window, cx) {
             return true;
         }
         if self.mention.is_some() {
@@ -679,6 +684,7 @@ impl Editor {
         if self.pasted.take().is_none()
             && self.slash.take().is_none()
             && self.mention.take().is_none()
+            && !self.dropdown_dismiss(cx)
         {
             self.selection = Selection::at(self.selection.head);
         }

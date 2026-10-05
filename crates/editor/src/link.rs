@@ -6,6 +6,7 @@
 //! behind is a bare URL, and that is a link this model can still write down.
 
 use markdown::Cursor;
+use ui::menu::{self, Item};
 
 /// What a row does.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -40,7 +41,7 @@ pub struct Paste {
     /// card is, and only for a URL whose name says it is one — a row that
     /// paints a broken box is worse than a row that is not there.
     pub rows: Vec<Choice>,
-    pub active: usize,
+    pub cursor: menu::Cursor,
 }
 
 impl Paste {
@@ -52,21 +53,35 @@ impl Paste {
                 rows.push(Choice::Image);
             }
         }
-        Self {
+        let mut paste = Self {
             at,
             url,
             rows,
-            active: 0,
-        }
+            cursor: menu::Cursor::default(),
+        };
+        paste.step(1);
+        paste
     }
 
-    /// Walk the rows. Two rows do not wrap: past the end is the end.
+    /// The rows as [`ui::menu::card`] paints them.
+    pub fn menu(&self) -> Vec<Item> {
+        self.rows
+            .iter()
+            .map(|choice| Item::action(choice.label()))
+            .collect()
+    }
+
     pub fn step(&mut self, delta: isize) {
-        let last = self.rows.len() as isize - 1;
-        self.active = (self.active as isize + delta).clamp(0, last) as usize;
+        let menu = self.menu();
+        self.cursor.step(&menu, delta);
     }
 
-    pub fn choice(&self) -> Choice {
-        self.rows[self.active]
+    /// The row at `path`, or the live one for `None`.
+    pub fn choice(&self, path: Option<&[usize]>) -> Option<Choice> {
+        let row = match path {
+            Some(path) => *path.first()?,
+            None => self.cursor.row()?,
+        };
+        self.rows.get(row).copied()
     }
 }

@@ -637,7 +637,6 @@ dependencies = [
  "bezel-gpui",
  "bezel-icons",
  "bezel-markdown",
- "bezel-motion",
  "bezel-theme",
  "bezel-ui",
 ]

@@ -132,6 +132,16 @@ fn a_separator_carries_nothing() {
     assert!(!Item::action("a").disabled().selectable());
 }
 
+#[test]
+fn the_keyboard_steps_over_a_heading() {
+    let heading = Item::Heading("Turn into".into());
+    assert_eq!(heading.clone().with_icon(icons::glyph::Check), heading);
+    assert!(!heading.selectable());
+    let items = vec![heading, Item::action("a")];
+    assert_eq!(next_selectable(&items, None, 1), Some(1));
+    assert_eq!(next_selectable(&items, Some(1), 1), Some(1));
+}
+
 /// `a · Copy As › (Text · More › (Base64)) · ─ · b(disabled) · Empty ›() · c`
 fn nested() -> Vec<Item> {
     vec![

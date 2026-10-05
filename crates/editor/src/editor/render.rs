@@ -120,9 +120,8 @@ impl Render for Editor {
                         && let Some((block, Part::Cell { row, column })) =
                             this.layouts.cell_at(event.position)
                     {
-                        this.table_menu.open((
-                            block,
-                            TableTarget::Cell { row, column },
+                        this.table_menu.open(Dropped::new(
+                            (block, TableTarget::Cell { row, column }),
                             event.position,
                         ));
                         this.focus_handle.focus(window, cx);
@@ -202,7 +201,9 @@ impl Render for Editor {
                         // press is what dismissed it, which the note taken on
                         // the way down is the only way to tell.
                         if !this.block_menu.take_press_was_open() {
-                            this.block_menu.open((from, event.position));
+                            let rows = crate::slash::Rows::new(crate::block_menu::installed(cx));
+                            this.block_menu
+                                .open(Dropped::new((from, rows), event.position));
                         }
                         return cx.notify();
                     }
@@ -316,12 +317,12 @@ impl Render for Editor {
             // Motion is one method with a `Cursor` function and an "extend"
             // flag, so a shift variant cannot drift from the key it shadows.
             .on_action(cx.listener(|this, _: &Left, _, cx| {
-                if !this.slash_side(false, cx) {
+                if !this.menu_side(false, cx) {
                     this.moved(false, Cursor::left, cx)
                 }
             }))
             .on_action(cx.listener(|this, _: &Right, _, cx| {
-                if !this.slash_side(true, cx) {
+                if !this.menu_side(true, cx) {
                     this.moved(false, Cursor::right, cx)
                 }
             }))
@@ -491,7 +492,7 @@ impl Render for Editor {
             )
             .children(self.slash_menu(&theme, window, cx))
             .children(self.mention_menu(&theme, window, cx))
-            .children(self.paste_menu(&theme, cx))
+            .children(self.paste_menu(&theme, window, cx))
             .children(self.url_prompt(&theme, cx))
             .children(self.image_target(cx))
             .children(self.resize_preview())
@@ -501,9 +502,9 @@ impl Render for Editor {
             .children(self.table_strips(&theme, cx))
             .children(self.table_handles(&theme, cx))
             .children(self.table_drop_indicator(&theme))
-            .children(self.table_menu(&theme, cx))
+            .children(self.dropdown(menu::Dropdown::Table, &theme, window, cx))
             .children(self.language_chip(&theme, cx))
-            .children(self.block_menu(&theme, cx))
-            .children(self.language_menu(&theme, cx))
+            .children(self.dropdown(menu::Dropdown::Block, &theme, window, cx))
+            .children(self.dropdown(menu::Dropdown::Language, &theme, window, cx))
     }
 }

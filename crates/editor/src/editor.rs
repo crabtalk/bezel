@@ -268,11 +268,28 @@ fn source_doc(source: &str) -> Doc {
     }
 }
 
-/// One of the two floating menus a block drops — the block it belongs to and
-/// where it hangs. A `Popup` rather than an `Option` for the exit phase, and
-/// for the press note: the card's `on_mouse_down_out` fires on the *press*, so
-/// without one a trigger's click on the *release* reopens what it just shut.
-pub(crate) type MenuPopup = ui::popover::Popup<(usize, gpui::Point<gpui::Pixels>)>;
+/// A floating menu a block drops. A `Popup` rather than an `Option` for the
+/// exit phase, and for the press note: the card's `on_mouse_down_out` fires on
+/// the *press*, so without one a trigger's click on the *release* reopens what
+/// it just shut.
+pub(crate) type MenuPopup<T> = ui::popover::Popup<Dropped<T>>;
+
+/// What a dropped menu belongs to, where it hangs, and its live row.
+pub(crate) struct Dropped<T> {
+    pub of: T,
+    pub at: gpui::Point<gpui::Pixels>,
+    pub cursor: ui::menu::Cursor,
+}
+
+impl<T> Dropped<T> {
+    pub fn new(of: T, at: gpui::Point<gpui::Pixels>) -> Self {
+        Self {
+            of,
+            at,
+            cursor: ui::menu::Cursor::default(),
+        }
+    }
+}
 
 /// The row, column, or cell whose table menu is open.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -341,7 +358,7 @@ pub struct Editor {
     /// A table row's or column's menu: the table, the line and where it hangs.
     table_drag: Option<table::TableDrag>,
     table_dragged: bool,
-    table_menu: ui::popover::Popup<(usize, TableTarget, gpui::Point<gpui::Pixels>)>,
+    table_menu: MenuPopup<(usize, TableTarget)>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
     /// An image being dragged wider or narrower by its edge handle, and the
@@ -351,10 +368,10 @@ pub struct Editor {
     /// document's own value here is what makes a press that never moved
     /// read back as no change at all.
     resizing: Option<(usize, Option<u32>)>,
-    /// The block menu the handle opened, and where to anchor it.
-    block_menu: MenuPopup,
-    /// The language menu a fence's header opened, and the block it belongs to.
-    language_menu: MenuPopup,
+    /// The block menu the handle opened, over the block and its rows.
+    block_menu: MenuPopup<(usize, crate::slash::Rows)>,
+    /// The language menu a fence's header opened, over its block.
+    language_menu: MenuPopup<usize>,
     /// Set by a floating layer's press — the gutter handle, the URL prompt —
     /// so the editor's own press does not undo what that press just did.
     press_claimed: bool,

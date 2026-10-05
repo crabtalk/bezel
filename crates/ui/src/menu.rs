@@ -147,6 +147,8 @@ pub enum Item {
         selected: usize,
         enabled: bool,
     },
+    /// A section's name over the rows after it. Never lit, never chosen.
+    Heading(SharedString),
     Separator,
 }
 
@@ -208,25 +210,25 @@ impl Item {
         }
     }
 
-    /// No-ops on a separator, which has nothing to hang a glyph on, and on a
-    /// segmented row, whose glyphs are its segments'.
+    /// No-ops on a separator and a heading, which have nothing to hang a glyph
+    /// on, and on a segmented row, whose glyphs are its segments'.
     pub fn with_icon(mut self, icon: impl Into<Icon>) -> Self {
         match &mut self {
             Item::Action { icon: slot, .. } | Item::Submenu { icon: slot, .. } => {
                 *slot = Some(icon.into())
             }
-            Item::Segmented { .. } | Item::Separator => {}
+            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {}
         }
         self
     }
 
     /// Moves the row's content in by `level` steps of the app's
     /// [`MenuIndent`], so a flat list of rows can show a hierarchy. No-ops on
-    /// a separator and on a segmented row.
+    /// a separator, a heading and a segmented row.
     pub fn indented(mut self, level: usize) -> Self {
         match &mut self {
             Item::Action { indent, .. } | Item::Submenu { indent, .. } => *indent = level,
-            Item::Segmented { .. } | Item::Separator => {}
+            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {}
         }
         self
     }
@@ -315,7 +317,7 @@ impl Item {
             Item::Action { enabled, .. }
             | Item::Submenu { enabled, .. }
             | Item::Segmented { enabled, .. } => *enabled = false,
-            Item::Separator => {}
+            Item::Heading(_) | Item::Separator => {}
         }
         self
     }
@@ -330,7 +332,7 @@ impl Item {
             Item::Segmented {
                 enabled, segments, ..
             } => *enabled && !segments.is_empty(),
-            Item::Separator => false,
+            Item::Heading(_) | Item::Separator => false,
         }
     }
 
@@ -371,7 +373,7 @@ impl Item {
                 None => label.to_string(),
             },
             Item::Submenu { label, .. } => label.to_string(),
-            Item::Segmented { .. } | Item::Separator => String::new(),
+            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => String::new(),
         }
     }
 
@@ -635,7 +637,8 @@ pub enum Hit {
 /// The panel a menu drops: every [`Item`] as a row, in a
 /// [`popover::popover_card`], with a further panel hanging off each submenu row
 /// the [`Cursor`] holds open. `id` prefixes the rows' element ids, so two menus
-/// open at once keep their hover state apart.
+/// open at once keep their hover state apart. In a test build each action and
+/// submenu row answers to the debug selector `{id}/{label}`.
 ///
 /// The root panel is returned unanchored: mount it through one of
 /// [`popover`]'s anchored layers ([`popover::anchored_menu_below`],
@@ -761,8 +764,12 @@ impl<V: 'static> Tree<V> {
             .p(px(popover::MENU_PAD))
             .children(visible.iter().map(|&row| {
                 let item = &items[row];
-                if matches!(item, Item::Separator) {
-                    return popover::divider(theme).into_any_element();
+                match item {
+                    Item::Separator => return popover::divider(theme).into_any_element(),
+                    Item::Heading(label) => {
+                        return popover::menu_heading(theme, label.clone()).into_any_element();
+                    }
+                    _ => {}
                 }
                 let path: Vec<usize> = prefix.iter().copied().chain([row]).collect();
                 if let Item::Segmented {
@@ -792,7 +799,7 @@ impl<V: 'static> Tree<V> {
                         enabled,
                         ..
                     } => (label.clone(), icon.clone(), *indent, *enabled),
-                    Item::Segmented { .. } | Item::Separator => {
+                    Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {
                         unreachable!("returned above")
                     }
                 };
@@ -820,6 +827,8 @@ impl<V: 'static> Tree<V> {
                 } else {
                     disabled_row(theme).id(id.clone())
                 };
+                let selector = format!("{}/{label}", self.id);
+                let row = row.debug_selector(move || selector);
                 let row = row.when_some(hint, |row, hint| {
                     row.tooltip(move |window, cx| Tooltip::text(hint.clone(), window, cx))
                 });
