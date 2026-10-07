@@ -1,5 +1,21 @@
 [
   {
+    "version": "0.2.10",
+    "date": "2026-10-07",
+    "summary": "Public fence panel and band, translucent diagram nodes, a detached web inspector on macOS, and list items sized by their content.",
+    "new": [
+      "`markdown::render::fence_panel` and `fence_band` are public, so an app can draw its own fences in the box and band markdown uses."
+    ],
+    "changed": [
+      "Diagram nodes fill with a light wash of ink instead of the card surface, so they take on what the diagram sits on.",
+      "gpui is `bezel-gpui` 0.3.17."
+    ],
+    "fixed": [
+      "`WebView::open_inspector` opens the inspector in its own window on macOS instead of attaching it inside gpui's view.",
+      "List item text in a shrink-to-fit container is sized by its content instead of collapsing."
+    ]
+  },
+  {
     "version": "0.2.9",
     "date": "2026-10-05",
     "summary": "Mermaid diagrams in markdown, an extended canvas format in the new bezel-canvas-core, resizable painted fences and embed cards, right-click menus, editor popups on ui::menu, nearest reveal, drag autoscroll, and hideable inactive carets.",
