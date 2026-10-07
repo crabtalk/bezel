@@ -414,7 +414,7 @@ impl Page {
     #[cfg(feature = "inspector")]
     pub(crate) fn open_inspector(&self) {
         if let Some(view) = self.built() {
-            view.open_devtools();
+            platform::open_inspector(view);
         }
     }
 

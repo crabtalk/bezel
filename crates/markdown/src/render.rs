@@ -1166,7 +1166,7 @@ fn marker_row(
         .flex_row()
         .gap(px(MARKER_GAP))
         .child(marker)
-        .child(div().flex_1().min_w_0().child(text_element(
+        .child(div().flex_auto().min_w_0().child(text_element(
             text,
             typography.body.size(),
             typography.body.line_height(),
