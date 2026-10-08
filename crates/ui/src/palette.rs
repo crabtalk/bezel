@@ -142,10 +142,14 @@ impl Render for CommandPalette {
         let theme = Theme::of(cx).clone();
         let card = popover::popover_card(&theme)
             .w(px(420.0))
-            .child(
-                self.search
-                    .body(&theme, None, |view| &mut view.search, Self::choose, cx),
-            );
+            .child(self.search.body(
+                &theme,
+                None,
+                None,
+                |view| &mut view.search,
+                Self::choose,
+                cx,
+            ));
 
         // The actions live on a wrapper, not the card, because the card is
         // handed to `material` — which frosts the backdrop so the content
