@@ -421,7 +421,7 @@ impl Editor {
                 vec![]
             });
             // Made where the handle was, not at the caret — see `drop_height`.
-            self.reveal = false;
+            self.reveal = None;
             // Handed back its natural width, which only the paint that
             // measures it knows: the next frame still places the handle from
             // the width being left behind, and this asks for the one after,

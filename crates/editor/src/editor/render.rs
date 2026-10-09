@@ -417,7 +417,7 @@ impl Render for Editor {
                                 caret_on: self.caret_on,
                                 layouts: Some(&self.layouts),
                                 annotations: &self.annotations(),
-                                keep: if self.reveal {
+                                keep: if self.reveal.is_some() {
                                     std::slice::from_ref(&reveal_line)
                                 } else {
                                     &[]
@@ -489,7 +489,7 @@ impl Render for Editor {
                                 base: self.base.as_deref(),
                                 // A reveal owed to a caret nobody is focused on
                                 // still needs its block built to find it.
-                                keep: if self.reveal {
+                                keep: if self.reveal.is_some() {
                                     std::slice::from_ref(&self.selection.head.block)
                                 } else {
                                     &[]

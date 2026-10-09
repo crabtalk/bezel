@@ -71,7 +71,7 @@ impl Editor {
         self.dismiss_menus();
         self.switch(mode);
         self.history.landed(EditKind::Structure, self.selection);
-        self.reveal = true;
+        self.reveal = Some(Reveal::Nearest);
         self.caret_moved();
         cx.emit(EditorEvent::ModeChanged(mode));
         cx.emit(EditorEvent::Changed);

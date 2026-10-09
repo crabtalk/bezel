@@ -308,6 +308,16 @@ pub(crate) enum Line {
     Column(usize),
 }
 
+/// Where a reveal leaves the caret's row in the scroll box.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Reveal {
+    /// The least scroll that brings the row inside the box.
+    Nearest,
+    /// The row at the box's top edge, or as near it as the document's end
+    /// allows.
+    Top,
+}
+
 pub struct Editor {
     doc: Doc,
     /// The dialect this document is read and written in — the app's own marks,
@@ -396,10 +406,10 @@ pub struct Editor {
     /// Whether the pointer is over painted text, which is the only place the
     /// editor claims an I-beam.
     over_text: bool,
-    /// The host's scroll box, when it gave one, and whether the caret still
-    /// owes it a reveal.
+    /// The host's scroll box, when it gave one, and the reveal the caret still
+    /// owes it.
     scroll: Option<gpui::ScrollHandle>,
-    reveal: bool,
+    reveal: Option<Reveal>,
     /// Where a held drag last was, in window coordinates.
     drag_at: Option<gpui::Point<gpui::Pixels>>,
     /// Scrolls [`Self::scroll`] while a drag is held past its top or bottom.
@@ -474,7 +484,7 @@ impl Editor {
             dragging: None,
             over_text: false,
             scroll: None,
-            reveal: false,
+            reveal: None,
             drag_at: None,
             edge_scroll: None,
             goal: None,
@@ -632,9 +642,19 @@ impl Editor {
     /// Clamped, because the caller's range came from somewhere the document may
     /// have moved on from.
     pub fn select(&mut self, selection: Selection, cx: &mut Context<Self>) {
+        self.select_revealing(selection, Reveal::Nearest, cx);
+    }
+
+    /// [`Self::select`], scrolling the caret's row to the top of the scroll
+    /// box — what a jump to a heading wants, from either side of it.
+    pub fn select_to_top(&mut self, selection: Selection, cx: &mut Context<Self>) {
+        self.select_revealing(selection, Reveal::Top, cx);
+    }
+
+    fn select_revealing(&mut self, selection: Selection, reveal: Reveal, cx: &mut Context<Self>) {
         self.selection = selection.clamp(&self.doc);
         self.history.interrupt();
-        self.reveal = true;
+        self.reveal = Some(reveal);
         self.caret_moved();
         cx.notify();
     }

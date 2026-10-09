@@ -31,11 +31,11 @@ impl Editor {
     }
 
     pub(super) fn reveal_caret(&mut self, window: &mut Window) {
-        if !self.reveal {
+        let Some(reveal) = self.reveal else {
             return;
-        }
+        };
         let Some(scroll) = self.scroll.clone() else {
-            self.reveal = false;
+            self.reveal = None;
             return;
         };
         // Left set when the caret has not painted: a block with no text at all
@@ -47,10 +47,18 @@ impl Editor {
         let view = scroll.bounds();
         let offset = scroll.offset();
         let mut y = offset.y;
-        if at.y < view.top() {
-            y += view.top() - at.y;
-        } else if at.y + line > view.bottom() {
-            y -= at.y + line - view.bottom();
+        match reveal {
+            // Within half a pixel is there: painted rows snap to device
+            // pixels, and an exact target can be missed every frame.
+            Reveal::Top if (at.y - view.top()).abs() >= gpui::px(0.5) => {
+                y += view.top() - at.y;
+            }
+            Reveal::Top => {}
+            Reveal::Nearest if at.y < view.top() => y += view.top() - at.y,
+            Reveal::Nearest if at.y + line > view.bottom() => {
+                y -= at.y + line - view.bottom();
+            }
+            Reveal::Nearest => {}
         }
         // `set_offset` clamps nothing, and past the ends the document would
         // scroll away from the caret it was asked to show.
@@ -61,7 +69,7 @@ impl Editor {
             scroll.set_offset(gpui::point(offset.x, y));
             window.request_animation_frame();
         } else {
-            self.reveal = false;
+            self.reveal = None;
         }
     }
 
@@ -163,7 +171,7 @@ impl Editor {
         self.history.interrupt();
         self.stored.clear();
         self.pasted = None;
-        self.reveal = true;
+        self.reveal = Some(Reveal::Nearest);
         self.caret_moved();
     }
 
@@ -198,7 +206,7 @@ impl Editor {
         self.history.landed(kind, self.selection);
         // Typing moves the caret as surely as an arrow key does, and a split
         // moves it onto a block that does not exist until this frame paints.
-        self.reveal = true;
+        self.reveal = Some(Reveal::Nearest);
         self.caret_moved();
         cx.emit(EditorEvent::Changed);
         cx.notify();
