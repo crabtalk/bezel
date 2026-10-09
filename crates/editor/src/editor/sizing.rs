@@ -86,7 +86,7 @@ impl Editor {
             });
             // Made where the grip was, not at the caret: the reveal `edit`
             // asked for would scroll to a caret that can be pages away.
-            self.reveal = false;
+            self.reveal = None;
         } else {
             cx.notify();
         }

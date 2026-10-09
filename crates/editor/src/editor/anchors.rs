@@ -29,7 +29,7 @@ impl Editor {
     /// The last match wins, so the newer of two overlapping ranges is the one a
     /// click opens.
     pub fn anchor_at(&self, at: gpui::Point<gpui::Pixels>) -> Option<AnchorId> {
-        let at = self.layouts.hit(at)?;
+        let (at, _) = self.layouts.hit(at)?;
         self.anchors
             .iter()
             .rfind(|anchor| {
@@ -42,7 +42,9 @@ impl Editor {
     /// Where to float a thread, mirroring [`Self::selection_bounds`].
     pub fn anchor_bounds(&self, id: AnchorId) -> Option<gpui::Bounds<gpui::Pixels>> {
         let anchor = self.anchors.iter().find(|anchor| anchor.id == id)?;
-        let (point, line_height) = self.layouts.position(anchor.range.ordered().0)?;
+        let (point, line_height) = self
+            .layouts
+            .position(anchor.range.ordered().0, Affinity::Downstream)?;
         Some(gpui::Bounds::new(
             point,
             gpui::size(gpui::px(0.0), line_height),

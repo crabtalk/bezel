@@ -31,26 +31,37 @@ impl Editor {
     }
 
     pub(super) fn reveal_caret(&mut self, window: &mut Window) {
-        if !self.reveal {
+        let Some(reveal) = self.reveal else {
             return;
-        }
+        };
         let Some(scroll) = self.scroll.clone() else {
-            self.reveal = false;
+            self.reveal = None;
             return;
         };
         // Left set when the caret has not painted: a block with no text at all
         // never answers, and the next move is what gets it back.
-        let Some((at, line)) = self.layouts.position(self.selection.head) else {
+        let Some((at, line)) = self
+            .layouts
+            .position(self.selection.head, self.selection.affinity)
+        else {
             return;
         };
 
         let view = scroll.bounds();
         let offset = scroll.offset();
         let mut y = offset.y;
-        if at.y < view.top() {
-            y += view.top() - at.y;
-        } else if at.y + line > view.bottom() {
-            y -= at.y + line - view.bottom();
+        match reveal {
+            // Within half a pixel is there: painted rows snap to device
+            // pixels, and an exact target can be missed every frame.
+            Reveal::Top if (at.y - view.top()).abs() >= gpui::px(0.5) => {
+                y += view.top() - at.y;
+            }
+            Reveal::Top => {}
+            Reveal::Nearest if at.y < view.top() => y += view.top() - at.y,
+            Reveal::Nearest if at.y + line > view.bottom() => {
+                y -= at.y + line - view.bottom();
+            }
+            Reveal::Nearest => {}
         }
         // `set_offset` clamps nothing, and past the ends the document would
         // scroll away from the caret it was asked to show.
@@ -61,7 +72,7 @@ impl Editor {
             scroll.set_offset(gpui::point(offset.x, y));
             window.request_animation_frame();
         } else {
-            self.reveal = false;
+            self.reveal = None;
         }
     }
 
@@ -109,6 +120,53 @@ impl Editor {
     ) {
         let head = to(self.selection.head, &self.doc).clamp(&self.doc);
         self.head_to(head, extend);
+        cx.notify();
+    }
+
+    /// Left and right. At a soft wrap a collapsed caret first crosses to the
+    /// other row, keeping its offset.
+    pub(super) fn horizontal(&mut self, right: bool, extend: bool, cx: &mut Context<Self>) {
+        let selection = self.selection;
+        let crossed = match (right, selection.affinity) {
+            (false, Affinity::Downstream) => Affinity::Upstream,
+            (true, Affinity::Upstream) => Affinity::Downstream,
+            _ => selection.affinity,
+        };
+        if !extend
+            && selection.is_collapsed()
+            && crossed != selection.affinity
+            && self.layouts.wraps_at(selection.head)
+        {
+            self.head_to(selection.head, false);
+            self.selection.affinity = crossed;
+            return cx.notify();
+        }
+        match right {
+            true => self.moved(extend, Cursor::right, cx),
+            false => self.moved(extend, Cursor::left, cx),
+        }
+    }
+
+    /// Home and End: the edge of the painted row holding the caret, or of its
+    /// line before anything has painted.
+    pub(super) fn row_edge(&mut self, end: bool, extend: bool, cx: &mut Context<Self>) {
+        let (head, affinity) = (self.selection.head, self.selection.affinity);
+        let painted = match end {
+            true => self.layouts.row_end(head, affinity),
+            false => self
+                .layouts
+                .row_start(head, affinity)
+                .map(|at| (at, Affinity::Downstream)),
+        };
+        let (to, affinity) = painted.unwrap_or_else(|| {
+            let line = match end {
+                true => line_end(head, &self.doc),
+                false => line_home(head, &self.doc),
+            };
+            (line, Affinity::Downstream)
+        });
+        self.head_to(to.clamp(&self.doc), extend);
+        self.selection.affinity = affinity;
         cx.notify();
     }
 
@@ -163,7 +221,7 @@ impl Editor {
         self.history.interrupt();
         self.stored.clear();
         self.pasted = None;
-        self.reveal = true;
+        self.reveal = Some(Reveal::Nearest);
         self.caret_moved();
     }
 
@@ -198,7 +256,7 @@ impl Editor {
         self.history.landed(kind, self.selection);
         // Typing moves the caret as surely as an arrow key does, and a split
         // moves it onto a block that does not exist until this frame paints.
-        self.reveal = true;
+        self.reveal = Some(Reveal::Nearest);
         self.caret_moved();
         cx.emit(EditorEvent::Changed);
         cx.notify();
@@ -246,27 +304,20 @@ impl Editor {
         if self.dropdown_step(delta, cx) {
             return;
         }
-        let head = self.selection.head;
-        let Some((at, _)) = self.layouts.position(head) else {
+        let (head, affinity) = (self.selection.head, self.selection.affinity);
+        let Some((at, _)) = self.layouts.position(head, affinity) else {
             return self.moved(
                 extend,
                 |at, doc| if down { at.down(doc) } else { at.up(doc) },
                 cx,
             );
         };
-        let from = self
-            .goal
-            .map_or(at, |goal| gpui::point(goal.x, at.y + goal.row_from_caret));
-        match self.layouts.step_row(head, from, down) {
-            Some((to, row)) => {
+        let x = self.goal.unwrap_or(at.x);
+        match self.layouts.step_row(head, affinity, x, down) {
+            Some((to, affinity)) => {
                 self.head_to(to.clamp(&self.doc), extend);
-                self.goal = self
-                    .layouts
-                    .position(self.cursor())
-                    .map(|(caret, _)| VerticalGoal {
-                        x: from.x,
-                        row_from_caret: row - caret.y,
-                    });
+                self.selection.affinity = affinity;
+                self.goal = Some(x);
             }
             // Off the top is the start of the document and off the bottom is
             // its end, which is what every native field does.
@@ -289,10 +340,7 @@ impl Editor {
                 self.head_to(to.clamp(&self.doc), extend);
                 // The column outlives the trip to either end, so coming back
                 // retraces the path.
-                self.goal = Some(VerticalGoal {
-                    x: from.x,
-                    row_from_caret: gpui::Pixels::ZERO,
-                });
+                self.goal = Some(x);
             }
         }
         cx.notify();

@@ -53,10 +53,10 @@ impl Editor {
                 Line::Column(from) => this.doc.move_column(block, from, to),
             };
             let delta = Delta::CellsMoved { block, from, to };
-            this.selection = Selection {
-                anchor: delta.cursor(this.selection.anchor).unwrap(),
-                head: delta.cursor(this.selection.head).unwrap(),
-            };
+            this.selection = Selection::new(
+                delta.cursor(this.selection.anchor).unwrap(),
+                delta.cursor(this.selection.head).unwrap(),
+            );
             this.hovered_cell = None;
             vec![delta]
         });

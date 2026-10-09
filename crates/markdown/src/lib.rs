@@ -65,11 +65,11 @@ pub use preview::{LinkCard, LinkPreview, Preview};
 pub use quote::Quote;
 pub use render::{
     Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,
-    ImageOverlayCorner, LeaveBlock, OnImage, OnLeave, OnResize, OnRewrite, OnToggle,
+    ImageOverlayCorner, LeaveBlock, OnImage, OnJump, OnLeave, OnResize, OnRewrite, OnToggle,
     PAINTED_CONTEXT, RevealMode, Toggle, image_source, markdown, render, render_source,
     render_with,
 };
-pub use select::{Cursor, Selection};
+pub use select::{Affinity, Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_at_many, serialize_with};
 pub use source::spans as source_spans;
 pub use source_style::SourceStyle;

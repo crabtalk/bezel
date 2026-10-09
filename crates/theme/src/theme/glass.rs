@@ -6,19 +6,15 @@ use gpui::{Hsla, WindowBackgroundAppearance, hsla};
 use crate::{Appearance, color, paint, theme::Theme};
 
 impl Theme {
-    /// The frost tint painted over the blurred window background (macOS glass),
-    /// at [`Brand::vibrancy_alpha`](crate::Brand::vibrancy_alpha). Dark: darker than
-    /// `surface`, matched to the reference vibrancy scrim `hsl(0 0% 3%)`.
-    /// Light: the material's own measured tone. Opaque, this IS the surface tone.
+    /// The frost tint painted over the blurred window background (macOS glass):
+    /// [`Self::vibrancy_tone`] at [`Brand::vibrancy_alpha`](crate::Brand::vibrancy_alpha).
+    /// Opaque, this IS the surface tone.
     pub fn vibrancy_tint(&self) -> Hsla {
         let alpha = self.vibrancy_alpha;
         if alpha >= 1.0 {
             return self.surface;
         }
-        match self.appearance {
-            Appearance::Dark => color::grey(8).opacity(alpha),
-            Appearance::Light => self.material.tone.opacity(alpha),
-        }
+        self.vibrancy_tone.opacity(alpha)
     }
 
     /// The app's root fill: the frost where glass is on, the opaque panel

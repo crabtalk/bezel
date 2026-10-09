@@ -325,6 +325,18 @@ impl Cursor {
     }
 }
 
+/// Which painted row the head of a [`Selection`] sits on when its offset is a
+/// soft wrap, where one offset both ends a row and starts the next. Anywhere
+/// else it changes nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Affinity {
+    /// The start of the row after the wrap.
+    #[default]
+    Downstream,
+    /// The end of the row before the wrap.
+    Upstream,
+}
+
 /// A range in the document: where the selection started, and where it is being
 /// dragged to.
 ///
@@ -335,6 +347,8 @@ impl Cursor {
 pub struct Selection {
     pub anchor: Cursor,
     pub head: Cursor,
+    /// The head's row at a soft wrap.
+    pub affinity: Affinity,
 }
 
 impl From<Cursor> for Selection {
@@ -346,14 +360,19 @@ impl From<Cursor> for Selection {
 impl Selection {
     /// A collapsed selection — a plain caret.
     pub fn at(cursor: Cursor) -> Self {
-        Self {
-            anchor: cursor,
-            head: cursor,
-        }
+        Self::new(cursor, cursor)
     }
 
     pub fn new(anchor: Cursor, head: Cursor) -> Self {
-        Self { anchor, head }
+        Self {
+            anchor,
+            head,
+            affinity: Affinity::Downstream,
+        }
+    }
+
+    pub fn with_affinity(self, affinity: Affinity) -> Self {
+        Self { affinity, ..self }
     }
 
     pub fn is_collapsed(&self) -> bool {
@@ -367,13 +386,14 @@ impl Selection {
 
     /// Move the head, leaving the anchor — every shift+motion and every drag.
     pub fn extend_to(self, head: Cursor) -> Self {
-        Self { head, ..self }
+        Self::new(self.anchor, head)
     }
 
     pub fn clamp(self, doc: &Doc) -> Self {
         Self {
             anchor: self.anchor.clamp(doc),
             head: self.head.clamp(doc),
+            ..self
         }
     }
 

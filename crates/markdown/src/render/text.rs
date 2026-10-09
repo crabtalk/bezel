@@ -274,6 +274,7 @@ pub(super) fn painted_text(
     let (ix, part) = (overlay.block, overlay.part);
     let shown = flat.shown.clone();
     let caret = overlay.caret_painted().map(|offset| shown.at(offset));
+    let affinity = overlay.affinity();
     let selected = overlay.selected(len).map(|range| shown.range(&range));
     let span = 0..len;
     // Only where the caret already is, and only while there is nothing to
@@ -296,7 +297,7 @@ pub(super) fn painted_text(
     );
     let glyph = caret
         .filter(|_| shape.cuts_out(hollow))
-        .and_then(|offset| glyph_at(&flat.text, offset));
+        .and_then(|offset| overlay.covered(&flat.text, offset));
     let runs = match &glyph {
         Some(glyph) => ui::input::caret::recoloured(flat.runs, glyph, theme.bg),
         None => flat.runs,
@@ -310,6 +311,7 @@ pub(super) fn painted_text(
             styled.into_any_element()
         } else {
             let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
+            let jump = overlay.jump.cloned();
             let hovered: Vec<(Range<usize>, String)> = mentions
                 .iter()
                 .filter(|mention| mention.glyph.is_none())
@@ -318,7 +320,7 @@ pub(super) fn painted_text(
             let text = InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
                 .on_click(ranges, move |clicked, window, cx| {
                     if let Some(url) = urls.get(clicked) {
-                        crate::link::open(url, window, cx);
+                        crate::link::follow(url, jump.as_ref(), window, cx);
                     }
                 });
             match hovered.is_empty() {
@@ -400,6 +402,7 @@ pub(super) fn painted_text(
                 paint_caret(
                     &layout,
                     offset,
+                    affinity,
                     glyph.as_ref(),
                     CaretPaint {
                         shape,
@@ -527,11 +530,48 @@ pub(super) struct CaretPaint {
     pub face: gpui::Font,
 }
 
+/// Where a caret at `offset` paints in `layout`, on the row `affinity` names
+/// at a soft wrap.
+pub(super) fn caret_position(
+    layout: &TextLayout,
+    offset: usize,
+    affinity: Affinity,
+) -> Option<Point<Pixels>> {
+    if affinity == Affinity::Downstream
+        && let Some(start) = wrapped_row_start(layout, offset)
+    {
+        return Some(start);
+    }
+    layout.position_for_index(offset)
+}
+
+/// The origin of the row a soft wrap at `offset` starts, or `None` when no
+/// wrap falls there.
+fn wrapped_row_start(layout: &TextLayout, offset: usize) -> Option<Point<Pixels>> {
+    let line_height = layout.line_height();
+    let mut origin = layout.bounds().origin;
+    let mut line_start = 0;
+    for line in layout.line_layouts() {
+        if offset > line_start + line.len() {
+            origin.y += line.size(line_height).height;
+            line_start += line.len() + 1;
+            continue;
+        }
+        let shaped = &line.unwrapped_layout;
+        let row = line.wrap_boundaries().iter().position(|wrap| {
+            line_start + shaped.runs[wrap.run_ix].glyphs[wrap.glyph_ix].index == offset
+        })?;
+        return Some(origin + point(px(0.0), line_height * (row + 1) as f32));
+    }
+    None
+}
+
 /// Paints the caret at `offset` in `layout`. A `glyph` — the range recoloured
 /// for a solid block — is what the block covers, on whichever row it shaped.
 pub(super) fn paint_caret(
     layout: &TextLayout,
     offset: usize,
+    affinity: Affinity,
     glyph: Option<&Range<usize>>,
     paint: CaretPaint,
     window: &mut Window,
@@ -541,7 +581,7 @@ pub(super) fn paint_caret(
     let (head, width) = match covered {
         Some(rect) => (rect.origin, rect.size.width),
         None => {
-            let Some(head) = layout.position_for_index(offset) else {
+            let Some(head) = caret_position(layout, offset, affinity) else {
                 return;
             };
             let width = match paint.shape {

@@ -4,6 +4,7 @@ use gpui::{Global, Hsla, SharedString};
 
 use crate::{Appearance, paint};
 
+mod family;
 mod glass;
 pub(crate) mod install;
 mod layout;
@@ -11,6 +12,7 @@ mod palettes;
 mod syntax;
 pub(crate) mod typography;
 
+pub use family::{ThemeFamily, Variant};
 pub use layout::{ControlSize, Sizing};
 pub use syntax::{HighlightKind, SyntaxPalette};
 pub use typography::{Metrics, TextStyle, Typeset, base_text_size};
@@ -340,6 +342,13 @@ pub struct Theme {
     /// Diff: hunk-header wash (bluish grey).
     pub diff_hunk_bg: Hsla,
 
+    // ---- paint: terminal ----
+    /// The terminal grid's background, behind cells that paint none.
+    pub terminal_bg: Hsla,
+    /// The 16 named ANSI colours: 0-7 normal, 8-15 bright. Indexes 16-255 —
+    /// the xterm cube and grey ramp — are not part of a palette.
+    pub terminal_ansi: [Hsla; 16],
+
     // ---- glass ----
     //
     // Numbers, so they flow with the appearance the way every other token
@@ -347,6 +356,9 @@ pub struct Theme {
     // nothing here is a parameter on a component.
     /// How opaque the tint over the blurred window is.
     pub vibrancy_alpha: f32,
+    /// The tint over the blurred window, at full coverage — see
+    /// [`Self::vibrancy_tint`].
+    pub vibrancy_tone: Hsla,
     /// The blur behind a translucent window, in native filter pixels with no
     /// scale conversion. Zero leaves the window transparent and unblurred.
     /// macOS alone; other platforms ignore it.

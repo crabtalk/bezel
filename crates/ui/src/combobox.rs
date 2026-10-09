@@ -15,11 +15,16 @@
 //! .detach();
 //! ```
 
-use crate::{input, popover, search::SearchList, widgets::Controls};
+use crate::{
+    input, popover,
+    search::{Leading, SearchList},
+    widgets::Controls,
+};
 use gpui::{
     App, Context, EventEmitter, FocusHandle, Focusable, KeyBinding, Pixels, SharedString, Window,
     actions, canvas, div, prelude::*, px,
 };
+use std::rc::Rc;
 use theme::Theme;
 
 actions!(
@@ -67,6 +72,7 @@ pub struct Combobox {
     menu: popover::Popup<()>,
     chosen: Option<usize>,
     placeholder: SharedString,
+    leading: Option<Rc<Leading>>,
     /// The trigger's laid-out width, measured last frame — the menu matches
     /// it. An anchored layer sizes to its own content, so without measuring,
     /// a combobox's menu could not line up with its face.
@@ -87,6 +93,7 @@ impl Combobox {
             menu: popover::Popup::default(),
             chosen: None,
             placeholder: placeholder.into(),
+            leading: None,
             trigger_width: None,
             // One stop per combobox: the query field is inside `menu_card`, so
             // it only joins the order while the menu is actually open.
@@ -97,6 +104,16 @@ impl Combobox {
     /// Preselect an item — the value a form field starts with.
     pub fn with_selection(mut self, item: usize) -> Self {
         self.chosen = (item < self.search.filter.items().len()).then_some(item);
+        self
+    }
+
+    /// Draw an element before each row's label in the menu — a swatch, an
+    /// icon. `item` is the index into the original items.
+    pub fn with_leading(
+        mut self,
+        leading: impl Fn(usize, &Theme) -> gpui::AnyElement + 'static,
+    ) -> Self {
+        self.leading = Some(Rc::new(leading));
         self
     }
 
@@ -182,6 +199,7 @@ impl Combobox {
             .child(self.search.body(
                 theme,
                 self.chosen,
+                self.leading.as_deref(),
                 |view| &mut view.search,
                 Self::choose,
                 cx,

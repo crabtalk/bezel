@@ -17,11 +17,11 @@ impl Theme {
     /// Which palette that is comes from [`crate::AppExt::set_palette`], so an app with its own
     /// colours keeps them across a light/dark switch.
     pub fn install(appearance: Appearance, cx: &mut App) {
-        let build = cx
-            .try_global::<Palette>()
-            .map_or(Self::for_appearance as fn(Appearance) -> Theme, |p| p.0);
+        let mut theme = match cx.try_global::<Palette>() {
+            Some(palette) => (palette.0)(appearance),
+            None => Self::for_appearance(appearance),
+        };
         let brand = cx.brand();
-        let mut theme = build(appearance);
         brand.apply(&mut theme);
         layout::set_base_radius(brand.radius);
         Self::install_custom(theme, cx);
@@ -66,7 +66,7 @@ impl Theme {
 }
 
 /// How the app builds a palette for an appearance. See [`crate::AppExt::set_palette`].
-struct Palette(fn(Appearance) -> Theme);
+struct Palette(Box<dyn Fn(Appearance) -> Theme>);
 
 impl Global for Palette {}
 
@@ -91,6 +91,6 @@ impl Global for Palette {}
 ///
 /// [`appearance::init`]: crate::appearance::init
 /// [`appearance::apply`]: crate::appearance::apply
-pub(crate) fn set_palette(build: fn(Appearance) -> Theme, cx: &mut App) {
-    cx.set_global(Palette(build));
+pub(crate) fn set_palette(build: impl Fn(Appearance) -> Theme + 'static, cx: &mut App) {
+    cx.set_global(Palette(Box::new(build)));
 }

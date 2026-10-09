@@ -26,7 +26,7 @@ pub trait AppExt {
     /// Before `appearance::init`.
     fn set_brand(&mut self, brand: Brand);
     /// The builder runs first; the brand rotates whatever it returns.
-    fn set_palette(&mut self, build: fn(Appearance) -> Theme);
+    fn set_palette(&mut self, build: impl Fn(Appearance) -> Theme + 'static);
 }
 
 pub struct Brand {

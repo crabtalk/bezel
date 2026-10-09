@@ -61,7 +61,7 @@ pub use paint::{
 };
 pub use theme::{
     ControlSize, Glass, HighlightKind, Material, MaterialSpec, Metrics, Sizing, SurfaceSpec,
-    SurfaceStyle, SyntaxPalette, TextStyle, Theme, Typeset, base_text_size,
+    SurfaceStyle, SyntaxPalette, TextStyle, Theme, ThemeFamily, Typeset, Variant, base_text_size,
 };
 
 /// The carrier seam for catalog traits: any type holding a [`Theme`] exposes

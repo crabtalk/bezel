@@ -9,7 +9,7 @@ use gpui::{
     AnyElement, App, Context, CursorStyle, MouseButton, Pixels, Point, SharedString, Window, div,
     prelude::*, px,
 };
-use markdown::{AppExt as _, BlockKind, Part};
+use markdown::{Affinity, AppExt as _, BlockKind, Part};
 use theme::{TextStyle, Theme, Typeset};
 use ui::{
     icons::Icon,
@@ -894,7 +894,7 @@ impl Editor {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let pasted = self.pasted.as_ref()?;
-        let (point, line_height) = self.layouts.position(pasted.at)?;
+        let (point, line_height) = self.layouts.position(pasted.at, Affinity::Downstream)?;
         let card = ui::menu::card(
             theme,
             "paste",
@@ -943,7 +943,7 @@ impl Editor {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let slash = self.slash.as_ref()?;
-        let (point, line_height) = self.layouts.position(slash.at)?;
+        let (point, line_height) = self.layouts.position(slash.at, Affinity::Downstream)?;
         let card = ui::menu::card(
             theme,
             "slash",
@@ -995,7 +995,7 @@ impl Editor {
         if items.is_empty() {
             return None;
         }
-        let (point, line_height) = self.layouts.position(mention.at)?;
+        let (point, line_height) = self.layouts.position(mention.at, Affinity::Downstream)?;
         let card = ui::menu::card(
             theme,
             "mention",

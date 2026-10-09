@@ -43,8 +43,9 @@ pub const BASE_COLORS: [(&str, Tint); 5] = [
     ("Slate", Tint::new(257.417, 0.046)),
 ];
 
-/// The alpha of each text role over the appearance's ink — white in dark,
-/// black in light.
+/// The alpha of each text role over the palette's ink — the colour of
+/// [`Theme::text`] at full opacity. The shipped palettes' ink is white in dark
+/// and black in light.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextInk {
     /// [`Theme::text`].
@@ -65,12 +66,12 @@ impl TextInk {
     }
 
     /// Writes [`Theme::text`], [`Theme::text_muted`] and [`Theme::text_faint`]
-    /// for the theme's appearance.
+    /// at these alphas over the colour `theme.text` already carries.
     pub fn paint(&self, theme: &mut Theme) {
-        let appearance = theme.appearance;
-        theme.text = Self::color(appearance, self.text);
-        theme.text_muted = Self::color(appearance, self.muted);
-        theme.text_faint = Self::color(appearance, self.faint);
+        let ink = theme.text;
+        theme.text = ink.alpha(self.text);
+        theme.text_muted = ink.alpha(self.muted);
+        theme.text_faint = ink.alpha(self.faint);
     }
 }
 
@@ -255,76 +256,7 @@ impl Brand {
         // danger, warning, success — is semantic and keeps it. Translucent ink
         // is skipped because it paints over whatever is beneath it, which is
         // tinted already.
-        let tokens: [&mut Hsla; 41] = [
-            &mut theme.bg,
-            &mut theme.surface,
-            &mut theme.surface_raised,
-            &mut theme.surface_card,
-            &mut theme.surface_dialog,
-            &mut theme.surface_overlay,
-            &mut theme.element_hover,
-            &mut theme.element_active,
-            &mut theme.border_faint,
-            &mut theme.border,
-            &mut theme.border_strong,
-            &mut theme.text,
-            &mut theme.text_muted,
-            &mut theme.text_faint,
-            &mut theme.text_dim,
-            &mut theme.solid,
-            &mut theme.on_solid,
-            &mut theme.accent,
-            &mut theme.accent_strong,
-            &mut theme.on_accent,
-            &mut theme.danger,
-            &mut theme.danger_muted,
-            &mut theme.warning,
-            &mut theme.warning_muted,
-            &mut theme.success,
-            &mut theme.busy,
-            &mut theme.success_muted,
-            &mut theme.surface_raised_hover,
-            &mut theme.band,
-            &mut theme.input_bg,
-            &mut theme.selection,
-            &mut theme.cursor,
-            &mut theme.caret,
-            &mut theme.ring,
-            &mut theme.drop_target,
-            &mut theme.danger_strong,
-            &mut theme.code_text,
-            &mut theme.code_wash,
-            &mut theme.diff_add,
-            &mut theme.diff_del,
-            &mut theme.diff_hunk_bg,
-        ];
-        let syntax: [&mut Hsla; 24] = [
-            &mut theme.syntax.comment,
-            &mut theme.syntax.keyword,
-            &mut theme.syntax.string,
-            &mut theme.syntax.string_special,
-            &mut theme.syntax.escape,
-            &mut theme.syntax.number,
-            &mut theme.syntax.boolean,
-            &mut theme.syntax.type_name,
-            &mut theme.syntax.type_builtin,
-            &mut theme.syntax.constructor,
-            &mut theme.syntax.function,
-            &mut theme.syntax.function_builtin,
-            &mut theme.syntax.macro_name,
-            &mut theme.syntax.property,
-            &mut theme.syntax.constant,
-            &mut theme.syntax.variable,
-            &mut theme.syntax.variable_special,
-            &mut theme.syntax.parameter,
-            &mut theme.syntax.operator,
-            &mut theme.syntax.punctuation,
-            &mut theme.syntax.tag,
-            &mut theme.syntax.attribute,
-            &mut theme.syntax.label,
-            &mut theme.syntax.invalid,
-        ];
-        for slot in tokens.into_iter().chain(syntax) {
+        for (_, slot) in theme.tokens_mut() {
             if slot.a == 1.0 && slot.s <= f32::EPSILON {
                 *slot = color::tint(*slot, self.tint.hue, self.tint.chroma);
             }

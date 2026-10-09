@@ -65,7 +65,13 @@ impl Theme {
             diff_add: color::oklch(0.765, 0.177, 163.223), // emerald-400
             diff_del: color::oklch(0.704, 0.191, 22.216),  // red-400
             diff_hunk_bg: hsla(0.6, 0.35, 0.6, 0.05),
+            // One small step up from `bg`: the terminal reads as its own pane
+            // without becoming a lighter box.
+            terminal_bg: color::grey(0x09),
+            terminal_ansi: ansi(ANSI_DARK),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            // Darker than `surface`: the reference vibrancy scrim, `hsl(0 0% 3%)`.
+            vibrancy_tone: color::grey(8),
             window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::frosted_window(),
             glass: crate::LENSED,
@@ -219,7 +225,13 @@ impl Theme {
             diff_add: color::oklch(0.596, 0.145, 163.225), // emerald-600
             diff_del: color::oklch(0.577, 0.245, 27.325),  // red-600
             diff_hunk_bg: hsla(0.6, 0.35, 0.35, 0.07),
+            // One step down from the white `bg`. Larger than dark's 3/255: a
+            // near-white delta that separates on near-black vanishes on white.
+            terminal_bg: color::grey(0xfa),
+            terminal_ansi: ansi(ANSI_LIGHT),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            // The material's own measured tone.
+            vibrancy_tone: color::grey(235),
             window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::frosted_window(),
             glass: crate::LENSED,
@@ -299,6 +311,53 @@ impl Theme {
             Appearance::Light => Self::light(),
         }
     }
+}
+
+/// The 16 ANSI colours on the dark terminal background.
+const ANSI_DARK: [u32; 16] = [
+    0x242424, // black — visible against #090909
+    0xf87171, // red
+    0x4ade80, // green
+    0xfacc15, // yellow
+    0x60a5fa, // blue
+    0xc084fc, // magenta
+    0x22d3ee, // cyan
+    0xd4d4d8, // white
+    0x52525b, // bright black
+    0xfca5a5, // bright red
+    0x86efac, // bright green
+    0xfde047, // bright yellow
+    0x93c5fd, // bright blue
+    0xd8b4fe, // bright magenta
+    0x67e8f9, // bright cyan
+    0xfafafa, // bright white
+];
+
+/// The same slots on the light background: the dark table's hue families at
+/// their 600/700 steps. "Bright" is darker here, not lighter, so it stays the
+/// more prominent half; bright black steps lighter than black in both tables.
+const ANSI_LIGHT: [u32; 16] = [
+    0x1f1f1f, // black
+    0xdc2626, // red — red-600
+    0x16a34a, // green — green-600
+    // Amber-700, not yellow-600: yellow-600 is 2.8:1 on white.
+    0xb45309, // yellow — amber-700
+    0x2563eb, // blue — blue-600
+    0x9333ea, // magenta — purple-600
+    0x0e7490, // cyan — cyan-700 (600 is too pale on white)
+    0x3f3f46, // white — the body-text tone, zinc-700
+    0x71717a, // bright black — zinc-500
+    0xb91c1c, // bright red — red-700
+    0x15803d, // bright green — green-700
+    0x92400e, // bright yellow — amber-800
+    0x1d4ed8, // bright blue — blue-700
+    0x7e22ce, // bright magenta — purple-700
+    0x155e75, // bright cyan — cyan-800
+    0x18181b, // bright white — max emphasis, zinc-900
+];
+
+fn ansi(table: [u32; 16]) -> [gpui::Hsla; 16] {
+    table.map(|c| rgb(c).into())
 }
 
 /// gpui's alias for whatever the platform calls its UI font, resolved per

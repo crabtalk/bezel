@@ -5,6 +5,9 @@ use std::cell::Cell;
 use gpui::{Axis, Context, Entity, Point, ScrollHandle, SharedString, Window, div, prelude::*, px};
 use theme::{TextStyle, Theme, Typeset};
 
+/// What a row draws before its label, by index into the original items.
+pub(crate) type Leading = dyn Fn(usize, &Theme) -> gpui::AnyElement;
+
 use crate::{
     icons,
     input::{FieldEvent, TextField},
@@ -87,6 +90,7 @@ impl SearchList {
         &self,
         theme: &Theme,
         selected: Option<usize>,
+        leading: Option<&Leading>,
         get: fn(&mut V) -> &mut Self,
         choose: fn(&mut V, usize, &mut Window, &mut Context<V>),
         cx: &mut Context<V>,
@@ -110,7 +114,15 @@ impl SearchList {
                     .on_click(
                         cx.listener(move |view, _, window, cx| choose(view, item, window, cx)),
                     )
-                    .child(self.filter.items()[item].clone())
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .min_w_0()
+                            .children(leading.map(|leading| leading(item, theme)))
+                            .child(self.filter.items()[item].clone()),
+                    )
                     .when(selected == Some(item), |row| {
                         row.child(
                             icons::icon(icons::glyph::Check)

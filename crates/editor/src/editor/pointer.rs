@@ -160,7 +160,7 @@ impl Editor {
             return;
         }
         if let Some((unit, pressed)) = self.dragging.clone()
-            && let Some(hit) = self.layouts.hit(position)
+            && let Some((hit, _)) = self.layouts.hit(position)
         {
             let (anchor, head) = ui::input::drag_selection(pressed, hit.span(unit, &self.doc));
             self.selection = Selection::new(anchor, head).clamp(&self.doc);
@@ -193,17 +193,21 @@ impl Editor {
         if self.tail_click(position, cx) {
             return;
         }
-        let Some(hit) = self.layouts.hit(position) else {
+        let Some((hit, affinity)) = self.layouts.hit(position) else {
             return cx.notify();
         };
         let unit = ui::input::Granularity::of_clicks(click_count);
         // Shift extends from wherever the anchor already is, which is what
         // makes click-then-shift-click a range.
         self.selection = match modifiers.shift {
-            true => self.selection.extend_to(hit),
+            true => self.selection.extend_to(hit).with_affinity(affinity),
             false => {
                 let span = hit.span(unit, &self.doc);
-                Selection::new(span.start, span.end)
+                let affinity = match span.end == hit {
+                    true => affinity,
+                    false => Affinity::Downstream,
+                };
+                Selection::new(span.start, span.end).with_affinity(affinity)
             }
         }
         .clamp(&self.doc);
@@ -236,10 +240,10 @@ impl Editor {
             self.image_menu.open(Dropped::new(target, position));
             return cx.notify();
         }
-        if let Some(hit) = self.layouts.hit(position) {
+        if let Some((hit, affinity)) = self.layouts.hit(position) {
             let (start, end) = self.selection.ordered();
             if self.selection.is_collapsed() || hit < start || hit > end {
-                self.selection = Selection::at(hit).clamp(&self.doc);
+                self.selection = Selection::at(hit).with_affinity(affinity).clamp(&self.doc);
                 self.history.interrupt();
                 self.caret_moved();
             }

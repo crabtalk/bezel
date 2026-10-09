@@ -731,3 +731,89 @@ fn the_frame_shadow_reserves_half_the_client_inset_for_its_tail() {
     assert_eq!(shadow.spread_radius, px(0.0));
     assert!(!shadow.inset);
 }
+
+/// Slot 0 is "black" — the one slot whose job is to sit *at* the dark end of
+/// the scale, not to be readable text. It draws box edges and shaded blocks,
+/// so it gets the grey floor below rather than the text floor.
+const ANSI_BLACK: usize = 0;
+
+/// Every ANSI slot is readable on its own terminal background. The chromatic
+/// slots clear 3:1; the black/bright-black pair are structural greys and only
+/// have to separate from it — the dark palette puts bright black at 2.58:1.
+#[test]
+fn every_ansi_slot_is_legible_on_its_background() {
+    const MIN_TEXT: f32 = 3.0;
+    const MIN_GREY: f32 = 1.25;
+    for theme in [Theme::dark(), Theme::light()] {
+        for (ix, &color) in theme.terminal_ansi.iter().enumerate() {
+            let min = if ix % 8 == ANSI_BLACK {
+                MIN_GREY
+            } else {
+                MIN_TEXT
+            };
+            let ratio = contrast_ratio(color, theme.terminal_bg);
+            assert!(
+                ratio >= min,
+                "{:?} ANSI {ix} is {ratio:.2}:1, want {min}:1",
+                theme.appearance
+            );
+        }
+    }
+}
+
+/// "Bright" is *more* prominent in both appearances — darker on a light field.
+/// Bright black is the exception: the dim-text grey, lighter than black in
+/// both.
+#[test]
+fn bright_ansi_slots_gain_emphasis_in_both_appearances() {
+    for theme in [Theme::dark(), Theme::light()] {
+        let lum = |ix: usize| relative_luminance(theme.terminal_ansi[ix]);
+        for ix in 1..8 {
+            let brighter = lum(ix + 8) > lum(ix);
+            assert_eq!(
+                brighter,
+                theme.appearance.is_dark(),
+                "{:?} ANSI {ix}",
+                theme.appearance
+            );
+        }
+        assert!(lum(8) > lum(ANSI_BLACK));
+    }
+}
+
+#[test]
+fn a_family_variant_lays_its_tokens_over_the_shipped_palette() {
+    let family: ThemeFamily = serde_json::from_str(
+        r##"{
+            "name": "Test",
+            "dark": {
+                "bg": "#282828",
+                "syntax": { "keyword": "#fb4934" },
+                "terminal.ansi": { "red": "#cc241d" },
+                "nope": "#000000"
+            },
+            "light": {}
+        }"##,
+    )
+    .unwrap();
+    let mut theme = Theme::dark();
+    let unknown = family.dark.apply(&mut theme);
+    assert_eq!(unknown, ["nope"]);
+    assert_eq!(theme.bg, gpui::rgb(0x282828).into());
+    assert_eq!(theme.syntax.keyword, gpui::rgb(0xfb4934).into());
+    assert_eq!(theme.terminal_ansi[1], gpui::rgb(0xcc241d).into());
+    assert_eq!(theme.surface, Theme::dark().surface);
+    assert_eq!(family.theme(Appearance::Light).bg, Theme::light().bg);
+}
+
+#[test]
+fn token_names_are_unique() {
+    let mut theme = Theme::dark();
+    let names: Vec<&str> = theme
+        .tokens_mut()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    let unique: std::collections::BTreeSet<&str> = names.iter().copied().collect();
+    assert_eq!(names.len(), unique.len());
+}

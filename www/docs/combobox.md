@@ -34,6 +34,13 @@ impl Combobox {
         cx: &mut Context<Self>,
     ) -> Self;
 
+    /// Draw an element before each row's label in the menu — a swatch, an
+    /// icon. `item` indexes the original items.
+    pub fn with_leading(
+        self,
+        leading: impl Fn(usize, &Theme) -> AnyElement + 'static,
+    ) -> Self;
+
     // ...
 }
 

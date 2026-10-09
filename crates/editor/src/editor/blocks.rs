@@ -323,7 +323,7 @@ impl Editor {
         // is made where a press landed, and the caret can be pages away: the
         // reveal `edit` asked for would scroll the box being checked off the
         // screen.
-        self.reveal = false;
+        self.reveal = None;
     }
 
     /// Put an empty row in table `ix` before `row` ([`Part::Cell`]
