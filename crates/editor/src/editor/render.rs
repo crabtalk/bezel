@@ -495,6 +495,15 @@ impl Render for Editor {
                                     &[]
                                 },
                                 scroll: self.scroll.as_ref(),
+                                jump: Some({
+                                    let editor = cx.entity().downgrade();
+                                    Rc::new(move |ix, _, cx| {
+                                        let at = Selection::at(Cursor::new(ix, Part::Body, 0));
+                                        editor
+                                            .update(cx, |this, cx| this.select_to_top(at, cx))
+                                            .ok();
+                                    })
+                                }),
                                 ..Default::default()
                             },
                             window,

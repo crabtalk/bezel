@@ -310,6 +310,7 @@ pub(super) fn painted_text(
             styled.into_any_element()
         } else {
             let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
+            let jump = overlay.jump.cloned();
             let hovered: Vec<(Range<usize>, String)> = mentions
                 .iter()
                 .filter(|mention| mention.glyph.is_none())
@@ -318,7 +319,7 @@ pub(super) fn painted_text(
             let text = InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
                 .on_click(ranges, move |clicked, window, cx| {
                     if let Some(url) = urls.get(clicked) {
-                        crate::link::open(url, window, cx);
+                        crate::link::follow(url, jump.as_ref(), window, cx);
                     }
                 });
             match hovered.is_empty() {

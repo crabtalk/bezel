@@ -179,6 +179,10 @@ pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 /// Handed the image block whose picture was clicked — see [`Editing::image`].
 pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
+/// Handed the heading block a clicked `#fragment` link names — see
+/// [`Editing::jump`].
+pub type OnJump = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
 /// Builds a picture's hover control from its block index and original URL.
 pub type ImageOverlay = Rc<dyn Fn(usize, &str, &mut Window, &mut App) -> Option<AnyElement>>;
 
@@ -309,6 +313,10 @@ pub struct Editing<'a> {
     /// showing come out taller or shorter than they were placed at, its offset
     /// moves by the difference. Only read with `layouts` given.
     pub scroll: Option<&'a gpui::ScrollHandle>,
+    /// Scrolls to the heading a clicked `#fragment` link names, matched by
+    /// [`crate::link::heading`]. `None`, or a fragment naming no heading,
+    /// makes the click do nothing.
+    pub jump: Option<OnJump>,
 }
 
 impl Default for Editing<'_> {
@@ -334,6 +342,7 @@ impl Default for Editing<'_> {
             base: None,
             keep: &[],
             scroll: None,
+            jump: None,
         }
     }
 }
@@ -374,6 +383,7 @@ struct Overlay<'a> {
     base: Option<&'a Path>,
     highlight: crate::HighlightPaint,
     find: crate::FindPaint,
+    jump: Option<&'a crate::link::Jump>,
 }
 
 /// What a resizable painted block carries besides itself: where it landed,
@@ -597,6 +607,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         base,
         keep,
         scroll,
+        jump,
     } = editing;
     // Cloned once so the theme is readable while `cx` stays free for the
     // element state the copy button needs.
@@ -604,6 +615,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     let typography = typography.unwrap_or_else(|| cx.typography());
     let highlight = crate::marks::highlight_paint_of(cx);
     let find = crate::find::find_paint_of(cx);
+    let jump = jump.map(|to| crate::link::Jump::new(doc, to));
     let gaps: Vec<Pixels> = doc
         .blocks
         .iter()
@@ -644,6 +656,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 base,
                 highlight,
                 find,
+                jump: jump.as_ref(),
             };
             column = column
                 .child(block_box(block, overlay, &typography, &theme, window, cx).mt(gaps[ix]));
@@ -690,6 +703,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         base: base.map(Path::to_path_buf),
         highlight,
         find,
+        jump,
         typography,
         theme,
     };
@@ -726,6 +740,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 base: owned.base.as_deref(),
                 highlight: owned.highlight,
                 find: owned.find,
+                jump: owned.jump.as_ref(),
             };
             block_box(
                 &owned.blocks[ix],
@@ -761,6 +776,7 @@ struct Owned {
     base: Option<std::path::PathBuf>,
     highlight: crate::HighlightPaint,
     find: crate::FindPaint,
+    jump: Option<crate::link::Jump>,
     typography: Typography,
     theme: Theme,
 }

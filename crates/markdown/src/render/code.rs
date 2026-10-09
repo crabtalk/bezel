@@ -53,6 +53,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         base: None,
         highlight: crate::marks::highlight_paint_of(cx),
         find: crate::find::find_paint_of(cx),
+        jump: None,
     };
     let style = cx.source_style();
     let count = code.split('\n').count();
