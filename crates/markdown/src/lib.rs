@@ -49,7 +49,7 @@ pub mod source_style;
 pub mod typography;
 
 pub use block::{BlockRenderer, Fence, Rewrite};
-pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Text};
+pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Quoted, Text};
 pub use edit::{Shortcut, Splice, shortcut};
 pub use find::{FindPaint, default_find};
 pub use highlight::Highlighter;

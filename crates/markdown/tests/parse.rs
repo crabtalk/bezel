@@ -199,7 +199,7 @@ fn tables_carry_alignment() {
 
 #[test]
 fn the_indent_invariant_holds_for_awkward_nesting() {
-    // `> - a` flattens; whatever it flattens to must still satisfy the
+    // Whatever a nested container flattens to must still satisfy the
     // invariant the serializer relies on.
     for source in [
         "> - a",

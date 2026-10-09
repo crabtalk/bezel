@@ -5,17 +5,12 @@
 //! - a list item's first paragraph becomes its marker block (bullet, ordered,
 //!   task) at one level shallower than the open list count, and anything else
 //!   in that item becomes a child at the list count itself;
-//! - a blockquote's paragraphs each become a [`BlockKind::Quote`], every one
-//!   of them carrying the GFM alert kind the blockquote opened with. Being
-//!   inside a quote decides a block's *kind*, never its depth — an indent a
-//!   blockquote contributed could not be reproduced in the output, and the
-//!   document would move every time it was read;
 //! - everything else keeps its kind at the open list count.
 //!
-//! Mixed containers therefore flatten: `> - a` yields a bullet and loses the
-//! quote. That is the cost of the flat model, and the fixed-point test in
-//! [`crate::serialize`] is what keeps it from mattering — whatever the first
-//! parse decides is stable from then on.
+//! A block inside a blockquote carries a [`Block::quote`] with the GFM alert
+//! the blockquote opened with. A blockquote never adds to the indent.
+//! Blockquotes nested in one another flatten to one, and the fixed-point test
+//! in [`crate::serialize`] keeps whatever the first parse decides.
 //!
 //! The parse also normalizes what markdown itself would not preserve: leading
 //! and trailing whitespace per line, blank lines at a block's edges, headings
@@ -29,7 +24,7 @@ use pulldown_cmark::{
 use std::ops::Range;
 
 use crate::{
-    doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, QuoteKind, Text},
+    doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, QuoteKind, Quoted, Text},
     marks::Marks,
     select::Cursor,
 };

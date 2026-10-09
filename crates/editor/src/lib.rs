@@ -31,7 +31,7 @@ pub use editor::menu::{BLOCK_HANDLE, BLOCK_MENU, SLASH_MENU};
 pub use editor::{
     CONTEXT, Chrome, Editor, EditorEvent, Formatting, HIGHLIGHT_MARK, Mode,
     image::{ImageStore, Source},
-    init, keys, turns,
+    init, keys, quotes, turns,
 };
 pub use handles::Handles;
 pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};

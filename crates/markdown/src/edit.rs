@@ -31,7 +31,9 @@ mod text;
 pub use shortcut::*;
 
 use crate::{
-    doc::{Block, BlockKind, Doc, Mark, MarkSpan, Part, Text},
+    doc::{
+        Block, BlockKind, Doc, Mark, MarkSpan, Part, QuoteKind, Quoted, Run, Runs, Text, quote_runs,
+    },
     select::{Cursor, Selection},
 };
 
@@ -57,14 +59,15 @@ impl Doc {
     ///
     /// The tail keeps the block's kind where a continued Enter means "another of
     /// these" — a list item, for example; anything else continues as body
-    /// text, and a quote only while it carries text. At the start of a block
-    /// holding text the block moves down whole, under an empty one of the same
-    /// list kind or an empty paragraph, and the returned index is the block.
+    /// text. Both halves keep the block's indent and quote. At the start of a
+    /// block holding text the block moves down whole, under an empty one of the
+    /// same list kind or an empty paragraph, and the returned index is the
+    /// block.
     pub fn split(&mut self, ix: usize, at: usize) -> usize {
         if ix >= self.blocks.len() {
             return ix;
         }
-        let indent = self.blocks[ix].indent;
+        let (indent, quote) = (self.blocks[ix].indent, self.blocks[ix].quote);
         if at == 0
             && self.blocks[ix]
                 .text_at(Part::Body)
@@ -82,7 +85,13 @@ impl Doc {
                 },
                 _ => BlockKind::Paragraph(Text::default()),
             };
-            self.blocks.insert(ix, Block::at(above, indent));
+            self.blocks.insert(
+                ix,
+                Block {
+                    quote,
+                    ..Block::at(above, indent)
+                },
+            );
             self.repair();
             return ix + 1;
         }
@@ -102,26 +111,98 @@ impl Doc {
                 checked: false,
                 text: tail,
             },
-            BlockKind::Quote { kind, .. } if !tail.text.is_empty() => BlockKind::Quote {
-                kind: *kind,
-                text: tail,
-            },
             _ => BlockKind::Paragraph(tail),
         };
-        self.blocks.insert(ix + 1, Block::at(kind, indent));
+        self.blocks.insert(
+            ix + 1,
+            Block {
+                quote,
+                ..Block::at(kind, indent)
+            },
+        );
         self.repair();
         ix + 1
     }
 
+    /// Take one layer off block `ix`, outermost first: the syntax around its
+    /// text, then its quote, then a level of indent. `false` when the block
+    /// has none of them left.
+    ///
+    /// Backspace at the start of a block, and Enter in an empty one.
+    pub fn peel(&mut self, ix: usize) -> bool {
+        let Some(block) = self.blocks.get(ix) else {
+            return false;
+        };
+        // Every prefix [`shortcut`] reads is chrome around text; the first
+        // backspace takes the chrome and leaves the text where it was, so what
+        // can be typed in can be typed out.
+        let unwrapped = match &block.kind {
+            kind if is_marker(kind) => block.text_at(Part::Body).cloned(),
+            BlockKind::Heading { text, .. } => Some(text.clone()),
+            BlockKind::Code { code, .. } => Some(code.clone()),
+            _ => None,
+        };
+        if let Some(text) = unwrapped {
+            self.blocks[ix].kind = BlockKind::Paragraph(text);
+        } else if block.quote.is_some() {
+            self.blocks[ix].quote = None;
+        } else if block.indent > 0 {
+            self.shift_subtree(ix, -1);
+        } else {
+            return false;
+        }
+        self.repair();
+        true
+    }
+
+    /// Quote block `ix`, or take it out of its quote with `None`.
+    pub fn set_quote(&mut self, ix: usize, quote: Option<Quoted>) {
+        let Some(block) = self.blocks.get_mut(ix) else {
+            return;
+        };
+        block.quote = quote;
+        self.repair();
+    }
+
+    /// What picking a quote does to block `ix`: one it is already in with this
+    /// alert takes it out, a quote with another alert takes this one across
+    /// the whole blockquote, and a block outside a quote goes in.
+    pub fn toggle_quote(&mut self, ix: usize, alert: Option<QuoteKind>) {
+        match self.blocks.get(ix).and_then(|block| block.quote) {
+            Some(quote) if quote.alert == alert => self.set_quote(ix, None),
+            Some(_) => self.set_alert(ix, alert),
+            None => self.set_quote(ix, Some(Quoted { alert })),
+        }
+    }
+
+    /// Give the whole blockquote block `ix` sits in the alert `alert`. Nothing
+    /// for a block outside a quote.
+    pub fn set_alert(&mut self, ix: usize, alert: Option<QuoteKind>) {
+        let runs = quote_runs(self.blocks.iter().map(|block| (block.quote, block.indent)));
+        let Some(Some(_)) = runs.get(ix) else {
+            return;
+        };
+        let start = (0..=ix)
+            .rev()
+            .find(|&at| runs[at].is_some_and(|run| run.first))
+            .unwrap_or(ix);
+        let end = (ix + 1..runs.len())
+            .find(|&at| runs[at].is_none_or(|run| run.first))
+            .unwrap_or(runs.len());
+        for block in &mut self.blocks[start..end] {
+            block.quote = Some(Quoted { alert });
+        }
+        self.repair();
+    }
+
     /// Backspace at the start of a block.
     ///
-    /// Notion's chain, in order: an indented block outdents, an image with
-    /// nothing written under it goes, a block wearing syntax around its text
-    /// gives the syntax up, and only a plain block at the left margin merges
-    /// into the one above it. When that one holds no body there is nothing to
-    /// merge into, so the caret steps into a fence or a table, and a rule —
-    /// which no caret can enter, and so no other key can remove — goes.
-    /// Returns where the caret landed, and `None` when nothing moved.
+    /// Notion's chain, in order: the block [`Doc::peel`]s, an image with
+    /// nothing written under it goes, and only a plain block at the left
+    /// margin merges into the one above it. When that one holds no body there
+    /// is nothing to merge into, so the caret steps into a fence or a table,
+    /// and a rule — which no caret can enter, and so no other key can remove —
+    /// goes. Returns where the caret landed, and `None` when nothing moved.
     ///
     /// A table cell is not a position that can swallow its neighbour, so
     /// backspace at the start of one does nothing rather than eating the table.
@@ -129,11 +210,16 @@ impl Doc {
         if matches!(at.part, Part::Cell { .. }) {
             return None;
         }
-        let block = self.blocks.get(at.block)?;
-        if block.indent > 0 {
-            self.outdent(at.block);
-            return Some(Cursor::new(at.block, at.part, 0));
+        if self.peel(at.block) {
+            let parts = self.blocks[at.block].parts();
+            let part = if parts.contains(&at.part) {
+                at.part
+            } else {
+                Part::Body
+            };
+            return Some(Cursor::new(at.block, part, 0));
         }
+        let block = self.blocks.get(at.block)?;
         // A caption is the only handle a caret has on an image, so with the
         // caption empty there is nothing left to take but the picture.
         if at.part == Part::Caption && block.text_at(Part::Caption)?.is_empty() {
@@ -149,20 +235,6 @@ impl Doc {
                 .copied()
                 .unwrap_or_default();
             return Some(Cursor::new(previous, part, 0).end(self));
-        }
-        // Every prefix [`shortcut`] reads is chrome around text; the first
-        // backspace takes the chrome and leaves the text where it was, so what
-        // can be typed in can be typed out.
-        let unwrapped = match &block.kind {
-            kind if is_marker(kind) => block.text_at(Part::Body).cloned(),
-            BlockKind::Heading { text, .. } | BlockKind::Quote { text, .. } => Some(text.clone()),
-            BlockKind::Code { code, .. } => Some(code.clone()),
-            _ => None,
-        };
-        if let Some(text) = unwrapped {
-            self.blocks[at.block].kind = BlockKind::Paragraph(text);
-            self.repair();
-            return Some(Cursor::new(at.block, Part::Body, 0));
         }
         if at.block == 0 {
             return None;
@@ -512,17 +584,20 @@ impl Doc {
         // is where the fence goes.
         let at = self.replace(selection, Text::default()).caret;
         let tail = self.split(at.block, at.offset);
-        let indent = self.blocks[at.block].indent;
+        let (indent, quote) = (self.blocks[at.block].indent, self.blocks[at.block].quote);
         self.blocks.insert(
             tail,
-            Block::at(
-                BlockKind::Code {
-                    language: None,
-                    code,
-                    height: None,
-                },
-                indent,
-            ),
+            Block {
+                quote,
+                ..Block::at(
+                    BlockKind::Code {
+                        language: None,
+                        code,
+                        height: None,
+                    },
+                    indent,
+                )
+            },
         );
         // A selection that covered whole blocks leaves nothing on either side,
         // and an empty paragraph is not what "turn this into code" asked for.
@@ -559,11 +634,14 @@ impl Doc {
             let BlockKind::Code { code, .. } = &self.blocks[ix].kind else {
                 continue;
             };
-            let indent = self.blocks[ix].indent;
+            let (indent, quote) = (self.blocks[ix].indent, self.blocks[ix].quote);
             let paragraphs: Vec<Block> = code
                 .text
                 .split('\n')
-                .map(|line| Block::at(BlockKind::Paragraph(Text::plain(line)), indent))
+                .map(|line| Block {
+                    quote,
+                    ..Block::at(BlockKind::Paragraph(Text::plain(line)), indent)
+                })
                 .collect();
             self.blocks.splice(ix..=ix, paragraphs);
         }
@@ -724,7 +802,10 @@ impl Doc {
         }
 
         let caret = self.replace(selection, Text::default()).caret;
-        let base = self.blocks[caret.block].indent;
+        let (base, quote) = (
+            self.blocks[caret.block].indent,
+            self.blocks[caret.block].quote,
+        );
         // Split so what followed the caret follows the paste too. An empty
         // remainder is the blank block a paste at the end would leave behind.
         let tail = self.split(caret.block, caret.offset);
@@ -735,8 +816,14 @@ impl Doc {
         let mut at = caret.block;
         for block in blocks {
             at += 1;
-            self.blocks
-                .insert(at, Block::at(block.kind, base.saturating_add(block.indent)));
+            self.blocks.insert(
+                at,
+                Block {
+                    kind: block.kind,
+                    indent: base.saturating_add(block.indent),
+                    quote: block.quote.or(quote),
+                },
+            );
         }
         if empty_tail {
             self.blocks.remove(at + 1);
@@ -852,7 +939,10 @@ impl Doc {
                 .unwrap_or_default(),
         };
 
-        let indent = self.blocks[start.block].indent;
+        let (indent, quote) = (
+            self.blocks[start.block].indent,
+            self.blocks[start.block].quote,
+        );
         let first = if head_keeps {
             start.block + 1
         } else {
@@ -867,8 +957,13 @@ impl Doc {
         } else {
             // Everything the selection touched is gone, so the tail arrives as
             // a paragraph in its place.
-            self.blocks
-                .insert(start.block, Block::at(BlockKind::Paragraph(tail), indent));
+            self.blocks.insert(
+                start.block,
+                Block {
+                    quote,
+                    ..Block::at(BlockKind::Paragraph(tail), indent)
+                },
+            );
             Cursor::new(start.block, Part::Body, 0)
         };
         self.repair();
@@ -900,8 +995,7 @@ impl Doc {
                 | BlockKind::Heading { text, .. }
                 | BlockKind::Bullet(text)
                 | BlockKind::Ordered { text, .. }
-                | BlockKind::Task { text, .. }
-                | BlockKind::Quote { text, .. } => {
+                | BlockKind::Task { text, .. } => {
                     *text = crate::parse::normalize(&text.text, &text.marks);
                     text.normalize_marks();
                     if one_line {
@@ -924,13 +1018,11 @@ impl Doc {
         // A blank paragraph is the empty line an editor leaves behind, and
         // markdown has no way to write one down — blank lines there separate
         // blocks rather than being one. An empty heading or list item is
-        // different: `# ` and `- ` are both real, so those stay. So is an
-        // alert with no body: `> [!TIP]` writes down and reads back.
+        // different: `# ` and `- ` are both real, so those stay. So is the
+        // empty body of an alert: `> [!TIP]` writes down and reads back.
         self.blocks.retain(|block| {
-            !matches!(
-                &block.kind,
-                BlockKind::Paragraph(text) | BlockKind::Quote { kind: None, text } if text.is_empty()
-            )
+            !matches!(&block.kind, BlockKind::Paragraph(text) if text.is_empty())
+                || block.quote.is_some_and(|quote| quote.alert.is_some())
         });
         self.repair();
 
@@ -997,11 +1089,33 @@ impl Doc {
     /// block may only go deeper than the one above it when that one is a
     /// marker. Indenting a paragraph under a *heading* would serialize to four
     /// leading spaces, which reads back as an indented code block.
+    ///
+    /// A block that does not carry on the blockquote above it sits no deeper
+    /// than that blockquote's `>`.
     pub fn ceiling(&self, ix: usize) -> u8 {
-        match ix.checked_sub(1).map(|previous| &self.blocks[previous]) {
-            None => 0,
-            Some(previous) if is_marker(&previous.kind) => previous.indent + 1,
-            Some(previous) => previous.indent,
+        let runs = quote_runs(
+            self.blocks[..ix]
+                .iter()
+                .map(|block| (block.quote, block.indent)),
+        );
+        self.ceiling_after(ix, ix.checked_sub(1).and_then(|previous| runs[previous]))
+    }
+
+    /// [`Doc::ceiling`], given the blockquote place of the block above.
+    fn ceiling_after(&self, ix: usize, above: Option<Run>) -> u8 {
+        let Some(previous) = ix.checked_sub(1).map(|previous| &self.blocks[previous]) else {
+            return 0;
+        };
+        let ceiling = if is_marker(&previous.kind) {
+            previous.indent + 1
+        } else {
+            previous.indent
+        };
+        match above {
+            Some(run) if self.blocks.get(ix).map(|block| block.quote) != Some(previous.quote) => {
+                ceiling.min(run.level)
+            }
+            _ => ceiling,
         }
     }
 
@@ -1013,9 +1127,13 @@ impl Doc {
     /// Public because an editor that changes a block's *kind* has to restore
     /// the invariant too, and only this knows what it is.
     pub fn repair(&mut self) {
+        let mut runs = Runs::default();
+        let mut above = None;
         for ix in 0..self.blocks.len() {
-            let ceiling = self.ceiling(ix);
-            self.blocks[ix].indent = self.blocks[ix].indent.min(ceiling);
+            let ceiling = self.ceiling_after(ix, above);
+            let block = &mut self.blocks[ix];
+            block.indent = block.indent.min(ceiling);
+            above = runs.next(block.quote, block.indent);
         }
         self.renumber();
     }

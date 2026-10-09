@@ -232,6 +232,23 @@ impl RibbonDemo {
                                         });
                                     },
                                 ))
+                            }))
+                            .children(editor::quotes().into_iter().map(|(row, alert)| {
+                                popover::menu_row(
+                                    theme,
+                                    formatting.quote.map(|quote| quote.alert) == Some(alert),
+                                    Some(Fade::new(view, format!("ribbon-quote-{row}"))),
+                                )
+                                .id(SharedString::from(format!("ribbon-quote-row-{row}")))
+                                .child(row)
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        popover::close_popup(this, cx, |this| &mut this.turn);
+                                        this.editor.update(cx, |editor, cx| {
+                                            editor.toggle_quote(block, alert, cx);
+                                        });
+                                    },
+                                ))
                             })),
                     )
                     .into_any_element(),
