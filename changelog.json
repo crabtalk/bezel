@@ -1,24 +1,37 @@
 [
   {
-    "version": "0.2.10",
-    "date": "2026-10-07",
-    "summary": "Public fence panel and band, terminal colours in the theme, palette builders that capture, translucent diagram nodes, a detached web inspector on macOS, and list items sized by their content.",
+    "version": "0.2.11",
+    "date": "2026-10-09",
+    "summary": "Theme families from TOML, terminal colours and the frost tone as palette tokens, palette builders that capture, `#fragment` links that jump to their heading, a combobox row leading, and cards set in the document's body face.",
     "new": [
-      "`markdown::render::fence_panel` and `fence_band` are public, so an app can draw its own fences in the box and band markdown uses.",
       "`Theme::vibrancy_tone` is the frost's tint at full coverage, so a palette sets the colour of a translucent window and a brand tints it.",
       "`Combobox::with_leading` draws an element before each row's label in the menu, such as a swatch or an icon.",
       "`ThemeFamily` deserializes a theme family, TOML or any serde format: a name and a dark and a light `Variant`, each a set of colour tokens laid over the shipped palette for its appearance, where a nested table like `[dark.syntax]` names `syntax.*` tokens. `Theme::tokens_mut` names every token a file can set.",
-      "`Theme::terminal_bg` and `Theme::terminal_ansi` hold the terminal's background and its 16 named ANSI colours, so a palette sets them like any other token and a brand tints their greys."
+      "`Theme::terminal_bg` and `Theme::terminal_ansi` hold the terminal's background and its 16 named ANSI colours, so a palette sets them like any other token and a brand tints their greys.",
+      "A `#fragment` link in markdown jumps to the heading it names, matched as GitHub slugs headings, through `Editing::jump` and an `OnJump`. `markdown::link::slug` and `heading` resolve one.",
+      "`Editor::select_to_top` selects and scrolls the caret's row to the top of the scroll box; the editor jumps to a `#fragment` link's heading with it."
     ],
     "changed": [
       "`AppExt::set_palette` takes any `Fn(Appearance) -> Theme + 'static`, so a builder can capture what it builds from.",
       "`TextInk::paint` sets the text roles' alphas over the colour the palette's `text` carries instead of over white or black, so a palette with its own text colour keeps it under a brand.",
-      "`terminal::view::indexed_color` resolves an indexed colour against a theme, and `extended_rgb` gives indexes 16-255. `terminal_bg_for`, `terminal_bg` and `indexed_rgb` are gone.",
+      "`terminal::view::indexed_color` resolves an indexed colour against a theme, and `extended_rgb` gives indexes 16-255. `terminal_bg_for`, `terminal_bg` and `indexed_rgb` are gone."
+    ],
+    "fixed": [
+      "Cards, bands and captions inside a markdown document are set in `Theme::font_body` like its text, instead of the interface face, unless they name their own."
+    ]
+  },
+  {
+    "version": "0.2.10",
+    "date": "2026-10-07",
+    "summary": "Public fence panel and band, translucent diagram nodes, a detached web inspector on macOS, and list items sized by their content.",
+    "new": [
+      "`markdown::render::fence_panel` and `fence_band` are public, so an app can draw its own fences in the box and band markdown uses."
+    ],
+    "changed": [
       "Diagram nodes fill with a light wash of ink instead of the card surface, so they take on what the diagram sits on.",
       "gpui is `bezel-gpui` 0.3.17."
     ],
     "fixed": [
-      "Cards, bands and captions inside a markdown document are set in `Theme::font_body` like its text, instead of the interface face, unless they name their own.",
       "`WebView::open_inspector` opens the inspector in its own window on macOS instead of attaching it inside gpui's view.",
       "List item text in a shrink-to-fit container is sized by its content instead of collapsing."
     ]
