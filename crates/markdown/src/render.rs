@@ -794,6 +794,9 @@ fn block_box(
     // belongs to moved right.
     div()
         .w_full()
+        // Everything a block draws — cards, bands, captions — is set in the
+        // document's face unless it names its own.
+        .font_family(theme.font_body.clone())
         .pl(px(block.indent as f32 * INDENT_WIDTH))
         .child(
             div()

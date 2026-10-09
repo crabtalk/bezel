@@ -18,6 +18,7 @@
       "gpui is `bezel-gpui` 0.3.17."
     ],
     "fixed": [
+      "Cards, bands and captions inside a markdown document are set in `Theme::font_body` like its text, instead of the interface face, unless they name their own.",
       "`WebView::open_inspector` opens the inspector in its own window on macOS instead of attaching it inside gpui's view.",
       "List item text in a shrink-to-fit container is sized by its content instead of collapsing."
     ]
