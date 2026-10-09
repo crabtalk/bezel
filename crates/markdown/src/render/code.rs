@@ -366,6 +366,7 @@ struct RowPaint {
     caret: Option<usize>,
     /// The grapheme after the caret, over the whole text.
     glyph: Option<Range<usize>>,
+    affinity: Affinity,
     shape: ui::input::CaretShape,
     height: ui::input::CaretHeight,
     hollow: bool,
@@ -382,7 +383,8 @@ impl RowPaint {
         let caret = overlay.caret_painted();
         Self {
             caret,
-            glyph: caret.and_then(|offset| glyph_at(code, offset)),
+            glyph: caret.and_then(|offset| overlay.covered(code, offset)),
+            affinity: overlay.affinity(),
             shape: overlay.caret_shape,
             height: overlay.caret_height,
             hollow: overlay.caret_hollow(),
@@ -431,6 +433,7 @@ impl RowPaint {
             paint_caret(
                 layout,
                 offset - span.start,
+                self.affinity,
                 glyph.as_ref(),
                 CaretPaint {
                     shape: self.shape,

@@ -213,7 +213,10 @@ fn source_mode_builds_only_the_lines_near_the_viewport(cx: &mut TestAppContext) 
             editor
                 .read(cx)
                 .layouts()
-                .position(Cursor::new(0, Part::Code, at))
+                .position(
+                    Cursor::new(0, Part::Code, at),
+                    markdown::Affinity::Downstream,
+                )
                 .is_some()
         })
     };

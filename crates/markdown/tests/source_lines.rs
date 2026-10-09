@@ -1,7 +1,7 @@
 use gpui::{
     Context, Render, TestAppContext, VisualTestContext, Window, div, point, prelude::*, px, size,
 };
-use markdown::{AppExt as _, BlockLayouts, Cursor, Editing, Part, render_source};
+use markdown::{Affinity, AppExt as _, BlockLayouts, Cursor, Editing, Part, render_source};
 
 struct Page {
     source: String,
@@ -43,7 +43,7 @@ fn wrapped_and_empty_lines_keep_their_caret_and_hit_positions(cx: &mut TestAppCo
         let layouts = &page.read(cx).layouts;
         let at = |offset| {
             layouts
-                .position(Cursor::new(0, Part::Code, offset))
+                .position(Cursor::new(0, Part::Code, offset), Affinity::Downstream)
                 .unwrap()
         };
         let (start, _) = at(0);
@@ -61,7 +61,7 @@ fn wrapped_and_empty_lines_keep_their_caret_and_hit_positions(cx: &mut TestAppCo
             let (position, height) = at(offset);
             assert_eq!(
                 layouts.hit(point(position.x, position.y + height / 2.0)),
-                Some(Cursor::new(0, Part::Code, offset)),
+                Some((Cursor::new(0, Part::Code, offset), Affinity::Downstream)),
             );
         }
     });
@@ -73,7 +73,7 @@ fn gutter_grows_when_line_numbers_gain_a_digit(cx: &mut TestAppContext) {
     let before = cx.update(|_, cx| {
         page.read(cx)
             .layouts
-            .position(Cursor::new(0, Part::Code, 0))
+            .position(Cursor::new(0, Part::Code, 0), Affinity::Downstream)
             .unwrap()
             .0
             .x
@@ -87,8 +87,14 @@ fn gutter_grows_when_line_numbers_gain_a_digit(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| {
         let layouts = &page.read(cx).layouts;
-        let first = layouts.position(Cursor::new(0, Part::Code, 0)).unwrap().0;
-        let last = layouts.position(Cursor::new(0, Part::Code, 18)).unwrap().0;
+        let first = layouts
+            .position(Cursor::new(0, Part::Code, 0), Affinity::Downstream)
+            .unwrap()
+            .0;
+        let last = layouts
+            .position(Cursor::new(0, Part::Code, 18), Affinity::Downstream)
+            .unwrap()
+            .0;
         assert!(first.x > before);
         assert_eq!(last.x, first.x);
     });
@@ -100,7 +106,7 @@ fn host_styles_resize_and_hide_the_gutter(cx: &mut TestAppContext) {
     let x = |page: &gpui::Entity<Page>, cx: &mut gpui::App| {
         page.read(cx)
             .layouts
-            .position(Cursor::new(0, Part::Code, 0))
+            .position(Cursor::new(0, Part::Code, 0), Affinity::Downstream)
             .unwrap()
             .0
             .x

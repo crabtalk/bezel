@@ -2,7 +2,9 @@ use gpui::{
     Context, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext, Window, div,
     prelude::*, px, size,
 };
-use markdown::{AppExt as _, BlockLayouts, Cursor, Doc, Editing, Layout, Part, parse, render_with};
+use markdown::{
+    Affinity, AppExt as _, BlockLayouts, Cursor, Doc, Editing, Layout, Part, parse, render_with,
+};
 use ui::{AppExt as _, scroll::Visibility};
 
 struct Page {
@@ -45,7 +47,7 @@ fn x(page: &gpui::Entity<Page>, part: Part, cx: &mut VisualTestContext) -> gpui:
     cx.update(|_, cx| {
         page.read(cx)
             .layouts
-            .position(Cursor::new(0, part, 0))
+            .position(Cursor::new(0, part, 0), Affinity::Downstream)
             .unwrap()
             .0
             .x

@@ -15,8 +15,8 @@ use gpui::{
     KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
 };
 use markdown::{
-    Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark, Part,
-    Selection, Splice, Text, edit, edit::shortcut,
+    Affinity, Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark,
+    Part, Selection, Splice, Text, edit, edit::shortcut,
 };
 use std::{ops::Range, time::Duration};
 use theme::Theme;
@@ -417,8 +417,8 @@ pub struct Editor {
     /// Where the gutter handle was placed this frame, so the frame after can
     /// tell whether the block moved out from under it.
     handle_at: Option<gpui::Point<gpui::Pixels>>,
-    /// The column and row held across consecutive vertical moves.
-    goal: Option<VerticalGoal>,
+    /// The column held across consecutive vertical moves.
+    goal: Option<gpui::Pixels>,
     /// The size the app set this document in, in points, or `None` to follow
     /// the app's own text size. Absolute rather than a factor over the ladder,
     /// so moving the interface size leaves a document set to 16pt at 16pt.
@@ -430,13 +430,6 @@ pub struct Editor {
     base: Option<std::path::PathBuf>,
     image_overlay: Option<markdown::ImageOverlay>,
     image_overlay_corner: markdown::ImageOverlayCorner,
-}
-
-#[derive(Clone, Copy)]
-struct VerticalGoal {
-    x: gpui::Pixels,
-    /// Relative to the caret's painted position so scrolling cannot change the row.
-    row_from_caret: gpui::Pixels,
 }
 
 impl Editor {
@@ -681,7 +674,9 @@ impl Editor {
         if self.selection.is_collapsed() {
             return None;
         }
-        let (point, line_height) = self.layouts.position(self.selection.head)?;
+        let (point, line_height) = self
+            .layouts
+            .position(self.selection.head, self.selection.affinity)?;
         Some(gpui::Bounds::new(
             point,
             gpui::size(gpui::px(0.0), line_height),

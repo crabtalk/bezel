@@ -390,10 +390,7 @@ impl Editor {
     pub(super) fn taken(at: Cursor, range: Range<usize>) -> Delta {
         let start = Cursor::new(at.block, at.part, range.start);
         Delta::Spliced(Splice {
-            removed: Selection {
-                anchor: start,
-                head: Cursor::new(at.block, at.part, range.end),
-            },
+            removed: Selection::new(start, Cursor::new(at.block, at.part, range.end)),
             caret: start,
             blocks: 0,
         })

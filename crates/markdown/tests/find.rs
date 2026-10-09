@@ -108,10 +108,10 @@ fn shown(page: &gpui::Entity<Page>, range: Selection, cx: &mut VisualTestContext
 #[gpui::test]
 fn a_reveal_scrolls_a_block_never_built_into_view(cx: &mut TestAppContext) {
     let (page, mut cx) = open(&paragraphs(300), false, false, cx);
-    let range = Selection {
-        anchor: Cursor::new(250, Part::Body, 0),
-        head: Cursor::new(250, Part::Body, 9),
-    };
+    let range = Selection::new(
+        Cursor::new(250, Part::Body, 0),
+        Cursor::new(250, Part::Body, 9),
+    );
     assert!(!shown(&page, range, &mut cx), "the block starts off-screen");
 
     cx.update(|_, cx| page.read(cx).layouts.reveal(range));
@@ -128,10 +128,7 @@ fn a_reveal_scrolls_back_up(cx: &mut TestAppContext) {
             Cursor::new(280, Part::Body, 0),
             Cursor::new(280, Part::Body, 9),
         ),
-        Selection {
-            anchor: Cursor::new(3, Part::Body, 0),
-            head: Cursor::new(3, Part::Body, 9),
-        },
+        Selection::new(Cursor::new(3, Part::Body, 0), Cursor::new(3, Part::Body, 9)),
     );
     cx.update(|_, cx| page.read(cx).layouts.reveal(low));
     settle(&mut cx);
@@ -184,10 +181,10 @@ fn a_reveal_in_source_finds_its_line(cx: &mut TestAppContext) {
     let source = paragraphs(300);
     let offset = source.find("paragraph 260").unwrap();
     let (page, mut cx) = open(&source, true, false, cx);
-    let range = Selection {
-        anchor: Cursor::new(0, Part::Code, offset),
-        head: Cursor::new(0, Part::Code, offset + 13),
-    };
+    let range = Selection::new(
+        Cursor::new(0, Part::Code, offset),
+        Cursor::new(0, Part::Code, offset + 13),
+    );
 
     cx.update(|_, cx| page.read(cx).layouts.reveal(range));
     settle(&mut cx);

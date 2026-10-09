@@ -2,7 +2,9 @@
 //! text layout, which is the only place wrapping can be seen at all.
 
 use gpui::{Context, Render, TestAppContext, VisualTestContext, Window, div, prelude::*, px, size};
-use markdown::{AppExt as _, BlockLayouts, Cursor, Doc, Editing, Layout, Part, parse, render_with};
+use markdown::{
+    Affinity, AppExt as _, BlockLayouts, Cursor, Doc, Editing, Layout, Part, parse, render_with,
+};
 
 const WIDTH: f32 = 320.0;
 const HEIGHT: f32 = 400.0;
@@ -34,7 +36,7 @@ fn row(page: &gpui::Entity<Page>, offset: usize, cx: &mut VisualTestContext) -> 
         let (point, _) = page
             .read(cx)
             .layouts
-            .position(Cursor::new(0, Part::Code, offset))
+            .position(Cursor::new(0, Part::Code, offset), Affinity::Downstream)
             .expect("the fence recorded its line");
         f32::from(point.y)
     })

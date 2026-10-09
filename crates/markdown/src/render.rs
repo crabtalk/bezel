@@ -31,7 +31,7 @@ use crate::{
     block,
     doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, QuoteKind, Text},
     preview,
-    select::{Cursor, Selection},
+    select::{Affinity, Cursor, Selection},
     typography::Typography,
 };
 
@@ -475,6 +475,20 @@ impl<'a> Overlay<'a> {
             .shown(self.window_active, self.caret_inactive);
         (self.caret_on && collapsed && shown)
             .then(|| self.caret())
+            .flatten()
+    }
+
+    /// The caret's row at a soft wrap.
+    fn affinity(&self) -> Affinity {
+        self.selection
+            .map_or_else(Affinity::default, |selection| selection.affinity)
+    }
+
+    /// The grapheme after the caret, which a solid block covers. None at the
+    /// end of a row before a wrap, where that grapheme starts the next row.
+    fn covered(&self, text: &str, offset: usize) -> Option<Range<usize>> {
+        (self.affinity() == Affinity::Downstream)
+            .then(|| glyph_at(text, offset))
             .flatten()
     }
 

@@ -324,18 +324,18 @@ impl Render for Editor {
             // flag, so a shift variant cannot drift from the key it shadows.
             .on_action(cx.listener(|this, _: &Left, _, cx| {
                 if !this.menu_side(false, cx) {
-                    this.moved(false, Cursor::left, cx)
+                    this.horizontal(false, false, cx)
                 }
             }))
             .on_action(cx.listener(|this, _: &Right, _, cx| {
                 if !this.menu_side(true, cx) {
-                    this.moved(false, Cursor::right, cx)
+                    this.horizontal(true, false, cx)
                 }
             }))
             .on_action(cx.listener(|this, _: &Up, _, cx| this.vertical(false, false, cx)))
             .on_action(cx.listener(|this, _: &Down, _, cx| this.vertical(true, false, cx)))
-            .on_action(cx.listener(|this, _: &Home, _, cx| this.moved(false, line_home, cx)))
-            .on_action(cx.listener(|this, _: &End, _, cx| this.moved(false, line_end, cx)))
+            .on_action(cx.listener(|this, _: &Home, _, cx| this.row_edge(false, false, cx)))
+            .on_action(cx.listener(|this, _: &End, _, cx| this.row_edge(true, false, cx)))
             .on_action(cx.listener(|this, _: &DocumentStart, _, cx| {
                 this.moved(false, |_, doc| Selection::all(doc).anchor, cx)
             }))
@@ -348,16 +348,12 @@ impl Render for Editor {
             .on_action(
                 cx.listener(|this, _: &WordRight, _, cx| this.moved(false, Cursor::word_right, cx)),
             )
-            .on_action(
-                cx.listener(|this, _: &SelectLeft, _, cx| this.moved(true, Cursor::left, cx)),
-            )
-            .on_action(
-                cx.listener(|this, _: &SelectRight, _, cx| this.moved(true, Cursor::right, cx)),
-            )
+            .on_action(cx.listener(|this, _: &SelectLeft, _, cx| this.horizontal(false, true, cx)))
+            .on_action(cx.listener(|this, _: &SelectRight, _, cx| this.horizontal(true, true, cx)))
             .on_action(cx.listener(|this, _: &SelectUp, _, cx| this.vertical(false, true, cx)))
             .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.vertical(true, true, cx)))
-            .on_action(cx.listener(|this, _: &SelectHome, _, cx| this.moved(true, line_home, cx)))
-            .on_action(cx.listener(|this, _: &SelectEnd, _, cx| this.moved(true, line_end, cx)))
+            .on_action(cx.listener(|this, _: &SelectHome, _, cx| this.row_edge(false, true, cx)))
+            .on_action(cx.listener(|this, _: &SelectEnd, _, cx| this.row_edge(true, true, cx)))
             .on_action(cx.listener(|this, _: &SelectDocumentStart, _, cx| {
                 this.moved(true, |_, doc| Selection::all(doc).anchor, cx)
             }))

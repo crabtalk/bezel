@@ -69,7 +69,7 @@ pub use render::{
     PAINTED_CONTEXT, RevealMode, Toggle, image_source, markdown, render, render_source,
     render_with,
 };
-pub use select::{Cursor, Selection};
+pub use select::{Affinity, Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_at_many, serialize_with};
 pub use source::spans as source_spans;
 pub use source_style::SourceStyle;
