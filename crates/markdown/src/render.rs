@@ -1157,7 +1157,15 @@ fn block_element(
                     _ => Vec::new(),
                 })
                 .into_any_element(),
-            None => bookmark(overlay.block, url, *form, typography, theme, cx),
+            None => bookmark(
+                overlay.block,
+                url,
+                overlay.base,
+                *form,
+                typography,
+                theme,
+                cx,
+            ),
         },
         BlockKind::Table {
             align,

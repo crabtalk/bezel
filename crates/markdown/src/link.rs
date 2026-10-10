@@ -4,14 +4,15 @@
 //! link goes to [`App::open_url`]. A `#fragment` link reaches neither: it names
 //! a heading of the document it is in — see [`heading`].
 
-use std::{collections::HashSet, rc::Rc};
+use std::{collections::HashSet, path::Path, rc::Rc};
 
 use gpui::{App, Global, Window};
 
 use crate::{BlockKind, Doc, render::OnJump};
 
-/// Opens a link a reader clicked: an inline link or a bookmark card.
-pub type LinkHandler = fn(url: &str, &mut Window, &mut App);
+/// Opens a link a reader clicked: an inline link or a bookmark card. `base` is
+/// the document's [`crate::render::Editing::base`]; the URL is as written.
+pub type LinkHandler = fn(url: &str, base: Option<&Path>, &mut Window, &mut App);
 
 struct Installed(LinkHandler);
 
@@ -22,9 +23,9 @@ pub(crate) fn set_link_handler(cx: &mut App, handler: LinkHandler) {
     cx.set_global(Installed(handler));
 }
 
-pub(crate) fn open(url: &str, window: &mut Window, cx: &mut App) {
+pub(crate) fn open(url: &str, base: Option<&Path>, window: &mut Window, cx: &mut App) {
     match cx.try_global::<Installed>().map(|installed| installed.0) {
-        Some(handler) => handler(url, window, cx),
+        Some(handler) => handler(url, base, window, cx),
         None => cx.open_url(url),
     }
 }
@@ -91,9 +92,15 @@ impl Jump {
 
 /// A clicked link: a `#fragment` jumps to its heading, or does nothing when it
 /// names none or no [`Jump`] is given; anything else goes to [`open`].
-pub(crate) fn follow(url: &str, jump: Option<&Jump>, window: &mut Window, cx: &mut App) {
+pub(crate) fn follow(
+    url: &str,
+    base: Option<&Path>,
+    jump: Option<&Jump>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     let Some(fragment) = url.strip_prefix('#') else {
-        open(url, window, cx);
+        open(url, base, window, cx);
         return;
     };
     if let Some(jump) = jump

@@ -321,10 +321,11 @@ pub(super) fn painted_text(
             .collect();
         let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
         let jump = overlay.jump.cloned();
+        let base = overlay.base.map(Path::to_path_buf);
         InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
             .on_click(ranges, move |clicked, window, cx| {
                 if let Some(url) = urls.get(clicked) {
-                    crate::link::follow(url, jump.as_ref(), window, cx);
+                    crate::link::follow(url, base.as_deref(), jump.as_ref(), window, cx);
                 }
             })
             .tooltip(move |at, _window, cx| {

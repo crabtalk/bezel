@@ -186,6 +186,7 @@ pub(super) fn image(
 pub(super) fn bookmark(
     ix: usize,
     url: &str,
+    base: Option<&Path>,
     form: Form,
     typography: &Typography,
     theme: &Theme,
@@ -264,6 +265,7 @@ pub(super) fn bookmark(
         });
 
     let open = url.to_string();
+    let base = base.map(Path::to_path_buf);
     let card = div()
         .id(ElementId::named_usize("md-bookmark", ix))
         .flex()
@@ -275,7 +277,7 @@ pub(super) fn bookmark(
         .bg(theme.surface_card)
         .cursor(CursorStyle::PointingHand)
         .hover(|el| el.bg(theme.element_hover))
-        .on_click(move |_, window, cx| crate::link::open(&open, window, cx));
+        .on_click(move |_, window, cx| crate::link::open(&open, base.as_deref(), window, cx));
 
     if matches!(form, Form::Embed(_)) {
         card.flex_col()
@@ -348,6 +350,7 @@ impl Render for MentionCard {
             bookmark(
                 0,
                 &self.url,
+                None,
                 Form::Embed(None),
                 &self.typography,
                 &theme,
