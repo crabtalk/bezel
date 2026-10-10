@@ -18,6 +18,11 @@ pub trait Content: ThemeExt {
     /// The chip. Sets `self_start`, so a column does not stretch it.
     fn tag(&self, label: impl Into<SharedString>) -> Div;
 
+    /// A name on a wash of `tint`, without the ✕ — a label on an entry, an
+    /// option of a multi-select. A long name ends in `…` once the caller caps
+    /// the width.
+    fn chip(&self, label: impl Into<SharedString>, tint: Hsla) -> Div;
+
     // ...
 }
 ```

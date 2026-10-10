@@ -85,6 +85,26 @@ pub trait Content: ThemeExt {
             )
     }
 
+    /// A name in a colour — a label on an entry, an option of a
+    /// multi-select. `tint` is the hue it is told apart by, painted as a wash
+    /// under the theme's text; [`crate::multi_select::tint`] derives one from
+    /// the name. A long name ends in `…`; the caller caps the width.
+    fn chip(&self, label: impl Into<SharedString>, tint: gpui::Hsla) -> Div {
+        let theme = self.theme();
+        div()
+            .flex_none()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(2.0))
+            .px(px(6.0))
+            .rounded(px(Theme::control_radius()))
+            .bg(tint.opacity(0.22))
+            .text_style(TextStyle::Callout)
+            .text_color(theme.text)
+            .child(div().min_w_0().truncate().child(label.into()))
+    }
+
     /// Breadcrumb trail. Items are added by the caller with
     /// [`Self::breadcrumb_item`], separated by [`Self::breadcrumb_separator`].
     fn breadcrumb(&self) -> Div {

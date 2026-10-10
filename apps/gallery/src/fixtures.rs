@@ -26,6 +26,15 @@ pub const COMMANDS: [&str; 8] = [
 
 pub(crate) const SELECT_CHOICES: [&str; 3] = ["Comfortable", "Compact", "Dense"];
 
+/// The names the multi-select demo starts with, and whether each is on.
+pub(crate) const LABELS: [(&str, bool); 5] = [
+    ("design", true),
+    ("q3", false),
+    ("research", true),
+    ("reading-list", false),
+    ("urgent", false),
+];
+
 /// What the tab-strip demo can open — label, glyph, whether it carries the
 /// unsaved dot, and its trailing badge if it has one. The `+` opens them in
 /// this order.

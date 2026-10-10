@@ -132,6 +132,77 @@ impl Gallery {
                 )
                 .into_any_element(),
 
+            "multi-select" => {
+                let open =
+                    self.controls.labels_menu.is_open() || self.controls.labels_menu.is_closing();
+                let applied: Vec<_> = self
+                    .controls
+                    .labels
+                    .iter()
+                    .filter(|(_, on)| *on)
+                    .map(|(name, _)| name.clone())
+                    .collect();
+                section
+                    .child(hint(
+                        &theme,
+                        "type to filter or create, backspace in an empty query \
+                         takes the last one off, and a row's ellipsis renames or \
+                         deletes it.",
+                    ))
+                    .child(
+                        div().w(px(280.0)).relative().child(
+                            popover::trigger_press(
+                                div()
+                                    .id("labels-trigger")
+                                    .min_h(px(28.0))
+                                    .px(px(6.0))
+                                    .flex()
+                                    .flex_row()
+                                    .flex_wrap()
+                                    .items_center()
+                                    .gap(px(4.0))
+                                    .rounded(px(Theme::control_radius()))
+                                    .cursor_pointer()
+                                    .hover(|el| el.bg(theme.element_hover))
+                                    .on_click(cx.listener(|view, _, window, cx| {
+                                        if view.controls.labels_menu.take_press_was_open() {
+                                            popover::close_popup(view, cx, |view: &mut Self| {
+                                                &mut view.controls.labels_menu
+                                            });
+                                        } else {
+                                            view.controls.labels_menu.open(());
+                                            view.controls
+                                                .labels_picker
+                                                .update(cx, |picker, cx| picker.reset(window, cx));
+                                        }
+                                        cx.notify();
+                                    })),
+                                |view: &mut Self| &mut view.controls.labels_menu,
+                                cx,
+                            )
+                            .when(applied.is_empty(), |trigger| {
+                                trigger.child(
+                                    div()
+                                        .text_style(TextStyle::Callout)
+                                        .text_color(theme.text_faint)
+                                        .child("Add labels"),
+                                )
+                            })
+                            .children(applied.iter().map(|name| {
+                                theme.chip(name.clone(), multi_select::tint(&theme, name))
+                            }))
+                            .when(open, |trigger| {
+                                trigger.child(popover::anchored_menu_below(
+                                    "labels-menu",
+                                    self.controls.labels_picker.clone().into_any_element(),
+                                    self.controls.labels_menu.closing_since(),
+                                ))
+                            }),
+                        ),
+                    )
+                    .into_any_element()
+            }
+
             "checkbox-radio" => section
                 .child(hint(
                     &theme,
@@ -696,6 +767,12 @@ pub(crate) struct State {
     /// The combobox, by contrast, owns its own menu — it has a query field to
     /// hold, so it is an entity.
     pub(crate) language: Entity<Combobox>,
+    /// The multi-select's names, sorted, and whether each is on. The picker
+    /// paints them and reports requests; this is what answers them.
+    pub(crate) labels: Vec<(SharedString, bool)>,
+    pub(crate) labels_menu: popover::Popup<()>,
+    pub(crate) labels_picker: Entity<MultiSelect>,
+    _labels_picker: gpui::Subscription,
     /// Focus for the wired controls. A stateless `fn(&Theme, ..) -> Div` has
     /// nowhere to keep a handle, so the view that composes it holds them —
     /// the same place it already holds what each one is set to.
@@ -724,6 +801,42 @@ impl State {
         let picker = cx.new(|cx| ui::color::ColorPicker::new(gpui::rgb(0x0A84FF).into(), true, cx));
         let _picker = cx.subscribe(&picker, |view, _, _: &ui::color::ColorPickerEvent, cx| {
             view.controls.swatch = None;
+            cx.notify();
+        });
+        let labels: Vec<(SharedString, bool)> =
+            LABELS.iter().map(|&(name, on)| (name.into(), on)).collect();
+        let labels_picker = cx.new(|cx| {
+            MultiSelect::new(label_choices(&labels), cx)
+                .with_create(normalize_label)
+                .with_manage()
+        });
+        let _labels_picker = cx.subscribe(&labels_picker, |view, picker, event, cx| {
+            let labels = &mut view.controls.labels;
+            match event {
+                MultiSelectEvent::Toggled { name, on } => {
+                    if let Some(label) = labels.iter_mut().find(|(label, _)| label == name) {
+                        label.1 = *on;
+                    }
+                }
+                MultiSelectEvent::Created(name) => labels.push((name.clone(), true)),
+                MultiSelectEvent::Renamed { from, to } => {
+                    let on = labels
+                        .iter()
+                        .any(|(label, on)| *on && (label == from || label == to));
+                    labels.retain(|(label, _)| label != from && label != to);
+                    labels.push((to.clone(), on));
+                }
+                MultiSelectEvent::Deleted(name) => labels.retain(|(label, _)| label != name),
+                MultiSelectEvent::Dismissed => {
+                    popover::close_popup(view, cx, |view: &mut Gallery| {
+                        &mut view.controls.labels_menu
+                    });
+                    return;
+                }
+            }
+            labels.sort();
+            let choices = label_choices(labels);
+            picker.update(cx, |picker, cx| picker.set_choices(choices, cx));
             cx.notify();
         });
         Self {
@@ -764,6 +877,36 @@ impl State {
             swatch: Some(7),
             picker,
             _picker,
+            labels,
+            labels_menu: popover::Popup::default(),
+            labels_picker,
+            _labels_picker,
         }
     }
+}
+
+/// The demo's names as the picker's choices.
+fn label_choices(labels: &[(SharedString, bool)]) -> Vec<multi_select::Choice> {
+    labels
+        .iter()
+        .map(|(name, on)| multi_select::Choice {
+            name: name.clone(),
+            check: if *on {
+                multi_select::Check::On
+            } else {
+                multi_select::Check::Off
+            },
+            count: None,
+        })
+        .collect()
+}
+
+/// Lowercase and trimmed, with each run of spaces as one `-`.
+fn normalize_label(text: &str) -> Option<SharedString> {
+    let name = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
+        .to_lowercase();
+    (!name.is_empty()).then(|| name.into())
 }

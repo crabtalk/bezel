@@ -31,6 +31,7 @@ use ui::{
     keys, list, loaders,
     menu::Item,
     menubar::{self, Menu, Menubar, MenubarEvent},
+    multi_select::{self, MultiSelect, MultiSelectEvent},
     pagination,
     palette::{self, CommandPalette, PaletteEvent},
     pending::PendingKeys,
@@ -91,6 +92,7 @@ pub fn init(cx: &mut App) {
     canvas::init(cx);
     palette::init(cx);
     combobox::init(cx);
+    multi_select::init(cx);
     ui::menu::init(cx);
     date::init(cx);
     focus::init(cx);

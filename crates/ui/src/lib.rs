@@ -36,6 +36,7 @@ pub mod list;
 pub mod loaders;
 pub mod menu;
 pub mod menubar;
+pub mod multi_select;
 pub mod pagination;
 pub mod palette;
 pub mod pending;
