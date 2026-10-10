@@ -584,6 +584,7 @@ dependencies = [
 name = "bezel-blocks"
 version = "0.2.12"
 dependencies = [
+ "bezel-chart",
  "bezel-gpui",
  "bezel-theme",
 ]

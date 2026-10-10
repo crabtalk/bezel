@@ -22,7 +22,6 @@ workspace = true
 # A painted fence that carries a parser is a feature, so a build that never
 # shows one never compiles the parser.
 [features]
-chart = ["dep:chart", "chart/vega-lite"]
 mermaid = [
     "dep:canvas-core",
     "canvas-core/mermaid",
@@ -48,7 +47,3 @@ gpui = { workspace = true, features = ["test-support"] }
 [[test]]
 name = "mermaid"
 required-features = ["mermaid"]
-
-[[test]]
-name = "vega_lite"
-required-features = ["chart"]

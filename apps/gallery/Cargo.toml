@@ -26,7 +26,7 @@ canvas.workspace = true
 chart.workspace = true
 editor.workspace = true
 markdown = { workspace = true, features = ["mermaid"] }
-blocks.workspace = true
+blocks = { workspace = true, features = ["vega-lite"] }
 motion.workspace = true
 theme.workspace = true
 ui.workspace = true

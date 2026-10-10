@@ -28,7 +28,7 @@ mod app;
 pub use app::AppExt;
 
 pub mod block;
-#[cfg(any(feature = "mermaid", feature = "chart"))]
+#[cfg(feature = "mermaid")]
 pub mod charts;
 pub mod doc;
 pub mod edit;
