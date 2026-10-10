@@ -50,8 +50,8 @@ pub use brand::{BASE_COLORS, Brand, Ink, TextInk, Tint, Vibrancy};
 pub use platform::{LENSED, frosted_window};
 
 pub use color::{
-    contrast_ratio, flatten, grey, hsl_to_rgb, lightness, mix, neutral, oklch, oklch_to_srgb,
-    relative_luminance, rgb_to_hsl, tint,
+    contrast_ratio, flatten, grey, hsl_to_rgb, lightness, mix, mix_oklab, neutral, oklch,
+    oklch_to_srgb, relative_luminance, rgb_to_hsl, tint,
 };
 pub use paint::{
     INK_FILL_SCALE, INK_HAIRLINE_SCALE, SCRIM_ALPHA_DARK, band, card_selected_bg,
@@ -60,7 +60,7 @@ pub use paint::{
     surface_shadows, theme_generation, user_bubble_bg, wash,
 };
 pub use theme::{
-    ControlSize, Glass, HighlightKind, Material, MaterialSpec, Metrics, Sizing, SurfaceSpec,
+    ControlSize, Glass, HighlightKind, Material, MaterialSpec, Metrics, Seed, Sizing, SurfaceSpec,
     SurfaceStyle, SyntaxPalette, TextStyle, Theme, ThemeFamily, Typeset, Variant, base_text_size,
 };
 

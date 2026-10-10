@@ -797,13 +797,86 @@ fn a_family_variant_lays_its_tokens_over_the_shipped_palette() {
     )
     .unwrap();
     let mut theme = Theme::dark();
-    let unknown = family.dark.apply(&mut theme);
+    let unknown = family.dark.as_ref().unwrap().apply(&mut theme);
     assert_eq!(unknown, ["nope"]);
     assert_eq!(theme.bg, gpui::rgb(0x282828).into());
     assert_eq!(theme.syntax.keyword, gpui::rgb(0xfb4934).into());
     assert_eq!(theme.terminal_ansi[1], gpui::rgb(0xcc241d).into());
     assert_eq!(theme.surface, Theme::dark().surface);
-    assert_eq!(family.theme(Appearance::Light).bg, Theme::light().bg);
+    let light = family.theme(Appearance::Light).unwrap();
+    assert_eq!(light.bg, Theme::light().bg);
+    assert_eq!(light.family.as_deref(), Some("Test"));
+}
+
+#[test]
+fn a_family_may_have_one_variant_but_not_none() {
+    let dark_only: ThemeFamily =
+        serde_json::from_str(r##"{ "name": "Night", "dark": { "bg": "#000000" } }"##).unwrap();
+    assert!(dark_only.theme(Appearance::Dark).is_some());
+    assert!(dark_only.theme(Appearance::Light).is_none());
+    assert!(serde_json::from_str::<ThemeFamily>(r##"{ "name": "Empty" }"##).is_err());
+}
+
+#[test]
+fn a_seed_grows_a_variant_and_tokens_override_it() {
+    let family: ThemeFamily = serde_json::from_str(
+        r##"{
+            "name": "Seeded",
+            "dark": {
+                "seed": {
+                    "surface": "#111827",
+                    "ink": "#e4e4e7",
+                    "accent": "#ff5c5c",
+                    "removed": "#ff5c5c"
+                },
+                "caret": "#3b82f6"
+            }
+        }"##,
+    )
+    .unwrap();
+    let theme = family.theme(Appearance::Dark).unwrap();
+    let surface: gpui::Hsla = gpui::rgb(0x111827).into();
+    assert_eq!(theme.bg, surface);
+    assert_eq!(theme.accent, gpui::rgb(0xff5c5c).into());
+    assert_eq!(theme.diff_del, gpui::rgb(0xff5c5c).into());
+    assert_eq!(theme.caret, gpui::rgb(0x3b82f6).into());
+    assert_eq!(theme.diff_add, Theme::dark().diff_add);
+    // Raised surfaces step from the panel toward the text.
+    assert!(relative_luminance(theme.surface_raised) > relative_luminance(surface));
+    assert!(relative_luminance(theme.surface_raised) < relative_luminance(theme.text));
+    assert!(
+        serde_json::from_str::<ThemeFamily>(
+            r##"{ "name": "Typo", "dark": { "seed": { "surface": "#000000", "ink": "#ffffff", "accent": "#ff0000", "accnet": "#ff0000" } } }"##
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn a_brand_tint_leaves_a_family_palette_alone() {
+    let brand = Brand {
+        tint: Tint::new(257.417, 0.046),
+        ..Brand::default()
+    };
+    let family: ThemeFamily =
+        serde_json::from_str(r##"{ "name": "Grey", "dark": { "bg": "#202020" } }"##).unwrap();
+    let mut themed = family.theme(Appearance::Dark).unwrap();
+    brand.apply(&mut themed);
+    assert_eq!(themed.bg, gpui::rgb(0x202020).into());
+    let mut shipped = Theme::dark();
+    brand.apply(&mut shipped);
+    assert_ne!(shipped.bg, Theme::dark().bg);
+}
+
+#[test]
+fn an_oklab_mix_runs_from_one_end_to_the_other() {
+    let (black, white) = (grey(0), grey(255));
+    assert_eq!(mix_oklab(black, white, 0.0), black);
+    let end = mix_oklab(black, white, 1.0);
+    assert!((end.l - 1.0).abs() < 1e-3);
+    // Halfway in OKLab is oklch L 0.5, not sRGB 50%.
+    let mid = mix_oklab(black, white, 0.5);
+    assert!((lightness(mid) - 0.5).abs() < 1e-3);
 }
 
 #[test]

@@ -16,6 +16,7 @@ impl Theme {
     pub fn dark() -> Self {
         Self {
             appearance: Appearance::Dark,
+            family: None,
             bg: color::grey(6),       // main panel — sampled #060606
             surface: color::grey(13), // shell / sidebar — sampled #0d0d0d
             surface_raised: color::neutral(0.235),
@@ -164,6 +165,7 @@ impl Theme {
     pub fn light() -> Self {
         Self {
             appearance: Appearance::Light,
+            family: None,
             bg: color::grey(0xff), // main panel — clean white
             // Deeper than ~neutral-100 looks on paper: the content card is pure
             // white and sits *inside* this surface, so too small a step leaves the
