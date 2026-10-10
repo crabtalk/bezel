@@ -31,6 +31,7 @@ impl Gallery {
                 .into_any_element(),
             "editor" => self.patterns.editor.clone().into_any_element(),
             "canvas" => self.patterns.canvas.clone().into_any_element(),
+            "charts" => self.patterns.charts.clone().into_any_element(),
             "browser" => self.patterns.browser.clone().into_any_element(),
             "ribbon" => self.patterns.ribbon.clone().into_any_element(),
             #[cfg(not(target_family = "wasm"))]

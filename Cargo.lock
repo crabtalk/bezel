@@ -2876,6 +2876,7 @@ dependencies = [
  "bezel-blocks",
  "bezel-browser",
  "bezel-canvas",
+ "bezel-chart",
  "bezel-editor",
  "bezel-gpui",
  "bezel-gpui-platform",

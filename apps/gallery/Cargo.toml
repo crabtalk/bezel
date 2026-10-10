@@ -23,6 +23,7 @@ theme.workspace = true
 agent.workspace = true
 browser.workspace = true
 canvas.workspace = true
+chart.workspace = true
 editor.workspace = true
 markdown = { workspace = true, features = ["mermaid"] }
 blocks.workspace = true
