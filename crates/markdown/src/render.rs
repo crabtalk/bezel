@@ -739,7 +739,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         guesses: guesses.into(),
         keep: kept,
         scroll: scroll.cloned(),
-        item_of: Box::new(|at| at.block),
+        item_of: Rc::new(|at| at.block),
         build: Box::new(move |ix, window, cx| {
             let overlay = Overlay {
                 block: ix,

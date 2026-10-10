@@ -359,7 +359,7 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
         scroll: scroll.cloned(),
         item_of: {
             let ranges = ranges.clone();
-            Box::new(move |at| ranges.partition_point(|line| line.end < at.offset))
+            Rc::new(move |at| ranges.partition_point(|line| line.end < at.offset))
         },
         build: Box::new(move |index, window, _| {
             let span = ranges[index].clone();

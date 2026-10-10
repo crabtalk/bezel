@@ -131,6 +131,26 @@ impl Editor {
         ))
     }
 
+    /// How far down the editor each anchor's first line sits, from the
+    /// editor's own top, in document order. A detached anchor sits where its
+    /// words were.
+    ///
+    /// Read from last frame's layout. An anchor whose line has not been built
+    /// gets the top of its block, guessed until the block is measured; the
+    /// editor repaints when a guess moves.
+    pub fn anchor_tops(&self) -> Vec<(AnchorId, gpui::Pixels)> {
+        let mut tops: Vec<_> = self
+            .anchors
+            .iter()
+            .filter_map(|anchor| {
+                let start = anchor.range.clamp(&self.doc).ordered().0;
+                Some((start, anchor.id, self.layouts.top(start)? - self.origin.y))
+            })
+            .collect();
+        tops.sort_by_key(|(start, ..)| *start);
+        tops.into_iter().map(|(_, id, top)| (id, top)).collect()
+    }
+
     /// The ranges the renderer washes, clamped because a block can change kind
     /// under an anchor and take its part with it.
     pub(super) fn annotations(&self) -> Vec<(Selection, Annotation)> {

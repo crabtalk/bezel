@@ -373,3 +373,35 @@ fn anchors_cross_to_and_from_the_markdown(cx: &mut TestAppContext) {
     assert_eq!(source, SOURCE);
     assert_eq!(ranges, vec![(ID, Some(bravo..bravo + 5))]);
 }
+
+#[gpui::test]
+fn anchor_tops_follow_the_document_down(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    let (alpha, charlie) = (
+        SOURCE.find("alpha").unwrap(),
+        SOURCE.find("charlie").unwrap(),
+    );
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_source_anchors(
+                SOURCE,
+                vec![
+                    (
+                        AnchorId(2),
+                        charlie..charlie + 7,
+                        markdown::Annotation::Open,
+                    ),
+                    (ID, alpha..alpha + 5, markdown::Annotation::Open),
+                ],
+                cx,
+            )
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let tops = cx.update(|_, cx| editor.read(cx).anchor_tops());
+    let ids: Vec<_> = tops.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, vec![ID, AnchorId(2)], "in document order");
+    assert!(tops[0].1 < tops[1].1, "{tops:?}");
+}

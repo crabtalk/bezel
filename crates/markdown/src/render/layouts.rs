@@ -37,6 +37,17 @@ pub(super) struct Frames {
     heights: Heights,
     /// Kept across frames until the column has shown it.
     reveal: Option<Reveal>,
+    /// Kept across frames: [`Self::clear`] leaves it.
+    placed: Option<Placed>,
+}
+
+/// Where the column put each of its items, built or not.
+struct Placed {
+    /// The column's top left, in window coordinates.
+    origin: Point<Pixels>,
+    /// Each item's top, from the column's top.
+    tops: Vec<Pixels>,
+    item_of: super::column::ItemOf,
 }
 
 /// Where [`BlockLayouts::reveal_with`] puts a range that is not showing. A
@@ -475,6 +486,49 @@ impl BlockLayouts {
             let keep: std::collections::HashSet<u64> = keys.iter().copied().collect();
             heights.by_key.retain(|key, _| keep.contains(key));
         }
+    }
+
+    /// Where `at` sits down the window, as last frame placed it: the top of
+    /// its row where that row painted, else the top of the item holding it — a
+    /// block, or a line of the source — measured or guessed. `None` before the
+    /// column has been laid out.
+    ///
+    /// Off screen the answer is a guess until the item is built, and moves when
+    /// it is measured.
+    pub fn top(&self, at: Cursor) -> Option<Pixels> {
+        let frames = self.0.borrow();
+        let placed = frames.placed.as_ref()?;
+        if let Some(row) = row_of(&frames, at, Affinity::Downstream) {
+            return Some(row.bounds.top());
+        }
+        let item = (placed.item_of)(at);
+        let top = placed.tops.get(item).or(placed.tops.last())?;
+        Some(placed.origin.y + *top)
+    }
+
+    /// Record where the column put its items this frame, and whether any item
+    /// moved against the column since the last one.
+    pub(super) fn place(
+        &self,
+        origin: Point<Pixels>,
+        tops: Vec<Pixels>,
+        item_of: super::column::ItemOf,
+    ) -> bool {
+        let mut frames = self.0.borrow_mut();
+        let moved = frames.placed.as_ref().is_none_or(|placed| {
+            placed.tops.len() != tops.len()
+                || placed
+                    .tops
+                    .iter()
+                    .zip(&tops)
+                    .any(|(was, now)| (*was - *now).abs() > px(0.5))
+        });
+        frames.placed = Some(Placed {
+            origin,
+            tops,
+            item_of,
+        });
+        moved
     }
 
     pub(super) fn clear(&self) {
