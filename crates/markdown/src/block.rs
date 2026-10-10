@@ -8,7 +8,8 @@
 //! paints the source it always did.
 //!
 //! The `mermaid` feature paints a ` ```mermaid ` fence the installed renderer
-//! leaves, as a diagram or a chart.
+//! leaves, as a diagram or a chart. The `chart` feature paints a
+//! ` ```vega-lite ` fence as a chart.
 //!
 //! Installed once at boot like the highlighter, and read at paint.
 
@@ -59,6 +60,17 @@ pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Op
         && let Some(painted) = renderer(fence, window, cx)
     {
         return Some(painted);
+    }
+    #[cfg(feature = "chart")]
+    if fence.language == crate::charts::VEGA_LITE {
+        return crate::charts::render(
+            crate::charts::VEGA_LITE,
+            fence.code,
+            chart::vega_lite::import,
+            fence.height,
+            window,
+            cx,
+        );
     }
     #[cfg(feature = "mermaid")]
     if fence.language == crate::mermaid::LANGUAGE {

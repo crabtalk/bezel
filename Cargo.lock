@@ -649,6 +649,7 @@ dependencies = [
  "bezel-gpui",
  "bezel-theme",
  "mermaid-rs-renderer",
+ "serde_json",
 ]
 
 [[package]]

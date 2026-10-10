@@ -1,4 +1,5 @@
-//! A fence drawn as a chart: ` ```mermaid ` pie and xychart source.
+//! A fence drawn as a chart: ` ```mermaid ` pie and xychart source under the
+//! `mermaid` feature, and ` ```vega-lite ` under `chart`.
 //!
 //! Parsing costs milliseconds and paint runs every frame, so each source is
 //! parsed once and its chart kept. The kept chart's data generation is what
@@ -17,6 +18,9 @@ use gpui::{AnyElement, App, Global, MouseButton, SharedString, Window, div, prel
 use theme::Theme;
 
 use crate::render::{copy_button, fence_band, fence_panel};
+
+#[cfg(feature = "chart")]
+pub const VEGA_LITE: &str = "vega-lite";
 
 /// The debug selector on a drawn chart.
 pub const SELECTOR: &str = "chart";

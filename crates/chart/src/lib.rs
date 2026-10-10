@@ -10,6 +10,8 @@ pub mod model;
 pub mod plan;
 pub mod scale;
 pub mod time;
+#[cfg(feature = "vega-lite")]
+pub mod vega_lite;
 pub mod view;
 
 pub use data::{Column, Data, Text};
