@@ -63,8 +63,8 @@ impl IntoElement for ChartView {
     }
 }
 
-/// The colour of series `index`: the theme's accent, then its status colours,
-/// then hues between them.
+/// The colour at `index` of a chart's colours: the theme's accent, then its
+/// status colours, then hues between them.
 pub fn series_color(theme: &Theme, index: usize) -> Hsla {
     let hue = |color: Hsla, degrees: f32| Hsla {
         h: degrees / 360.0,
@@ -86,9 +86,8 @@ pub fn series_color(theme: &Theme, index: usize) -> Hsla {
 /// What a plan was made from. Equal keys make equal plans.
 #[derive(Clone, PartialEq)]
 struct Key {
-    generation: u64,
-    mark: Mark,
-    encoding: Encoding,
+    /// Each layer's data generation, mark and encoding.
+    layers: Vec<(u64, Mark, Encoding)>,
     title: Option<SharedString>,
     size: [f32; 2],
     font: Font,
@@ -156,9 +155,12 @@ impl Element for ChartView {
     ) -> Prepainted {
         let theme = Theme::of(cx);
         let key = Key {
-            generation: self.chart.data.generation(),
-            mark: self.chart.mark,
-            encoding: self.chart.encoding.clone(),
+            layers: self
+                .chart
+                .layers
+                .iter()
+                .map(|layer| (layer.data.generation(), layer.mark, layer.encoding.clone()))
+                .collect(),
             title: self.chart.title.clone(),
             size: [bounds.size.width.as_f32(), bounds.size.height.as_f32()],
             font: window.text_style().font(),
@@ -418,9 +420,9 @@ fn paint_chart(
     window.with_content_mask(Some(mask), |window| {
         let mut paths = built.paths.iter().peekable();
         for (s, series) in plan.series.iter().enumerate() {
-            let color = series_color(theme, s);
+            let color = series_color(theme, series.color);
             while let Some((_, path, filled)) = paths.next_if(|(of, ..)| *of == s) {
-                let color = if *filled && plan.chart().mark == Mark::Area {
+                let color = if *filled && series.mark == Mark::Area {
                     color.opacity(AREA_FILL)
                 } else {
                     color
@@ -535,7 +537,7 @@ fn paint_tip(
         .rows
         .iter()
         .map(|(s, value)| {
-            let text = match &built.plan.series[*s].name {
+            let text = match &built.plan.colors[*s] {
                 Some(name) if *name != tip.title => format!("{name}  {value}"),
                 _ => value.to_string(),
             };

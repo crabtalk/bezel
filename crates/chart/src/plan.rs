@@ -17,7 +17,7 @@ use gpui::SharedString;
 use crate::{
     data::Column,
     decimate,
-    model::{Channel, Chart, Kind, Mark, Scale, Sort},
+    model::{Channel, Chart, Encoding, Kind, Layer, Mark, Scale, Sort},
     scale::{self, Band, Linear, Ticks},
     time,
 };
@@ -122,10 +122,13 @@ pub enum Marks {
     Slices(Vec<Slice>),
 }
 
-/// One colour's marks. `name` is its value of the colour field.
+/// One colour's marks in one layer. `name` is its value of the colour field.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Series {
     pub name: Option<SharedString>,
+    /// Its place in the chart's colours.
+    pub color: usize,
+    pub mark: Mark,
     pub marks: Marks,
 }
 
@@ -133,9 +136,9 @@ pub struct Series {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tip {
     pub title: SharedString,
-    /// Series and its value there.
+    /// Colour and the value read out in it.
     pub rows: Vec<(usize, SharedString)>,
-    /// Series and the point of it read out.
+    /// Colour and the point read out.
     pub points: Vec<(usize, [f32; 2])>,
     /// The band read out.
     pub band: Option<Rect>,
@@ -153,44 +156,58 @@ pub struct Plan {
     pub axes: Vec<Axis>,
     /// Paint order.
     pub series: Vec<Series>,
+    /// Each colour's value of the colour field. `None` for a layer's own
+    /// colour, where it has no colour field.
+    pub colors: Vec<Option<SharedString>>,
     chart: Chart,
     hover: Hover,
 }
 
+#[derive(Clone, Debug, Default)]
+struct Hover {
+    bands: Option<Bands>,
+    traces: Vec<Trace>,
+    slices: Option<Slices>,
+}
+
+/// Bars' values by band.
 #[derive(Clone, Debug)]
-enum Hover {
-    /// Per series, ascending in x: each point's position and row.
-    Along {
-        x: Channel,
-        y: Channel,
-        points: Vec<Vec<([f32; 2], u32)>>,
-    },
-    /// `values[band * series + s]`, `NaN` for none.
-    Bands {
-        band: Band,
-        vertical: bool,
-        across: (f32, f32),
-        labels: Vec<SharedString>,
-        values: Vec<f64>,
-        series: usize,
-    },
-    Slices {
-        slices: Vec<(usize, Slice, f64)>,
-        total: f64,
-    },
+struct Bands {
+    band: Band,
+    vertical: bool,
+    across: (f32, f32),
+    labels: Vec<SharedString>,
+    /// Colour, and its value in each band, `NaN` for none.
+    values: Vec<(usize, Vec<f64>)>,
+}
+
+/// One colour of a line, area or point layer, ascending in x: each point and
+/// its row.
+#[derive(Clone, Debug)]
+struct Trace {
+    layer: usize,
+    color: usize,
+    points: Vec<([f32; 2], u32)>,
+}
+
+#[derive(Clone, Debug)]
+struct Slices {
+    slices: Vec<(usize, Slice, f64)>,
+    total: f64,
 }
 
 /// `chart` laid out at `size`, its labels `line` high and as wide as `measure`
-/// says. `None` for an encoding the mark cannot be drawn from: a field the
-/// data does not hold, a quantitative field over text, a colour that is not
-/// discrete, or a size too small to hold a plot.
+/// says. `None` for what cannot be drawn: a field the data does not hold, a
+/// quantitative field over text, a colour that is not discrete, layers that
+/// disagree on which axis is discrete, a layered arc, or a size too small to
+/// hold a plot.
 pub fn plan(
     chart: &Chart,
     size: [f32; 2],
     line: f32,
     measure: &mut dyn FnMut(&str) -> f32,
 ) -> Option<Plan> {
-    let groups = Groups::of(chart)?;
+    let colors = Colors::of(chart)?;
     let mut layout = Layout {
         size,
         line,
@@ -198,22 +215,27 @@ pub fn plan(
         reserved: 0.0,
         measure,
     };
-    let title = chart.title.clone().map(|text| layout.line_at(text, PAD));
-    let color_title = chart.encoding.color.as_ref().and_then(|c| c.title.clone());
-    let (legend_title, legend) = layout.legend(color_title, &groups.names);
-    let axis_title = |channel: &Option<Channel>| match chart.mark {
-        Mark::Arc => None,
-        _ => channel.as_ref()?.title.clone(),
+    let first_title = |channel: fn(&Encoding) -> &Option<Channel>| {
+        chart
+            .layers
+            .iter()
+            .find_map(|layer| channel(&layer.encoding).as_ref()?.title.clone())
     };
-    let x_title = axis_title(&chart.encoding.x);
+    let title = chart.title.clone().map(|text| layout.line_at(text, PAD));
+    let (legend_title, legend) = layout.legend(first_title(|e| &e.color), &colors.names);
+    let arc = chart.layers.iter().any(|layer| layer.mark == Mark::Arc);
+    let x_title = first_title(|e| &e.x).filter(|_| !arc);
     if x_title.is_some() {
         layout.reserved = line + GAP;
     }
-    let y_title = axis_title(&chart.encoding.y).map(|text| layout.line_at(text, PAD));
-    let (plot, mut axes, marks, hover) = match chart.mark {
-        Mark::Arc => arcs(chart, &groups, &layout)?,
-        Mark::Bar => bars(chart, &groups, &mut layout)?,
-        Mark::Line | Mark::Area | Mark::Point => along(chart, &groups, &mut layout)?,
+    let y_title = first_title(|e| &e.y)
+        .filter(|_| !arc)
+        .map(|text| layout.line_at(text, PAD));
+
+    let (plot, mut axes, series, hover) = match (arc, chart.layers.as_slice()) {
+        (true, [layer]) => arcs(layer, &colors, &layout)?,
+        (true, _) | (false, []) => return None,
+        (false, _) => cartesian(chart, &colors, &mut layout)?,
     };
     let x_title = x_title.map(|text| {
         let label = layout.label(text, [0.0, 0.0]);
@@ -231,12 +253,6 @@ pub fn plan(
             Side::Left => y_title.clone(),
         };
     }
-    let series = groups
-        .names
-        .into_iter()
-        .zip(marks)
-        .map(|(name, marks)| Series { name, marks })
-        .collect();
     Some(Plan {
         size,
         plot,
@@ -245,6 +261,7 @@ pub fn plan(
         legend,
         axes,
         series,
+        colors: colors.names,
         chart: chart.clone(),
         hover,
     })
@@ -257,149 +274,181 @@ impl Plan {
 
     /// What `point` is over, if anything.
     pub fn hit(&self, point: [f32; 2]) -> Option<Tip> {
-        match &self.hover {
-            Hover::Along { x, y, points } => {
-                if !self.plot.contains(point) {
-                    return None;
-                }
-                let at = points
-                    .iter()
-                    .filter_map(|series| nearest(series, point[0]))
-                    .min_by(|a, b| {
-                        (a.0[0] - point[0])
-                            .abs()
-                            .total_cmp(&(b.0[0] - point[0]).abs())
-                    })?
-                    .0[0];
-                let hits: Vec<(usize, [f32; 2], u32)> = points
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(s, series)| {
-                        let (p, row) = nearest(series, at)?;
-                        ((p[0] - at).abs() <= SAME_X).then_some((s, *p, *row))
-                    })
-                    .collect();
-                let first = hits.first()?.2 as usize;
-                Some(Tip {
-                    title: self.text(x, first)?,
-                    rows: hits
-                        .iter()
-                        .filter_map(|&(s, _, row)| Some((s, self.text(y, row as usize)?)))
-                        .collect(),
-                    points: hits.iter().map(|&(s, p, _)| (s, p)).collect(),
-                    band: None,
-                })
+        if let Some(Slices { slices, total }) = &self.hover.slices {
+            let (center, radius) = slices.first().map(|(_, s, _)| (s.center, s.radius))?;
+            let (dx, dy) = (point[0] - center[0], point[1] - center[1]);
+            if dx.hypot(dy) > radius {
+                return None;
             }
-            Hover::Bands {
+            let angle = dx.atan2(-dy).rem_euclid(TAU);
+            let (color, _, value) = slices
+                .iter()
+                .find(|(_, slice, _)| angle >= slice.start && angle < slice.end)?;
+            let share = value / total * 100.0;
+            return Some(Tip {
+                title: self.colors[*color].clone().unwrap_or_default(),
+                rows: vec![(
+                    *color,
+                    format!("{} ({share:.1}%)", scale::value(*value)).into(),
+                )],
+                points: Vec::new(),
+                band: None,
+            });
+        }
+        if !self.plot.contains(point) {
+            return None;
+        }
+
+        let mut tip = Tip {
+            title: SharedString::default(),
+            rows: Vec::new(),
+            points: Vec::new(),
+            band: None,
+        };
+        if let Some(bands) = &self.hover.bands {
+            let Bands {
                 band,
                 vertical,
                 across,
                 labels,
                 values,
-                series,
-            } => {
-                if !self.plot.contains(point) {
-                    return None;
+            } = bands;
+            let index = band.index(if *vertical { point[0] } else { point[1] })?;
+            let start = band.range.0 + band.step() * index as f32;
+            tip.title = labels[index].clone();
+            tip.band = Some(match vertical {
+                true => Rect {
+                    x: start,
+                    y: across.0,
+                    w: band.step(),
+                    h: across.1 - across.0,
+                },
+                false => Rect {
+                    x: across.0,
+                    y: start,
+                    w: across.1 - across.0,
+                    h: band.step(),
+                },
+            });
+            tip.rows.extend(values.iter().filter_map(|(color, values)| {
+                let value = values[index];
+                (!value.is_nan()).then(|| (*color, scale::value(value).into()))
+            }));
+        }
+
+        let gap = |p: &([f32; 2], u32)| (p.0[0] - point[0]).abs();
+        let at = self
+            .hover
+            .traces
+            .iter()
+            .filter_map(|trace| nearest(&trace.points, point[0]))
+            .min_by(|a, b| gap(a).total_cmp(&gap(b)))
+            .map(|p| p.0[0]);
+        if let Some(at) = at {
+            for trace in &self.hover.traces {
+                let Some(&(p, row)) = nearest(&trace.points, at) else {
+                    continue;
+                };
+                if (p[0] - at).abs() > SAME_X {
+                    continue;
                 }
-                let index = band.index(if *vertical { point[0] } else { point[1] })?;
-                let (start, extent) = (band.range.0 + band.step() * index as f32, band.step());
-                let rows = (0..*series)
-                    .filter_map(|s| {
-                        let value = values[index * series + s];
-                        (!value.is_nan()).then(|| (s, scale::value(value).into()))
-                    })
-                    .collect();
-                Some(Tip {
-                    title: labels[index].clone(),
-                    rows,
-                    points: Vec::new(),
-                    band: Some(match vertical {
-                        true => Rect {
-                            x: start,
-                            y: across.0,
-                            w: extent,
-                            h: across.1 - across.0,
-                        },
-                        false => Rect {
-                            x: across.0,
-                            y: start,
-                            w: across.1 - across.0,
-                            h: extent,
-                        },
-                    }),
-                })
-            }
-            Hover::Slices { slices, total } => {
-                let (center, radius) = slices.first().map(|(_, s, _)| (s.center, s.radius))?;
-                let (dx, dy) = (point[0] - center[0], point[1] - center[1]);
-                if dx.hypot(dy) > radius {
-                    return None;
+                let encoding = &self.chart.layers[trace.layer].encoding;
+                if tip.title.is_empty() {
+                    tip.title = self.text(trace.layer, encoding.x.as_ref()?, row as usize)?;
                 }
-                let angle = dx.atan2(-dy).rem_euclid(TAU);
-                let (s, _, value) = slices
-                    .iter()
-                    .find(|(_, slice, _)| angle >= slice.start && angle < slice.end)?;
-                let share = value / total * 100.0;
-                Some(Tip {
-                    title: self.series[*s].name.clone().unwrap_or_default(),
-                    rows: vec![(*s, format!("{} ({share:.1}%)", scale::value(*value)).into())],
-                    points: Vec::new(),
-                    band: None,
-                })
+                tip.rows.push((
+                    trace.color,
+                    self.text(trace.layer, encoding.y.as_ref()?, row as usize)?,
+                ));
+                tip.points.push((trace.color, p));
             }
         }
+        (!tip.rows.is_empty()).then_some(tip)
     }
 
-    /// Row `row` of `channel`'s field, read as its kind.
-    fn text(&self, channel: &Channel, row: usize) -> Option<SharedString> {
-        Some(match self.chart.data.column(&channel.field)? {
-            Column::Text(text) => text.get(row).clone(),
-            Column::Number(values) => match channel.kind {
-                Kind::Temporal => time::describe(values[row]).into(),
-                _ => scale::value(values[row]).into(),
+    /// Row `row` of `channel`'s field in layer `layer`, read as its kind.
+    fn text(&self, layer: usize, channel: &Channel, row: usize) -> Option<SharedString> {
+        Some(
+            match self.chart.layers[layer].data.column(&channel.field)? {
+                Column::Text(text) => text.get(row).clone(),
+                Column::Number(values) => match channel.kind {
+                    Kind::Temporal => time::describe(values[row]).into(),
+                    _ => scale::value(values[row]).into(),
+                },
             },
-        })
+        )
     }
 }
 
-/// The point of `series`, ascending in x, nearest `at` along x.
-fn nearest(series: &[([f32; 2], u32)], at: f32) -> Option<&([f32; 2], u32)> {
-    let index = series.partition_point(|(p, _)| p[0] < at);
+/// The point of `points`, ascending in x, nearest `at` along x.
+fn nearest(points: &[([f32; 2], u32)], at: f32) -> Option<&([f32; 2], u32)> {
+    let index = points.partition_point(|(p, _)| p[0] < at);
     [index.checked_sub(1), Some(index)]
         .into_iter()
         .flatten()
-        .filter_map(|index| series.get(index))
+        .filter_map(|index| points.get(index))
         .min_by(|a, b| (a.0[0] - at).abs().total_cmp(&(b.0[0] - at).abs()))
 }
 
-/// The series the colour field splits rows into.
-struct Groups {
+/// The chart's colours: every colour field's values across the layers, in
+/// the order met, then one for each layer with no colour field.
+struct Colors {
     names: Vec<Option<SharedString>>,
-    codes: Option<Arc<[u32]>>,
+    layers: Vec<LayerColor>,
 }
 
-impl Groups {
+enum LayerColor {
+    /// Each row's colour.
+    Field(Vec<u32>),
+    Fixed(usize),
+}
+
+impl Colors {
     fn of(chart: &Chart) -> Option<Self> {
-        let Some(color) = &chart.encoding.color else {
-            return Some(Self {
-                names: vec![None],
-                codes: None,
+        let mut names = Vec::new();
+        let mut index: HashMap<SharedString, u32> = HashMap::new();
+        let mut layers = Vec::with_capacity(chart.layers.len());
+        for layer in &chart.layers {
+            let Some(color) = &layer.encoding.color else {
+                layers.push(None);
+                continue;
+            };
+            if !discrete(color.kind) {
+                return None;
+            }
+            let domain = Discrete::of(layer.data.column(&color.field)?, &color.sort);
+            let global: Vec<u32> = domain
+                .labels
+                .into_iter()
+                .map(|label| {
+                    *index.entry(label.clone()).or_insert_with(|| {
+                        names.push(Some(label));
+                        names.len() as u32 - 1
+                    })
+                })
+                .collect();
+            let codes = domain.codes.iter().map(|&code| match code {
+                MISSING => MISSING,
+                code => global[code as usize],
             });
-        };
-        if !discrete(color.kind) {
-            return None;
+            layers.push(Some(LayerColor::Field(codes.collect())));
         }
-        let domain = Discrete::of(chart.data.column(&color.field)?, &color.sort);
-        Some(Self {
-            names: domain.labels.into_iter().map(Some).collect(),
-            codes: Some(domain.codes),
-        })
+        let layers = layers
+            .into_iter()
+            .map(|color| {
+                color.unwrap_or_else(|| {
+                    names.push(None);
+                    LayerColor::Fixed(names.len() - 1)
+                })
+            })
+            .collect();
+        Some(Self { names, layers })
     }
 
-    fn of_row(&self, row: usize) -> Option<usize> {
-        match &self.codes {
-            None => Some(0),
-            Some(codes) => (codes[row] != MISSING).then_some(codes[row] as usize),
+    fn of_row(&self, layer: usize, row: usize) -> Option<usize> {
+        match &self.layers[layer] {
+            LayerColor::Fixed(color) => Some(*color),
+            LayerColor::Field(codes) => (codes[row] != MISSING).then_some(codes[row] as usize),
         }
     }
 
@@ -477,13 +526,6 @@ impl Discrete {
 
 fn discrete(kind: Kind) -> bool {
     matches!(kind, Kind::Ordinal | Kind::Nominal)
-}
-
-fn numbers<'a>(chart: &'a Chart, channel: &Channel) -> Option<&'a Arc<[f64]>> {
-    match chart.data.column(&channel.field)? {
-        Column::Number(values) => Some(values),
-        Column::Text(_) => None,
-    }
 }
 
 /// Ticks for a quantitative or temporal channel whose data spans `lo..=hi`.
@@ -656,217 +698,312 @@ fn widest(labels: &[Label]) -> f32 {
     labels.iter().map(|l| l.width).fold(0.0, f32::max)
 }
 
-type Body = (Rect, Vec<Axis>, Vec<Marks>, Hover);
+type Body = (Rect, Vec<Axis>, Vec<Series>, Hover);
 
-fn bars(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
-    let (x, y) = (chart.encoding.x.as_ref()?, chart.encoding.y.as_ref()?);
-    let (category, value, vertical) = match (discrete(x.kind), discrete(y.kind)) {
-        (true, false) if y.kind == Kind::Quantitative => (x, y, true),
-        (false, true) if x.kind == Kind::Quantitative => (y, x, false),
-        _ => return None,
+/// Where a row lands along the shared axis, in pixels.
+type Place = Box<dyn Fn(&Along, usize) -> f32>;
+
+/// Where a layer's rows fall along the axis the layers share their domain on.
+enum Along {
+    /// Codes into the chart's discrete domain.
+    Discrete(Vec<u32>),
+    Continuous(Arc<[f64]>),
+}
+
+impl Along {
+    fn valid(&self, row: usize) -> bool {
+        match self {
+            Along::Discrete(codes) => codes[row] != MISSING,
+            Along::Continuous(values) => !values[row].is_nan(),
+        }
+    }
+}
+
+/// A layer read for laying out: its data along the shared axis and along its
+/// values, and for bars, each band's total per colour.
+struct Read<'a> {
+    index: usize,
+    mark: Mark,
+    along: Along,
+    values: &'a Arc<[f64]>,
+    /// `sums[band * colours + colour]`, `NaN` for none.
+    sums: Vec<f64>,
+}
+
+fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> Option<Body> {
+    // Bars along y are the only marks that put the shared axis on the left.
+    let horizontal = chart.layers.iter().all(|layer| {
+        let encoding = &layer.encoding;
+        layer.mark == Mark::Bar
+            && encoding.y.as_ref().is_some_and(|y| discrete(y.kind))
+            && encoding.x.as_ref().is_some_and(|x| !discrete(x.kind))
+    });
+    let channels = |layer: &'_ Layer| -> Option<(Channel, Channel)> {
+        let (x, y) = (layer.encoding.x.clone()?, layer.encoding.y.clone()?);
+        Some(if horizontal { (y, x) } else { (x, y) })
     };
-    let bands = Discrete::of(chart.data.column(&category.field)?, &category.sort);
-    let values = numbers(chart, value)?;
-    let (count, series) = (bands.labels.len(), groups.len());
+    let (shared, value) = channels(&chart.layers[0])?;
+    let is_discrete = discrete(shared.kind);
 
-    let mut sums = vec![f64::NAN; count * series];
-    for (row, &v) in values.iter().enumerate() {
-        let (code, Some(s)) = (bands.codes[row], groups.of_row(row)) else {
-            continue;
+    let mut labels: Vec<SharedString> = Vec::new();
+    let mut index: HashMap<SharedString, u32> = HashMap::new();
+    let mut read = Vec::with_capacity(chart.layers.len());
+    for (layer_index, layer) in chart.layers.iter().enumerate() {
+        let (along_channel, value_channel) = channels(layer)?;
+        if discrete(along_channel.kind) != is_discrete
+            || value_channel.kind != Kind::Quantitative
+            || (layer.mark == Mark::Bar && !is_discrete)
+        {
+            return None;
+        }
+        let column = layer.data.column(&along_channel.field)?;
+        let along = match (is_discrete, column) {
+            (true, column) => {
+                let domain = Discrete::of(column, &along_channel.sort);
+                let global: Vec<u32> = domain
+                    .labels
+                    .into_iter()
+                    .map(|label| {
+                        *index.entry(label.clone()).or_insert_with(|| {
+                            labels.push(label);
+                            labels.len() as u32 - 1
+                        })
+                    })
+                    .collect();
+                Along::Discrete(
+                    domain
+                        .codes
+                        .iter()
+                        .map(|&code| match code {
+                            MISSING => MISSING,
+                            code => global[code as usize],
+                        })
+                        .collect(),
+                )
+            }
+            (false, Column::Number(values)) => Along::Continuous(values.clone()),
+            (false, Column::Text(_)) => return None,
         };
-        if code == MISSING || v.is_nan() {
+        let values = match layer.data.column(&value_channel.field)? {
+            Column::Number(values) => values,
+            Column::Text(_) => return None,
+        };
+        read.push(Read {
+            index: layer_index,
+            mark: layer.mark,
+            along,
+            values,
+            sums: Vec::new(),
+        });
+    }
+
+    let count = labels.len();
+    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    for layer in &mut read {
+        let rows = (0..layer.values.len())
+            .filter(|&row| layer.along.valid(row) && colors.of_row(layer.index, row).is_some());
+        if layer.mark != Mark::Bar {
+            for row in rows.filter(|&row| !layer.values[row].is_nan()) {
+                (lo, hi) = (lo.min(layer.values[row]), hi.max(layer.values[row]));
+            }
             continue;
         }
-        let sum = &mut sums[code as usize * series + s];
-        *sum = if sum.is_nan() { v } else { *sum + v };
+        let Along::Discrete(codes) = &layer.along else {
+            return None;
+        };
+        let mut sums = vec![f64::NAN; count * colors.len()];
+        for row in rows {
+            let (v, color) = (layer.values[row], colors.of_row(layer.index, row)?);
+            if v.is_nan() {
+                continue;
+            }
+            let sum = &mut sums[codes[row] as usize * colors.len() + color];
+            *sum = if sum.is_nan() { v } else { *sum + v };
+        }
+        for stack in sums.chunks(colors.len().max(1)) {
+            let up: f64 = stack.iter().filter(|v| **v > 0.0).sum();
+            let down: f64 = stack.iter().filter(|v| **v < 0.0).sum();
+            (lo, hi) = (lo.min(down.min(0.0)), hi.max(up.max(0.0)));
+        }
+        layer.sums = sums;
     }
-    let (mut lo, mut hi) = (0.0f64, 0.0f64);
-    for stack in sums.chunks(series.max(1)) {
-        let up: f64 = stack.iter().filter(|v| **v > 0.0).sum();
-        let down: f64 = stack.iter().filter(|v| **v < 0.0).sum();
-        (lo, hi) = (lo.min(down), hi.max(up));
-    }
+    let (lo, hi) = if lo > hi { (0.0, 0.0) } else { (lo, hi) };
 
-    let (plot, axes, band, scale) = if vertical {
-        let count = (layout.plot_height() / Y_SPACING).floor().max(2.0) as usize;
-        let ticks = continuous(value, lo, hi, count);
-        let labels = layout.measured(&ticks.labels);
-        let plot = layout.plot(widest(&labels))?;
-        let scale = Linear {
-            domain: ticks.domain,
-            range: (plot.bottom(), plot.y),
-        };
-        let at: Vec<f32> = ticks.values.iter().map(|&v| scale.at(v)).collect();
-        let band = Band {
-            count: bands.labels.len(),
-            range: (plot.x, plot.right()),
-            padding: BAND_PADDING,
-        };
-        let centers: Vec<f32> = (0..band.count).map(|b| band.center(b)).collect();
-        let axes = vec![
-            layout.left(labels, &at, plot, true),
-            layout.bottom(&bands.labels, &centers, plot, false),
-        ];
-        (plot, axes, band, scale)
-    } else {
-        let labels = layout.measured(&bands.labels);
-        let plot = layout.plot(widest(&labels))?;
+    let barred = read.iter().any(|layer| layer.mark == Mark::Bar);
+    let padding = if barred { BAND_PADDING } else { 0.0 };
+    let (plot, axes, value_scale, place): (Rect, Vec<Axis>, Linear, Place) = if horizontal {
+        let measured = layout.measured(&labels);
+        let plot = layout.plot(widest(&measured))?;
         let band = Band {
             count,
             range: (plot.y, plot.bottom()),
-            padding: BAND_PADDING,
+            padding,
         };
         let centers: Vec<f32> = (0..count).map(|b| band.center(b)).collect();
-        let left = layout.left(labels, &centers, plot, false);
-        let count = (plot.w / X_SPACING).floor().max(2.0) as usize;
-        let ticks = continuous(value, lo, hi, count);
+        let left = layout.left(measured, &centers, plot, false);
+        let ticks = continuous(&value, lo, hi, x_count(plot));
         let scale = Linear {
             domain: ticks.domain,
             range: (plot.x, plot.right()),
         };
         let at: Vec<f32> = ticks.values.iter().map(|&v| scale.at(v)).collect();
         let axes = vec![layout.bottom(&ticks.labels, &at, plot, true), left];
-        (plot, axes, band, scale)
-    };
-
-    let mut marks = vec![Vec::new(); series];
-    for (b, stack) in sums.chunks(series.max(1)).enumerate() {
-        let (mut up, mut down) = (0.0, 0.0);
-        for (s, &v) in stack.iter().enumerate() {
-            if v.is_nan() || v == 0.0 {
-                continue;
-            }
-            let base = if v > 0.0 { &mut up } else { &mut down };
-            let (from, to) = (scale.at(*base), scale.at(*base + v));
-            *base += v;
-            let (start, extent) = (band.start(b), band.width());
-            marks[s].push(match vertical {
-                true => Rect {
-                    x: start,
-                    y: from.min(to),
-                    w: extent,
-                    h: (to - from).abs(),
-                },
-                false => Rect {
-                    x: from.min(to),
-                    y: start,
-                    w: (to - from).abs(),
-                    h: extent,
-                },
-            });
-        }
-    }
-    let across = match vertical {
-        true => (plot.y, plot.bottom()),
-        false => (plot.x, plot.right()),
-    };
-    let hover = Hover::Bands {
-        band,
-        vertical,
-        across,
-        labels: bands.labels,
-        values: sums,
-        series,
-    };
-    Some((
-        plot,
-        axes,
-        marks.into_iter().map(Marks::Bars).collect(),
-        hover,
-    ))
-}
-
-fn along(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
-    let (x, y) = (chart.encoding.x.as_ref()?, chart.encoding.y.as_ref()?);
-    if y.kind != Kind::Quantitative {
-        return None;
-    }
-    let ys = numbers(chart, y)?;
-    let x_column = chart.data.column(&x.field)?;
-    let xs = match (discrete(x.kind), x_column) {
-        (true, column) => Err(Discrete::of(column, &x.sort)),
-        (false, Column::Number(values)) => Ok(values),
-        (false, Column::Text(_)) => return None,
-    };
-    let valid = |row: usize| {
-        let x_valid = match &xs {
-            Ok(values) => !values[row].is_nan(),
-            Err(domain) => domain.codes[row] != MISSING,
+        (plot, axes, scale, Box::new(move |_: &Along, _| 0.0))
+    } else {
+        let count_y = (layout.plot_height() / Y_SPACING).floor().max(2.0) as usize;
+        let ticks = continuous(&value, lo, hi, count_y);
+        let measured = layout.measured(&ticks.labels);
+        let plot = layout.plot(widest(&measured))?;
+        let scale = Linear {
+            domain: ticks.domain,
+            range: (plot.bottom(), plot.y),
         };
-        x_valid && groups.of_row(row).is_some()
-    };
-
-    let (lo, hi) = (0..chart.data.len())
-        .filter(|&row| valid(row) && !ys[row].is_nan())
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), row| {
-            (lo.min(ys[row]), hi.max(ys[row]))
-        });
-    let (lo, hi) = if lo > hi { (0.0, 0.0) } else { (lo, hi) };
-    let count = (layout.plot_height() / Y_SPACING).floor().max(2.0) as usize;
-    let y_ticks = continuous(y, lo, hi, count);
-    let labels = layout.measured(&y_ticks.labels);
-    let plot = layout.plot(widest(&labels))?;
-    let y_scale = Linear {
-        domain: y_ticks.domain,
-        range: (plot.bottom(), plot.y),
-    };
-    let y_at: Vec<f32> = y_ticks.values.iter().map(|&v| y_scale.at(v)).collect();
-
-    let x_count = (plot.w / X_SPACING).floor().max(2.0) as usize;
-    let (x_at, x_axis): (Box<dyn Fn(usize) -> f32>, Axis) = match &xs {
-        Ok(values) => {
-            let (lo, hi) = (0..chart.data.len())
-                .filter(|&row| valid(row))
-                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), row| {
-                    (lo.min(values[row]), hi.max(values[row]))
+        let at: Vec<f32> = ticks.values.iter().map(|&v| scale.at(v)).collect();
+        let left = layout.left(measured, &at, plot, true);
+        let (bottom, place): (Axis, Place) = if is_discrete {
+            let band = Band {
+                count,
+                range: (plot.x, plot.right()),
+                padding,
+            };
+            let centers: Vec<f32> = (0..count).map(|b| band.center(b)).collect();
+            let axis = layout.bottom(&labels, &centers, plot, false);
+            (
+                axis,
+                Box::new(move |along: &Along, row| match along {
+                    Along::Discrete(codes) => band.center(codes[row] as usize),
+                    Along::Continuous(_) => f32::NAN,
+                }),
+            )
+        } else {
+            let (lo, hi) = read
+                .iter()
+                .flat_map(|layer| {
+                    (0..layer.values.len())
+                        .filter(|&row| layer.along.valid(row))
+                        .filter_map(|row| match &layer.along {
+                            Along::Continuous(values) => Some(values[row]),
+                            Along::Discrete(_) => None,
+                        })
+                })
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+                    (lo.min(v), hi.max(v))
                 });
             let (lo, hi) = if lo > hi { (0.0, 0.0) } else { (lo, hi) };
-            let ticks = continuous(x, lo, hi, x_count);
+            let ticks = continuous(&shared, lo, hi, x_count(plot));
             let scale = Linear {
                 domain: ticks.domain,
                 range: (plot.x, plot.right()),
             };
             let at: Vec<f32> = ticks.values.iter().map(|&v| scale.at(v)).collect();
             let axis = layout.bottom(&ticks.labels, &at, plot, false);
-            let values = Arc::clone(values);
-            (Box::new(move |row| scale.at(values[row])), axis)
-        }
-        Err(domain) => {
-            let band = Band {
-                count: domain.labels.len(),
-                range: (plot.x, plot.right()),
-                padding: 0.0,
-            };
-            let centers: Vec<f32> = (0..band.count).map(|b| band.center(b)).collect();
-            let axis = layout.bottom(&domain.labels, &centers, plot, false);
-            let codes = domain.codes.clone();
-            (Box::new(move |row| band.center(codes[row] as usize)), axis)
-        }
+            (
+                axis,
+                Box::new(move |along: &Along, row| match along {
+                    Along::Continuous(values) => scale.at(values[row]),
+                    Along::Discrete(_) => f32::NAN,
+                }),
+            )
+        };
+        (plot, vec![left, bottom], scale, place)
     };
 
-    let mut points: Vec<Vec<([f32; 2], u32)>> = vec![Vec::new(); groups.len()];
-    for row in (0..chart.data.len()).filter(|&row| valid(row)) {
-        let s = groups.of_row(row)?;
-        let py = if ys[row].is_nan() {
-            f32::NAN
-        } else {
-            y_scale.at(ys[row])
-        };
-        points[s].push(([x_at(row), py], row as u32));
-    }
-    for series in &mut points {
-        if !series.is_sorted_by(|a, b| a.0[0] <= b.0[0]) {
-            series.sort_by(|a, b| a.0[0].total_cmp(&b.0[0]));
-        }
-    }
-
-    let base = y_scale.at(0.0f64.clamp(y_ticks.domain.0, y_ticks.domain.1));
+    let band_axis = match horizontal {
+        true => (plot.y, plot.bottom()),
+        false => (plot.x, plot.right()),
+    };
+    let band = Band {
+        count,
+        range: band_axis,
+        padding,
+    };
+    let base = value_scale.at(0.0f64.clamp(
+        value_scale.domain.0.min(value_scale.domain.1),
+        value_scale.domain.0.max(value_scale.domain.1),
+    ));
     let columns = plot.w.ceil() as usize;
-    let marks = points
-        .iter()
-        .map(|series| {
+    let mut series = Vec::new();
+    let mut hover = Hover::default();
+    for layer in &read {
+        let name = |color: usize| colors.names[color].clone();
+        if layer.mark == Mark::Bar {
+            let mut bars = vec![Vec::new(); colors.len()];
+            for (b, stack) in layer.sums.chunks(colors.len().max(1)).enumerate() {
+                let (mut up, mut down) = (0.0, 0.0);
+                for (color, &v) in stack.iter().enumerate() {
+                    if v.is_nan() || v == 0.0 {
+                        continue;
+                    }
+                    let base = if v > 0.0 { &mut up } else { &mut down };
+                    let (from, to) = (value_scale.at(*base), value_scale.at(*base + v));
+                    *base += v;
+                    let (start, extent) = (band.start(b), band.width());
+                    bars[color].push(match horizontal {
+                        false => Rect {
+                            x: start,
+                            y: from.min(to),
+                            w: extent,
+                            h: (to - from).abs(),
+                        },
+                        true => Rect {
+                            x: from.min(to),
+                            y: start,
+                            w: (to - from).abs(),
+                            h: extent,
+                        },
+                    });
+                }
+            }
+            let bands = hover.bands.get_or_insert_with(|| Bands {
+                band,
+                vertical: !horizontal,
+                across: match horizontal {
+                    true => (plot.x, plot.right()),
+                    false => (plot.y, plot.bottom()),
+                },
+                labels: labels.clone(),
+                values: Vec::new(),
+            });
+            for (color, bars) in bars.into_iter().enumerate() {
+                if bars.is_empty() {
+                    continue;
+                }
+                let values = (0..count)
+                    .map(|b| layer.sums[b * colors.len() + color])
+                    .collect();
+                bands.values.push((color, values));
+                series.push(Series {
+                    name: name(color),
+                    color,
+                    mark: Mark::Bar,
+                    marks: Marks::Bars(bars),
+                });
+            }
+            continue;
+        }
+
+        let mut points: Vec<Vec<([f32; 2], u32)>> = vec![Vec::new(); colors.len()];
+        for row in (0..layer.values.len()).filter(|&row| layer.along.valid(row)) {
+            let Some(color) = colors.of_row(layer.index, row) else {
+                continue;
+            };
+            let v = layer.values[row];
+            let y = if v.is_nan() {
+                f32::NAN
+            } else {
+                value_scale.at(v)
+            };
+            points[color].push(([place(&layer.along, row), y], row as u32));
+        }
+        for (color, mut points) in points.into_iter().enumerate() {
+            if points.is_empty() {
+                continue;
+            }
+            if !points.is_sorted_by(|a, b| a.0[0] <= b.0[0]) {
+                points.sort_by(|a, b| a.0[0].total_cmp(&b.0[0]));
+            }
             let runs = || {
-                series
+                points
                     .split(|(p, _)| p[1].is_nan())
                     .filter(|run| !run.is_empty())
                     .map(|run| {
@@ -878,7 +1015,7 @@ fn along(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
                         }
                     })
             };
-            match chart.mark {
+            let marks = match layer.mark {
                 Mark::Line => Marks::Lines(runs().collect()),
                 Mark::Area => Marks::Areas(
                     runs()
@@ -891,40 +1028,49 @@ fn along(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
                 ),
                 _ => {
                     let mut seen = HashSet::new();
+                    let dense = points.len() > columns;
                     Marks::Points(
-                        series
+                        points
                             .iter()
                             .filter(|(p, _)| !p[1].is_nan())
                             .filter(|(p, _)| {
-                                series.len() <= columns
-                                    || seen.insert((p[0].round() as i32, p[1].round() as i32))
+                                !dense || seen.insert((p[0].round() as i32, p[1].round() as i32))
                             })
                             .map(|(p, _)| *p)
                             .collect(),
                     )
                 }
-            }
-        })
-        .collect();
-
-    for series in &mut points {
-        series.retain(|(p, _)| !p[1].is_nan());
+            };
+            series.push(Series {
+                name: name(color),
+                color,
+                mark: layer.mark,
+                marks,
+            });
+            points.retain(|(p, _)| !p[1].is_nan());
+            hover.traces.push(Trace {
+                layer: layer.index,
+                color,
+                points,
+            });
+        }
     }
-    let axes = vec![layout.left(labels, &y_at, plot, true), x_axis];
-    let hover = Hover::Along {
-        x: x.clone(),
-        y: y.clone(),
-        points,
-    };
-    Some((plot, axes, marks, hover))
+    Some((plot, axes, series, hover))
 }
 
-fn arcs(chart: &Chart, groups: &Groups, layout: &Layout) -> Option<Body> {
-    let theta = chart.encoding.theta.as_ref()?;
+/// About one tick to [`X_SPACING`] across `plot`.
+fn x_count(plot: Rect) -> usize {
+    (plot.w / X_SPACING).floor().max(2.0) as usize
+}
+
+fn arcs(layer: &Layer, colors: &Colors, layout: &Layout) -> Option<Body> {
+    let theta = layer.encoding.theta.as_ref()?;
     if theta.kind != Kind::Quantitative {
         return None;
     }
-    let values = numbers(chart, theta)?;
+    let Column::Number(values) = layer.data.column(&theta.field)? else {
+        return None;
+    };
     let room = Rect {
         x: PAD,
         y: layout.top,
@@ -937,14 +1083,14 @@ fn arcs(chart: &Chart, groups: &Groups, layout: &Layout) -> Option<Body> {
     }
     let center = [room.x + room.w / 2.0, room.y + room.h / 2.0];
 
-    let parts: Vec<(usize, f64)> = match groups.codes {
-        Some(_) => {
-            let mut sums = vec![0.0; groups.len()];
+    let parts: Vec<(usize, f64)> = match colors.layers[0] {
+        LayerColor::Field(_) => {
+            let mut sums = vec![0.0; colors.len()];
             for (row, &v) in values.iter().enumerate() {
-                if let Some(s) = groups.of_row(row)
+                if let Some(color) = colors.of_row(0, row)
                     && v > 0.0
                 {
-                    sums[s] += v;
+                    sums[color] += v;
                 }
             }
             sums.into_iter()
@@ -952,17 +1098,17 @@ fn arcs(chart: &Chart, groups: &Groups, layout: &Layout) -> Option<Body> {
                 .filter(|(_, v)| *v > 0.0)
                 .collect()
         }
-        None => values
+        LayerColor::Fixed(color) => values
             .iter()
             .filter(|v| **v > 0.0)
-            .map(|&v| (0, v))
+            .map(|&v| (color, v))
             .collect(),
     };
     let total: f64 = parts.iter().map(|(_, v)| v).sum();
-    let mut marks = vec![Vec::new(); groups.len()];
+    let mut by_color: Vec<Vec<Slice>> = vec![Vec::new(); colors.len()];
     let mut slices = Vec::new();
     let mut start = 0.0f64;
-    for (s, value) in parts {
+    for (color, value) in parts {
         let end = start + value / total;
         let slice = Slice {
             center,
@@ -970,8 +1116,8 @@ fn arcs(chart: &Chart, groups: &Groups, layout: &Layout) -> Option<Body> {
             start: start as f32 * TAU,
             end: end as f32 * TAU,
         };
-        marks[s].push(slice);
-        slices.push((s, slice, value));
+        by_color[color].push(slice);
+        slices.push((color, slice, value));
         start = end;
     }
     let plot = Rect {
@@ -980,11 +1126,20 @@ fn arcs(chart: &Chart, groups: &Groups, layout: &Layout) -> Option<Body> {
         w: radius * 2.0,
         h: radius * 2.0,
     };
-    let hover = Hover::Slices { slices, total };
-    Some((
-        plot,
-        Vec::new(),
-        marks.into_iter().map(Marks::Slices).collect(),
-        hover,
-    ))
+    let series = by_color
+        .into_iter()
+        .enumerate()
+        .filter(|(_, slices)| !slices.is_empty())
+        .map(|(color, slices)| Series {
+            name: colors.names[color].clone(),
+            color,
+            mark: Mark::Arc,
+            marks: Marks::Slices(slices),
+        })
+        .collect();
+    let hover = Hover {
+        slices: Some(Slices { slices, total }),
+        ..Hover::default()
+    };
+    Some((plot, Vec::new(), series, hover))
 }

@@ -26,6 +26,8 @@ const HEIGHT: f32 = 220.0;
 
 pub struct Charts {
     sales: Data,
+    /// A monthly target over the sales.
+    target: Data,
     series: Data,
     long: Data,
     /// The live series' next time and its last value.
@@ -86,8 +88,13 @@ impl Charts {
                     .collect::<Vec<_>>(),
             );
 
+        let target = Data::new()
+            .text("month", months)
+            .number("sales", [90.0, 100.0, 110.0, 115.0, 125.0, 140.0]);
+
         Self {
             sales,
+            target,
             series,
             long,
             clock: (0.0, 50.0),
@@ -196,6 +203,19 @@ impl Render for Charts {
             ),
             card("Areas", by_day(Chart::area(self.series.clone())), &theme),
             card("Points", by_day(Chart::point(self.series.clone())), &theme),
+            card(
+                "Layers: bars under a target line",
+                Chart::bar(self.sales.clone())
+                    .x(Channel::ordinal("month"))
+                    .y(Channel::quantitative("sales"))
+                    .color(Channel::nominal("region"))
+                    .layer(
+                        Chart::line(self.target.clone())
+                            .x(Channel::ordinal("month"))
+                            .y(Channel::quantitative("sales")),
+                    ),
+                &theme,
+            ),
             card(
                 "Arc",
                 Chart::arc(self.sales.clone())

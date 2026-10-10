@@ -40,6 +40,14 @@ fn charts() -> Vec<Chart> {
         along(Chart::line(data.clone())),
         along(Chart::area(data.clone())),
         along(Chart::point(data.clone())),
+        Chart::bar(data.clone())
+            .x(Channel::nominal("month"))
+            .y(Channel::quantitative("sales"))
+            .layer(
+                Chart::line(data.clone())
+                    .x(Channel::nominal("month"))
+                    .y(Channel::quantitative("x")),
+            ),
         Chart::arc(data)
             .theta(Channel::quantitative("x"))
             .color(Channel::nominal("month")),

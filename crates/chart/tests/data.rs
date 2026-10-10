@@ -57,8 +57,11 @@ fn builders_fill_the_encoding() {
         .x(Channel::ordinal("month"))
         .y(Channel::quantitative("sales"))
         .title("Sales");
-    assert_eq!(chart.mark, Mark::Bar);
-    assert_eq!(chart.encoding.x.unwrap().field, "month");
-    assert_eq!(chart.encoding.y.unwrap().kind, Kind::Quantitative);
-    assert!(chart.encoding.color.is_none());
+    assert_eq!(chart.layers[0].mark, Mark::Bar);
+    assert_eq!(chart.layers[0].encoding.x.clone().unwrap().field, "month");
+    assert_eq!(
+        chart.layers[0].encoding.y.clone().unwrap().kind,
+        Kind::Quantitative
+    );
+    assert!(chart.layers[0].encoding.color.is_none());
 }

@@ -1,5 +1,5 @@
-//! What a chart draws: one [`Mark`] per row of its [`Data`], placed by the
-//! fields its [`Encoding`] names.
+//! What a chart draws: layers over shared axes, each one [`Mark`] per row of
+//! its [`Data`], placed by the fields its [`Encoding`] names.
 
 use gpui::SharedString;
 
@@ -7,10 +7,17 @@ use crate::data::Data;
 
 #[derive(Clone, Debug)]
 pub struct Chart {
+    /// Paint order. Their x scales are one scale, as are their y scales, and
+    /// a colour value is one colour across them.
+    pub layers: Vec<Layer>,
+    pub title: Option<SharedString>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Layer {
     pub data: Data,
     pub mark: Mark,
     pub encoding: Encoding,
-    pub title: Option<SharedString>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -88,13 +95,30 @@ pub enum Kind {
 }
 
 impl Chart {
+    /// One layer.
     pub fn new(mark: Mark, data: Data) -> Self {
         Self {
-            data,
-            mark,
-            encoding: Encoding::default(),
+            layers: vec![Layer {
+                data,
+                mark,
+                encoding: Encoding::default(),
+            }],
             title: None,
         }
+    }
+
+    /// `other`'s layers over this chart's. Its title is dropped.
+    pub fn layer(mut self, other: Chart) -> Self {
+        self.layers.extend(other.layers);
+        self
+    }
+
+    fn last(&mut self) -> &mut Encoding {
+        &mut self
+            .layers
+            .last_mut()
+            .expect("a chart has a layer")
+            .encoding
     }
 
     pub fn bar(data: Data) -> Self {
@@ -117,23 +141,24 @@ impl Chart {
         Self::new(Mark::Arc, data)
     }
 
+    /// Sets the last layer's x, as the other channels do theirs.
     pub fn x(mut self, channel: Channel) -> Self {
-        self.encoding.x = Some(channel);
+        self.last().x = Some(channel);
         self
     }
 
     pub fn y(mut self, channel: Channel) -> Self {
-        self.encoding.y = Some(channel);
+        self.last().y = Some(channel);
         self
     }
 
     pub fn color(mut self, channel: Channel) -> Self {
-        self.encoding.color = Some(channel);
+        self.last().color = Some(channel);
         self
     }
 
     pub fn theta(mut self, channel: Channel) -> Self {
-        self.encoding.theta = Some(channel);
+        self.last().theta = Some(channel);
         self
     }
 

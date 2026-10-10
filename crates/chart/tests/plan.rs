@@ -417,3 +417,83 @@ fn titles_label_their_axes_and_the_legend() {
     assert_eq!(plan.legend_title.as_ref().unwrap().text, "Region");
     assert!(plan.legend[0].swatch.x > plan.legend_title.as_ref().unwrap().width);
 }
+
+#[test]
+fn layers_share_their_scales_and_colours() {
+    let actual = Data::new()
+        .text("month", ["Jan", "Feb", "Mar"])
+        .number("v", [3.0, 5.0, 4.0]);
+    let target = Data::new()
+        .text("month", ["Feb", "Mar", "Apr"])
+        .number("v", [10.0, 6.0, 7.0]);
+    let chart = Chart::bar(actual)
+        .x(Channel::nominal("month"))
+        .y(Channel::quantitative("v"))
+        .layer(
+            Chart::line(target)
+                .x(Channel::nominal("month"))
+                .y(Channel::quantitative("v")),
+        );
+    let plan = laid_out(&chart);
+    let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
+    let months: Vec<_> = bottom
+        .ticks
+        .iter()
+        .filter_map(|t| t.label.as_ref())
+        .map(|l| l.text.as_ref())
+        .collect();
+    assert_eq!(months, ["Jan", "Feb", "Mar", "Apr"]);
+    // The line's 10 sets the top, which the bars are measured against.
+    assert_eq!(left_labels(&plan).last().unwrap(), "10");
+    let colors: Vec<usize> = plan.series.iter().map(|s| s.color).collect();
+    assert_eq!(colors, [0, 1]);
+    assert!(plan.legend.is_empty());
+
+    // Over Feb: the bar's band and the line's point read out together.
+    let Marks::Bars(bars) = &plan.series[0].marks else {
+        panic!()
+    };
+    let tip = plan.hit([bars[1].x + 1.0, plan.plot.y + 1.0]).unwrap();
+    assert_eq!(tip.title, "Feb");
+    assert_eq!(tip.rows, [(0, "5".into()), (1, "10".into())]);
+    assert!(tip.band.is_some() && tip.points.len() == 1);
+}
+
+#[test]
+fn a_colour_value_is_one_colour_across_layers() {
+    let data = Data::new()
+        .text("month", ["Jan", "Jan", "Feb", "Feb"])
+        .text("region", ["east", "west", "east", "west"])
+        .number("v", [1.0, 2.0, 3.0, 4.0]);
+    let west = Data::new()
+        .text("month", ["Jan", "Feb"])
+        .text("region", ["west", "west"])
+        .number("v", [5.0, 6.0]);
+    let layer = |chart: Chart| {
+        chart
+            .x(Channel::nominal("month"))
+            .y(Channel::quantitative("v"))
+            .color(Channel::nominal("region"))
+    };
+    let plan = laid_out(&layer(Chart::bar(data)).layer(layer(Chart::line(west))));
+    assert_eq!(plan.colors, [Some("east".into()), Some("west".into())]);
+    let line = plan
+        .series
+        .iter()
+        .find(|s| s.mark == chart::Mark::Line)
+        .unwrap();
+    assert_eq!(line.color, 1);
+}
+
+#[test]
+fn layers_that_disagree_or_layer_an_arc_are_none() {
+    let line = Chart::line(temperatures())
+        .x(Channel::quantitative("x"))
+        .y(Channel::quantitative("t"));
+    let bars = Chart::bar(sales())
+        .x(Channel::nominal("month"))
+        .y(Channel::quantitative("sales"));
+    assert!(plan(&bars.clone().layer(line.clone()), SIZE, LINE, &mut measure).is_none());
+    let pie = Chart::arc(sales()).theta(Channel::quantitative("sales"));
+    assert!(plan(&pie.layer(line), SIZE, LINE, &mut measure).is_none());
+}
