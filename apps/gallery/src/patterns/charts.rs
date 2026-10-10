@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use chart::{Chart, Data, Kind};
+use chart::{Channel, Chart, Data};
 use gpui::{
     Context, Render, ScrollHandle, SharedString, Subscription, Task, Window, div, prelude::*, px,
 };
@@ -169,24 +169,24 @@ impl Render for Charts {
         let theme = Theme::of(cx).clone();
         let by_day = |chart: Chart| {
             chart
-                .x("day", Kind::Temporal)
-                .y("value", Kind::Quantitative)
-                .color("series", Kind::Nominal)
+                .x(Channel::temporal("day"))
+                .y(Channel::quantitative("value"))
+                .color(Channel::nominal("series"))
         };
         let charts = [
             card(
                 "Bars, stacked by colour",
                 Chart::bar(self.sales.clone())
-                    .x("month", Kind::Ordinal)
-                    .y("sales", Kind::Quantitative)
-                    .color("region", Kind::Nominal),
+                    .x(Channel::ordinal("month"))
+                    .y(Channel::quantitative("sales"))
+                    .color(Channel::nominal("region")),
                 &theme,
             ),
             card(
                 "Horizontal bars",
                 Chart::bar(self.sales.clone())
-                    .y("region", Kind::Nominal)
-                    .x("sales", Kind::Quantitative),
+                    .y(Channel::nominal("region"))
+                    .x(Channel::quantitative("sales")),
                 &theme,
             ),
             card(
@@ -199,22 +199,22 @@ impl Render for Charts {
             card(
                 "Arc",
                 Chart::arc(self.sales.clone())
-                    .theta("sales", Kind::Quantitative)
-                    .color("region", Kind::Nominal),
+                    .theta(Channel::quantitative("sales"))
+                    .color(Channel::nominal("region")),
                 &theme,
             ),
             card(
                 "100,000 points, M4-decimated",
                 Chart::line(self.long.clone())
-                    .x("t", Kind::Quantitative)
-                    .y("v", Kind::Quantitative),
+                    .x(Channel::quantitative("t"))
+                    .y(Channel::quantitative("v")),
                 &theme,
             ),
             card(
                 "Live, a point every 100 ms",
                 Chart::area(self.live.clone())
-                    .x("t", Kind::Temporal)
-                    .y("v", Kind::Quantitative),
+                    .x(Channel::temporal("t"))
+                    .y(Channel::quantitative("v")),
                 &theme,
             ),
         ];

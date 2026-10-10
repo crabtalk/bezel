@@ -66,9 +66,10 @@ pub struct Ticks {
     pub labels: Vec<SharedString>,
 }
 
-/// About `count` ticks at 1, 2 or 5 times a power of ten, with the domain
-/// widened to the ticks either side of `lo..=hi`.
-pub fn linear(lo: f64, hi: f64, count: usize) -> Ticks {
+/// About `count` ticks at 1, 2 or 5 times a power of ten. `nice` widens the
+/// domain to the ticks either side of `lo..=hi`; otherwise the domain is
+/// `lo..=hi` and the ticks fall inside it.
+pub fn linear(lo: f64, hi: f64, count: usize, nice: bool) -> Ticks {
     let (lo, hi) = widen(lo, hi, 1.0);
     let (factor, power) = increment(lo, hi, count);
     let value = |index: f64| match power < 0 {
@@ -76,7 +77,10 @@ pub fn linear(lo: f64, hi: f64, count: usize) -> Ticks {
         false => index * factor * 10f64.powi(power),
     };
     let step = value(1.0);
-    let (first, last) = ((lo / step).floor(), (hi / step).ceil());
+    let (first, last) = match nice {
+        true => ((lo / step).floor(), (hi / step).ceil()),
+        false => ((lo / step - 1e-9).ceil(), (hi / step + 1e-9).floor()),
+    };
     let values: Vec<f64> = (first as i64..=last as i64)
         .map(|index| value(index as f64))
         .collect();
@@ -86,7 +90,10 @@ pub fn linear(lo: f64, hi: f64, count: usize) -> Ticks {
         .map(|&v| number(v, power, magnitude).into())
         .collect();
     Ticks {
-        domain: (value(first), value(last)),
+        domain: match nice {
+            true => (value(first), value(last)),
+            false => (lo, hi),
+        },
         values,
         labels,
     }

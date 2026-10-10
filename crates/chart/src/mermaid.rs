@@ -1,8 +1,8 @@
 //! Mermaid `pie` and `xychart-beta` source as a chart, parsed by
 //! `mermaid-rs-renderer`.
 //!
-//! An xychart's axis titles and y range are dropped. One whose series mix
-//! bars and lines answers `None`.
+//! An xychart keeps its categories in the order written, and its axis titles
+//! and y range. One whose series mix bars and lines answers `None`.
 
 use std::panic::{self, AssertUnwindSafe};
 
@@ -10,7 +10,7 @@ use mermaid_rs_renderer as mmdr;
 
 use crate::{
     data::Data,
-    model::{Chart, Kind},
+    model::{Channel, Chart},
 };
 
 /// The chart `source` describes, or `None` for source that does not parse or
@@ -43,8 +43,8 @@ fn pie(graph: &mmdr::Graph) -> Option<Chart> {
                 .collect::<Vec<_>>(),
         );
     let chart = Chart::arc(data)
-        .theta("value", Kind::Quantitative)
-        .color("label", Kind::Nominal);
+        .theta(Channel::quantitative("value"))
+        .color(Channel::nominal("label"));
     Some(match &graph.pie_title {
         Some(title) => chart.title(title.clone()),
         None => chart,
@@ -77,13 +77,21 @@ fn xy(xy: &mmdr::ir::XYChartData) -> Option<Chart> {
         .text("x", categories)
         .text("series", names)
         .number("y", values);
-    let chart = match kind {
-        mmdr::ir::XYSeriesKind::Bar => Chart::bar(data).x("x", Kind::Nominal),
-        mmdr::ir::XYSeriesKind::Line => Chart::line(data).x("x", Kind::Ordinal),
+    let mut x = Channel::nominal("x");
+    x.title = xy.x_axis_label.clone().map(Into::into);
+    let mut y = Channel::quantitative("y");
+    y.title = xy.y_axis_label.clone().map(Into::into);
+    if let (Some(low), Some(high)) = (xy.y_axis_min, xy.y_axis_max) {
+        y = y.domain(f64::from(low), f64::from(high));
     }
-    .y("y", Kind::Quantitative);
+    let chart = match kind {
+        mmdr::ir::XYSeriesKind::Bar => Chart::bar(data),
+        mmdr::ir::XYSeriesKind::Line => Chart::line(data),
+    }
+    .x(x)
+    .y(y);
     let chart = match xy.series.len() > 1 {
-        true => chart.color("series", Kind::Nominal),
+        true => chart.color(Channel::nominal("series")),
         false => chart,
     };
     Some(match &xy.title {

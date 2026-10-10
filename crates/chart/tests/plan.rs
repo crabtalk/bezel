@@ -1,5 +1,5 @@
 use chart::{
-    Chart, Data, Kind,
+    Channel, Chart, Data, Sort,
     decimate::m4,
     plan::{Marks, Side, plan},
     scale, time,
@@ -25,19 +25,19 @@ fn sales() -> Data {
 
 #[test]
 fn linear_ticks_are_round_and_cover_the_data() {
-    let ticks = scale::linear(0.0, 97.0, 5);
+    let ticks = scale::linear(0.0, 97.0, 5, true);
     assert_eq!(ticks.values, [0.0, 20.0, 40.0, 60.0, 80.0, 100.0]);
     assert_eq!(ticks.domain, (0.0, 100.0));
     assert_eq!(
-        scale::linear(0.0, 0.3, 3).labels,
+        scale::linear(0.0, 0.3, 3, true).labels,
         ["0.0", "0.1", "0.2", "0.3"]
     );
     assert_eq!(
-        scale::linear(0.0, 25_000.0, 2).labels,
+        scale::linear(0.0, 25_000.0, 2, true).labels,
         ["0", "10k", "20k", "30k"]
     );
     assert_eq!(
-        scale::linear(0.0, 4_000.0, 2).labels,
+        scale::linear(0.0, 4_000.0, 2, true).labels,
         ["0", "2,000", "4,000"]
     );
 }
@@ -110,9 +110,9 @@ fn m4_keeps_each_columns_extremes_in_order() {
 #[test]
 fn bars_stack_up_and_down_from_zero() {
     let chart = Chart::bar(sales())
-        .x("month", Kind::Nominal)
-        .y("sales", Kind::Quantitative)
-        .color("region", Kind::Nominal);
+        .x(Channel::nominal("month"))
+        .y(Channel::quantitative("sales"))
+        .color(Channel::nominal("region"));
     let plan = laid_out(&chart);
     assert_eq!(plan.legend.len(), 2);
     let bars = |s: usize| match &plan.series[s].marks {
@@ -135,9 +135,9 @@ fn bars_stack_up_and_down_from_zero() {
 #[test]
 fn hovering_a_band_reads_out_each_series() {
     let chart = Chart::bar(sales())
-        .x("month", Kind::Nominal)
-        .y("sales", Kind::Quantitative)
-        .color("region", Kind::Nominal);
+        .x(Channel::nominal("month"))
+        .y(Channel::quantitative("sales"))
+        .color(Channel::nominal("region"));
     let plan = laid_out(&chart);
     let Marks::Bars(east) = &plan.series[0].marks else {
         panic!()
@@ -152,8 +152,8 @@ fn hovering_a_band_reads_out_each_series() {
 #[test]
 fn horizontal_bars_put_categories_on_the_left() {
     let chart = Chart::bar(sales())
-        .y("month", Kind::Ordinal)
-        .x("sales", Kind::Quantitative);
+        .y(Channel::ordinal("month"))
+        .x(Channel::quantitative("sales"));
     let plan = laid_out(&chart);
     let left = plan.axes.iter().find(|a| a.side == Side::Left).unwrap();
     let labels: Vec<_> = left
@@ -179,8 +179,8 @@ fn a_long_line_is_bounded_by_the_plot_width() {
         );
     let plan = laid_out(
         &Chart::line(data)
-            .x("t", Kind::Quantitative)
-            .y("v", Kind::Quantitative),
+            .x(Channel::quantitative("t"))
+            .y(Channel::quantitative("v")),
     );
     let Marks::Lines(runs) = &plan.series[0].marks else {
         panic!()
@@ -201,8 +201,8 @@ fn a_missing_value_breaks_the_line() {
         .number("y", [1.0, 2.0, f64::NAN, 4.0, 5.0]);
     let plan = laid_out(
         &Chart::line(data)
-            .x("x", Kind::Quantitative)
-            .y("y", Kind::Quantitative),
+            .x(Channel::quantitative("x"))
+            .y(Channel::quantitative("y")),
     );
     let Marks::Lines(runs) = &plan.series[0].marks else {
         panic!()
@@ -217,8 +217,8 @@ fn rows_out_of_order_draw_in_x_order() {
         .number("y", [3.0, 1.0, 2.0]);
     let plan = laid_out(
         &Chart::line(data)
-            .x("x", Kind::Quantitative)
-            .y("y", Kind::Quantitative),
+            .x(Channel::quantitative("x"))
+            .y(Channel::quantitative("y")),
     );
     let Marks::Lines(runs) = &plan.series[0].marks else {
         panic!()
@@ -233,8 +233,8 @@ fn an_area_closes_along_zero() {
         .number("y", [2.0, 3.0, 1.0]);
     let plan = laid_out(
         &Chart::area(data)
-            .x("x", Kind::Quantitative)
-            .y("y", Kind::Quantitative),
+            .x(Channel::quantitative("x"))
+            .y(Channel::quantitative("y")),
     );
     let Marks::Areas(areas) = &plan.series[0].marks else {
         panic!()
@@ -251,8 +251,8 @@ fn slices_share_the_circle_by_value() {
         .number("n", [1.0, 2.0, 1.0, 4.0]);
     let plan = laid_out(
         &Chart::arc(data)
-            .theta("n", Kind::Quantitative)
-            .color("kind", Kind::Nominal),
+            .theta(Channel::quantitative("n"))
+            .color(Channel::nominal("kind")),
     );
     let spans: Vec<f32> = plan
         .series
@@ -283,8 +283,8 @@ fn time_on_x_labels_by_the_calendar() {
     let data = Data::new().number("day", days).number("v", vec![1.0; 90]);
     let plan = laid_out(
         &Chart::line(data)
-            .x("day", Kind::Temporal)
-            .y("v", Kind::Quantitative),
+            .x(Channel::temporal("day"))
+            .y(Channel::quantitative("v")),
     );
     let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
     assert!(
@@ -303,26 +303,117 @@ fn an_encoding_the_mark_cannot_draw_is_none() {
     let chart = |c: Chart| plan(&c, SIZE, LINE, &mut measure).is_none();
     assert!(chart(
         Chart::bar(sales())
-            .x("month", Kind::Nominal)
-            .y("region", Kind::Nominal)
+            .x(Channel::nominal("month"))
+            .y(Channel::nominal("region"))
     ));
     assert!(chart(
         Chart::bar(sales())
-            .x("month", Kind::Nominal)
-            .y("missing", Kind::Quantitative)
+            .x(Channel::nominal("month"))
+            .y(Channel::quantitative("missing"))
     ));
     assert!(chart(
         Chart::line(sales())
-            .x("month", Kind::Quantitative)
-            .y("sales", Kind::Quantitative)
+            .x(Channel::quantitative("month"))
+            .y(Channel::quantitative("sales"))
     ));
     assert!(chart(
         Chart::arc(sales())
-            .theta("sales", Kind::Quantitative)
-            .color("sales", Kind::Quantitative)
+            .theta(Channel::quantitative("sales"))
+            .color(Channel::quantitative("sales"))
     ));
     let tiny = Chart::bar(sales())
-        .x("month", Kind::Nominal)
-        .y("sales", Kind::Quantitative);
+        .x(Channel::nominal("month"))
+        .y(Channel::quantitative("sales"));
     assert!(plan(&tiny, [20.0, 20.0], LINE, &mut measure).is_none());
+}
+
+fn temperatures() -> Data {
+    Data::new()
+        .number("x", [0.0, 1.0, 2.0])
+        .number("t", [21.0, 24.0, 22.5])
+}
+
+fn left_labels(plan: &chart::Plan) -> Vec<String> {
+    let left = plan.axes.iter().find(|a| a.side == Side::Left).unwrap();
+    left.ticks
+        .iter()
+        .filter_map(|t| t.label.as_ref())
+        .map(|l| l.text.to_string())
+        .collect()
+}
+
+#[test]
+fn zero_off_lets_the_scale_start_at_the_data() {
+    let with_zero = laid_out(
+        &Chart::line(temperatures())
+            .x(Channel::quantitative("x"))
+            .y(Channel::quantitative("t")),
+    );
+    assert_eq!(left_labels(&with_zero).first().unwrap(), "0");
+    let without = laid_out(
+        &Chart::line(temperatures())
+            .x(Channel::quantitative("x"))
+            .y(Channel::quantitative("t").zero(false)),
+    );
+    let labels = left_labels(&without);
+    assert_eq!(
+        (
+            labels.first().unwrap().as_str(),
+            labels.last().unwrap().as_str()
+        ),
+        ("21.0", "24.0")
+    );
+}
+
+#[test]
+fn a_fixed_domain_is_the_scale_exactly() {
+    let plan = laid_out(
+        &Chart::line(temperatures())
+            .x(Channel::quantitative("x"))
+            .y(Channel::quantitative("t").domain(0.0, 30.0)),
+    );
+    let Marks::Lines(runs) = &plan.series[0].marks else {
+        panic!()
+    };
+    let top = plan.plot.y;
+    let expected = top + plan.plot.h * (1.0 - 24.0 / 30.0);
+    assert!((runs[0][1][1] - expected).abs() < 0.01);
+}
+
+#[test]
+fn sort_orders_a_discrete_domain() {
+    let order = |sort: Sort| {
+        let plan = laid_out(
+            &Chart::bar(sales())
+                .y(Channel::nominal("month").sort(sort))
+                .x(Channel::quantitative("sales")),
+        );
+        left_labels(&plan)
+    };
+    assert_eq!(order(Sort::Data), ["Jan", "Feb", "Mar"]);
+    assert_eq!(order(Sort::Ascending), ["Feb", "Jan", "Mar"]);
+    assert_eq!(order(Sort::Descending), ["Mar", "Jan", "Feb"]);
+    assert_eq!(
+        order(Sort::Explicit(vec!["Mar".into()])),
+        ["Mar", "Jan", "Feb"]
+    );
+}
+
+#[test]
+fn titles_label_their_axes_and_the_legend() {
+    let plan = laid_out(
+        &Chart::bar(sales())
+            .x(Channel::nominal("month").title("Month"))
+            .y(Channel::quantitative("sales").title("Sales"))
+            .color(Channel::nominal("region").title("Region")),
+    );
+    let title = |side| {
+        let axis = plan.axes.iter().find(|a| a.side == side).unwrap();
+        axis.title.clone().unwrap()
+    };
+    let (x, y) = (title(Side::Bottom), title(Side::Left));
+    assert_eq!((x.text.as_ref(), y.text.as_ref()), ("Month", "Sales"));
+    assert!(x.at[1] > plan.plot.bottom() && y.at[1] + LINE <= plan.plot.y + 0.01);
+    assert_eq!(plan.legend_title.as_ref().unwrap().text, "Region");
+    assert!(plan.legend[0].swatch.x > plan.legend_title.as_ref().unwrap().width);
 }

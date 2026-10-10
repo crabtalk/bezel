@@ -1,4 +1,4 @@
-use chart::{Chart, Column, Data, Kind, Mark};
+use chart::{Channel, Chart, Column, Data, Kind, Mark};
 
 fn sales() -> Data {
     Data::new()
@@ -54,8 +54,8 @@ fn a_column_of_another_length_panics() {
 #[test]
 fn builders_fill_the_encoding() {
     let chart = Chart::bar(sales())
-        .x("month", Kind::Ordinal)
-        .y("sales", Kind::Quantitative)
+        .x(Channel::ordinal("month"))
+        .y(Channel::quantitative("sales"))
         .title("Sales");
     assert_eq!(chart.mark, Mark::Bar);
     assert_eq!(chart.encoding.x.unwrap().field, "month");

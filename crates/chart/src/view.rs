@@ -4,8 +4,8 @@
 use std::{cell::Cell, collections::HashMap, f32::consts::FRAC_PI_2, rc::Rc};
 
 use gpui::{
-    App, Bounds, Corners, DispatchPhase, Element, ElementId, Font, GlobalElementId, Hitbox,
-    HitboxBehavior, Hsla, InspectorElementId, IntoElement, LayoutId, MouseMoveEvent, Path,
+    App, Bounds, ContentMask, Corners, DispatchPhase, Element, ElementId, Font, GlobalElementId,
+    Hitbox, HitboxBehavior, Hsla, InspectorElementId, IntoElement, LayoutId, MouseMoveEvent, Path,
     PathBuilder, Pixels, Point, Refineable, ShapedLine, SharedString, Style, StyleRefinement,
     Styled, TextAlign, TextRun, Window, fill, point, px, relative, size,
 };
@@ -385,7 +385,8 @@ fn paint_chart(
                 window.paint_quad(fill(bounds_of(line, origin), theme.border_faint));
             }
         }
-        for label in axis.ticks.iter().filter_map(|tick| tick.label.as_ref()) {
+        let labels = axis.ticks.iter().filter_map(|tick| tick.label.as_ref());
+        for label in labels.chain(&axis.title) {
             paint_label(built, label, origin, window, cx);
         }
     }
@@ -402,43 +403,57 @@ fn paint_chart(
         window.paint_quad(fill(bounds_of(band, origin), theme.ink(BAND_WASH)));
     }
 
-    let mut paths = built.paths.iter().peekable();
-    for (s, series) in plan.series.iter().enumerate() {
-        let color = series_color(theme, s);
-        while let Some((_, path, filled)) = paths.next_if(|(of, ..)| *of == s) {
-            let color = if *filled && plan.chart().mark == Mark::Area {
-                color.opacity(AREA_FILL)
-            } else {
-                color
-            };
-            window.paint_path(moved(path, origin), color);
-        }
-        match &series.marks {
-            Marks::Bars(bars) => {
-                for bar in bars {
-                    window.paint_quad(
-                        fill(bounds_of(*bar, origin), color)
-                            .corner_radii(Corners::all(px(BAR_RADIUS))),
-                    );
-                }
+    // A fixed domain can leave marks past the plot; they stop at its edge,
+    // short of half a point.
+    let clip = Rect {
+        x: plan.plot.x - POINT / 2.0,
+        y: plan.plot.y - POINT / 2.0,
+        w: plan.plot.w + POINT,
+        h: plan.plot.h + POINT,
+    };
+    let mask = ContentMask {
+        bounds: bounds_of(clip, origin),
+        ..ContentMask::default()
+    };
+    window.with_content_mask(Some(mask), |window| {
+        let mut paths = built.paths.iter().peekable();
+        for (s, series) in plan.series.iter().enumerate() {
+            let color = series_color(theme, s);
+            while let Some((_, path, filled)) = paths.next_if(|(of, ..)| *of == s) {
+                let color = if *filled && plan.chart().mark == Mark::Area {
+                    color.opacity(AREA_FILL)
+                } else {
+                    color
+                };
+                window.paint_path(moved(path, origin), color);
             }
-            Marks::Points(at) => {
-                for &[x, y] in at {
-                    let dot = Rect {
-                        x: x - POINT / 2.0,
-                        y: y - POINT / 2.0,
-                        w: POINT,
-                        h: POINT,
-                    };
-                    window.paint_quad(
-                        fill(bounds_of(dot, origin), color)
-                            .corner_radii(Corners::all(px(POINT / 2.0))),
-                    );
+            match &series.marks {
+                Marks::Bars(bars) => {
+                    for bar in bars {
+                        window.paint_quad(
+                            fill(bounds_of(*bar, origin), color)
+                                .corner_radii(Corners::all(px(BAR_RADIUS))),
+                        );
+                    }
                 }
+                Marks::Points(at) => {
+                    for &[x, y] in at {
+                        let dot = Rect {
+                            x: x - POINT / 2.0,
+                            y: y - POINT / 2.0,
+                            w: POINT,
+                            h: POINT,
+                        };
+                        window.paint_quad(
+                            fill(bounds_of(dot, origin), color)
+                                .corner_radii(Corners::all(px(POINT / 2.0))),
+                        );
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
-    }
+    });
 
     if let Some(tip) = tip
         && let Some(&(_, [x, _])) = tip.points.first()
@@ -472,6 +487,9 @@ fn paint_chart(
         shaped
             .paint(at, px(built.line), TextAlign::Left, None, window, cx)
             .ok();
+    }
+    if let Some(label) = &plan.legend_title {
+        paint_label(built, label, origin, window, cx);
     }
     for swatch in &plan.legend {
         window.paint_quad(

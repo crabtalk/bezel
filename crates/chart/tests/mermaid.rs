@@ -42,3 +42,13 @@ fn mixed_series_and_other_kinds_are_none() {
     assert!(mermaid::import("flowchart LR\n  A --> B\n").is_none());
     assert!(mermaid::import("pie\n").is_none());
 }
+
+#[test]
+fn an_xychart_keeps_its_axis_titles_and_y_range() {
+    let source = "xychart-beta\n  x-axis \"Month\" [jan, feb]\n  y-axis \"Revenue\" 0 --> 100\n  bar [10, 20]\n";
+    let chart = mermaid::import(source).unwrap();
+    let (x, y) = (chart.encoding.x.unwrap(), chart.encoding.y.unwrap());
+    assert_eq!(x.title.as_deref(), Some("Month"));
+    assert_eq!(y.title.as_deref(), Some("Revenue"));
+    assert_eq!(y.scale.domain, Some([0.0, 100.0]));
+}

@@ -3,17 +3,21 @@
 //!
 //! Bars sharing a band stack, positive values up and negative down. Lines,
 //! areas and points take their series in ascending x, and a missing y breaks
-//! a line or area. Discrete domains keep the data's first-seen order.
-//! Quantitative scales take in zero; temporal scales span the data.
+//! a line or area. A channel's [`Scale`] and [`Sort`] shape its domain, and its
+//! title sits under the bottom axis or over the left one.
 
-use std::{collections::HashSet, f32::consts::TAU, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    f32::consts::TAU,
+    sync::Arc,
+};
 
 use gpui::SharedString;
 
 use crate::{
     data::Column,
     decimate,
-    model::{Channel, Chart, Kind, Mark},
+    model::{Channel, Chart, Kind, Mark, Scale, Sort},
     scale::{self, Band, Linear, Ticks},
     time,
 };
@@ -87,6 +91,7 @@ pub struct Axis {
     pub side: Side,
     pub ticks: Vec<Tick>,
     pub grid: bool,
+    pub title: Option<Label>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -142,6 +147,8 @@ pub struct Plan {
     /// What the marks are drawn in. For arcs, the square the pie fills.
     pub plot: Rect,
     pub title: Option<Label>,
+    /// The colour channel's title, ahead of the swatches.
+    pub legend_title: Option<Label>,
     pub legend: Vec<Swatch>,
     pub axes: Vec<Axis>,
     /// Paint order.
@@ -188,15 +195,42 @@ pub fn plan(
         size,
         line,
         top: PAD,
+        reserved: 0.0,
         measure,
     };
     let title = chart.title.clone().map(|text| layout.line_at(text, PAD));
-    let legend = layout.legend(&groups.names);
-    let (plot, axes, marks, hover) = match chart.mark {
+    let color_title = chart.encoding.color.as_ref().and_then(|c| c.title.clone());
+    let (legend_title, legend) = layout.legend(color_title, &groups.names);
+    let axis_title = |channel: &Option<Channel>| match chart.mark {
+        Mark::Arc => None,
+        _ => channel.as_ref()?.title.clone(),
+    };
+    let x_title = axis_title(&chart.encoding.x);
+    if x_title.is_some() {
+        layout.reserved = line + GAP;
+    }
+    let y_title = axis_title(&chart.encoding.y).map(|text| layout.line_at(text, PAD));
+    let (plot, mut axes, marks, hover) = match chart.mark {
         Mark::Arc => arcs(chart, &groups, &layout)?,
         Mark::Bar => bars(chart, &groups, &mut layout)?,
         Mark::Line | Mark::Area | Mark::Point => along(chart, &groups, &mut layout)?,
     };
+    let x_title = x_title.map(|text| {
+        let label = layout.label(text, [0.0, 0.0]);
+        Label {
+            at: [
+                plot.x + (plot.w - label.width) / 2.0,
+                plot.bottom() + GAP + line + GAP,
+            ],
+            ..label
+        }
+    });
+    for axis in &mut axes {
+        axis.title = match axis.side {
+            Side::Bottom => x_title.clone(),
+            Side::Left => y_title.clone(),
+        };
+    }
     let series = groups
         .names
         .into_iter()
@@ -207,6 +241,7 @@ pub fn plan(
         size,
         plot,
         title,
+        legend_title,
         legend,
         axes,
         series,
@@ -354,7 +389,7 @@ impl Groups {
         if !discrete(color.kind) {
             return None;
         }
-        let domain = Discrete::of(chart.data.column(&color.field)?);
+        let domain = Discrete::of(chart.data.column(&color.field)?, &color.sort);
         Some(Self {
             names: domain.labels.into_iter().map(Some).collect(),
             codes: Some(domain.codes),
@@ -380,30 +415,62 @@ struct Discrete {
 }
 
 impl Discrete {
-    fn of(column: &Column) -> Self {
-        match column {
-            Column::Text(text) => Self {
-                labels: text.names.to_vec(),
-                codes: text.codes.clone(),
-            },
-            Column::Number(values) => {
-                let mut distinct: Vec<f64> =
-                    values.iter().copied().filter(|v| !v.is_nan()).collect();
-                distinct.sort_by(f64::total_cmp);
-                distinct.dedup();
-                let codes = values
-                    .iter()
-                    .map(|v| {
-                        distinct
-                            .binary_search_by(|d| d.total_cmp(v))
-                            .map_or(MISSING, |index| index as u32)
-                    })
-                    .collect();
-                Self {
-                    labels: distinct.iter().map(|&v| scale::value(v).into()).collect(),
-                    codes,
+    fn of(column: &Column, sort: &Sort) -> Self {
+        let (labels, codes, numbers): (Vec<SharedString>, Arc<[u32]>, Option<Vec<f64>>) =
+            match column {
+                Column::Text(text) => (text.names.to_vec(), text.codes.clone(), None),
+                Column::Number(values) => {
+                    let mut index = HashMap::new();
+                    let mut distinct = Vec::new();
+                    let codes = values
+                        .iter()
+                        .map(|&v| match v.is_nan() {
+                            true => MISSING,
+                            false => *index.entry(v.to_bits()).or_insert_with(|| {
+                                distinct.push(v);
+                                distinct.len() as u32 - 1
+                            }),
+                        })
+                        .collect();
+                    let labels = distinct.iter().map(|&v| scale::value(v).into()).collect();
+                    (labels, codes, Some(distinct))
+                }
+            };
+        let mut order: Vec<usize> = (0..labels.len()).collect();
+        match sort {
+            Sort::Data => return Self { labels, codes },
+            Sort::Ascending | Sort::Descending => {
+                order.sort_by(|&a, &b| match &numbers {
+                    Some(values) => values[a].total_cmp(&values[b]),
+                    None => labels[a].cmp(&labels[b]),
+                });
+                if *sort == Sort::Descending {
+                    order.reverse();
                 }
             }
+            Sort::Explicit(listed) => {
+                let rank = |index: &usize| {
+                    listed
+                        .iter()
+                        .position(|name| *name == labels[*index])
+                        .unwrap_or(listed.len())
+                };
+                order.sort_by_key(rank);
+            }
+        }
+        let mut rank = vec![0u32; labels.len()];
+        for (new, &old) in order.iter().enumerate() {
+            rank[old] = new as u32;
+        }
+        Self {
+            labels: order.iter().map(|&old| labels[old].clone()).collect(),
+            codes: codes
+                .iter()
+                .map(|&code| match code {
+                    MISSING => MISSING,
+                    code => rank[code as usize],
+                })
+                .collect(),
         }
     }
 }
@@ -419,11 +486,15 @@ fn numbers<'a>(chart: &'a Chart, channel: &Channel) -> Option<&'a Arc<[f64]>> {
     }
 }
 
-/// Ticks for a continuous channel spanning `lo..=hi`.
-fn continuous(kind: Kind, lo: f64, hi: f64, count: usize) -> Ticks {
-    match kind {
-        Kind::Temporal => scale::temporal(lo, hi, count),
-        _ => scale::linear(lo.min(0.0), hi.max(0.0), count),
+/// Ticks for a quantitative or temporal channel whose data spans `lo..=hi`.
+fn continuous(channel: &Channel, lo: f64, hi: f64, count: usize) -> Ticks {
+    let Scale { zero, domain, nice } = channel.scale;
+    match (channel.kind, domain) {
+        (Kind::Temporal, Some([lo, hi])) => scale::temporal(lo, hi, count),
+        (Kind::Temporal, None) => scale::temporal(lo, hi, count),
+        (_, Some([lo, hi])) => scale::linear(lo, hi, count, false),
+        (_, None) if zero => scale::linear(lo.min(0.0), hi.max(0.0), count, nice),
+        (_, None) => scale::linear(lo, hi, count, nice),
     }
 }
 
@@ -432,6 +503,8 @@ struct Layout<'a> {
     size: [f32; 2],
     line: f32,
     top: f32,
+    /// Kept under the bottom axis, for its title.
+    reserved: f32,
     measure: &'a mut dyn FnMut(&str) -> f32,
 }
 
@@ -448,10 +521,22 @@ impl Layout<'_> {
         label
     }
 
-    /// One entry per named series, flowing left to right and wrapping.
-    fn legend(&mut self, names: &[Option<SharedString>]) -> Vec<Swatch> {
+    /// `title`, then one entry per named series, flowing left to right and
+    /// wrapping.
+    fn legend(
+        &mut self,
+        title: Option<SharedString>,
+        names: &[Option<SharedString>],
+    ) -> (Option<Label>, Vec<Swatch>) {
         let mut swatches = Vec::new();
         let mut x = PAD;
+        let title = title
+            .filter(|_| names.iter().any(Option::is_some))
+            .map(|text| {
+                let label = self.label(text, [PAD, self.top]);
+                x += label.width + GAP;
+                label
+            });
         for (series, name) in names.iter().enumerate() {
             let Some(name) = name else { continue };
             let label = self.label(name.clone(), [0.0, 0.0]);
@@ -478,12 +563,12 @@ impl Layout<'_> {
         if !swatches.is_empty() {
             self.top += self.line + GAP;
         }
-        swatches
+        (title, swatches)
     }
 
     /// The plot's height once a bottom axis is taken out.
     fn plot_height(&self) -> f32 {
-        self.size[1] - self.top - PAD - GAP - self.line
+        self.size[1] - self.top - PAD - GAP - self.line - self.reserved
     }
 
     /// The plot beside left labels `left` wide, over a bottom axis.
@@ -524,6 +609,7 @@ impl Layout<'_> {
                 })
                 .collect(),
             grid,
+            title: None,
         }
     }
 
@@ -553,6 +639,7 @@ impl Layout<'_> {
             side: Side::Bottom,
             ticks,
             grid,
+            title: None,
         }
     }
 }
@@ -578,7 +665,7 @@ fn bars(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
         (false, true) if x.kind == Kind::Quantitative => (y, x, false),
         _ => return None,
     };
-    let bands = Discrete::of(chart.data.column(&category.field)?);
+    let bands = Discrete::of(chart.data.column(&category.field)?, &category.sort);
     let values = numbers(chart, value)?;
     let (count, series) = (bands.labels.len(), groups.len());
 
@@ -602,7 +689,7 @@ fn bars(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
 
     let (plot, axes, band, scale) = if vertical {
         let count = (layout.plot_height() / Y_SPACING).floor().max(2.0) as usize;
-        let ticks = scale::linear(lo, hi, count);
+        let ticks = continuous(value, lo, hi, count);
         let labels = layout.measured(&ticks.labels);
         let plot = layout.plot(widest(&labels))?;
         let scale = Linear {
@@ -632,7 +719,7 @@ fn bars(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
         let centers: Vec<f32> = (0..count).map(|b| band.center(b)).collect();
         let left = layout.left(labels, &centers, plot, false);
         let count = (plot.w / X_SPACING).floor().max(2.0) as usize;
-        let ticks = scale::linear(lo, hi, count);
+        let ticks = continuous(value, lo, hi, count);
         let scale = Linear {
             domain: ticks.domain,
             range: (plot.x, plot.right()),
@@ -697,7 +784,7 @@ fn along(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
     let ys = numbers(chart, y)?;
     let x_column = chart.data.column(&x.field)?;
     let xs = match (discrete(x.kind), x_column) {
-        (true, column) => Err(Discrete::of(column)),
+        (true, column) => Err(Discrete::of(column, &x.sort)),
         (false, Column::Number(values)) => Ok(values),
         (false, Column::Text(_)) => return None,
     };
@@ -716,7 +803,7 @@ fn along(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
         });
     let (lo, hi) = if lo > hi { (0.0, 0.0) } else { (lo, hi) };
     let count = (layout.plot_height() / Y_SPACING).floor().max(2.0) as usize;
-    let y_ticks = continuous(y.kind, lo, hi, count);
+    let y_ticks = continuous(y, lo, hi, count);
     let labels = layout.measured(&y_ticks.labels);
     let plot = layout.plot(widest(&labels))?;
     let y_scale = Linear {
@@ -734,7 +821,7 @@ fn along(chart: &Chart, groups: &Groups, layout: &mut Layout) -> Option<Body> {
                     (lo.min(values[row]), hi.max(values[row]))
                 });
             let (lo, hi) = if lo > hi { (0.0, 0.0) } else { (lo, hi) };
-            let ticks = continuous(x.kind, lo, hi, x_count);
+            let ticks = continuous(x, lo, hi, x_count);
             let scale = Linear {
                 domain: ticks.domain,
                 range: (plot.x, plot.right()),

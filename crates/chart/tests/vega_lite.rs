@@ -1,4 +1,4 @@
-use chart::{Column, Kind, Mark, time, vega_lite};
+use chart::{Column, Kind, Mark, Sort, time, vega_lite};
 
 const BARS: &str = r#"{
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
@@ -66,4 +66,51 @@ fn what_it_cannot_draw_as_written_is_none() {
         vega_lite::import(r#"{"data": {"url": "x.csv"}, "mark": "bar", "encoding": {}}"#).is_none()
     );
     assert!(vega_lite::import("not json").is_none());
+}
+
+#[test]
+fn channels_take_vega_lites_defaults_and_settings() {
+    let chart = vega_lite::import(BARS).unwrap();
+    let x = chart.encoding.x.unwrap();
+    assert_eq!(x.title.as_deref(), Some("month"));
+    assert_eq!(x.sort, Sort::Ascending);
+
+    let spec = BARS
+        .replace(
+            r#""y": {"field": "sales", "type": "quantitative"}"#,
+            r#""y": {"field": "sales", "type": "quantitative", "title": null, "scale": {"zero": false, "domain": [1, 9]}}"#,
+        )
+        .replace(r#""axis": {"labelAngle": 0}"#, r#""axis": {"title": "Month"}, "sort": ["Mar"]"#);
+    let chart = vega_lite::import(&spec).unwrap();
+    let (x, y) = (chart.encoding.x.unwrap(), chart.encoding.y.unwrap());
+    assert_eq!(x.title.as_deref(), Some("Month"));
+    assert_eq!(x.sort, Sort::Explicit(vec!["Mar".into()]));
+    assert_eq!(y.title, None);
+    assert!(!y.scale.zero);
+    assert_eq!(y.scale.domain, Some([1.0, 9.0]));
+}
+
+#[test]
+fn a_scale_or_sort_it_cannot_honour_is_none() {
+    let y = r#""y": {"field": "sales", "type": "quantitative"}"#;
+    let with = |channel: &str| BARS.replace(y, channel);
+    assert!(
+        vega_lite::import(&with(
+            r#""y": {"field": "sales", "type": "quantitative", "scale": {"type": "log"}}"#
+        ))
+        .is_none()
+    );
+    assert!(
+        vega_lite::import(&with(
+            r#""y": {"field": "sales", "type": "quantitative", "stack": "normalize"}"#
+        ))
+        .is_none()
+    );
+    assert!(
+        vega_lite::import(&BARS.replace(
+            r#""type": "nominal", "axis""#,
+            r#""type": "nominal", "sort": "-y", "axis""#
+        ))
+        .is_none()
+    );
 }

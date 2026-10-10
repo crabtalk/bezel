@@ -1,6 +1,6 @@
 //! Each mark draws, and redraws under a pointer, in a window.
 
-use chart::{Chart, Data, Kind};
+use chart::{Channel, Chart, Data};
 use gpui::{
     Context, IntoElement, Modifiers, Render, TestAppContext, VisualTestContext, Window, div, point,
     prelude::*, px, size,
@@ -27,22 +27,22 @@ fn charts() -> Vec<Chart> {
         .number("sales", [3.0, 5.0, 4.0, 2.0, -1.0, 6.0]);
     let along = |chart: Chart| {
         chart
-            .x("x", Kind::Quantitative)
-            .y("sales", Kind::Quantitative)
-            .color("region", Kind::Nominal)
+            .x(Channel::quantitative("x"))
+            .y(Channel::quantitative("sales"))
+            .color(Channel::nominal("region"))
     };
     vec![
         Chart::bar(data.clone())
-            .x("month", Kind::Nominal)
-            .y("sales", Kind::Quantitative)
-            .color("region", Kind::Nominal)
+            .x(Channel::nominal("month"))
+            .y(Channel::quantitative("sales"))
+            .color(Channel::nominal("region"))
             .title("Sales"),
         along(Chart::line(data.clone())),
         along(Chart::area(data.clone())),
         along(Chart::point(data.clone())),
         Chart::arc(data)
-            .theta("x", Kind::Quantitative)
-            .color("month", Kind::Nominal),
+            .theta(Channel::quantitative("x"))
+            .color(Channel::nominal("month")),
     ]
 }
 

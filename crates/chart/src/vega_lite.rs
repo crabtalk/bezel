@@ -2,21 +2,27 @@
 //! `data.values`, one `mark`, and `x`, `y`, `color` and `theta` channels each
 //! naming a `field` and its `type`.
 //!
+//! A channel's `title`, `scale` (`zero`, `domain`, `nice`) and `sort`
+//! (`null`, `"ascending"`, `"descending"` or a list) are read with Vega-Lite's
+//! defaults: the field name for a title, ascending for a discrete field. An
+//! `axis` or `legend` gives its `title` and nothing else.
+//!
 //! A spec with a transform, layers, composed or faceted views, params, an
-//! aggregate, a bin, a time unit or another channel answers `None`. A
-//! channel's `title`, `axis`, `legend`, `scale`, `sort` and `stack`, the
-//! `tooltip` channel, and a mark's properties past its `type` are dropped.
+//! aggregate, a bin, a time unit, another channel, or a scale, sort or stack
+//! it cannot draw as written answers `None`. The `tooltip` channel and a
+//! mark's properties past its `type` are dropped.
 //!
 //! A temporal field's strings are read by [`time::parse`]; its numbers are
 //! milliseconds since the epoch. A field whose values are all numbers or null
 //! is numeric; any other field is text.
 
+use gpui::SharedString;
 use serde_json::{Map, Value};
 
 use crate::{
     data::{Column, Data},
-    model::{Channel, Chart, Kind, Mark},
-    time,
+    model::{Channel, Chart, Kind, Mark, Sort},
+    scale, time,
 };
 
 /// What a channel may carry.
@@ -98,12 +104,9 @@ pub fn import(source: &str) -> Option<Chart> {
     chart.data = data;
 
     chart.title = match spec.get("title") {
-        Some(Value::String(title)) => Some(title.clone().into()),
-        Some(Value::Object(title)) => title
-            .get("text")
-            .and_then(Value::as_str)
-            .map(|t| t.to_string().into()),
-        _ => None,
+        Some(Value::Object(title)) => title.get("text").and_then(text),
+        Some(title) => text(title),
+        None => None,
     };
     Some(chart)
 }
@@ -119,10 +122,91 @@ fn channel(channel: &Map<String, Value>) -> Option<Channel> {
         "nominal" => Kind::Nominal,
         _ => return None,
     };
-    Some(Channel::new(
-        channel.get("field")?.as_str()?.to_string(),
-        kind,
-    ))
+    let field = channel.get("field")?.as_str()?.to_string();
+    let mut out = Channel::new(field.clone(), kind);
+
+    let guide = ["axis", "legend"]
+        .into_iter()
+        .filter_map(|key| channel.get(key)?.as_object()?.get("title"))
+        .next();
+    out.title = match guide.or(channel.get("title")) {
+        None => Some(field.into()),
+        Some(title) => text(title),
+    };
+
+    if let Some(value) = channel.get("scale") {
+        let scale = value.as_object()?;
+        for (key, value) in scale {
+            match (key.as_str(), value) {
+                ("zero", Value::Bool(zero)) => out.scale.zero = *zero,
+                ("nice", Value::Bool(nice)) => out.scale.nice = *nice,
+                ("domain", Value::Array(ends))
+                    if matches!(kind, Kind::Quantitative | Kind::Temporal) =>
+                {
+                    let end = |value: &Value| match value {
+                        Value::Number(n) => n.as_f64(),
+                        Value::String(s) if kind == Kind::Temporal => time::parse(s),
+                        _ => None,
+                    };
+                    let [low, high] = ends.as_slice() else {
+                        return None;
+                    };
+                    out.scale.domain = Some([end(low)?, end(high)?]);
+                }
+                ("type", Value::String(name))
+                    if matches!(
+                        (kind, name.as_str()),
+                        (Kind::Quantitative, "linear")
+                            | (Kind::Temporal, "time" | "utc")
+                            | (Kind::Ordinal | Kind::Nominal, "band" | "point" | "ordinal")
+                    ) => {}
+                _ => return None,
+            }
+        }
+    }
+
+    if matches!(kind, Kind::Ordinal | Kind::Nominal) {
+        out.sort = match channel.get("sort") {
+            None => Sort::Ascending,
+            Some(Value::Null) => Sort::Data,
+            Some(Value::String(order)) if order == "ascending" => Sort::Ascending,
+            Some(Value::String(order)) if order == "descending" => Sort::Descending,
+            Some(Value::Array(values)) => Sort::Explicit(
+                values
+                    .iter()
+                    .map(|value| match value {
+                        Value::String(s) => Some(s.clone().into()),
+                        Value::Number(n) => Some(scale::value(n.as_f64()?).into()),
+                        _ => None,
+                    })
+                    .collect::<Option<_>>()?,
+            ),
+            Some(_) => return None,
+        };
+    }
+
+    match channel.get("stack") {
+        None | Some(Value::Bool(true)) => {}
+        Some(Value::String(stack)) if stack == "zero" => {}
+        Some(_) => return None,
+    }
+    Some(out)
+}
+
+/// A title: a string, lines joined by spaces, or `null` for none.
+fn text(value: &Value) -> Option<SharedString> {
+    match value {
+        Value::String(text) => Some(text.clone().into()),
+        Value::Array(lines) => Some(
+            lines
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" ")
+                .into(),
+        ),
+        _ => None,
+    }
 }
 
 fn column(values: &[&Value], temporal: bool) -> Column {

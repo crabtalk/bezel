@@ -15,6 +15,6 @@ pub mod vega_lite;
 pub mod view;
 
 pub use data::{Column, Data, Text};
-pub use model::{Channel, Chart, Encoding, Kind, Mark};
+pub use model::{Channel, Chart, Encoding, Kind, Mark, Scale, Sort};
 pub use plan::{Plan, plan};
 pub use view::{ChartView, view};
