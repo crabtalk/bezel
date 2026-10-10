@@ -36,6 +36,7 @@ impl Editor {
         }
         self.edit(EditKind::Structure, cx, |this| {
             this.doc
+                .edit()
                 .blocks
                 .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
             let ix = this.doc.blocks.len() - 1;

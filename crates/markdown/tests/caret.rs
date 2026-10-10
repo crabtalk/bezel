@@ -37,7 +37,11 @@ impl Render for Page {
             ..Editing::default()
         };
         let body = if self.mode == 2 {
-            markdown::render_source(&self.text, editing, cx)
+            markdown::render_source(
+                &markdown::SourceText::new(self.text.as_str(), cx),
+                editing,
+                cx,
+            )
         } else {
             let source = if self.mode == 1 {
                 format!("```\n{}\n```", self.text)

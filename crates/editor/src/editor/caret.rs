@@ -200,6 +200,7 @@ impl Editor {
         self.edit(EditKind::Delete, cx, |this| {
             let splice = this
                 .doc
+                .edit()
                 .replace(Selection::new(target, at), Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             this.track_slash("", Vec::new());
@@ -247,7 +248,7 @@ impl Editor {
         }
         // Deleting the last block is the other way to an empty document, and
         // the caret belongs at the start of whatever replaces it.
-        if ensure_block(&mut self.doc) {
+        if ensure_block(self.doc.edit()) {
             self.selection = Selection::at(Cursor::default());
         }
         if !self.blocks() {
@@ -362,7 +363,10 @@ impl Editor {
         }
         self.edit(EditKind::Delete, cx, |this| {
             let from = Cursor::new(at.block, at.part, at.offset - width);
-            let splice = this.doc.replace(Selection::new(from, at), Text::default());
+            let splice = this
+                .doc
+                .edit()
+                .replace(Selection::new(from, at), Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             vec![Delta::Spliced(splice)]
         });

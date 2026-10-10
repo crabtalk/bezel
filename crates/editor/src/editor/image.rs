@@ -184,7 +184,7 @@ impl Editor {
             return cx.notify();
         }
         self.edit(EditKind::Structure, cx, |this| {
-            this.doc.set_kind(
+            this.doc.edit().set_kind(
                 prompt.block,
                 BlockKind::Image {
                     url,
@@ -265,7 +265,7 @@ impl Editor {
             );
             let mut deltas = Vec::new();
             let first = if empty {
-                this.doc.blocks.remove(ix);
+                this.doc.edit().blocks.remove(ix);
                 deltas.push(Delta::Moved {
                     at: ix..ix + 1,
                     to: None,
@@ -276,7 +276,7 @@ impl Editor {
             };
             let last = first + urls.len() - 1;
             for (offset, url) in urls.into_iter().enumerate() {
-                this.doc.blocks.insert(
+                this.doc.edit().blocks.insert(
                     first + offset,
                     Block::at(
                         BlockKind::Image {
@@ -288,7 +288,7 @@ impl Editor {
                     ),
                 );
             }
-            this.doc.repair();
+            this.doc.edit().repair();
             this.selection = Selection::at(Cursor::new(last, Part::Caption, 0).clamp(&this.doc));
             deltas.push(Delta::Opened {
                 at: first,
@@ -413,8 +413,12 @@ impl Editor {
         });
         if current != Some(width) {
             self.edit(EditKind::Structure, cx, |this| {
-                if let Some(BlockKind::Image { width: at, .. }) =
-                    this.doc.blocks.get_mut(ix).map(|block| &mut block.kind)
+                if let Some(BlockKind::Image { width: at, .. }) = this
+                    .doc
+                    .edit()
+                    .blocks
+                    .get_mut(ix)
+                    .map(|block| &mut block.kind)
                 {
                     *at = width;
                 }

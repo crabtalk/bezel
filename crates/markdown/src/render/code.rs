@@ -2,6 +2,115 @@
 
 use super::*;
 
+/// A source text and what [`render_source`] reads off it every frame: its
+/// lines, a hash of each, and its highlight spans.
+///
+/// Building one walks and highlights the whole text. A caller keeps it across
+/// frames and builds a new one when the text changes, or when the installed
+/// highlighter would answer differently.
+pub struct SourceText {
+    code: Rc<str>,
+    ranges: Rc<[Range<usize>]>,
+    hashes: Box<[u64]>,
+    spans: Option<Rc<[Span]>>,
+    sized: RefCell<Option<Sized>>,
+}
+
+/// The per-line tables that also depend on what the text is set at.
+#[derive(Clone)]
+struct Sized {
+    /// The text size, line height and indent these were built for.
+    at: (u32, Pixels, Pixels),
+    keys: Rc<[u64]>,
+    gaps: Rc<[Pixels]>,
+    guesses: Rc<[Guess]>,
+}
+
+impl SourceText {
+    pub fn new(code: impl Into<Rc<str>>, cx: &App) -> Self {
+        let code: Rc<str> = code.into();
+        let language = crate::source::LANGUAGES[0];
+        let spans = crate::highlight::spans(cx, Some(language), &code)
+            .or_else(|| crate::source::is_markdown(language).then(|| crate::source::spans(&code)))
+            .map(Into::into);
+        let mut ranges = Vec::new();
+        let mut offset = 0usize;
+        for line in code.split('\n') {
+            ranges.push(offset..offset + line.len());
+            offset += line.len() + 1;
+        }
+        let hashes = ranges
+            .iter()
+            .map(|range| {
+                let mut hasher = DefaultHasher::new();
+                "source".hash(&mut hasher);
+                code[range.clone()].hash(&mut hasher);
+                hasher.finish()
+            })
+            .collect();
+        Self {
+            code,
+            ranges: ranges.into(),
+            hashes,
+            spans,
+            sized: RefCell::new(None),
+        }
+    }
+
+    pub fn text(&self) -> &str {
+        &self.code
+    }
+
+    /// Lines, counting the empty one after a trailing newline.
+    pub fn lines(&self) -> usize {
+        self.ranges.len()
+    }
+
+    /// The line holding byte `offset`; past the end, the last line.
+    pub fn line_of(&self, offset: usize) -> usize {
+        self.ranges
+            .partition_point(|range| range.end < offset)
+            .min(self.ranges.len() - 1)
+    }
+
+    fn sized(&self, size: f32, line: Pixels, indent: Pixels) -> Sized {
+        let key = (size.to_bits(), line, indent);
+        let mut held = self.sized.borrow_mut();
+        if let Some(sized) = held.as_ref()
+            && sized.at == key
+        {
+            return sized.clone();
+        }
+        let sized = Sized {
+            at: key,
+            keys: self
+                .hashes
+                .iter()
+                .map(|hash| {
+                    let mut hasher = DefaultHasher::new();
+                    hash.hash(&mut hasher);
+                    size.to_bits().hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect(),
+            gaps: vec![px(0.0); self.ranges.len()].into(),
+            guesses: self
+                .ranges
+                .iter()
+                .map(|range| Guess {
+                    chars: range.len(),
+                    line,
+                    rows: 0,
+                    extra: px(0.0),
+                    indent,
+                })
+                .collect(),
+        };
+        *held = Some(sized.clone());
+        sized
+    }
+}
+
 /// Paint a document's own markdown source: a fence's caret, selection and hit
 /// testing, without a fence's box, band or copy button.
 ///
@@ -11,7 +120,8 @@ use super::*;
 /// source view that scrolled sideways would hide most of it.
 ///
 /// Set at [`Typography::body`]'s size and leading, in [`Theme::font_body`].
-pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
+pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> AnyElement {
+    let code: &str = &source.code;
     let Editing {
         selection,
         caret_on,
@@ -56,7 +166,7 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
         jump: None,
     };
     let style = cx.source_style();
-    let count = code.split('\n').count();
+    let count = source.ranges.len();
     let gutter = Gutter::new(&style, count, &typography, &theme);
 
     let Some(layouts) = layouts else {
@@ -82,58 +192,25 @@ pub fn render_source(code: &str, editing: Editing, cx: &mut App) -> AnyElement {
 
     // Built a line at a time by the same column the blocks are: a line is to
     // this text what a block is to a document.
-    let language = crate::source::LANGUAGES[0];
-    let spans: Option<Rc<[Span]>> = crate::highlight::spans(cx, Some(language), code)
-        .or_else(|| crate::source::is_markdown(language).then(|| crate::source::spans(code)))
-        .map(Into::into);
-    let mut ranges = Vec::with_capacity(count);
-    let mut offset = 0usize;
-    for line in code.split('\n') {
-        ranges.push(offset..offset + line.len());
-        offset += line.len() + 1;
-    }
-    let line_of = |at: usize| {
-        ranges
-            .partition_point(|range| range.end < at)
-            .min(count - 1)
-    };
+    let spans = source.spans.clone();
+    let ranges = source.ranges.clone();
     let mut kept: Vec<usize> = keep.to_vec();
     if let Some(selection) = selection {
-        kept.push(line_of(selection.head.offset));
-        kept.push(line_of(selection.anchor.offset));
+        kept.push(source.line_of(selection.head.offset));
+        kept.push(source.line_of(selection.anchor.offset));
     }
     let line = px(typography.code.line_height());
-    let keys: Vec<u64> = ranges
-        .iter()
-        .map(|range| {
-            let mut hasher = DefaultHasher::new();
-            "source".hash(&mut hasher);
-            code[range.clone()].hash(&mut hasher);
-            typography.code.size().to_bits().hash(&mut hasher);
-            hasher.finish()
-        })
-        .collect();
-    layouts.prune(&keys);
     let indent = px(gutter.width() + 2.0 * CODE_PADDING_X);
-    let guesses: Vec<Guess> = ranges
-        .iter()
-        .map(|range| Guess {
-            chars: range.len(),
-            line,
-            rows: 0,
-            extra: px(0.0),
-            indent,
-        })
-        .collect();
+    let sized = source.sized(typography.code.size(), line, indent);
+    layouts.prune(&sized.keys);
     let paint = RowPaint::new(&overlay, code, typography.code.size(), &theme);
-    let code: Rc<str> = code.into();
+    let code = source.code.clone();
     let sink = layouts.clone();
-    let ranges: Rc<[Range<usize>]> = ranges.into();
     let column = Column {
         layouts: layouts.clone(),
-        keys: keys.into(),
-        gaps: vec![px(0.0); count].into(),
-        guesses: guesses.into(),
+        keys: sized.keys,
+        gaps: sized.gaps,
+        guesses: sized.guesses,
         keep: kept,
         scroll: scroll.cloned(),
         item_of: {

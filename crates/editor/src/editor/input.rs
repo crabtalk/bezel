@@ -116,7 +116,9 @@ impl EntityInputHandler for Editor {
             .or_else(|| self.marked.clone())
         {
             let at = self.cursor();
-            self.doc.edit_at(at, |body| body.remove(range.clone()));
+            self.doc
+                .edit()
+                .edit_at(at, |body| body.remove(range.clone()));
             self.place(Cursor {
                 offset: range.start,
                 ..at
@@ -127,7 +129,7 @@ impl EntityInputHandler for Editor {
         // pull the text out from under the IME.
         let at = self.cursor();
         let start = at.offset;
-        self.doc.edit_at(at, |body| body.insert(start, text));
+        self.doc.edit().edit_at(at, |body| body.insert(start, text));
         self.marked = (!text.is_empty()).then_some(start..start + text.len());
         let selected = composition_selection(text, start, marked);
         self.selection = Selection::new(

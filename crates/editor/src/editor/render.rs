@@ -24,10 +24,10 @@ impl Render for Editor {
         let selection = focused.then_some(self.selection);
         // The source line a reveal owed in source mode lands on.
         let reveal_line = match self.mode {
-            Mode::Source => self
-                .source_text()
-                .get(..self.selection.head.offset)
-                .map_or(0, |before| before.matches('\n').count()),
+            Mode::Source => {
+                self.refresh_source_view(cx);
+                self.source_view().line_of(self.selection.head.offset)
+            }
             Mode::Blocks => 0,
         };
         // gpui ends an outside file drag — left the window or released
@@ -225,7 +225,7 @@ impl Render for Editor {
                         let mut deltas = Vec::new();
                         for _ in 0..this.doc.blocks.len() {
                             let span = this.doc.subtree(at);
-                            let Some(next) = this.doc.move_block(at, delta) else {
+                            let Some(next) = this.doc.edit().move_block(at, delta) else {
                                 break;
                             };
                             deltas.push(Delta::Moved {
@@ -407,7 +407,7 @@ impl Render for Editor {
                         // the same caret, the same clicks, no block chrome to
                         // suppress a piece at a time.
                         Mode::Source => markdown::render_source(
-                            self.source_text(),
+                            self.source_view(),
                             markdown::Editing {
                                 selection,
                                 caret_on: self.caret_on,

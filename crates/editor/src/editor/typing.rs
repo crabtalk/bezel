@@ -22,7 +22,7 @@ impl Editor {
                     mark,
                 });
             }
-            let splice = this.doc.replace(this.selection, typed);
+            let splice = this.doc.edit().replace(this.selection, typed);
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             let shortcut = this.apply_shortcut();
             let promoted = this.promote_quote_marker();
@@ -154,7 +154,7 @@ impl Editor {
             }],
         };
         self.edit(EditKind::Insert, cx, |this| {
-            let splice = this.doc.replace(Selection::new(at, caret), chip);
+            let splice = this.doc.edit().replace(Selection::new(at, caret), chip);
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             vec![Delta::Spliced(splice)]
         });
@@ -189,10 +189,11 @@ impl Editor {
         let caret = self.cursor();
         self.edit(EditKind::Structure, cx, |this| {
             this.doc
+                .edit()
                 .edit_at(at, |text| text.remove(at.offset..caret.offset));
             match &action {
-                SlashAction::Block(kind) => this.doc.set_kind(at.block, kind.clone()),
-                SlashAction::Quote(alert) => this.doc.toggle_quote(at.block, *alert),
+                SlashAction::Block(kind) => this.doc.edit().set_kind(at.block, kind.clone()),
+                SlashAction::Quote(alert) => this.doc.edit().toggle_quote(at.block, *alert),
                 SlashAction::Run(_) => {}
             }
             this.selection =
@@ -244,7 +245,7 @@ impl Editor {
         };
         let width = open.len();
         let (opening, closing) = (open.clone(), inner.end..at.offset);
-        self.doc.edit_at(at, |text| {
+        self.doc.edit().edit_at(at, |text| {
             // The closing delimiter first — taking the opening one would move
             // every offset after it.
             text.remove(inner.end..at.offset);
@@ -296,18 +297,18 @@ impl Editor {
                 })]
             };
             if matches!(mark, Mark::Code) {
-                if let Some(head) = this.doc.unfence(selection) {
+                if let Some(head) = this.doc.edit().unfence(selection) {
                     this.selection = Selection::at(head.clamp(&this.doc));
                     return refenced(&this.doc, head);
                 }
                 if fenceable(&this.doc, selection) {
-                    let head = this.doc.fence(selection);
+                    let head = this.doc.edit().fence(selection);
                     this.selection = Selection::at(head.clamp(&this.doc));
                     return refenced(&this.doc, head);
                 }
             }
             // A mark is paint over text that does not move.
-            this.doc.toggle_mark(selection, mark);
+            this.doc.edit().toggle_mark(selection, mark);
             vec![]
         });
     }
@@ -340,8 +341,8 @@ impl Editor {
         }
         // Strip the prefix, then turn the block — the same two steps the slash
         // menu takes, so a `## ` and a menu pick land in one place.
-        self.doc.edit_at(at, |text| text.remove(0..len));
-        self.doc.apply(at.block, hit);
+        self.doc.edit().edit_at(at, |text| text.remove(0..len));
+        self.doc.edit().apply(at.block, hit);
         self.selection =
             Selection::at(Cursor::new(at.block, Part::Body, at.offset - len).clamp(&self.doc));
         // The transformation is its own step: undo after typing `## Title`
@@ -369,8 +370,8 @@ impl Editor {
         let kind = Self::quote_marker(first)?;
         // The marker line, and the break after it where a body follows.
         let len = first.len() + usize::from(text.len() > first.len());
-        self.doc.edit_at(at, |text| text.remove(0..len));
-        self.doc.set_alert(at.block, Some(kind));
+        self.doc.edit().edit_at(at, |text| text.remove(0..len));
+        self.doc.edit().set_alert(at.block, Some(kind));
         self.selection = Selection::at(
             Cursor::new(at.block, Part::Body, at.offset.saturating_sub(len)).clamp(&self.doc),
         );
@@ -421,15 +422,17 @@ impl Editor {
         self.edit(kind, cx, |this| {
             let before = this.doc.blocks.len();
             let splice = if !this.selection.is_collapsed() {
-                this.doc.replace(this.selection, Text::default())
+                this.doc.edit().replace(this.selection, Text::default())
             } else if at.offset > 0 {
+                let from = at.left(&this.doc);
                 this.doc
-                    .replace(Selection::new(at.left(&this.doc), at), Text::default())
+                    .edit()
+                    .replace(Selection::new(from, at), Text::default())
             } else {
                 // `merge_back` outdents, unmarkers, unfences or merges —
                 // whichever the block's state calls for — and says where the
                 // caret landed.
-                match this.doc.merge_back(at) {
+                match this.doc.edit().merge_back(at) {
                     // The seam between where the caret was and where it landed
                     // is exactly what the merge closed up.
                     Some(head) => Splice {
@@ -464,7 +467,7 @@ impl Editor {
             } else {
                 this.selection
             };
-            let splice = this.doc.replace(range, Text::default());
+            let splice = this.doc.edit().replace(range, Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             vec![Delta::Spliced(splice)]
         });
@@ -535,18 +538,18 @@ impl Editor {
                 .and_then(|block| block.text_at(Part::Body))
                 .is_some_and(Text::is_empty);
         self.edit(EditKind::Structure, cx, |this| {
-            if empty && this.doc.peel(at.block) {
+            if empty && this.doc.edit().peel(at.block) {
                 this.selection = Selection::at(at.clamp(&this.doc));
                 return vec![];
             }
             let mut deltas = Vec::new();
             if !this.selection.is_collapsed() {
-                let splice = this.doc.replace(this.selection, Text::default());
+                let splice = this.doc.edit().replace(this.selection, Text::default());
                 this.selection = Selection::at(splice.caret.clamp(&this.doc));
                 deltas.push(Delta::Spliced(splice));
             }
             let at = this.cursor();
-            let new = this.doc.split(at.block, at.offset);
+            let new = this.doc.edit().split(at.block, at.offset);
             this.selection = Selection::at(Cursor::new(new, Part::Body, 0).clamp(&this.doc));
             // What followed the caret moved into a block of its own, which
             // everything below it now sits under.
@@ -594,11 +597,11 @@ impl Editor {
             let at = this.cursor().block;
             let insert_at = this.doc.subtree(at).end;
             let indent = this.doc.blocks.get(at).map_or(0, |block| block.indent);
-            this.doc.blocks.insert(
+            this.doc.edit().blocks.insert(
                 insert_at,
                 Block::at(BlockKind::Paragraph(Text::default()), indent),
             );
-            this.doc.repair();
+            this.doc.edit().repair();
             this.selection = Selection::at(Cursor::new(insert_at, Part::Body, 0).clamp(&this.doc));
             vec![Delta::Opened {
                 at: insert_at,
@@ -617,7 +620,8 @@ impl Editor {
             return;
         }
         self.edit(EditKind::Structure, cx, |this| {
-            this.doc.indent(this.cursor().block);
+            let block = this.cursor().block;
+            this.doc.edit().indent(block);
             vec![]
         });
     }
@@ -630,7 +634,8 @@ impl Editor {
             return;
         }
         self.edit(EditKind::Structure, cx, |this| {
-            this.doc.outdent(this.cursor().block);
+            let block = this.cursor().block;
+            this.doc.edit().outdent(block);
             vec![]
         });
     }

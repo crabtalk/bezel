@@ -88,7 +88,7 @@ impl Editor {
                 let mut at = vec![self.cursor()];
                 at.extend(ends.iter().flat_map(|(start, end)| [*start, *end]));
                 let (source, offsets) = markdown::serialize_at_many(&self.doc, &at, &self.marks);
-                self.doc = source_doc(&source);
+                self.doc.set(source_doc(&source));
                 let place =
                     |ix: usize| offsets[ix].map(|offset| Cursor::new(0, Part::Code, offset));
                 let caret = place(0).unwrap_or(Cursor::new(0, Part::Code, source.len()));
@@ -102,9 +102,10 @@ impl Editor {
                     ends.iter()
                         .flat_map(|(start, end)| [start.offset, end.offset]),
                 );
-                let (doc, at) = markdown::parse_at_many(self.source_text(), &offsets, &self.marks);
-                self.doc = doc;
-                ensure_block(&mut self.doc);
+                let (mut doc, at) =
+                    markdown::parse_at_many(self.source_text(), &offsets, &self.marks);
+                ensure_block(&mut doc);
+                self.doc.set(doc);
                 let place = |ix: usize| at[ix].map(|at: Cursor| at.clamp(&self.doc));
                 let caret = place(0).unwrap_or_else(|| Cursor::default().clamp(&self.doc));
                 self.selection = Selection::at(caret);
@@ -137,6 +138,46 @@ impl Editor {
         self.mode == Mode::Blocks
     }
 
+    /// Rebuild the source view's text if the document has changed since it was
+    /// built.
+    // TODO: also rebuild when the installed highlighter or the syntax registry
+    // would colour the text differently.
+    pub(super) fn refresh_source_view(&mut self, cx: &App) {
+        let revision = self.doc.revision();
+        if self
+            .source_view
+            .as_ref()
+            .is_none_or(|(built, _)| *built != revision)
+        {
+            let view = markdown::SourceText::new(self.source_text(), cx);
+            self.source_view = Some((revision, view));
+        }
+    }
+
+    /// The source view's text. Current only after [`Self::refresh_source_view`].
+    pub(super) fn source_view(&self) -> &markdown::SourceText {
+        &self
+            .source_view
+            .as_ref()
+            .expect("render refreshes the source view before reading it")
+            .1
+    }
+
+    /// Lines in the source, counting the empty one after a trailing newline.
+    /// Only meaningful in [`Mode::Source`], as [`Self::source_text`] is.
+    pub fn source_lines(&self) -> usize {
+        match &self.source_view {
+            Some((built, view)) if *built == self.doc.revision() => view.lines(),
+            _ => {
+                self.source_text()
+                    .bytes()
+                    .filter(|byte| *byte == b'\n')
+                    .count()
+                    + 1
+            }
+        }
+    }
+
     /// The text of the fence the source is held in — what is being edited in
     /// [`Mode::Source`]. Only meaningful there; in [`Mode::Blocks`] the
     /// document is the truth and this is whatever block zero happens to be.
@@ -167,7 +208,7 @@ impl Editor {
             .collect::<Vec<_>>()
             .join("\n");
         let offset = self.selection.head.offset.min(source.len());
-        self.doc = source_doc(&source);
+        self.doc.set(source_doc(&source));
         self.selection = Selection::at(Cursor::new(0, Part::Code, offset));
         for anchor in &mut self.anchors {
             anchor.range = anchor.range.clamp(&self.doc);

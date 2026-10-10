@@ -326,8 +326,48 @@ pub(crate) enum Reveal {
     Top,
 }
 
-pub struct Editor {
+/// The document, and a count of the changes made to it.
+///
+/// Reads go through `Deref`. [`Tracked::edit`] and [`Tracked::set`] are the
+/// only ways to change it, and both move [`Tracked::revision`], so something
+/// derived from a revision is current while the revision is.
+pub(crate) struct Tracked {
     doc: Doc,
+    revision: u64,
+}
+
+impl Tracked {
+    fn new(doc: Doc) -> Self {
+        Self { doc, revision: 0 }
+    }
+
+    pub(crate) fn edit(&mut self) -> &mut Doc {
+        self.revision += 1;
+        &mut self.doc
+    }
+
+    pub(crate) fn set(&mut self, doc: Doc) {
+        *self.edit() = doc;
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
+    }
+}
+
+impl std::ops::Deref for Tracked {
+    type Target = Doc;
+
+    fn deref(&self) -> &Doc {
+        &self.doc
+    }
+}
+
+pub struct Editor {
+    doc: Tracked,
+    /// The source view's text and the [`Tracked::revision`] it was built at.
+    /// Read only in [`Mode::Source`].
+    source_view: Option<(u64, markdown::SourceText)>,
     /// The dialect this document is read and written in — the app's own marks,
     /// taken once at construction. One editor, one spelling: a document that
     /// changed dialect between a read and a write would rewrite itself.
@@ -451,7 +491,8 @@ impl Editor {
             // has no body at block zero, and a caret claiming one resolves
             // against nothing until something moves it.
             selection: Selection::at(Cursor::default().clamp(&doc)),
-            doc,
+            doc: Tracked::new(doc),
+            source_view: None,
             chrome: Chrome::default(),
             mode: Mode::default(),
             focus_handle: cx.focus_handle(),
@@ -512,8 +553,9 @@ impl Editor {
     pub fn with_marks(mut self, marks: markdown::Marks) -> Self {
         let source = self.source();
         self.marks = marks;
-        self.doc = markdown::parse_with(&source, &self.marks);
-        ensure_block(&mut self.doc);
+        let mut doc = markdown::parse_with(&source, &self.marks);
+        ensure_block(&mut doc);
+        self.doc.set(doc);
         self.selection = self.selection.clamp(&self.doc);
         self
     }
