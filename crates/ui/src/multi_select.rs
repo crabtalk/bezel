@@ -25,8 +25,8 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    App, Axis, Context, Entity, EventEmitter, FocusHandle, Focusable, Hsla, KeyBinding, Point,
-    ScrollHandle, SharedString, Window, actions, div, prelude::*, px,
+    App, Axis, Context, Entity, EventEmitter, FocusHandle, Focusable, Hsla, KeyBinding, Pixels,
+    Point, ScrollHandle, SharedString, Window, actions, div, prelude::*, px,
 };
 use theme::{TextStyle, Theme, Typeset};
 
@@ -46,7 +46,7 @@ actions!(
 /// typing goes to a field while navigation keys fall through.
 pub const KEY_CONTEXT: &str = "MultiSelect";
 
-/// The card's width.
+/// The card's width until [`MultiSelect::with_width`] says otherwise.
 const WIDTH: f32 = 280.0;
 
 /// Install the bindings — [`bindings`], bound. Call once, alongside
@@ -142,6 +142,8 @@ pub struct MultiSelect {
     create: Option<Rc<Normalize>>,
     manage: bool,
     tint: Rc<Tint>,
+    /// The card's narrowest and widest.
+    width: (Pixels, Pixels),
     managing: Option<Managing>,
     /// The query takes focus at the next paint: the pane holding it closed
     /// where no window was to hand.
@@ -177,6 +179,7 @@ impl MultiSelect {
             create: None,
             manage: false,
             tint: Rc::new(|name, theme| tint(theme, name)),
+            width: (px(WIDTH), px(WIDTH)),
             managing: None,
             refocus: false,
             scroll: ScrollHandle::new(),
@@ -209,6 +212,13 @@ impl MultiSelect {
     /// Colour each name with `tint` instead of [`tint`].
     pub fn with_tint(mut self, tint: impl Fn(&str, &Theme) -> Hsla + 'static) -> Self {
         self.tint = Rc::new(tint);
+        self
+    }
+
+    /// Size the card to its widest row, from `min` up to `max`. Equal bounds
+    /// fix the width. A name wider than `max` is cut at the card's edge.
+    pub fn with_width(mut self, min: Pixels, max: Pixels) -> Self {
+        self.width = (min, max);
         self
     }
 
@@ -597,7 +607,8 @@ impl Render for MultiSelect {
         popover::popover_card(&theme)
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
-            .w(px(WIDTH))
+            .min_w(self.width.0)
+            .max_w(self.width.1)
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_previous))
             .on_action(cx.listener(Self::confirm))

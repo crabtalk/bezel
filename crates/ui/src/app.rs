@@ -53,6 +53,13 @@ pub trait AppExt {
     /// Sets how far each [`crate::menu::Item::indented`] level moves a row in,
     /// and refreshes windows. Defaults to 12px.
     fn set_menu_indent(&mut self, indent: crate::menu::MenuIndent);
+
+    /// Reads the menu panel widths.
+    fn menu_width(&self) -> crate::menu::MenuWidth;
+
+    /// Sets how wide menu panels sit, and refreshes windows. Defaults to
+    /// 180px at least, and exactly 280px for a panel with a described row.
+    fn set_menu_width(&mut self, width: crate::menu::MenuWidth);
 }
 
 impl AppExt for App {
@@ -119,5 +126,13 @@ impl AppExt for App {
 
     fn set_menu_indent(&mut self, indent: crate::menu::MenuIndent) {
         crate::menu::set_indent(indent, self)
+    }
+
+    fn menu_width(&self) -> crate::menu::MenuWidth {
+        crate::menu::width(self)
+    }
+
+    fn set_menu_width(&mut self, width: crate::menu::MenuWidth) {
+        crate::menu::set_width(width, self)
     }
 }
