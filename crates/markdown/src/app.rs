@@ -20,6 +20,10 @@ pub trait AppExt {
     /// Configures markdown layout.
     fn set_markdown_layout(&mut self, layout: crate::Layout);
 
+    /// Sets how far a mermaid diagram zooms.
+    #[cfg(feature = "mermaid")]
+    fn set_mermaid_zoom(&mut self, zoom: crate::mermaid::Zoom);
+
     /// Handles link clicks; without a handler links use `App::open_url`.
     fn set_link_handler(&mut self, handler: crate::LinkHandler);
 
@@ -82,6 +86,11 @@ impl AppExt for App {
 
     fn set_markdown_layout(&mut self, layout: crate::Layout) {
         crate::layout::set_layout(self, layout)
+    }
+
+    #[cfg(feature = "mermaid")]
+    fn set_mermaid_zoom(&mut self, zoom: crate::mermaid::Zoom) {
+        crate::mermaid::set_zoom(self, zoom)
     }
 
     fn set_link_handler(&mut self, handler: crate::LinkHandler) {

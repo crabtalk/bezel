@@ -6,11 +6,13 @@
     "new": [
       "A theme family variant can carry a `seed` table, a `Seed` of surface, ink and accent with optional added, removed and highlight colours, that every opaque surface, text, accent and syntax token is grown from before the variant's own tokens apply.",
       "`mix_oklab` mixes two colours in OKLab.",
+      "`AppExt::set_mermaid_zoom` installs a `mermaid::Zoom`, the farthest out, closest in and per-press step a mermaid diagram's corner buttons zoom by.",
       "`Theme::family` names the family a palette was built from.",
       "`AppExt::set_link_hover` installs a `LinkHover`, the card an app paints over a link it owns while the pointer rests on it. A link without one keeps its bookmark.",
       "`Doc::set_quote`, `toggle_quote` and `peel` put a block in a quote, switch a blockquote's alert, and take a block's syntax, quote and indent off one layer at a time. `editor::quotes` lists the quotes a block can be put in, for `Editor::toggle_quote` and the slash menu's `SlashAction::Quote` rows."
     ],
     "changed": [
+      "A mermaid diagram's zoom buttons step by 1.25 between 50% and 200%, instead of walking a fixed ladder.",
       "`ThemeFamily::dark` and `light` are optional, so a family can ship one variant; one with neither fails to deserialize. `ThemeFamily::variant` and `theme` answer `None` for the missing one.",
       "Quoting is `Block::quote`, a `Quoted` with the GFM alert, instead of `BlockKind::Quote`, which is gone. Adjacent quoted blocks form one blockquote. `Formatting::quote` is the quote the caret's block sits in; `Formatting` built field by field needs it."
     ],

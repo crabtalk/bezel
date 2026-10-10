@@ -33,9 +33,50 @@ pub const LANGUAGE: &str = "mermaid";
 /// Diagrams kept laid out. Past this the cache starts over.
 const CACHED: usize = 64;
 
-/// The zoom steps the corner buttons walk, and where a diagram starts.
-const ZOOMS: [f32; 7] = [0.5, 0.67, 0.8, 1.0, 1.25, 1.5, 2.0];
-const UNZOOMED: usize = 3;
+/// How far the corner buttons zoom a diagram. `cx.set_mermaid_zoom(zoom)`
+/// installs it for the app; [`Zoom::default`] stands before that.
+///
+/// `min <= 1.0 <= max` and `step > 1.0`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Zoom {
+    /// The farthest out, as a scale of the diagram's own size.
+    pub min: f32,
+    /// The closest in.
+    pub max: f32,
+    /// One button press's zoom.
+    pub step: f32,
+}
+
+impl Default for Zoom {
+    fn default() -> Self {
+        Self {
+            min: 0.5,
+            max: 2.0,
+            step: 1.25,
+        }
+    }
+}
+
+impl Zoom {
+    pub(crate) fn of(cx: &App) -> Self {
+        cx.try_global::<Installed>()
+            .map_or_else(Self::default, |installed| installed.0)
+    }
+
+    /// The scale `steps` presses from 100% land on.
+    fn at(&self, steps: i32) -> f32 {
+        self.step.powi(steps).clamp(self.min, self.max)
+    }
+}
+
+struct Installed(Zoom);
+
+impl Global for Installed {}
+
+/// `cx.set_mermaid_zoom(my_zoom)` — call once at boot.
+pub(crate) fn set_zoom(cx: &mut App, zoom: Zoom) {
+    cx.set_global(Installed(zoom));
+}
 
 /// The tallest the diagram stands on its own, whatever its height. A height
 /// the fence states is the whole box's, band included, taken as it is.
@@ -48,23 +89,14 @@ struct Cache(HashMap<u64, Option<Rc<Canvas>>>);
 
 impl Global for Cache {}
 
-/// One diagram's view: its zoom step, how far it is panned, and the press a
+/// One diagram's view: how many zoom presses in from 100% it is, how far it is
+/// panned, and the press a
 /// pan is following — where the pointer and the pan were when it went down.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct View {
-    zoom: usize,
+    zoom: i32,
     pan: Point<Pixels>,
     held: Option<(Point<Pixels>, Point<Pixels>)>,
-}
-
-impl Default for View {
-    fn default() -> Self {
-        Self {
-            zoom: UNZOOMED,
-            pan: Point::default(),
-            held: None,
-        }
-    }
 }
 
 fn hash(code: &str, size: f32) -> u64 {
@@ -109,9 +141,11 @@ pub fn render(
         |_, _| View::default(),
     );
     let view = *state.read(cx);
-    let canvas = match view.zoom {
-        UNZOOMED => base,
-        step => laid_out(code, size * ZOOMS[step], cx)?,
+    let zoom = Zoom::of(cx);
+    let scale = zoom.at(view.zoom);
+    let canvas = match scale == 1.0 {
+        true => base,
+        false => laid_out(code, size * scale, cx)?,
     };
     let theme = Theme::of(cx).clone();
 
@@ -159,7 +193,7 @@ pub fn render(
                 .top(view.pan.y)
                 .child(canvas_core::diagram(&canvas, cx)),
         )
-        .child(controls(&id, &state, view, &theme));
+        .child(controls(&id, &state, view, scale, zoom, &theme));
 
     Some(
         fence_panel(&theme)
@@ -187,7 +221,14 @@ fn end_pan(state: &Entity<View>, cx: &mut App) {
 }
 
 /// Zoom out, zoom in and reset, in the box's bottom-right corner.
-fn controls(id: &str, state: &Entity<View>, view: View, theme: &Theme) -> AnyElement {
+fn controls(
+    id: &str,
+    state: &Entity<View>,
+    view: View,
+    scale: f32,
+    zoom: Zoom,
+    theme: &Theme,
+) -> AnyElement {
     let button =
         |name: &str, icon: &'static [u8], tip: &'static str, enabled: bool, act: fn(&mut View)| {
             let state = state.clone();
@@ -217,21 +258,21 @@ fn controls(id: &str, state: &Entity<View>, view: View, theme: &Theme) -> AnyEle
             "zoom-out",
             glyph::ZoomOut,
             "Zoom out",
-            view.zoom > 0,
+            scale > zoom.min,
             |view| view.zoom -= 1,
         ))
         .child(button(
             "zoom-in",
             glyph::ZoomIn,
             "Zoom in",
-            view.zoom + 1 < ZOOMS.len(),
+            scale < zoom.max,
             |view| view.zoom += 1,
         ))
         .child(button(
             "reset",
             glyph::RotateCcw,
             "Reset view",
-            view.zoom != UNZOOMED || view.pan != Point::default(),
+            view.zoom != 0 || view.pan != Point::default(),
             |view| *view = View::default(),
         ))
         .into_any_element()
