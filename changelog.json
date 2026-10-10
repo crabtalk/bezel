@@ -31,7 +31,8 @@
       "Quoting is `Block::quote`, a `Quoted` with the GFM alert, instead of `BlockKind::Quote`, which is gone. Adjacent quoted blocks form one blockquote. `Formatting::quote` is the quote the caret's block sits in; `Formatting` built field by field needs it.",
       "`blocks::render` takes the fence's stated height, `Option<u32>`, after the code.",
       "`markdown::LinkHandler` is handed the document's `Editing::base` after the URL, so an app can resolve a relative link the way the renderer resolves a relative image.",
-      "`ui` turns on the icons' `layout` category."
+      "`ui` turns on the icons' `layout` category.",
+      "gpui is `bezel-gpui` 0.3.19, where a scroll container moves only on the axes it scrolls: a sideways swipe over a vertical list no longer scrolls it down, and a downward swipe over a wide table no longer pans it."
     ],
     "fixed": [
       "A brand's tint rotates the shipped palette only, instead of also turning a theme family's own greys.",
