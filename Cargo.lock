@@ -647,6 +647,7 @@ name = "bezel-chart"
 version = "0.2.12"
 dependencies = [
  "bezel-gpui",
+ "bezel-theme",
 ]
 
 [[package]]
