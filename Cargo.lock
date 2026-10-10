@@ -648,6 +648,7 @@ version = "0.2.12"
 dependencies = [
  "bezel-gpui",
  "bezel-theme",
+ "mermaid-rs-renderer",
 ]
 
 [[package]]
@@ -979,6 +980,7 @@ name = "bezel-markdown"
 version = "0.2.12"
 dependencies = [
  "bezel-canvas-core",
+ "bezel-chart",
  "bezel-gpui",
  "bezel-icons",
  "bezel-theme",

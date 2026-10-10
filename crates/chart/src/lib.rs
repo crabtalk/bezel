@@ -4,6 +4,8 @@
 
 pub mod data;
 pub mod decimate;
+#[cfg(feature = "mermaid")]
+pub mod mermaid;
 pub mod model;
 pub mod plan;
 pub mod scale;

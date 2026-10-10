@@ -1,4 +1,5 @@
-//! ` ```mermaid ` — the diagram, drawn as a read-only canvas in a fence's box.
+//! ` ```mermaid ` — the diagram, drawn as a read-only canvas in a fence's box,
+//! or as a chart for the kinds [`chart::mermaid`] reads.
 //!
 //! Parsing and layout cost milliseconds and paint runs every frame, so each
 //! source is laid out once per text size and kept. Zoom lays the source out
@@ -96,7 +97,9 @@ pub fn render(
     let size = TextStyle::Callout.painted();
     // The box keeps the unzoomed diagram's height, so zooming moves what is in
     // it rather than the page under it.
-    let base = laid_out(code, size, cx)?;
+    let Some(base) = laid_out(code, size, cx) else {
+        return crate::charts::render(LANGUAGE, code, chart::mermaid::import, height, window, cx);
+    };
     let (_, natural) = canvas_core::diagram::size_of(&base)?;
     let key = hash(code, size);
     let id = format!("mermaid-{key:x}");

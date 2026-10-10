@@ -8,7 +8,7 @@
 //! paints the source it always did.
 //!
 //! The `mermaid` feature paints a ` ```mermaid ` fence the installed renderer
-//! leaves, as a diagram.
+//! leaves, as a diagram or a chart.
 //!
 //! Installed once at boot like the highlighter, and read at paint.
 

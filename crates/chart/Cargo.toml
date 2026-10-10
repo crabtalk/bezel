@@ -19,9 +19,19 @@ name = "chart"
 [lints]
 workspace = true
 
+# A translator that carries a parser is a feature, so a build that never reads
+# its format never compiles the parser.
+[features]
+mermaid = ["dep:mermaid-rs-renderer"]
+
 [dependencies]
+mermaid-rs-renderer = { workspace = true, optional = true }
 gpui.workspace = true
 theme.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+
+[[test]]
+name = "mermaid"
+required-features = ["mermaid"]

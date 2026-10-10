@@ -28,6 +28,8 @@ mod app;
 pub use app::AppExt;
 
 pub mod block;
+#[cfg(feature = "mermaid")]
+pub mod charts;
 pub mod doc;
 pub mod edit;
 pub mod find;
