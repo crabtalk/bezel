@@ -61,7 +61,7 @@ pub use marks::{
 pub use parse::{
     ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges, parse_with,
 };
-pub use preview::{LinkCard, LinkPreview, Preview};
+pub use preview::{LinkCard, LinkHover, LinkPreview, Preview};
 pub use quote::Quote;
 pub use render::{
     Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,

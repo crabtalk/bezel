@@ -323,7 +323,8 @@ pub(super) fn initial(host: &str, size: f32, color: Hsla, wash: Hsla) -> AnyElem
         .into_any_element()
 }
 
-/// A mention's hover card: its bookmark, picture on top.
+/// A link's hover card: the app's [`crate::LinkHover`] for a link it owns,
+/// and otherwise its bookmark, picture on top.
 pub(super) struct MentionCard {
     url: String,
     typography: Typography,
@@ -341,15 +342,18 @@ impl MentionCard {
 }
 
 impl Render for MentionCard {
-    fn render(&mut self, _: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
-        div().w(px(MENTION_CARD_WIDTH)).child(bookmark(
-            0,
-            &self.url,
-            Form::Embed(None),
-            &self.typography,
-            &theme,
-            cx,
-        ))
+        let card = crate::preview::hover(&self.url, window, cx).unwrap_or_else(|| {
+            bookmark(
+                0,
+                &self.url,
+                Form::Embed(None),
+                &self.typography,
+                &theme,
+                cx,
+            )
+        });
+        div().w(px(MENTION_CARD_WIDTH)).child(card)
     }
 }

@@ -306,33 +306,35 @@ pub(super) fn painted_text(
     let layout = styled.layout().clone();
 
     let mentions = flat.mentions;
-    let painted: AnyElement =
-        if flat.links.is_empty() {
-            styled.into_any_element()
-        } else {
-            let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
-            let jump = overlay.jump.cloned();
-            let hovered: Vec<(Range<usize>, String)> = mentions
-                .iter()
-                .filter(|mention| mention.glyph.is_none())
-                .map(|mention| (mention.range.clone(), mention.url.clone()))
-                .collect();
-            let text = InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
-                .on_click(ranges, move |clicked, window, cx| {
-                    if let Some(url) = urls.get(clicked) {
-                        crate::link::follow(url, jump.as_ref(), window, cx);
-                    }
-                });
-            match hovered.is_empty() {
-                true => text.into_any_element(),
-                false => text
-                    .tooltip(move |at, _window, cx| {
-                        let (_, url) = hovered.iter().find(|(range, _)| range.contains(&at))?;
-                        Some(MentionCard::view(url, cx))
-                    })
-                    .into_any_element(),
-            }
-        };
+    let painted: AnyElement = if flat.links.is_empty() {
+        styled.into_any_element()
+    } else {
+        // A mention opens its card on hover, and so does a plain link the
+        // app owns. A plain link to the web opens none.
+        let hovered: Vec<(Range<usize>, String, bool)> = flat
+            .links
+            .iter()
+            .map(|(range, url)| {
+                let mention = mentions.iter().any(|mention| mention.range == *range);
+                (range.clone(), url.clone(), mention)
+            })
+            .collect();
+        let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
+        let jump = overlay.jump.cloned();
+        InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
+            .on_click(ranges, move |clicked, window, cx| {
+                if let Some(url) = urls.get(clicked) {
+                    crate::link::follow(url, jump.as_ref(), window, cx);
+                }
+            })
+            .tooltip(move |at, _window, cx| {
+                let (_, url, mention) = hovered.iter().find(|(range, _, _)| range.contains(&at))?;
+                let owned =
+                    || crate::preview::of(cx, url).is_some_and(|preview| preview.glyph.is_some());
+                (*mention || owned()).then(|| MentionCard::view(url, cx))
+            })
+            .into_any_element()
+    };
 
     // The wash is painted before the text — an earlier sibling is underneath —
     // reading glyph geometry from the text's own layout handle. Pure paint,

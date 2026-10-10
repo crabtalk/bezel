@@ -23,7 +23,8 @@ pub struct Preview {
     /// knowledge, not this crate's.
     pub label: Option<SharedString>,
     /// An app's own mark for a link it owns, painted in the text colour where
-    /// a favicon would go. A chip with one opens no hover card.
+    /// a favicon would go. A link with one opens the app's [`LinkHover`] on
+    /// hover, plain links included.
     pub glyph: Option<ui::icons::Icon>,
 }
 
@@ -51,6 +52,25 @@ pub(crate) fn card(
 ) -> Option<AnyElement> {
     let card = cx.try_global::<InstalledCard>()?.0;
     card(url, form, window, cx)
+}
+
+/// The card an app paints over a link it owns while the pointer rests on it —
+/// see [`crate::AppExt::set_link_hover`]. `None` leaves the link its bookmark.
+///
+/// It sits in a tooltip: nothing in it scrolls or takes a press.
+pub type LinkHover = fn(url: &str, &mut Window, &mut App) -> Option<AnyElement>;
+
+struct InstalledHover(LinkHover);
+
+impl Global for InstalledHover {}
+
+pub(crate) fn set_link_hover(cx: &mut App, hover: LinkHover) {
+    cx.set_global(InstalledHover(hover));
+}
+
+pub(crate) fn hover(url: &str, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+    let hover = cx.try_global::<InstalledHover>()?.0;
+    hover(url, window, cx)
 }
 
 /// `None` for a URL the caller has nothing for *yet*: the card paints its host
