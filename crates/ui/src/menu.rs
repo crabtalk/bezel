@@ -31,15 +31,6 @@ const GLYPH: f32 = 13.0;
 /// A segment's glyph, over its label.
 const SEGMENT_GLYPH: f32 = 16.0;
 
-/// How wide a panel sits.
-const PANEL_MIN: f32 = 180.0;
-/// How wide one holding a described row sits — a width, not a floor. A
-/// description is a sentence rather than a name, so the panel widens the way
-/// one icon opens the glyph gutter; and because the sentence is kept to one
-/// line, the panel needs a ceiling to clip it against rather than growing to
-/// whatever the longest one measures.
-const PANEL_DESCRIBED: f32 = 280.0;
-
 /// How many rows a searchable submenu shows before it scrolls.
 const SEARCH_ROWS: f32 = 10.0;
 
@@ -64,6 +55,47 @@ pub(crate) fn indent(cx: &App) -> MenuIndent {
 /// Changes the step and repaints open windows.
 pub(crate) fn set_indent(indent: MenuIndent, cx: &mut App) {
     cx.set_global(indent);
+    cx.refresh_windows();
+}
+
+/// How wide a menu's panels sit, app-wide.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MenuWidth {
+    /// The narrowest a panel sits. A panel without a described row grows past
+    /// it to its widest row.
+    pub min: Pixels,
+    /// How a panel holding an [`Item::with_description`] row is sized.
+    pub described: Described,
+}
+
+/// How a panel holding a described row is sized. A description is one line,
+/// cut at the panel's edge.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Described {
+    /// Exactly this wide, whatever its rows measure.
+    Fixed(Pixels),
+    /// As wide as its widest row, from [`MenuWidth::min`] up to this.
+    Fit(Pixels),
+}
+
+impl Default for MenuWidth {
+    fn default() -> Self {
+        Self {
+            min: px(180.0),
+            described: Described::Fixed(px(280.0)),
+        }
+    }
+}
+
+impl Global for MenuWidth {}
+
+pub(crate) fn width(cx: &App) -> MenuWidth {
+    cx.try_global::<MenuWidth>().copied().unwrap_or_default()
+}
+
+/// Changes the widths and repaints open windows.
+pub(crate) fn set_width(width: MenuWidth, cx: &mut App) {
+    cx.set_global(width);
     cx.refresh_windows();
 }
 
@@ -810,6 +842,7 @@ impl<V: 'static> Tree<V> {
         let gutter = items.iter().any(Item::has_icon);
         let MenuIndent(step) = indent(cx);
         let described = items.iter().any(Item::has_description);
+        let width = width(cx);
         let rows = div()
             .id(rows_id.clone())
             .p(px(popover::MENU_PAD))
@@ -939,9 +972,10 @@ impl<V: 'static> Tree<V> {
             .flex()
             .flex_col()
             .max_h(cap)
-            .map(|card| match described {
-                true => card.w(px(PANEL_DESCRIBED)),
-                false => card.min_w(px(PANEL_MIN)),
+            .map(|card| match (described, width.described) {
+                (true, Described::Fixed(wide)) => card.w(wide),
+                (true, Described::Fit(most)) => card.min_w(width.min).max_w(most),
+                (false, _) => card.min_w(width.min),
             })
             .on_mouse_down_out(self.dismissal(cx))
             .map(|card| match query {

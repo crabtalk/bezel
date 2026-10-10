@@ -63,26 +63,6 @@ impl IntoElement for ChartView {
     }
 }
 
-/// The colour at `index` of a chart's colours: the theme's accent, then its
-/// status colours, then hues between them.
-pub fn series_color(theme: &Theme, index: usize) -> Hsla {
-    let hue = |color: Hsla, degrees: f32| Hsla {
-        h: degrees / 360.0,
-        ..color
-    };
-    let palette = [
-        theme.accent,
-        theme.success,
-        theme.warning,
-        theme.danger,
-        hue(theme.success, 185.0),
-        hue(theme.accent, 270.0),
-        hue(theme.danger, 330.0),
-        hue(theme.warning, 50.0),
-    ];
-    palette[index % palette.len()]
-}
-
 /// What a plan was made from. Equal keys make equal plans.
 #[derive(Clone, PartialEq)]
 struct Key {
@@ -420,7 +400,7 @@ fn paint_chart(
     window.with_content_mask(Some(mask), |window| {
         let mut paths = built.paths.iter().peekable();
         for (s, series) in plan.series.iter().enumerate() {
-            let color = series_color(theme, series.color);
+            let color = theme.categorical(series.color);
             while let Some((_, path, filled)) = paths.next_if(|(of, ..)| *of == s) {
                 let color = if *filled && series.mark == Mark::Area {
                     color.opacity(AREA_FILL)
@@ -476,7 +456,7 @@ fn paint_chart(
                 h: HOVER_POINT,
             };
             window.paint_quad(
-                fill(bounds_of(dot, origin), series_color(theme, s))
+                fill(bounds_of(dot, origin), theme.categorical(s))
                     .corner_radii(Corners::all(px(half)))
                     .border_widths(px(1.5))
                     .border_color(theme.surface),
@@ -497,7 +477,7 @@ fn paint_chart(
         window.paint_quad(
             fill(
                 bounds_of(swatch.swatch, origin),
-                series_color(theme, swatch.series),
+                theme.categorical(swatch.series),
             )
             .corner_radii(Corners::all(px(2.0))),
         );
@@ -584,8 +564,7 @@ fn paint_tip(
             h: swatch,
         };
         window.paint_quad(
-            fill(bounds_of(dot, origin), series_color(theme, s))
-                .corner_radii(Corners::all(px(2.0))),
+            fill(bounds_of(dot, origin), theme.categorical(s)).corner_radii(Corners::all(px(2.0))),
         );
         let text_at = row_at + point(px(swatch + TIP_PAD / 2.0), px(0.0));
         row.paint(text_at, px(line), TextAlign::Left, None, window, cx)

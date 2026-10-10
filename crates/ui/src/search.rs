@@ -17,7 +17,7 @@ use crate::{
 /// How many results a list shows before it scrolls. A count rather than a
 /// height: the rows are what the reader is counting, and a figure in pixels
 /// would have to be restated every time their metrics move.
-const MAX_ROWS: f32 = 12.0;
+pub(crate) const MAX_ROWS: f32 = 12.0;
 
 /// The field a [`popover::search_line`] holds: unframed, the line is its
 /// frame.

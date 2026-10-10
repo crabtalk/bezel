@@ -258,6 +258,11 @@ pub const COMPONENTS: &[Group] = &[
             section("select", "Select", "crates/ui/src/widgets/controls.rs"),
             section("combobox", "Combobox", "crates/ui/src/combobox.rs"),
             section(
+                "multi-select",
+                "Multi-select",
+                "crates/ui/src/multi_select.rs",
+            ),
+            section(
                 "checkbox-radio",
                 "Checkbox & radio",
                 "crates/ui/src/widgets/controls.rs",

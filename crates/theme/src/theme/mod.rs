@@ -418,6 +418,27 @@ impl Theme {
         paint::ink_for(self.appearance, alpha)
     }
 
+    /// The colour at `index` of the categorical set — a chart's series, a
+    /// label's tint: the accent, then the status colours, then hues between
+    /// them. Any index is valid; the set wraps.
+    pub fn categorical(&self, index: usize) -> Hsla {
+        let hue = |color: Hsla, degrees: f32| Hsla {
+            h: degrees / 360.0,
+            ..color
+        };
+        let palette = [
+            self.accent,
+            self.success,
+            self.warning,
+            self.danger,
+            hue(self.success, 185.0),
+            hue(self.accent, 270.0),
+            hue(self.danger, 330.0),
+            hue(self.warning, 50.0),
+        ];
+        palette[index % palette.len()]
+    }
+
     /// Hairline ink at `alpha` — see [`hairline`](crate::paint::hairline).
     pub fn hairline(&self, alpha: f32) -> Hsla {
         paint::hairline_for(self.appearance, alpha)
