@@ -354,3 +354,22 @@ fn an_anchor_end_in_the_markup_comes_back_detached(cx: &mut TestAppContext) {
         "not stretched from the document start"
     );
 }
+
+#[gpui::test]
+fn anchors_cross_to_and_from_the_markdown(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    let bravo = SOURCE.find("bravo").unwrap();
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_source_anchors(
+                SOURCE,
+                vec![(ID, bravo..bravo + 5, markdown::Annotation::Open)],
+                cx,
+            )
+        })
+    });
+    assert_eq!(anchored(&editor, &mut cx), (1, 0, 5));
+    let (source, ranges) = cx.update(|_, cx| editor.read(cx).source_with_anchors());
+    assert_eq!(source, SOURCE);
+    assert_eq!(ranges, vec![(ID, Some(bravo..bravo + 5))]);
+}
