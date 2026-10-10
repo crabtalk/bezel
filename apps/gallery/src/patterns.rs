@@ -8,6 +8,7 @@ pub mod agent;
 pub mod avatar;
 pub mod browser;
 pub mod canvas;
+pub mod charts;
 pub mod dialect;
 pub mod diff;
 pub mod document;
@@ -43,6 +44,7 @@ pub(crate) struct State {
     pub(crate) selectable: Entity<selectable::Selectable>,
     pub(crate) editor: Entity<editor::EditorDemo>,
     pub(crate) canvas: Entity<canvas::CanvasDemo>,
+    pub(crate) charts: Entity<charts::Charts>,
     #[cfg(not(target_family = "wasm"))]
     pub(crate) terminal: Entity<terminal::Terminal>,
     pub(crate) browser: Entity<browser::Browser>,
@@ -65,6 +67,7 @@ impl State {
             selectable: cx.new(selectable::Selectable::new),
             editor: cx.new(editor::EditorDemo::new),
             canvas: cx.new(canvas::CanvasDemo::new),
+            charts: cx.new(charts::Charts::new),
             #[cfg(not(target_family = "wasm"))]
             terminal: cx.new(terminal::Terminal::new),
             browser: cx.new(browser::Browser::new),

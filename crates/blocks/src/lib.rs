@@ -24,20 +24,31 @@ use gpui::{AnyElement, App, Window};
 
 #[cfg(feature = "chart")]
 pub mod chart;
+#[cfg(feature = "vega-lite")]
+pub mod vega_lite;
 
 /// Paint the block a fence names, or `None` to leave it to the ordinary code
-/// block.
+/// block. `height` is the fence's stated height in whole pixels, for a block
+/// that takes one.
 ///
 /// One answer for a tag no enabled block claims, a block turned off at compile
 /// time, and a block that read the source and declined.
-pub fn render(language: &str, code: &str, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+pub fn render(
+    language: &str,
+    code: &str,
+    height: Option<u32>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<AnyElement> {
     match language {
         #[cfg(feature = "chart")]
         chart::LANGUAGE => chart::render(code, window, cx),
+        #[cfg(feature = "vega-lite")]
+        vega_lite::LANGUAGE => vega_lite::render(code, height, window, cx),
         // Spelled out rather than bare, so that turning every block off leaves
         // a signature nothing reads and no warning about it.
         _ => {
-            let _ = (code, window, cx);
+            let _ = (code, height, window, cx);
             None
         }
     }
@@ -49,5 +60,7 @@ pub fn languages() -> &'static [&'static str] {
     &[
         #[cfg(feature = "chart")]
         chart::LANGUAGE,
+        #[cfg(feature = "vega-lite")]
+        vega_lite::LANGUAGE,
     ]
 }

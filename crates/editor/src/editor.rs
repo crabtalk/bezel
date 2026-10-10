@@ -154,6 +154,8 @@ pub struct Formatting {
     /// What the caret's block is called in [`turns`], or `None` for a block the
     /// menu does not offer.
     pub block: Option<gpui::SharedString>,
+    /// The quote the caret's block sits in — see [`quotes`].
+    pub quote: Option<markdown::Quoted>,
     /// Whether [`Mark::Code`] here makes a fence out of the selection rather
     /// than an inline span — the one chord whose meaning changes with what is
     /// selected, and the one a bar cannot work out for itself.
@@ -166,6 +168,12 @@ pub struct Formatting {
 /// bezel's own menus call.
 pub fn turns() -> Vec<(gpui::SharedString, BlockKind)> {
     crate::slash::items()
+}
+
+/// Every quote a block can be put in, and what each is called. Pair with
+/// [`Editor::toggle_quote`].
+pub fn quotes() -> Vec<(gpui::SharedString, Option<markdown::QuoteKind>)> {
+    crate::slash::quotes()
 }
 
 /// Shown on the focused block while it is empty — the only discoverable place

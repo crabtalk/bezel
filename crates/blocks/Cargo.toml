@@ -25,7 +25,16 @@ workspace = true
 [features]
 default = ["chart"]
 chart = []
+vega-lite = ["dep:chart", "chart/vega-lite"]
 
 [dependencies]
+chart = { workspace = true, optional = true }
 theme.workspace = true
 gpui.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+
+[[test]]
+name = "vega_lite"
+required-features = ["vega-lite"]

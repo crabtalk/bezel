@@ -22,7 +22,13 @@ workspace = true
 # A painted fence that carries a parser is a feature, so a build that never
 # shows one never compiles the parser.
 [features]
-mermaid = ["dep:canvas-core", "canvas-core/mermaid", "dep:icons"]
+mermaid = [
+    "dep:canvas-core",
+    "canvas-core/mermaid",
+    "dep:icons",
+    "dep:chart",
+    "chart/mermaid",
+]
 
 [dependencies]
 theme.workspace = true
@@ -30,6 +36,7 @@ ui.workspace = true
 gpui.workspace = true
 pulldown-cmark = { version = "0.13", default-features = false }
 canvas-core = { workspace = true, optional = true }
+chart = { workspace = true, optional = true }
 icons = { workspace = true, optional = true, features = ["layout"] }
 
 [dev-dependencies]

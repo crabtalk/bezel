@@ -75,7 +75,7 @@ pub fn init(cx: &mut App) {
     cx.set_highlighter(highlight::spans, highlight::languages());
     cx.set_link_preview(preview::of);
     cx.set_block_renderer(|fence, window, cx| {
-        blocks::render(fence.language, fence.code, window, cx)
+        blocks::render(fence.language, fence.code, fence.height, window, cx)
     });
     // The dialect this gallery reads and writes: two marks CommonMark has no
     // spelling for, registered rather than waited on. See the Ribbon page.

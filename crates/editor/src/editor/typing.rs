@@ -187,15 +187,13 @@ impl Editor {
             return false;
         };
         let caret = self.cursor();
-        let kind = match &action {
-            SlashAction::Block(kind) => Some(kind.clone()),
-            SlashAction::Run(_) => None,
-        };
         self.edit(EditKind::Structure, cx, |this| {
             this.doc
                 .edit_at(at, |text| text.remove(at.offset..caret.offset));
-            if let Some(kind) = kind {
-                this.doc.set_kind(at.block, kind);
+            match &action {
+                SlashAction::Block(kind) => this.doc.set_kind(at.block, kind.clone()),
+                SlashAction::Quote(alert) => this.doc.toggle_quote(at.block, *alert),
+                SlashAction::Run(_) => {}
             }
             this.selection =
                 Selection::at(Cursor::new(at.block, Part::Body, at.offset).clamp(&this.doc));
@@ -326,23 +324,24 @@ impl Editor {
         if at.part != Part::Body {
             return None;
         }
-        // Only a paragraph turns: in a heading, list item or quote the prefix
-        // is text.
+        // Only a paragraph turns: in a heading or list item the prefix is
+        // text. `> ` quotes any block not already in a quote.
         let block = self.doc.blocks.get(at.block)?;
-        if !matches!(block.kind, BlockKind::Paragraph(_)) {
-            return None;
-        }
         let text = block.text_at(Part::Body)?;
         // Only from the very start of a block, and only up to the caret: a
         // `- ` typed in the middle of a sentence is a hyphen.
         let (hit, len) = shortcut(&text.text)?;
-        if at.offset < len {
+        let turns = match hit {
+            markdown::Shortcut::Quote => block.quote.is_none(),
+            _ => matches!(block.kind, BlockKind::Paragraph(_)),
+        };
+        if !turns || at.offset < len {
             return None;
         }
         // Strip the prefix, then turn the block — the same two steps the slash
         // menu takes, so a `## ` and a menu pick land in one place.
         self.doc.edit_at(at, |text| text.remove(0..len));
-        self.doc.set_kind(at.block, hit.apply(Text::default()));
+        self.doc.apply(at.block, hit);
         self.selection =
             Selection::at(Cursor::new(at.block, Part::Body, at.offset - len).clamp(&self.doc));
         // The transformation is its own step: undo after typing `## Title`
@@ -351,8 +350,8 @@ impl Editor {
         Some(Self::taken(at, 0..len))
     }
 
-    /// Promote a quote whose first line is a GFM alert marker into the alert
-    /// block kind the parser would have produced from the same markdown.
+    /// Promote a quote whose block opens with a GFM alert marker into the
+    /// alert the parser would have produced from the same markdown.
     ///
     /// The marker line goes the way a block shortcut's prefix does, so what was
     /// written under it stays as the alert's body.
@@ -362,7 +361,7 @@ impl Editor {
             return None;
         }
         let block = self.doc.blocks.get(at.block)?;
-        if !matches!(block.kind, BlockKind::Quote { kind: None, .. }) {
+        if block.quote.is_none_or(|quote| quote.alert.is_some()) {
             return None;
         }
         let text = &block.text_at(Part::Body)?.text;
@@ -371,13 +370,7 @@ impl Editor {
         // The marker line, and the break after it where a body follows.
         let len = first.len() + usize::from(text.len() > first.len());
         self.doc.edit_at(at, |text| text.remove(0..len));
-        self.doc.set_kind(
-            at.block,
-            BlockKind::Quote {
-                kind: Some(kind),
-                text: Text::default(),
-            },
-        );
+        self.doc.set_alert(at.block, Some(kind));
         self.selection = Selection::at(
             Cursor::new(at.block, Part::Body, at.offset.saturating_sub(len)).clamp(&self.doc),
         );
@@ -532,7 +525,20 @@ impl Editor {
             // which is [`Doc::split`]'s answer for a block with no body.
             Part::Caption | Part::Body => {}
         }
+        // Enter in an empty block steps out of whatever holds it.
+        let empty = self.selection.is_collapsed()
+            && at.part == Part::Body
+            && self
+                .doc
+                .blocks
+                .get(at.block)
+                .and_then(|block| block.text_at(Part::Body))
+                .is_some_and(Text::is_empty);
         self.edit(EditKind::Structure, cx, |this| {
+            if empty && this.doc.peel(at.block) {
+                this.selection = Selection::at(at.clamp(&this.doc));
+                return vec![];
+            }
             let mut deltas = Vec::new();
             if !this.selection.is_collapsed() {
                 let splice = this.doc.replace(this.selection, Text::default());

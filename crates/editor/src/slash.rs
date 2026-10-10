@@ -63,48 +63,6 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
             },
         ),
         (
-            "Quote".into(),
-            BlockKind::Quote {
-                kind: None,
-                text: text(),
-            },
-        ),
-        (
-            "Quote (Note)".into(),
-            BlockKind::Quote {
-                kind: Some(QuoteKind::Note),
-                text: text(),
-            },
-        ),
-        (
-            "Quote (Tip)".into(),
-            BlockKind::Quote {
-                kind: Some(QuoteKind::Tip),
-                text: text(),
-            },
-        ),
-        (
-            "Quote (Important)".into(),
-            BlockKind::Quote {
-                kind: Some(QuoteKind::Important),
-                text: text(),
-            },
-        ),
-        (
-            "Quote (Warning)".into(),
-            BlockKind::Quote {
-                kind: Some(QuoteKind::Warning),
-                text: text(),
-            },
-        ),
-        (
-            "Quote (Caution)".into(),
-            BlockKind::Quote {
-                kind: Some(QuoteKind::Caution),
-                text: text(),
-            },
-        ),
-        (
             "Code".into(),
             BlockKind::Code {
                 language: None,
@@ -132,6 +90,18 @@ pub fn items() -> Vec<(SharedString, BlockKind)> {
     ]
 }
 
+/// Every quote a block can be put in, and what each is called.
+pub fn quotes() -> Vec<(SharedString, Option<QuoteKind>)> {
+    vec![
+        ("Quote".into(), None),
+        ("Note".into(), Some(QuoteKind::Note)),
+        ("Tip".into(), Some(QuoteKind::Tip)),
+        ("Important".into(), Some(QuoteKind::Important)),
+        ("Warning".into(), Some(QuoteKind::Warning)),
+        ("Caution".into(), Some(QuoteKind::Caution)),
+    ]
+}
+
 /// What a [`SlashAction::Run`] row calls.
 pub type SlashRun = Rc<dyn Fn(SlashAt, &mut Window, &mut App)>;
 
@@ -140,6 +110,9 @@ pub type SlashRun = Rc<dyn Fn(SlashAt, &mut Window, &mut App)>;
 pub enum SlashAction {
     /// Turn the block the row was picked for into this one.
     Block(BlockKind),
+    /// Put the block in a quote with this alert — see
+    /// [`markdown::Doc::toggle_quote`].
+    Quote(Option<QuoteKind>),
     /// Hand the block to the app, after the menu's own update ends. From the
     /// slash menu the `/query` is gone from the block by then; what the block
     /// becomes, and where the caret goes, is the app's.
@@ -182,30 +155,27 @@ pub enum SlashItem {
 pub fn defaults() -> Vec<SlashItem> {
     let mut defaults = Vec::new();
     for (label, kind) in items() {
-        let row = SlashRow {
-            label,
-            icon: Some(glyph_of(&kind)),
-            action: SlashAction::Block(kind.clone()),
-        };
-        if !matches!(kind, BlockKind::Quote { .. }) {
-            defaults.push(SlashItem::Row(row));
-            continue;
-        }
-        let row = match row.label.strip_prefix("Quote (") {
-            Some(rest) => SlashRow {
-                label: rest.trim_end_matches(')').to_owned().into(),
-                ..row
-            },
-            None => row,
-        };
-        match defaults.last_mut() {
-            Some(SlashItem::Group { rows, .. }) => rows.push(row),
-            _ => defaults.push(SlashItem::Group {
+        // The quotes follow the lists.
+        let lists_end = matches!(kind, BlockKind::Code { .. });
+        if lists_end {
+            defaults.push(SlashItem::Group {
                 label: "Quote".into(),
                 icon: Some(glyph::TextQuote.into()),
-                rows: vec![row],
-            }),
+                rows: quotes()
+                    .into_iter()
+                    .map(|(label, alert)| SlashRow {
+                        label,
+                        icon: Some(quote_glyph(alert)),
+                        action: SlashAction::Quote(alert),
+                    })
+                    .collect(),
+            });
         }
+        defaults.push(SlashItem::Row(SlashRow {
+            label,
+            icon: Some(glyph_of(&kind)),
+            action: SlashAction::Block(kind),
+        }));
     }
     defaults
 }
@@ -220,18 +190,22 @@ fn glyph_of(kind: &BlockKind) -> Icon {
         BlockKind::Bullet(_) => glyph::List.into(),
         BlockKind::Ordered { .. } => glyph::ListOrdered.into(),
         BlockKind::Task { .. } => glyph::ListTodo.into(),
-        BlockKind::Quote { kind, .. } => match kind {
-            None => glyph::TextQuote.into(),
-            Some(QuoteKind::Note) => glyph::Info.into(),
-            Some(QuoteKind::Tip) => glyph::Lightbulb.into(),
-            Some(QuoteKind::Important) => glyph::MessageSquareWarning.into(),
-            Some(QuoteKind::Warning) => glyph::TriangleAlert.into(),
-            Some(QuoteKind::Caution) => glyph::OctagonAlert.into(),
-        },
         BlockKind::Code { .. } => glyph::SquareCode.into(),
         BlockKind::Table { .. } => glyph::Table.into(),
         BlockKind::Image { .. } => glyph::Image.into(),
         _ => glyph::SeparatorHorizontal.into(),
+    }
+}
+
+/// The glyph a quote's slash row carries.
+fn quote_glyph(alert: Option<QuoteKind>) -> Icon {
+    match alert {
+        None => glyph::TextQuote.into(),
+        Some(QuoteKind::Note) => glyph::Info.into(),
+        Some(QuoteKind::Tip) => glyph::Lightbulb.into(),
+        Some(QuoteKind::Important) => glyph::MessageSquareWarning.into(),
+        Some(QuoteKind::Warning) => glyph::TriangleAlert.into(),
+        Some(QuoteKind::Caution) => glyph::OctagonAlert.into(),
     }
 }
 
@@ -293,9 +267,11 @@ fn entries(items: Vec<SlashItem>) -> Vec<Entry> {
     entries
 }
 
-/// The [`SlashAction::Block`] rows of `items`, groups kept, without headings.
+/// The [`SlashAction::Block`] and [`SlashAction::Quote`] rows of `items`,
+/// groups kept, without headings.
 pub(crate) fn turns(items: Vec<SlashItem>) -> Vec<SlashItem> {
-    let turns = |row: &SlashRow| matches!(row.action, SlashAction::Block(_));
+    let turns =
+        |row: &SlashRow| matches!(row.action, SlashAction::Block(_) | SlashAction::Quote(_));
     items
         .into_iter()
         .filter_map(|item| match item {
@@ -325,7 +301,6 @@ pub fn label(kind: &BlockKind) -> Option<SharedString> {
 fn same(row: &BlockKind, kind: &BlockKind) -> bool {
     match (row, kind) {
         (BlockKind::Heading { level: a, .. }, BlockKind::Heading { level: b, .. }) => a == b,
-        (BlockKind::Quote { kind: a, .. }, BlockKind::Quote { kind: b, .. }) => a == b,
         (row, kind) => std::mem::discriminant(row) == std::mem::discriminant(kind),
     }
 }

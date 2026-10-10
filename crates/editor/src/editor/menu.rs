@@ -872,6 +872,7 @@ impl Editor {
     ) {
         match action {
             SlashAction::Block(kind) => self.set_block(ix, kind, cx),
+            SlashAction::Quote(alert) => self.toggle_quote(ix, alert, cx),
             SlashAction::Run(run) => {
                 // After this update ends: the app edits this editor.
                 let editor = cx.entity().downgrade();

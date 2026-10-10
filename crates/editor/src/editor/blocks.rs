@@ -159,6 +159,24 @@ impl Editor {
         });
     }
 
+    /// Put the block at `ix` in a quote with `alert`, or take it out of the one
+    /// it is in — see [`markdown::Doc::toggle_quote`].
+    pub fn toggle_quote(
+        &mut self,
+        ix: usize,
+        alert: Option<markdown::QuoteKind>,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.blocks() {
+            return;
+        }
+        self.edit(EditKind::Structure, cx, |this| {
+            this.doc.toggle_quote(ix, alert);
+            this.selection = this.selection.clamp(&this.doc);
+            vec![]
+        });
+    }
+
     /// Replace a fenced block's code, as one undo step — what a painted fence
     /// writes through [`markdown::Fence::rewrite`].
     pub fn set_code(&mut self, ix: usize, code: String, cx: &mut Context<Self>) {

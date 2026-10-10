@@ -185,6 +185,7 @@ pub const PATTERNS: &[Group] = &[
             ),
             section("editor", "Editor", "apps/gallery/src/patterns/editor.rs"),
             section("canvas", "Canvas", "apps/gallery/src/patterns/canvas.rs"),
+            section("charts", "Charts", "apps/gallery/src/patterns/charts.rs"),
             section("browser", "Browser", "apps/gallery/src/patterns/browser.rs"),
             section("ribbon", "Ribbon", "apps/gallery/src/patterns/ribbon.rs"),
             section(

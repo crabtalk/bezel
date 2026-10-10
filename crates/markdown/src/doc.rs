@@ -8,7 +8,7 @@
 //! restructure.
 //!
 //! The trade is that arbitrarily nested CommonMark does not survive a round
-//! trip: a list inside a quote inside a list flattens. Notion has the same
+//! trip: a quote inside a quote flattens to one. Notion has the same
 //! limitation. What is guaranteed is [`crate::serialize`]'s fixed point —
 //! parse, serialize, parse again, and the document is unchanged — so an
 //! edit/save cycle never drifts.
@@ -34,8 +34,23 @@ impl Doc {
         // The number owed to the next ordered item at each indent level. A run
         // survives blocks nested under it and ends at anything else.
         let mut expected: Vec<Option<u64>> = Vec::new();
+        let mut runs = Runs::default();
+        let mut above: Option<Run> = None;
         for block in &mut self.blocks {
             let indent = block.indent as usize;
+            let run = runs.next(block.quote, block.indent);
+            // A list on the other side of a quote's `>` is another list.
+            if run.is_none_or(|run| run.first) {
+                let edge = [above, run]
+                    .into_iter()
+                    .flatten()
+                    .map(|run| run.level as usize)
+                    .min();
+                if let Some(edge) = edge {
+                    expected.truncate(edge);
+                }
+            }
+            above = run;
             expected.truncate(indent + 1);
             expected.resize(indent + 1, None);
 
@@ -61,6 +76,67 @@ impl Doc {
 pub struct Block {
     pub kind: BlockKind,
     pub indent: u8,
+    /// The blockquote the block sits in, or `None` outside one. Adjacent
+    /// quoted blocks form one blockquote — see [`quote_runs`].
+    pub quote: Option<Quoted>,
+}
+
+/// A block's place in a blockquote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Quoted {
+    /// The GFM alert the blockquote opens with — see [`QuoteKind`].
+    pub alert: Option<QuoteKind>,
+}
+
+/// Where a quoted block falls in its blockquote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Run {
+    /// The indent the `>` is written at: the indent of the run's first block.
+    pub level: u8,
+    pub first: bool,
+}
+
+/// Each block's place in a blockquote, or `None` for an unquoted block.
+///
+/// A quoted block continues the run before it when it carries the same
+/// [`Quoted`] and sits no shallower than the run's level. Anything else starts
+/// a new run at its own indent.
+pub(crate) fn quote_runs(
+    blocks: impl IntoIterator<Item = (Option<Quoted>, u8)>,
+) -> Vec<Option<Run>> {
+    let mut runs = Runs::default();
+    blocks
+        .into_iter()
+        .map(|(quote, indent)| runs.next(quote, indent))
+        .collect()
+}
+
+/// [`quote_runs`] one block at a time.
+#[derive(Default)]
+pub(crate) struct Runs {
+    open: Option<(Quoted, u8)>,
+}
+
+impl Runs {
+    pub fn next(&mut self, quote: Option<Quoted>, indent: u8) -> Option<Run> {
+        let Some(quote) = quote else {
+            self.open = None;
+            return None;
+        };
+        match self.open {
+            Some((current, level)) if current == quote && indent >= level => Some(Run {
+                level,
+                first: false,
+            }),
+            _ => {
+                self.open = Some((quote, indent));
+                Some(Run {
+                    level: indent,
+                    first: true,
+                })
+            }
+        }
+    }
 }
 
 impl From<BlockKind> for Block {
@@ -71,11 +147,22 @@ impl From<BlockKind> for Block {
 
 impl Block {
     pub fn new(kind: BlockKind) -> Self {
-        Self { kind, indent: 0 }
+        Self::at(kind, 0)
     }
 
     pub fn at(kind: BlockKind, indent: u8) -> Self {
-        Self { kind, indent }
+        Self {
+            kind,
+            indent,
+            quote: None,
+        }
+    }
+
+    pub fn quoted(self, quote: Quoted) -> Self {
+        Self {
+            quote: Some(quote),
+            ..self
+        }
     }
 
     /// One of the block's editable texts. `None` when the block has no such
@@ -88,8 +175,7 @@ impl Block {
                 | BlockKind::Heading { text, .. }
                 | BlockKind::Bullet(text)
                 | BlockKind::Ordered { text, .. }
-                | BlockKind::Task { text, .. }
-                | BlockKind::Quote { text, .. },
+                | BlockKind::Task { text, .. },
                 Part::Body,
             ) => Some(text),
             (BlockKind::Code { code, .. }, Part::Code) => Some(code),
@@ -109,8 +195,7 @@ impl Block {
                 | BlockKind::Heading { text, .. }
                 | BlockKind::Bullet(text)
                 | BlockKind::Ordered { text, .. }
-                | BlockKind::Task { text, .. }
-                | BlockKind::Quote { text, .. },
+                | BlockKind::Task { text, .. },
                 Part::Body,
             ) => Some(text),
             (BlockKind::Code { code, .. }, Part::Code) => Some(code),
@@ -132,8 +217,7 @@ impl Block {
             | BlockKind::Heading { .. }
             | BlockKind::Bullet(_)
             | BlockKind::Ordered { .. }
-            | BlockKind::Task { .. }
-            | BlockKind::Quote { .. } => vec![Part::Body],
+            | BlockKind::Task { .. } => vec![Part::Body],
             BlockKind::Code { .. } => vec![Part::Code],
             BlockKind::Image { .. } => vec![Part::Caption],
             BlockKind::Table { header, rows, .. } => {
@@ -207,11 +291,6 @@ pub enum BlockKind {
         checked: bool,
         text: Text,
     },
-    /// A blockquote. `kind` is the GFM alert it opens with — see [`QuoteKind`].
-    Quote {
-        kind: Option<QuoteKind>,
-        text: Text,
-    },
     /// The code carries a [`Text`] like every other editable region, so one
     /// accessor and one edit path cover the whole document. Its marks are
     /// unreachable rather than forbidden: nothing that writes here creates one.
@@ -258,8 +337,6 @@ pub enum BlockKind {
 ///
 /// Only recognised when the marker is alone on the quote's first line and
 /// names one of these five; anything else stays the text it was written as.
-/// A blockquote holding two paragraphs becomes two [`BlockKind::Quote`] blocks
-/// and each carries the kind, so writing the document back gives two alerts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum QuoteKind {
     Note,

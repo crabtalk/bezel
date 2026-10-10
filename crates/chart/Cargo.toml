@@ -1,0 +1,43 @@
+[package]
+name = "bezel-chart"
+
+description = "Charts for gpui — a Vega-Lite subset over columnar data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "chart"
+
+[lints]
+workspace = true
+
+# A translator that carries a parser is a feature, so a build that never reads
+# its format never compiles the parser.
+[features]
+mermaid = ["dep:mermaid-rs-renderer"]
+vega-lite = ["dep:serde_json"]
+
+[dependencies]
+mermaid-rs-renderer = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+gpui.workspace = true
+theme.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+
+[[test]]
+name = "mermaid"
+required-features = ["mermaid"]
+
+[[test]]
+name = "vega_lite"
+required-features = ["vega-lite"]

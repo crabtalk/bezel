@@ -29,7 +29,7 @@ pub(super) struct TableBuild {
     in_head: bool,
 }
 
-/// An open blockquote, and how many blocks the document held when it opened.
+/// An open blockquote, and how many blocks had been pushed when it opened.
 pub(super) struct OpenQuote {
     kind: Option<QuoteKind>,
     at: usize,
@@ -43,7 +43,8 @@ pub(super) struct ParseState {
     lists: Vec<Option<u64>>,
     /// One entry per open blockquote, innermost last.
     quotes: Vec<OpenQuote>,
-    pending_marker: Option<Marker>,
+    /// The marker, and the quote its item opened in.
+    pending_marker: Option<(Marker, Option<Quoted>)>,
     heading: Option<u8>,
     code: Option<(Option<String>, Option<u32>, String)>,
     table: Option<TableBuild>,
@@ -56,43 +57,66 @@ pub(super) struct ParseState {
     span: Option<usize>,
     /// Where each block started, in the order they were pushed.
     pub(super) starts: Vec<usize>,
+    /// Every block pushed, absorbed ones included.
+    pushed: usize,
 }
 
 impl ParseState {
     /// Indent level for a block that is not a list marker.
     ///
-    /// Only list nesting counts. A blockquote decides a block's *kind*, not how
-    /// deep it sits — so a code block inside a quote stays at the quote's own
-    /// level rather than acquiring an indent that nothing in the serialized
-    /// output could reproduce.
+    /// Only list nesting counts. A blockquote sets a block's
+    /// [`Block::quote`], not how deep it sits.
     pub(super) fn indent(&self) -> u8 {
         self.lists.len() as u8
     }
 
-    /// The alert kind a quoted block inherits — the innermost open blockquote's.
-    pub(super) fn quote_kind(&self) -> Option<QuoteKind> {
-        self.quotes.last().and_then(|open| open.kind)
+    /// The quote a block opened now sits in. Nested blockquotes are one quote,
+    /// with the innermost one's alert.
+    pub(super) fn quoted(&self) -> Option<Quoted> {
+        self.quotes.last().map(|open| Quoted { alert: open.kind })
+    }
+
+    /// Append a block in the open quote — see [`Self::push_in`].
+    pub(super) fn push(&mut self, kind: BlockKind, indent: u8) {
+        let quote = self.quoted();
+        self.push_in(kind, indent, quote);
     }
 
     /// Append a block, clamping its indent so the document invariant holds
     /// (first block at 0, never more than one deeper than its predecessor).
-    pub(super) fn push(&mut self, kind: BlockKind, indent: u8) {
-        self.starts.push(self.span.take().unwrap_or(self.at.start));
+    pub(super) fn push_in(&mut self, kind: BlockKind, indent: u8, quote: Option<Quoted>) {
+        let start = self.span.take().unwrap_or(self.at.start);
+        self.pushed += 1;
+        // An alert with no body holds one empty paragraph, which only stands
+        // while nothing follows it in the same quote. The block that does takes
+        // its place and its start.
+        let bodyless = self.doc.blocks.last().is_some_and(|last| {
+            quote.is_some()
+                && last.quote == quote
+                && indent >= last.indent
+                && matches!(&last.kind, BlockKind::Paragraph(text) if text.is_empty())
+        });
+        if bodyless {
+            self.doc.blocks.pop();
+        } else {
+            self.starts.push(start);
+        }
         let max = self.doc.blocks.last().map_or(0, |b| b.indent + 1);
         self.doc.blocks.push(Block {
             kind,
             indent: indent.min(max),
+            quote,
         });
     }
 
     /// Emit a pending marker as an empty block so a non-paragraph leaf (a code
     /// block, a table) nests *under* its bullet instead of replacing it.
     pub(super) fn flush_marker(&mut self) {
-        let Some(marker) = self.pending_marker.take() else {
+        let Some((marker, quote)) = self.pending_marker.take() else {
             return;
         };
         let indent = self.indent().saturating_sub(1);
-        self.push(marker.into_kind(Text::default()), indent);
+        self.push_in(marker.into_kind(Text::default()), indent, quote);
     }
 
     /// Close any inline content still open as a block.
@@ -164,17 +188,16 @@ impl ParseState {
             return;
         }
 
-        if !self.quotes.is_empty() {
-            // The bullet comes first so the quote reads as its child rather
-            // than replacing it.
-            self.flush_marker();
-            let kind = self.quote_kind();
-            let indent = self.indent();
-            self.push(BlockKind::Quote { kind, text }, indent);
-        } else if let Some(marker) = self.pending_marker.take() {
+        // A quote opened inside the item holds the text, and the marker stays
+        // outside it as an empty block of its own.
+        if let Some((marker, quote)) = self.pending_marker
+            && quote == self.quoted()
+        {
+            self.pending_marker = None;
             let indent = self.indent().saturating_sub(1);
-            self.push(marker.into_kind(text), indent);
+            self.push_in(marker.into_kind(text), indent, quote);
         } else {
+            self.flush_marker();
             let indent = self.indent();
             self.push(BlockKind::Paragraph(text), indent);
         }
@@ -213,7 +236,9 @@ impl ParseState {
                 self.push(BlockKind::Rule, indent);
             }
             Event::TaskListMarker(checked) => {
-                self.pending_marker = Some(Marker::Task(checked));
+                if let Some((marker, _)) = &mut self.pending_marker {
+                    *marker = Marker::Task(checked);
+                }
             }
             Event::FootnoteReference(label) => {
                 self.builder.text.push_str(&format!("[^{label}]"));
@@ -230,7 +255,7 @@ impl ParseState {
             }
             Tag::BlockQuote(kind) => {
                 self.flush_inline();
-                let at = self.doc.blocks.len();
+                let at = self.pushed;
                 self.quotes.push(OpenQuote {
                     kind: kind.map(QuoteKind::from),
                     at,
@@ -262,14 +287,15 @@ impl ParseState {
             }
             Tag::Item => {
                 self.flush_inline();
-                self.pending_marker = Some(match self.lists.last_mut() {
+                let marker = match self.lists.last_mut() {
                     Some(Some(number)) => {
                         let n = *number;
                         *number += 1;
                         Marker::Ordered(n)
                     }
                     _ => Marker::Bullet,
-                });
+                };
+                self.pending_marker = Some((marker, self.quoted()));
             }
             Tag::Table(aligns) => {
                 self.flush_inline();
@@ -330,25 +356,20 @@ impl ParseState {
                 let indent = self.indent();
                 self.push(BlockKind::Heading { level, text }, indent);
             }
-            // Flushed before the depth changes, so trailing text still lands
-            // as a quote rather than as a paragraph after it.
+            // Flushed before the quote closes, so trailing text still lands
+            // inside it rather than as a paragraph after it.
             TagEnd::BlockQuote(_) => {
                 self.flush_inline();
                 // pulldown-cmark takes the marker line out of the text, so a
                 // blockquote that held nothing else arrives here empty.
-                if let Some(open) = self.quotes.pop()
+                if let Some(open) = self.quotes.last()
                     && open.kind.is_some()
-                    && self.doc.blocks.len() == open.at
+                    && self.pushed == open.at
                 {
                     let indent = self.indent();
-                    self.push(
-                        BlockKind::Quote {
-                            kind: open.kind,
-                            text: Text::default(),
-                        },
-                        indent,
-                    );
+                    self.push(BlockKind::Paragraph(Text::default()), indent);
                 }
+                self.quotes.pop();
             }
             TagEnd::CodeBlock => {
                 if let Some((language, height, code)) = self.code.take() {

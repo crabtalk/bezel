@@ -32,3 +32,19 @@ fn a_mermaid_fence_paints_its_diagram(cx: &mut TestAppContext) {
 fn a_fence_it_cannot_read_keeps_its_source(cx: &mut TestAppContext) {
     assert!(diagram("```mermaid\nflowchart LR\n  A -->\n```\n", cx).is_none());
 }
+
+fn chart(source: &'static str, cx: &mut TestAppContext) -> Option<gpui::Bounds<gpui::Pixels>> {
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let window = cx.add_window(|_, _| Page(source));
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(size(px(320.0), px(600.0)));
+    cx.run_until_parked();
+    cx.debug_bounds(markdown::charts::SELECTOR)
+}
+
+#[gpui::test]
+fn a_mermaid_pie_paints_as_a_chart(cx: &mut TestAppContext) {
+    let bounds = chart("```mermaid\npie\n  \"a\" : 1\n  \"b\" : 2\n```\n", cx)
+        .expect("the fence paints a chart");
+    assert!(bounds.size.height > px(0.0));
+}

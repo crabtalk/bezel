@@ -175,30 +175,37 @@ fn ctrl_enter_inserts_a_paragraph_after_the_current_block(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn enter_after_a_quote_opens_plain_text(cx: &mut TestAppContext) {
+fn enter_after_a_quote_stays_in_it_and_enter_again_leaves(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("> quote", cx);
     cx.simulate_keystrokes("end enter");
+    cx.simulate_input("more");
+    assert_eq!(source(&editor, &mut cx), "> quote\n>\n> more");
+
+    cx.simulate_keystrokes("enter enter");
     cx.simulate_input("plain");
-    assert_eq!(source(&editor, &mut cx), "> quote\n\nplain");
+    assert_eq!(source(&editor, &mut cx), "> quote\n>\n> more\n\nplain");
 }
 
-/// Leaving a quote is what Enter at the *end* of one means. In the middle of a
-/// sentence it is still a split, and half a quote is not plain text.
+#[gpui::test]
+fn enter_in_a_quoted_list_makes_another_quoted_item(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("> - one", cx);
+    cx.simulate_keystrokes("end enter");
+    cx.simulate_input("two");
+    assert_eq!(source(&editor, &mut cx), "> - one\n> - two");
+}
+
 #[gpui::test]
 fn enter_inside_a_quote_keeps_both_halves_quoted(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("> hello world", cx);
     cx.simulate_keystrokes("home right right right right right enter");
-    assert_eq!(source(&editor, &mut cx), "> hello\n\n> world");
+    assert_eq!(source(&editor, &mut cx), "> hello\n>\n> world");
 }
 
 #[gpui::test]
 fn enter_inside_an_alert_keeps_the_alert(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("> [!NOTE]\n> hello world", cx);
     cx.simulate_keystrokes("home right right right right right enter");
-    assert_eq!(
-        source(&editor, &mut cx),
-        "> [!NOTE]\n> hello\n\n> [!NOTE]\n> world"
-    );
+    assert_eq!(source(&editor, &mut cx), "> [!NOTE]\n> hello\n>\n> world");
 }
 
 #[gpui::test]
@@ -1551,23 +1558,27 @@ fn a_press_beside_a_checkbox_places_a_caret(cx: &mut TestAppContext) {
     assert_eq!(head(&editor, &mut cx).block, 1, "the caret moved there");
 }
 
-/// The mirror of Enter at the end of a quote: at its start the quote goes down
-/// whole, and what opens above it is plain text.
 #[gpui::test]
-fn enter_at_the_start_of_an_alert_opens_plain_text_above(cx: &mut TestAppContext) {
+fn enter_at_the_start_of_an_alert_opens_a_line_above_inside_it(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("> [!NOTE]\n> body", cx);
     cx.simulate_keystrokes("home enter up");
     cx.simulate_input("above");
-    assert_eq!(source(&editor, &mut cx), "above\n\n> [!NOTE]\n> body");
+    assert_eq!(source(&editor, &mut cx), "> [!NOTE]\n> above\n>\n> body");
 }
 
-/// `> [!TIP]` with nothing under it is a document markdown writes down and
-/// reads back, and Enter in one has nothing to push down.
 #[gpui::test]
-fn enter_in_an_empty_alert_keeps_it(cx: &mut TestAppContext) {
+fn enter_in_an_empty_alert_leaves_it(cx: &mut TestAppContext) {
     let (editor, _window, mut cx) = open_with("> [!TIP]", cx);
     cx.simulate_keystrokes("enter");
-    assert_eq!(source(&editor, &mut cx), "> [!TIP]");
+    assert_eq!(source(&editor, &mut cx), "");
+}
+
+#[gpui::test]
+fn the_quote_prefix_quotes_a_list_item(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) = open_with("- item", cx);
+    cx.simulate_keystrokes("home");
+    cx.simulate_input("> ");
+    assert_eq!(source(&editor, &mut cx), "> - item");
 }
 
 fn copy_text(text: &str, cx: &mut VisualTestContext) {

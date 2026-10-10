@@ -256,9 +256,13 @@ impl Brand {
         // danger, warning, success — is semantic and keeps it. Translucent ink
         // is skipped because it paints over whatever is beneath it, which is
         // tinted already.
+        let tint = match theme.family {
+            None => self.tint,
+            Some(_) => Tint::NONE,
+        };
         for (_, slot) in theme.tokens_mut() {
             if slot.a == 1.0 && slot.s <= f32::EPSILON {
-                *slot = color::tint(*slot, self.tint.hue, self.tint.chroma);
+                *slot = color::tint(*slot, tint.hue, tint.chroma);
             }
         }
 

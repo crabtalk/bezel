@@ -290,6 +290,12 @@ const FRAGMENTS: &[&str] = &[
     "   ",
     "> - x",
     "- > x",
+    ">     - y",
+    "> 1. one",
+    "> ```",
+    "> # h",
+    "    > q",
+    ">",
     "<div>",
     "a <span> b",
     "trailing \\",
@@ -343,14 +349,15 @@ fn the_fixed_point_holds_for_generated_documents() {
 }
 
 #[test]
-fn an_alert_is_a_block_kind_rather_than_text() {
+fn an_alert_is_the_quote_rather_than_text() {
     let doc = parse("> [!TIP]\n> body");
     assert_eq!(
         doc.blocks,
-        vec![Block::new(BlockKind::Quote {
-            kind: Some(QuoteKind::Tip),
-            text: Text::plain("body"),
-        })]
+        vec![
+            Block::new(BlockKind::Paragraph(Text::plain("body"))).quoted(Quoted {
+                alert: Some(QuoteKind::Tip),
+            })
+        ]
     );
     assert_eq!(serialize(&doc), "> [!TIP]\n> body");
 }
@@ -369,10 +376,10 @@ fn a_marker_that_names_no_alert_stays_text() {
     let doc = parse("> [!BOGUS]\n> body");
     assert_eq!(
         doc.blocks,
-        vec![Block::new(BlockKind::Quote {
-            kind: None,
-            text: Text::plain("[!BOGUS]\nbody"),
-        })]
+        vec![
+            Block::new(BlockKind::Paragraph(Text::plain("[!BOGUS]\nbody")))
+                .quoted(Quoted::default())
+        ]
     );
 }
 
@@ -385,20 +392,96 @@ fn normalize_keeps_an_alert_with_no_body() {
     assert_eq!(serialize(&doc), "> [!TIP]");
 
     let mut plain = Doc {
-        blocks: vec![Block::new(BlockKind::Quote {
-            kind: None,
-            text: Text::default(),
-        })],
+        blocks: vec![Block::new(BlockKind::Paragraph(Text::default())).quoted(Quoted::default())],
     };
     plain.normalize();
     assert!(plain.blocks.is_empty());
 }
 
 #[test]
-fn a_quotes_paragraphs_each_carry_the_alert() {
-    // The flat model splits a blockquote's paragraphs into one block each, so
-    // the kind rides on both and the rewrite is two alerts.
-    let text = serialize(&parse("> [!TIP]\n> one\n>\n> two"));
-    assert_eq!(text, "> [!TIP]\n> one\n\n> [!TIP]\n> two");
-    assert_eq!(parse(&text), parse(&serialize(&parse(&text))));
+fn a_quotes_paragraphs_are_one_alert() {
+    let source = "> [!TIP]\n> one\n>\n> two";
+    let doc = parse(source);
+    let tip = Some(Quoted {
+        alert: Some(QuoteKind::Tip),
+    });
+    assert!(doc.blocks.iter().all(|block| block.quote == tip));
+    assert_eq!(serialize(&doc), source);
+}
+
+#[test]
+fn a_list_inside_a_quote_stays_a_list_and_stays_quoted() {
+    let source = "> - one\n> - two\n>     - nested";
+    let doc = parse(source);
+    let quoted = Some(Quoted::default());
+    assert_eq!(
+        doc.blocks,
+        vec![
+            Block::at(BlockKind::Bullet(Text::plain("one")), 0),
+            Block::at(BlockKind::Bullet(Text::plain("two")), 0),
+            Block::at(BlockKind::Bullet(Text::plain("nested")), 1),
+        ]
+        .into_iter()
+        .map(|block| Block {
+            quote: quoted,
+            ..block
+        })
+        .collect::<Vec<_>>()
+    );
+    assert_eq!(serialize(&doc), source);
+}
+
+#[test]
+fn every_block_kind_can_be_quoted() {
+    for source in [
+        "> # Title",
+        "> 1. one\n> 2. two",
+        "> - [ ] task",
+        "> ```rs\n> let x = 1;\n> ```",
+        "> | a | b |\n> | --- | --- |\n> | 1 | 2 |",
+        "> ---",
+        "> [!NOTE]\n> - item\n>\n> text",
+    ] {
+        let doc = parse(source);
+        assert!(
+            doc.blocks.iter().all(|block| block.quote.is_some()),
+            "{source:?}: {:?}",
+            doc.blocks
+        );
+        assert_eq!(serialize(&doc), source);
+    }
+}
+
+#[test]
+fn a_quote_inside_a_list_item_stays_under_its_marker() {
+    let doc = parse("- item\n\n    > quoted");
+    assert_eq!(doc.blocks[0].quote, None);
+    assert_eq!(doc.blocks[1].indent, 1);
+    assert_eq!(doc.blocks[1].quote, Some(Quoted::default()));
+    assert_eq!(serialize(&doc), "- item\n\n    > quoted");
+
+    // The marker stays outside a quote that opens its item.
+    let doc = parse("- > quoted");
+    assert_eq!(
+        doc.blocks[0],
+        Block::new(BlockKind::Bullet(Text::default()))
+    );
+    assert_eq!(doc.blocks[1].quote, Some(Quoted::default()));
+}
+
+#[test]
+fn quotes_round_trip_to_a_fixed_point() {
+    for source in [
+        "> a\n\nb",
+        "> a\n\n> [!NOTE]\n> b",
+        "- x\n\n    > - a\n    >     - b\n\n    c",
+        "> - a\n\n- b",
+        "> > deep\n> outer",
+        "- > a\n- b",
+        "> [!WARNING]\n> - [x] done\n>\n> 1. one",
+    ] {
+        let once = parse(source);
+        let twice = parse(&serialize(&once));
+        assert_eq!(once, twice, "{source:?} drifted: {:?}", serialize(&once));
+    }
 }

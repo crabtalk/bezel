@@ -20,6 +20,10 @@ pub trait AppExt {
     /// Configures markdown layout.
     fn set_markdown_layout(&mut self, layout: crate::Layout);
 
+    /// Sets how far a mermaid diagram zooms.
+    #[cfg(feature = "mermaid")]
+    fn set_mermaid_zoom(&mut self, zoom: crate::mermaid::Zoom);
+
     /// Handles link clicks; without a handler links use `App::open_url`.
     fn set_link_handler(&mut self, handler: crate::LinkHandler);
 
@@ -37,6 +41,9 @@ pub trait AppExt {
 
     /// Installs the painter of cards for links the app owns.
     fn set_link_card(&mut self, card: crate::LinkCard);
+
+    /// Installs the painter of hover cards for links the app owns.
+    fn set_link_hover(&mut self, hover: crate::LinkHover);
 
     /// Resolves source styles against the current theme and refreshes windows.
     fn set_source_style(&mut self, style: impl Fn(&theme::Theme) -> crate::SourceStyle + 'static);
@@ -81,6 +88,11 @@ impl AppExt for App {
         crate::layout::set_layout(self, layout)
     }
 
+    #[cfg(feature = "mermaid")]
+    fn set_mermaid_zoom(&mut self, zoom: crate::mermaid::Zoom) {
+        crate::mermaid::set_zoom(self, zoom)
+    }
+
     fn set_link_handler(&mut self, handler: crate::LinkHandler) {
         crate::link::set_link_handler(self, handler)
     }
@@ -103,6 +115,10 @@ impl AppExt for App {
 
     fn set_link_card(&mut self, card: crate::LinkCard) {
         crate::preview::set_link_card(self, card)
+    }
+
+    fn set_link_hover(&mut self, hover: crate::LinkHover) {
+        crate::preview::set_link_hover(self, hover)
     }
 
     fn set_source_style(&mut self, style: impl Fn(&theme::Theme) -> crate::SourceStyle + 'static) {

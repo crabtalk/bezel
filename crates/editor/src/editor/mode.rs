@@ -46,6 +46,7 @@ impl Editor {
                 .blocks
                 .get(at.block)
                 .and_then(|block| crate::slash::label(&block.kind)),
+            quote: self.doc.blocks.get(at.block).and_then(|block| block.quote),
             fenceable: self.blocks() && fenceable(&self.doc, self.selection),
         }
     }

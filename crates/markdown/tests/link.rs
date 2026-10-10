@@ -8,15 +8,22 @@ use gpui::{
     prelude::*, px, size,
 };
 use markdown::{Caption, Doc, Editing, parse, render, render_with};
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::Cell,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 const WIDTH: f32 = 320.0;
 const HEIGHT: f32 = 200.0;
 
 static OPENED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-fn record(url: &str, _: &mut Window, _: &mut App) {
+static BASES: Mutex<Vec<Option<PathBuf>>> = Mutex::new(Vec::new());
+
+fn record(url: &str, base: Option<&Path>, _: &mut Window, _: &mut App) {
     OPENED.lock().unwrap().push(url.to_string());
+    BASES.lock().unwrap().push(base.map(Path::to_path_buf));
 }
 
 struct Page(Doc);
@@ -49,6 +56,43 @@ fn a_clicked_link_goes_to_the_installed_handler(cx: &mut TestAppContext) {
 
     assert_eq!(*OPENED.lock().unwrap(), ["https://example.com"]);
     assert_eq!(cx.cx.opened_url(), None);
+}
+
+/// Rendered with [`Editing::base`] set to `/notes`.
+struct Based(Doc);
+
+impl Render for Based {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let editing = Editing {
+            base: Some(Path::new("/notes")),
+            ..Default::default()
+        };
+        div()
+            .w(px(WIDTH))
+            .child(render_with(&self.0, editing, window, cx))
+    }
+}
+
+#[gpui::test]
+fn a_clicked_link_hands_the_handler_the_document_base(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        theme::Theme::install(theme::Appearance::Dark, cx);
+        cx.set_link_handler(record);
+    });
+    let window = cx.add_window(|_, _| {
+        Based(parse(
+            "[a link that runs the whole width of the line](../todo.md)",
+        ))
+    });
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(size(px(WIDTH), px(HEIGHT)));
+    cx.run_until_parked();
+
+    cx.simulate_click(point(px(40.0), px(12.0)), Modifiers::none());
+    cx.run_until_parked();
+
+    assert_eq!(*OPENED.lock().unwrap(), ["../todo.md"]);
+    assert_eq!(*BASES.lock().unwrap(), [Some(PathBuf::from("/notes"))]);
 }
 
 /// Rendered with a [`markdown::OnJump`] that records the block it is handed.

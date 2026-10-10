@@ -28,6 +28,8 @@ mod app;
 pub use app::AppExt;
 
 pub mod block;
+#[cfg(feature = "mermaid")]
+pub mod charts;
 pub mod doc;
 pub mod edit;
 pub mod find;
@@ -49,7 +51,7 @@ pub mod source_style;
 pub mod typography;
 
 pub use block::{BlockRenderer, Fence, Rewrite};
-pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Text};
+pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Quoted, Text};
 pub use edit::{Shortcut, Splice, shortcut};
 pub use find::{FindPaint, default_find};
 pub use highlight::Highlighter;
@@ -61,7 +63,7 @@ pub use marks::{
 pub use parse::{
     ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges, parse_with,
 };
-pub use preview::{LinkCard, LinkPreview, Preview};
+pub use preview::{LinkCard, LinkHover, LinkPreview, Preview};
 pub use quote::Quote;
 pub use render::{
     Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,

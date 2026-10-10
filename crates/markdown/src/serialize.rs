@@ -12,7 +12,7 @@
 //! they would actually mean something.
 
 use crate::{
-    doc::{Align, Block, BlockKind, Doc, Mark, Part, Text},
+    doc::{Align, Block, BlockKind, Doc, Mark, Part, Text, quote_runs},
     marks::Marks,
     select::Cursor,
 };
@@ -35,23 +35,69 @@ impl From<&Doc> for String {
 /// [`serialize`] with the app's own marks — see [`crate::Marks`].
 pub fn serialize_with(doc: &Doc, marks: &Marks) -> String {
     let mut out = String::new();
-    let mut previous: Option<(&BlockKind, u8)> = None;
-
+    let mut indents = Vec::with_capacity(doc.blocks.len());
     for block in &doc.blocks {
-        let indent = match previous {
-            Some((_, prev)) => block.indent.min(prev + 1),
-            None => 0,
-        };
+        let indent = indents
+            .last()
+            .map_or(0, |prev: &u8| block.indent.min(prev + 1));
+        indents.push(indent);
+    }
+    let runs = quote_runs(doc.blocks.iter().zip(&indents).map(|(b, i)| (b.quote, *i)));
+    let mut previous: Option<(&BlockKind, u8, bool)> = None;
 
-        if let Some((prev_kind, prev_indent)) = previous {
+    for ((block, &indent), run) in doc.blocks.iter().zip(&indents).zip(runs) {
+        // A blockquote's `>` stands at its level, and the block is written
+        // after it as if the level were the margin.
+        let (prefix, inner) = match run {
+            Some(run) => (
+                format!("{}> ", INDENT.repeat(run.level as usize)),
+                indent - run.level,
+            ),
+            None => (String::new(), indent),
+        };
+        let within = run.is_some_and(|run| !run.first);
+
+        if let Some((prev_kind, prev_indent, prev_quoted)) = previous {
             out.push('\n');
-            if !tight_after(prev_kind, &block.kind, indent > prev_indent) {
+            // A quote's edge takes a blank line, which is what ends one
+            // blockquote before the next block or the next blockquote. Only an
+            // empty marker cannot have one after it.
+            let edge = run.is_some_and(|run| run.first) || (run.is_none() && prev_quoted);
+            if !tight_after(prev_kind, &block.kind, indent > prev_indent)
+                || (edge && !is_empty_marker(prev_kind))
+            {
+                if within {
+                    out.push_str(prefix.trim_end());
+                }
                 out.push('\n');
             }
         }
 
-        write_block(&mut out, &block.kind, indent, marks);
-        previous = Some((&block.kind, indent));
+        let mut written = String::new();
+        write_block(&mut written, &block.kind, inner, marks);
+        if let Some(alert) = block.quote.and_then(|quote| quote.alert)
+            && run.is_some_and(|run| run.first)
+        {
+            // A marker line stands alone when nothing at all is under it.
+            let body = std::mem::take(&mut written);
+            written.push_str(alert.marker());
+            if !body.is_empty() {
+                written.push('\n');
+                written.push_str(&body);
+            }
+        }
+        for (ix, line) in written.split('\n').enumerate() {
+            if ix > 0 {
+                out.push('\n');
+            }
+            if line.is_empty() {
+                out.push_str(prefix.trim_end());
+            } else {
+                out.push_str(&prefix);
+                out.push_str(line);
+            }
+        }
+        previous = Some((&block.kind, indent, run.is_some()));
     }
 
     // GFM reads `[ ]` as a task marker only when whitespace follows it, and an
@@ -154,22 +200,6 @@ fn write_block(out: &mut String, kind: &BlockKind, indent: u8, marks: &Marks) {
         BlockKind::Task { checked, text } => {
             let marker = if *checked { "- [x] " } else { "- [ ] " };
             write_marked(out, &pad, marker, text, marks);
-        }
-        BlockKind::Quote { kind, text } => {
-            let prefix = format!("{pad}> ");
-            // Rendered before the marker is written: an empty [`Text`] can
-            // still carry a mark, and a marker line stands alone only when
-            // there is nothing at all under it.
-            let body = inline(text, marks);
-            if let Some(kind) = kind {
-                out.push_str(&prefix);
-                out.push_str(kind.marker());
-                if body.is_empty() {
-                    return;
-                }
-                out.push('\n');
-            }
-            write_lines(out, &prefix, &prefix, &body);
         }
         BlockKind::Code {
             language,

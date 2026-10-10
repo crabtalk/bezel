@@ -14,24 +14,34 @@ pub enum Shortcut {
     Rule,
 }
 
-impl Shortcut {
-    /// The block this shortcut makes, carrying whatever text was left over.
-    pub fn apply(self, text: Text) -> BlockKind {
-        match self {
-            Self::Heading(level) => BlockKind::Heading { level, text },
-            Self::Bullet => BlockKind::Bullet(text),
-            Self::Ordered => BlockKind::Ordered { number: 1, text },
-            Self::Task(checked) => BlockKind::Task { checked, text },
-            Self::Quote => BlockKind::Quote { kind: None, text },
-            // Code is literal, so whatever marks the text carried have no
-            // meaning inside the fence.
-            Self::Code => BlockKind::Code {
+impl Doc {
+    /// Turn block `ix` the way a typed prefix says, keeping its text. A quote
+    /// is the block's [`Block::quote`] and leaves its kind alone.
+    pub fn apply(&mut self, ix: usize, shortcut: Shortcut) {
+        let text = Text::default;
+        let kind = match shortcut {
+            Shortcut::Heading(level) => BlockKind::Heading {
+                level,
+                text: text(),
+            },
+            Shortcut::Bullet => BlockKind::Bullet(text()),
+            Shortcut::Ordered => BlockKind::Ordered {
+                number: 1,
+                text: text(),
+            },
+            Shortcut::Task(checked) => BlockKind::Task {
+                checked,
+                text: text(),
+            },
+            Shortcut::Quote => return self.set_quote(ix, Some(Quoted::default())),
+            Shortcut::Code => BlockKind::Code {
                 language: None,
-                code: Text::plain(text.text),
+                code: text(),
                 height: None,
             },
-            Self::Rule => BlockKind::Rule,
-        }
+            Shortcut::Rule => BlockKind::Rule,
+        };
+        self.set_kind(ix, kind);
     }
 }
 

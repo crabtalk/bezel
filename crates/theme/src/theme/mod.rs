@@ -12,7 +12,7 @@ mod palettes;
 mod syntax;
 pub(crate) mod typography;
 
-pub use family::{ThemeFamily, Variant};
+pub use family::{Seed, ThemeFamily, Variant};
 pub use layout::{ControlSize, Sizing};
 pub use syntax::{HighlightKind, SyntaxPalette};
 pub use typography::{Metrics, TextStyle, Typeset, base_text_size};
@@ -178,6 +178,9 @@ impl SurfaceStyle {
 pub struct Theme {
     /// Which appearance these tokens were built for.
     pub appearance: Appearance,
+    /// The [`ThemeFamily`] these tokens came from, by name. `None` is the
+    /// shipped palette, the only one a [`Brand`](crate::Brand)'s tint rotates.
+    pub family: Option<SharedString>,
 
     // ---- paint: neutral surfaces ----
     /// Main content panel. Dark: the deepest plane (#060606). Light: pure white —

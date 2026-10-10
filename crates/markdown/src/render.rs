@@ -29,7 +29,7 @@ use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
     block,
-    doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, QuoteKind, Text},
+    doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, QuoteKind, Run, Text, quote_runs},
     preview,
     select::{Affinity, Cursor, Selection},
     typography::Typography,
@@ -642,6 +642,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
             })
         })
         .collect();
+    let runs = quote_runs(doc.blocks.iter().map(|block| (block.quote, block.indent)));
 
     let Some(layouts) = layouts else {
         let mut column = div().flex().flex_col();
@@ -672,8 +673,13 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 find,
                 jump: jump.as_ref(),
             };
-            column = column
-                .child(block_box(block, overlay, &typography, &theme, window, cx).mt(gaps[ix]));
+            let quote = Quote {
+                run: runs[ix],
+                gap: gaps[ix],
+            };
+            column = column.child(
+                block_box(block, quote, overlay, &typography, &theme, window, cx).mt(gaps[ix]),
+            );
         }
         return column.into_any_element();
     };
@@ -681,14 +687,16 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     let keys: Vec<u64> = doc
         .blocks
         .iter()
-        .map(|block| block_key(block, &typography, table_controls))
+        .zip(&runs)
+        .map(|(block, run)| block_key(block, *run, &typography, table_controls))
         .collect();
     layouts.prune(&keys);
     let guesses: Vec<Guess> = doc
         .blocks
         .iter()
-        .map(|block| {
-            let mut guess = guess(block, &typography);
+        .zip(&runs)
+        .map(|(block, run)| {
+            let mut guess = guess(block, *run, &typography);
             if table_controls && matches!(block.kind, BlockKind::Table { .. }) {
                 guess.extra += px(2.0 * TABLE_CONTROL_SIZE);
             }
@@ -700,6 +708,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     kept.extend(selection.map(|selection| selection.anchor.block));
     let owned = Owned {
         blocks: doc.blocks.clone(),
+        runs,
+        gaps: gaps.clone(),
         selection,
         caret_on,
         layouts: layouts.clone(),
@@ -756,8 +766,13 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 find: owned.find,
                 jump: owned.jump.as_ref(),
             };
+            let quote = Quote {
+                run: owned.runs[ix],
+                gap: owned.gaps[ix],
+            };
             block_box(
                 &owned.blocks[ix],
+                quote,
                 overlay,
                 &owned.typography,
                 &owned.theme,
@@ -773,6 +788,8 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
 /// What [`Column`] builds a block from, owned so it can build one at prepaint.
 struct Owned {
     blocks: Vec<Block>,
+    runs: Vec<Option<Run>>,
+    gaps: Vec<Pixels>,
     selection: Option<Selection>,
     caret_on: bool,
     layouts: BlockLayouts,
@@ -795,10 +812,23 @@ struct Owned {
     theme: Theme,
 }
 
+/// Where a block stands in a blockquote, and the gap above it that a bar
+/// carried on from the block before has to cross.
+#[derive(Clone, Copy)]
+struct Quote {
+    run: Option<Run>,
+    gap: Pixels,
+}
+
+/// The space between a blockquote's bar and the text inside it.
+const QUOTE_INSET: f32 = 12.0;
+const QUOTE_BAR: f32 = 2.0;
+
 /// A block's box: its indent outside, and inside it the recorder and the
 /// block itself.
 fn block_box(
     block: &Block,
+    quote: Quote,
     overlay: Overlay,
     typography: &Typography,
     theme: &Theme,
@@ -839,23 +869,82 @@ fn block_box(
                 .when(overlay.covers_block() && block.opaque(), |el| {
                     el.rounded(px(4.0)).bg(theme.selection)
                 })
-                .child(block_element(block, overlay, typography, theme, window, cx)),
+                .child(quoted(
+                    block,
+                    quote,
+                    block_element(block, overlay, typography, theme, window, cx),
+                    typography,
+                    theme,
+                )),
         )
+}
+
+/// A block inside a blockquote: the bar at the quote's level, the alert's
+/// label over the first block, and the block itself inset from the bar.
+///
+/// Each block paints its own piece of the bar, reaching up across the gap to
+/// the block before it, so a run shows one unbroken bar.
+fn quoted(
+    block: &Block,
+    quote: Quote,
+    element: AnyElement,
+    typography: &Typography,
+    theme: &Theme,
+) -> AnyElement {
+    let (Some(run), Some(quoted)) = (quote.run, block.quote) else {
+        return element;
+    };
+    let color = quoted
+        .alert
+        .map_or(theme.border_strong, |alert| alert_color(alert, theme));
+    let label = quoted.alert.filter(|_| run.first).map(|alert| {
+        div()
+            .pb(px(2.0))
+            .text_size(px(typography.body.size()))
+            .line_height(px(typography.body.line_height()))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(color)
+            .child(alert.label())
+    });
+    let bar = div()
+        .absolute()
+        .left(px(
+            -((block.indent - run.level.min(block.indent)) as f32) * INDENT_WIDTH
+        ))
+        .top(if run.first { px(0.0) } else { -quote.gap })
+        .bottom_0()
+        .w(px(QUOTE_BAR))
+        .bg(color);
+    div()
+        .child(bar)
+        .pl(px(QUOTE_BAR + QUOTE_INSET))
+        .pr(px(10.0))
+        .py(px(2.0))
+        .text_color(theme.text_muted)
+        .children(label)
+        .child(element)
+        .into_any_element()
 }
 
 /// What a block's height is cached under: its content and the type it is set
 /// in, so an edit elsewhere that shifts its index keeps the height.
-fn block_key(block: &Block, typography: &Typography, table_controls: bool) -> u64 {
+fn block_key(
+    block: &Block,
+    run: Option<Run>,
+    typography: &Typography,
+    table_controls: bool,
+) -> u64 {
     let mut hasher = DefaultHasher::new();
     table_controls.hash(&mut hasher);
     block.hash(&mut hasher);
+    run.map(|run| run.first).hash(&mut hasher);
     typography.body.size().to_bits().hash(&mut hasher);
     typography.body.line_height().to_bits().hash(&mut hasher);
     hasher.finish()
 }
 
 /// What a block is placed at before it has ever been built.
-fn guess(block: &Block, typography: &Typography) -> Guess {
+fn guess(block: &Block, run: Option<Run>, typography: &Typography) -> Guess {
     let body = px(typography.body.line_height());
     let prose = |chars: usize, line: Pixels| Guess {
         chars,
@@ -868,8 +957,7 @@ fn guess(block: &Block, typography: &Typography) -> Guess {
         BlockKind::Paragraph(text)
         | BlockKind::Bullet(text)
         | BlockKind::Ordered { text, .. }
-        | BlockKind::Task { text, .. }
-        | BlockKind::Quote { text, .. } => prose(text.text.len(), body),
+        | BlockKind::Task { text, .. } => prose(text.text.len(), body),
         BlockKind::Heading { level, text } => prose(
             text.text.len(),
             px(typography.heading(*level).line_height()),
@@ -898,8 +986,18 @@ fn guess(block: &Block, typography: &Typography) -> Guess {
             ..prose(0, px(0.0))
         },
     };
+    let quoted = run.is_some();
+    let label = run.is_some_and(|run| run.first) && block.quote.is_some_and(|q| q.alert.is_some());
     Guess {
-        indent: px(block.indent as f32 * INDENT_WIDTH),
+        indent: px(block.indent as f32 * INDENT_WIDTH)
+            + if quoted {
+                px(QUOTE_BAR + QUOTE_INSET + 10.0)
+            } else {
+                px(0.0)
+            },
+        extra: guess.extra
+            + if quoted { px(4.0) } else { px(0.0) }
+            + if label { body + px(2.0) } else { px(0.0) },
         ..guess
     }
 }
@@ -972,32 +1070,6 @@ fn block_element(
             theme,
             cx,
         ),
-        BlockKind::Quote { kind, text } => div()
-            .border_l_2()
-            .border_color(kind.map_or(theme.border_strong, |kind| alert_color(kind, theme)))
-            .pl(px(12.0))
-            .pr(px(10.0))
-            .py(px(2.0))
-            .text_color(theme.text_muted)
-            .children(kind.map(|kind| {
-                div()
-                    .pb(px(2.0))
-                    .text_size(px(typography.body.size()))
-                    .line_height(px(typography.body.line_height()))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(alert_color(kind, theme))
-                    .child(kind.label())
-            }))
-            .child(text_element(
-                text,
-                typography.body.size(),
-                typography.body.line_height(),
-                FontWeight::NORMAL,
-                body,
-                theme,
-                cx,
-            ))
-            .into_any_element(),
         BlockKind::Code {
             language,
             code,
@@ -1085,7 +1157,15 @@ fn block_element(
                     _ => Vec::new(),
                 })
                 .into_any_element(),
-            None => bookmark(overlay.block, url, *form, typography, theme, cx),
+            None => bookmark(
+                overlay.block,
+                url,
+                overlay.base,
+                *form,
+                typography,
+                theme,
+                cx,
+            ),
         },
         BlockKind::Table {
             align,
