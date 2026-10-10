@@ -400,6 +400,9 @@ pub struct Editor {
     /// document. Here rather than in the app because an undo restores a whole
     /// document and leaves no delta an app could map its own copy through.
     anchors: Vec<Anchor>,
+    /// Ranges washed for one frame's worth of the app's say — find hits. Not
+    /// mapped through edits and not in the history: the app sets them again.
+    washes: Vec<(Selection, Annotation)>,
     /// Marks the next typed character will carry — cmd-B at a collapsed caret,
     /// which otherwise has no range to apply to and so would do nothing.
     /// Cleared by any motion, because they belong to a spot and not to a mood.
@@ -505,6 +508,7 @@ impl Editor {
             caret_on: true,
             blink: None,
             anchors: Vec::new(),
+            washes: Vec::new(),
             stored: Vec::new(),
             slash: None,
             mention: None,

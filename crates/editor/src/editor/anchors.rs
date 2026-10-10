@@ -151,13 +151,27 @@ impl Editor {
         tops.into_iter().map(|(_, id, top)| (id, top)).collect()
     }
 
+    /// Wash `washes` from the next frame on, over the anchors' own. They are
+    /// positions in [`Self::doc`] as it stands, and are not mapped through
+    /// edits: an app that keeps them current sets them again.
+    pub fn set_washes(&mut self, washes: Vec<(Selection, Annotation)>, cx: &mut Context<Self>) {
+        self.washes = washes;
+        cx.notify();
+    }
+
+    pub fn washes(&self) -> &[(Selection, Annotation)] {
+        &self.washes
+    }
+
     /// The ranges the renderer washes, clamped because a block can change kind
     /// under an anchor and take its part with it.
     pub(super) fn annotations(&self) -> Vec<(Selection, Annotation)> {
         self.anchors
             .iter()
             .filter(|anchor| !anchor.detached())
-            .map(|anchor| (anchor.range.clamp(&self.doc), anchor.state))
+            .map(|anchor| (anchor.range, anchor.state))
+            .chain(self.washes.iter().copied())
+            .map(|(range, state)| (range.clamp(&self.doc), state))
             .collect()
     }
 }

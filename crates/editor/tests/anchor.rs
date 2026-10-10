@@ -405,3 +405,21 @@ fn anchor_tops_follow_the_document_down(cx: &mut TestAppContext) {
     assert_eq!(ids, vec![ID, AnchorId(2)], "in document order");
     assert!(tops[0].1 < tops[1].1, "{tops:?}");
 }
+
+#[gpui::test]
+fn washes_leave_the_anchors_alone(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    let hit = Selection::new(at(0, 0), at(0, 5));
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_washes(vec![(hit, markdown::Annotation::Match)], cx)
+        })
+    });
+    cx.update(|_, cx| {
+        assert!(editor.read(cx).anchors().is_empty());
+        assert_eq!(
+            editor.read(cx).washes(),
+            &[(hit, markdown::Annotation::Match)]
+        );
+    });
+}
