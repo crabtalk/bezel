@@ -28,7 +28,10 @@ impl Render for Editor {
                 self.refresh_source_view(cx);
                 self.source_view().line_of(self.selection.head.offset)
             }
-            Mode::Blocks => 0,
+            Mode::Blocks => {
+                self.drop_source_view();
+                0
+            }
         };
         // gpui ends an outside file drag — left the window or released
         // elsewhere — without a drop here, so the indicator goes with it.

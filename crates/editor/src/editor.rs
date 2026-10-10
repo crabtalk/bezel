@@ -368,6 +368,8 @@ pub struct Editor {
     /// The source view's text and the [`Tracked::revision`] it was built at.
     /// Read only in [`Mode::Source`].
     source_view: Option<(u64, markdown::SourceText)>,
+    /// Highlighting the source view's text after an edit. Dropping it cancels.
+    source_spans: Option<Task<()>>,
     /// The dialect this document is read and written in — the app's own marks,
     /// taken once at construction. One editor, one spelling: a document that
     /// changed dialect between a read and a write would rewrite itself.
@@ -493,6 +495,7 @@ impl Editor {
             selection: Selection::at(Cursor::default().clamp(&doc)),
             doc: Tracked::new(doc),
             source_view: None,
+            source_spans: None,
             chrome: Chrome::default(),
             mode: Mode::default(),
             focus_handle: cx.focus_handle(),

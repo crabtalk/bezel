@@ -138,20 +138,47 @@ impl Editor {
         self.mode == Mode::Blocks
     }
 
-    /// Rebuild the source view's text if the document has changed since it was
-    /// built.
+    /// Bring the source view's text up to the document. A first build
+    /// highlights in place; an edit after it is highlighted on the background
+    /// executor, and the view shows the spans from before it until then.
     // TODO: also rebuild when the installed highlighter or the syntax registry
     // would colour the text differently.
-    pub(super) fn refresh_source_view(&mut self, cx: &App) {
+    pub(super) fn refresh_source_view(&mut self, cx: &mut Context<Self>) {
         let revision = self.doc.revision();
-        if self
-            .source_view
-            .as_ref()
-            .is_none_or(|(built, _)| *built != revision)
-        {
-            let view = markdown::SourceText::new(self.source_text(), cx);
-            self.source_view = Some((revision, view));
-        }
+        let job = match &mut self.source_view {
+            Some((built, _)) if *built == revision => return,
+            Some((built, view)) => {
+                *built = revision;
+                view.edit(source_of(&self.doc), cx)
+            }
+            None => {
+                let view = markdown::SourceText::new(source_of(&self.doc), cx);
+                self.source_view = Some((revision, view));
+                None
+            }
+        };
+        let Some(job) = job else { return };
+        self.source_spans = Some(cx.spawn(async move |editor, cx| {
+            let spans = cx
+                .background_executor()
+                .spawn(async move { job.run() })
+                .await;
+            editor
+                .update(cx, |editor, cx| {
+                    if let Some((_, view)) = &mut editor.source_view
+                        && view.set_spans(spans)
+                    {
+                        cx.notify();
+                    }
+                })
+                .ok();
+        }));
+    }
+
+    /// Drop the source view and any highlighting under way for it.
+    pub(super) fn drop_source_view(&mut self) {
+        self.source_view = None;
+        self.source_spans = None;
     }
 
     /// The source view's text. Current only after [`Self::refresh_source_view`].
@@ -182,11 +209,7 @@ impl Editor {
     /// [`Mode::Source`]. Only meaningful there; in [`Mode::Blocks`] the
     /// document is the truth and this is whatever block zero happens to be.
     pub(super) fn source_text(&self) -> &str {
-        self.doc
-            .blocks
-            .first()
-            .and_then(|block| block.text_at(Part::Code))
-            .map_or("", |text| text.text.as_str())
+        source_of(&self.doc)
     }
 
     /// Put the source back in the one fence it is edited as.
@@ -246,4 +269,12 @@ impl Editor {
         self.table_drag = None;
         self.dropping = None;
     }
+}
+
+/// See [`Editor::source_text`].
+fn source_of(doc: &Doc) -> &str {
+    doc.blocks
+        .first()
+        .and_then(|block| block.text_at(Part::Code))
+        .map_or("", |text| text.text.as_str())
 }

@@ -15,6 +15,7 @@ use std::{
     ops::Range,
     path::Path,
     rc::Rc,
+    sync::Arc,
 };
 use ui::AppExt as _;
 use ui::widgets::Layout as _;

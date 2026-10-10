@@ -5,14 +5,17 @@ use super::*;
 /// A source text and what [`render_source`] reads off it every frame: its
 /// lines, a hash of each, and its highlight spans.
 ///
-/// Building one walks and highlights the whole text. A caller keeps it across
-/// frames and builds a new one when the text changes, or when the installed
-/// highlighter would answer differently.
+/// [`SourceText::new`] walks and highlights the whole text.
+/// [`SourceText::edit`] redoes only the lines an edit touched and shifts the
+/// spans around it; the [`SpanJob`] it answers highlights the new text in full,
+/// on any thread, for [`SourceText::set_spans`].
 pub struct SourceText {
-    code: Rc<str>,
+    code: Arc<str>,
     ranges: Rc<[Range<usize>]>,
-    hashes: Box<[u64]>,
+    hashes: Rc<[u64]>,
     spans: Option<Rc<[Span]>>,
+    /// Moved by every edit. A [`SpanJob`] carries the one it was taken at.
+    generation: u64,
     sized: RefCell<Option<Sized>>,
 }
 
@@ -26,33 +29,48 @@ struct Sized {
     guesses: Rc<[Guess]>,
 }
 
-impl SourceText {
-    pub fn new(code: impl Into<Rc<str>>, cx: &App) -> Self {
-        let code: Rc<str> = code.into();
-        let language = crate::source::LANGUAGES[0];
-        let spans = crate::highlight::spans(cx, Some(language), &code)
-            .or_else(|| crate::source::is_markdown(language).then(|| crate::source::spans(&code)))
-            .map(Into::into);
-        let mut ranges = Vec::new();
-        let mut offset = 0usize;
-        for line in code.split('\n') {
-            ranges.push(offset..offset + line.len());
-            offset += line.len() + 1;
+/// Highlighting a [`SourceText`] in full. `Send`, so it can run off the thread
+/// that paints.
+pub struct SpanJob {
+    code: Arc<str>,
+    highlighter: Option<crate::Highlighter>,
+    generation: u64,
+}
+
+/// What a [`SpanJob`] found, for [`SourceText::set_spans`].
+pub struct Spans {
+    spans: Option<Vec<Span>>,
+    generation: u64,
+}
+
+impl SpanJob {
+    pub fn run(self) -> Spans {
+        Spans {
+            spans: highlight_source(self.highlighter, &self.code),
+            generation: self.generation,
         }
-        let hashes = ranges
-            .iter()
-            .map(|range| {
-                let mut hasher = DefaultHasher::new();
-                "source".hash(&mut hasher);
-                code[range.clone()].hash(&mut hasher);
-                hasher.finish()
-            })
-            .collect();
+    }
+}
+
+fn highlight_source(highlighter: Option<crate::Highlighter>, code: &str) -> Option<Vec<Span>> {
+    let language = crate::source::LANGUAGES[0];
+    highlighter
+        .and_then(|highlighter| highlighter(language, code))
+        .or_else(|| crate::source::is_markdown(language).then(|| crate::source::spans(code)))
+}
+
+impl SourceText {
+    pub fn new(code: impl Into<Arc<str>>, cx: &App) -> Self {
+        let code: Arc<str> = code.into();
+        let spans = highlight_source(crate::highlight::installed(cx), &code).map(Into::into);
+        let ranges = split_lines(&code, 0..code.len());
+        let hashes = ranges.iter().map(|range| hash_line(&code, range)).collect();
         Self {
             code,
             ranges: ranges.into(),
             hashes,
             spans,
+            generation: 0,
             sized: RefCell::new(None),
         }
     }
@@ -73,42 +91,168 @@ impl SourceText {
             .min(self.ranges.len() - 1)
     }
 
+    /// The highlight spans, in bytes and in order. Between an [`Self::edit`]
+    /// and the [`Self::set_spans`] that follows it, the spans from before the
+    /// edit, shifted past it, and none over the bytes it replaced.
+    pub fn spans(&self) -> Option<&[(Range<usize>, theme::HighlightKind)]> {
+        self.spans.as_deref()
+    }
+
+    /// Make the text `code`. The change is taken to be the one run of bytes
+    /// between the longest prefix and suffix the two texts share. `None` when
+    /// the text is unchanged.
+    pub fn edit(&mut self, code: &str, cx: &App) -> Option<SpanJob> {
+        let old = self.code.as_bytes();
+        let new = code.as_bytes();
+        let prefix = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+        if prefix == old.len() && prefix == new.len() {
+            return None;
+        }
+        let room = old.len().min(new.len()) - prefix;
+        let suffix = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take(room)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let old_end = old.len() - suffix;
+        let delta = (new.len() - suffix) as isize - old_end as isize;
+        let shift = |at: usize| at.wrapping_add_signed(delta);
+
+        let first = self.line_of(prefix);
+        let last = self.line_of(old_end);
+        let code: Arc<str> = code.into();
+        let lines = split_lines(
+            &code,
+            self.ranges[first].start..shift(self.ranges[last].end),
+        );
+        let hashes: Vec<u64> = lines.iter().map(|range| hash_line(&code, range)).collect();
+        let cut = first..last + 1;
+
+        if let Some(sized) = self.sized.get_mut() {
+            let (size, line, indent) = sized.at;
+            sized.keys = splice(
+                &sized.keys,
+                cut.clone(),
+                hashes.iter().map(|hash| key(*hash, size)),
+            );
+            sized.guesses = splice(
+                &sized.guesses,
+                cut.clone(),
+                lines.iter().map(|range| guess(range, line, indent)),
+            );
+            sized.gaps = vec![px(0.0); sized.keys.len()].into();
+        }
+        self.hashes = splice(&self.hashes, cut.clone(), hashes);
+        self.ranges = self.ranges[..first]
+            .iter()
+            .cloned()
+            .chain(lines)
+            .chain(
+                self.ranges[last + 1..]
+                    .iter()
+                    .map(|range| shift(range.start)..shift(range.end)),
+            )
+            .collect();
+        self.spans = self.spans.as_ref().map(|spans| {
+            let mut kept = Vec::with_capacity(spans.len());
+            for (range, kind) in spans.iter() {
+                if range.start < prefix {
+                    kept.push((range.start..range.end.min(prefix), *kind));
+                }
+                if range.end > old_end {
+                    kept.push((shift(range.start.max(old_end))..shift(range.end), *kind));
+                }
+            }
+            kept.into()
+        });
+        self.code = code;
+        self.generation += 1;
+        Some(SpanJob {
+            code: self.code.clone(),
+            highlighter: crate::highlight::installed(cx),
+            generation: self.generation,
+        })
+    }
+
+    /// Take what a [`SpanJob`] found. `false`, and nothing taken, when the text
+    /// has been edited since the job was made.
+    pub fn set_spans(&mut self, spans: Spans) -> bool {
+        if spans.generation != self.generation {
+            return false;
+        }
+        self.spans = spans.spans.map(Into::into);
+        true
+    }
+
     fn sized(&self, size: f32, line: Pixels, indent: Pixels) -> Sized {
-        let key = (size.to_bits(), line, indent);
+        let at = (size.to_bits(), line, indent);
         let mut held = self.sized.borrow_mut();
         if let Some(sized) = held.as_ref()
-            && sized.at == key
+            && sized.at == at
         {
             return sized.clone();
         }
         let sized = Sized {
-            at: key,
-            keys: self
-                .hashes
-                .iter()
-                .map(|hash| {
-                    let mut hasher = DefaultHasher::new();
-                    hash.hash(&mut hasher);
-                    size.to_bits().hash(&mut hasher);
-                    hasher.finish()
-                })
-                .collect(),
+            at,
+            keys: self.hashes.iter().map(|hash| key(*hash, at.0)).collect(),
             gaps: vec![px(0.0); self.ranges.len()].into(),
             guesses: self
                 .ranges
                 .iter()
-                .map(|range| Guess {
-                    chars: range.len(),
-                    line,
-                    rows: 0,
-                    extra: px(0.0),
-                    indent,
-                })
+                .map(|range| guess(range, line, indent))
                 .collect(),
         };
         *held = Some(sized.clone());
         sized
     }
+}
+
+/// The lines of `code` within `within`, which starts at a line's start and
+/// ends at a line's end.
+fn split_lines(code: &str, within: Range<usize>) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut at = within.start;
+    for line in code[within].split('\n') {
+        ranges.push(at..at + line.len());
+        at += line.len() + 1;
+    }
+    ranges
+}
+
+fn hash_line(code: &str, range: &Range<usize>) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    "source".hash(&mut hasher);
+    code[range.clone()].hash(&mut hasher);
+    hasher.finish()
+}
+
+fn key(hash: u64, size: u32) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    hash.hash(&mut hasher);
+    size.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn guess(range: &Range<usize>, line: Pixels, indent: Pixels) -> Guess {
+    Guess {
+        chars: range.len(),
+        line,
+        rows: 0,
+        extra: px(0.0),
+        indent,
+    }
+}
+
+/// `old` with `cut` replaced by `new`.
+fn splice<T: Clone>(old: &[T], cut: Range<usize>, new: impl IntoIterator<Item = T>) -> Rc<[T]> {
+    old[..cut.start]
+        .iter()
+        .cloned()
+        .chain(new)
+        .chain(old[cut.end..].iter().cloned())
+        .collect()
 }
 
 /// Paint a document's own markdown source: a fence's caret, selection and hit
