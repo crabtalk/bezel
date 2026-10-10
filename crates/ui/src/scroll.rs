@@ -3,9 +3,7 @@
 //! pane a wheel belongs to.
 //!
 //! [`pane`] is the container — an axis given at construction, the way
-//! SwiftUI's `ScrollView` takes one, because gpui's is a style field that
-//! defaults to unset and gets guessed at. Read its docs before reaching for
-//! `div().overflow_y_scroll()`; the guess is a real bug and not a small one.
+//! SwiftUI's `ScrollView` takes one.
 //!
 //! gpui scrolls that pane perfectly well and draws nothing while it does, so a
 //! bezel app has no way to show how far down it is. That is [`scrollbar`]: an
@@ -138,23 +136,7 @@ impl Axes {
 /// app's and only its scroll behaviour is decided here. The id is gpui's
 /// requirement, not ours: a scroll container has state to track.
 ///
-/// # Why this exists rather than `div().overflow_y_scroll()`
-///
-/// gpui makes scrollability a late-bound style field with no default, and then
-/// has to guess what to do when a gesture's axis is not one the container
-/// scrolls: it **remaps the delta onto whichever axis the container can
-/// scroll**. A sideways swipe over a vertical list scrolls it down; a downward
-/// swipe over a wide table pans it sideways. `restrict_scroll_to_axis` turns
-/// that off, but it is opt-in per element, so every pane that forgets it is
-/// wrong and nothing says so.
-///
-/// SwiftUI has no such case to guess at — `ScrollView(.vertical)` takes its
-/// axis at construction, so there is no container whose axis is unstated. This
-/// is that: ask for an axis, get a pane that answers only to it.
-///
-/// A horizontal pane also contains a sideways gesture ([`contain_sideways`]),
-/// because the pane it is nested in usually belongs to a consumer and is not
-/// ours to restrict.
+/// A horizontal pane also contains a sideways gesture ([`contain_sideways`]).
 ///
 /// `Axes::Both` inherits gpui's dominant-axis lock — a diagonal gesture moves
 /// one axis, not two. gpui exposes no builder for `allow_concurrent_scroll`.
@@ -212,8 +194,7 @@ pub fn scrolls<E: gpui::StatefulInteractiveElement>(el: E, axes: Axes) -> E {
         Axes::Vertical => el.overflow_y_scroll(),
         Axes::Horizontal => el.overflow_x_scroll(),
         Axes::Both => el.overflow_scroll(),
-    }
-    .restrict_scroll_to_axis();
+    };
     match axes.horizontal() {
         true => contain_sideways(el),
         false => el,
@@ -224,9 +205,8 @@ pub fn scrolls<E: gpui::StatefulInteractiveElement>(el: E, axes: Axes) -> E {
 ///
 /// The other half of [`pane`], and the half [`Axes::Vertical`] does not want:
 /// a vertical pane at its end should hand the wheel to the page behind it
-/// ([`claim_wheel`] is that chaining), but a sideways gesture reaching a
-/// vertical ancestor is never right — unless that ancestor is restricted too,
-/// it will remap the delta and scroll down.
+/// ([`claim_wheel`] is that chaining), but a sideways gesture bubbles on past
+/// a pane that moved and pans any ancestor that scrolls sideways too.
 ///
 /// Applied by [`pane`] for the axes that need it. Public because a consumer
 /// wrapping bezel's content in a scroller of its own has the same problem and

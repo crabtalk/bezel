@@ -214,7 +214,6 @@ impl Render for Diff {
                     .child(
                         theme.group_box().child(Self::header(&theme)).child(
                             scroll::pane("diff-rows", Axes::Horizontal)
-                                .restrict_scroll_to_axis()
                                 .py(px(4.0))
                                 .flex()
                                 .flex_col()
