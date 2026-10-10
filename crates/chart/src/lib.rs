@@ -3,7 +3,12 @@
 //! Mark, channel and field type names are Vega-Lite's.
 
 pub mod data;
+pub mod decimate;
 pub mod model;
+pub mod plan;
+pub mod scale;
+pub mod time;
 
 pub use data::{Column, Data, Text};
 pub use model::{Channel, Chart, Encoding, Kind, Mark};
+pub use plan::{Plan, plan};
