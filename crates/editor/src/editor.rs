@@ -81,6 +81,9 @@ pub enum EditorEvent {
     Changed,
     /// A click landed on an anchor's range.
     AnchorActivated(AnchorId),
+    /// The pointer came over an anchor's painted text, or left it: `None`
+    /// over none, and when the pointer leaves the editor.
+    AnchorHovered(Option<AnchorId>),
     /// The editor switched between the document and its source, which a host
     /// lighting its own toggle has no other way to hear about — the switch can
     /// come from an undo as well as from the button.
@@ -459,6 +462,9 @@ pub struct Editor {
     /// Whether the pointer is over painted text, which is the only place the
     /// editor claims an I-beam.
     over_text: bool,
+    /// The anchor whose text the pointer is over — see
+    /// [`EditorEvent::AnchorHovered`].
+    over_anchor: Option<AnchorId>,
     /// The host's scroll box, when it gave one, and the reveal the caret still
     /// owes it.
     scroll: Option<gpui::ScrollHandle>,
@@ -532,6 +538,7 @@ impl Editor {
             width: gpui::Pixels::ZERO,
             dragging: None,
             over_text: false,
+            over_anchor: None,
             scroll: None,
             reveal: None,
             drag_at: None,

@@ -423,3 +423,26 @@ fn washes_leave_the_anchors_alone(cx: &mut TestAppContext) {
         );
     });
 }
+
+#[gpui::test]
+fn the_pointer_over_anchored_text_names_the_anchor(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    anchor(&editor, &mut cx, ONE, at(0, 0));
+    let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    cx.update(|_, cx| {
+        let heard = heard.clone();
+        cx.subscribe(&editor, move |_, event: &editor::EditorEvent, _| {
+            if let editor::EditorEvent::AnchorHovered(over) = event {
+                heard.borrow_mut().push(*over);
+            }
+        })
+        .detach();
+    });
+    let bounds = cx
+        .update(|_, cx| editor.read(cx).anchor_bounds(ID))
+        .expect("the anchor painted somewhere");
+    let on = bounds.origin + gpui::point(px(2.0), bounds.size.height / 2.0);
+    cx.simulate_mouse_move(on, None, gpui::Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(heard.borrow().as_slice(), &[Some(ID)]);
+}

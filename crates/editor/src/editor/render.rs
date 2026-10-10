@@ -144,6 +144,9 @@ impl Render for Editor {
                 {
                     cx.notify();
                 }
+                if !*hovered && this.over_anchor.take().is_some() {
+                    cx.emit(EditorEvent::AnchorHovered(None));
+                }
             }))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                 // Ahead of every drag branch below, because the pointer's shape
@@ -158,6 +161,14 @@ impl Render for Editor {
                 // block wears the handle.
                 if this.in_drag() {
                     return;
+                }
+                let over = match this.over_text {
+                    true => this.anchor_at(event.position),
+                    false => None,
+                };
+                if over != this.over_anchor {
+                    this.over_anchor = over;
+                    cx.emit(EditorEvent::AnchorHovered(over));
                 }
                 let hovered = this.layouts.block_at(event.position);
                 let cell = this.layouts.cell_at(event.position).or_else(|| {
