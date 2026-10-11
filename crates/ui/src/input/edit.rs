@@ -262,7 +262,20 @@ impl TextField {
             [&Cut, &Copy, &Paste, &SelectAll],
             window,
         );
-        self.menu.open(event.position, items, window, cx);
+        self.menu.open(
+            (),
+            crate::context_menu::Place::At(event.position),
+            items,
+            |this, path, window, cx| match crate::menu::Edit::at(path) {
+                Some(crate::menu::Edit::Cut) => this.cut(&Cut, window, cx),
+                Some(crate::menu::Edit::Copy) => this.copy(&Copy, window, cx),
+                Some(crate::menu::Edit::Paste) => this.paste(&Paste, window, cx),
+                Some(crate::menu::Edit::SelectAll) => this.select_all(&SelectAll, window, cx),
+                None => {}
+            },
+            window,
+            cx,
+        );
         window.prevent_default();
         cx.stop_propagation();
     }
@@ -273,19 +286,8 @@ impl TextField {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
-        self.menu.render(
-            "text-field-menu",
-            |this| &mut this.menu,
-            |this, path, window, cx| match crate::menu::Edit::at(path) {
-                Some(crate::menu::Edit::Cut) => this.cut(&Cut, window, cx),
-                Some(crate::menu::Edit::Copy) => this.copy(&Copy, window, cx),
-                Some(crate::menu::Edit::Paste) => this.paste(&Paste, window, cx),
-                Some(crate::menu::Edit::SelectAll) => this.select_all(&SelectAll, window, cx),
-                None => {}
-            },
-            window,
-            cx,
-        )
+        self.menu
+            .render("text-field-menu", |this| &mut this.menu, window, cx)
     }
 
     /// The `unit` a press at `position`, which lands on `offset`, takes: the

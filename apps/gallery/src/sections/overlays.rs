@@ -300,7 +300,56 @@ impl Gallery {
                 .into_any_element(),
 
             "context-menu" => section
-                .child(hint(&theme, "Right-click anywhere in this window."))
+                .child(hint(
+                    &theme,
+                    "Right-click anywhere in this window, or open the ··· below. The arrows walk the rows and the submenu, enter chooses, escape backs out.",
+                ))
+                .child(
+                    row().child(
+                        ContextMenu::trigger(
+                            div()
+                                .id("context-menu-button")
+                                .relative()
+                                .on_click(cx.listener(|view, _, window, cx| {
+                                    ContextMenu::toggle(
+                                        view,
+                                        |view| &mut view.context_menu,
+                                        Demo::Button,
+                                        Place::Below,
+                                        |_, _, _| {
+                                            let items = vec![
+                                                Item::action("Rename"),
+                                                Item::submenu(
+                                                    "Move to",
+                                                    ["Inbox", "Archive"].map(Item::action).to_vec(),
+                                                ),
+                                                Item::Separator,
+                                                Item::action("Delete"),
+                                            ];
+                                            (items, |_: &mut Self, _: &[usize], _: &mut Window, _: &mut Context<Self>| {})
+                                        },
+                                        window,
+                                        cx,
+                                    );
+                                }))
+                                .child(theme.icon_button(
+                                    icons::layout::Ellipsis,
+                                    ButtonStyle::Ghost,
+                                    Some(Fade::new(view, "context-menu-button")),
+                                )),
+                            |view| &mut view.context_menu,
+                            Demo::Button,
+                            cx,
+                        )
+                        .children(self.context_menu.render_for(
+                            &Demo::Button,
+                            "context-menu-button-menu",
+                            |view| &mut view.context_menu,
+                            window,
+                            cx,
+                        )),
+                    ),
+                )
                 .child(
                     div()
                         .h(px(120.0))

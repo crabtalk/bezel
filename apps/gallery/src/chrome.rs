@@ -401,9 +401,16 @@ impl Render for Gallery {
             .on_action(cx.listener(Self::close_overlay))
             .on_mouse_down(
                 gpui::MouseButton::Right,
-                cx.listener(|view, event: &gpui::MouseDownEvent, _, cx| {
-                    view.context_menu.open(event.position);
-                    cx.notify();
+                cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
+                    let items = ["Cut", "Copy", "Paste"].map(Item::action).to_vec();
+                    view.context_menu.open(
+                        Demo::Pointer,
+                        Place::At(event.position),
+                        items,
+                        |_, _, _, _| {},
+                        window,
+                        cx,
+                    );
                 }),
             )
             .size_full()
@@ -464,43 +471,13 @@ impl Render for Gallery {
                     ))
                 },
             )
-            .when_some(
-                self.context_menu
-                    .get()
-                    .copied()
-                    .map(|position| (position, self.context_menu.closing_since())),
-                |root, (position, closing)| {
-                    root.child(popover::menu_at(
-                        "gallery-context",
-                        position,
-                        popover::popover_card(&theme)
-                            .w(px(180.0))
-                            .children(["Cut", "Copy", "Paste"].iter().enumerate().map(
-                                |(index, label)| {
-                                    popover::menu_row(
-                                        &theme,
-                                        false,
-                                        Some(Fade::new(view, format!("ctx-{index}"))),
-                                    )
-                                    .id(SharedString::from(format!("ctx-item-{index}")))
-                                    .on_click(
-                                        cx.listener(|view, _, _, cx| view.close_context_menu(cx)),
-                                    )
-                                    .child(*label)
-                                    .into_any_element()
-                                },
-                            ))
-                            // Dismissal is the caller's, and this is that
-                            // caller: press anywhere off the card and the menu
-                            // goes away.
-                            .on_mouse_down_out(
-                                cx.listener(|view, _, _, cx| view.close_context_menu(cx)),
-                            )
-                            .into_any_element(),
-                        closing,
-                    ))
-                },
-            )
+            .children(self.context_menu.render_for(
+                &Demo::Pointer,
+                "gallery-context",
+                |view| &mut view.context_menu,
+                window,
+                cx,
+            ))
             .when(self.dialog.get().is_some(), |root| {
                 root.child(popover::modal(
                     "gallery-dialog",
