@@ -153,18 +153,20 @@ impl EditorDemo {
             body: format!("Note {}", self.threads.len() + 1).into(),
         });
         self.open = Some(id);
-        self.editor.update(cx, |editor, cx| {
-            let mut anchors = editor.anchors().to_vec();
+        let document = self.editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            let mut anchors = document.anchors().to_vec();
             anchors.push(Anchor::new(id, selection));
-            editor.set_anchors(anchors, cx);
+            document.set_anchors(anchors, cx);
         });
     }
 
     /// Repaint the anchors so the open thread is the lit one.
     fn light(&self, cx: &mut Context<Self>) {
         let open = self.open;
-        self.editor.update(cx, |editor, cx| {
-            let anchors = editor
+        let document = self.editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            let anchors = document
                 .anchors()
                 .iter()
                 .map(|anchor| Anchor {
@@ -176,7 +178,7 @@ impl EditorDemo {
                     ..anchor.clone()
                 })
                 .collect();
-            editor.set_anchors(anchors, cx);
+            document.set_anchors(anchors, cx);
         });
     }
 

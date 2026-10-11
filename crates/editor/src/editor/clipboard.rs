@@ -5,7 +5,7 @@ use super::*;
 impl Editor {
     pub(super) fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
         self.selection = Selection::all(&self.doc);
-        self.history.interrupt();
+        self.run.interrupt();
         self.caret_moved();
         cx.notify();
     }

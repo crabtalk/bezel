@@ -58,17 +58,18 @@ fn anchor(
 ) {
     let (block, from, to) = range;
     cx.update(|_, cx| {
-        editor.update(cx, |editor, cx| {
-            editor.set_anchors(
+        let document = editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            document.set_anchors(
                 vec![Anchor::new(
                     ID,
                     Selection::new(at(block, from), at(block, to)),
                 )],
                 cx,
-            );
-            editor.select(Selection::at(caret), cx);
-        })
+            )
+        });
     });
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.select(Selection::at(caret), cx)));
 }
 
 /// The anchored range, as `(block, start, end)`.
@@ -344,8 +345,9 @@ fn an_anchor_end_in_the_markup_comes_back_detached(cx: &mut TestAppContext) {
     // Between `#` and its space: no block owns that position.
     let code = |offset| Cursor::new(0, Part::Code, offset);
     cx.update(|_, cx| {
-        editor.update(cx, |editor, cx| {
-            editor.set_anchors(vec![Anchor::new(ID, Selection::new(code(1), code(7)))], cx)
+        let document = editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            document.set_anchors(vec![Anchor::new(ID, Selection::new(code(1), code(7)))], cx)
         })
     });
     toggle_source(&editor, &mut cx);
@@ -360,8 +362,9 @@ fn anchors_cross_to_and_from_the_markdown(cx: &mut TestAppContext) {
     let (editor, mut cx) = open(cx);
     let bravo = SOURCE.find("bravo").unwrap();
     cx.update(|_, cx| {
-        editor.update(cx, |editor, cx| {
-            editor.set_source_anchors(
+        let document = editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            document.set_source_anchors(
                 SOURCE,
                 vec![(ID, bravo..bravo + 5, markdown::Annotation::Open)],
                 cx,
@@ -369,7 +372,8 @@ fn anchors_cross_to_and_from_the_markdown(cx: &mut TestAppContext) {
         })
     });
     assert_eq!(anchored(&editor, &mut cx), (1, 0, 5));
-    let (source, ranges) = cx.update(|_, cx| editor.read(cx).source_with_anchors());
+    let (source, ranges) =
+        cx.update(|_, cx| editor.read(cx).document().read(cx).source_with_anchors());
     assert_eq!(source, SOURCE);
     assert_eq!(ranges, vec![(ID, Some(bravo..bravo + 5))]);
 }
@@ -382,8 +386,9 @@ fn anchor_tops_follow_the_document_down(cx: &mut TestAppContext) {
         SOURCE.find("charlie").unwrap(),
     );
     cx.update(|_, cx| {
-        editor.update(cx, |editor, cx| {
-            editor.set_source_anchors(
+        let document = editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            document.set_source_anchors(
                 SOURCE,
                 vec![
                     (

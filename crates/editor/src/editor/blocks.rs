@@ -50,19 +50,25 @@ impl Editor {
     }
 
     pub(super) fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(step) = self
-            .history
-            .undo(self.mode, &self.doc, self.selection, &self.anchors)
-        {
+        let (mode, selection) = (self.mode, self.selection);
+        let step = self.document.update(cx, |document, _| {
+            document
+                .history
+                .undo(mode, &self.doc, selection, &self.anchors)
+        });
+        if let Some(step) = step {
             self.restore(step, cx);
         }
     }
 
     pub(super) fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(step) = self
-            .history
-            .redo(self.mode, &self.doc, self.selection, &self.anchors)
-        {
+        let (mode, selection) = (self.mode, self.selection);
+        let step = self.document.update(cx, |document, _| {
+            document
+                .history
+                .redo(mode, &self.doc, selection, &self.anchors)
+        });
+        if let Some(step) = step {
             self.restore(step, cx);
         }
     }
@@ -75,10 +81,13 @@ impl Editor {
     pub(super) fn restore(&mut self, step: crate::history::Step, cx: &mut Context<Self>) {
         self.doc.set(step.doc);
         self.selection = step.selection.clamp(&self.doc);
+        self.run.interrupt();
         self.caret_moved();
         self.anchors = step.anchors;
-        if step.mode != self.mode {
-            self.mode = step.mode;
+        let switched = step.mode != self.mode;
+        self.mode = step.mode;
+        self.publish(Change::Replaced, cx);
+        if switched {
             self.dismiss_menus();
             cx.emit(EditorEvent::ModeChanged(step.mode));
         }

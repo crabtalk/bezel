@@ -58,9 +58,8 @@ fn open_in(
         let scroll = scroll.clone();
         move |_, cx| Page {
             editor: cx.new(|cx| {
-                Editor::new(&source(), cx)
-                    .with_mode(mode)
-                    .with_scroll(scroll.clone())
+                let document = cx.new(|cx| editor::Document::new(&source(), cx).with_mode(mode));
+                Editor::for_document(document, cx).with_scroll(scroll.clone())
             }),
             scroll,
         }

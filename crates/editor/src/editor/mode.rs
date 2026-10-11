@@ -7,14 +7,7 @@ impl Editor {
     /// survives being read back. In [`Mode::Source`] it is the text being
     /// edited, exactly as it stands.
     pub fn source(&self) -> String {
-        match self.mode {
-            Mode::Blocks => {
-                let mut doc = self.doc.clone();
-                doc.normalize_with(&self.marks);
-                markdown::serialize_with(&doc, &self.marks)
-            }
-            Mode::Source => self.source_text().to_string(),
-        }
+        source(&self.doc, self.mode, &self.marks)
     }
 
     /// Which form the document is being edited in.
@@ -62,57 +55,29 @@ impl Editor {
         if mode == self.mode {
             return;
         }
-        self.history.record(
-            EditKind::Structure,
-            self.mode,
-            &self.doc,
-            self.selection,
-            &self.anchors,
-        );
+        let (was, selection) = (self.mode, self.selection);
+        self.document.update(cx, |document, _| {
+            document
+                .history
+                .record(false, was, &self.doc, selection, &self.anchors)
+        });
         self.dismiss_menus();
         self.switch(mode);
-        self.history.landed(EditKind::Structure, self.selection);
+        self.run.landed(EditKind::Structure, self.selection);
         self.reveal = Some(Reveal::Nearest);
         self.caret_moved();
+        self.publish(Change::Replaced, cx);
         cx.emit(EditorEvent::ModeChanged(mode));
         cx.emit(EditorEvent::Changed);
         cx.notify();
     }
 
     /// Turn the document into the other form, caret and all. The half of
-    /// [`Self::set_mode`] that [`Self::with_mode`] needs without a window.
+    /// [`Self::set_mode`] that needs no window.
     pub(super) fn switch(&mut self, mode: Mode) {
-        match mode {
-            Mode::Source => {
-                let ends = self.anchor_ends();
-                let mut at = vec![self.cursor()];
-                at.extend(ends.iter().flat_map(|(start, end)| [*start, *end]));
-                let (source, offsets) = markdown::serialize_at_many(&self.doc, &at, &self.marks);
-                self.doc.set(source_doc(&source));
-                let place =
-                    |ix: usize| offsets[ix].map(|offset| Cursor::new(0, Part::Code, offset));
-                let caret = place(0).unwrap_or(Cursor::new(0, Part::Code, source.len()));
-                self.selection = Selection::at(caret);
-                self.place_anchors(|ix| place(ix + 1));
-            }
-            Mode::Blocks => {
-                let ends = self.anchor_ends();
-                let mut offsets = vec![self.cursor().offset];
-                offsets.extend(
-                    ends.iter()
-                        .flat_map(|(start, end)| [start.offset, end.offset]),
-                );
-                let (mut doc, at) =
-                    markdown::parse_at_many(self.source_text(), &offsets, &self.marks);
-                ensure_block(&mut doc);
-                self.doc.set(doc);
-                let place = |ix: usize| at[ix].map(|at: Cursor| at.clamp(&self.doc));
-                let caret = place(0).unwrap_or_else(|| Cursor::default().clamp(&self.doc));
-                self.selection = Selection::at(caret);
-                let ends: Vec<_> = (1..at.len()).map(place).collect();
-                self.place_anchors(|ix| ends[ix]);
-            }
-        }
+        let caret = self.cursor();
+        let caret = switch(&mut self.doc, &mut self.anchors, &self.marks, mode, caret);
+        self.selection = Selection::at(caret);
         self.mode = mode;
     }
 
@@ -218,9 +183,11 @@ impl Editor {
     /// nothing above it leaves a paragraph — a block the source view does not
     /// paint and the caret would be stranded in. The text survives either way,
     /// so this is a change of container and never of content.
-    pub(super) fn ensure_source(&mut self) {
+    ///
+    /// Whether it had to.
+    pub(super) fn ensure_source(&mut self) -> bool {
         if self.doc.blocks.len() == 1 && matches!(self.doc.blocks[0].kind, BlockKind::Code { .. }) {
-            return;
+            return false;
         }
         let source = self
             .doc
@@ -236,26 +203,7 @@ impl Editor {
         for anchor in &mut self.anchors {
             anchor.range = anchor.range.clamp(&self.doc);
         }
-    }
-
-    /// Each anchor's ends, in document order.
-    fn anchor_ends(&self) -> Vec<(Cursor, Cursor)> {
-        self.anchors
-            .iter()
-            .map(|anchor| anchor.range.ordered())
-            .collect()
-    }
-
-    /// Put each anchor at the ends `place` gives for it, indexed as
-    /// [`Self::anchor_ends`] flattened: start, end, start, end. An anchor with
-    /// an end `place` cannot give collapses onto the other, detached.
-    fn place_anchors(&mut self, place: impl Fn(usize) -> Option<Cursor>) {
-        for (ix, anchor) in self.anchors.iter_mut().enumerate() {
-            anchor.range = match (place(2 * ix), place(2 * ix + 1)) {
-                (Some(start), Some(end)) => Selection::new(start, end),
-                (surviving, other) => Selection::at(surviving.or(other).unwrap_or_default()),
-            };
-        }
+        true
     }
 
     /// Shut everything floating. A switch of mode is a new document as far as
@@ -272,9 +220,75 @@ impl Editor {
 }
 
 /// See [`Editor::source_text`].
-fn source_of(doc: &Doc) -> &str {
+pub(crate) fn source_of(doc: &Doc) -> &str {
     doc.blocks
         .first()
         .and_then(|block| block.text_at(Part::Code))
         .map_or("", |text| text.text.as_str())
+}
+
+/// `doc` as markdown — see [`Editor::source`].
+pub(crate) fn source(doc: &Doc, mode: Mode, marks: &markdown::Marks) -> String {
+    match mode {
+        Mode::Blocks => {
+            let mut doc = doc.clone();
+            doc.normalize_with(marks);
+            markdown::serialize_with(&doc, marks)
+        }
+        Mode::Source => source_of(doc).to_string(),
+    }
+}
+
+/// Turn `doc` into `mode`, carrying `anchors` into the coordinates of the
+/// form switched to, and hand back where `caret` lands. An anchor with an end
+/// that cannot be placed there comes out detached.
+pub(crate) fn switch(
+    doc: &mut Tracked,
+    anchors: &mut [Anchor],
+    marks: &markdown::Marks,
+    mode: Mode,
+    caret: Cursor,
+) -> Cursor {
+    let ends: Vec<(Cursor, Cursor)> = anchors
+        .iter()
+        .map(|anchor| anchor.range.ordered())
+        .collect();
+    match mode {
+        Mode::Source => {
+            let mut at = vec![caret];
+            at.extend(ends.iter().flat_map(|(start, end)| [*start, *end]));
+            let (source, offsets) = markdown::serialize_at_many(doc, &at, marks);
+            doc.set(source_doc(&source));
+            let place = |ix: usize| offsets[ix].map(|offset| Cursor::new(0, Part::Code, offset));
+            place_anchors(anchors, |ix| place(ix + 1));
+            place(0).unwrap_or(Cursor::new(0, Part::Code, source.len()))
+        }
+        Mode::Blocks => {
+            let mut offsets = vec![caret.offset];
+            offsets.extend(
+                ends.iter()
+                    .flat_map(|(start, end)| [start.offset, end.offset]),
+            );
+            let (mut parsed, at) = markdown::parse_at_many(source_of(doc), &offsets, marks);
+            ensure_block(&mut parsed);
+            doc.set(parsed);
+            let place = |ix: usize| at[ix].map(|at: Cursor| at.clamp(doc));
+            let caret = place(0).unwrap_or_else(|| Cursor::default().clamp(doc));
+            let ends: Vec<_> = (1..at.len()).map(place).collect();
+            place_anchors(anchors, |ix| ends[ix]);
+            caret
+        }
+    }
+}
+
+/// Put each anchor at the ends `place` gives for it, indexed start, end,
+/// start, end. An anchor with an end `place` cannot give collapses onto the
+/// other, detached.
+fn place_anchors(anchors: &mut [Anchor], place: impl Fn(usize) -> Option<Cursor>) {
+    for (ix, anchor) in anchors.iter_mut().enumerate() {
+        anchor.range = match (place(2 * ix), place(2 * ix + 1)) {
+            (Some(start), Some(end)) => Selection::new(start, end),
+            (surviving, other) => Selection::at(surviving.or(other).unwrap_or_default()),
+        };
+    }
 }

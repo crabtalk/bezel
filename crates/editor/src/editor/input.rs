@@ -6,7 +6,10 @@ use gpui::{Context, EntityInputHandler, UTF16Selection, Window};
 use markdown::{Affinity, Cursor, Selection};
 use ui::input::{composition_selection, offset_to_utf16, range_from_utf16, range_to_utf16};
 
-use crate::editor::{Editor, Reveal};
+use crate::{
+    document::Change,
+    editor::{Editor, Reveal},
+};
 
 /// Typed text and IME arrive here. Offsets are within the caret's block, which
 /// is the unit the platform is told about — a block is a paragraph's worth of
@@ -144,6 +147,7 @@ impl EntityInputHandler for Editor {
         );
         self.reveal = Some(Reveal::Nearest);
         self.caret_moved();
+        self.publish(Change::Composing, cx);
         cx.notify();
     }
 

@@ -347,7 +347,7 @@ impl Editor {
             Selection::at(Cursor::new(at.block, Part::Body, at.offset - len).clamp(&self.doc));
         // The transformation is its own step: undo after typing `## Title`
         // should give back the heading, not the paragraph before the hashes.
-        self.history.interrupt();
+        self.run.interrupt();
         Some(Self::taken(at, 0..len))
     }
 
@@ -375,7 +375,7 @@ impl Editor {
         self.selection = Selection::at(
             Cursor::new(at.block, Part::Body, at.offset.saturating_sub(len)).clamp(&self.doc),
         );
-        self.history.interrupt();
+        self.run.interrupt();
         Some(Self::taken(at, 0..len))
     }
 

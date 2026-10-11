@@ -14,6 +14,7 @@ pub use app::AppExt;
 
 mod anchor;
 mod block_menu;
+mod document;
 mod editor;
 mod handles;
 mod history;
@@ -26,6 +27,7 @@ mod text_size;
 
 pub use anchor::{Anchor, AnchorId, SourceRanges};
 pub use block_menu::defaults as block_menu_defaults;
+pub use document::{Document, DocumentEvent};
 #[doc(hidden)]
 pub use editor::menu::{BLOCK_HANDLE, BLOCK_MENU, SLASH_MENU};
 pub use editor::{
@@ -34,7 +36,7 @@ pub use editor::{
     init, keys, quotes, turns,
 };
 pub use handles::Handles;
-pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Step};
+pub use history::{DEFAULT_UNDO_LIMIT, EditKind, History, Run, Step};
 pub use layout::Layout;
 pub use mention::{Mention, MentionSource};
 pub use paste::{PasteContent, PasteContext, PasteHandler};
