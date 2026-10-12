@@ -286,12 +286,7 @@ impl Brand {
 
 /// Whichever of the palette's two extremes the plate can actually hold.
 fn label_on(plate: Hsla, theme: &Theme) -> Hsla {
-    let (a, b) = (theme.solid, theme.on_solid);
-    if color::contrast_ratio(plate, a) >= color::contrast_ratio(plate, b) {
-        a
-    } else {
-        b
-    }
+    color::legible_on(plate, theme.solid, theme.on_solid)
 }
 
 /// Read the installed brand (the default before one is set).

@@ -12,6 +12,9 @@ pub struct Flat {
     pub runs: Vec<TextRun>,
     pub links: Vec<(Range<usize>, String)>,
     pub code: Vec<Range<usize>>,
+    /// Each run of a [`crate::MarkPaint::background`], painted under the
+    /// selection.
+    pub washes: Vec<(Range<usize>, Hsla)>,
     pub mentions: Vec<Mention>,
     pub shown: Shown,
 }
@@ -81,6 +84,7 @@ pub fn flatten_with(
     let mut runs = Vec::new();
     let mut links: Vec<(Range<usize>, String)> = Vec::new();
     let mut code: Vec<Range<usize>> = Vec::new();
+    let mut washes: Vec<(Range<usize>, Hsla)> = Vec::new();
     let mut mentions: Vec<Mention> = Vec::new();
     let mut map: Vec<(Range<usize>, Range<usize>)> = Vec::new();
 
@@ -203,6 +207,12 @@ pub fn flatten_with(
                 _ => code.push(from..to),
             }
         }
+        if let Some(background) = custom.background {
+            match washes.last_mut() {
+                Some((range, last)) if range.end == from && *last == background => range.end = to,
+                _ => washes.push((from..to, background)),
+            }
+        }
         if let Some(url) = &link {
             match links.last_mut() {
                 Some((range, last)) if range.end == from && last == url => range.end = to,
@@ -220,7 +230,7 @@ pub fn flatten_with(
                 (true, None) => theme.code_text,
                 (false, None) => theme.text,
             },
-            background_color: custom.background,
+            background_color: None,
             underline: (link.is_some() || custom.underline).then_some(underline),
             strikethrough: strike.then_some(StrikethroughStyle {
                 thickness: px(1.0),
@@ -234,6 +244,7 @@ pub fn flatten_with(
         runs,
         links,
         code,
+        washes,
         mentions,
         shown: Shown::new(map),
     }
@@ -306,7 +317,7 @@ pub(super) fn painted_text(
         styled.into_any_element()
     } else {
         // A mention opens its card on hover, and so does a plain link the
-        // app owns. A plain link to the web opens none.
+        // app owns. Any other link shows where it goes, as written.
         let hovered: Vec<(Range<usize>, String, bool)> = flat
             .links
             .iter()
@@ -324,11 +335,14 @@ pub(super) fn painted_text(
                     crate::link::follow(url, base.as_deref(), jump.as_ref(), window, cx);
                 }
             })
-            .tooltip(move |at, _window, cx| {
+            .tooltip(move |at, window, cx| {
                 let (_, url, mention) = hovered.iter().find(|(range, _, _)| range.contains(&at))?;
                 let owned =
                     || crate::preview::of(cx, url).is_some_and(|preview| preview.glyph.is_some());
-                (*mention || owned()).then(|| MentionCard::view(url, cx))
+                Some(match *mention || owned() {
+                    true => MentionCard::view(url, cx),
+                    false => ui::tooltip::Tooltip::text(url.clone(), window, cx),
+                })
             })
             .into_any_element()
     };
@@ -338,6 +352,7 @@ pub(super) fn painted_text(
     // never part of layout.
     let wash = theme.code_wash;
     let code_ranges = flat.code;
+    let washes = flat.washes;
     let (icon_color, icon_wash) = (theme.text_muted, theme.element_hover);
     let caret_color = theme.caret;
     let selection_color = theme.selection;
@@ -398,8 +413,21 @@ pub(super) fn painted_text(
             if let Some(layouts) = &layouts {
                 layouts.record(ix, part, span.clone(), layout.clone(), shown.clone());
             }
-            // Below the selection, so dragging across a comment still reads as
-            // selected rather than as a third colour nobody chose.
+            // Below the selection, so dragging across a comment or a mark
+            // still reads as selected rather than as a third colour nobody
+            // chose.
+            for (range, wash) in &washes {
+                for rect in range_rects(&layout, range, 0.0, 0.0) {
+                    window.paint_quad(quad(
+                        rect,
+                        px(0.0),
+                        *wash,
+                        px(0.0),
+                        gpui::transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
+            }
             for (range, wash) in &annotated {
                 for rect in range_rects(&layout, range, 0.0, 0.0) {
                     window.paint_quad(quad(

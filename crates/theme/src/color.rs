@@ -216,6 +216,16 @@ pub fn contrast_ratio(a: Hsla, b: Hsla) -> f32 {
     (hi + 0.05) / (lo + 0.05)
 }
 
+/// Whichever of `a` and `b` has the higher contrast ratio against `plate`,
+/// `a` on a tie.
+pub fn legible_on(plate: Hsla, a: Hsla, b: Hsla) -> Hsla {
+    if contrast_ratio(plate, a) >= contrast_ratio(plate, b) {
+        a
+    } else {
+        b
+    }
+}
+
 /// Composite `fg` (which may be translucent) over an opaque `bg`, returning the
 /// opaque result — the color the eye actually receives.
 pub fn flatten(fg: Hsla, bg: Hsla) -> Hsla {

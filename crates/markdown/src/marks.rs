@@ -115,11 +115,11 @@ pub(crate) fn set_marks(cx: &mut App, marks: Marks) {
     cx.set_global(Installed(marks));
 }
 
-/// How a custom mark paints. Everything a [`gpui::TextRun`] can carry, and
-/// nothing a layout would have to move for.
+/// How a custom mark paints: nothing a layout would have to move for.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct MarkPaint {
     pub color: Option<Hsla>,
+    /// Painted under the text and under the selection.
     pub background: Option<Hsla>,
     pub weight: Option<FontWeight>,
     pub italic: bool,

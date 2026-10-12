@@ -466,7 +466,10 @@ impl Element for TextFieldElement {
         let scrolled = field.scroll;
         let caret_shape = cx.caret_shape();
         let caret_height = cx.caret_height();
-        let follow_caret = field.follow_caret || caret_shape != field.last_caret_shape;
+        // A single line out of focus shows its start, wherever its caret is.
+        let at_start = !shape.is_multiline() && !field.focus_handle.contains_focused(window, cx);
+        let follow_caret =
+            !at_start && (field.follow_caret || caret_shape != field.last_caret_shape);
         let style = window.text_style();
 
         let text = chipped.text.clone();
@@ -585,6 +588,9 @@ impl Element for TextFieldElement {
             }
             scroll.x = scroll.x.clamp(px(0.), max.x);
             scroll.y = scroll.y.clamp(px(0.), max.y);
+        }
+        if at_start {
+            scroll.x = px(0.);
         }
         self.field.update(cx, |field, _| {
             field.scroll = scroll;
@@ -714,7 +720,12 @@ impl Element for TextFieldElement {
         });
         let lines = std::mem::take(&mut prepaint.lines);
         let matches = std::mem::take(&mut prepaint.matches);
-        let selection = std::mem::take(&mut prepaint.selection);
+        // Shown while focus is in the field or its menu, kept for when it
+        // comes back.
+        let selection = match focus_handle.contains_focused(window, cx) {
+            true => std::mem::take(&mut prepaint.selection),
+            false => Vec::new(),
+        };
         let cursor = prepaint.cursor.take();
         let origin = prepaint.origin;
 
