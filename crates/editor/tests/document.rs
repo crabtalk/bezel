@@ -101,3 +101,26 @@ fn a_switch_of_form_reaches_every_editor(cx: &mut TestAppContext) {
         "# Title\n\nbody"
     );
 }
+
+#[gpui::test]
+fn an_edit_and_a_switch_leave_the_other_blocks_bytes(cx: &mut TestAppContext) {
+    let (left, right, mut cx) = open("*  first\n\nSetext\n======\n\nlast\n", cx);
+    cx.update(|_, cx| {
+        left.update(cx, |editor, cx| {
+            editor.select(Selection::at(Cursor::new(2, Part::Body, 4)), cx)
+        })
+    });
+    cx.simulate_input("!");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| right.read(cx).source()),
+        "*  first\n\nSetext\n======\n\nlast!\n"
+    );
+
+    cx.update(|_, cx| left.update(cx, |editor, cx| editor.set_mode(Mode::Source, cx)));
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| right.read(cx).source()),
+        "*  first\n\nSetext\n======\n\nlast!\n"
+    );
+}

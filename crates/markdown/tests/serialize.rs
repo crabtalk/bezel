@@ -1,6 +1,7 @@
+use markdown::parse::parse;
 use markdown::*;
 
-use markdown::parse::parse;
+mod common;
 
 /// Markdown already in the form this serializer emits. These must survive
 /// byte for byte — anything less means opening a note and saving it without
@@ -245,89 +246,13 @@ fn an_empty_document_serializes_to_nothing() {
     assert_eq!(parse(""), Doc::default());
 }
 
-/// Line fragments to shuffle into documents no one would think to write.
-/// The point of the generative test is exactly the combinations a
-/// hand-written corpus misses, so the awkward ones earn their place here.
-const FRAGMENTS: &[&str] = &[
-    "# h",
-    "###### deep",
-    "text",
-    "- a",
-    "- b",
-    "1. a",
-    "2. b",
-    "9) paren",
-    "> q",
-    "```",
-    "```rust",
-    "    indented",
-    "| a | b |",
-    "| --- | ---: |",
-    "| 1 | 2 |",
-    "---",
-    "***",
-    "",
-    "    - nested",
-    "        deep cont",
-    "- [ ] t",
-    "- [x] d",
-    "**bold** tail",
-    "_it_ tail",
-    "`code` tail",
-    "[l](u) tail",
-    "![](i)",
-    "![alt](i)",
-    "[l](<a b>)",
-    "![](<a b.png>)",
-    "[l](a(b)c)",
-    "a*b",
-    "a_b_c",
-    "#123",
-    "1 < 2 & 3",
-    "AT&T",
-    "\\# escaped",
-    "~~s~~",
-    "   ",
-    "> - x",
-    "- > x",
-    ">     - y",
-    "> 1. one",
-    "> ```",
-    "> # h",
-    "    > q",
-    ">",
-    "<div>",
-    "a <span> b",
-    "trailing \\",
-    "**unclosed",
-    "| ragged |",
-    "setext",
-    "======",
-    "> [!TIP]",
-    "> [!NOTE]",
-    "> [!BOGUS]",
-    "> \\[!TIP\\]",
-];
-
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> usize {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        (self.0 >> 33) as usize
-    }
-}
-
 #[test]
 fn the_fixed_point_holds_for_generated_documents() {
-    let mut rng = Rng(0x5eed);
+    let mut rng = common::Rng(0x5eed);
     for case in 0..20_000 {
         let lines = 1 + rng.next() % 8;
         let source = (0..lines)
-            .map(|_| FRAGMENTS[rng.next() % FRAGMENTS.len()])
+            .map(|_| common::LINES[rng.next() % common::LINES.len()])
             .collect::<Vec<_>>()
             .join("\n");
 

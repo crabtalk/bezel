@@ -102,7 +102,7 @@ fn an_app_row_makes_its_block_and_leaves_the_caret_after_it(cx: &mut TestAppCont
 fn set_code_rewrites_the_fence(cx: &mut TestAppContext) {
     let (editor, mut cx) = open("```widget\n```\n", cx);
     cx.update(|_, cx| editor.update(cx, |editor, cx| editor.set_code(0, "link".to_owned(), cx)));
-    assert_eq!(source(&editor, &mut cx), "```widget\nlink\n```");
+    assert_eq!(source(&editor, &mut cx), "```widget\nlink\n```\n");
 }
 
 #[gpui::test]

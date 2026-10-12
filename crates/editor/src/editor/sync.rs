@@ -6,6 +6,9 @@ impl Editor {
     /// Hand this editor's snapshot back to the document, telling every other
     /// editor on it what `change` did.
     pub(super) fn publish(&mut self, change: Change, cx: &mut Context<Self>) {
+        if self.blocks() && !matches!(change, Change::Composing) {
+            self.synced.borrow_mut().set_doc(self.doc.shared());
+        }
         let (doc, mode, anchors, by) = (
             self.doc.clone(),
             self.mode,

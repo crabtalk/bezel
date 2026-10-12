@@ -7,9 +7,10 @@
 //! Three things it is built to show.
 //!
 //! **The output is the document, live.** The right pane is
-//! `editor.source()` — the document normalized and written back to markdown on
-//! every keystroke. Nothing is transformed on the way to the screen, so what
-//! you read there is exactly what a save would write.
+//! `editor.source()` — the document as markdown on every keystroke, each block
+//! edited written back normalized and the rest as it was read. Nothing is
+//! transformed on the way to the screen, so what you read there is exactly
+//! what a save would write.
 //!
 //! **The toolbar is a caller, not a component.** It floats at
 //! `Editor::selection_bounds()` and each button is `toggle_mark` — the same

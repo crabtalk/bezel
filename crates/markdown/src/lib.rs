@@ -49,6 +49,7 @@ pub mod selectable;
 pub mod serialize;
 pub mod source;
 pub mod source_style;
+pub mod synced;
 pub mod typography;
 
 pub use block::{BlockRenderer, Fence, Rewrite};
@@ -63,7 +64,8 @@ pub use marks::{
     HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, highlight_solid,
 };
 pub use parse::{
-    ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges, parse_with,
+    ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges,
+    parse_ranges_with, parse_with,
 };
 pub use preview::{LinkCard, LinkHover, LinkPreview, Preview};
 pub use quote::Quote;
@@ -77,4 +79,5 @@ pub use select::{Affinity, Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_at_many, serialize_with};
 pub use source::spans as source_spans;
 pub use source_style::SourceStyle;
+pub use synced::Synced;
 pub use typography::Typography;

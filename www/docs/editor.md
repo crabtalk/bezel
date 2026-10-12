@@ -128,8 +128,9 @@ impl Editor {
     /// editor's own, or the caret cannot follow typing down the page.
     pub fn with_scroll(self, handle: gpui::ScrollHandle) -> Self;
 
-    /// The document written back to markdown, normalized, on every keystroke —
-    /// in either mode, so a save needs no branch.
+    /// The document as markdown, in either mode, so a save needs no branch.
+    /// Blocks edited since it was read are written back normalized; every
+    /// other byte is the one it was read as.
     pub fn source(&self) -> String;
 
     /// One read rather than four: a bar answering half its questions from this
