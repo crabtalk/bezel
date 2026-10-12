@@ -298,11 +298,7 @@ pub(super) fn painted_text(
     let glyph = caret
         .filter(|_| shape.cuts_out(hollow))
         .and_then(|offset| overlay.covered(&flat.text, offset));
-    let runs = match &glyph {
-        Some(glyph) => ui::input::caret::recoloured(flat.runs, glyph, theme.bg),
-        None => flat.runs,
-    };
-    let styled = StyledText::new(flat.text).with_runs(runs);
+    let styled = StyledText::new(flat.text).with_runs(flat.runs);
     let layout = styled.layout().clone();
 
     let mentions = flat.mentions;
@@ -351,6 +347,37 @@ pub(super) fn painted_text(
         .map(|(range, wash)| (shown.range(&range), wash))
         .collect();
     let layouts = overlay.layouts.cloned();
+    // Over the text, which a solid block hides: the glyph it covers is painted
+    // again on top of it.
+    let caret_layout = layout.clone();
+    let cover = theme.bg;
+    let over = canvas(
+        |_, _, _| (),
+        move |_, _, window, cx| {
+            let Some(offset) = caret else {
+                return;
+            };
+            let face = font(Theme::of(cx).font_body.clone());
+            paint_caret(
+                &caret_layout,
+                offset,
+                affinity,
+                glyph.as_ref(),
+                CaretPaint {
+                    shape,
+                    height,
+                    hollow,
+                    color: caret_color,
+                    cover,
+                    size,
+                    face,
+                },
+                window,
+            );
+        },
+    )
+    .absolute()
+    .size_full();
     let underlay = canvas(
         {
             let mentions = mentions.clone();
@@ -399,24 +426,6 @@ pub(super) fn painted_text(
                         BorderStyle::default(),
                     ));
                 }
-            }
-            if let Some(offset) = caret {
-                let face = font(Theme::of(cx).font_body.clone());
-                paint_caret(
-                    &layout,
-                    offset,
-                    affinity,
-                    glyph.as_ref(),
-                    CaretPaint {
-                        shape,
-                        height,
-                        hollow,
-                        color: caret_color,
-                        size,
-                        face,
-                    },
-                    window,
-                );
             }
             for range in &code_ranges {
                 for rect in range_rects(&layout, range, INLINE_CODE_PAD_X, INLINE_CODE_INSET_Y) {
@@ -499,6 +508,7 @@ pub(super) fn painted_text(
         .child(underlay)
         .children(hint)
         .child(painted)
+        .child(over)
         .into_any_element()
 }
 
@@ -527,6 +537,8 @@ pub(super) struct CaretPaint {
     pub height: ui::input::CaretHeight,
     pub hollow: bool,
     pub color: Hsla,
+    /// The colour of the glyph a solid block covers.
+    pub cover: Hsla,
     /// The text's font size, in pixels.
     pub size: f32,
     /// The font a wide caret measures its empty slot in.
@@ -569,8 +581,8 @@ fn wrapped_row_start(layout: &TextLayout, offset: usize) -> Option<Point<Pixels>
     None
 }
 
-/// Paints the caret at `offset` in `layout`. A `glyph` — the range recoloured
-/// for a solid block — is what the block covers, on whichever row it shaped.
+/// Paints the caret at `offset` in `layout`, over the text. A `glyph` is what
+/// a solid block covers, on whichever row it shaped, painted again over it.
 pub(super) fn paint_caret(
     layout: &TextLayout,
     offset: usize,
@@ -604,6 +616,35 @@ pub(super) fn paint_caret(
         paint.color,
         paint.hollow,
     ));
+    if let Some(glyph) = glyph
+        && covered.is_some()
+        && let Some((line, range)) = line_of(layout, glyph)
+    {
+        ui::input::caret::paint_covered(
+            &line.unwrapped_layout,
+            &range,
+            head,
+            line_height,
+            paint.cover,
+            window,
+        );
+    }
+}
+
+/// The shaped line `range` falls in, and `range` within that line.
+fn line_of(
+    layout: &TextLayout,
+    range: &Range<usize>,
+) -> Option<(Arc<gpui::WrappedLineLayout>, Range<usize>)> {
+    let mut start = 0;
+    for line in layout.line_layouts() {
+        let end = start + line.len();
+        if range.start <= end {
+            return (range.end <= end).then(|| (line, range.start - start..range.end - start));
+        }
+        start = end + 1;
+    }
+    None
 }
 
 /// The rectangles a byte range occupies, one per visual row.

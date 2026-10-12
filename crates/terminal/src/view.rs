@@ -338,6 +338,17 @@ pub struct TerminalPrepaint {
     /// Grid cell advance, so paint can place segments by column.
     cell_w: Pixels,
     cursor: Option<PaintQuad>,
+    covered: Option<Covered>,
+}
+
+/// The glyph under a solid block cursor, for [`ui::input::caret::paint_covered`].
+struct Covered {
+    line: ShapedLine,
+    /// Within `line`.
+    range: std::ops::Range<usize>,
+    /// The top left of its slot.
+    at: Point<Pixels>,
+    color: Hsla,
 }
 
 impl gpui::IntoElement for TerminalElement {
@@ -433,6 +444,7 @@ impl gpui::Element for TerminalElement {
                 lines: Vec::new(),
                 cell_w,
                 cursor: None,
+                covered: None,
             };
         };
 
@@ -577,16 +589,36 @@ impl gpui::Element for TerminalElement {
                     glyph_color(cell, &theme),
                 ));
             }
-            match cursor.filter(|c| solid && c.style.shape == CursorShape::Block && c.row == row_ix)
-            {
-                Some(c) if c.col < row.len() => {
-                    let mut row = row.clone();
-                    row[c.col] = row[c.col].under_cursor();
-                    lines.push(shape_row(&row, &theme, &mono, font_size, window));
-                }
-                _ => lines.push(shape_row(row, &theme, &mono, font_size, window)),
-            }
+            lines.push(shape_row(row, &theme, &mono, font_size, window));
         }
+
+        // The glyph a solid block covers: the one in the segment its column
+        // falls in, painted again over the block.
+        let covered = cursor
+            .filter(|c| solid && c.style.shape == CursorShape::Block)
+            .and_then(|c| {
+                let cell = snapshot.lines.get(c.row)?.get(c.col)?;
+                let (col, line) = lines
+                    .get(c.row)?
+                    .iter()
+                    .rev()
+                    .find(|(col, _)| *col <= c.col)?;
+                // A segment of ASCII holds a cell per byte; any other holds
+                // the one glyph its column starts.
+                let range = match line.text.is_ascii() {
+                    true => c.col - col..c.col - col + 1,
+                    false => 0..line.len(),
+                };
+                Some(Covered {
+                    at: point(
+                        origin.x + cell_w * *col as f32 + line.x_for_index(range.start),
+                        origin.y + line_h * c.row as f32,
+                    ),
+                    line: line.clone(),
+                    range,
+                    color: glyph_color(&cell.under_cursor(), &theme),
+                })
+            });
 
         let cursor = cursor.map(|c| {
             let cell = Bounds::new(
@@ -618,6 +650,7 @@ impl gpui::Element for TerminalElement {
             lines,
             cell_w,
             cursor,
+            covered,
         }
     }
 
@@ -656,10 +689,6 @@ impl gpui::Element for TerminalElement {
                 window.paint_quad(quad);
             }
             paint_layer(Layer::UnderText, window);
-            // Under the text: the glyph in the cursor cell is cut out of it.
-            if let Some(cursor) = prepaint.cursor.take() {
-                window.paint_quad(cursor);
-            }
             let cell_w = prepaint.cell_w;
             for (ix, segments) in prepaint.lines.iter().enumerate() {
                 let y = origin.y + line_h * ix as f32;
@@ -673,6 +702,19 @@ impl gpui::Element for TerminalElement {
                         cx,
                     );
                 }
+            }
+            if let Some(cursor) = prepaint.cursor.take() {
+                window.paint_quad(cursor);
+            }
+            if let Some(covered) = prepaint.covered.take() {
+                ui::input::caret::paint_covered(
+                    &covered.line,
+                    &covered.range,
+                    covered.at,
+                    line_h,
+                    covered.color,
+                    window,
+                );
             }
             paint_layer(Layer::OverText, window);
         });
