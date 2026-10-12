@@ -16,10 +16,7 @@ const LIGHT_STROKE_DIVISOR: f32 = 8.0;
 
 /// Whether [`fills`] paints this character. The text run skips these.
 pub(crate) fn covers(ch: char) -> bool {
-    matches!(
-        ch,
-        '─' | '━' | '│' | '┃' | '═' | '║' | '\u{2580}'..='\u{259F}'
-    )
+    arms(ch).is_some() || matches!(ch, '═' | '║' | '\u{2580}'..='\u{259F}')
 }
 
 /// The quads that paint `ch` filling `cell` in `color`. Empty for characters
@@ -47,11 +44,55 @@ pub(crate) fn fills(ch: char, cell: Bounds<Pixels>, color: Hsla) -> Vec<PaintQua
         )
     };
 
+    if let Some([left, up, right, down]) = arms(ch) {
+        // Each arm runs from the cell edge past the centre by half the
+        // thickest arm, so arms meet in a square joint.
+        let reach = light * f32::from(left.max(up).max(right).max(down)) / 2.0;
+        let mut quads = Vec::with_capacity(4);
+        if left > 0 {
+            let t = light * f32::from(left);
+            quads.push(fill(
+                Bounds::new(
+                    point(cell.left(), mid_y - t / 2.0),
+                    size(mid_x + reach - cell.left(), t),
+                ),
+                color,
+            ));
+        }
+        if right > 0 {
+            let t = light * f32::from(right);
+            quads.push(fill(
+                Bounds::new(
+                    point(mid_x - reach, mid_y - t / 2.0),
+                    size(cell.right() - mid_x + reach, t),
+                ),
+                color,
+            ));
+        }
+        if up > 0 {
+            let t = light * f32::from(up);
+            quads.push(fill(
+                Bounds::new(
+                    point(mid_x - t / 2.0, cell.top()),
+                    size(t, mid_y + reach - cell.top()),
+                ),
+                color,
+            ));
+        }
+        if down > 0 {
+            let t = light * f32::from(down);
+            quads.push(fill(
+                Bounds::new(
+                    point(mid_x - t / 2.0, mid_y - reach),
+                    size(t, cell.bottom() - mid_y + reach),
+                ),
+                color,
+            ));
+        }
+        return quads;
+    }
+
     match ch {
-        '─' => vec![hbar(mid_y, light)],
-        '━' => vec![hbar(mid_y, light * 2.0)],
-        '│' => vec![vbar(mid_x, light)],
-        '┃' => vec![vbar(mid_x, light * 2.0)],
         '═' => vec![hbar(mid_y - light, light), hbar(mid_y + light, light)],
         '║' => vec![vbar(mid_x - light, light), vbar(mid_x + light, light)],
         '\u{2591}' => vec![fill(
@@ -93,6 +134,50 @@ pub(crate) fn fills(ch: char, cell: Bounds<Pixels>, color: Hsla) -> Vec<PaintQua
             .collect(),
         _ => Vec::new(),
     }
+}
+
+/// `[left, up, right, down]` stroke weights of a single-line box-drawing
+/// character: 0 none, 1 light, 2 heavy. `None` for every other character,
+/// mixed light-and-heavy corners, dashes, rounded corners and diagonals
+/// included.
+fn arms(ch: char) -> Option<[u8; 4]> {
+    Some(match ch {
+        '─' => [1, 0, 1, 0],
+        '━' => [2, 0, 2, 0],
+        '│' => [0, 1, 0, 1],
+        '┃' => [0, 2, 0, 2],
+        '┌' => [0, 0, 1, 1],
+        '┐' => [1, 0, 0, 1],
+        '└' => [0, 1, 1, 0],
+        '┘' => [1, 1, 0, 0],
+        '├' => [0, 1, 1, 1],
+        '┤' => [1, 1, 0, 1],
+        '┬' => [1, 0, 1, 1],
+        '┴' => [1, 1, 1, 0],
+        '┼' => [1, 1, 1, 1],
+        '┏' => [0, 0, 2, 2],
+        '┓' => [2, 0, 0, 2],
+        '┗' => [0, 2, 2, 0],
+        '┛' => [2, 2, 0, 0],
+        '┣' => [0, 2, 2, 2],
+        '┫' => [2, 2, 0, 2],
+        '┳' => [2, 0, 2, 2],
+        '┻' => [2, 2, 2, 0],
+        '╋' => [2, 2, 2, 2],
+        '╴' => [1, 0, 0, 0],
+        '╵' => [0, 1, 0, 0],
+        '╶' => [0, 0, 1, 0],
+        '╷' => [0, 0, 0, 1],
+        '╸' => [2, 0, 0, 0],
+        '╹' => [0, 2, 0, 0],
+        '╺' => [0, 0, 2, 0],
+        '╻' => [0, 0, 0, 2],
+        '╼' => [1, 0, 2, 0],
+        '╽' => [0, 1, 0, 2],
+        '╾' => [2, 0, 1, 0],
+        '╿' => [0, 2, 0, 1],
+        _ => return None,
+    })
 }
 
 /// `(column, line, columns, lines)` rectangles in subcell units for a block
