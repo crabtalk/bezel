@@ -174,10 +174,6 @@ pub fn flatten_with(
             };
             run(&mut shown, ICON_SLOT, gpui::transparent_black(), None);
             run(&mut shown, " ", theme.text, None);
-            if let Some(label) = described.label.filter(|_| described.title.is_some()) {
-                run(&mut shown, &label, theme.text_muted, None);
-                run(&mut shown, " ", theme.text, None);
-            }
             run(&mut shown, &title, theme.text, Some(underline));
             let to = shown.len();
             links.push((from..to, url.to_string()));
@@ -313,6 +309,9 @@ pub(super) fn painted_text(
     let layout = styled.layout().clone();
 
     let mentions = flat.mentions;
+    let link_ranges: Vec<Range<usize>> =
+        flat.links.iter().map(|(range, _)| range.clone()).collect();
+    let press_layout = layout.clone();
     let painted: AnyElement = if flat.links.is_empty() {
         styled.into_any_element()
     } else {
@@ -525,6 +524,17 @@ pub(super) fn painted_text(
         .children(hint)
         .child(painted)
         .child(over)
+        // A shift-press on a link is the link's: the host follows it on the
+        // release, and the editor around would take the press as extending
+        // the selection.
+        .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+            let on_link = press_layout
+                .index_for_position(event.position)
+                .is_ok_and(|at| link_ranges.iter().any(|range| range.contains(&at)));
+            if event.modifiers.shift && on_link {
+                cx.stop_propagation();
+            }
+        })
         .into_any_element()
 }
 

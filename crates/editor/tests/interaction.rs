@@ -2127,3 +2127,37 @@ fn a_right_press_on_text_opens_the_edit_menu(cx: &mut TestAppContext) {
         );
     });
 }
+
+/// A shift-click on a link is the link's: the host follows it, and the
+/// selection stays where it was rather than running out to the link.
+#[gpui::test]
+fn a_shift_click_on_a_link_leaves_the_selection(cx: &mut TestAppContext) {
+    let (editor, _window, mut cx) =
+        open_with("Plain words, then [a link](https://example.com).", cx);
+    let at = |offset: usize, cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let (at, line) = editor
+                .read(cx)
+                .layouts()
+                .position(
+                    markdown::Cursor::new(0, markdown::Part::Body, offset),
+                    markdown::Affinity::Downstream,
+                )
+                .unwrap();
+            at + point(px(1.0), line / 2.0)
+        })
+    };
+    let start = at(1, &mut cx);
+    cx.simulate_click(start, gpui::Modifiers::default());
+    cx.run_until_parked();
+    let before = cx.update(|_, cx| editor.read(cx).selection());
+
+    let link = at(20, &mut cx);
+    cx.simulate_click(link, gpui::Modifiers::shift());
+    cx.run_until_parked();
+
+    let after = cx.update(|_, cx| editor.read(cx).selection());
+    assert_eq!(after, before);
+    assert!(after.is_collapsed());
+    assert_eq!(cx.cx.opened_url().as_deref(), Some("https://example.com"));
+}
