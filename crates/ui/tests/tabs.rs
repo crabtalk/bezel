@@ -100,17 +100,25 @@ fn a_strip_with_tabs_always_has_one_in_front() {
 #[test]
 fn a_lone_tab_cycles_to_itself() {
     let mut strip = strip(&["only"]);
-    strip.cycle(1);
+    assert!(!strip.cycle(1));
     assert_eq!(front(&strip), Some("only"));
-    strip.cycle(-1);
+    assert!(!strip.cycle(-1));
     assert_eq!(front(&strip), Some("only"));
 }
 
 #[test]
 fn an_empty_strip_does_not_cycle() {
     let mut strip: Strip<String> = Strip::new();
-    strip.cycle(1);
+    assert!(!strip.cycle(1));
     assert_eq!(front(&strip), None);
+}
+
+#[test]
+fn cycling_says_whether_the_front_moved() {
+    let mut strip = strip(&["a", "b", "c"]);
+    assert!(strip.cycle(1));
+    assert_eq!(front(&strip), Some("b"));
+    assert!(!strip.cycle(3), "a whole lap lands where it started");
 }
 
 #[test]

@@ -29,6 +29,16 @@ impl Theme {
         }
     }
 
+    /// A sidebar's fill: the frost where glass is on, [`Self::surface`] where
+    /// it is not.
+    pub fn sidebar_bg(&self) -> Hsla {
+        if self.vibrancy {
+            self.vibrancy_tint()
+        } else {
+            self.surface
+        }
+    }
+
     /// The translucent tint floating cards paint over their backdrop blur
     /// (see `bezel::material`). Dark: the reference `.glass-surface` menu tint
     /// verbatim — `oklch(0.33 0 0 / 34%)`. Light: heavier, since white over a

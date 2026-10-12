@@ -1,13 +1,16 @@
-//! Status surfaces — the step row and its output, and the alert strips.
+//! Status surfaces — the step row and its output, the alert strips, and the
+//! status bar.
 //!
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.step_row(..)`, `theme.step_output(..)`, `theme.error_strip(..)`.
 
-use gpui::{Div, SharedString, div, prelude::*, px};
+use std::path::Path;
+
+use gpui::{ClipboardItem, Div, ElementId, SharedString, Stateful, div, prelude::*, px};
 use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
-use crate::{stack, widgets::Layout};
+use crate::{stack, tooltip::Tooltip, widgets::Layout};
 
 /// Padding inside a [`Status::step_row`] and the [`Status::step_output`] under
 /// it — the two have to agree or the output's first character sits left of the
@@ -197,6 +200,45 @@ pub trait Status: ThemeExt {
                 ),
             )
             .child(div().min_w_0().child(message.into()))
+    }
+
+    /// A pane's bottom row: 30px under a top border, in muted `Caption` text.
+    fn status_bar(&self) -> Div {
+        let theme = self.theme();
+        div()
+            .h(px(30.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .px(px(8.0))
+            .border_t_1()
+            .border_color(theme.border)
+            .text_style(TextStyle::Caption)
+            .text_color(theme.text_muted)
+    }
+
+    /// A [`Self::status_bar`] cell showing `label` for `path`. It takes the
+    /// room left, truncates, tooltips the full path and copies it on click.
+    fn status_path(
+        &self,
+        id: impl Into<ElementId>,
+        path: &Path,
+        label: impl Into<SharedString>,
+    ) -> Stateful<Div> {
+        let full = path.display().to_string();
+        let tip: SharedString = format!("{full}\nClick to copy path").into();
+        div()
+            .id(id)
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .cursor_pointer()
+            .tooltip(move |window, cx| Tooltip::text(tip.clone(), window, cx))
+            .on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(full.clone()))
+            })
+            .child(label.into())
     }
 }
 

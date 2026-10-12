@@ -146,11 +146,11 @@ impl<Id: Clone + PartialEq> Strip<Id> {
         true
     }
 
-    /// Step the front `step` tabs along, wrapping at both ends. An empty strip
-    /// does not move.
-    pub fn cycle(&mut self, step: isize) {
+    /// Step the front `step` tabs along, wrapping at both ends. Whether the
+    /// front changed: an empty strip, a lone tab and a whole lap do not move.
+    pub fn cycle(&mut self, step: isize) -> bool {
         if self.order.is_empty() {
-            return;
+            return false;
         }
         let len = self.order.len() as isize;
         let at = self
@@ -158,10 +158,15 @@ impl<Id: Clone + PartialEq> Strip<Id> {
             .as_ref()
             .and_then(|id| self.index_of(id))
             .unwrap_or(0) as isize;
-        self.active = self
+        let next = self
             .order
             .get((at + step).rem_euclid(len) as usize)
             .cloned();
+        if next == self.active {
+            return false;
+        }
+        self.active = next;
+        true
     }
 
     /// Move the tab at `from` so that it sits at `to`. Out-of-range ends are
