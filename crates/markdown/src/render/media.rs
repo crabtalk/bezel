@@ -192,7 +192,7 @@ pub(super) fn bookmark(
     theme: &Theme,
     cx: &App,
 ) -> AnyElement {
-    let preview = preview::of(cx, url).unwrap_or_default();
+    let preview = crate::link::preview(crate::Link::new(url, base), cx).unwrap_or_default();
     let host = SharedString::from(preview::host(url).to_string());
     let label = preview.label.clone().unwrap_or_else(|| host.clone());
     let title = preview
@@ -277,7 +277,9 @@ pub(super) fn bookmark(
         .bg(theme.surface_card)
         .cursor(CursorStyle::PointingHand)
         .hover(|el| el.bg(theme.element_hover))
-        .on_click(move |_, window, cx| crate::link::open(&open, base.as_deref(), window, cx));
+        .on_click(move |_, window, cx| {
+            crate::link::open(crate::Link::new(&open, base.as_deref()), window, cx)
+        });
 
     if matches!(form, Form::Embed(_)) {
         card.flex_col()
@@ -325,38 +327,43 @@ pub(super) fn initial(host: &str, size: f32, color: Hsla, wash: Hsla) -> AnyElem
         .into_any_element()
 }
 
-/// A link's hover card: the app's [`crate::LinkHover`] for a link it owns,
-/// and otherwise its bookmark, picture on top.
-pub(super) struct MentionCard {
-    url: String,
-    typography: Typography,
+/// A web link's hover card: its bookmark, picture on top.
+pub fn hover_bookmark(link: crate::Link<'_>, cx: &App) -> AnyElement {
+    let theme = Theme::of(cx).clone();
+    let card = bookmark(
+        0,
+        link.url,
+        link.base,
+        Form::Embed(None),
+        &cx.typography(),
+        &theme,
+        cx,
+    );
+    div()
+        .w(px(MENTION_CARD_WIDTH))
+        .child(card)
+        .into_any_element()
 }
 
-impl MentionCard {
-    pub(super) fn view(url: &str, cx: &mut App) -> gpui::AnyView {
-        let typography = cx.typography();
+/// A link's hover card: whatever [`crate::Links::hover`] answers.
+pub(super) struct HoverCard {
+    url: String,
+    base: Option<std::path::PathBuf>,
+}
+
+impl HoverCard {
+    pub(super) fn view(url: &str, base: Option<std::path::PathBuf>, cx: &mut App) -> gpui::AnyView {
         cx.new(|_| Self {
             url: url.to_string(),
-            typography,
+            base,
         })
         .into()
     }
 }
 
-impl Render for MentionCard {
+impl Render for HoverCard {
     fn render(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
-        let theme = Theme::of(cx).clone();
-        let card = crate::preview::hover(&self.url, window, cx).unwrap_or_else(|| {
-            bookmark(
-                0,
-                &self.url,
-                None,
-                Form::Embed(None),
-                &self.typography,
-                &theme,
-                cx,
-            )
-        });
-        div().w(px(MENTION_CARD_WIDTH)).child(card)
+        let link = crate::Link::new(&self.url, self.base.as_deref());
+        div().children(crate::link::hover(link, window, cx))
     }
 }

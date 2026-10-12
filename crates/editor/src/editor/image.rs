@@ -5,7 +5,7 @@
 //! one on disk. A pasted screenshot names nothing at all — it is bytes, and
 //! bytes have to be put somewhere before a document can point at them, which is
 //! the app's decision and not this library's. Hence [`crate::AppExt::set_image_store`],
-//! installed once at boot like `markdown::AppExt::set_link_preview`.
+//! installed once at boot like `markdown::AppExt::set_links`.
 
 use std::path::{Path, PathBuf};
 

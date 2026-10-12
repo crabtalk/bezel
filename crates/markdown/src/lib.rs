@@ -59,7 +59,7 @@ pub use edit::{Shortcut, Splice, shortcut};
 pub use find::{FindPaint, default_find};
 pub use highlight::Highlighter;
 pub use layout::Layout;
-pub use link::LinkHandler;
+pub use link::{Link, Links};
 pub use marks::{
     HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, highlight_solid,
 };
@@ -67,7 +67,7 @@ pub use parse::{
     ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges,
     parse_ranges_with, parse_with,
 };
-pub use preview::{LinkCard, LinkHover, LinkPreview, Preview};
+pub use preview::Preview;
 pub use quote::Quote;
 pub use render::{
     Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,

@@ -86,8 +86,14 @@ impl Tooltip {
     }
 }
 
-impl Render for Tooltip {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+impl Tooltip {
+    /// The card a tooltip paints, for a hover drawn inside another view
+    /// rather than mounted by `.tooltip(..)`.
+    pub fn card(
+        text: impl Into<SharedString>,
+        keystroke: Option<SharedString>,
+        cx: &App,
+    ) -> gpui::AnyElement {
         let theme = Theme::of(cx).clone();
         // Tooltips are small and frequent, so this is a tighter card than
         // `popover_card`: less padding, no menu rhythm.
@@ -100,8 +106,8 @@ impl Render for Tooltip {
             .gap(px(Theme::SPACE))
             .text_style(TextStyle::Callout)
             .text_color(theme.text)
-            .child(self.text.clone())
-            .when_some(self.keystroke.clone(), |card, keystroke| {
+            .child(text.into())
+            .when_some(keystroke, |card, keystroke| {
                 card.child(
                     div()
                         .text_style(TextStyle::Subheadline)
@@ -110,5 +116,12 @@ impl Render for Tooltip {
                 )
             })
             .surface(&theme, theme.popover_surface)
+            .into_any_element()
+    }
+}
+
+impl Render for Tooltip {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        Self::card(self.text.clone(), self.keystroke.clone(), cx)
     }
 }

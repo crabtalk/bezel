@@ -67,7 +67,7 @@ A bare URL links itself: https://example.com. In angle brackets it is a chip —
 
 <https://github.com/crabtalk/bezel>
 
-What a card shows past the URL comes from `set_link_preview`. A `"chip"` title puts a chip on a line of its own, where it has room for the favicon shaped text cannot hold:
+What a card shows past the URL comes from the app's `markdown::Links::preview`. A `"chip"` title puts a chip on a line of its own, where it has room for the favicon shaped text cannot hold:
 
 [https://github.com/crabtalk/bezel](https://github.com/crabtalk/bezel "chip")
 

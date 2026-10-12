@@ -264,7 +264,7 @@ pub(super) fn text_element(
         weight,
         theme,
         |name| crate::marks::paint_of(cx, name, theme),
-        |url| preview::of(cx, url),
+        |url| crate::link::preview(crate::Link::new(url, overlay.base), cx),
     );
     painted_text(flat, text.text.len(), size, line_height, overlay, theme)
 }
@@ -316,33 +316,21 @@ pub(super) fn painted_text(
     let painted: AnyElement = if flat.links.is_empty() {
         styled.into_any_element()
     } else {
-        // A mention opens its card on hover, and so does a plain link the
-        // app owns. Any other link shows where it goes, as written.
-        let hovered: Vec<(Range<usize>, String, bool)> = flat
-            .links
-            .iter()
-            .map(|(range, url)| {
-                let mention = mentions.iter().any(|mention| mention.range == *range);
-                (range.clone(), url.clone(), mention)
-            })
-            .collect();
+        let hovered = flat.links.clone();
         let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
         let jump = overlay.jump.cloned();
         let base = overlay.base.map(Path::to_path_buf);
+        let hover_base = base.clone();
         InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
             .on_click(ranges, move |clicked, window, cx| {
                 if let Some(url) = urls.get(clicked) {
-                    crate::link::follow(url, base.as_deref(), jump.as_ref(), window, cx);
+                    let link = crate::Link::new(url, base.as_deref());
+                    crate::link::follow(link, jump.as_ref(), window, cx);
                 }
             })
-            .tooltip(move |at, window, cx| {
-                let (_, url, mention) = hovered.iter().find(|(range, _, _)| range.contains(&at))?;
-                let owned =
-                    || crate::preview::of(cx, url).is_some_and(|preview| preview.glyph.is_some());
-                Some(match *mention || owned() {
-                    true => MentionCard::view(url, cx),
-                    false => ui::tooltip::Tooltip::text(url.clone(), window, cx),
-                })
+            .tooltip(move |at, _window, cx| {
+                let (_, url) = hovered.iter().find(|(range, _)| range.contains(&at))?;
+                Some(HoverCard::view(url, hover_base.clone(), cx))
             })
             .into_any_element()
     };

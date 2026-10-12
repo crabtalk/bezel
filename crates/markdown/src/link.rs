@@ -1,33 +1,133 @@
-//! Who opens a link.
+//! What a link is to the app: what opens it, what it shows on hover, and
+//! what its chip and its card say.
 //!
-//! Installed once at boot like the highlighter, and read at click. Without it a
-//! link goes to [`App::open_url`]. A `#fragment` link reaches neither: it names
-//! a heading of the document it is in — see [`heading`].
+//! Installed once at boot with [`crate::AppExt::set_links`]. Without it a
+//! link goes to [`App::open_url`] and shows nothing on hover. A `#fragment`
+//! link reaches none of it: it names a heading of the document it is in — see
+//! [`heading`].
 
 use std::{collections::HashSet, path::Path, rc::Rc};
 
-use gpui::{App, Global, Window};
+use gpui::{AnyElement, App, Global, Window};
 
-use crate::{BlockKind, Doc, render::OnJump};
+use crate::{BlockKind, Doc, Form, Preview, render::OnJump};
 
-/// Opens a link a reader clicked: an inline link or a bookmark card. `base` is
-/// the document's [`crate::render::Editing::base`]; the URL is as written.
-pub type LinkHandler = fn(url: &str, base: Option<&Path>, &mut Window, &mut App);
+/// A link where it is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Link<'a> {
+    /// As written.
+    pub url: &'a str,
+    /// The document's [`crate::render::Editing::base`].
+    pub base: Option<&'a Path>,
+}
 
-struct Installed(LinkHandler);
+impl<'a> Link<'a> {
+    pub fn new(url: &'a str, base: Option<&'a Path>) -> Self {
+        Self { url, base }
+    }
+
+    /// Whether it names a web page: `http://` or `https://`.
+    pub fn is_web(&self) -> bool {
+        let scheme = self.url.split_once("://").map_or("", |(scheme, _)| scheme);
+        scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+    }
+}
+
+/// The app's side of every link a document paints.
+///
+/// Associated functions rather than methods: [`crate::AppExt::set_links`]
+/// keeps each one as a plain function pointer.
+pub trait Links: 'static {
+    /// Opens a link a reader clicked: an inline link or a bookmark card.
+    fn open(link: Link<'_>, _window: &mut Window, cx: &mut App) {
+        cx.open_url(link.url);
+    }
+
+    /// What a chip, a bookmark and an embed say about the link. Asked at
+    /// paint. `None` for a link the app has nothing for *yet*: the bookmark
+    /// paints its host, and repaints when the app notifies.
+    fn preview(_link: Link<'_>, _cx: &App) -> Option<Preview> {
+        None
+    }
+
+    /// The card painted for a bookmark block, in place of the bookmark.
+    /// `None` leaves the bookmark.
+    ///
+    /// The element sits inside [`crate::render::PAINTED_CONTEXT`]. A press it
+    /// does not stop reaches the editor.
+    fn card(
+        _link: Link<'_>,
+        _form: Form,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Option<AnyElement> {
+        None
+    }
+
+    /// The card shown while the pointer rests on the link, in a tooltip:
+    /// nothing in it scrolls or takes a press. `None` shows nothing.
+    fn hover(link: Link<'_>, _window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+        link.is_web()
+            .then(|| crate::render::hover_bookmark(link, cx))
+    }
+}
+
+/// [`Links`] with nothing installed.
+struct Unhandled;
+
+impl Links for Unhandled {}
+
+#[derive(Clone, Copy)]
+struct Installed {
+    open: fn(Link<'_>, &mut Window, &mut App),
+    preview: fn(Link<'_>, &App) -> Option<Preview>,
+    card: fn(Link<'_>, Form, &mut Window, &mut App) -> Option<AnyElement>,
+    hover: fn(Link<'_>, &mut Window, &mut App) -> Option<AnyElement>,
+}
 
 impl Global for Installed {}
 
-/// `cx.set_link_handler(my_links)` — call once at boot.
-pub(crate) fn set_link_handler(cx: &mut App, handler: LinkHandler) {
-    cx.set_global(Installed(handler));
+impl Installed {
+    fn of<L: Links>() -> Self {
+        Self {
+            open: L::open,
+            preview: L::preview,
+            card: L::card,
+            hover: L::hover,
+        }
+    }
+
+    fn get(cx: &App) -> Self {
+        cx.try_global::<Self>()
+            .copied()
+            .unwrap_or_else(Self::of::<Unhandled>)
+    }
 }
 
-pub(crate) fn open(url: &str, base: Option<&Path>, window: &mut Window, cx: &mut App) {
-    match cx.try_global::<Installed>().map(|installed| installed.0) {
-        Some(handler) => handler(url, base, window, cx),
-        None => cx.open_url(url),
-    }
+pub(crate) fn set_links<L: Links>(cx: &mut App) {
+    cx.set_global(Installed::of::<L>());
+}
+
+pub(crate) fn open(link: Link<'_>, window: &mut Window, cx: &mut App) {
+    (Installed::get(cx).open)(link, window, cx)
+}
+
+pub(crate) fn preview(link: Link<'_>, cx: &App) -> Option<Preview> {
+    (Installed::get(cx).preview)(link, cx)
+}
+
+pub(crate) fn card(
+    link: Link<'_>,
+    form: Form,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<AnyElement> {
+    (Installed::get(cx).card)(link, form, window, cx)
+}
+
+pub(crate) fn hover(link: Link<'_>, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+    (Installed::get(cx).hover)(link, window, cx)
 }
 
 /// The anchor GitHub gives a heading: lowercased, punctuation dropped but for
@@ -92,15 +192,9 @@ impl Jump {
 
 /// A clicked link: a `#fragment` jumps to its heading, or does nothing when it
 /// names none or no [`Jump`] is given; anything else goes to [`open`].
-pub(crate) fn follow(
-    url: &str,
-    base: Option<&Path>,
-    jump: Option<&Jump>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let Some(fragment) = url.strip_prefix('#') else {
-        open(url, base, window, cx);
+pub(crate) fn follow(link: Link<'_>, jump: Option<&Jump>, window: &mut Window, cx: &mut App) {
+    let Some(fragment) = link.url.strip_prefix('#') else {
+        open(link, window, cx);
         return;
     };
     if let Some(jump) = jump

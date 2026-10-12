@@ -75,7 +75,7 @@ const APP_MENUBAR: bool = !cfg!(any(target_os = "macos", target_family = "wasm")
 /// the browser and Backspace did not.
 pub fn init(cx: &mut App) {
     cx.set_highlighter(highlight::spans, highlight::languages());
-    cx.set_link_preview(preview::of);
+    cx.set_links::<preview::Links>();
     cx.set_block_renderer(|fence, window, cx| {
         blocks::render(fence.language, fence.code, fence.height, window, cx)
     });

@@ -53,7 +53,7 @@ A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing 
 ![A caption is the alt text|480](https://example.com/cover.png)
 ```
 
-A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::AppExt::set_link_preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
+A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::Links::preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
 
 A preview can supply `Editing::image_overlay` to build a control from a picture's
 block index and original URL:

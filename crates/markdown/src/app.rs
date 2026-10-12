@@ -27,8 +27,8 @@ pub trait AppExt {
     #[cfg(feature = "mermaid")]
     fn set_mermaid_zoom(&mut self, zoom: crate::mermaid::Zoom);
 
-    /// Handles link clicks; without a handler links use `App::open_url`.
-    fn set_link_handler(&mut self, handler: crate::LinkHandler);
+    /// Installs what the app does with links — see [`crate::Links`].
+    fn set_links<L: crate::Links>(&mut self);
 
     /// Installs the mark dialect shared by document readers and editors.
     fn set_marks(&mut self, marks: crate::Marks);
@@ -38,15 +38,6 @@ pub trait AppExt {
 
     /// Sets the paint for reader highlights.
     fn set_highlight_paint(&mut self, paint: crate::HighlightPaint);
-
-    /// Installs the provider for link cards, chips and embeds.
-    fn set_link_preview(&mut self, preview: crate::LinkPreview);
-
-    /// Installs the painter of cards for links the app owns.
-    fn set_link_card(&mut self, card: crate::LinkCard);
-
-    /// Installs the painter of hover cards for links the app owns.
-    fn set_link_hover(&mut self, hover: crate::LinkHover);
 
     /// Resolves source styles against the current theme and refreshes windows.
     fn set_source_style(&mut self, style: impl Fn(&theme::Theme) -> crate::SourceStyle + 'static);
@@ -100,8 +91,8 @@ impl AppExt for App {
         crate::mermaid::set_zoom(self, zoom)
     }
 
-    fn set_link_handler(&mut self, handler: crate::LinkHandler) {
-        crate::link::set_link_handler(self, handler)
+    fn set_links<L: crate::Links>(&mut self) {
+        crate::link::set_links::<L>(self)
     }
 
     fn set_marks(&mut self, marks: crate::Marks) {
@@ -114,18 +105,6 @@ impl AppExt for App {
 
     fn set_highlight_paint(&mut self, paint: crate::HighlightPaint) {
         crate::marks::set_highlight_paint(self, paint)
-    }
-
-    fn set_link_preview(&mut self, preview: crate::LinkPreview) {
-        crate::preview::set_link_preview(self, preview)
-    }
-
-    fn set_link_card(&mut self, card: crate::LinkCard) {
-        crate::preview::set_link_card(self, card)
-    }
-
-    fn set_link_hover(&mut self, hover: crate::LinkHover) {
-        crate::preview::set_link_hover(self, hover)
     }
 
     fn set_source_style(&mut self, style: impl Fn(&theme::Theme) -> crate::SourceStyle + 'static) {

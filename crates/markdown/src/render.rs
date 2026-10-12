@@ -41,6 +41,7 @@ mod code;
 mod column;
 mod layouts;
 mod media;
+pub use media::hover_bookmark;
 mod table;
 mod text;
 
@@ -1143,8 +1144,8 @@ fn block_element(
         BlockKind::Image { url, alt, width } => {
             image(url, alt, *width, overlay, typography, theme, window, cx)
         }
-        BlockKind::Bookmark { url, form } => match crate::preview::card(
-            url,
+        BlockKind::Bookmark { url, form } => match crate::link::card(
+            crate::Link::new(url, overlay.base),
             match (*form, overlay.held_height()) {
                 (Form::Embed(_), Some(held)) => Form::Embed(Some(held)),
                 (form, _) => form,
