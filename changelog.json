@@ -1,5 +1,33 @@
 [
   {
+    "version": "0.2.13",
+    "date": "2026-10-12",
+    "summary": "A shared `Document` under several editors, each with its own caret, menus and scroll. Anchors in markdown byte offsets, placed down the page whether built or not, with hover events and app washes beside them. Keyed context menus that stand off a trigger and walk submenus by arrow key. A source view that keeps its lines across frames and highlights edits off the UI thread.",
+    "new": [
+      "`Document`, a markdown document as its editors share it: the text, its form, its marks, its anchors and one undo stack. `Editor::for_document` opens an editor on one, and every editor on it shows the same text with its own caret and scroll. `Editor::document` is the one an editor is on; `Editor::new` still makes an editor on a document of its own.",
+      "`DocumentEvent` reports a change to a document, and `DocumentEvent::edited` whether its text changed.",
+      "`Document::source_with_anchors` answers the markdown to save and each anchor's range in byte offsets into it (`SourceRanges`), and `Document::set_source_anchors` takes ranges in byte offsets into the markdown the document was read from.",
+      "`Editor::anchor_tops` places every anchor down the editor, built or not: an anchor whose line has not been built gets its block's top, guessed until the block is measured. `BlockLayouts::top` places any position the same way.",
+      "`Editor::set_washes` washes ranges the app sets, such as find hits, over the anchors' own, and `Editor::washes` reads them back.",
+      "`EditorEvent::AnchorHovered` says which anchor's text the pointer came over, or `None` when it leaves one.",
+      "`Editor::source_lines` counts the source's lines in source mode.",
+      "`markdown::SourceText` holds a source text's lines and highlight spans across frames. `SourceText::edit` redoes only the lines an edit touched and answers a `SpanJob`, which highlights the whole text on any thread for `SourceText::set_spans`.",
+      "`ContextMenu` is keyed by a `K` and stands at a `Place`: a window point, or above or below a trigger with either edge aligned. `ContextMenu::toggle` opens or closes the menu a trigger owns, `ContextMenu::trigger` wraps the trigger, and `key`, `showing`, `card`, `place` and `render_for` read and draw it.",
+      "A context menu walks into a submenu with the right arrow and back out with the left (`menu::SelectChild`, `SelectParent`).",
+      "`History::clear`, `History::can_undo`, and `Run`, the run of edits an undo step coalesces."
+    ],
+    "changed": [
+      "`with_undo_limit`, `with_marks`, `with_mode`, `set_anchors`, `source_with_anchors` and `set_source_anchors` are on `Document`, not `Editor`.",
+      "`ContextMenu` is `ContextMenu<V, K = ()>`, and `Slot` is `Slot<V, K>`. `ContextMenu::open` takes the key, a `Place` and the choice handler; `render` no longer takes the handler.",
+      "`History::landed` and `interrupt` are on `Run`.",
+      "`markdown::render_source` takes a `&SourceText` instead of a `&str`.",
+      "Source mode applies an edit to the lines it touched and highlights it on the background executor, showing the spans from before the edit until then."
+    ],
+    "fixed": [
+      "Lifting custom marks out of markdown is linear in the source again, instead of quadratic in its code spans, fences and links."
+    ]
+  },
+  {
     "version": "0.2.12",
     "date": "2026-10-10",
     "summary": "Charts: a Vega-Lite-shaped chart model over columnar data, drawn by one gpui element, from Mermaid pie and xychart fences and a vega-lite block. Also quoting as a property of the block, theme families with one variant, seeded variants, and brand tints that leave a family's palette alone.",
