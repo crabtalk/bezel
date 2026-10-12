@@ -849,6 +849,7 @@ impl Editor {
             id,
             &items,
             cursor,
+            closing,
             window,
             cx,
             move |this: &mut Self, hit, window, cx| this.dropdown_hit(which, hit, window, cx),
@@ -901,6 +902,7 @@ impl Editor {
             "paste",
             &pasted.menu(),
             &pasted.cursor,
+            None,
             window,
             cx,
             |this: &mut Self, hit, _, cx| match hit {
@@ -950,6 +952,7 @@ impl Editor {
             "slash",
             &slash.menu(),
             &slash.cursor,
+            None,
             window,
             cx,
             |this: &mut Self, hit, window, cx| match hit {
@@ -1002,6 +1005,7 @@ impl Editor {
             "mention",
             &items,
             &mention.cursor,
+            None,
             window,
             cx,
             |this: &mut Self, hit, _, cx| match hit {

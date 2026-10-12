@@ -21,10 +21,12 @@
       "`ContextMenu` is `ContextMenu<V, K = ()>`, and `Slot` is `Slot<V, K>`. `ContextMenu::open` takes the key, a `Place` and the choice handler; `render` no longer takes the handler.",
       "`History::landed` and `interrupt` are on `Run`.",
       "`markdown::render_source` takes a `&SourceText` instead of a `&str`.",
-      "Source mode applies an edit to the lines it touched and highlights it on the background executor, showing the spans from before the edit until then."
+      "Source mode applies an edit to the lines it touched and highlights it on the background executor, showing the spans from before the edit until then.",
+      "`menu::card` takes the popup's closing instant after the cursor, and `popover::anchored_submenu` takes it last."
     ],
     "fixed": [
-      "Lifting custom marks out of markdown is linear in the source again, instead of quadratic in its code spans, fences and links."
+      "Lifting custom marks out of markdown is linear in the source again, instead of quadratic in its code spans, fences and links.",
+      "A submenu open when its menu closes leaves with the menu, instead of disappearing and playing its entrance again."
     ]
   },
   {

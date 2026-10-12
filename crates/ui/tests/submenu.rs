@@ -214,6 +214,7 @@ impl gpui::Render for Pinned {
                 "pinned",
                 &self.items,
                 &self.cursor,
+                None,
                 window,
                 cx,
                 |view: &mut Self, hit, _, _| {

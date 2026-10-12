@@ -219,6 +219,7 @@ impl<V: 'static, K: PartialEq + 'static> ContextMenu<V, K> {
             id,
             &open.items,
             &open.cursor,
+            self.0.closing_since(),
             window,
             cx,
             move |view: &mut V, hit, window, cx| match hit {

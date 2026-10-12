@@ -752,17 +752,23 @@ pub fn edit_items(
 /// The pointer moves the cursor rather than lighting a row of its own, so a
 /// submenu can only ever hang off the row that is live. Everything the pointer
 /// does arrives as a [`Hit`], dismissal included.
+///
+/// `closing` is the popup's, the same instant its anchored layer is given:
+/// every open submenu panel plays its exit with the root card.
+#[allow(clippy::too_many_arguments)]
 pub fn card<V: 'static>(
     theme: &Theme,
     id: impl Into<SharedString>,
     items: &[Item],
     cursor: &Cursor,
+    closing: Option<web_time::Instant>,
     window: &mut Window,
     cx: &mut Context<V>,
     on: impl Fn(&mut V, Hit, &mut Window, &mut Context<V>) + 'static,
 ) -> gpui::Div {
     let tree = Tree {
         id: id.into(),
+        closing,
         panels: 1 + open_depth(items, cursor.open()),
         outside: Rc::new(Cell::new((None, 0))),
         chain: popover::Chain::default(),
@@ -798,6 +804,8 @@ struct Tree<V: 'static> {
     outside: Rc<Cell<(Option<Point<Pixels>>, usize)>>,
     /// Which way the open panels are stepping across the window.
     chain: popover::Chain,
+    /// When the popup began to close, while it is closing.
+    closing: Option<web_time::Instant>,
     on: Reporter<V>,
 }
 
@@ -982,6 +990,7 @@ impl<V: 'static> Tree<V> {
                             SharedString::from(format!("{id}-panel")),
                             panel,
                             &self.chain,
+                            self.closing,
                         ))
                     },
                 )
