@@ -21,6 +21,7 @@ use gpui::{
     relative, size,
 };
 
+use crate::glyph;
 use theme::{Appearance, Theme};
 
 use std::{
@@ -275,14 +276,20 @@ impl TerminalElement {
         self
     }
 
-    fn line_height(&self) -> f32 {
-        self.font_size * TERM_LINE_HEIGHT / TERM_FONT_SIZE
+    /// Row pitch in logical pixels, a whole number of device pixels.
+    fn line_height(&self, scale: f32) -> f32 {
+        (self.font_size * TERM_LINE_HEIGHT / TERM_FONT_SIZE * scale)
+            .round()
+            .max(1.0)
+            / scale
     }
 
-    fn grid_origin(&self, bounds: Bounds<Pixels>) -> Point<Pixels> {
+    /// Grid origin on the device-pixel grid, so row edges share exact pixels.
+    fn grid_origin(&self, bounds: Bounds<Pixels>, scale: f32) -> Point<Pixels> {
+        let snap = |value: Pixels| Pixels::from((f32::from(value) * scale).floor() / scale);
         point(
-            bounds.left() + self.inset.left,
-            bounds.top() + self.inset.top,
+            snap(bounds.left() + self.inset.left),
+            snap(bounds.top() + self.inset.top),
         )
     }
 }
@@ -398,7 +405,8 @@ impl gpui::Element for TerminalElement {
             .text_system()
             .em_advance(font_id, font_size)
             .unwrap_or(px(self.font_size * 0.6));
-        let line_h = px(self.line_height());
+        let scale = window.scale_factor();
+        let line_h = px(self.line_height(scale));
 
         let inner_w = f32::from(bounds.size.width - self.inset.left - self.inset.right);
         let inner_h = f32::from(bounds.size.height - self.inset.top - self.inset.bottom);
@@ -406,7 +414,7 @@ impl gpui::Element for TerminalElement {
         let rows = ((inner_h / f32::from(line_h)).floor() as i64).clamp(1, 500) as u16;
 
         // Report the measured grid, then snapshot for painting.
-        let origin = self.grid_origin(bounds);
+        let origin = self.grid_origin(bounds, scale);
         let snapshot = (self.grid)(
             GridGeometry {
                 origin,
@@ -555,6 +563,20 @@ impl gpui::Element for TerminalElement {
                     _ => {}
                 }
             }
+            for (col, cell) in row.iter().enumerate() {
+                if cell.hidden || !glyph::covers(cell.ch) {
+                    continue;
+                }
+                let cell_bounds = Bounds::new(
+                    point(origin.x + cell_w * col as f32, y),
+                    size(cell_w, line_h),
+                );
+                bg_quads.extend(glyph::fills(
+                    cell.ch,
+                    cell_bounds,
+                    glyph_color(cell, &theme),
+                ));
+            }
             match cursor.filter(|c| solid && c.style.shape == CursorShape::Block && c.row == row_ix)
             {
                 Some(c) if c.col < row.len() => {
@@ -609,8 +631,9 @@ impl gpui::Element for TerminalElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let line_h = px(self.line_height());
-        let origin = self.grid_origin(bounds);
+        let scale = window.scale_factor();
+        let line_h = px(self.line_height(scale));
+        let origin = self.grid_origin(bounds, scale);
         window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
             let images = std::mem::take(&mut prepaint.images);
             let paint_layer = |layer: Layer, window: &mut Window| {
@@ -673,6 +696,16 @@ impl gpui::Element for TerminalElement {
 /// and every other glyph is its own segment pinned at its own column. Wide
 /// spacers are still skipped — the wide glyph covers both columns, and the
 /// NEXT segment re-pins regardless.
+/// The colour a cell's glyph is painted in, dimmed when the cell is dim.
+fn glyph_color(cell: &CellSnapshot, theme: &Theme) -> Hsla {
+    let (fg, _) = cell.display_colors();
+    let mut color = resolve_color(fg, theme);
+    if cell.dim {
+        color.a *= 0.6;
+    }
+    color
+}
+
 fn shape_row(
     row: &[CellSnapshot],
     theme: &Theme,
@@ -712,7 +745,8 @@ fn shape_row(
         }
         // Tab stops are already expanded in the grid. Paint the stored tab
         // marker as one blank cell so the shaper cannot expand it again.
-        let ch = if cell.hidden || cell.ch == '\t' {
+        // Box and block characters are painted as geometry, see `glyph::fills`.
+        let ch = if cell.hidden || cell.ch == '\t' || glyph::covers(cell.ch) {
             ' '
         } else {
             cell.ch
@@ -732,11 +766,7 @@ fn shape_row(
         if text.is_empty() {
             seg_col = col;
         }
-        let (fg, _) = cell.display_colors();
-        let mut color = resolve_color(fg, theme);
-        if cell.dim {
-            color.a *= 0.6;
-        }
+        let color = glyph_color(cell, theme);
         let mut cell_font = mono.clone();
         cell_font.weight = if cell.bold {
             gpui::FontWeight::BOLD
