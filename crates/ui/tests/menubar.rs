@@ -341,3 +341,11 @@ fn a_disabled_or_empty_segmented_row_is_stepped_over() {
     assert!(!segmented()[1].clone().disabled().selectable());
     assert!(segmented()[1].selectable());
 }
+
+#[test]
+fn a_note_is_read_and_never_landed_on() {
+    let note = Item::Note("1,204 words".into());
+    assert_eq!(note.clone().with_icon(icons::glyph::Check), note);
+    assert_eq!(note.clone().disabled(), note);
+    assert!(!note.selectable());
+}

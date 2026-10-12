@@ -199,6 +199,9 @@ pub enum Item {
     },
     /// A section's name over the rows after it. Never lit, never chosen.
     Heading(SharedString),
+    /// A line of plain text about what the menu is on. Never lit, never
+    /// chosen.
+    Note(SharedString),
     Separator,
 }
 
@@ -267,7 +270,7 @@ impl Item {
             Item::Action { icon: slot, .. } | Item::Submenu { icon: slot, .. } => {
                 *slot = Some(icon.into())
             }
-            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {}
+            Item::Segmented { .. } | Item::Heading(_) | Item::Note(_) | Item::Separator => {}
         }
         self
     }
@@ -278,7 +281,7 @@ impl Item {
     pub fn indented(mut self, level: usize) -> Self {
         match &mut self {
             Item::Action { indent, .. } | Item::Submenu { indent, .. } => *indent = level,
-            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {}
+            Item::Segmented { .. } | Item::Heading(_) | Item::Note(_) | Item::Separator => {}
         }
         self
     }
@@ -367,7 +370,7 @@ impl Item {
             Item::Action { enabled, .. }
             | Item::Submenu { enabled, .. }
             | Item::Segmented { enabled, .. } => *enabled = false,
-            Item::Heading(_) | Item::Separator => {}
+            Item::Heading(_) | Item::Note(_) | Item::Separator => {}
         }
         self
     }
@@ -382,7 +385,7 @@ impl Item {
             Item::Segmented {
                 enabled, segments, ..
             } => *enabled && !segments.is_empty(),
-            Item::Heading(_) | Item::Separator => false,
+            Item::Heading(_) | Item::Note(_) | Item::Separator => false,
         }
     }
 
@@ -423,7 +426,9 @@ impl Item {
                 None => label.to_string(),
             },
             Item::Submenu { label, .. } => label.to_string(),
-            Item::Segmented { .. } | Item::Heading(_) | Item::Separator => String::new(),
+            Item::Segmented { .. } | Item::Heading(_) | Item::Note(_) | Item::Separator => {
+                String::new()
+            }
         }
     }
 
@@ -865,6 +870,9 @@ impl<V: 'static> Tree<V> {
                     Item::Heading(label) => {
                         return popover::menu_heading(theme, label.clone()).into_any_element();
                     }
+                    Item::Note(text) => {
+                        return popover::menu_note(theme, text.clone()).into_any_element();
+                    }
                     _ => {}
                 }
                 let path: Vec<usize> = prefix.iter().copied().chain([row]).collect();
@@ -895,7 +903,7 @@ impl<V: 'static> Tree<V> {
                         enabled,
                         ..
                     } => (label.clone(), icon.clone(), *indent, *enabled),
-                    Item::Segmented { .. } | Item::Heading(_) | Item::Separator => {
+                    Item::Segmented { .. } | Item::Heading(_) | Item::Note(_) | Item::Separator => {
                         unreachable!("returned above")
                     }
                 };

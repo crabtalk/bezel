@@ -69,6 +69,16 @@ pub fn menu_heading(theme: &Theme, label: impl Into<SharedString>) -> gpui::Div 
         .child(tracked_upper(&label))
 }
 
+/// A line of plain text in a menu — see [`crate::menu::Item::Note`].
+pub fn menu_note(theme: &Theme, text: impl Into<SharedString>) -> gpui::Div {
+    div()
+        .px(px(8.0))
+        .py(px(2.0))
+        .text_style(TextStyle::Caption)
+        .text_color(theme.text_muted)
+        .child(text.into())
+}
+
 /// Uppercase + hair-space tracking (see [`menu_heading`]).
 pub fn tracked_upper(label: &str) -> String {
     let upper = label.to_uppercase();
