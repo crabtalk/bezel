@@ -142,7 +142,8 @@ pub enum CopyButton {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[non_exhaustive]
 pub enum Annotation {
-    /// A thread still waiting on someone.
+    /// A thread still waiting on someone. The comment washes are
+    /// [`crate::AppExt::set_comment_paint`]'s.
     #[default]
     Open,
     /// Answered, and kept for the record.
@@ -159,11 +160,17 @@ pub enum Annotation {
 }
 
 impl Annotation {
-    fn wash(self, theme: &Theme, highlight: crate::HighlightPaint, find: crate::FindPaint) -> Hsla {
+    fn wash(
+        self,
+        theme: &Theme,
+        highlight: crate::HighlightPaint,
+        find: crate::FindPaint,
+        comment: crate::CommentPaint,
+    ) -> Hsla {
         match self {
-            Self::Open => theme.warning.opacity(0.20),
-            Self::Resolved => theme.warning.opacity(0.08),
-            Self::Active => theme.warning.opacity(0.38),
+            Self::Open => comment(theme).open,
+            Self::Resolved => comment(theme).resolved,
+            Self::Active => comment(theme).active,
             Self::Highlight(color) => highlight(color, theme),
             Self::Match => find(theme).0,
             Self::Current => find(theme).1,
@@ -384,6 +391,7 @@ struct Overlay<'a> {
     base: Option<&'a Path>,
     highlight: crate::HighlightPaint,
     find: crate::FindPaint,
+    comment: crate::CommentPaint,
     jump: Option<&'a crate::link::Jump>,
 }
 
@@ -518,7 +526,7 @@ impl<'a> Overlay<'a> {
             .filter_map(|(range, kind)| {
                 Some((
                     self.clip(*range, len)?,
-                    kind.wash(theme, self.highlight, self.find),
+                    kind.wash(theme, self.highlight, self.find, self.comment),
                 ))
             })
             .collect()
@@ -630,6 +638,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     let typography = typography.unwrap_or_else(|| cx.typography());
     let highlight = crate::marks::highlight_paint_of(cx);
     let find = crate::find::find_paint_of(cx);
+    let comment = crate::comment::comment_paint_of(cx);
     let jump = jump.map(|to| crate::link::Jump::new(doc, to));
     let gaps: Vec<Pixels> = doc
         .blocks
@@ -672,6 +681,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 base,
                 highlight,
                 find,
+                comment,
                 jump: jump.as_ref(),
             };
             let quote = Quote {
@@ -728,6 +738,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         base: base.map(Path::to_path_buf),
         highlight,
         find,
+        comment,
         jump,
         typography,
         theme,
@@ -765,6 +776,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 base: owned.base.as_deref(),
                 highlight: owned.highlight,
                 find: owned.find,
+                comment: owned.comment,
                 jump: owned.jump.as_ref(),
             };
             let quote = Quote {
@@ -808,6 +820,7 @@ struct Owned {
     base: Option<std::path::PathBuf>,
     highlight: crate::HighlightPaint,
     find: crate::FindPaint,
+    comment: crate::CommentPaint,
     jump: Option<crate::link::Jump>,
     typography: Typography,
     theme: Theme,

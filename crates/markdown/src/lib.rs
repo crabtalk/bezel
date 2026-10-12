@@ -30,6 +30,7 @@ pub use app::AppExt;
 pub mod block;
 #[cfg(feature = "mermaid")]
 pub mod charts;
+pub mod comment;
 pub mod doc;
 pub mod edit;
 pub mod find;
@@ -51,6 +52,7 @@ pub mod source_style;
 pub mod typography;
 
 pub use block::{BlockRenderer, Fence, Rewrite};
+pub use comment::{CommentPaint, CommentWashes, default_comment};
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Quoted, Text};
 pub use edit::{Shortcut, Splice, shortcut};
 pub use find::{FindPaint, default_find};

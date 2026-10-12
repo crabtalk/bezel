@@ -323,6 +323,7 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
         base: None,
         highlight: crate::marks::highlight_paint_of(cx),
         find: crate::find::find_paint_of(cx),
+        comment: crate::comment::comment_paint_of(cx),
         jump: None,
     };
     let style = cx.source_style();

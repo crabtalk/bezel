@@ -10,6 +10,9 @@ pub trait AppExt {
     /// Sets match and current washes; the callback keeps the current match stronger.
     fn set_find_paint(&mut self, paint: crate::FindPaint);
 
+    /// Sets the washes behind comment ranges.
+    fn set_comment_paint(&mut self, paint: crate::CommentPaint);
+
     /// Installs syntax highlighting and the language names offered by pickers.
     fn set_highlighter(
         &mut self,
@@ -74,6 +77,10 @@ impl AppExt for App {
 
     fn set_find_paint(&mut self, paint: crate::FindPaint) {
         crate::find::set_find_paint(self, paint)
+    }
+
+    fn set_comment_paint(&mut self, paint: crate::CommentPaint) {
+        crate::comment::set_comment_paint(self, paint)
     }
 
     fn set_highlighter(
