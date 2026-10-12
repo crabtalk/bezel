@@ -259,7 +259,8 @@ impl CanvasView {
                         .min_w(px(self.style.label.0 / 2.0 * z))
                         .child(session.input.clone())
                         .into_any_element(),
-                    None => kind::text_style(div(), TextStyle::Callout, z)
+                    None => div()
+                        .text_style_at(TextStyle::Callout, z)
                         .text_color(theme.text_muted)
                         .child(text.unwrap_or_default())
                         .into_any_element(),

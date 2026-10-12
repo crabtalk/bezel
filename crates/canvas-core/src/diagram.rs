@@ -1,5 +1,5 @@
-//! A canvas drawn whole for reading: one canvas unit to the pixel, no pan, no
-//! zoom, nothing to pick. Node text is set plain, centred in its shape.
+//! A canvas drawn whole for reading, at a scale: no pan, nothing to pick.
+//! Node text is set plain, centred in its shape.
 
 use gpui::{App, Bounds, Div, Hsla, SharedString, div, point, prelude::*, px, size};
 use theme::{TextStyle, Theme, Typeset};
@@ -23,15 +23,16 @@ const GROUP_WASH: f32 = 0.04;
 /// A node's wash of ink, over what the diagram sits on.
 const NODE_WASH: f32 = 0.06;
 
-/// `canvas` at its own size: every node, group and edge, with its labels.
-pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
+/// `canvas` at `zoom` pixels to the canvas unit: every node, group and edge,
+/// with its labels, text and spacing scaled with it.
+pub fn diagram(canvas: &Canvas, zoom: f32, cx: &App) -> Div {
     let theme = Theme::of(cx).clone();
     let Some((x0, y0, x1, y1)) = extent(canvas) else {
         return div();
     };
     let shift = (MARGIN - x0, MARGIN - y0);
     let (width, height) = (x1 - x0 + 2.0 * MARGIN, y1 - y0 + 2.0 * MARGIN);
-    let place = move |x: f32, y: f32| (x + shift.0, y + shift.1);
+    let place = move |x: f32, y: f32| ((x + shift.0) * zoom, (y + shift.1) * zoom);
 
     let nodes = canvas.lookup();
     let paths: Vec<(Path, crate::model::Edge)> = canvas
@@ -48,7 +49,10 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
             .iter()
             .map(|node| {
                 let (x, y) = place(node.x as f32, node.y as f32);
-                let bounds = Bounds::new(point(x, y), size(node.width as f32, node.height as f32));
+                let bounds = Bounds::new(
+                    point(x, y),
+                    size(node.width as f32 * zoom, node.height as f32 * zoom),
+                );
                 let border = tint(node).unwrap_or(theme.border);
                 let fill = match node.kind == GROUP {
                     true => tint(node).map_or(gpui::transparent_black(), |c| c.opacity(GROUP_WASH)),
@@ -82,15 +86,19 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
                 )
             };
             for (b, shape, fill, border) in &group_boxes {
-                paint::shape(window, *shape, on_screen(b), RADIUS, *fill, *border);
+                paint::shape(window, *shape, on_screen(b), RADIUS * zoom, *fill, *border);
             }
-            let screen =
-                |p: gpui::Point<f32>| point(origin.0 + p.x + shift.0, origin.1 + p.y + shift.1);
+            let screen = |p: gpui::Point<f32>| {
+                point(
+                    origin.0 + (p.x + shift.0) * zoom,
+                    origin.1 + (p.y + shift.1) * zoom,
+                )
+            };
             for (path, stroke, color) in &strokes {
-                paint::edge(window, path, screen, *stroke, 1.0, MARK, *color);
+                paint::edge(window, path, screen, *stroke, 1.0, MARK * zoom, *color);
             }
             for (b, shape, fill, border) in &node_boxes {
-                paint::shape(window, *shape, on_screen(b), RADIUS, *fill, *border);
+                paint::shape(window, *shape, on_screen(b), RADIUS * zoom, *fill, *border);
             }
         },
     )
@@ -101,7 +109,7 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
 
     let label = |text: SharedString| {
         div()
-            .text_style(TextStyle::Callout)
+            .text_style_at(TextStyle::Callout, zoom)
             .text_color(theme.text)
             .child(text)
     };
@@ -113,9 +121,9 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
                 .absolute()
                 .left(px(x))
                 .top(px(y))
-                .w(px(node.width as f32))
-                .h(px(node.height as f32))
-                .p(px(PAD))
+                .w(px(node.width as f32 * zoom))
+                .h(px(node.height as f32 * zoom))
+                .p(px(PAD * zoom))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -130,9 +138,9 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
         Some(
             div()
                 .absolute()
-                .left(px(x + PAD))
-                .top(px(y + PAD / 2.0))
-                .text_style(TextStyle::Caption)
+                .left(px(x + PAD * zoom))
+                .top(px(y + PAD * zoom / 2.0))
+                .text_style_at(TextStyle::Caption, zoom)
                 .text_color(theme.text_muted)
                 .child(text),
         )
@@ -149,16 +157,16 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
                     .flex()
                     .justify_center()
                     .items_center()
-                    .left(px(-60.0))
-                    .w(px(120.0))
-                    .top(px(-10.0))
-                    .h(px(20.0))
+                    .left(px(-60.0 * zoom))
+                    .w(px(120.0 * zoom))
+                    .top(px(-10.0 * zoom))
+                    .h(px(20.0 * zoom))
                     .child(
                         div()
-                            .px(px(4.0))
-                            .rounded(px(4.0))
+                            .px(px(4.0 * zoom))
+                            .rounded(px(4.0 * zoom))
                             .bg(theme.surface_card)
-                            .text_style(TextStyle::Caption)
+                            .text_style_at(TextStyle::Caption, zoom)
                             .text_color(theme.text_muted)
                             .child(text),
                     ),
@@ -169,16 +177,16 @@ pub fn diagram(canvas: &Canvas, cx: &App) -> Div {
     div()
         .relative()
         .flex_none()
-        .w(px(width))
-        .h(px(height))
+        .w(px(width * zoom))
+        .h(px(height * zoom))
         .child(painter)
         .children(group_labels)
         .children(node_labels)
         .children(edge_labels)
 }
 
-/// The width and height [`diagram`] draws `canvas` at, or `None` for a canvas
-/// with nothing in it.
+/// The width and height [`diagram`] draws `canvas` at a zoom of 1, or `None`
+/// for a canvas with nothing in it.
 pub fn size_of(canvas: &Canvas) -> Option<(f32, f32)> {
     let (x0, y0, x1, y1) = extent(canvas)?;
     Some((x1 - x0 + 2.0 * MARGIN, y1 - y0 + 2.0 * MARGIN))

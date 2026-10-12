@@ -29,7 +29,7 @@ use gpui::{
     prelude::*, px,
 };
 use markdown::{Doc, Editing};
-use theme::{TextStyle, Theme};
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::{
     handle::{self, Handle},
@@ -497,14 +497,6 @@ pub fn chrome(dress: Chrome, node: &Node, zoom: f32, cx: &App) -> Div {
 
 pub use canvas_core::paint::color;
 
-/// Text in `style` at `zoom`: size, leading and weight together. Scaling the
-/// size alone keeps the full leading, and the text spills out of its node.
-pub fn text_style<E: Styled>(el: E, style: TextStyle, zoom: f32) -> E {
-    el.text_size(px(style.painted() * zoom))
-        .line_height(px(style.painted_line_height() * zoom))
-        .font_weight(style.weight())
-}
-
 /// Our own node field: the height a growing node was pulled to. Its content
 /// may still run taller.
 pub const MIN_HEIGHT: &str = "minHeight";
@@ -578,7 +570,8 @@ fn group_under(root: Option<Rc<Path>>) -> Kind {
             .children(backdrop)
             .when(!title.is_empty(), |d| {
                 d.child(
-                    text_style(div(), TextStyle::Callout, zoom)
+                    div()
+                        .text_style_at(TextStyle::Callout, zoom)
                         .absolute()
                         .left_0()
                         .bottom(px(node.height as f32 * zoom))
@@ -644,7 +637,8 @@ fn render_text(
 }
 
 fn label(text: String, zoom: f32, color: Hsla) -> AnyElement {
-    text_style(div(), TextStyle::Callout, zoom)
+    div()
+        .text_style_at(TextStyle::Callout, zoom)
         .text_color(color)
         .child(text)
         .into_any_element()

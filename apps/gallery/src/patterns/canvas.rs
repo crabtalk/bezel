@@ -85,7 +85,8 @@ fn session(node: &Node, look: Look, _: &mut Window, cx: &mut App) -> AnyElement 
         .and_then(|turns| turns.as_u64())
         .unwrap_or_default();
     let title = look.editor.unwrap_or_else(|| {
-        canvas::text_style(div(), TextStyle::Headline, zoom)
+        div()
+            .text_style_at(TextStyle::Headline, zoom)
             .text_color(theme.text)
             .child(title(node))
             .into_any_element()
@@ -93,7 +94,8 @@ fn session(node: &Node, look: Look, _: &mut Window, cx: &mut App) -> AnyElement 
     kind::chrome(Chrome::Card, node, zoom, cx)
         .child(title)
         .child(
-            canvas::text_style(div(), TextStyle::Callout, zoom)
+            div()
+                .text_style_at(TextStyle::Callout, zoom)
                 .text_color(theme.text_muted)
                 .child(format!("Session · {turns} turns")),
         )

@@ -2,8 +2,8 @@
 //! or as a chart for the kinds [`chart::mermaid`] reads.
 //!
 //! Parsing and layout cost milliseconds and paint runs every frame, so each
-//! source is laid out once per text size and kept. Zoom lays the source out
-//! again at a scaled text size, so each zoom step is one more cache entry.
+//! source is laid out once per text size and kept. Zoom scales the drawing of
+//! that one layout.
 //!
 //! A press on the diagram pans it and does not reach the editor; the band
 //! above it does, which is how the source is reached for editing.
@@ -17,7 +17,7 @@ use std::{
 use canvas_core::Canvas;
 use gpui::{
     AnyElement, App, ElementId, Entity, Global, MouseButton, MouseDownEvent, MouseMoveEvent,
-    Pixels, Point, SharedString, Window, div, prelude::*, px,
+    Pixels, Point, SharedString, Size, Window, div, prelude::*, px,
 };
 use theme::{TextStyle, Theme};
 use ui::{
@@ -30,11 +30,17 @@ use crate::render::{copy_button, fence_band, fence_panel};
 
 pub const LANGUAGE: &str = "mermaid";
 
+/// The debug selector on the drawn diagram, inside the box [`LANGUAGE`]
+/// selects.
+pub const DIAGRAM_SELECTOR: &str = "mermaid-diagram";
+
 /// Diagrams kept laid out. Past this the cache starts over.
 const CACHED: usize = 64;
 
 /// How far the corner buttons zoom a diagram. `cx.set_mermaid_zoom(zoom)`
-/// installs it for the app; [`Zoom::default`] stands before that.
+/// installs it for the app; [`Zoom::default`] stands before that. A diagram
+/// larger than its box zooms out past [`Self::min`] to the scale at which it
+/// fits, and opens there.
 ///
 /// `min <= 1.0 <= max` and `step > 1.0`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -63,9 +69,27 @@ impl Zoom {
             .map_or_else(Self::default, |installed| installed.0)
     }
 
-    /// The scale `steps` presses from 100% land on.
-    fn at(&self, steps: i32) -> f32 {
-        self.step.powi(steps).clamp(self.min, self.max)
+    /// One press from `scale`, in or out, between `floor` and [`Self::max`].
+    /// A press across 100% stops there.
+    fn press(&self, scale: f32, inward: bool, floor: f32) -> f32 {
+        let next = match inward {
+            true => scale * self.step,
+            false => scale / self.step,
+        };
+        let next = match (scale < 1.0) != (next < 1.0) && scale != 1.0 {
+            true => 1.0,
+            false => next,
+        };
+        next.clamp(floor, self.max)
+    }
+}
+
+/// The largest scale, up to 1, at which `natural` fits in `frame`.
+fn fit(natural: (f32, f32), frame: Size<Pixels>) -> f32 {
+    let ratio = (f32::from(frame.width) / natural.0).min(f32::from(frame.height) / natural.1);
+    match ratio > 0.0 {
+        true => ratio.min(1.0),
+        false => 1.0,
     }
 }
 
@@ -89,14 +113,15 @@ struct Cache(HashMap<u64, Option<Rc<Canvas>>>);
 
 impl Global for Cache {}
 
-/// One diagram's view: how many zoom presses in from 100% it is, how far it is
-/// panned, and the press a
-/// pan is following — where the pointer and the pan were when it went down.
+/// One diagram's view: its scale, `None` until a zoom button is pressed; how
+/// far it is panned; the press a pan is following — where the pointer and the
+/// pan were when it went down; and the box's size as last frame laid it out.
 #[derive(Clone, Copy, Default)]
 struct View {
-    zoom: i32,
+    zoom: Option<f32>,
     pan: Point<Pixels>,
     held: Option<(Point<Pixels>, Point<Pixels>)>,
+    frame: Option<Size<Pixels>>,
 }
 
 fn hash(code: &str, size: f32) -> u64 {
@@ -129,10 +154,10 @@ pub fn render(
     let size = TextStyle::Callout.painted();
     // The box keeps the unzoomed diagram's height, so zooming moves what is in
     // it rather than the page under it.
-    let Some(base) = laid_out(code, size, cx) else {
+    let Some(canvas) = laid_out(code, size, cx) else {
         return crate::charts::render(LANGUAGE, code, chart::mermaid::import, height, window, cx);
     };
-    let (_, natural) = canvas_core::diagram::size_of(&base)?;
+    let natural = canvas_core::diagram::size_of(&canvas)?;
     let key = hash(code, size);
     let id = format!("mermaid-{key:x}");
     let state = window.use_keyed_state(
@@ -142,15 +167,19 @@ pub fn render(
     );
     let view = *state.read(cx);
     let zoom = Zoom::of(cx);
-    let scale = zoom.at(view.zoom);
-    let canvas = match scale == 1.0 {
-        true => base,
-        false => laid_out(code, size * scale, cx)?,
-    };
+    let fit = view.frame.map_or(1.0, |frame| fit(natural, frame));
+    let floor = zoom.min.min(fit);
+    // Until a press, a diagram larger than its box opens fitted to it.
+    let scale = view.zoom.unwrap_or(fit).clamp(floor, zoom.max);
     let theme = Theme::of(cx).clone();
 
-    let (press, follow, release, release_out) =
-        (state.clone(), state.clone(), state.clone(), state.clone());
+    let (press, follow, release, release_out, measure) = (
+        state.clone(),
+        state.clone(),
+        state.clone(),
+        state.clone(),
+        state.clone(),
+    );
     let viewport = div()
         .id(SharedString::from(format!("{id}-view")))
         .debug_selector(|| LANGUAGE.into())
@@ -158,7 +187,7 @@ pub fn render(
         .w_full()
         .map(|el| match height {
             Some(_) => el.flex_1().min_h_0(),
-            None => el.h(px(natural.min(MAX_HEIGHT))),
+            None => el.h(px(natural.1.min(MAX_HEIGHT))),
         })
         .overflow_hidden()
         .map(|el| match view.held {
@@ -187,13 +216,31 @@ pub fn render(
         .on_mouse_up(MouseButton::Left, move |_, _, cx| end_pan(&release, cx))
         .on_mouse_up_out(MouseButton::Left, move |_, _, cx| end_pan(&release_out, cx))
         .child(
+            gpui::canvas(
+                move |bounds, _, cx| {
+                    measure.update(cx, |view, cx| {
+                        if view.frame != Some(bounds.size) {
+                            view.frame = Some(bounds.size);
+                            cx.notify();
+                        }
+                    })
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full(),
+        )
+        .child(
             div()
+                .debug_selector(|| DIAGRAM_SELECTOR.into())
                 .absolute()
                 .left(view.pan.x)
                 .top(view.pan.y)
-                .child(canvas_core::diagram(&canvas, cx)),
+                .child(canvas_core::diagram(&canvas, scale, cx)),
         )
-        .child(controls(&id, &state, view, scale, zoom, &theme));
+        .child(controls(&id, &state, view, scale, floor, zoom, &theme));
 
     Some(
         fence_panel(&theme)
@@ -220,34 +267,39 @@ fn end_pan(state: &Entity<View>, cx: &mut App) {
     });
 }
 
-/// Zoom out, zoom in and reset, in the box's bottom-right corner.
+/// Zoom out, zoom in and reset, in the box's bottom-right corner. `floor` is
+/// the farthest out `scale` may go.
 fn controls(
     id: &str,
     state: &Entity<View>,
     view: View,
     scale: f32,
+    floor: f32,
     zoom: Zoom,
     theme: &Theme,
 ) -> AnyElement {
-    let button =
-        |name: &str, icon: &'static [u8], tip: &'static str, enabled: bool, act: fn(&mut View)| {
-            let state = state.clone();
-            theme
-                .icon_button(icon, ButtonStyle::Ghost, None)
-                .id(SharedString::from(format!("{id}-{name}")))
-                .when(!enabled, |el| el.opacity(0.4))
-                .tooltip(move |window, cx| Tooltip::text(tip, window, cx))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(move |_, _, cx| {
-                    cx.stop_propagation();
-                    if enabled {
-                        state.update(cx, |view, cx| {
-                            act(view);
-                            cx.notify();
-                        });
-                    }
-                })
-        };
+    let button = |name: &str,
+                  icon: &'static [u8],
+                  tip: &'static str,
+                  enabled: bool,
+                  act: Box<dyn Fn(&mut View)>| {
+        let state = state.clone();
+        theme
+            .icon_button(icon, ButtonStyle::Ghost, None)
+            .id(SharedString::from(format!("{id}-{name}")))
+            .when(!enabled, |el| el.opacity(0.4))
+            .tooltip(move |window, cx| Tooltip::text(tip, window, cx))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(move |_, _, cx| {
+                cx.stop_propagation();
+                if enabled {
+                    state.update(cx, |view, cx| {
+                        act(view);
+                        cx.notify();
+                    });
+                }
+            })
+    };
     theme
         .control_group()
         .absolute()
@@ -258,22 +310,25 @@ fn controls(
             "zoom-out",
             glyph::ZoomOut,
             "Zoom out",
-            scale > zoom.min,
-            |view| view.zoom -= 1,
+            scale > floor,
+            Box::new(move |view| view.zoom = Some(zoom.press(scale, false, floor))),
         ))
         .child(button(
             "zoom-in",
             glyph::ZoomIn,
             "Zoom in",
             scale < zoom.max,
-            |view| view.zoom += 1,
+            Box::new(move |view| view.zoom = Some(zoom.press(scale, true, floor))),
         ))
         .child(button(
             "reset",
             glyph::RotateCcw,
             "Reset view",
-            view.zoom != 0 || view.pan != Point::default(),
-            |view| *view = View::default(),
+            view.zoom.is_some() || view.pan != Point::default(),
+            Box::new(|view| {
+                view.zoom = None;
+                view.pan = Point::default();
+            }),
         ))
         .into_any_element()
 }

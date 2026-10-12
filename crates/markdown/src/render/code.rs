@@ -8,14 +8,18 @@ use super::*;
 /// [`SourceText::new`] walks and highlights the whole text.
 /// [`SourceText::edit`] redoes only the lines an edit touched and shifts the
 /// spans around it; the [`SpanJob`] it answers highlights the new text in full,
-/// on any thread, for [`SourceText::set_spans`].
+/// on any thread, for [`SourceText::set_spans`]. [`SourceText::rehighlight`]
+/// answers one when the installed highlighter has changed.
 pub struct SourceText {
     code: Arc<str>,
     ranges: Rc<[Range<usize>]>,
     hashes: Rc<[u64]>,
     spans: Option<Rc<[Span]>>,
-    /// Moved by every edit. A [`SpanJob`] carries the one it was taken at.
+    /// Moved by every edit and rehighlight. A [`SpanJob`] carries the one it
+    /// was taken at.
     generation: u64,
+    /// The highlighter generation the last [`SpanJob`], or the build, used.
+    highlighter: u64,
     sized: RefCell<Option<Sized>>,
 }
 
@@ -71,6 +75,7 @@ impl SourceText {
             hashes,
             spans,
             generation: 0,
+            highlighter: crate::highlight::generation(cx),
             sized: RefCell::new(None),
         }
     }
@@ -168,16 +173,27 @@ impl SourceText {
             kept.into()
         });
         self.code = code;
+        Some(self.span_job(cx))
+    }
+
+    /// Highlight the text again if the installed highlighter has changed since
+    /// it was last highlighted. The spans stand until the job's land.
+    pub fn rehighlight(&mut self, cx: &App) -> Option<SpanJob> {
+        (self.highlighter != crate::highlight::generation(cx)).then(|| self.span_job(cx))
+    }
+
+    fn span_job(&mut self, cx: &App) -> SpanJob {
         self.generation += 1;
-        Some(SpanJob {
+        self.highlighter = crate::highlight::generation(cx);
+        SpanJob {
             code: self.code.clone(),
             highlighter: crate::highlight::installed(cx),
             generation: self.generation,
-        })
+        }
     }
 
     /// Take what a [`SpanJob`] found. `false`, and nothing taken, when the text
-    /// has been edited since the job was made.
+    /// has been edited or rehighlighted since the job was made.
     pub fn set_spans(&mut self, spans: Spans) -> bool {
         if spans.generation != self.generation {
             return false;

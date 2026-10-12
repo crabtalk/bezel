@@ -19,7 +19,7 @@ use gpui::{
     Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px, size,
 };
 use motion::{AppExt as _, LAYOUT};
-use theme::{TextStyle, Theme};
+use theme::{TextStyle, Theme, Typeset};
 use web_time::Instant;
 
 use crate::{

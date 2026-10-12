@@ -33,7 +33,7 @@ mod view;
 
 pub use edge::{EdgeKind, EdgeKinds};
 pub use edit::{CanvasEditor, CanvasEvent, Item};
-pub use kind::{Kind, Kinds, text_style};
+pub use kind::{Kind, Kinds};
 pub use minimap::minimap;
 pub use options::{Options, Overlays, Style};
 pub use tool::Tool;

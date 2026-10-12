@@ -165,6 +165,15 @@ pub trait Typeset: Styled + Sized {
             .line_height(px(style.painted_line_height()))
             .font_weight(style.weight())
     }
+
+    /// [`Self::text_style`] at `zoom`: size, leading and weight together.
+    /// Scaling the size alone keeps the full leading, and the text spills out
+    /// of a box scaled with it.
+    fn text_style_at(self, style: TextStyle, zoom: f32) -> Self {
+        self.text_size(px(style.painted() * zoom))
+            .line_height(px(style.painted_line_height() * zoom))
+            .font_weight(style.weight())
+    }
 }
 
 impl<E: Styled> Typeset for E {}

@@ -106,15 +106,19 @@ impl Editor {
     /// Bring the source view's text up to the document. A first build
     /// highlights in place; an edit after it is highlighted on the background
     /// executor, and the view shows the spans from before it until then.
-    // TODO: also rebuild when the installed highlighter or the syntax registry
-    // would colour the text differently.
+    /// A highlighter installed since the last highlight is run the same way.
     pub(super) fn refresh_source_view(&mut self, cx: &mut Context<Self>) {
         let revision = self.doc.revision();
         let job = match &mut self.source_view {
-            Some((built, _)) if *built == revision => return,
             Some((built, view)) => {
-                *built = revision;
-                view.edit(source_of(&self.doc), cx)
+                let edited = match *built == revision {
+                    true => None,
+                    false => {
+                        *built = revision;
+                        view.edit(source_of(&self.doc), cx)
+                    }
+                };
+                edited.or_else(|| view.rehighlight(cx))
             }
             None => {
                 let view = markdown::SourceText::new(source_of(&self.doc), cx);

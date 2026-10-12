@@ -109,3 +109,28 @@ fn a_job_for_an_older_text_is_refused(cx: &mut TestAppContext) {
         assert!(edited.set_spans(current.run()));
     });
 }
+
+#[gpui::test]
+fn a_new_highlighter_highlights_the_text_again(cx: &mut TestAppContext) {
+    use markdown::AppExt as _;
+    use theme::HighlightKind;
+
+    cx.update(|cx| {
+        let mut view = SourceText::new(BEFORE, cx);
+        assert!(view.rehighlight(cx).is_none(), "nothing has changed");
+
+        cx.set_highlighter(
+            |_, code| Some(vec![(0..code.len(), HighlightKind::Keyword)]),
+            ["markdown"],
+        );
+        let job = view
+            .rehighlight(cx)
+            .expect("a new highlighter rehighlights");
+        assert!(view.rehighlight(cx).is_none(), "once");
+        assert!(view.set_spans(job.run()));
+        assert_eq!(
+            view.spans(),
+            Some(&[(0..BEFORE.len(), HighlightKind::Keyword)][..])
+        );
+    });
+}
