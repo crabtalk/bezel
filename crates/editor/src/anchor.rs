@@ -35,6 +35,19 @@ pub struct Anchor {
     pub id: AnchorId,
     pub range: Selection,
     pub state: Annotation,
+    /// Whether a press on it does something the app answers. The pointer is a
+    /// hand over an actionable anchor and an I-beam over any other text.
+    pub actionable: bool,
+}
+
+/// An anchor as [`crate::Document::set_source_anchors`] takes it: its range in
+/// byte offsets into the markdown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceAnchor {
+    pub id: AnchorId,
+    pub range: Range<usize>,
+    pub state: Annotation,
+    pub actionable: bool,
 }
 
 impl Anchor {
@@ -43,6 +56,7 @@ impl Anchor {
             id,
             range,
             state: Annotation::default(),
+            actionable: false,
         }
     }
 

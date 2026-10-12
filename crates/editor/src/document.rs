@@ -10,13 +10,11 @@
 //! the new snapshot and carries its caret through what changed.
 
 use gpui::{Context, EntityId, EventEmitter};
-use markdown::{
-    Annotation, AppExt as _, Block, BlockKind, Cursor, Doc, Part, Selection, Synced, Text,
-};
-use std::{cell::RefCell, ops::Range, rc::Rc};
+use markdown::{AppExt as _, Block, BlockKind, Cursor, Doc, Part, Selection, Synced, Text};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    anchor::{Anchor, AnchorId, Delta, SourceRanges},
+    anchor::{Anchor, Delta, SourceAnchor, SourceRanges},
     editor::{
         Mode,
         mode::{source_of, switch},
@@ -315,12 +313,12 @@ impl Document {
     pub fn set_source_anchors(
         &mut self,
         source: &str,
-        anchors: Vec<(AnchorId, Range<usize>, Annotation)>,
+        anchors: Vec<SourceAnchor>,
         cx: &mut Context<Self>,
     ) {
         let offsets: Vec<usize> = anchors
             .iter()
-            .flat_map(|(_, range, _)| [range.start, range.end])
+            .flat_map(|anchor| [anchor.range.start, anchor.range.end])
             .collect();
         let ends: Vec<Option<Cursor>> = match self.mode {
             Mode::Blocks => markdown::parse_at_many(source, &offsets, &self.marks).1,
@@ -334,15 +332,16 @@ impl Document {
         self.anchors = anchors
             .into_iter()
             .enumerate()
-            .map(|(ix, (id, _, state))| {
+            .map(|(ix, anchor)| {
                 let range = match (ends[2 * ix], ends[2 * ix + 1]) {
                     (Some(start), Some(end)) => Selection::new(start, end),
                     (surviving, other) => Selection::at(surviving.or(other).unwrap_or_default()),
                 };
                 Anchor {
-                    id,
+                    id: anchor.id,
                     range: range.clamp(&self.doc),
-                    state,
+                    state: anchor.state,
+                    actionable: anchor.actionable,
                 }
             })
             .collect();
