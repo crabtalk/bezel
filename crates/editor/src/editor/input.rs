@@ -6,7 +6,10 @@ use gpui::{Context, EntityInputHandler, UTF16Selection, Window};
 use markdown::{Affinity, Cursor, Selection};
 use ui::input::{composition_selection, offset_to_utf16, range_from_utf16, range_to_utf16};
 
-use crate::editor::{Editor, Reveal};
+use crate::{
+    document::Change,
+    editor::{Editor, Reveal},
+};
 
 /// Typed text and IME arrive here. Offsets are within the caret's block, which
 /// is the unit the platform is told about — a block is a paragraph's worth of
@@ -116,7 +119,9 @@ impl EntityInputHandler for Editor {
             .or_else(|| self.marked.clone())
         {
             let at = self.cursor();
-            self.doc.edit_at(at, |body| body.remove(range.clone()));
+            self.doc
+                .edit()
+                .edit_at(at, |body| body.remove(range.clone()));
             self.place(Cursor {
                 offset: range.start,
                 ..at
@@ -127,7 +132,7 @@ impl EntityInputHandler for Editor {
         // pull the text out from under the IME.
         let at = self.cursor();
         let start = at.offset;
-        self.doc.edit_at(at, |body| body.insert(start, text));
+        self.doc.edit().edit_at(at, |body| body.insert(start, text));
         self.marked = (!text.is_empty()).then_some(start..start + text.len());
         let selected = composition_selection(text, start, marked);
         self.selection = Selection::new(
@@ -142,6 +147,7 @@ impl EntityInputHandler for Editor {
         );
         self.reveal = Some(Reveal::Nearest);
         self.caret_moved();
+        self.publish(Change::Composing, cx);
         cx.notify();
     }
 

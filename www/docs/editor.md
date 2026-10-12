@@ -117,7 +117,12 @@ means unchanged paste behavior. File drops use their existing separate path.
 
 ```rust
 impl Editor {
+    /// An editor on a document of its own.
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self;
+
+    /// An editor on a shared `Document`. Every editor on one document shows
+    /// the same text and undo stack, each with its own caret and scroll.
+    pub fn for_document(document: Entity<Document>, cx: &mut Context<Self>) -> Self;
 
     /// The scroll handle of the pane the document sits in, not one of the
     /// editor's own, or the caret cannot follow typing down the page.
@@ -151,20 +156,30 @@ impl Editor {
     /// the same place.
     pub fn with_chrome(self, chrome: Chrome) -> Self;
 
-    /// One editor's own dialect, rather than the one `markdown::AppExt::set_marks`
-    /// installed.
-    pub fn with_marks(self, marks: markdown::Marks) -> Self;
-
-    /// Default 100, coalesced so a run of typing comes back as a word. Undo
-    /// crosses a mode switch and carries the mode with it.
-    pub fn with_undo_limit(self, limit: usize) -> Self;
-
     /// Where everything landed last frame — `block_bounds`, `picture_bounds`,
     /// `language_bounds`, `checkbox_bounds`, `hit`, and `rects(selection)` for
     /// the painted rows of a range.
     pub fn layouts(&self) -> &BlockLayouts;
 
     // ...
+}
+
+impl Document {
+    pub fn new(source: &str, cx: &mut Context<Self>) -> Self;
+
+    /// One document's own dialect, rather than the one
+    /// `markdown::AppExt::set_marks` installed.
+    pub fn with_marks(self, marks: markdown::Marks) -> Self;
+
+    /// Open in `Mode::Source`. Nothing is recorded.
+    pub fn with_mode(self, mode: Mode) -> Self;
+
+    /// Default 100, coalesced so a run of typing comes back as a word. Undo
+    /// crosses a mode switch and carries the mode with it.
+    pub fn with_undo_limit(self, limit: usize) -> Self;
+
+    pub fn source(&self) -> String;
+    pub fn mode(&self) -> Mode;
 }
 
 // editor

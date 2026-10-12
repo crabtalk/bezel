@@ -36,6 +36,7 @@ impl Editor {
         }
         self.edit(EditKind::Structure, cx, |this| {
             this.doc
+                .edit()
                 .blocks
                 .push(markdown::Block::new(BlockKind::Paragraph(Text::default())));
             let ix = this.doc.blocks.len() - 1;
@@ -215,7 +216,7 @@ impl Editor {
             let (start, end) = self.selection.ordered();
             (unit, start..end)
         });
-        self.history.interrupt();
+        self.run.interrupt();
         self.caret_moved();
         // Only the editor sees the press, so only the editor can
         // say which anchor it landed on.
@@ -244,7 +245,7 @@ impl Editor {
             let (start, end) = self.selection.ordered();
             if self.selection.is_collapsed() || hit < start || hit > end {
                 self.selection = Selection::at(hit).with_affinity(affinity).clamp(&self.doc);
-                self.history.interrupt();
+                self.run.interrupt();
                 self.caret_moved();
             }
         }

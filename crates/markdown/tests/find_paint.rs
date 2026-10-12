@@ -27,7 +27,7 @@ impl Render for Page {
             ..Editing::default()
         };
         let body = if self.source {
-            markdown::render_source("one two sun", editing, cx)
+            markdown::render_source(&markdown::SourceText::new("one two sun", cx), editing, cx)
         } else {
             markdown::render_with(&markdown::parse("one two sun"), editing, window, cx)
         };

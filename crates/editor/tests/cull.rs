@@ -58,9 +58,8 @@ fn open_in(
         let scroll = scroll.clone();
         move |_, cx| Page {
             editor: cx.new(|cx| {
-                Editor::new(&source(), cx)
-                    .with_mode(mode)
-                    .with_scroll(scroll.clone())
+                let document = cx.new(|cx| editor::Document::new(&source(), cx).with_mode(mode));
+                Editor::for_document(document, cx).with_scroll(scroll.clone())
             }),
             scroll,
         }
@@ -232,4 +231,41 @@ fn source_mode_builds_only_the_lines_near_the_viewport(cx: &mut TestAppContext) 
         painted(end, &mut cx),
         "the last line is built at the bottom"
     );
+}
+
+/// An edit in source mode reaches the lines it is painted from on the next
+/// frame, not the text they were built from before it.
+#[gpui::test]
+fn source_mode_paints_an_edit_on_the_next_frame(cx: &mut TestAppContext) {
+    let (editor, _, mut cx) = open_in(Mode::Source, true, cx);
+    let lines = |cx: &mut VisualTestContext| cx.update(|_, cx| editor.read(cx).source_lines());
+    let before = lines(&mut cx);
+    let counted = cx.update(|_, cx| editor.read(cx).source().split('\n').count());
+    assert_eq!(before, counted);
+
+    cx.simulate_keystrokes("enter");
+    assert_eq!(lines(&mut cx), before + 1, "counted before a frame paints");
+    frames(&mut cx, 1);
+    assert_eq!(lines(&mut cx), before + 1, "and after one has");
+
+    cx.simulate_input("X");
+    frames(&mut cx, 1);
+    let at = cx.update(|_, cx| {
+        editor
+            .read(cx)
+            .source()
+            .find('X')
+            .expect("typed into the source")
+    });
+    let painted = cx.update(|_, cx| {
+        editor
+            .read(cx)
+            .layouts()
+            .position(
+                Cursor::new(0, Part::Code, at),
+                markdown::Affinity::Downstream,
+            )
+            .is_some()
+    });
+    assert!(painted, "the typed line is built from the edited text");
 }

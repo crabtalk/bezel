@@ -74,6 +74,7 @@ impl Editor {
             self.edit(EditKind::Structure, cx, |this| {
                 match this
                     .doc
+                    .edit()
                     .blocks
                     .get_mut(sizing.ix)
                     .map(|block| &mut block.kind)

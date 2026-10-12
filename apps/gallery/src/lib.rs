@@ -21,6 +21,7 @@ use theme::{
 };
 use ui::{
     combobox::{self, Combobox},
+    context_menu::{ContextMenu, Place},
     control_bar::{self, Shape as ControlBarShape},
     date::{self, Calendar, Date},
     floating::{self, Floating},
@@ -187,14 +188,24 @@ const COMPACT_NAV_PAD: f32 = if cfg!(target_os = "macos") {
     RAIL_PAD
 };
 
+/// Which of the context menu page's menus is up.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Demo {
+    /// At a right press anywhere in the window.
+    Pointer,
+    /// Under the page's `···`.
+    Button,
+}
+
 pub struct Gallery {
     /// Mounted only while open — a palette that lingers keeps a stale query.
     palette: Option<Entity<CommandPalette>>,
     last_command: Option<SharedString>,
     /// Built on the first render, which is the first time there is a window.
     pending: Option<Entity<PendingKeys>>,
-    /// Right-click menu, anchored at the click position.
-    context_menu: popover::Popup<gpui::Point<gpui::Pixels>>,
+    /// The context menu page's two menus: one at a right press anywhere,
+    /// one under its `···`.
+    context_menu: ContextMenu<Self, Demo>,
     /// The menubar demo, which holds which menu is down.
     menubar: Entity<Menubar>,
     /// The app's own menus, mounted in the nav where the platform has no menu
@@ -313,7 +324,7 @@ impl Gallery {
             palette: None,
             last_command: None,
             pending: None,
-            context_menu: popover::Popup::default(),
+            context_menu: ContextMenu::default(),
             sheet: popover::Popup::default(),
             drawer: popover::Popup::default(),
             focus_handle: cx.focus_handle(),
@@ -484,10 +495,7 @@ impl Gallery {
     }
 
     fn close_context_menu(&mut self, cx: &mut Context<Self>) {
-        if self.context_menu.begin_close() {
-            popover::reap_popup(self, cx, |view: &mut Self| &mut view.context_menu);
-        }
-        cx.notify();
+        ContextMenu::close(self, |view| &mut view.context_menu, cx);
     }
 
     /// Straight off, because `popover::modal` has no exit to play — unlike the

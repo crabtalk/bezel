@@ -25,6 +25,10 @@ use markdown::{Annotation, Cursor, Part, Selection, Splice};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AnchorId(pub u64);
 
+/// Each anchor's range in byte offsets into the markdown, `None` where the
+/// markdown has no place for an end.
+pub type SourceRanges = Vec<(AnchorId, Option<Range<usize>>)>;
+
 /// A range in the document, and which wash it paints.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Anchor {

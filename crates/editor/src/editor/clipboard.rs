@@ -5,7 +5,7 @@ use super::*;
 impl Editor {
     pub(super) fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
         self.selection = Selection::all(&self.doc);
-        self.history.interrupt();
+        self.run.interrupt();
         self.caret_moved();
         cx.notify();
     }
@@ -40,7 +40,7 @@ impl Editor {
         };
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(source));
         self.edit(EditKind::Structure, cx, |this| {
-            let splice = this.doc.replace(this.selection, Text::default());
+            let splice = this.doc.edit().replace(this.selection, Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             vec![Delta::Spliced(splice)]
         });
@@ -112,6 +112,7 @@ impl Editor {
             let before = this.doc.blocks.len();
             let head = this
                 .doc
+                .edit()
                 .splice(removed, markdown::parse_with(source, &this.marks));
             this.selection = Selection::at(head.clamp(&this.doc));
             vec![Delta::Spliced(Splice {
@@ -131,7 +132,7 @@ impl Editor {
     /// Put `text` in place of the selection as it stands, caret after it.
     pub(super) fn paste_literal(&mut self, text: &str, cx: &mut Context<Self>) {
         self.edit(EditKind::Structure, cx, |this| {
-            let splice = this.doc.replace(this.selection, Text::plain(text));
+            let splice = this.doc.edit().replace(this.selection, Text::plain(text));
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             vec![Delta::Spliced(splice)]
         });
@@ -154,7 +155,7 @@ impl Editor {
         let at = self.cursor();
         let alone = at.part == Part::Body && self.caret_text().is_some_and(Text::is_empty);
         self.edit(EditKind::Structure, cx, |this| {
-            let splice = this.doc.replace(this.selection, Text::link(&url));
+            let splice = this.doc.edit().replace(this.selection, Text::link(&url));
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             vec![Delta::Spliced(splice)]
         });
@@ -193,7 +194,10 @@ impl Editor {
                         },
                     }],
                 };
-                let splice = this.doc.replace(Selection::new(pasted.at, end), text);
+                let splice = this
+                    .doc
+                    .edit()
+                    .replace(Selection::new(pasted.at, end), text);
                 this.selection = Selection::at(splice.caret.clamp(&this.doc));
                 vec![Delta::Spliced(splice)]
             }),

@@ -58,17 +58,18 @@ fn anchor(
 ) {
     let (block, from, to) = range;
     cx.update(|_, cx| {
-        editor.update(cx, |editor, cx| {
-            editor.set_anchors(
+        let document = editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            document.set_anchors(
                 vec![Anchor::new(
                     ID,
                     Selection::new(at(block, from), at(block, to)),
                 )],
                 cx,
-            );
-            editor.select(Selection::at(caret), cx);
-        })
+            )
+        });
     });
+    cx.update(|_, cx| editor.update(cx, |editor, cx| editor.select(Selection::at(caret), cx)));
 }
 
 /// The anchored range, as `(block, start, end)`.
@@ -344,8 +345,9 @@ fn an_anchor_end_in_the_markup_comes_back_detached(cx: &mut TestAppContext) {
     // Between `#` and its space: no block owns that position.
     let code = |offset| Cursor::new(0, Part::Code, offset);
     cx.update(|_, cx| {
-        editor.update(cx, |editor, cx| {
-            editor.set_anchors(vec![Anchor::new(ID, Selection::new(code(1), code(7)))], cx)
+        let document = editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            document.set_anchors(vec![Anchor::new(ID, Selection::new(code(1), code(7)))], cx)
         })
     });
     toggle_source(&editor, &mut cx);
@@ -353,4 +355,99 @@ fn an_anchor_end_in_the_markup_comes_back_detached(cx: &mut TestAppContext) {
         detached(&editor, &mut cx),
         "not stretched from the document start"
     );
+}
+
+#[gpui::test]
+fn anchors_cross_to_and_from_the_markdown(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    let bravo = SOURCE.find("bravo").unwrap();
+    cx.update(|_, cx| {
+        let document = editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            document.set_source_anchors(
+                SOURCE,
+                vec![(ID, bravo..bravo + 5, markdown::Annotation::Open)],
+                cx,
+            )
+        })
+    });
+    assert_eq!(anchored(&editor, &mut cx), (1, 0, 5));
+    let (source, ranges) =
+        cx.update(|_, cx| editor.read(cx).document().read(cx).source_with_anchors());
+    assert_eq!(source, SOURCE);
+    assert_eq!(ranges, vec![(ID, Some(bravo..bravo + 5))]);
+}
+
+#[gpui::test]
+fn anchor_tops_follow_the_document_down(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    let (alpha, charlie) = (
+        SOURCE.find("alpha").unwrap(),
+        SOURCE.find("charlie").unwrap(),
+    );
+    cx.update(|_, cx| {
+        let document = editor.read(cx).document().clone();
+        document.update(cx, |document, cx| {
+            document.set_source_anchors(
+                SOURCE,
+                vec![
+                    (
+                        AnchorId(2),
+                        charlie..charlie + 7,
+                        markdown::Annotation::Open,
+                    ),
+                    (ID, alpha..alpha + 5, markdown::Annotation::Open),
+                ],
+                cx,
+            )
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let tops = cx.update(|_, cx| editor.read(cx).anchor_tops());
+    let ids: Vec<_> = tops.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, vec![ID, AnchorId(2)], "in document order");
+    assert!(tops[0].1 < tops[1].1, "{tops:?}");
+}
+
+#[gpui::test]
+fn washes_leave_the_anchors_alone(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    let hit = Selection::new(at(0, 0), at(0, 5));
+    cx.update(|_, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_washes(vec![(hit, markdown::Annotation::Match)], cx)
+        })
+    });
+    cx.update(|_, cx| {
+        assert!(editor.read(cx).anchors().is_empty());
+        assert_eq!(
+            editor.read(cx).washes(),
+            &[(hit, markdown::Annotation::Match)]
+        );
+    });
+}
+
+#[gpui::test]
+fn the_pointer_over_anchored_text_names_the_anchor(cx: &mut TestAppContext) {
+    let (editor, mut cx) = open(cx);
+    anchor(&editor, &mut cx, ONE, at(0, 0));
+    let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    cx.update(|_, cx| {
+        let heard = heard.clone();
+        cx.subscribe(&editor, move |_, event: &editor::EditorEvent, _| {
+            if let editor::EditorEvent::AnchorHovered(over) = event {
+                heard.borrow_mut().push(*over);
+            }
+        })
+        .detach();
+    });
+    let bounds = cx
+        .update(|_, cx| editor.read(cx).anchor_bounds(ID))
+        .expect("the anchor painted somewhere");
+    let on = bounds.origin + gpui::point(px(2.0), bounds.size.height / 2.0);
+    cx.simulate_mouse_move(on, None, gpui::Modifiers::none());
+    cx.run_until_parked();
+    assert_eq!(heard.borrow().as_slice(), &[Some(ID)]);
 }

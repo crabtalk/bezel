@@ -11,7 +11,7 @@
 //! turning a click into a position.
 
 use gpui::{
-    App, Context, CursorStyle, ElementInputHandler, EventEmitter, FocusHandle, Focusable,
+    App, Context, CursorStyle, ElementInputHandler, Entity, EventEmitter, FocusHandle, Focusable,
     KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
 };
 use markdown::{
@@ -23,7 +23,8 @@ use theme::Theme;
 
 use crate::{
     anchor::{Anchor, AnchorId, Delta},
-    history::{EditKind, History},
+    document::{Change, Document, DocumentEvent, Tracked},
+    history::{EditKind, Run},
     link::{self, Choice},
     slash::{Slash, SlashAction, SlashAt},
     text_size,
@@ -37,10 +38,11 @@ pub(crate) mod image;
 mod input;
 pub mod keys;
 pub(crate) mod menu;
-mod mode;
+pub(crate) mod mode;
 mod pointer;
 mod render;
 mod sizing;
+mod sync;
 mod table;
 mod typing;
 
@@ -81,6 +83,9 @@ pub enum EditorEvent {
     Changed,
     /// A click landed on an anchor's range.
     AnchorActivated(AnchorId),
+    /// The pointer came over an anchor's painted text, or left it: `None`
+    /// over none, and when the pointer leaves the editor.
+    AnchorHovered(Option<AnchorId>),
     /// The editor switched between the document and its source, which a host
     /// lighting its own toggle has no other way to hear about — the switch can
     /// come from an undo as well as from the button.
@@ -226,7 +231,7 @@ fn fenceable(doc: &Doc, selection: Selection) -> bool {
 /// there is no caret and no placeholder, and neither a click nor a hit test
 /// has a target to find. An empty file would sit inert until something typed
 /// a block into existence, which is the one thing you cannot do with no caret.
-fn ensure_block(doc: &mut Doc) -> bool {
+pub(crate) fn ensure_block(doc: &mut Doc) -> bool {
     if !doc.blocks.is_empty() {
         return false;
     }
@@ -327,17 +332,23 @@ pub(crate) enum Reveal {
 }
 
 pub struct Editor {
-    doc: Doc,
-    /// The dialect this document is read and written in — the app's own marks,
-    /// taken once at construction. One editor, one spelling: a document that
-    /// changed dialect between a read and a write would rewrite itself.
+    document: Entity<Document>,
+    /// This editor's snapshot of the document, its form, its marks and its
+    /// anchors: what it edits, handed back to [`Self::document`] after each
+    /// change, and replaced whenever another editor changes the document.
+    doc: Tracked,
+    /// The source view's text and the [`Tracked::revision`] it was built at.
+    /// Read only in [`Mode::Source`].
+    source_view: Option<(u64, markdown::SourceText)>,
+    /// Highlighting the source view's text after an edit. Dropping it cancels.
+    source_spans: Option<Task<()>>,
     marks: markdown::Marks,
     /// Which of the editor's own affordances paint. The app's, so one document
     /// can carry the lot and another none of it.
     chrome: Chrome,
-    /// Which form the document is in. In [`Mode::Source`] `doc` is one fenced
-    /// block holding the markdown, so every operation below that is about
-    /// *blocks* asks [`Editor::blocks`] first.
+    /// In [`Mode::Source`] `doc` is one fenced block holding the markdown, so
+    /// every operation below that is about *blocks* asks [`Editor::blocks`]
+    /// first.
     mode: Mode,
     /// Collapsed for an ordinary caret, so there is one position here rather
     /// than a caret and a range that can disagree.
@@ -349,15 +360,15 @@ pub struct Editor {
     /// Where each text landed last frame, so a click can be turned into a
     /// caret. Only paint knows this, so the renderer fills it.
     layouts: BlockLayouts,
-    history: History,
+    run: Run,
     /// Which half of the blink the caret is in. Flipped by [`Self::start_blink`].
     caret_on: bool,
     /// The blink, alive only while the document holds focus.
     blink: Option<Task<()>>,
-    /// Comment ranges, mapped through every edit and snapshotted with the
-    /// document. Here rather than in the app because an undo restores a whole
-    /// document and leaves no delta an app could map its own copy through.
     anchors: Vec<Anchor>,
+    /// Ranges washed for one frame's worth of the app's say — find hits. Not
+    /// mapped through edits and not in the history: the app sets them again.
+    washes: Vec<(Selection, Annotation)>,
     /// Marks the next typed character will carry — cmd-B at a collapsed caret,
     /// which otherwise has no range to apply to and so would do nothing.
     /// Cleared by any motion, because they belong to a spot and not to a mood.
@@ -414,6 +425,9 @@ pub struct Editor {
     /// Whether the pointer is over painted text, which is the only place the
     /// editor claims an I-beam.
     over_text: bool,
+    /// The anchor whose text the pointer is over — see
+    /// [`EditorEvent::AnchorHovered`].
+    over_anchor: Option<AnchorId>,
     /// The host's scroll box, when it gave one, and the reveal the caret still
     /// owes it.
     scroll: Option<gpui::ScrollHandle>,
@@ -438,29 +452,52 @@ pub struct Editor {
     base: Option<std::path::PathBuf>,
     image_overlay: Option<markdown::ImageOverlay>,
     image_overlay_corner: markdown::ImageOverlayCorner,
+    _document: gpui::Subscription,
 }
 
 impl Editor {
+    /// An editor on a document of its own.
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
-        let marks = cx.marks();
-        let mut doc = markdown::parse_with(source, &marks);
-        ensure_block(&mut doc);
+        let document = cx.new(|cx| Document::new(source, cx));
+        Self::for_document(document, cx)
+    }
+
+    /// An editor on `document`, beside any others already on it.
+    pub fn for_document(document: Entity<Document>, cx: &mut Context<Self>) -> Self {
+        let (doc, mode, marks, anchors) = {
+            let document = document.read(cx);
+            (
+                document.doc.clone(),
+                document.mode,
+                document.marks.clone(),
+                document.anchors.clone(),
+            )
+        };
+        let subscription = cx.subscribe(&document, |this, document, event: &DocumentEvent, cx| {
+            if event.by != Some(cx.entity_id()) {
+                this.take_document(&document, &event.change, cx);
+            }
+        });
         Self {
+            document,
             marks,
             // Clamped, not defaulted: a document opening on a fence or a table
             // has no body at block zero, and a caret claiming one resolves
             // against nothing until something moves it.
             selection: Selection::at(Cursor::default().clamp(&doc)),
             doc,
+            mode,
+            anchors,
+            source_view: None,
+            source_spans: None,
             chrome: Chrome::default(),
-            mode: Mode::default(),
             focus_handle: cx.focus_handle(),
             marked: None,
             layouts: BlockLayouts::default(),
-            history: History::default(),
+            run: Run::default(),
             caret_on: true,
             blink: None,
-            anchors: Vec::new(),
+            washes: Vec::new(),
             stored: Vec::new(),
             slash: None,
             mention: None,
@@ -484,6 +521,7 @@ impl Editor {
             width: gpui::Pixels::ZERO,
             dragging: None,
             over_text: false,
+            over_anchor: None,
             scroll: None,
             reveal: None,
             drag_at: None,
@@ -494,28 +532,13 @@ impl Editor {
             base: None,
             image_overlay: None,
             image_overlay_corner: markdown::ImageOverlayCorner::default(),
+            _document: subscription,
         }
     }
 
-    /// How many undo steps to keep. App-wide configuration would be a gpui
-    /// global alongside [`init`], not a `Theme` field — the theme is rebuilt on
-    /// every light/dark switch, which would quietly reset anything behavioural
-    /// parked in it.
-    pub fn with_undo_limit(mut self, limit: usize) -> Self {
-        self.history = History::with_limit(limit);
-        self
-    }
-
-    /// Read and write this document with marks of its own, rather than the ones
-    /// [`markdown::AppExt::set_marks`] installed. For an app whose editors do not all
-    /// speak the same dialect.
-    pub fn with_marks(mut self, marks: markdown::Marks) -> Self {
-        let source = self.source();
-        self.marks = marks;
-        self.doc = markdown::parse_with(&source, &self.marks);
-        ensure_block(&mut self.doc);
-        self.selection = self.selection.clamp(&self.doc);
-        self
+    /// The document this editor is a view of.
+    pub fn document(&self) -> &Entity<Document> {
+        &self.document
     }
 
     /// Which of the editor's own affordances to paint. See [`Chrome`].
@@ -559,16 +582,6 @@ impl Editor {
     /// What is painting now, for an app whose own bar mirrors it.
     pub fn chrome(&self) -> Chrome {
         self.chrome
-    }
-
-    /// Open in [`Mode::Source`] rather than on the document — an app whose
-    /// editor is a markdown file first. Nothing is recorded: this is where the
-    /// document starts, not a switch to step back over.
-    pub fn with_mode(mut self, mode: Mode) -> Self {
-        if mode != self.mode {
-            self.switch(mode);
-        }
-        self
     }
 
     /// Open the document at a size of its own, in points — the app's settings
@@ -654,7 +667,7 @@ impl Editor {
 
     fn select_revealing(&mut self, selection: Selection, reveal: Reveal, cx: &mut Context<Self>) {
         self.selection = selection.clamp(&self.doc);
-        self.history.interrupt();
+        self.run.interrupt();
         self.reveal = Some(reveal);
         self.caret_moved();
         cx.notify();

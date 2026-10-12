@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use editor::{AppExt as _, Editor, ImageStore, Mode, PasteContent, Source};
 use gpui::{
-    App, ClipboardEntry, ClipboardItem, ClipboardString, Entity, EntityId, ExternalPaths,
-    Focusable, Global, TestAppContext, VisualTestContext,
+    App, AppContext as _, ClipboardEntry, ClipboardItem, ClipboardString, Entity, EntityId,
+    ExternalPaths, Focusable, Global, TestAppContext, VisualTestContext,
 };
 use markdown::{BlockKind, Part, Selection};
 
@@ -17,7 +17,10 @@ fn open(source: &str, mode: Mode, cx: &mut TestAppContext) -> (Entity<Editor>, V
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
     });
-    let window = cx.add_window(|_, cx| Editor::new(source, cx).with_mode(mode).with_base("/notes"));
+    let window = cx.add_window(|_, cx| {
+        let document = cx.new(|cx| editor::Document::new(source, cx).with_mode(mode));
+        Editor::for_document(document, cx).with_base("/notes")
+    });
     let editor = window.root(cx).unwrap();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
     visual.update(|window, cx| window.focus(&editor.read(cx).focus_handle(cx), cx));
@@ -93,8 +96,9 @@ fn markdown_response_uses_the_editors_dialect(cx: &mut TestAppContext) {
     visual.update(|_, cx| {
         // Set the dialect on a fresh editor before it reads the paste.
         editor.update(cx, |editor, cx| {
-            *editor =
-                Editor::new("", cx).with_marks(markdown::Marks::new().with("highlight", "=="));
+            let marks = markdown::Marks::new().with("highlight", "==");
+            let document = cx.new(|cx| editor::Document::new("", cx).with_marks(marks));
+            *editor = Editor::for_document(document, cx);
         });
         cx.set_paste_handler(|_, _, _, _| {
             Some(PasteContent::Markdown("# Title\n\n==marked==".into()))

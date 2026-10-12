@@ -200,6 +200,7 @@ impl Editor {
         self.edit(EditKind::Delete, cx, |this| {
             let splice = this
                 .doc
+                .edit()
                 .replace(Selection::new(target, at), Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             this.track_slash("", Vec::new());
@@ -218,7 +219,7 @@ impl Editor {
         // again must not undo as one step across two places. It also spends any
         // stored mark and any open paste menu, both of which belonged to the
         // spot the caret just left.
-        self.history.interrupt();
+        self.run.interrupt();
         self.stored.clear();
         self.pasted = None;
         self.reveal = Some(Reveal::Nearest);
@@ -236,24 +237,43 @@ impl Editor {
         // Any edit answers the paste menu by ignoring it — whatever it offered
         // was about a block that no longer holds only the link.
         self.pasted = None;
-        self.history
-            .record(kind, self.mode, &self.doc, self.selection, &self.anchors);
+        let joins =
+            self.run.joins(kind, self.selection) && self.document.read(cx).history.can_undo();
+        if !joins {
+            self.run.interrupt();
+        }
+        let (mode, selection) = (self.mode, self.selection);
+        self.document.update(cx, |document, _| {
+            document
+                .history
+                .record(joins, mode, &self.doc, selection, &self.anchors)
+        });
         // A list rather than one: Enter clears a selection *and* splits, and an
         // anchor mapped through only half of that lands in the wrong place.
-        for delta in edit(self) {
+        let deltas = edit(self);
+        for delta in &deltas {
             for anchor in &mut self.anchors {
-                anchor.map(&delta);
+                anchor.map(delta);
             }
         }
         // Deleting the last block is the other way to an empty document, and
         // the caret belongs at the start of whatever replaces it.
-        if ensure_block(&mut self.doc) {
+        let mut replaced = false;
+        if ensure_block(self.doc.edit()) {
             self.selection = Selection::at(Cursor::default());
+            replaced = true;
         }
         if !self.blocks() {
-            self.ensure_source();
+            replaced |= self.ensure_source();
         }
-        self.history.landed(kind, self.selection);
+        self.run.landed(kind, self.selection);
+        self.publish(
+            match replaced {
+                true => Change::Replaced,
+                false => Change::Edited(deltas.into()),
+            },
+            cx,
+        );
         // Typing moves the caret as surely as an arrow key does, and a split
         // moves it onto a block that does not exist until this frame paints.
         self.reveal = Some(Reveal::Nearest);
@@ -362,7 +382,10 @@ impl Editor {
         }
         self.edit(EditKind::Delete, cx, |this| {
             let from = Cursor::new(at.block, at.part, at.offset - width);
-            let splice = this.doc.replace(Selection::new(from, at), Text::default());
+            let splice = this
+                .doc
+                .edit()
+                .replace(Selection::new(from, at), Text::default());
             this.selection = Selection::at(splice.caret.clamp(&this.doc));
             vec![Delta::Spliced(splice)]
         });

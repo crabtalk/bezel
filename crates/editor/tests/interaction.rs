@@ -1355,11 +1355,33 @@ fn open_built(
     build: impl FnOnce(Editor) -> Editor,
     cx: &mut TestAppContext,
 ) -> (Entity<Editor>, VisualTestContext) {
+    open_made(|cx| build(Editor::new(source, cx)), cx)
+}
+
+/// [`open_built`] on a document built by `build`.
+fn open_document(
+    source: &str,
+    build: impl FnOnce(editor::Document) -> editor::Document,
+    cx: &mut TestAppContext,
+) -> (Entity<Editor>, VisualTestContext) {
+    open_made(
+        |cx| {
+            let document = cx.new(|cx| build(editor::Document::new(source, cx)));
+            Editor::for_document(document, cx)
+        },
+        cx,
+    )
+}
+
+fn open_made(
+    make: impl FnOnce(&mut gpui::Context<Editor>) -> Editor,
+    cx: &mut TestAppContext,
+) -> (Entity<Editor>, VisualTestContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
     });
-    let window = cx.add_window(|_, cx| build(Editor::new(source, cx)));
+    let window = cx.add_window(|_, cx| make(cx));
     let editor = window.root(cx).unwrap();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
     visual.simulate_resize(size(px(360.0), px(600.0)));
@@ -1400,9 +1422,9 @@ fn chrome_turned_off_never_reaches_the_screen(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn an_editor_can_open_on_its_source(cx: &mut TestAppContext) {
-    let (editor, mut cx) = open_built(
+    let (editor, mut cx) = open_document(
         "# Title\n\nbody",
-        |editor| editor.with_mode(editor::Mode::Source),
+        |document| document.with_mode(editor::Mode::Source),
         cx,
     );
 
@@ -1421,7 +1443,11 @@ fn an_editor_can_open_on_its_source(cx: &mut TestAppContext) {
 #[gpui::test]
 fn an_app_mark_survives_the_editor(cx: &mut TestAppContext) {
     let marks = markdown::Marks::new().with("highlight", "==");
-    let (editor, mut cx) = open_built("a ==lit== word", move |editor| editor.with_marks(marks), cx);
+    let (editor, mut cx) = open_document(
+        "a ==lit== word",
+        move |document| document.with_marks(marks),
+        cx,
+    );
 
     let highlight = markdown::Mark::Custom("highlight".into());
     cx.simulate_keystrokes("right right right");
@@ -1587,9 +1613,9 @@ fn copy_text(text: &str, cx: &mut VisualTestContext) {
 
 #[gpui::test]
 fn a_paste_in_source_goes_into_the_text_at_the_caret(cx: &mut TestAppContext) {
-    let (editor, mut cx) = open_built(
+    let (editor, mut cx) = open_document(
         "# Title\n\nbody",
-        |editor| editor.with_mode(editor::Mode::Source),
+        |document| document.with_mode(editor::Mode::Source),
         cx,
     );
     let at = head(&editor, &mut cx).offset;
@@ -1610,7 +1636,11 @@ fn a_paste_in_source_goes_into_the_text_at_the_caret(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn a_url_pasted_over_a_selection_in_source_replaces_it(cx: &mut TestAppContext) {
-    let (editor, mut cx) = open_built("body", |editor| editor.with_mode(editor::Mode::Source), cx);
+    let (editor, mut cx) = open_document(
+        "body",
+        |document| document.with_mode(editor::Mode::Source),
+        cx,
+    );
     cx.simulate_keystrokes(&format!("{PRIMARY}-a"));
     copy_text("https://example.com", &mut cx);
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
@@ -1619,7 +1649,8 @@ fn a_url_pasted_over_a_selection_in_source_replaces_it(cx: &mut TestAppContext) 
 
 #[gpui::test]
 fn a_copied_image_file_pastes_its_path_in_source(cx: &mut TestAppContext) {
-    let (editor, mut cx) = open_built("", |editor| editor.with_mode(editor::Mode::Source), cx);
+    let (editor, mut cx) =
+        open_document("", |document| document.with_mode(editor::Mode::Source), cx);
     copy_file("/tmp/shot.png", &mut cx);
     cx.simulate_keystrokes(&format!("{PRIMARY}-v"));
     assert_eq!(source(&editor, &mut cx), "/tmp/shot.png");
@@ -1631,9 +1662,9 @@ fn clipboard(cx: &mut VisualTestContext) -> Option<String> {
 
 #[gpui::test]
 fn a_copy_in_source_is_the_text_without_a_fence(cx: &mut TestAppContext) {
-    let (editor, mut cx) = open_built(
+    let (editor, mut cx) = open_document(
         "# Title\n\nbody",
-        |editor| editor.with_mode(editor::Mode::Source),
+        |document| document.with_mode(editor::Mode::Source),
         cx,
     );
     cx.simulate_keystrokes(&format!("{PRIMARY}-a {PRIMARY}-c"));
@@ -1681,7 +1712,8 @@ fn the_store_is_handed_the_editors_base(cx: &mut TestAppContext) {
 #[gpui::test]
 fn the_highlight_chord_toggles_a_registered_highlight(cx: &mut TestAppContext) {
     let marks = markdown::Marks::new().with(editor::HIGHLIGHT_MARK, "==");
-    let (editor, mut cx) = open_built("a lit word", move |editor| editor.with_marks(marks), cx);
+    let (editor, mut cx) =
+        open_document("a lit word", move |document| document.with_marks(marks), cx);
     cx.update(|_, cx| {
         editor.update(cx, |editor, cx| {
             editor.select(
@@ -1996,8 +2028,11 @@ fn table_reordering_carries_the_selection_and_anchors(cx: &mut TestAppContext) {
     let at = |row, column, offset| Cursor::new(0, Part::Cell { row, column }, offset);
     let anchored = Selection::new(at(1, 0, 0), at(1, 0, 3));
     let selected = Selection::at(at(2, 1, 2));
+    let document = editor.read_with(&cx, |editor, _| editor.document().clone());
+    document.update(&mut cx, |document, cx| {
+        document.set_anchors(vec![editor::Anchor::new(editor::AnchorId(1), anchored)], cx)
+    });
     editor.update(&mut cx, |editor, cx| {
-        editor.set_anchors(vec![editor::Anchor::new(editor::AnchorId(1), anchored)], cx);
         editor.select(selected, cx);
         editor.move_row(0, 1, 3, cx);
         assert_eq!(

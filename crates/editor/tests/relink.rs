@@ -1,5 +1,5 @@
-use editor::{Editor, Mode};
-use gpui::{Entity, Focusable, TestAppContext, VisualTestContext};
+use editor::{Document, Editor, Mode};
+use gpui::{AppContext as _, Entity, Focusable, TestAppContext, VisualTestContext};
 use markdown::{BlockKind, Cursor, Part, Selection};
 
 const WEB: &str = "https://example.com/p.png";
@@ -10,7 +10,10 @@ fn open(source: &str, mode: Mode, cx: &mut TestAppContext) -> (Entity<Editor>, V
         theme::Theme::install(theme::Appearance::Dark, cx);
         editor::init(cx);
     });
-    let window = cx.add_window(|_, cx| Editor::new(source, cx).with_mode(mode));
+    let window = cx.add_window(|_, cx| {
+        let document = cx.new(|cx| Document::new(source, cx).with_mode(mode));
+        Editor::for_document(document, cx)
+    });
     let editor = window.root(cx).unwrap();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
     visual.update(|window, cx| window.focus(&editor.read(cx).focus_handle(cx), cx));

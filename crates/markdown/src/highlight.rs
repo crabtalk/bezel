@@ -46,6 +46,11 @@ pub(crate) fn languages(cx: &App) -> &[SharedString] {
         .map_or(&[], |installed| &installed.languages)
 }
 
+pub(crate) fn installed(cx: &App) -> Option<Highlighter> {
+    cx.try_global::<Installed>()
+        .map(|installed| installed.highlighter)
+}
+
 pub(crate) fn spans(
     cx: &App,
     language: Option<&str>,

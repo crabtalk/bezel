@@ -8,7 +8,7 @@ use gpui::{
     Window, div, point, prelude::*, px, size,
 };
 use markdown::{
-    BlockLayouts, Cursor, Doc, Editing, ImageOverlay, OnImage, Part, Selection, parse,
+    BlockLayouts, Cursor, Doc, Editing, ImageOverlay, OnImage, Part, Selection, SourceText, parse,
     render_source, render_with,
 };
 
@@ -45,7 +45,7 @@ impl Render for Page {
             ..Editing::default()
         };
         let body = match &self.source {
-            Some(source) => render_source(source, editing, cx),
+            Some(source) => render_source(&SourceText::new(source.as_str(), cx), editing, cx),
             None => render_with(&self.doc, editing, window, cx),
         };
         div()

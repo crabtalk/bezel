@@ -49,8 +49,8 @@ impl Editor {
         }
         self.edit(EditKind::Structure, cx, |this| {
             match from {
-                Line::Row(from) => this.doc.move_row(block, from, to),
-                Line::Column(from) => this.doc.move_column(block, from, to),
+                Line::Row(from) => this.doc.edit().move_row(block, from, to),
+                Line::Column(from) => this.doc.edit().move_column(block, from, to),
             };
             let delta = Delta::CellsMoved { block, from, to };
             this.selection = Selection::new(

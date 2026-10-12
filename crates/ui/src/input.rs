@@ -440,7 +440,7 @@ pub struct TextField {
     /// In document order, none overlapping — see [`Self::set_chips`].
     chips: Vec<Chip>,
     /// The right-click menu.
-    menu: crate::context_menu::ContextMenu,
+    menu: crate::context_menu::ContextMenu<Self>,
 }
 
 impl EventEmitter<FieldEvent> for TextField {}

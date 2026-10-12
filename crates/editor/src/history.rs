@@ -48,19 +48,14 @@ struct Snapshot {
     anchors: Vec<Anchor>,
 }
 
+/// A document's undo and redo stacks, shared by every editor on it.
 pub struct History {
     snapshots: SnapshotHistory<Snapshot>,
-    /// The kind of the last edit and where it *left* the caret, which is what
-    /// decides whether the next edit joins that group or starts a new one.
-    last: Option<(EditKind, Cursor)>,
 }
 
 impl Default for History {
     fn default() -> Self {
-        Self {
-            snapshots: SnapshotHistory::new(DEFAULT_UNDO_LIMIT),
-            last: None,
-        }
+        Self::with_limit(DEFAULT_UNDO_LIMIT)
     }
 }
 
@@ -68,53 +63,35 @@ impl History {
     pub fn with_limit(limit: usize) -> Self {
         Self {
             snapshots: SnapshotHistory::new(limit),
-            last: None,
         }
     }
 
-    /// Record the state *before* an edit of `kind`; [`History::landed`] closes
-    /// it afterwards. A run of insertions leaves one step, so undo gives back
-    /// the word rather than the letter.
+    /// Drop every step, both ways.
+    pub fn clear(&mut self) {
+        self.snapshots.clear();
+    }
+
+    /// Whether there is a step to take back.
+    pub fn can_undo(&self) -> bool {
+        self.snapshots.can_undo()
+    }
+
+    /// Record the state *before* an edit. `joins` leaves it to the step the
+    /// last edit opened — see [`Run::joins`]. Either way the redo stack goes.
     pub fn record(
         &mut self,
-        kind: EditKind,
+        joins: bool,
         mode: Mode,
         doc: &Doc,
         selection: Selection,
         anchors: &[Anchor],
     ) {
-        let joins = self.joins(kind, selection);
         self.snapshots.record((!joins).then(|| Snapshot {
             doc: doc.clone(),
             mode,
             selection,
             anchors: anchors.to_vec(),
         }));
-        if !joins {
-            self.last = None;
-        }
-    }
-
-    /// Close the edit, noting where it left the caret. The next edit joins this
-    /// group only if it starts from exactly here.
-    pub fn landed(&mut self, kind: EditKind, selection: Selection) {
-        self.last = (kind != EditKind::Structure).then_some((kind, selection.head));
-    }
-
-    /// Whether this edit continues the group the last one opened — same kind,
-    /// same text, and picking up exactly where that one stopped.
-    fn joins(&self, kind: EditKind, selection: Selection) -> bool {
-        if kind == EditKind::Structure || !self.snapshots.can_undo() {
-            return false;
-        }
-        self.last == Some((kind, selection.head)) && selection.is_collapsed()
-    }
-
-    /// Anything that is not an edit ends the group — a motion, a click, a
-    /// focus change. Without this, typing a word, clicking elsewhere and typing
-    /// again would undo as one step across two places.
-    pub fn interrupt(&mut self) {
-        self.last = None;
     }
 
     /// Step back, handing the caller the state to restore. Pushes what it was
@@ -132,7 +109,6 @@ impl History {
             selection,
             anchors: anchors.to_vec(),
         })?;
-        self.last = None;
         Some(previous.into())
     }
 
@@ -149,8 +125,39 @@ impl History {
             selection,
             anchors: anchors.to_vec(),
         })?;
-        self.last = None;
         Some(next.into())
+    }
+}
+
+/// Where one editor's run of edits left off: the kind of the last edit and
+/// where it *left* the caret, which decides whether the next edit joins that
+/// step or opens one of its own.
+#[derive(Default)]
+pub struct Run {
+    last: Option<(EditKind, Cursor)>,
+}
+
+impl Run {
+    /// Whether an edit of `kind` from `selection` continues the run — same
+    /// kind, same text, and picking up exactly where the last one stopped.
+    /// Structural edits never do.
+    pub fn joins(&self, kind: EditKind, selection: Selection) -> bool {
+        kind != EditKind::Structure
+            && self.last == Some((kind, selection.head))
+            && selection.is_collapsed()
+    }
+
+    /// Close the edit, noting where it left the caret. The next edit joins this
+    /// run only if it starts from exactly here.
+    pub fn landed(&mut self, kind: EditKind, selection: Selection) {
+        self.last = (kind != EditKind::Structure).then_some((kind, selection.head));
+    }
+
+    /// Anything that is not an edit ends the run — a motion, a click, a focus
+    /// change. Without this, typing a word, clicking elsewhere and typing again
+    /// would undo as one step across two places.
+    pub fn interrupt(&mut self) {
+        self.last = None;
     }
 }
 

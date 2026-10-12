@@ -142,7 +142,7 @@ pub(super) fn lift(source: &str, marks: &Marks) -> String {
     while at < source.len() {
         // Inside a fence, a code span or a link's destination the delimiter is
         // not markup and never was.
-        if let Some(range) = skipped.iter().find(|range| range.contains(&at)) {
+        if let Some(range) = covering(&skipped, at) {
             out.push_str(&source[at..range.end]);
             at = range.end;
             continue;
@@ -216,7 +216,7 @@ pub(super) fn closing(
     while let Some(found) = source[at..line_end.max(at)].find(delimiter) {
         let found = at + found;
         let escaped = source[..found].ends_with('\\');
-        let literal = skipped.iter().any(|range| range.contains(&found));
+        let literal = covering(skipped, found).is_some();
         let spaced = source[..found].ends_with(char::is_whitespace);
         if !escaped && !literal && !spaced && found > from {
             return true;
@@ -231,10 +231,18 @@ pub(super) fn line_end(source: &str, at: usize) -> usize {
     source[at..].find('\n').map_or(source.len(), |ix| at + ix)
 }
 
+/// The range of `ranges` holding `at`. `ranges` is sorted and disjoint, as
+/// [`literal`] answers them.
+fn covering(ranges: &[Range<usize>], at: usize) -> Option<&Range<usize>> {
+    let ix = ranges.partition_point(|range| range.end <= at);
+    ranges.get(ix).filter(|range| range.start <= at)
+}
+
 /// The source ranges a delimiter means nothing in: a fence, a code span, raw
-/// HTML, and a link's destination.
+/// HTML, and a link's destination. Sorted and disjoint: nested ranges are
+/// merged into the one around them.
 pub(super) fn literal(source: &str) -> Vec<Range<usize>> {
-    let mut out = Vec::new();
+    let mut out: Vec<Range<usize>> = Vec::new();
     for (event, range) in Parser::new_ext(source, OPTIONS).into_offset_iter() {
         match event {
             Event::Code(_) | Event::Html(_) | Event::InlineHtml(_) => out.push(range),
@@ -255,7 +263,16 @@ pub(super) fn literal(source: &str) -> Vec<Range<usize>> {
             _ => {}
         }
     }
-    out
+    out.retain(|range| !range.is_empty());
+    out.sort_by_key(|range| range.start);
+    let mut merged: Vec<Range<usize>> = Vec::with_capacity(out.len());
+    for range in out {
+        match merged.last_mut() {
+            Some(last) if range.start < last.end => last.end = last.end.max(range.end),
+            _ => merged.push(range),
+        }
+    }
+    merged
 }
 
 /// Take the sentinels back out of a parsed text, leaving the marks they stood

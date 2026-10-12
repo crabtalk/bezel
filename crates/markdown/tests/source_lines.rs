@@ -1,7 +1,9 @@
 use gpui::{
     Context, Render, TestAppContext, VisualTestContext, Window, div, point, prelude::*, px, size,
 };
-use markdown::{Affinity, AppExt as _, BlockLayouts, Cursor, Editing, Part, render_source};
+use markdown::{
+    Affinity, AppExt as _, BlockLayouts, Cursor, Editing, Part, SourceText, render_source,
+};
 
 struct Page {
     source: String,
@@ -11,7 +13,7 @@ struct Page {
 impl Render for Page {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div().w(px(320.0)).child(render_source(
-            &self.source,
+            &SourceText::new(self.source.as_str(), cx),
             Editing {
                 layouts: Some(&self.layouts),
                 ..Default::default()

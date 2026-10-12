@@ -34,7 +34,17 @@ const SEGMENT_GLYPH: f32 = 16.0;
 /// How many rows a searchable submenu shows before it scrolls.
 const SEARCH_ROWS: f32 = 10.0;
 
-actions!(bezel_menu, [SelectNext, SelectPrevious, Confirm, Dismiss]);
+actions!(
+    bezel_menu,
+    [
+        SelectNext,
+        SelectPrevious,
+        SelectChild,
+        SelectParent,
+        Confirm,
+        Dismiss
+    ]
+);
 
 /// How far each [`Item::indented`] level moves a row's content in, app-wide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,6 +127,8 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("escape", Dismiss, ctx),
         KeyBinding::new("down", SelectNext, context),
         KeyBinding::new("up", SelectPrevious, context),
+        KeyBinding::new("right", SelectChild, context),
+        KeyBinding::new("left", SelectParent, context),
         KeyBinding::new("enter", Confirm, context),
         KeyBinding::new("escape", Dismiss, context),
     ]

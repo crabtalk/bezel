@@ -282,7 +282,11 @@ pub const COMPONENTS: &[Group] = &[
         title: "Menus & actions",
         sections: &[
             section("menu", "Menu", "crates/ui/src/popover.rs"),
-            section("context-menu", "Context menu", "crates/ui/src/popover.rs"),
+            section(
+                "context-menu",
+                "Context menu",
+                "crates/ui/src/context_menu.rs",
+            ),
             section("palette", "Command palette", "crates/ui/src/palette.rs"),
             section("menubar", "Menubar", "crates/ui/src/menubar.rs"),
         ],
