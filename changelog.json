@@ -1,5 +1,50 @@
 [
   {
+    "version": "0.2.14",
+    "date": "2026-10-13",
+    "summary": "Documents that keep their markdown and blocks in step, so a mode switch converts nothing and untouched blocks keep their bytes. One `Links` trait for everything an app does with links. Mermaid diagrams that zoom one layout and open fitted to their box. Status bars, a menu note row and app-set comment washes. Terminal box and block glyphs drawn as cell geometry on a device-pixel grid.",
+    "new": [
+      "`markdown::Synced` holds a document as markdown and as blocks, each kept up with the other: `set_doc` rewrites only the blocks that changed and `set_text` reads again only the blocks whose text changed. `text`, `doc`, `ranges`, `offsets` and `cursors` read it. `parse_ranges_with` is `parse_ranges` with the app's own marks.",
+      "`markdown::Links`, the app's side of every link: `open`, `preview`, `card` and `hover`, installed with `AppExt::set_links::<L>()`. Each takes a `Link`, the URL as written and the document's base, and `Link::is_web` tells a web page.",
+      "`AppExt::set_comment_paint` installs a `CommentPaint`, the `CommentWashes` an open, active and resolved comment is painted in. `default_comment` is the shipped one, cut from the theme's warning colour.",
+      "`SourceText::rehighlight` answers a `SpanJob` when the installed highlighter has changed since the text was last highlighted, and the editor's source mode runs it.",
+      "`markdown::PictureMenu`, the rows of a picture's right-click menu (Open, Reveal in Finder or Show in Folder, Copy Image, Copy Image Address) and what each does, for a picture at a URL against a base. `Editing::image_menu` (`OnImageMenu`) hands a right press on a picture to the app with its block and position, so a read-only render can raise the menu the editor raises.",
+      "`mermaid::DIAGRAM_SELECTOR`, the debug selector on a drawn mermaid diagram.",
+      "`editor::SourceAnchor`, an anchor as `Document::set_source_anchors` takes it. `Anchor::actionable` marks an anchor a press on does something for, and the pointer is a hand over one.",
+      "`menu::Item::Note`, a line of plain text in a menu that is never lit or chosen, painted by `popover::menu_note`.",
+      "`Status::status_bar`, a pane's bottom row, and `Status::status_path`, a cell in it that truncates a path, tooltips it in full and copies it on click.",
+      "`Layout::toolbar_separator`, a vertical rule between clusters of controls in a bar.",
+      "`drag::ghost_label`, a row or tab in flight as a truncated pill, and `drag::file_drop_wash`, an overlay that paints `Theme::drop_target` while files are dragged over its parent.",
+      "`Theme::sidebar_bg`, a sidebar's fill with glass on or off, and `Theme::row_text`, a list row's text by selected and archived.",
+      "`Typeset::text_style_at` sets a `TextStyle` at a zoom: size, leading and weight together.",
+      "`color::legible_on` picks whichever of two colours reads better on a plate.",
+      "`Tooltip::card` paints a tooltip's card for a hover drawn inside another view.",
+      "`ui::input::caret::paint_covered` paints the glyphs a solid block caret covers over it, and `CaretPaint::cover` is their colour."
+    ],
+    "changed": [
+      "`AppExt::set_link_handler`, `set_link_preview`, `set_link_card` and `set_link_hover` and their `LinkHandler`, `LinkPreview`, `LinkCard` and `LinkHover` types are gone: a `Links` impl installed with `set_links` does all four.",
+      "A link with no hover card from the app shows a bookmark of the page on hover when it is a web link, and nothing otherwise.",
+      "`Document` and `Editor::source` write back only the blocks edited since the document was read; every other byte is the one it was read as. Switching between blocks and source converts nothing.",
+      "`Document::set_source_anchors` takes `SourceAnchor`s instead of `(AnchorId, Range<usize>, Annotation)` tuples.",
+      "`canvas_core::diagram` takes a zoom, and `canvas::text_style` is gone for `Typeset::text_style_at`.",
+      "A mermaid diagram's zoom scales one layout instead of laying it out again, and a diagram larger than its box opens zoomed out to fit it, past `Zoom::min` where it must.",
+      "`Strip::cycle` answers whether the front tab moved.",
+      "`menu::card` takes the popup's closing instant after the cursor, and `popover::anchored_submenu` takes it last.",
+      "Table cells clip to their column, and text in them stays on one line and ends in `…`.",
+      "A link chip shows the favicon and the title, without the site's name before it.",
+      "A single-line field out of focus shows its start and hides its selection, keeping both for when focus comes back."
+    ],
+    "fixed": [
+      "A submenu open when its menu closes leaves with the menu, instead of disappearing and playing its entrance again.",
+      "A menu opened inside a modal or a sheet paints over it rather than under it.",
+      "A custom mark's background paints under the selection, instead of over it.",
+      "A shift-press on a link stays with the link, instead of extending the editor's selection.",
+      "A solid block caret paints the glyph it covers over itself, instead of recolouring the line's runs and shifting the glyphs around it.",
+      "The terminal grid snaps to device pixels, and box-drawing and block glyphs, half-lines, corners and tees included, are painted as cell geometry, so they join across cells.",
+      "DEC private mode 12 no longer overrides the cursor blink DECSCUSR sets in the terminal."
+    ]
+  },
+  {
     "version": "0.2.13",
     "date": "2026-10-12",
     "summary": "A shared `Document` under several editors, each with its own caret, menus and scroll. Anchors in markdown byte offsets, placed down the page whether built or not, with hover events and app washes beside them. Keyed context menus that stand off a trigger and walk submenus by arrow key. A source view that keeps its lines across frames and highlights edits off the UI thread.",
@@ -14,21 +59,17 @@
       "`markdown::SourceText` holds a source text's lines and highlight spans across frames. `SourceText::edit` redoes only the lines an edit touched and answers a `SpanJob`, which highlights the whole text on any thread for `SourceText::set_spans`.",
       "`ContextMenu` is keyed by a `K` and stands at a `Place`: a window point, or above or below a trigger with either edge aligned. `ContextMenu::toggle` opens or closes the menu a trigger owns, `ContextMenu::trigger` wraps the trigger, and `key`, `showing`, `card`, `place` and `render_for` read and draw it.",
       "A context menu walks into a submenu with the right arrow and back out with the left (`menu::SelectChild`, `SelectParent`).",
-      "`History::clear`, `History::can_undo`, and `Run`, the run of edits an undo step coalesces.",
-      "`markdown::PictureMenu`, the rows of a picture's right-click menu (Open, Reveal in Finder or Show in Folder, Copy Image, Copy Image Address) and what each does, for a picture at a URL against a base. `Editing::image_menu` (`OnImageMenu`) hands a right press on a picture to the app with its block and position, so a read-only render can raise the menu the editor raises."
+      "`History::clear`, `History::can_undo`, and `Run`, the run of edits an undo step coalesces."
     ],
     "changed": [
       "`with_undo_limit`, `with_marks`, `with_mode`, `set_anchors`, `source_with_anchors` and `set_source_anchors` are on `Document`, not `Editor`.",
       "`ContextMenu` is `ContextMenu<V, K = ()>`, and `Slot` is `Slot<V, K>`. `ContextMenu::open` takes the key, a `Place` and the choice handler; `render` no longer takes the handler.",
       "`History::landed` and `interrupt` are on `Run`.",
       "`markdown::render_source` takes a `&SourceText` instead of a `&str`.",
-      "Source mode applies an edit to the lines it touched and highlights it on the background executor, showing the spans from before the edit until then.",
-      "`menu::card` takes the popup's closing instant after the cursor, and `popover::anchored_submenu` takes it last."
+      "Source mode applies an edit to the lines it touched and highlights it on the background executor, showing the spans from before the edit until then."
     ],
     "fixed": [
-      "Lifting custom marks out of markdown is linear in the source again, instead of quadratic in its code spans, fences and links.",
-      "A submenu open when its menu closes leaves with the menu, instead of disappearing and playing its entrance again.",
-      "A menu opened inside a modal or a sheet paints over it rather than under it."
+      "Lifting custom marks out of markdown is linear in the source again, instead of quadratic in its code spans, fences and links."
     ]
   },
   {
