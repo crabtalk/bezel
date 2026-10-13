@@ -240,6 +240,20 @@ fn decscusr_sets_the_cursor_shape_and_blink() {
 }
 
 #[test]
+fn mode_12_leaves_the_blink_to_decscusr() {
+    let mut e = emu(10, 2);
+    let blinking = |e: &Emulator| e.cursor().map(|c| c.style.blinking);
+    // terminfo's `cvvis` for xterm-256color.
+    e.feed(b"\x1b[?12;25h");
+    assert_eq!(blinking(&e), Some(false));
+    e.feed(b"\x1b[1 q");
+    assert_eq!(blinking(&e), Some(true));
+    // terminfo's `cnorm` for xterm-256color.
+    e.feed(b"\x1b[?12l\x1b[?25h");
+    assert_eq!(blinking(&e), Some(true));
+}
+
+#[test]
 fn a_cursor_override_outranks_decscusr_until_cleared() {
     let mut e = emu(10, 2);
     let host = CursorStyle {
