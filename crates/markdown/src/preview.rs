@@ -3,10 +3,10 @@
 //! `markdown` fetches nothing. Resolving a URL's Open Graph data is an HTTP
 //! request and an HTML parse, neither of which a component library has any
 //! business carrying, and `wasm32-unknown-unknown` would spell both differently
-//! anyway. Installed once at boot like the highlighter and read at paint: the
-//! app answers from its own cache and notifies when a fetch lands.
+//! anyway. The app answers [`crate::Links::preview`] from its own cache and
+//! notifies when a fetch lands.
 
-use gpui::{AnyElement, App, Global, SharedString, Window};
+use gpui::SharedString;
 
 /// What a bookmark paints beyond the URL it already has.
 ///
@@ -23,82 +23,8 @@ pub struct Preview {
     /// knowledge, not this crate's.
     pub label: Option<SharedString>,
     /// An app's own mark for a link it owns, painted in the text colour where
-    /// a favicon would go. A link with one opens the app's [`LinkHover`] on
-    /// hover, plain links included.
+    /// a favicon would go.
     pub glyph: Option<ui::icons::Icon>,
-}
-
-/// The card an app paints for a link it owns, in place of the bookmark — see
-/// [`crate::AppExt::set_link_card`]. `None` for a link it leaves to the web
-/// preview.
-///
-/// The element sits inside [`crate::render::PAINTED_CONTEXT`]. A press it does
-/// not stop reaches the editor.
-pub type LinkCard = fn(url: &str, form: crate::Form, &mut Window, &mut App) -> Option<AnyElement>;
-
-struct InstalledCard(LinkCard);
-
-impl Global for InstalledCard {}
-
-pub(crate) fn set_link_card(cx: &mut App, card: LinkCard) {
-    cx.set_global(InstalledCard(card));
-}
-
-pub(crate) fn card(
-    url: &str,
-    form: crate::Form,
-    window: &mut Window,
-    cx: &mut App,
-) -> Option<AnyElement> {
-    let card = cx.try_global::<InstalledCard>()?.0;
-    card(url, form, window, cx)
-}
-
-/// The card an app paints over a link it owns while the pointer rests on it —
-/// see [`crate::AppExt::set_link_hover`]. `None` leaves the link its bookmark.
-///
-/// It sits in a tooltip: nothing in it scrolls or takes a press.
-pub type LinkHover = fn(url: &str, &mut Window, &mut App) -> Option<AnyElement>;
-
-struct InstalledHover(LinkHover);
-
-impl Global for InstalledHover {}
-
-pub(crate) fn set_link_hover(cx: &mut App, hover: LinkHover) {
-    cx.set_global(InstalledHover(hover));
-}
-
-pub(crate) fn hover(url: &str, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
-    let hover = cx.try_global::<InstalledHover>()?.0;
-    hover(url, window, cx)
-}
-
-/// `None` for a URL the caller has nothing for *yet*: the card paints its host
-/// and repaints when the answer arrives.
-///
-/// `cx` is how the answer is found: a cache lives in the app, so a bare call
-/// with only the URL would have to reach for a `static` to read its own.
-/// Shared rather than exclusive because this is asked at paint — the fetch it
-/// misses belongs to whatever notices the `None`, not to the paint that
-/// returned it.
-pub type LinkPreview = fn(url: &str, cx: &App) -> Option<Preview>;
-
-struct Installed(LinkPreview);
-
-impl Global for Installed {}
-
-/// `cx.set_link_preview(my_previews)` — call once at boot. Without
-/// it a bookmark shows its host and its URL, which is what a link looks like
-/// before anyone has resolved it.
-pub(crate) fn set_link_preview(cx: &mut App, preview: LinkPreview) {
-    cx.set_global(Installed(preview));
-}
-
-pub(crate) fn of(cx: &App, url: &str) -> Option<Preview> {
-    // Copied out before the call: a preview reads its own globals off the same
-    // `cx` this borrows.
-    let preview = cx.try_global::<Installed>()?.0;
-    preview(url, cx)
 }
 
 /// The host, without its `www.` — all a card can say about a URL nobody has

@@ -105,3 +105,31 @@ fn a_mention_shows_its_host_behind_a_favicon_slot() {
     assert_eq!(flat.shown.offset(mention.range.end - 1), end);
     assert_eq!(flat.shown.offset(mention.range.end + 2), end + 2);
 }
+
+#[test]
+fn a_mark_background_is_a_wash_and_not_a_run_background() {
+    let theme = Theme::dark();
+    let yellow: gpui::Hsla = gpui::rgb(0xffd60a).into();
+    let marks = Marks::new().with("highlight", "==");
+    let doc = parse_with("plain ==marked== tail", &marks);
+    let BlockKind::Paragraph(text) = &doc.blocks[0].kind else {
+        panic!("expected a paragraph")
+    };
+    let flat = markdown::render::flatten_with(
+        text,
+        FontWeight::NORMAL,
+        &theme,
+        |name| {
+            (name == "highlight").then_some(MarkPaint {
+                background: Some(yellow),
+                ..Default::default()
+            })
+        },
+        |_| None,
+    );
+
+    // A run's background is painted with the text, over the selection.
+    assert!(flat.runs.iter().all(|run| run.background_color.is_none()));
+    assert_eq!(flat.washes, vec![(6..12, yellow)]);
+    assert_eq!(&flat.text[6..12], "marked");
+}

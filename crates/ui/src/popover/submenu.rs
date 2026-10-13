@@ -20,7 +20,7 @@ use gpui::{
     LayoutId, Pixels, Point, Position, Size, Style, Window, canvas, div, point, prelude::*, px,
 };
 
-use super::{MENU_PAD, SNAP};
+use super::{MENU_LAYER, MENU_PAD, SNAP};
 
 /// Which way a panel opens from the card it hangs on.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -147,7 +147,7 @@ pub(super) fn layer(content: AnyElement, chain: &Chain) -> AnyElement {
                         anchor,
                         chain: chain.clone(),
                     })
-                    .priority(1),
+                    .priority(MENU_LAYER),
                 ),
         )
         .into_any_element()

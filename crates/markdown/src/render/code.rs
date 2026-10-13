@@ -8,14 +8,18 @@ use super::*;
 /// [`SourceText::new`] walks and highlights the whole text.
 /// [`SourceText::edit`] redoes only the lines an edit touched and shifts the
 /// spans around it; the [`SpanJob`] it answers highlights the new text in full,
-/// on any thread, for [`SourceText::set_spans`].
+/// on any thread, for [`SourceText::set_spans`]. [`SourceText::rehighlight`]
+/// answers one when the installed highlighter has changed.
 pub struct SourceText {
     code: Arc<str>,
     ranges: Rc<[Range<usize>]>,
     hashes: Rc<[u64]>,
     spans: Option<Rc<[Span]>>,
-    /// Moved by every edit. A [`SpanJob`] carries the one it was taken at.
+    /// Moved by every edit and rehighlight. A [`SpanJob`] carries the one it
+    /// was taken at.
     generation: u64,
+    /// The highlighter generation the last [`SpanJob`], or the build, used.
+    highlighter: u64,
     sized: RefCell<Option<Sized>>,
 }
 
@@ -71,6 +75,7 @@ impl SourceText {
             hashes,
             spans,
             generation: 0,
+            highlighter: crate::highlight::generation(cx),
             sized: RefCell::new(None),
         }
     }
@@ -168,16 +173,27 @@ impl SourceText {
             kept.into()
         });
         self.code = code;
+        Some(self.span_job(cx))
+    }
+
+    /// Highlight the text again if the installed highlighter has changed since
+    /// it was last highlighted. The spans stand until the job's land.
+    pub fn rehighlight(&mut self, cx: &App) -> Option<SpanJob> {
+        (self.highlighter != crate::highlight::generation(cx)).then(|| self.span_job(cx))
+    }
+
+    fn span_job(&mut self, cx: &App) -> SpanJob {
         self.generation += 1;
-        Some(SpanJob {
+        self.highlighter = crate::highlight::generation(cx);
+        SpanJob {
             code: self.code.clone(),
             highlighter: crate::highlight::installed(cx),
             generation: self.generation,
-        })
+        }
     }
 
     /// Take what a [`SpanJob`] found. `false`, and nothing taken, when the text
-    /// has been edited since the job was made.
+    /// has been edited or rehighlighted since the job was made.
     pub fn set_spans(&mut self, spans: Spans) -> bool {
         if spans.generation != self.generation {
             return false;
@@ -297,6 +313,7 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
         // The source view is one fence and holds no task block.
         toggle: None,
         image: None,
+        image_menu: None,
         image_overlay: None,
         image_overlay_corner: ImageOverlayCorner::BottomRight,
         fence: None,
@@ -307,6 +324,7 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
         base: None,
         highlight: crate::marks::highlight_paint_of(cx),
         find: crate::find::find_paint_of(cx),
+        comment: crate::comment::comment_paint_of(cx),
         jump: None,
     };
     let style = cx.source_style();
@@ -314,7 +332,7 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
     let gutter = Gutter::new(&style, count, &typography, &theme);
 
     let Some(layouts) = layouts else {
-        let (underlay, lines) = code_lines(
+        let (underlay, over, lines) = code_lines(
             Some(crate::source::LANGUAGES[0]),
             code,
             overlay,
@@ -330,7 +348,7 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
         return div()
             .flex()
             .flex_col()
-            .child(code_body(0, underlay, lines, &typography, true))
+            .child(code_body(0, underlay, over, lines, &typography, true))
             .into_any_element();
     };
 
@@ -367,15 +385,18 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
                 hollow: !window.is_window_active(),
                 ..paint.clone()
             };
-            let styled = code_line(
-                &code[span.clone()],
-                span.start,
-                spans.as_deref(),
-                paint.cut(),
-                &theme,
-            );
+            let styled = code_line(&code[span.clone()], span.start, spans.as_deref(), &theme);
             let layout = styled.layout().clone();
             let sink = sink.clone();
+            let over = {
+                let (span, layout, paint) = (span.clone(), layout.clone(), paint.clone());
+                canvas(
+                    |_, _, _| (),
+                    move |_, _, window, _| paint.paint_over(&span, &layout, window),
+                )
+                .absolute()
+                .size_full()
+            };
             let underlay = canvas(
                 |_, _, _| (),
                 move |_, _, window, _| {
@@ -386,12 +407,12 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
                         layout.clone(),
                         Shown::default(),
                     );
-                    paint.paint(&span, &layout, window);
+                    paint.paint_under(&span, &layout, window);
                 },
             )
             .absolute()
             .size_full();
-            let text = div().relative().child(underlay).child(styled);
+            let text = div().relative().child(underlay).child(styled).child(over);
             div()
                 .px(px(CODE_PADDING_X))
                 .child(gutter.row(index, text.into_any_element()))
@@ -464,8 +485,8 @@ impl Gutter {
     }
 }
 
-/// The shaped lines of a fence, and the canvas that paints the caret, the
-/// selection and the annotations over them.
+/// The shaped lines of a fence, the canvas that paints the selection and the
+/// annotations under them, and the one that paints the caret over them.
 pub(super) fn code_lines(
     language: Option<&str>,
     code: &str,
@@ -473,7 +494,7 @@ pub(super) fn code_lines(
     typography: &Typography,
     theme: &Theme,
     cx: &App,
-) -> (AnyElement, Vec<AnyElement>) {
+) -> (AnyElement, AnyElement, Vec<AnyElement>) {
     let ix = overlay.block;
     // Highlighting recolors runs only — layout does not move, so a build with
     // no highlighter installed paints the same block in one plain run.
@@ -496,13 +517,26 @@ pub(super) fn code_lines(
         .map(|line| {
             let start = offset;
             offset += line.len() + 1;
-            let styled = code_line(line, start, spans.as_deref(), paint.cut(), theme);
+            let styled = code_line(line, start, spans.as_deref(), theme);
             rows.push((start..start + line.len(), styled.layout().clone()));
             styled.into_any_element()
         })
         .collect();
 
     let sink = overlay.layouts.cloned();
+    let over = {
+        let (rows, paint) = (rows.clone(), paint.clone());
+        canvas(
+            |_, _, _| (),
+            move |_, _, window, _| {
+                for (span, layout) in &rows {
+                    paint.paint_over(span, layout, window);
+                }
+            },
+        )
+        .absolute()
+        .size_full()
+    };
     let underlay = canvas(
         |_, _, _| (),
         move |_, _, window, _| {
@@ -516,14 +550,14 @@ pub(super) fn code_lines(
                         Shown::default(),
                     );
                 }
-                paint.paint(span, layout, window);
+                paint.paint_under(span, layout, window);
             }
         },
     )
     .absolute()
     .size_full();
 
-    (underlay.into_any_element(), lines)
+    (underlay.into_any_element(), over.into_any_element(), lines)
 }
 
 /// A highlighted byte range of a text.
@@ -533,15 +567,7 @@ type Span = (Range<usize>, theme::HighlightKind);
 ///
 /// Runs are measured within the line; spans are byte ranges over the whole
 /// text, so every span is clipped to the line and rebased.
-/// `glyph`, over the whole text, is recoloured to the background where it
-/// falls in the line.
-fn code_line(
-    line: &str,
-    start: usize,
-    spans: Option<&[Span]>,
-    glyph: Option<&Range<usize>>,
-    theme: &Theme,
-) -> StyledText {
+fn code_line(line: &str, start: usize, spans: Option<&[Span]>, theme: &Theme) -> StyledText {
     let mono = font(theme.font_mono.clone());
     let run = |len: usize, color: Hsla| TextRun {
         len,
@@ -571,17 +597,12 @@ fn code_line(
     if runs.is_empty() {
         runs.push(run(0, theme.text));
     }
-    if let Some(glyph) =
-        glyph.filter(|glyph| glyph.start >= start && glyph.end <= start + line.len())
-    {
-        runs =
-            ui::input::caret::recoloured(runs, &(glyph.start - start..glyph.end - start), theme.bg);
-    }
     StyledText::new(SharedString::from(line.to_string())).with_runs(runs)
 }
 
-/// What paints under a line of code: the annotations, the selection and the
-/// caret, each clipped to the slice of the text the line covers.
+/// What paints with a line of code: the annotations and the selection under
+/// it, the caret over it, each clipped to the slice of the text the line
+/// covers.
 #[derive(Clone)]
 struct RowPaint {
     caret: Option<usize>,
@@ -595,6 +616,7 @@ struct RowPaint {
     selected: Option<Range<usize>>,
     annotated: Vec<(Range<usize>, Hsla)>,
     caret_color: Hsla,
+    cover: Hsla,
     selection_color: Hsla,
     code_size: f32,
 }
@@ -613,19 +635,20 @@ impl RowPaint {
             selected: overlay.selected(code.len()),
             annotated: overlay.annotated(code.len(), theme),
             caret_color: theme.caret,
+            cover: theme.bg,
             selection_color: theme.selection,
             code_size,
         }
     }
 
-    /// The grapheme a solid block covers, recoloured to the background.
+    /// The grapheme a solid block covers.
     fn cut(&self) -> Option<&Range<usize>> {
         self.glyph
             .as_ref()
             .filter(|_| self.shape.cuts_out(self.hollow))
     }
 
-    fn paint(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
+    fn paint_under(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
         let wash = |range: &Range<usize>, color: Hsla, window: &mut Window| {
             let (from, to) = (range.start.max(span.start), range.end.min(span.end));
             if from < to {
@@ -647,6 +670,9 @@ impl RowPaint {
         if let Some(range) = &self.selected {
             wash(range, self.selection_color, window);
         }
+    }
+
+    fn paint_over(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
         if let Some(offset) = self.caret.filter(|at| span.contains(at) || *at == span.end) {
             let glyph = self
                 .cut()
@@ -661,6 +687,7 @@ impl RowPaint {
                     height: self.height,
                     hollow: self.hollow,
                     color: self.caret_color,
+                    cover: self.cover,
                     size: self.code_size,
                     face: font(self.font.clone()),
                 },
@@ -680,10 +707,11 @@ pub(super) fn code_block(
     cx: &mut App,
 ) -> AnyElement {
     let ix = overlay.block;
-    let (underlay, lines) = code_lines(language, code, overlay, typography, theme, cx);
+    let (underlay, over, lines) = code_lines(language, code, overlay, typography, theme, cx);
     let body = code_body(
         ix,
         underlay,
+        over,
         lines,
         typography,
         cx.markdown_layout().wrap_code,
@@ -757,6 +785,7 @@ pub fn fence_band(theme: &Theme) -> gpui::Div {
 pub(super) fn code_body(
     ix: usize,
     underlay: AnyElement,
+    over: AnyElement,
     lines: Vec<AnyElement>,
     typography: &Typography,
     wrap: bool,
@@ -776,7 +805,7 @@ pub(super) fn code_body(
     if wrap {
         // The column is the block's width here rather than its widest line's,
         // which is what gives the text something to wrap against.
-        body.child(column.w_full()).into_any_element()
+        body.child(column.w_full()).child(over).into_any_element()
     } else {
         ui::scroll::Viewport::new(
             format!("md-code-scroll-{ix}"),
@@ -789,7 +818,8 @@ pub(super) fn code_body(
                 // edge with nowhere left to go. As a row's only item this column is
                 // sized by its widest line, and the padding rides along inside that
                 // width.
-                .child(column.items_start()),
+                .child(column.items_start())
+                .child(over),
             gpui::Axis::Horizontal,
         )
         .into_any_element()

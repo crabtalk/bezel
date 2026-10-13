@@ -10,13 +10,13 @@
 //! the new snapshot and carries its caret through what changed.
 
 use gpui::{Context, EntityId, EventEmitter};
-use markdown::{Annotation, AppExt as _, Cursor, Doc, Part, Selection};
-use std::{ops::Range, rc::Rc};
+use markdown::{AppExt as _, Block, BlockKind, Cursor, Doc, Part, Selection, Synced, Text};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    anchor::{Anchor, AnchorId, Delta, SourceRanges},
+    anchor::{Anchor, Delta, SourceAnchor, SourceRanges},
     editor::{
-        Mode, ensure_block,
+        Mode,
         mode::{source_of, switch},
     },
     history::History,
@@ -35,11 +35,8 @@ pub(crate) struct Tracked {
 }
 
 impl Tracked {
-    fn new(doc: Doc) -> Self {
-        Self {
-            doc: Rc::new(doc),
-            revision: 0,
-        }
+    fn new(doc: Rc<Doc>) -> Self {
+        Self { doc, revision: 0 }
     }
 
     pub(crate) fn edit(&mut self) -> &mut Doc {
@@ -49,6 +46,33 @@ impl Tracked {
 
     pub(crate) fn set(&mut self, doc: Doc) {
         *self.edit() = doc;
+    }
+
+    /// [`Self::set`] to a document held elsewhere, shared until edited.
+    pub(crate) fn share(&mut self, doc: Rc<Doc>) {
+        self.revision += 1;
+        self.doc = doc;
+    }
+
+    pub(crate) fn shared(&self) -> Rc<Doc> {
+        self.doc.clone()
+    }
+
+    /// Give an empty document a block to hold a caret, and say whether one
+    /// was needed.
+    ///
+    /// A [`Doc`] with no blocks is a legitimate document — it is what
+    /// `parse("")` returns — but it is not something that can be edited:
+    /// nothing paints, so there is no caret and no placeholder, and neither a
+    /// click nor a hit test has a target to find.
+    pub(crate) fn ensure_block(&mut self) -> bool {
+        if !self.doc.blocks.is_empty() {
+            return false;
+        }
+        self.edit()
+            .blocks
+            .push(Block::new(BlockKind::Paragraph(Text::default())));
+        true
     }
 
     pub(crate) fn revision(&self) -> u64 {
@@ -70,6 +94,11 @@ pub struct Document {
     /// Which form the document is in. In [`Mode::Source`] `doc` is one fenced
     /// block holding the markdown.
     pub(crate) mode: Mode,
+    /// The document as markdown and as blocks. In [`Mode::Blocks`] it is kept
+    /// up with `doc` as each change is handed back; in [`Mode::Source`] it
+    /// stands where the last switch left it, and catches up with the source at
+    /// the next. Every editor on the document holds it too.
+    pub(crate) synced: Rc<RefCell<Synced>>,
     /// The dialect this document is read and written in — the app's own marks,
     /// taken once at construction. One document, one spelling: a document that
     /// changed dialect between a read and a write would rewrite itself.
@@ -119,11 +148,13 @@ impl EventEmitter<DocumentEvent> for Document {}
 impl Document {
     pub fn new(source: &str, cx: &mut Context<Self>) -> Self {
         let marks = cx.marks();
-        let mut doc = markdown::parse_with(source, &marks);
-        ensure_block(&mut doc);
+        let synced = Synced::new(source, &marks);
+        let mut doc = Tracked::new(synced.doc().clone());
+        doc.ensure_block();
         Self {
-            doc: Tracked::new(doc),
+            doc,
             mode: Mode::default(),
+            synced: Rc::new(RefCell::new(synced)),
             marks,
             anchors: Vec::new(),
             history: History::default(),
@@ -143,11 +174,12 @@ impl Document {
     /// [`markdown::AppExt::set_marks`] installed. For an app whose documents do
     /// not all speak the same dialect.
     pub fn with_marks(mut self, marks: markdown::Marks) -> Self {
-        let source = crate::editor::mode::source(&self.doc, self.mode, &self.marks);
+        let source = self.source();
         self.marks = marks;
-        let mut doc = markdown::parse_with(&source, &self.marks);
-        ensure_block(&mut doc);
-        self.doc.set(doc);
+        let synced = Synced::new(source, &self.marks);
+        self.doc.share(synced.doc().clone());
+        self.doc.ensure_block();
+        *self.synced.borrow_mut() = synced;
         self
     }
 
@@ -158,8 +190,8 @@ impl Document {
         if mode != self.mode {
             switch(
                 &mut self.doc,
+                &mut self.synced.borrow_mut(),
                 &mut self.anchors,
-                &self.marks,
                 mode,
                 Default::default(),
             );
@@ -170,7 +202,7 @@ impl Document {
 
     /// The document as markdown — see [`crate::Editor::source`].
     pub fn source(&self) -> String {
-        crate::editor::mode::source(&self.doc, self.mode, &self.marks)
+        crate::editor::mode::source(&self.doc, self.mode, &self.synced)
     }
 
     /// Which form the document is being edited in.
@@ -185,15 +217,16 @@ impl Document {
     /// Read the document again from `source`, in the form it is in. The undo
     /// stack and the anchors go with the old text.
     pub fn reload(&mut self, source: &str, cx: &mut Context<Self>) {
-        let mut doc = markdown::parse_with(source, &self.marks);
-        ensure_block(&mut doc);
-        self.doc.set(doc);
+        let synced = Synced::new(source, &self.marks);
+        self.doc.share(synced.doc().clone());
+        self.doc.ensure_block();
+        *self.synced.borrow_mut() = synced;
         self.anchors.clear();
         if self.mode == Mode::Source {
             switch(
                 &mut self.doc,
+                &mut self.synced.borrow_mut(),
                 &mut self.anchors,
-                &self.marks,
                 Mode::Source,
                 Cursor::default(),
             );
@@ -247,7 +280,12 @@ impl Document {
             })
             .collect();
         let (source, offsets) = match self.mode {
-            Mode::Blocks => markdown::serialize_at_many(&self.doc, &ends, &self.marks),
+            Mode::Blocks => {
+                let mut synced = self.synced.borrow_mut();
+                synced.set_doc(self.doc.shared());
+                let offsets = synced.offsets(&ends);
+                (synced.text().to_owned(), offsets)
+            }
             Mode::Source => {
                 let source = source_of(&self.doc).to_string();
                 let offsets = ends
@@ -275,12 +313,12 @@ impl Document {
     pub fn set_source_anchors(
         &mut self,
         source: &str,
-        anchors: Vec<(AnchorId, Range<usize>, Annotation)>,
+        anchors: Vec<SourceAnchor>,
         cx: &mut Context<Self>,
     ) {
         let offsets: Vec<usize> = anchors
             .iter()
-            .flat_map(|(_, range, _)| [range.start, range.end])
+            .flat_map(|anchor| [anchor.range.start, anchor.range.end])
             .collect();
         let ends: Vec<Option<Cursor>> = match self.mode {
             Mode::Blocks => markdown::parse_at_many(source, &offsets, &self.marks).1,
@@ -294,15 +332,16 @@ impl Document {
         self.anchors = anchors
             .into_iter()
             .enumerate()
-            .map(|(ix, (id, _, state))| {
+            .map(|(ix, anchor)| {
                 let range = match (ends[2 * ix], ends[2 * ix + 1]) {
                     (Some(start), Some(end)) => Selection::new(start, end),
                     (surviving, other) => Selection::at(surviving.or(other).unwrap_or_default()),
                 };
                 Anchor {
-                    id,
+                    id: anchor.id,
                     range: range.clamp(&self.doc),
-                    state,
+                    state: anchor.state,
+                    actionable: anchor.actionable,
                 }
             })
             .collect();

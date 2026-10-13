@@ -103,9 +103,9 @@ pub trait Layout: ThemeExt {
         // `popover::menu_row`'s and `tree::tree_row`'s, so a sidebar, a menu
         // and a tree never show three different ideas of "this one".
         let tint = if selected {
-            theme.text
+            theme.row_text(true, false)
         } else {
-            motion::hover_blend(&fade, theme.text_muted, theme.text)
+            motion::hover_blend(&fade, theme.row_text(false, false), theme.text)
         };
         let mut row = stack::row()
             .w_full()
@@ -136,6 +136,16 @@ pub trait Layout: ThemeExt {
             )
         })
         .child(div().min_w_0().flex_1().truncate().child(label.into()))
+    }
+
+    /// A vertical rule between clusters of controls in a bar.
+    fn toolbar_separator(&self) -> Div {
+        div()
+            .w(px(1.0))
+            .h(px(16.0))
+            .mx(px(2.0))
+            .flex_none()
+            .bg(self.theme().border)
     }
 
     /// The divider between two panes: a hairline centred in a grab strip, lit

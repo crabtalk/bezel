@@ -46,7 +46,7 @@ A kind is keyed by the node's `type`, and holds what it needs. Kinds belong to a
 
 Any node holds others. A node names its container in `"container"` (`contain::hold`); one that names none sits in the smallest node around it whose kind `holds`, as a group does. What a node holds, however deep, moves, copies and duplicates with it and paints above it; removing a container leaves what it held. A node carried out of the container it names lets it go, and a kind that holds is never a drop target.
 
-State stays with the app: look the view up by the node's id. gpui cannot transform an element, so `zoom` is a scale the content applies itself — `canvas::text_style(div(), TextStyle::Callout, zoom)` sets size, leading and weight together, and `Typography::scaled` does a whole document. A node of fixed size clips what it paints.
+State stays with the app: look the view up by the node's id. gpui cannot transform an element, so `zoom` is a scale the content applies itself — `div().text_style_at(TextStyle::Callout, zoom)` (`theme::Typeset`) sets size, leading and weight together, and `Typography::scaled` does a whole document. A node of fixed size clips what it paints.
 
 ## Changes
 

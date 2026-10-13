@@ -231,12 +231,7 @@ impl Seed {
         theme.code_text = ink;
         theme.accent = accent;
         theme.accent_strong = accent;
-        theme.on_accent = if color::contrast_ratio(accent, bg) >= color::contrast_ratio(accent, ink)
-        {
-            bg
-        } else {
-            ink
-        };
+        theme.on_accent = color::legible_on(accent, bg, ink);
         theme.caret = accent;
         theme.selection = color::mix_oklab(bg, accent, if dark { 0.35 } else { 0.25 });
         if let Some(removed) = self.removed {

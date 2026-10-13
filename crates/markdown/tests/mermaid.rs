@@ -29,6 +29,26 @@ fn a_mermaid_fence_paints_its_diagram(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_diagram_wider_than_its_box_opens_fitted_to_it(cx: &mut TestAppContext) {
+    let source = "```mermaid\nflowchart LR\n  A[Alpha] --> B[Bravo] --> C[Charlie] --> D[Delta] --> E[Echo] --> F[Foxtrot] --> G[Golf] --> H[Hotel] --> I[India] --> J[Juliet]\n```\n";
+    let frame = diagram(source, cx).expect("the fence paints a diagram");
+    let drawn = cx
+        .windows()
+        .into_iter()
+        .find_map(|window| {
+            VisualTestContext::from_window(window, cx)
+                .debug_bounds(markdown::mermaid::DIAGRAM_SELECTOR)
+        })
+        .expect("the diagram is drawn");
+    assert!(
+        drawn.size.width <= frame.size.width,
+        "{:?} fits in {:?}",
+        drawn.size,
+        frame.size
+    );
+}
+
+#[gpui::test]
 fn a_fence_it_cannot_read_keeps_its_source(cx: &mut TestAppContext) {
     assert!(diagram("```mermaid\nflowchart LR\n  A -->\n```\n", cx).is_none());
 }

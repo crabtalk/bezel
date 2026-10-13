@@ -30,6 +30,7 @@ pub use app::AppExt;
 pub mod block;
 #[cfg(feature = "mermaid")]
 pub mod charts;
+pub mod comment;
 pub mod doc;
 pub mod edit;
 pub mod find;
@@ -40,6 +41,7 @@ pub mod marks;
 #[cfg(feature = "mermaid")]
 pub mod mermaid;
 pub mod parse;
+pub mod picture;
 pub mod preview;
 pub mod quote;
 pub mod render;
@@ -48,31 +50,36 @@ pub mod selectable;
 pub mod serialize;
 pub mod source;
 pub mod source_style;
+pub mod synced;
 pub mod typography;
 
 pub use block::{BlockRenderer, Fence, Rewrite};
+pub use comment::{CommentPaint, CommentWashes, default_comment};
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Quoted, Text};
 pub use edit::{Shortcut, Splice, shortcut};
 pub use find::{FindPaint, default_find};
 pub use highlight::Highlighter;
 pub use layout::Layout;
-pub use link::LinkHandler;
+pub use link::{Link, Links};
 pub use marks::{
     HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, highlight_solid,
 };
 pub use parse::{
-    ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges, parse_with,
+    ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges,
+    parse_ranges_with, parse_with,
 };
-pub use preview::{LinkCard, LinkHover, LinkPreview, Preview};
+pub use picture::PictureMenu;
+pub use preview::Preview;
 pub use quote::Quote;
 pub use render::{
     Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,
-    ImageOverlayCorner, LeaveBlock, OnImage, OnJump, OnLeave, OnResize, OnRewrite, OnToggle,
-    PAINTED_CONTEXT, RevealMode, SourceText, SpanJob, Spans, Toggle, image_source, markdown,
-    render, render_source, render_with,
+    ImageOverlayCorner, LeaveBlock, OnImage, OnImageMenu, OnJump, OnLeave, OnResize, OnRewrite,
+    OnToggle, PAINTED_CONTEXT, RevealMode, SourceText, SpanJob, Spans, Toggle, image_source,
+    markdown, render, render_source, render_with,
 };
 pub use select::{Affinity, Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_at_many, serialize_with};
 pub use source::spans as source_spans;
 pub use source_style::SourceStyle;
+pub use synced::Synced;
 pub use typography::Typography;

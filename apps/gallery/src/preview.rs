@@ -23,10 +23,18 @@ const KNOWN: &[(&str, &str, &str, &str)] = &[(
     "https://crabtalk.ai/og-home.png",
 )];
 
-/// Install with `cx.set_link_preview(preview::of)`.
-///
+/// The gallery's links: its previews, and the defaults for the rest. Install
+/// with `cx.set_links::<preview::Links>()`.
+pub struct Links;
+
+impl markdown::Links for Links {
+    fn preview(link: markdown::Link<'_>, _: &App) -> Option<Preview> {
+        of(link.url)
+    }
+}
+
 /// A const table rather than a cache, so there is nothing in the app to read.
-pub fn of(url: &str, _: &App) -> Option<Preview> {
+fn of(url: &str) -> Option<Preview> {
     let after = url.split_once("://")?.1;
     let host = after.split(['/', '?', '#']).next()?;
     let host = host.strip_prefix("www.").unwrap_or(host);

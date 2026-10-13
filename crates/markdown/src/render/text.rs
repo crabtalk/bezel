@@ -12,6 +12,9 @@ pub struct Flat {
     pub runs: Vec<TextRun>,
     pub links: Vec<(Range<usize>, String)>,
     pub code: Vec<Range<usize>>,
+    /// Each run of a [`crate::MarkPaint::background`], painted under the
+    /// selection.
+    pub washes: Vec<(Range<usize>, Hsla)>,
     pub mentions: Vec<Mention>,
     pub shown: Shown,
 }
@@ -81,6 +84,7 @@ pub fn flatten_with(
     let mut runs = Vec::new();
     let mut links: Vec<(Range<usize>, String)> = Vec::new();
     let mut code: Vec<Range<usize>> = Vec::new();
+    let mut washes: Vec<(Range<usize>, Hsla)> = Vec::new();
     let mut mentions: Vec<Mention> = Vec::new();
     let mut map: Vec<(Range<usize>, Range<usize>)> = Vec::new();
 
@@ -170,10 +174,6 @@ pub fn flatten_with(
             };
             run(&mut shown, ICON_SLOT, gpui::transparent_black(), None);
             run(&mut shown, " ", theme.text, None);
-            if let Some(label) = described.label.filter(|_| described.title.is_some()) {
-                run(&mut shown, &label, theme.text_muted, None);
-                run(&mut shown, " ", theme.text, None);
-            }
             run(&mut shown, &title, theme.text, Some(underline));
             let to = shown.len();
             links.push((from..to, url.to_string()));
@@ -203,6 +203,12 @@ pub fn flatten_with(
                 _ => code.push(from..to),
             }
         }
+        if let Some(background) = custom.background {
+            match washes.last_mut() {
+                Some((range, last)) if range.end == from && *last == background => range.end = to,
+                _ => washes.push((from..to, background)),
+            }
+        }
         if let Some(url) = &link {
             match links.last_mut() {
                 Some((range, last)) if range.end == from && last == url => range.end = to,
@@ -220,7 +226,7 @@ pub fn flatten_with(
                 (true, None) => theme.code_text,
                 (false, None) => theme.text,
             },
-            background_color: custom.background,
+            background_color: None,
             underline: (link.is_some() || custom.underline).then_some(underline),
             strikethrough: strike.then_some(StrikethroughStyle {
                 thickness: px(1.0),
@@ -234,6 +240,7 @@ pub fn flatten_with(
         runs,
         links,
         code,
+        washes,
         mentions,
         shown: Shown::new(map),
     }
@@ -253,7 +260,7 @@ pub(super) fn text_element(
         weight,
         theme,
         |name| crate::marks::paint_of(cx, name, theme),
-        |url| preview::of(cx, url),
+        |url| crate::link::preview(crate::Link::new(url, overlay.base), cx),
     );
     painted_text(flat, text.text.len(), size, line_height, overlay, theme)
 }
@@ -298,41 +305,31 @@ pub(super) fn painted_text(
     let glyph = caret
         .filter(|_| shape.cuts_out(hollow))
         .and_then(|offset| overlay.covered(&flat.text, offset));
-    let runs = match &glyph {
-        Some(glyph) => ui::input::caret::recoloured(flat.runs, glyph, theme.bg),
-        None => flat.runs,
-    };
-    let styled = StyledText::new(flat.text).with_runs(runs);
+    let styled = StyledText::new(flat.text).with_runs(flat.runs);
     let layout = styled.layout().clone();
 
     let mentions = flat.mentions;
+    let link_ranges: Vec<Range<usize>> =
+        flat.links.iter().map(|(range, _)| range.clone()).collect();
+    let press_layout = layout.clone();
     let painted: AnyElement = if flat.links.is_empty() {
         styled.into_any_element()
     } else {
-        // A mention opens its card on hover, and so does a plain link the
-        // app owns. A plain link to the web opens none.
-        let hovered: Vec<(Range<usize>, String, bool)> = flat
-            .links
-            .iter()
-            .map(|(range, url)| {
-                let mention = mentions.iter().any(|mention| mention.range == *range);
-                (range.clone(), url.clone(), mention)
-            })
-            .collect();
+        let hovered = flat.links.clone();
         let (ranges, urls): (Vec<_>, Vec<_>) = flat.links.into_iter().unzip();
         let jump = overlay.jump.cloned();
         let base = overlay.base.map(Path::to_path_buf);
+        let hover_base = base.clone();
         InteractiveText::new(ElementId::named_usize("md-text", ix), styled)
             .on_click(ranges, move |clicked, window, cx| {
                 if let Some(url) = urls.get(clicked) {
-                    crate::link::follow(url, base.as_deref(), jump.as_ref(), window, cx);
+                    let link = crate::Link::new(url, base.as_deref());
+                    crate::link::follow(link, jump.as_ref(), window, cx);
                 }
             })
             .tooltip(move |at, _window, cx| {
-                let (_, url, mention) = hovered.iter().find(|(range, _, _)| range.contains(&at))?;
-                let owned =
-                    || crate::preview::of(cx, url).is_some_and(|preview| preview.glyph.is_some());
-                (*mention || owned()).then(|| MentionCard::view(url, cx))
+                let (_, url) = hovered.iter().find(|(range, _)| range.contains(&at))?;
+                Some(HoverCard::view(url, hover_base.clone(), cx))
             })
             .into_any_element()
     };
@@ -342,6 +339,7 @@ pub(super) fn painted_text(
     // never part of layout.
     let wash = theme.code_wash;
     let code_ranges = flat.code;
+    let washes = flat.washes;
     let (icon_color, icon_wash) = (theme.text_muted, theme.element_hover);
     let caret_color = theme.caret;
     let selection_color = theme.selection;
@@ -351,6 +349,37 @@ pub(super) fn painted_text(
         .map(|(range, wash)| (shown.range(&range), wash))
         .collect();
     let layouts = overlay.layouts.cloned();
+    // Over the text, which a solid block hides: the glyph it covers is painted
+    // again on top of it.
+    let caret_layout = layout.clone();
+    let cover = theme.bg;
+    let over = canvas(
+        |_, _, _| (),
+        move |_, _, window, cx| {
+            let Some(offset) = caret else {
+                return;
+            };
+            let face = font(Theme::of(cx).font_body.clone());
+            paint_caret(
+                &caret_layout,
+                offset,
+                affinity,
+                glyph.as_ref(),
+                CaretPaint {
+                    shape,
+                    height,
+                    hollow,
+                    color: caret_color,
+                    cover,
+                    size,
+                    face,
+                },
+                window,
+            );
+        },
+    )
+    .absolute()
+    .size_full();
     let underlay = canvas(
         {
             let mentions = mentions.clone();
@@ -371,8 +400,21 @@ pub(super) fn painted_text(
             if let Some(layouts) = &layouts {
                 layouts.record(ix, part, span.clone(), layout.clone(), shown.clone());
             }
-            // Below the selection, so dragging across a comment still reads as
-            // selected rather than as a third colour nobody chose.
+            // Below the selection, so dragging across a comment or a mark
+            // still reads as selected rather than as a third colour nobody
+            // chose.
+            for (range, wash) in &washes {
+                for rect in range_rects(&layout, range, 0.0, 0.0) {
+                    window.paint_quad(quad(
+                        rect,
+                        px(0.0),
+                        *wash,
+                        px(0.0),
+                        gpui::transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
+            }
             for (range, wash) in &annotated {
                 for rect in range_rects(&layout, range, 0.0, 0.0) {
                     window.paint_quad(quad(
@@ -399,24 +441,6 @@ pub(super) fn painted_text(
                         BorderStyle::default(),
                     ));
                 }
-            }
-            if let Some(offset) = caret {
-                let face = font(Theme::of(cx).font_body.clone());
-                paint_caret(
-                    &layout,
-                    offset,
-                    affinity,
-                    glyph.as_ref(),
-                    CaretPaint {
-                        shape,
-                        height,
-                        hollow,
-                        color: caret_color,
-                        size,
-                        face,
-                    },
-                    window,
-                );
             }
             for range in &code_ranges {
                 for rect in range_rects(&layout, range, INLINE_CODE_PAD_X, INLINE_CODE_INSET_Y) {
@@ -499,6 +523,18 @@ pub(super) fn painted_text(
         .child(underlay)
         .children(hint)
         .child(painted)
+        .child(over)
+        // A shift-press on a link is the link's: the host follows it on the
+        // release, and the editor around would take the press as extending
+        // the selection.
+        .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+            let on_link = press_layout
+                .index_for_position(event.position)
+                .is_ok_and(|at| link_ranges.iter().any(|range| range.contains(&at)));
+            if event.modifiers.shift && on_link {
+                cx.stop_propagation();
+            }
+        })
         .into_any_element()
 }
 
@@ -527,6 +563,8 @@ pub(super) struct CaretPaint {
     pub height: ui::input::CaretHeight,
     pub hollow: bool,
     pub color: Hsla,
+    /// The colour of the glyph a solid block covers.
+    pub cover: Hsla,
     /// The text's font size, in pixels.
     pub size: f32,
     /// The font a wide caret measures its empty slot in.
@@ -569,8 +607,8 @@ fn wrapped_row_start(layout: &TextLayout, offset: usize) -> Option<Point<Pixels>
     None
 }
 
-/// Paints the caret at `offset` in `layout`. A `glyph` — the range recoloured
-/// for a solid block — is what the block covers, on whichever row it shaped.
+/// Paints the caret at `offset` in `layout`, over the text. A `glyph` is what
+/// a solid block covers, on whichever row it shaped, painted again over it.
 pub(super) fn paint_caret(
     layout: &TextLayout,
     offset: usize,
@@ -604,6 +642,35 @@ pub(super) fn paint_caret(
         paint.color,
         paint.hollow,
     ));
+    if let Some(glyph) = glyph
+        && covered.is_some()
+        && let Some((line, range)) = line_of(layout, glyph)
+    {
+        ui::input::caret::paint_covered(
+            &line.unwrapped_layout,
+            &range,
+            head,
+            line_height,
+            paint.cover,
+            window,
+        );
+    }
+}
+
+/// The shaped line `range` falls in, and `range` within that line.
+fn line_of(
+    layout: &TextLayout,
+    range: &Range<usize>,
+) -> Option<(Arc<gpui::WrappedLineLayout>, Range<usize>)> {
+    let mut start = 0;
+    for line in layout.line_layouts() {
+        let end = start + line.len();
+        if range.start <= end {
+            return (range.end <= end).then(|| (line, range.start - start..range.end - start));
+        }
+        start = end + 1;
+    }
+    None
 }
 
 /// The rectangles a byte range occupies, one per visual row.

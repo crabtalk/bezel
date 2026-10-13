@@ -413,6 +413,16 @@ impl Theme {
         paint::card_selected_bg_for(self.appearance)
     }
 
+    /// A list row's text at rest: [`Self::text`] selected, else
+    /// [`Self::text_faint`] archived, else [`Self::text_muted`].
+    pub fn row_text(&self, selected: bool, archived: bool) -> Hsla {
+        match (selected, archived) {
+            (true, _) => self.text,
+            (false, true) => self.text_faint,
+            (false, false) => self.text_muted,
+        }
+    }
+
     /// Overlay ink at `alpha` — see [`ink`](crate::paint::ink).
     pub fn ink(&self, alpha: f32) -> Hsla {
         paint::ink_for(self.appearance, alpha)

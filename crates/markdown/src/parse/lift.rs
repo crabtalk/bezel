@@ -131,9 +131,13 @@ pub(super) fn tag_index(c: char) -> Option<usize> {
         .then(|| c as usize - 0xE020)
 }
 
-/// The source with every registered delimiter pair replaced by its sentinels.
-pub(super) fn lift(source: &str, marks: &Marks) -> String {
+/// The source with every registered delimiter pair replaced by its sentinels,
+/// and where the two line up: `(lifted, source)` offsets in order, one after
+/// each replacement. Between two of them, and after the last, the texts run
+/// byte for byte.
+pub(super) fn lift(source: &str, marks: &Marks) -> (String, Vec<(usize, usize)>) {
     let skipped = literal(source);
+    let mut aligned = Vec::new();
     let entries = marks.sorted();
     let mut out = String::with_capacity(source.len());
     let mut open: Vec<(usize, &str)> = Vec::new();
@@ -165,6 +169,7 @@ pub(super) fn lift(source: &str, marks: &Marks) -> String {
                 out.push(CLOSE);
                 open.pop();
                 at += delimiter.len();
+                aligned.push((out.len(), at));
                 continue;
             }
             if !closes
@@ -182,6 +187,7 @@ pub(super) fn lift(source: &str, marks: &Marks) -> String {
                 out.push(tag);
                 open.push((ix, delimiter));
                 at += delimiter.len();
+                aligned.push((out.len(), at));
                 continue;
             }
         }
@@ -189,7 +195,16 @@ pub(super) fn lift(source: &str, marks: &Marks) -> String {
         out.push(c);
         at += c.len_utf8();
     }
-    out
+    (out, aligned)
+}
+
+/// The source offset a lifted offset stands for, by [`lift`]'s alignment.
+pub(super) fn unlift(aligned: &[(usize, usize)], lifted: usize) -> usize {
+    let ix = aligned.partition_point(|(at, _)| *at <= lifted);
+    match ix.checked_sub(1) {
+        Some(ix) => aligned[ix].1 + (lifted - aligned[ix].0),
+        None => lifted,
+    }
 }
 
 /// Whether a delimiter opened at `from` has a partner to close against: an

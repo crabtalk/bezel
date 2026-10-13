@@ -3,8 +3,8 @@
 use std::ops::Range;
 
 use gpui::{
-    App, BorderStyle, Bounds, Font, Global, Hsla, PaintQuad, Pixels, TextRun, Window,
-    WrappedLineLayout, fill, outline, px,
+    App, BorderStyle, Bounds, Font, Global, Hsla, LineLayout, PaintQuad, Pixels, Point, TextRun,
+    Window, WrappedLineLayout, fill, outline, point, px,
 };
 
 /// The app-wide caret shape. Terminal cursors follow their terminal instead.
@@ -118,7 +118,7 @@ impl CaretShape {
     }
 
     /// Whether the glyph under the caret is painted in the background colour,
-    /// over the caret.
+    /// over the caret, by [`paint_covered`].
     pub fn cuts_out(self, hollow: bool) -> bool {
         self == Self::Block && !hollow
     }
@@ -139,6 +139,42 @@ pub fn zero_width(font: Font, font_size: Pixels, window: &Window) -> Pixels {
         .text_system()
         .shape_line("0".into(), font_size, &[run], None)
         .width
+}
+
+/// Paints the glyphs `layout` shaped for `range` again, in `color`: what a
+/// solid block covers, painted over the block and the line. `at` is the top
+/// left of the first one's slot, on a row `line_height` tall.
+///
+/// gpui shapes each colour of a line apart, so recolouring the covered glyph
+/// in the line's runs moves the glyphs around it.
+pub fn paint_covered(
+    layout: &LineLayout,
+    range: &Range<usize>,
+    at: Point<Pixels>,
+    line_height: Pixels,
+    color: Hsla,
+    window: &mut Window,
+) {
+    let mut glyphs = layout
+        .runs
+        .iter()
+        .flat_map(|run| run.glyphs.iter().map(move |glyph| (run.font_id, glyph)))
+        .filter(|(_, glyph)| range.contains(&glyph.index))
+        .peekable();
+    let Some(left) = glyphs.peek().map(|(_, glyph)| glyph.position.x) else {
+        return;
+    };
+    let baseline = (line_height - layout.ascent - layout.descent) / 2. + layout.ascent;
+    for (font_id, glyph) in glyphs {
+        let origin = point(
+            at.x + glyph.position.x - left,
+            at.y + baseline + glyph.position.y,
+        );
+        let _ = match glyph.is_emoji {
+            true => window.paint_emoji(origin, font_id, glyph.id, layout.font_size),
+            false => window.paint_glyph(origin, font_id, glyph.id, layout.font_size, color),
+        };
+    }
 }
 
 /// `runs` cut at `range`'s edges, the pieces inside it in `color`.

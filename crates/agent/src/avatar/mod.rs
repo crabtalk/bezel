@@ -25,7 +25,7 @@ use gpui::{
     AnyElement, Bounds, Hsla, IntoElement, PathBuilder, Pixels, Point, Styled, Window, canvas,
     hsla, point, px,
 };
-use theme::{Theme, contrast_ratio, flatten};
+use theme::{Theme, flatten, legible_on};
 
 /// The share of the box the body fills at rest.
 const FILL: f32 = 0.4;
@@ -158,7 +158,7 @@ pub fn avatar(pose: Pose) -> AnyElement {
             let head = pose.color.unwrap_or(theme.accent);
             // Whichever end of the theme reads as a hole in this body.
             let text = flatten(theme.text, head);
-            let ink = if contrast_ratio(head, theme.bg) >= contrast_ratio(head, text) {
+            let ink = if legible_on(head, theme.bg, text) == theme.bg {
                 theme.bg
             } else {
                 theme.text

@@ -17,13 +17,17 @@ pub type Highlighter = fn(language: &str, code: &str) -> Option<Vec<(Range<usize
 struct Installed {
     highlighter: Highlighter,
     languages: Vec<SharedString>,
+    /// Moved by every install.
+    generation: u64,
 }
 
 impl Global for Installed {}
 
-/// `cx.set_highlighter(my_highlighter, my_languages)` — call once at
-/// boot. Without it every fenced block paints in one plain run, which is what a
-/// document looks like before anyone has an opinion about its code.
+/// `cx.set_highlighter(my_highlighter, my_languages)` — call at boot, and
+/// again when the highlighter would colour the same text differently, such as
+/// after registering a language. Without it every fenced block paints in one
+/// plain run, which is what a document looks like before anyone has an opinion
+/// about its code.
 ///
 /// The names travel with the function because they are the same fact twice: a
 /// picker that offers a language nothing can color is a promise the highlighter
@@ -33,10 +37,20 @@ pub(crate) fn set_highlighter(
     highlighter: Highlighter,
     languages: impl IntoIterator<Item = impl Into<SharedString>>,
 ) {
+    let generation = generation(cx) + 1;
     cx.set_global(Installed {
         highlighter,
         languages: languages.into_iter().map(Into::into).collect(),
+        generation,
     });
+    cx.refresh_windows();
+}
+
+/// How many times a highlighter has been installed: what a cache of spans
+/// compares to tell whether they would colour differently now.
+pub(crate) fn generation(cx: &App) -> u64 {
+    cx.try_global::<Installed>()
+        .map_or(0, |installed| installed.generation)
 }
 
 /// What the installed highlighter can color — the list a language picker

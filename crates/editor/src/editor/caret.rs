@@ -259,7 +259,7 @@ impl Editor {
         // Deleting the last block is the other way to an empty document, and
         // the caret belongs at the start of whatever replaces it.
         let mut replaced = false;
-        if ensure_block(self.doc.edit()) {
+        if self.doc.ensure_block() {
             self.selection = Selection::at(Cursor::default());
             replaced = true;
         }

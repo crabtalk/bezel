@@ -16,9 +16,9 @@ use gpui::{
 };
 use markdown::{
     Affinity, Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark,
-    Part, Selection, Splice, Text, edit, edit::shortcut,
+    Part, Selection, Splice, Synced, Text, edit, edit::shortcut,
 };
-use std::{ops::Range, time::Duration};
+use std::{cell::RefCell, ops::Range, rc::Rc, time::Duration};
 use theme::Theme;
 
 use crate::{
@@ -223,23 +223,6 @@ fn fenceable(doc: &Doc, selection: Selection) -> bool {
                 .any(|(at, range)| covered(at, range).is_some_and(|text| text.contains('\n'))))
 }
 
-/// Give an empty document a block to hold a caret, and say whether one was
-/// needed.
-///
-/// A [`Doc`] with no blocks is a legitimate document — it is what `parse("")`
-/// returns — but it is not something that can be edited: nothing paints, so
-/// there is no caret and no placeholder, and neither a click nor a hit test
-/// has a target to find. An empty file would sit inert until something typed
-/// a block into existence, which is the one thing you cannot do with no caret.
-pub(crate) fn ensure_block(doc: &mut Doc) -> bool {
-    if !doc.blocks.is_empty() {
-        return false;
-    }
-    doc.blocks
-        .push(Block::new(BlockKind::Paragraph(Text::default())));
-    true
-}
-
 fn line_home(at: Cursor, doc: &Doc) -> Cursor {
     let Some(text) = doc
         .blocks
@@ -343,6 +326,9 @@ pub struct Editor {
     /// Highlighting the source view's text after an edit. Dropping it cancels.
     source_spans: Option<Task<()>>,
     marks: markdown::Marks,
+    /// The document's markdown and blocks, shared with it — see
+    /// [`Document`]'s field of the name.
+    synced: Rc<RefCell<Synced>>,
     /// Which of the editor's own affordances paint. The app's, so one document
     /// can carry the lot and another none of it.
     chrome: Chrome,
@@ -394,7 +380,7 @@ pub struct Editor {
     /// opened.
     text_menu: MenuPopup<Vec<ui::menu::Item>>,
     /// The right-click menu on a picture.
-    image_menu: MenuPopup<image::ImageTarget>,
+    image_menu: MenuPopup<markdown::PictureMenu>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
     /// An image being dragged wider or narrower by its edge handle, and the
@@ -464,12 +450,13 @@ impl Editor {
 
     /// An editor on `document`, beside any others already on it.
     pub fn for_document(document: Entity<Document>, cx: &mut Context<Self>) -> Self {
-        let (doc, mode, marks, anchors) = {
+        let (doc, mode, marks, synced, anchors) = {
             let document = document.read(cx);
             (
                 document.doc.clone(),
                 document.mode,
                 document.marks.clone(),
+                document.synced.clone(),
                 document.anchors.clone(),
             )
         };
@@ -487,6 +474,7 @@ impl Editor {
             selection: Selection::at(Cursor::default().clamp(&doc)),
             doc,
             mode,
+            synced,
             anchors,
             source_view: None,
             source_spans: None,

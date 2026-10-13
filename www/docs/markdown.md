@@ -53,7 +53,7 @@ A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing 
 ![A caption is the alt text|480](https://example.com/cover.png)
 ```
 
-A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::AppExt::set_link_preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
+A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::Links::preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
 
 A preview can supply `Editing::image_overlay` to build a control from a picture's
 block index and original URL:
@@ -76,7 +76,7 @@ placeholders and source view have no overlay.
 | | |
 | --- | --- |
 | nesting | Four spaces per level, **list nesting only**. A blockquote marks the blocks inside it as quoted and adds no level. A quote inside a quote flattens to one. |
-| normalized on parse | Edge whitespace, blank lines at block edges, headings and table cells flattened to one line, ordered runs renumbered. `parse_ranges` gives the source range each block came from, for an app that would rather splice the blocks it did not edit than write the whole file back in canonical form. |
+| normalized on parse | Edge whitespace, blank lines at block edges, headings and table cells flattened to one line, ordered runs renumbered. `parse_ranges` gives the source range each block came from, for an app that would rather splice the blocks it did not edit than write the whole file back in canonical form. `Synced` holds the markdown and the blocks together and does that splice on every change, either way round. |
 | escaping | Only at the start of a line, where the character would mean something — escape `#` everywhere and `#123` becomes `\#123`, which no reader matches. |
 | HTML | Arrives as the text it spells and is written back escaped. |
 | not carried | Footnotes and reference-style definitions. A setext heading is read and written back as `#`. |

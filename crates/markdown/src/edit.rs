@@ -989,41 +989,10 @@ impl Doc {
     /// [`Doc::normalize`] with the app's own marks — see [`crate::Marks`].
     pub fn normalize_with(&mut self, marks: &crate::Marks) {
         for block in &mut self.blocks {
-            let one_line = matches!(block.kind, BlockKind::Heading { .. });
-            match &mut block.kind {
-                BlockKind::Paragraph(text)
-                | BlockKind::Heading { text, .. }
-                | BlockKind::Bullet(text)
-                | BlockKind::Ordered { text, .. }
-                | BlockKind::Task { text, .. } => {
-                    *text = crate::parse::normalize(&text.text, &text.marks);
-                    text.normalize_marks();
-                    if one_line {
-                        crate::parse::collapse_to_one_line(text);
-                    }
-                }
-                BlockKind::Table { header, rows, .. } => {
-                    for cell in header.iter_mut().chain(rows.iter_mut().flatten()) {
-                        *cell = crate::parse::normalize(&cell.text, &cell.marks);
-                        cell.normalize_marks();
-                        crate::parse::collapse_to_one_line(cell);
-                    }
-                }
-                // A caption lives between brackets, where a line break has no
-                // spelling at all.
-                BlockKind::Image { alt, .. } => crate::parse::collapse_to_one_line(alt),
-                BlockKind::Code { .. } | BlockKind::Bookmark { .. } | BlockKind::Rule => {}
-            }
+            block.normalize_text();
         }
-        // A blank paragraph is the empty line an editor leaves behind, and
-        // markdown has no way to write one down — blank lines there separate
-        // blocks rather than being one. An empty heading or list item is
-        // different: `# ` and `- ` are both real, so those stay. So is the
-        // empty body of an alert: `> [!TIP]` writes down and reads back.
-        self.blocks.retain(|block| {
-            !matches!(&block.kind, BlockKind::Paragraph(text) if text.is_empty())
-                || block.quote.is_some_and(|quote| quote.alert.is_some())
-        });
+        // An empty heading or list item stays: `# ` and `- ` are both real.
+        self.blocks.retain(|block| !block.blank());
         self.repair();
 
         // The rules above keep every ordinary edit lossless. They cannot be
@@ -1164,4 +1133,37 @@ fn is_marker(kind: &BlockKind) -> bool {
         kind,
         BlockKind::Bullet(_) | BlockKind::Ordered { .. } | BlockKind::Task { .. }
     )
+}
+
+impl Block {
+    /// Shed what markdown cannot hold from each of the block's texts: the
+    /// whitespace at the ends of its lines and of the whole, and a line break
+    /// where the block has no spelling for one. Marks move with the text.
+    pub(crate) fn normalize_text(&mut self) {
+        let one_line = matches!(self.kind, BlockKind::Heading { .. });
+        match &mut self.kind {
+            BlockKind::Paragraph(text)
+            | BlockKind::Heading { text, .. }
+            | BlockKind::Bullet(text)
+            | BlockKind::Ordered { text, .. }
+            | BlockKind::Task { text, .. } => {
+                *text = crate::parse::normalize(&text.text, &text.marks);
+                text.normalize_marks();
+                if one_line {
+                    crate::parse::collapse_to_one_line(text);
+                }
+            }
+            BlockKind::Table { header, rows, .. } => {
+                for cell in header.iter_mut().chain(rows.iter_mut().flatten()) {
+                    *cell = crate::parse::normalize(&cell.text, &cell.marks);
+                    cell.normalize_marks();
+                    crate::parse::collapse_to_one_line(cell);
+                }
+            }
+            // A caption lives between brackets, where a line break has no
+            // spelling at all.
+            BlockKind::Image { alt, .. } => crate::parse::collapse_to_one_line(alt),
+            BlockKind::Code { .. } | BlockKind::Bookmark { .. } | BlockKind::Rule => {}
+        }
+    }
 }

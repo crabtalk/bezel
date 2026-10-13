@@ -328,10 +328,21 @@ pub(super) struct FieldPrepaint {
     /// Top-left of the text, which is the box moved up by the scroll offset.
     origin: Point<Pixels>,
     cursor: Option<PaintQuad>,
+    covered: Option<Covered>,
     /// One quad per visual row each match covers.
     matches: Vec<PaintQuad>,
     /// One quad per visual row the selection covers.
     selection: Vec<PaintQuad>,
+}
+
+/// The glyph a solid block caret covers, for [`caret::paint_covered`].
+struct Covered {
+    layout: std::sync::Arc<gpui::LineLayout>,
+    /// Within `layout`'s line.
+    range: Range<usize>,
+    /// The top left of its slot.
+    at: Point<Pixels>,
+    color: gpui::Hsla,
 }
 
 impl IntoElement for TextFieldElement {
@@ -455,7 +466,10 @@ impl Element for TextFieldElement {
         let scrolled = field.scroll;
         let caret_shape = cx.caret_shape();
         let caret_height = cx.caret_height();
-        let follow_caret = field.follow_caret || caret_shape != field.last_caret_shape;
+        // A single line out of focus shows its start, wherever its caret is.
+        let at_start = !shape.is_multiline() && !field.focus_handle.contains_focused(window, cx);
+        let follow_caret =
+            !at_start && (field.follow_caret || caret_shape != field.last_caret_shape);
         let style = window.text_style();
 
         let text = chipped.text.clone();
@@ -532,27 +546,6 @@ impl Element for TextFieldElement {
             .flatten();
         let advance = slot.map(|slot| follows.unwrap_or(slot));
         let hollow = !window.is_window_active();
-        let lines = if caret_shape.cuts_out(hollow)
-            && follows.is_some()
-            && selected_range.is_empty()
-            && field.caret_on
-            && field.focus_handle.is_focused(window)
-        {
-            let glyph = cursor..next_boundary(&text, cursor);
-            window
-                .text_system()
-                .shape_text(
-                    text.clone(),
-                    font_size,
-                    &caret::recoloured(runs, &glyph, theme.bg),
-                    wrap_width,
-                    None,
-                )
-                .map(|lines| lines.into_vec())
-                .unwrap_or(lines)
-        } else {
-            lines
-        };
         let caret_width = caret_shape
             .quad(
                 Bounds::new(
@@ -596,6 +589,9 @@ impl Element for TextFieldElement {
             scroll.x = scroll.x.clamp(px(0.), max.x);
             scroll.y = scroll.y.clamp(px(0.), max.y);
         }
+        if at_start {
+            scroll.x = px(0.);
+        }
         self.field.update(cx, |field, _| {
             field.scroll = scroll;
             field.follow_caret = false;
@@ -619,6 +615,20 @@ impl Element for TextFieldElement {
         };
 
         let caret_shown = caret_shape.shown(!hollow, crate::input::caret::inactive_caret(cx));
+        let covered =
+            (selected_range.is_empty() && follows.is_some() && caret_shape.cuts_out(hollow))
+                .then(|| {
+                    let (start, line) =
+                        lines_from(&lines).find(|(start, line)| cursor <= start + line.len())?;
+                    let at = position_for_offset(&lines, cursor, line_height)?;
+                    Some(Covered {
+                        layout: line.unwrapped_layout.clone(),
+                        range: cursor - start..next_boundary(&text, cursor) - start,
+                        at: origin + at,
+                        color: theme.bg,
+                    })
+                })
+                .flatten();
         let (selection, cursor) = if selected_range.is_empty() {
             let at = position_for_offset(&lines, cursor, line_height).unwrap_or_default();
             (
@@ -662,6 +672,7 @@ impl Element for TextFieldElement {
             font_size,
             origin,
             cursor,
+            covered,
             matches,
             selection,
         }
@@ -709,7 +720,12 @@ impl Element for TextFieldElement {
         });
         let lines = std::mem::take(&mut prepaint.lines);
         let matches = std::mem::take(&mut prepaint.matches);
-        let selection = std::mem::take(&mut prepaint.selection);
+        // Shown while focus is in the field or its menu, kept for when it
+        // comes back.
+        let selection = match focus_handle.contains_focused(window, cx) {
+            true => std::mem::take(&mut prepaint.selection),
+            false => Vec::new(),
+        };
         let cursor = prepaint.cursor.take();
         let origin = prepaint.origin;
 
@@ -720,21 +736,30 @@ impl Element for TextFieldElement {
                 window.paint_quad(quad);
             }
 
-            // The caret only exists while focused — an unfocused field showing
-            // one reads as two cursors on screen. Under the text, so a glyph
-            // cut out of a block lands on top of it.
-            if focus_handle.is_focused(window)
-                && caret_on
-                && let Some(cursor) = cursor
-            {
-                window.paint_quad(cursor);
-            }
-
             let mut top = origin;
             for line in &lines {
                 line.paint(top, line_height, gpui::TextAlign::Left, None, window, cx)
                     .ok();
                 top.y += line.size(line_height).height;
+            }
+
+            // The caret only exists while focused — an unfocused field showing
+            // one reads as two cursors on screen.
+            if focus_handle.is_focused(window)
+                && caret_on
+                && let Some(cursor) = cursor
+            {
+                window.paint_quad(cursor);
+                if let Some(covered) = &prepaint.covered {
+                    caret::paint_covered(
+                        &covered.layout,
+                        &covered.range,
+                        covered.at,
+                        line_height,
+                        covered.color,
+                        window,
+                    );
+                }
             }
 
             for (slot, glyph) in &prepaint.glyphs {

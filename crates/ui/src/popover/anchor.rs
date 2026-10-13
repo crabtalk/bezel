@@ -79,7 +79,7 @@ pub(super) fn menu_layer(
         layer = layer.position(position);
     }
     gpui::deferred(layer.child(menu_motion(id.into(), closing.map(exit_progress), inner)))
-        .priority(1)
+        .priority(MENU_LAYER)
         .into_any_element()
 }
 
@@ -139,9 +139,13 @@ pub fn anchored_submenu(
     id: impl Into<SharedString>,
     content: AnyElement,
     chain: &Chain,
+    closing: Option<web_time::Instant>,
 ) -> AnyElement {
     let content = div().occlude().child(material_menu(content));
-    submenu::layer(menu_motion(id.into(), None, content), chain)
+    submenu::layer(
+        menu_motion(id.into(), closing.map(exit_progress), content),
+        chain,
+    )
 }
 
 /// [`anchored_menu`] opening UPWARD from the trigger (composer pickers, the

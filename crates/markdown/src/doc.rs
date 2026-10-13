@@ -237,6 +237,14 @@ impl Block {
         }
     }
 
+    /// Whether the block is a blank paragraph: the empty line an editor leaves
+    /// behind, which markdown has no way to write down. The empty body of an
+    /// alert is not one: `> [!TIP]` writes down and reads back.
+    pub(crate) fn blank(&self) -> bool {
+        matches!(&self.kind, BlockKind::Paragraph(text) if text.is_empty() && text.marks.is_empty())
+            && !self.quote.is_some_and(|quote| quote.alert.is_some())
+    }
+
     /// Whether what the block paints past its parts holds no caret — a picture,
     /// a card, a line. What a selection has to wash for itself, since there is
     /// no text under it to carry the highlight.

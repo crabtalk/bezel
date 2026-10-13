@@ -288,13 +288,15 @@ impl Shell {
     }
 
     fn next_tab(&mut self, _: &NextTab, window: &mut Window, cx: &mut Context<Self>) {
-        self.strip.cycle(1);
-        self.shown(window, cx);
+        if self.strip.cycle(1) {
+            self.shown(window, cx);
+        }
     }
 
     fn previous_tab(&mut self, _: &PreviousTab, window: &mut Window, cx: &mut Context<Self>) {
-        self.strip.cycle(-1);
-        self.shown(window, cx);
+        if self.strip.cycle(-1) {
+            self.shown(window, cx);
+        }
     }
 
     fn focus_address(&mut self, _: &FocusAddress, window: &mut Window, cx: &mut Context<Self>) {

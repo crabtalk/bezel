@@ -7,7 +7,7 @@ use gpui::{
     App, Context, Modifiers, Render, TestAppContext, VisualTestContext, Window, div, point,
     prelude::*, px, size,
 };
-use markdown::{Caption, Doc, Editing, parse, render, render_with};
+use markdown::{Caption, Doc, Editing, Link, Links, parse, render, render_with};
 use std::{
     cell::Cell,
     path::{Path, PathBuf},
@@ -21,9 +21,13 @@ static OPENED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 static BASES: Mutex<Vec<Option<PathBuf>>> = Mutex::new(Vec::new());
 
-fn record(url: &str, base: Option<&Path>, _: &mut Window, _: &mut App) {
-    OPENED.lock().unwrap().push(url.to_string());
-    BASES.lock().unwrap().push(base.map(Path::to_path_buf));
+struct Record;
+
+impl Links for Record {
+    fn open(link: Link<'_>, _: &mut Window, _: &mut App) {
+        OPENED.lock().unwrap().push(link.url.to_string());
+        BASES.lock().unwrap().push(link.base.map(Path::to_path_buf));
+    }
 }
 
 struct Page(Doc);
@@ -40,7 +44,7 @@ impl Render for Page {
 fn a_clicked_link_goes_to_the_installed_handler(cx: &mut TestAppContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
-        cx.set_link_handler(record);
+        cx.set_links::<Record>();
     });
     let window = cx.add_window(|_, _| {
         Page(parse(
@@ -77,7 +81,7 @@ impl Render for Based {
 fn a_clicked_link_hands_the_handler_the_document_base(cx: &mut TestAppContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
-        cx.set_link_handler(record);
+        cx.set_links::<Record>();
     });
     let window = cx.add_window(|_, _| {
         Based(parse(
@@ -115,7 +119,7 @@ impl Render for Jumping {
 fn a_clicked_fragment_link_jumps_to_its_heading(cx: &mut TestAppContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
-        cx.set_link_handler(record);
+        cx.set_links::<Record>();
     });
     let jumped = Rc::new(Cell::new(None));
     let window = cx.add_window({
@@ -143,7 +147,7 @@ fn a_clicked_fragment_link_jumps_to_its_heading(cx: &mut TestAppContext) {
 fn a_fragment_link_with_no_jump_opens_nothing(cx: &mut TestAppContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
-        cx.set_link_handler(record);
+        cx.set_links::<Record>();
     });
     let window = cx.add_window(|_, _| {
         Page(parse(

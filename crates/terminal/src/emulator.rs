@@ -55,6 +55,7 @@ pub use alacritty_terminal::index::{Point as GridPoint, Side};
 pub use alacritty_terminal::selection::SelectionType;
 
 mod graphics;
+mod modes;
 mod selection;
 
 use graphics::*;
@@ -532,7 +533,8 @@ impl Emulator {
         for segment in self.scanner.feed(bytes) {
             match segment {
                 Segment::Text(text) => {
-                    self.parser.advance(&mut self.term, text);
+                    self.parser
+                        .advance(&mut modes::Filter(&mut self.term), text);
                     self.drain_events(&mut responses);
                 }
                 Segment::Graphics(command) => {

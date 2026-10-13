@@ -3,6 +3,7 @@
 
 use markdown::{BlockKind, ParsedDoc, Text, parse_ranges, serialize};
 
+mod common;
 /// Bullets with an extra space, a setext heading, a fence: a document written
 /// the way a person writes one, and nothing the serializer would leave alone.
 const SOURCE: &str = "Intro
@@ -109,48 +110,14 @@ fn splicing_an_unedited_block_back_is_byte_for_byte() {
     );
 }
 
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> usize {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        (self.0 >> 33) as usize
-    }
-}
-
-const FRAGMENTS: &[&str] = &[
-    "plain text",
-    "# heading",
-    "Setext\n------",
-    "*  star bullet",
-    "- [ ] a task",
-    "- [x] a done task",
-    "1. ordered",
-    "9) ordered too",
-    "> quoted",
-    "> [!TIP]\n> an alert",
-    "```rs\nfn main() {}\n```",
-    "| a | b |\n| --- | --- |\n| 1 | 2 |",
-    "---",
-    "![alt](cover.png)",
-    "<https://bezel.gallery>",
-    "- ![alt](cover.png)",
-    "",
-    "    indented code",
-    "nested\n\n  - under it",
-];
-
 /// The invariants a splice rests on, over documents nobody wrote by hand.
 #[test]
 fn the_partition_holds_for_generated_documents() {
-    let mut rng = Rng(0x5eed);
+    let mut rng = common::Rng(0x5eed);
     for case in 0..5_000 {
         let parts = 1 + rng.next() % 6;
         let source = (0..parts)
-            .map(|_| FRAGMENTS[rng.next() % FRAGMENTS.len()])
+            .map(|_| common::BLOCKS[rng.next() % common::BLOCKS.len()])
             .collect::<Vec<_>>()
             .join("\n\n");
 

@@ -25,7 +25,7 @@ mod paste;
 mod slash;
 mod text_size;
 
-pub use anchor::{Anchor, AnchorId, SourceRanges};
+pub use anchor::{Anchor, AnchorId, SourceAnchor, SourceRanges};
 pub use block_menu::defaults as block_menu_defaults;
 pub use document::{Document, DocumentEvent};
 #[doc(hidden)]

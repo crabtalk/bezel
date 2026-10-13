@@ -37,6 +37,7 @@ impl Render for Host {
             "m",
             &menu,
             &self.cursor,
+            None,
             window,
             cx,
             |this: &mut Self, hit, _, cx| {

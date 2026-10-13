@@ -41,6 +41,7 @@ mod code;
 mod column;
 mod layouts;
 mod media;
+pub use media::hover_bookmark;
 mod table;
 mod text;
 
@@ -142,7 +143,8 @@ pub enum CopyButton {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[non_exhaustive]
 pub enum Annotation {
-    /// A thread still waiting on someone.
+    /// A thread still waiting on someone. The comment washes are
+    /// [`crate::AppExt::set_comment_paint`]'s.
     #[default]
     Open,
     /// Answered, and kept for the record.
@@ -159,11 +161,17 @@ pub enum Annotation {
 }
 
 impl Annotation {
-    fn wash(self, theme: &Theme, highlight: crate::HighlightPaint, find: crate::FindPaint) -> Hsla {
+    fn wash(
+        self,
+        theme: &Theme,
+        highlight: crate::HighlightPaint,
+        find: crate::FindPaint,
+        comment: crate::CommentPaint,
+    ) -> Hsla {
         match self {
-            Self::Open => theme.warning.opacity(0.20),
-            Self::Resolved => theme.warning.opacity(0.08),
-            Self::Active => theme.warning.opacity(0.38),
+            Self::Open => comment(theme).open,
+            Self::Resolved => comment(theme).resolved,
+            Self::Active => comment(theme).active,
             Self::Highlight(color) => highlight(color, theme),
             Self::Match => find(theme).0,
             Self::Current => find(theme).1,
@@ -179,6 +187,10 @@ pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
 /// Handed the image block whose picture was clicked — see [`Editing::image`].
 pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Handed the image block whose picture was right-pressed and the press's
+/// window position — see [`Editing::image_menu`].
+pub type OnImageMenu = Rc<dyn Fn(usize, Point<Pixels>, &mut Window, &mut App)>;
 
 /// Handed the heading block a clicked `#fragment` link names — see
 /// [`Editing::jump`].
@@ -287,6 +299,11 @@ pub struct Editing<'a> {
     /// press and release more than a couple of pixels apart is a drag and
     /// calls nothing. The press still reaches whatever is under the picture.
     pub image: Option<OnImage>,
+    /// Handles a right press on a picture with its block index and the press's
+    /// window position, and stops the press. `None` lets it through to
+    /// whatever is under the picture. [`crate::PictureMenu`] is what the menu
+    /// offers.
+    pub image_menu: Option<OnImageMenu>,
     /// An app control inset at `image_overlay_corner`, visible on hover.
     /// Its presses do not reach the picture. `None` adds no listeners.
     pub image_overlay: Option<ImageOverlay>,
@@ -334,6 +351,7 @@ impl Default for Editing<'_> {
             typography: None,
             toggle: None,
             image: None,
+            image_menu: None,
             image_overlay: None,
             image_overlay_corner: ImageOverlayCorner::BottomRight,
             fence: None,
@@ -375,6 +393,7 @@ struct Overlay<'a> {
     /// press listener that needs an owned handle.
     toggle: Option<&'a Toggle>,
     image: Option<&'a OnImage>,
+    image_menu: Option<&'a OnImageMenu>,
     image_overlay: Option<&'a ImageOverlay>,
     image_overlay_corner: ImageOverlayCorner,
     fence: Option<&'a FenceHost>,
@@ -384,6 +403,7 @@ struct Overlay<'a> {
     base: Option<&'a Path>,
     highlight: crate::HighlightPaint,
     find: crate::FindPaint,
+    comment: crate::CommentPaint,
     jump: Option<&'a crate::link::Jump>,
 }
 
@@ -518,7 +538,7 @@ impl<'a> Overlay<'a> {
             .filter_map(|(range, kind)| {
                 Some((
                     self.clip(*range, len)?,
-                    kind.wash(theme, self.highlight, self.find),
+                    kind.wash(theme, self.highlight, self.find, self.comment),
                 ))
             })
             .collect()
@@ -613,6 +633,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         typography,
         toggle,
         image,
+        image_menu,
         image_overlay,
         image_overlay_corner,
         fence,
@@ -630,6 +651,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
     let typography = typography.unwrap_or_else(|| cx.typography());
     let highlight = crate::marks::highlight_paint_of(cx);
     let find = crate::find::find_paint_of(cx);
+    let comment = crate::comment::comment_paint_of(cx);
     let jump = jump.map(|to| crate::link::Jump::new(doc, to));
     let gaps: Vec<Pixels> = doc
         .blocks
@@ -663,6 +685,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caption,
                 toggle: toggle.as_ref(),
                 image: image.as_ref(),
+                image_menu: image_menu.as_ref(),
                 image_overlay: image_overlay.as_ref(),
                 image_overlay_corner,
                 fence: fence.as_ref(),
@@ -672,6 +695,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 base,
                 highlight,
                 find,
+                comment,
                 jump: jump.as_ref(),
             };
             let quote = Quote {
@@ -719,6 +743,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         caption,
         toggle,
         image,
+        image_menu,
         image_overlay,
         image_overlay_corner,
         fence,
@@ -728,6 +753,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         base: base.map(Path::to_path_buf),
         highlight,
         find,
+        comment,
         jump,
         typography,
         theme,
@@ -756,6 +782,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caption: owned.caption,
                 toggle: owned.toggle.as_ref(),
                 image: owned.image.as_ref(),
+                image_menu: owned.image_menu.as_ref(),
                 image_overlay: owned.image_overlay.as_ref(),
                 image_overlay_corner: owned.image_overlay_corner,
                 fence: owned.fence.as_ref(),
@@ -765,6 +792,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 base: owned.base.as_deref(),
                 highlight: owned.highlight,
                 find: owned.find,
+                comment: owned.comment,
                 jump: owned.jump.as_ref(),
             };
             let quote = Quote {
@@ -799,6 +827,7 @@ struct Owned {
     caption: Caption,
     toggle: Option<Toggle>,
     image: Option<OnImage>,
+    image_menu: Option<OnImageMenu>,
     image_overlay: Option<ImageOverlay>,
     image_overlay_corner: ImageOverlayCorner,
     fence: Option<FenceHost>,
@@ -808,6 +837,7 @@ struct Owned {
     base: Option<std::path::PathBuf>,
     highlight: crate::HighlightPaint,
     find: crate::FindPaint,
+    comment: crate::CommentPaint,
     jump: Option<crate::link::Jump>,
     typography: Typography,
     theme: Theme,
@@ -1130,8 +1160,8 @@ fn block_element(
         BlockKind::Image { url, alt, width } => {
             image(url, alt, *width, overlay, typography, theme, window, cx)
         }
-        BlockKind::Bookmark { url, form } => match crate::preview::card(
-            url,
+        BlockKind::Bookmark { url, form } => match crate::link::card(
+            crate::Link::new(url, overlay.base),
             match (*form, overlay.held_height()) {
                 (Form::Embed(_), Some(held)) => Form::Embed(Some(held)),
                 (form, _) => form,

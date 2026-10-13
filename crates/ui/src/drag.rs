@@ -17,11 +17,11 @@ use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
     AnyElement, App, Axis, Bounds, Element, ElementId, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, Pixels, Point, Render, StatefulInteractiveElement, Window, point,
-    prelude::*,
+    IntoElement, LayoutId, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Window,
+    div, point, prelude::*, px,
 };
 use motion::Painter;
-use theme::Theme;
+use theme::{TextStyle, Theme, Typeset};
 
 use crate::surface::{Surface, Surfaced};
 
@@ -35,6 +35,30 @@ pub trait Carried: Styled + IntoElement + Sized {
 }
 
 impl<E: Styled + IntoElement> Carried for E {}
+
+/// A row or tab in flight, as a label: a truncated pill under the pointer.
+pub fn ghost_label(label: impl Into<SharedString>, theme: &Theme) -> Surface {
+    div()
+        .rounded(px(Theme::control_radius()))
+        .px(px(10.0))
+        .py(px(4.0))
+        .text_style(TextStyle::Callout)
+        .text_color(theme.text)
+        .truncate()
+        .child(label.into())
+        .ghost(theme)
+}
+
+/// An overlay over its parent that paints [`Theme::drop_target`] while files
+/// are dragged over it. It takes no drop: the parent's `on_drop` does. Draw
+/// it last, over a `relative` parent.
+pub fn file_drop_wash(theme: &Theme) -> gpui::Div {
+    let wash = theme.drop_target;
+    div()
+        .absolute()
+        .inset_0()
+        .drag_over::<gpui::ExternalPaths>(move |style, _, _, _| style.bg(wash))
+}
 
 mod element;
 mod state;

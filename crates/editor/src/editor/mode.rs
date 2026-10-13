@@ -3,11 +3,12 @@
 use super::*;
 
 impl Editor {
-    /// The document as markdown — normalized, because that is the form that
-    /// survives being read back. In [`Mode::Source`] it is the text being
-    /// edited, exactly as it stands.
+    /// The document as markdown. In [`Mode::Blocks`] it is the text the
+    /// document was read from, with every block edited since written again
+    /// in normalized form. In [`Mode::Source`] it is the text being edited,
+    /// exactly as it stands.
     pub fn source(&self) -> String {
-        source(&self.doc, self.mode, &self.marks)
+        source(&self.doc, self.mode, &self.synced)
     }
 
     /// Which form the document is being edited in.
@@ -76,7 +77,13 @@ impl Editor {
     /// [`Self::set_mode`] that needs no window.
     pub(super) fn switch(&mut self, mode: Mode) {
         let caret = self.cursor();
-        let caret = switch(&mut self.doc, &mut self.anchors, &self.marks, mode, caret);
+        let caret = switch(
+            &mut self.doc,
+            &mut self.synced.borrow_mut(),
+            &mut self.anchors,
+            mode,
+            caret,
+        );
         self.selection = Selection::at(caret);
         self.mode = mode;
     }
@@ -106,15 +113,19 @@ impl Editor {
     /// Bring the source view's text up to the document. A first build
     /// highlights in place; an edit after it is highlighted on the background
     /// executor, and the view shows the spans from before it until then.
-    // TODO: also rebuild when the installed highlighter or the syntax registry
-    // would colour the text differently.
+    /// A highlighter installed since the last highlight is run the same way.
     pub(super) fn refresh_source_view(&mut self, cx: &mut Context<Self>) {
         let revision = self.doc.revision();
         let job = match &mut self.source_view {
-            Some((built, _)) if *built == revision => return,
             Some((built, view)) => {
-                *built = revision;
-                view.edit(source_of(&self.doc), cx)
+                let edited = match *built == revision {
+                    true => None,
+                    false => {
+                        *built = revision;
+                        view.edit(source_of(&self.doc), cx)
+                    }
+                };
+                edited.or_else(|| view.rehighlight(cx))
             }
             None => {
                 let view = markdown::SourceText::new(source_of(&self.doc), cx);
@@ -228,12 +239,12 @@ pub(crate) fn source_of(doc: &Doc) -> &str {
 }
 
 /// `doc` as markdown — see [`Editor::source`].
-pub(crate) fn source(doc: &Doc, mode: Mode, marks: &markdown::Marks) -> String {
+pub(crate) fn source(doc: &Tracked, mode: Mode, synced: &RefCell<Synced>) -> String {
     match mode {
         Mode::Blocks => {
-            let mut doc = doc.clone();
-            doc.normalize_with(marks);
-            markdown::serialize_with(&doc, marks)
+            let mut synced = synced.borrow_mut();
+            synced.set_doc(doc.shared());
+            synced.text().to_owned()
         }
         Mode::Source => source_of(doc).to_string(),
     }
@@ -242,10 +253,13 @@ pub(crate) fn source(doc: &Doc, mode: Mode, marks: &markdown::Marks) -> String {
 /// Turn `doc` into `mode`, carrying `anchors` into the coordinates of the
 /// form switched to, and hand back where `caret` lands. An anchor with an end
 /// that cannot be placed there comes out detached.
+///
+/// `synced` is brought up to `doc` first. The markdown it holds is then the
+/// source, and its blocks the document, so neither is converted whole.
 pub(crate) fn switch(
     doc: &mut Tracked,
+    synced: &mut Synced,
     anchors: &mut [Anchor],
-    marks: &markdown::Marks,
     mode: Mode,
     caret: Cursor,
 ) -> Cursor {
@@ -255,10 +269,12 @@ pub(crate) fn switch(
         .collect();
     match mode {
         Mode::Source => {
+            synced.set_doc(doc.shared());
             let mut at = vec![caret];
             at.extend(ends.iter().flat_map(|(start, end)| [*start, *end]));
-            let (source, offsets) = markdown::serialize_at_many(doc, &at, marks);
-            doc.set(source_doc(&source));
+            let offsets = synced.offsets(&at);
+            let source = synced.text();
+            doc.set(source_doc(source));
             let place = |ix: usize| offsets[ix].map(|offset| Cursor::new(0, Part::Code, offset));
             place_anchors(anchors, |ix| place(ix + 1));
             place(0).unwrap_or(Cursor::new(0, Part::Code, source.len()))
@@ -269,9 +285,10 @@ pub(crate) fn switch(
                 ends.iter()
                     .flat_map(|(start, end)| [start.offset, end.offset]),
             );
-            let (mut parsed, at) = markdown::parse_at_many(source_of(doc), &offsets, marks);
-            ensure_block(&mut parsed);
-            doc.set(parsed);
+            synced.set_text(source_of(doc));
+            let at = synced.cursors(&offsets);
+            doc.share(synced.doc().clone());
+            doc.ensure_block();
             let place = |ix: usize| at[ix].map(|at: Cursor| at.clamp(doc));
             let caret = place(0).unwrap_or_else(|| Cursor::default().clamp(doc));
             let ends: Vec<_> = (1..at.len()).map(place).collect();

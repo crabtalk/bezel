@@ -53,7 +53,7 @@ pub(super) fn table(
                 weight,
                 theme,
                 |name| crate::marks::paint_of(cx, name, theme),
-                |url| preview::of(cx, url),
+                |url| crate::link::preview(crate::Link::new(url, overlay.base), cx),
             );
             if !flat.text.is_empty() {
                 let width = f32::from(

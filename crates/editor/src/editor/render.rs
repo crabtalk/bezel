@@ -146,6 +146,7 @@ impl Render for Editor {
                 }
                 if !*hovered && this.over_anchor.take().is_some() {
                     cx.emit(EditorEvent::AnchorHovered(None));
+                    cx.notify();
                 }
             }))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
@@ -169,6 +170,8 @@ impl Render for Editor {
                 if over != this.over_anchor {
                     this.over_anchor = over;
                     cx.emit(EditorEvent::AnchorHovered(over));
+                    // The pointer's shape follows the anchor under it.
+                    cx.notify();
                 }
                 let hovered = this.layouts.block_at(event.position);
                 let cell = this.layouts.cell_at(event.position).or_else(|| {
@@ -386,9 +389,16 @@ impl Render for Editor {
             // reaches over its gutter, the margin beside a short line, a rule,
             // an image and a card, none of which a caret can be put into.
             // Where it has nothing to say it stays quiet rather than
-            // overriding the page with an arrow of its own.
-            .when(self.over_text || self.dragging.is_some(), |el| {
-                el.cursor(CursorStyle::IBeam)
+            // overriding the page with an arrow of its own. Over an actionable
+            // anchor it is a hand: a press there does what the app says.
+            .map(|el| {
+                if self.dragging.is_none() && self.over_actionable() {
+                    el.cursor(CursorStyle::PointingHand)
+                } else if self.over_text || self.dragging.is_some() {
+                    el.cursor(CursorStyle::IBeam)
+                } else {
+                    el
+                }
             })
             // No focus ring. A ring says *widget*, and a document is not one —
             // the caret already paints only while focused, so a box around the

@@ -90,7 +90,22 @@ pub struct ParsedDoc {
 
 /// [`parse`], keeping the source range each block was parsed from.
 pub fn parse_ranges(source: &str) -> ParsedDoc {
-    let (doc, starts) = parse_spanned(source);
+    parse_ranges_with(source, &Marks::default())
+}
+
+/// [`parse_ranges`] with the app's own marks — see [`parse_with`].
+pub fn parse_ranges_with(source: &str, marks: &Marks) -> ParsedDoc {
+    if marks.is_empty() {
+        let (doc, starts) = parse_spanned(source);
+        return ParsedDoc {
+            block_ranges: ranges(&starts, source.len()),
+            doc,
+        };
+    }
+    let (lifted, aligned) = lift(source, marks);
+    let (mut doc, starts) = parse_spanned(&lifted);
+    settle_all(&mut doc, marks);
+    let starts: Vec<usize> = starts.iter().map(|&at| unlift(&aligned, at)).collect();
     ParsedDoc {
         block_ranges: ranges(&starts, source.len()),
         doc,
@@ -146,7 +161,13 @@ pub fn parse_with(source: &str, marks: &Marks) -> Doc {
     if marks.is_empty() {
         return parse_plain(source);
     }
-    let mut doc = parse_plain(&lift(source, marks));
+    let mut doc = parse_plain(&lift(source, marks).0);
+    settle_all(&mut doc, marks);
+    doc
+}
+
+/// Turn every lifted mark in `doc` back into the mark it stands for.
+fn settle_all(doc: &mut Doc, marks: &Marks) {
     for block in &mut doc.blocks {
         for part in block.parts() {
             if let Some(text) = block.text_at_mut(part) {
@@ -154,7 +175,6 @@ pub fn parse_with(source: &str, marks: &Marks) -> Doc {
             }
         }
     }
-    doc
 }
 
 fn parse_plain(source: &str) -> Doc {

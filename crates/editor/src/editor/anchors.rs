@@ -24,6 +24,15 @@ impl Editor {
             .map(|anchor| anchor.id)
     }
 
+    /// Whether the pointer is over an anchor marked [`Anchor::actionable`].
+    pub(crate) fn over_actionable(&self) -> bool {
+        self.over_anchor.is_some_and(|id| {
+            self.anchors
+                .iter()
+                .any(|anchor| anchor.id == id && anchor.actionable)
+        })
+    }
+
     /// Where to float a thread, mirroring [`Self::selection_bounds`].
     pub fn anchor_bounds(&self, id: AnchorId) -> Option<gpui::Bounds<gpui::Pixels>> {
         let anchor = self.anchors.iter().find(|anchor| anchor.id == id)?;

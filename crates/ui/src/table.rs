@@ -152,7 +152,7 @@ pub fn header_cell(theme: &Theme, column: &Column, sorted: Option<bool>) -> gpui
             theme.text_muted
         })
         .cursor_pointer()
-        .child(column.label.clone())
+        .child(div().min_w_0().child(column.label.clone()))
         .when_some(sorted, |cell, ascending| {
             cell.child(
                 icons::icon(if ascending {
@@ -161,6 +161,7 @@ pub fn header_cell(theme: &Theme, column: &Column, sorted: Option<bool>) -> gpui
                     icons::glyph::ArrowDown
                 })
                 .size(px(11.0))
+                .flex_none()
                 .text_color(theme.text_muted),
             )
         })
@@ -201,16 +202,16 @@ pub fn row(
         // system rather than two.
         row.hover(|s| s.bg(theme.element_hover))
     };
-    row.children(
-        columns
-            .iter()
-            .zip(cells)
-            .map(|(column, content)| cell_frame(column).py(px(9.0)).child(content)),
-    )
+    row.children(columns.iter().zip(cells).map(|(column, content)| {
+        cell_frame(column)
+            .py(px(9.0))
+            .child(div().min_w_0().child(content))
+    }))
 }
 
-/// Width and alignment from the column, and nothing else — the shared shape
-/// that makes a header cell and a body cell land in the same place.
+/// Width and alignment from the column — the shared shape that makes a header
+/// cell and a body cell land in the same place. A cell clips to its width, and
+/// text in it stays on one line and ends in `…` where it does not fit.
 fn cell_frame(column: &Column) -> gpui::Div {
     let cell = div()
         .flex()
@@ -218,6 +219,7 @@ fn cell_frame(column: &Column) -> gpui::Div {
         .items_center()
         .min_w_0()
         .px(px(CELL_X))
+        .truncate()
         .when(column.align == Align::End, |cell| cell.justify_end());
     match column.width {
         Width::Fixed(width) => cell.flex_none().w(width),

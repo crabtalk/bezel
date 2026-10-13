@@ -260,8 +260,9 @@ impl Gallery {
                                     .text_color(theme.text_muted),
                                 )
                                 .on_click(cx.listener(move |view, _, _, cx| {
-                                    view.navigation.strip.cycle(step);
-                                    cx.notify();
+                                    if view.navigation.strip.cycle(step) {
+                                        cx.notify();
+                                    }
                                 }))
                         })),
                 )

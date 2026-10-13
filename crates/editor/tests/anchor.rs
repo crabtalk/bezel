@@ -6,7 +6,7 @@
 //! path through `Editor::edit` reports what it did, and a path that forgets is
 //! invisible to a unit test of the arithmetic.
 
-use editor::{Anchor, AnchorId, Editor};
+use editor::{Anchor, AnchorId, Editor, SourceAnchor};
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
 use markdown::{Cursor, Part, Selection};
 
@@ -366,12 +366,19 @@ fn anchors_cross_to_and_from_the_markdown(cx: &mut TestAppContext) {
         document.update(cx, |document, cx| {
             document.set_source_anchors(
                 SOURCE,
-                vec![(ID, bravo..bravo + 5, markdown::Annotation::Open)],
+                vec![SourceAnchor {
+                    id: ID,
+                    range: bravo..bravo + 5,
+                    state: markdown::Annotation::Open,
+                    actionable: true,
+                }],
                 cx,
             )
         })
     });
     assert_eq!(anchored(&editor, &mut cx), (1, 0, 5));
+    let actionable = cx.update(|_, cx| editor.read(cx).anchors()[0].actionable);
+    assert!(actionable, "the flag comes through with the range");
     let (source, ranges) =
         cx.update(|_, cx| editor.read(cx).document().read(cx).source_with_anchors());
     assert_eq!(source, SOURCE);
@@ -391,12 +398,18 @@ fn anchor_tops_follow_the_document_down(cx: &mut TestAppContext) {
             document.set_source_anchors(
                 SOURCE,
                 vec![
-                    (
-                        AnchorId(2),
-                        charlie..charlie + 7,
-                        markdown::Annotation::Open,
-                    ),
-                    (ID, alpha..alpha + 5, markdown::Annotation::Open),
+                    SourceAnchor {
+                        id: AnchorId(2),
+                        range: charlie..charlie + 7,
+                        state: markdown::Annotation::Open,
+                        actionable: false,
+                    },
+                    SourceAnchor {
+                        id: ID,
+                        range: alpha..alpha + 5,
+                        state: markdown::Annotation::Open,
+                        actionable: false,
+                    },
                 ],
                 cx,
             )
