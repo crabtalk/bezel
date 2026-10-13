@@ -27,7 +27,8 @@
     ],
     "fixed": [
       "Lifting custom marks out of markdown is linear in the source again, instead of quadratic in its code spans, fences and links.",
-      "A submenu open when its menu closes leaves with the menu, instead of disappearing and playing its entrance again."
+      "A submenu open when its menu closes leaves with the menu, instead of disappearing and playing its entrance again.",
+      "A menu opened inside a modal or a sheet paints over it rather than under it."
     ]
   },
   {

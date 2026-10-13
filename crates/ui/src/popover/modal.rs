@@ -92,7 +92,7 @@ pub(super) fn modal_with(
                     )),
             ),
     )
-    .priority(2)
+    .priority(MODAL_LAYER)
     .into_any_element()
 }
 
@@ -239,6 +239,6 @@ pub fn sheet(
                     .child(panel),
             ),
     )
-    .priority(2)
+    .priority(MODAL_LAYER)
     .into_any_element()
 }

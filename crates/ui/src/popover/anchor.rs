@@ -79,7 +79,7 @@ pub(super) fn menu_layer(
         layer = layer.position(position);
     }
     gpui::deferred(layer.child(menu_motion(id.into(), closing.map(exit_progress), inner)))
-        .priority(1)
+        .priority(MENU_LAYER)
         .into_any_element()
 }
 

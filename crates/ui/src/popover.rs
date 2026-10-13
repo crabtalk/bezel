@@ -31,6 +31,13 @@ use icons::Icon;
 use motion::{self as motion, AnimationExt as _, Fade, PULSE, Painter};
 use theme::{TextStyle, Theme, Typeset, ink};
 
+/// The deferred priority a modal and a sheet paint at.
+const MODAL_LAYER: usize = 2;
+
+/// The deferred priority a menu and its submenus paint at: over a modal, so a
+/// menu opened inside one shows.
+const MENU_LAYER: usize = 3;
+
 // ---------------------------------------------------------------------------
 // Loadable — async slot state shared by pickers/settings pages
 // ---------------------------------------------------------------------------
