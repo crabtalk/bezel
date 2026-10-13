@@ -313,6 +313,7 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
         // The source view is one fence and holds no task block.
         toggle: None,
         image: None,
+        image_menu: None,
         image_overlay: None,
         image_overlay_corner: ImageOverlayCorner::BottomRight,
         fence: None,

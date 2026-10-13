@@ -14,7 +14,8 @@
       "`markdown::SourceText` holds a source text's lines and highlight spans across frames. `SourceText::edit` redoes only the lines an edit touched and answers a `SpanJob`, which highlights the whole text on any thread for `SourceText::set_spans`.",
       "`ContextMenu` is keyed by a `K` and stands at a `Place`: a window point, or above or below a trigger with either edge aligned. `ContextMenu::toggle` opens or closes the menu a trigger owns, `ContextMenu::trigger` wraps the trigger, and `key`, `showing`, `card`, `place` and `render_for` read and draw it.",
       "A context menu walks into a submenu with the right arrow and back out with the left (`menu::SelectChild`, `SelectParent`).",
-      "`History::clear`, `History::can_undo`, and `Run`, the run of edits an undo step coalesces."
+      "`History::clear`, `History::can_undo`, and `Run`, the run of edits an undo step coalesces.",
+      "`markdown::PictureMenu`, the rows of a picture's right-click menu (Open, Reveal in Finder or Show in Folder, Copy Image, Copy Image Address) and what each does, for a picture at a URL against a base. `Editing::image_menu` (`OnImageMenu`) hands a right press on a picture to the app with its block and position, so a read-only render can raise the menu the editor raises."
     ],
     "changed": [
       "`with_undo_limit`, `with_marks`, `with_mode`, `set_anchors`, `source_with_anchors` and `set_source_anchors` are on `Document`, not `Editor`.",

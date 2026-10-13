@@ -41,6 +41,7 @@ pub mod marks;
 #[cfg(feature = "mermaid")]
 pub mod mermaid;
 pub mod parse;
+pub mod picture;
 pub mod preview;
 pub mod quote;
 pub mod render;
@@ -67,13 +68,14 @@ pub use parse::{
     ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges,
     parse_ranges_with, parse_with,
 };
+pub use picture::PictureMenu;
 pub use preview::Preview;
 pub use quote::Quote;
 pub use render::{
     Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,
-    ImageOverlayCorner, LeaveBlock, OnImage, OnJump, OnLeave, OnResize, OnRewrite, OnToggle,
-    PAINTED_CONTEXT, RevealMode, SourceText, SpanJob, Spans, Toggle, image_source, markdown,
-    render, render_source, render_with,
+    ImageOverlayCorner, LeaveBlock, OnImage, OnImageMenu, OnJump, OnLeave, OnResize, OnRewrite,
+    OnToggle, PAINTED_CONTEXT, RevealMode, SourceText, SpanJob, Spans, Toggle, image_source,
+    markdown, render, render_source, render_with,
 };
 pub use select::{Affinity, Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_at_many, serialize_with};

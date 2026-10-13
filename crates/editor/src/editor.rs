@@ -380,7 +380,7 @@ pub struct Editor {
     /// opened.
     text_menu: MenuPopup<Vec<ui::menu::Item>>,
     /// The right-click menu on a picture.
-    image_menu: MenuPopup<image::ImageTarget>,
+    image_menu: MenuPopup<markdown::PictureMenu>,
     /// A block being dragged by its handle, and where it would land.
     lifted: Option<(usize, usize)>,
     /// An image being dragged wider or narrower by its edge handle, and the

@@ -8,8 +8,8 @@ use gpui::{
     Window, div, point, prelude::*, px, size,
 };
 use markdown::{
-    BlockLayouts, Cursor, Doc, Editing, ImageOverlay, OnImage, Part, Selection, SourceText, parse,
-    render_source, render_with,
+    BlockLayouts, Cursor, Doc, Editing, ImageOverlay, OnImage, OnImageMenu, Part, Selection,
+    SourceText, parse, render_source, render_with,
 };
 
 const WIDTH: f32 = 320.0;
@@ -22,6 +22,8 @@ struct Page {
     scroll: ScrollHandle,
     /// Every block the image hook was called with, in order.
     clicked: Rc<RefCell<Vec<usize>>>,
+    /// Every block the image menu hook was called with, in order.
+    menued: Rc<RefCell<Vec<usize>>>,
     hooked: bool,
     overlay: Option<ImageOverlay>,
     overlay_anchor: markdown::ImageOverlayCorner,
@@ -36,10 +38,16 @@ impl Render for Page {
             Rc::new(move |ix: usize, _: &mut Window, _: &mut App| clicked.borrow_mut().push(ix))
                 as OnImage
         });
+        let menued = self.menued.clone();
+        let image_menu = self.hooked.then(|| {
+            Rc::new(move |ix: usize, _, _: &mut Window, _: &mut App| menued.borrow_mut().push(ix))
+                as OnImageMenu
+        });
         let editing = Editing {
             layouts: self.virtualized.then_some(&self.layouts),
             scroll: Some(&self.scroll),
             image,
+            image_menu,
             image_overlay: self.overlay.clone(),
             image_overlay_corner: self.overlay_anchor,
             ..Editing::default()
@@ -72,6 +80,7 @@ fn open(
         layouts: BlockLayouts::default(),
         scroll: ScrollHandle::new(),
         clicked: Rc::new(RefCell::new(Vec::new())),
+        menued: Rc::new(RefCell::new(Vec::new())),
         hooked,
         overlay: None,
         overlay_anchor: markdown::ImageOverlayCorner::BottomRight,
@@ -244,8 +253,25 @@ fn a_picture_without_a_hook_takes_nothing(cx: &mut TestAppContext) {
 
     let center = picture(&page, &mut cx).center();
     cx.simulate_click(center, Modifiers::default());
+    cx.simulate_mouse_down(center, MouseButton::Right, Modifiers::default());
 
     assert!(clicked(&page, &mut cx).is_empty());
+    assert_eq!(cx.update(|_, cx| page.read(cx).presses), 2);
+}
+
+#[gpui::test]
+fn a_right_press_on_a_picture_calls_the_menu_hook_and_stops(cx: &mut TestAppContext) {
+    let (page, mut cx) = open(&picture_doc(), false, true, cx);
+
+    let center = picture(&page, &mut cx).center();
+    cx.simulate_mouse_down(center, MouseButton::Right, Modifiers::default());
+
+    assert_eq!(
+        cx.update(|_, cx| page.read(cx).menued.borrow().clone()),
+        vec![1]
+    );
+    assert!(clicked(&page, &mut cx).is_empty());
+    assert_eq!(cx.update(|_, cx| page.read(cx).presses), 0);
 }
 
 #[gpui::test]

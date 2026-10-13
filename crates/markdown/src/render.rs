@@ -188,6 +188,10 @@ pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 /// Handed the image block whose picture was clicked — see [`Editing::image`].
 pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
+/// Handed the image block whose picture was right-pressed and the press's
+/// window position — see [`Editing::image_menu`].
+pub type OnImageMenu = Rc<dyn Fn(usize, Point<Pixels>, &mut Window, &mut App)>;
+
 /// Handed the heading block a clicked `#fragment` link names — see
 /// [`Editing::jump`].
 pub type OnJump = Rc<dyn Fn(usize, &mut Window, &mut App)>;
@@ -295,6 +299,11 @@ pub struct Editing<'a> {
     /// press and release more than a couple of pixels apart is a drag and
     /// calls nothing. The press still reaches whatever is under the picture.
     pub image: Option<OnImage>,
+    /// Handles a right press on a picture with its block index and the press's
+    /// window position, and stops the press. `None` lets it through to
+    /// whatever is under the picture. [`crate::PictureMenu`] is what the menu
+    /// offers.
+    pub image_menu: Option<OnImageMenu>,
     /// An app control inset at `image_overlay_corner`, visible on hover.
     /// Its presses do not reach the picture. `None` adds no listeners.
     pub image_overlay: Option<ImageOverlay>,
@@ -342,6 +351,7 @@ impl Default for Editing<'_> {
             typography: None,
             toggle: None,
             image: None,
+            image_menu: None,
             image_overlay: None,
             image_overlay_corner: ImageOverlayCorner::BottomRight,
             fence: None,
@@ -383,6 +393,7 @@ struct Overlay<'a> {
     /// press listener that needs an owned handle.
     toggle: Option<&'a Toggle>,
     image: Option<&'a OnImage>,
+    image_menu: Option<&'a OnImageMenu>,
     image_overlay: Option<&'a ImageOverlay>,
     image_overlay_corner: ImageOverlayCorner,
     fence: Option<&'a FenceHost>,
@@ -622,6 +633,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         typography,
         toggle,
         image,
+        image_menu,
         image_overlay,
         image_overlay_corner,
         fence,
@@ -673,6 +685,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caption,
                 toggle: toggle.as_ref(),
                 image: image.as_ref(),
+                image_menu: image_menu.as_ref(),
                 image_overlay: image_overlay.as_ref(),
                 image_overlay_corner,
                 fence: fence.as_ref(),
@@ -730,6 +743,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         caption,
         toggle,
         image,
+        image_menu,
         image_overlay,
         image_overlay_corner,
         fence,
@@ -768,6 +782,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
                 caption: owned.caption,
                 toggle: owned.toggle.as_ref(),
                 image: owned.image.as_ref(),
+                image_menu: owned.image_menu.as_ref(),
                 image_overlay: owned.image_overlay.as_ref(),
                 image_overlay_corner: owned.image_overlay_corner,
                 fence: owned.fence.as_ref(),
@@ -812,6 +827,7 @@ struct Owned {
     caption: Caption,
     toggle: Option<Toggle>,
     image: Option<OnImage>,
+    image_menu: Option<OnImageMenu>,
     image_overlay: Option<ImageOverlay>,
     image_overlay_corner: ImageOverlayCorner,
     fence: Option<FenceHost>,

@@ -97,6 +97,12 @@ pub(super) fn image(
                     on_image(ix, window, cx);
                 })
             })
+            .when_some(overlay.image_menu.cloned(), |el, on_menu| {
+                el.on_mouse_down(MouseButton::Right, move |event, window, cx| {
+                    cx.stop_propagation();
+                    on_menu(ix, event.position, window, cx);
+                })
+            })
             .children(overlay.layouts.map(|layouts| {
                 let layouts = layouts.clone();
                 canvas(
