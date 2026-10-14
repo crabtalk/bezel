@@ -646,3 +646,14 @@ fn an_item_not_painted_last_frame_does_not_slide(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(top("b", &mut cx), 0.);
 }
+
+#[gpui::test]
+fn an_item_moved_outside_a_gesture_does_not_slide(cx: &mut TestAppContext) {
+    let (view, mut cx) = stack(vec!["a", "b", "c"], None, cx);
+    view.update(&mut cx, |view, cx| {
+        view.skip = Some("a");
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert_eq!((top("b", &mut cx), top("c", &mut cx)), (0., 30.));
+}

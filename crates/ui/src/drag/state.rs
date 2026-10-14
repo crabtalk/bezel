@@ -203,6 +203,11 @@ pub(super) struct State<R, I> {
     prepainted: bool,
     slots: Vec<Slot<I>>,
     drift_since: Option<Instant>,
+    /// A gesture ended since the last frame began.
+    ended: bool,
+    /// This frame is the first laid out after a gesture ended: handles that
+    /// moved slide into place. Outside a gesture and this frame they snap.
+    settling: bool,
     /// Whether this frame has drifted yet: once, before the first region lays
     /// out, so every region in the frame reads the same offsets.
     drifted: bool,
@@ -250,6 +255,8 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             prepainted: false,
             slots: Vec::new(),
             drift_since: None,
+            ended: false,
+            settling: false,
             drifted: false,
         }
     }
@@ -262,6 +269,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         }
         self.prepainted = false;
         self.drifted = false;
+        self.settling = std::mem::take(&mut self.ended);
         self.frames = std::mem::take(&mut self.building);
         self.slots.retain(|slot| slot.seen);
         for slot in &mut self.slots {
@@ -380,6 +388,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             _ => bounds.origin,
         };
         let painter = self.painter;
+        let moving = self.live.is_some() || self.settling;
         let slot = match self.slots.iter().position(|slot| &slot.item == item) {
             Some(at) => &mut self.slots[at],
             None => {
@@ -402,7 +411,14 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
                 Seen::Slot {
                     target: last,
                     painted,
-                } => (*last + moved != target).then(|| (*painted + moved, false)),
+                } if *last + moved != target => match moving {
+                    true => Some((*painted + moved, false)),
+                    false => {
+                        slot.slide = None;
+                        None
+                    }
+                },
+                Seen::Slot { .. } => None,
                 Seen::Floating(at) => Some((*at, true)),
                 Seen::Ghost(gesture) => gesture.shown.get().map(|at| (at, true)),
                 Seen::Hidden => None,
@@ -651,6 +667,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
     /// Ends the gesture. The caller commits whatever the landing names.
     pub fn end(&mut self, window: &mut Window, cx: &mut App) -> Option<Live<R, I>> {
         let live = self.live.take()?;
+        self.ended = true;
         self.stale = false;
         self.drift_since = None;
         let focus = self
