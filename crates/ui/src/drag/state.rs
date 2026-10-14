@@ -42,12 +42,10 @@ pub(super) type OnDrop<R, I> = dyn Fn(&Drop<R, I>, &mut Window, &mut App);
 pub(super) type OnOutside<I> = dyn Fn(&Outside<I>, &mut Window, &mut App);
 pub(super) type Accepts<I> = dyn Fn(&I) -> bool;
 pub(super) type Lands<I> = dyn Fn(&I, Option<&I>, Option<&I>) -> bool;
-pub(super) type Carries<I> = dyn Fn(&I) -> Vec<I>;
 
 pub(super) struct Config<R, I> {
     pub accepts: Option<Box<Accepts<I>>>,
     pub lands: Option<Box<Lands<I>>>,
-    pub carries: Option<Box<Carries<I>>>,
     pub feedback: Feedback,
     pub axis_locked: bool,
     pub scroll: Option<Scroller>,
@@ -102,10 +100,8 @@ pub(super) struct Frame<R, I> {
 
 impl<R, I: PartialEq> Frame<R, I> {
     /// The painted items that are not carried.
-    fn others<'a>(&'a self, members: &'a [I]) -> impl Iterator<Item = &'a Mark<I>> + 'a {
-        self.handles
-            .iter()
-            .filter(move |mark| !members.contains(&mark.item))
+    fn others<'a>(&'a self, item: &'a I) -> impl Iterator<Item = &'a Mark<I>> + 'a {
+        self.handles.iter().filter(move |mark| &mark.item != item)
     }
 
     fn position(&self, item: &I) -> Option<usize> {
@@ -127,8 +123,6 @@ pub(super) struct Landing<R> {
 
 pub(super) struct Live<R, I> {
     pub item: I,
-    /// The item and the ones it carries along, in order.
-    pub members: Vec<I>,
     pub from: R,
     pub gesture: Rc<Gesture>,
     pub origin: Point<Pixels>,
@@ -337,11 +331,8 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         let frame = &mut self.building[ix];
         let (carried_before, m) = match &self.live {
             Some(live) => (
-                frame
-                    .handles
-                    .iter()
-                    .any(|mark| live.members.contains(&mark.item)),
-                frame.others(&live.members).count(),
+                frame.position(&live.item).is_some(),
+                frame.others(&live.item).count(),
             ),
             None => (false, 0),
         };
@@ -367,10 +358,6 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
                     seen = Some(Seen::Floating(at));
                     at
                 }
-            }
-            Some(live) if live.members.contains(item) => {
-                seen = Some(Seen::Hidden);
-                bounds.origin
             }
             Some(live) if frame.config.feedback == Feedback::Displace => {
                 let removed = frame.id == live.from && carried_before;
@@ -402,7 +389,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
                 self.slots.last_mut().unwrap()
             }
         };
-        let hidden = matches!(seen, Some(Seen::Ghost(_) | Seen::Hidden));
+        let hidden = matches!(seen, Some(Seen::Ghost(_)));
         if seen.is_some() {
             slot.slide = None;
         } else {
@@ -494,16 +481,6 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             _ => cursor,
         };
         let start = along(axis, bounds.origin);
-        let members: Vec<I> = std::iter::once(item.clone())
-            .chain(
-                frame
-                    .config
-                    .carries
-                    .as_ref()
-                    .map(|carries| carries(item))
-                    .unwrap_or_default(),
-            )
-            .collect();
         let gap = match (frame.handles.get(at + 1), at.checked_sub(1)) {
             (Some(next), _) => along(axis, next.bounds.origin) - start - length(axis, bounds.size),
             (None, Some(previous)) => {
@@ -513,24 +490,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             (None, None) => px(0.),
         }
         .max(px(0.));
-        let own = length(axis, bounds.size) + gap;
-        let painted: Vec<usize> = frame
-            .handles
-            .iter()
-            .enumerate()
-            .filter(|(_, mark)| members.contains(&mark.item))
-            .map(|(at, _)| at)
-            .collect();
-        let last = painted.iter().copied().max().unwrap_or(at);
-        let block = match frame.handles.get(last + 1) {
-            Some(next) => along(axis, next.bounds.origin) - start,
-            None => {
-                let last = frame.handles[last].bounds;
-                along(axis, last.origin) + length(axis, last.size) + gap - start
-            }
-        };
-        // Members out of the painted range count at the item's own pitch.
-        let extent = block + own * (members.len() - painted.len()) as f32;
+        let extent = length(axis, bounds.size) + gap;
         gesture.grab.set(grab);
         gesture.size.set(bounds.size);
         gesture.claimed.set(true);
@@ -539,7 +499,6 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         window.focus(&frame.config.focus, cx);
         self.live = Some(Live {
             item: item.clone(),
-            members,
             from: frame.id.clone(),
             gesture,
             origin,
@@ -566,7 +525,6 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         };
         live.pointer = pointer;
         let item = &live.item;
-        let members = &live.members;
         let grab = live.gesture.grab.get();
         let size = live.gesture.size.get();
         let mut claimed = false;
@@ -603,7 +561,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             let axis = frame.axis;
             let centre = along(axis, pointer - grab) + length(axis, size) / 2.;
             let mut index = 0;
-            for mark in frame.others(members) {
+            for mark in frame.others(item) {
                 let middle = along(axis, mark.bounds.origin) + length(axis, mark.bounds.size) / 2.;
                 if centre <= middle {
                     break;
@@ -612,7 +570,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             }
             landing = frame
                 .config
-                .nearest(item, &frame.others(members).collect::<Vec<_>>(), index)
+                .nearest(item, &frame.others(item).collect::<Vec<_>>(), index)
                 .map(|index| Landing {
                     region: frame.id.clone(),
                     index,
@@ -635,7 +593,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             .as_ref()
             .filter(|landing| &landing.region == id)?;
         let aimed = self.frames.iter().find(|frame| &frame.id == id)?;
-        let others: Vec<_> = aimed.others(&live.members).collect();
+        let others: Vec<_> = aimed.others(&live.item).collect();
         let before = others.get(landing.index).map(|mark| &mark.item);
         let after = landing
             .index
@@ -715,7 +673,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             return None;
         }
         let dropped = frame.config.dropped.clone()?;
-        let others: Vec<_> = frame.others(&live.members).collect();
+        let others: Vec<_> = frame.others(&live.item).collect();
         let after = landing
             .index
             .checked_sub(1)

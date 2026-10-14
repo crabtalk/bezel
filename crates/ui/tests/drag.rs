@@ -333,11 +333,13 @@ fn a_tab_pulled_off_its_strip_lands_on_a_docking_surface(cx: &mut TestAppContext
     });
 }
 
-/// A heading, then two groups whose heading carries the rows under it, in a
-/// virtualized list.
+/// A heading, then two groups, in a virtualized list. A group's rows are left
+/// out while its heading is carried.
 struct Outline {
     domain: Domain<(), &'static str>,
     rows: Vec<&'static str>,
+    /// The rows drawn this frame.
+    shown: Vec<&'static str>,
     drops: Vec<drag::Drop<(), &'static str>>,
 }
 
@@ -353,13 +355,19 @@ fn group_of(rows: &[&'static str], row: &str) -> Option<&'static str> {
 impl Render for Outline {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let rows = self.rows.clone();
+        let held = self.domain.carried().map(|item| members(&rows, item));
+        self.shown = rows
+            .iter()
+            .copied()
+            .filter(|row| held.as_ref().is_none_or(|held| !held.contains(row)))
+            .collect();
         let list = gpui::uniform_list(
             "outline",
-            rows.len(),
+            self.shown.len(),
             cx.processor(move |this, range: std::ops::Range<usize>, _, _| {
                 range
                     .map(|ix| {
-                        let row = this.rows[ix];
+                        let row = this.shown[ix];
                         let el = div().id(row).debug_selector(move || row.into()).h(px(30.));
                         match row {
                             "H" => this.domain.fixed(row, el).into_any_element(),
@@ -370,21 +378,11 @@ impl Render for Outline {
             }),
         )
         .size_full();
-        let (carried, landing) = (rows.clone(), rows);
+        let landing = rows;
         self.domain
             .region("outline-region", (), Axis::Vertical, list)
             .w(px(120.))
             .h(px(300.))
-            .carries(move |item| match item.starts_with('G') {
-                true => carried
-                    .iter()
-                    .skip_while(|at| *at != item)
-                    .skip(1)
-                    .take_while(|at| !at.starts_with('G'))
-                    .copied()
-                    .collect(),
-                false => Vec::new(),
-            })
             .lands(move |item, after, before| match item.starts_with('G') {
                 true => before.is_none_or(|before| before.starts_with('G')),
                 false => [after, before].into_iter().flatten().any(|at| {
@@ -404,6 +402,7 @@ fn outline(cx: &mut TestAppContext) -> (Entity<Outline>, VisualTestContext) {
     let window = cx.add_window(|_, cx| Outline {
         domain: Domain::new(motion::Painter::of(cx)),
         rows: vec!["H", "G1", "a", "b", "G2", "c", "d"],
+        shown: Vec::new(),
         drops: Vec::new(),
     });
     let view = window.root(cx).unwrap();
@@ -430,7 +429,7 @@ fn an_entry_in_a_virtualized_list_slides_its_neighbour_and_lands(cx: &mut TestAp
 }
 
 #[gpui::test]
-fn a_heading_carries_its_rows_and_an_entry_stays_in_its_group(cx: &mut TestAppContext) {
+fn a_heading_leaves_its_rows_out_and_an_entry_stays_in_its_group(cx: &mut TestAppContext) {
     let (view, mut cx) = outline(cx);
     let g2 = cx.debug_bounds("G2").unwrap().top();
     down(10., 40., &mut cx);
@@ -455,8 +454,9 @@ fn a_heading_carries_its_rows_and_an_entry_stays_in_its_group(cx: &mut TestAppCo
     });
 }
 
-/// A column that applies its drops. A row named `G…` carries the rows after it
-/// up to the next `G…`.
+/// A column that applies its drops. A row named `G…` heads the rows after it
+/// up to the next `G…`: they are left out while it is carried, and land with
+/// it.
 struct Stack {
     domain: Domain<(), &'static str>,
     rows: Vec<&'static str>,
@@ -479,10 +479,15 @@ fn members(rows: &[&'static str], item: &str) -> Vec<&'static str> {
 impl Render for Stack {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let skip = self.skip;
+        let held = self
+            .domain
+            .carried()
+            .map(|item| members(&self.rows, item))
+            .unwrap_or_default();
         let content = div().flex().flex_col().children(
             self.rows
                 .iter()
-                .filter(|row| Some(**row) != skip)
+                .filter(|row| Some(**row) != skip && !held.contains(row))
                 .map(|&row| {
                     self.domain.handle(
                         row,
@@ -494,12 +499,10 @@ impl Render for Stack {
                     )
                 }),
         );
-        let rows = self.rows.clone();
         self.domain
             .region("stack", (), Axis::Vertical, content)
             .w(px(120.))
             .h(px(300.))
-            .carries(move |item| members(&rows, item))
             .on_drop(
                 cx.listener(|view, event: &drag::Drop<(), &'static str>, _, cx| {
                     let moved: Vec<_> = std::iter::once(event.item)
@@ -604,7 +607,7 @@ fn a_ghost_narrower_than_its_item_stays_under_the_pointer(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn a_carried_member_appears_in_place(cx: &mut TestAppContext) {
+fn a_carried_headings_rows_appear_in_place(cx: &mut TestAppContext) {
     let (view, mut cx) = stack(vec!["G1", "a", "G2", "b"], None, cx);
     down(10., 10., &mut cx);
     travel(10., 100., &mut cx);
