@@ -583,11 +583,7 @@ impl gpui::Element for TerminalElement {
                     point(origin.x + cell_w * col as f32, y),
                     size(cell_w, line_h),
                 );
-                bg_quads.extend(glyph::fills(
-                    cell.ch,
-                    cell_bounds,
-                    glyph_color(cell, &theme),
-                ));
+                bg_quads.extend(glyph::fills(cell.ch, cell_bounds, ink(cell, &theme)));
             }
             lines.push(shape_row(row, &theme, &mono, font_size, window));
         }
@@ -616,7 +612,11 @@ impl gpui::Element for TerminalElement {
                     ),
                     line: line.clone(),
                     range,
-                    color: glyph_color(&cell.under_cursor(), &theme),
+                    color: theme::legible(
+                        glyph_color(&cell.under_cursor(), &theme),
+                        theme.cursor,
+                        theme::LEGIBLE,
+                    ),
                 })
             });
 
@@ -721,6 +721,28 @@ impl gpui::Element for TerminalElement {
     }
 }
 
+/// The colour a cell's glyph is painted in, dimmed when the cell is dim.
+fn glyph_color(cell: &CellSnapshot, theme: &Theme) -> Hsla {
+    let (fg, _) = cell.display_colors();
+    let mut color = resolve_color(fg, theme);
+    if cell.dim {
+        color.a *= 0.6;
+    }
+    color
+}
+
+/// The color a cell's glyph is drawn in: its own, and legible over the
+/// selection while the cell is selected.
+fn ink(cell: &CellSnapshot, theme: &Theme) -> Hsla {
+    let color = glyph_color(cell, theme);
+    if !cell.selected {
+        return color;
+    }
+    let page = resolve_color(cell.display_colors().1, theme);
+    let plate = theme::stack(page, [terminal_selection_for(theme.appearance)]);
+    theme::legible(color, plate, theme::kept(color, page))
+}
+
 /// Shape one grid row into COLUMN-PINNED segments.
 ///
 /// A terminal is a fixed grid, but a shaped line places glyphs by their font
@@ -738,16 +760,6 @@ impl gpui::Element for TerminalElement {
 /// and every other glyph is its own segment pinned at its own column. Wide
 /// spacers are still skipped — the wide glyph covers both columns, and the
 /// NEXT segment re-pins regardless.
-/// The colour a cell's glyph is painted in, dimmed when the cell is dim.
-fn glyph_color(cell: &CellSnapshot, theme: &Theme) -> Hsla {
-    let (fg, _) = cell.display_colors();
-    let mut color = resolve_color(fg, theme);
-    if cell.dim {
-        color.a *= 0.6;
-    }
-    color
-}
-
 fn shape_row(
     row: &[CellSnapshot],
     theme: &Theme,
@@ -808,7 +820,7 @@ fn shape_row(
         if text.is_empty() {
             seg_col = col;
         }
-        let color = glyph_color(cell, theme);
+        let color = ink(cell, theme);
         let mut cell_font = mono.clone();
         cell_font.weight = if cell.bold {
             gpui::FontWeight::BOLD

@@ -11,7 +11,7 @@ use crate::scroll::Scroller;
 
 use super::{
     Domain, Drop, Feedback, Outside,
-    state::{Accepts, Carries, Commit, Config, Lands, OnDrop, OnOutside},
+    state::{Accepts, Commit, Config, Lands, OnDrop, OnOutside},
 };
 
 /// A drop target whose content the host lays out. Style it as the box that
@@ -25,7 +25,6 @@ pub struct Region<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static
     child: AnyElement,
     accepts: Option<Box<Accepts<I>>>,
     lands: Option<Box<Lands<I>>>,
-    carries: Option<Box<Carries<I>>>,
     feedback: Feedback,
     axis_locked: bool,
     scroll: Option<Scroller>,
@@ -50,7 +49,6 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Region<R, I
             child,
             accepts: None,
             lands: None,
-            carries: None,
             feedback: Feedback::default(),
             axis_locked: false,
             scroll: None,
@@ -72,13 +70,6 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Region<R, I
     /// release commits nothing.
     pub fn lands(mut self, lands: impl Fn(&I, Option<&I>, Option<&I>) -> bool + 'static) -> Self {
         self.lands = Some(Box::new(lands));
-        self
-    }
-
-    /// The items that go along with `item` when it is picked up here, in
-    /// order after it. They are hidden with it and land with it.
-    pub fn carries(mut self, carries: impl Fn(&I) -> Vec<I> + 'static) -> Self {
-        self.carries = Some(Box::new(carries));
         self
     }
 
@@ -144,7 +135,6 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce 
         let config = Rc::new(Config {
             accepts: self.accepts,
             lands: self.lands,
-            carries: self.carries,
             feedback: self.feedback,
             axis_locked: self.axis_locked,
             scroll: self.scroll,

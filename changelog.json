@@ -1,5 +1,24 @@
 [
   {
+    "version": "0.2.15",
+    "date": "2026-10-15",
+    "summary": "Multi-select pickers the host searches, with plain rows for choices that are not labels and the query on a line of its own. Drag handles that slide only while a gesture runs, and drag regions without carried groups.",
+    "new": [
+      "`MultiSelect::with_search` lets the host answer each query: every change of the query is a `MultiSelectEvent::Searched`, the rows are the choices that are off in the order `set_choices` answers them, and an empty query shows no rows. The choices that are on show only as chips.",
+      "`MultiSelect::with_plain_rows` paints each row's name as text rather than as a chip.",
+      "`MultiSelect::with_placeholder` sets what the empty query field says."
+    ],
+    "changed": [
+      "A multi-select's chosen chips sit on their own line, over the query field.",
+      "A multi-select's query field says \"Search…\", and \"Search or create…\" only with `with_create`.",
+      "`MultiSelectEvent` has a `Searched` variant.",
+      "`Region::carries` is gone: a host leaves a carried heading's rows out of the list itself while the heading is in flight, and lands them with it."
+    ],
+    "fixed": [
+      "Drag handles slide into place only during a gesture and the frame it settles in; a handle that moves at any other time snaps."
+    ]
+  },
+  {
     "version": "0.2.14",
     "date": "2026-10-13",
     "summary": "Documents that keep their markdown and blocks in step, so a mode switch converts nothing and untouched blocks keep their bytes. One `Links` trait for everything an app does with links. Mermaid diagrams that zoom one layout and open fitted to their box. Status bars, a menu note row and app-set comment washes. Terminal box and block glyphs drawn as cell geometry on a device-pixel grid.",

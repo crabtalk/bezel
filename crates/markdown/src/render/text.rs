@@ -12,7 +12,7 @@ pub struct Flat {
     pub runs: Vec<TextRun>,
     pub links: Vec<(Range<usize>, String)>,
     pub code: Vec<Range<usize>>,
-    /// Each run of a [`crate::MarkPaint::background`], painted under the
+    /// Each run of a [`crate::MarkPaint::background`], painted over the
     /// selection.
     pub washes: Vec<(Range<usize>, Hsla)>,
     pub mentions: Vec<Mention>,
@@ -305,6 +305,7 @@ pub(super) fn painted_text(
     let glyph = caret
         .filter(|_| shape.cuts_out(hollow))
         .and_then(|offset| overlay.covered(&flat.text, offset));
+    let runs = flat.runs.clone();
     let styled = StyledText::new(flat.text).with_runs(flat.runs);
     let layout = styled.layout().clone();
 
@@ -349,13 +350,30 @@ pub(super) fn painted_text(
         .map(|(range, wash)| (shown.range(&range), wash))
         .collect();
     let layouts = overlay.layouts.cloned();
+    // In the order the underlay paints them.
+    let layers: Vec<_> = selected
+        .iter()
+        .map(|range| (range.clone(), selection_color))
+        .chain(washes.iter().cloned())
+        .chain(annotated.iter().cloned())
+        .chain(code_ranges.iter().map(|range| (range.clone(), wash)))
+        .collect();
+    let overdraws = ui::input::overdraw::overdraws(&runs, theme.bg, &layers);
     // Over the text, which a solid block hides: the glyph it covers is painted
     // again on top of it.
     let caret_layout = layout.clone();
-    let cover = theme.bg;
+    let cover = theme::legible(theme.bg, caret_color, theme::LEGIBLE);
     let over = canvas(
         |_, _, _| (),
         move |_, _, window, cx| {
+            ui::input::overdraw::paint(
+                caret_layout.line_layouts().iter().map(|line| &**line),
+                caret_layout.bounds().origin,
+                caret_layout.line_height(),
+                px(2.0),
+                &overdraws,
+                window,
+            );
             let Some(offset) = caret else {
                 return;
             };
@@ -400,9 +418,22 @@ pub(super) fn painted_text(
             if let Some(layouts) = &layouts {
                 layouts.record(ix, part, span.clone(), layout.clone(), shown.clone());
             }
-            // Below the selection, so dragging across a comment or a mark
-            // still reads as selected rather than as a third colour nobody
-            // chose.
+            // Under the glyphs, like the inline-code wash — one quad per visual
+            // row, so a wrapped selection is a stack of rows rather than a box
+            // around all of them. Under the marks and the annotations, which
+            // are translucent: a highlight shows through over a selection.
+            if let Some(range) = &selected {
+                for rect in range_rects(&layout, range, 0.0, 0.0) {
+                    window.paint_quad(quad(
+                        rect,
+                        px(2.0),
+                        selection_color,
+                        px(0.0),
+                        gpui::transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
+            }
             for (range, wash) in &washes {
                 for rect in range_rects(&layout, range, 0.0, 0.0) {
                     window.paint_quad(quad(
@@ -421,21 +452,6 @@ pub(super) fn painted_text(
                         rect,
                         px(2.0),
                         *wash,
-                        px(0.0),
-                        gpui::transparent_black(),
-                        BorderStyle::default(),
-                    ));
-                }
-            }
-            // Under the glyphs, like the inline-code wash — one quad per visual
-            // row, so a wrapped selection is a stack of rows rather than a box
-            // around all of them.
-            if let Some(range) = &selected {
-                for rect in range_rects(&layout, range, 0.0, 0.0) {
-                    window.paint_quad(quad(
-                        rect,
-                        px(2.0),
-                        selection_color,
                         px(0.0),
                         gpui::transparent_black(),
                         BorderStyle::default(),

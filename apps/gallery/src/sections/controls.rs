@@ -833,6 +833,7 @@ impl State {
                     });
                     return;
                 }
+                MultiSelectEvent::Searched(_) => return,
             }
             labels.sort();
             let choices = label_choices(labels);

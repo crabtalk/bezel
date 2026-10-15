@@ -35,6 +35,7 @@ mod chip;
 mod edit;
 mod element;
 mod ime;
+pub mod overdraw;
 mod text;
 
 pub use caret::{CaretHeight, CaretShape, InactiveCaret};

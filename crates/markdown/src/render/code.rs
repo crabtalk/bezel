@@ -385,14 +385,15 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
                 hollow: !window.is_window_active(),
                 ..paint.clone()
             };
-            let styled = code_line(&code[span.clone()], span.start, spans.as_deref(), &theme);
+            let (styled, runs) =
+                code_line(&code[span.clone()], span.start, spans.as_deref(), &theme);
             let layout = styled.layout().clone();
             let sink = sink.clone();
             let over = {
                 let (span, layout, paint) = (span.clone(), layout.clone(), paint.clone());
                 canvas(
                     |_, _, _| (),
-                    move |_, _, window, _| paint.paint_over(&span, &layout, window),
+                    move |_, _, window, _| paint.paint_over(&span, &layout, &runs, window),
                 )
                 .absolute()
                 .size_full()
@@ -510,15 +511,15 @@ pub(super) fn code_lines(
     // several rows of one layout, which is the case `range_rects` already
     // walks for a paragraph.
     let paint = RowPaint::new(&overlay, code, typography.code.size(), theme);
-    let mut rows: Vec<(Range<usize>, TextLayout)> = Vec::new();
+    let mut rows: Vec<(Range<usize>, TextLayout, Vec<TextRun>)> = Vec::new();
     let mut offset = 0usize;
     let lines: Vec<AnyElement> = code
         .split('\n')
         .map(|line| {
             let start = offset;
             offset += line.len() + 1;
-            let styled = code_line(line, start, spans.as_deref(), theme);
-            rows.push((start..start + line.len(), styled.layout().clone()));
+            let (styled, runs) = code_line(line, start, spans.as_deref(), theme);
+            rows.push((start..start + line.len(), styled.layout().clone(), runs));
             styled.into_any_element()
         })
         .collect();
@@ -529,8 +530,8 @@ pub(super) fn code_lines(
         canvas(
             |_, _, _| (),
             move |_, _, window, _| {
-                for (span, layout) in &rows {
-                    paint.paint_over(span, layout, window);
+                for (span, layout, runs) in &rows {
+                    paint.paint_over(span, layout, runs, window);
                 }
             },
         )
@@ -540,7 +541,7 @@ pub(super) fn code_lines(
     let underlay = canvas(
         |_, _, _| (),
         move |_, _, window, _| {
-            for (span, layout) in &rows {
+            for (span, layout, _) in &rows {
                 if let Some(sink) = &sink {
                     sink.record(
                         ix,
@@ -563,11 +564,17 @@ pub(super) fn code_lines(
 /// A highlighted byte range of a text.
 type Span = (Range<usize>, theme::HighlightKind);
 
-/// One line of code, coloured by the spans over the text it came from.
+/// One line of code, coloured by the spans over the text it came from, and
+/// its runs.
 ///
 /// Runs are measured within the line; spans are byte ranges over the whole
 /// text, so every span is clipped to the line and rebased.
-fn code_line(line: &str, start: usize, spans: Option<&[Span]>, theme: &Theme) -> StyledText {
+fn code_line(
+    line: &str,
+    start: usize,
+    spans: Option<&[Span]>,
+    theme: &Theme,
+) -> (StyledText, Vec<TextRun>) {
     let mono = font(theme.font_mono.clone());
     let run = |len: usize, color: Hsla| TextRun {
         len,
@@ -597,11 +604,12 @@ fn code_line(line: &str, start: usize, spans: Option<&[Span]>, theme: &Theme) ->
     if runs.is_empty() {
         runs.push(run(0, theme.text));
     }
-    StyledText::new(SharedString::from(line.to_string())).with_runs(runs)
+    let styled = StyledText::new(SharedString::from(line.to_string())).with_runs(runs.clone());
+    (styled, runs)
 }
 
-/// What paints with a line of code: the annotations and the selection under
-/// it, the caret over it, each clipped to the slice of the text the line
+/// What paints with a line of code: the selection and the annotations under
+/// it, the caret and the text they leave unreadable over it, each clipped to the slice of the text the line
 /// covers.
 #[derive(Clone)]
 struct RowPaint {
@@ -618,6 +626,8 @@ struct RowPaint {
     caret_color: Hsla,
     cover: Hsla,
     selection_color: Hsla,
+    /// What the code is painted on.
+    page: Hsla,
     code_size: f32,
 }
 
@@ -635,8 +645,9 @@ impl RowPaint {
             selected: overlay.selected(code.len()),
             annotated: overlay.annotated(code.len(), theme),
             caret_color: theme.caret,
-            cover: theme.bg,
+            cover: theme::legible(theme.bg, theme.caret, theme::LEGIBLE),
             selection_color: theme.selection,
+            page: theme.bg,
             code_size,
         }
     }
@@ -664,15 +675,44 @@ impl RowPaint {
                 }
             }
         };
-        for (range, color) in &self.annotated {
-            wash(range, *color, window);
-        }
-        if let Some(range) = &self.selected {
-            wash(range, self.selection_color, window);
+        for (range, color) in self.layers() {
+            wash(&range, color, window);
         }
     }
 
-    fn paint_over(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
+    /// The selection, then the annotations, which are translucent: a
+    /// highlight shows through over a selection. Over the whole text, in the
+    /// order they are painted.
+    fn layers(&self) -> impl Iterator<Item = (Range<usize>, Hsla)> + '_ {
+        self.selected
+            .iter()
+            .map(|range| (range.clone(), self.selection_color))
+            .chain(self.annotated.iter().cloned())
+    }
+
+    /// `runs` are the line's, `span` its slice of the whole text.
+    fn paint_over(
+        &self,
+        span: &Range<usize>,
+        layout: &TextLayout,
+        runs: &[TextRun],
+        window: &mut Window,
+    ) {
+        let layers: Vec<_> = self
+            .layers()
+            .filter_map(|(range, color)| {
+                let (from, to) = (range.start.max(span.start), range.end.min(span.end));
+                (from < to).then(|| (from - span.start..to - span.start, color))
+            })
+            .collect();
+        ui::input::overdraw::paint(
+            layout.line_layouts().iter().map(|line| &**line),
+            layout.bounds().origin,
+            layout.line_height(),
+            px(2.0),
+            &ui::input::overdraw::overdraws(runs, self.page, &layers),
+            window,
+        );
         if let Some(offset) = self.caret.filter(|at| span.contains(at) || *at == span.end) {
             let glyph = self
                 .cut()
