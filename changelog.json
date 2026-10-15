@@ -4,7 +4,7 @@
     "date": "2026-10-16",
     "summary": "A card for an app's main view that floats on the window's chrome, and a picture picker.",
     "new": [
-      "`window::content(floating, cx)` is the element an app's main view is drawn in: floating, a rounded, bordered card inset `Theme::CONTENT_INSET` on the `Theme::sidebar_bg` chrome its parent paints, filled with `Theme::content_bg` — `Theme::bg` covering `Brand::content_opacity` of the chrome (from `Theme::CONTENT_OPACITY`, `Material::Thick`'s) under `Theme::vibrancy`, opaque otherwise, and casting `theme::content_shadows` only when opaque; flat, a plain `Theme::window_bg` fill. `window::content_fill` is the one colour it shows, chrome included.",
+      "`window::content(floating, cx)` is the element an app's main view is drawn in: floating, a rounded, bordered card on the `Theme::sidebar_bg` chrome its parent paints, with half `Theme::CONTENT_INSET` of margin and the parent padded by the other half, so cards side by side meet the inset apart, filled with `Theme::content_bg` — `Theme::content_background` covering `Brand::content_opacity` of the chrome (from `Theme::CONTENT_OPACITY`, `Material::Thick`'s) under `Theme::vibrancy`, opaque otherwise, and casting `theme::content_shadows` only when opaque; flat, a plain `Theme::window_bg` fill. `window::content_fill` is the one colour it shows, chrome included.",
       "`Controls::picture_picker` is a row of tiles, each a picture the caller draws over its label, the chosen one ringed in the accent — macOS's appearance picker.",
       "`theme::over` composites one translucent colour over another."
     ],

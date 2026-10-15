@@ -71,6 +71,8 @@ impl Theme {
             terminal_bg: color::grey(0x09),
             terminal_ansi: ansi(ANSI_DARK),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            // SwiftUI's material tone, below.
+            content_background: color::grey(47),
             content_opacity: Self::CONTENT_OPACITY,
             // Darker than `surface`: the reference vibrancy scrim, `hsl(0 0% 3%)`.
             vibrancy_tone: color::grey(8),
@@ -233,6 +235,8 @@ impl Theme {
             terminal_bg: color::grey(0xfa),
             terminal_ansi: ansi(ANSI_LIGHT),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            // SwiftUI's material tone, below.
+            content_background: color::grey(235),
             content_opacity: Self::CONTENT_OPACITY,
             // The material's own measured tone.
             vibrancy_tone: color::grey(235),

@@ -359,6 +359,9 @@ pub struct Theme {
     // nothing here is a parameter on a component.
     /// How opaque the tint over the blurred window is.
     pub vibrancy_alpha: f32,
+    /// The fill of a floating content card over a translucent window, at full
+    /// coverage — see [`Self::content_bg`].
+    pub content_background: Hsla,
     /// How much of the chrome [`Self::content_bg`] covers.
     pub content_opacity: f32,
     /// The tint over the blurred window, at full coverage — see

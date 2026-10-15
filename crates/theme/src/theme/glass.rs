@@ -30,11 +30,12 @@ impl Theme {
     }
 
     /// What a content card paints over [`Self::sidebar_bg`]:
-    /// [`Self::bg`](Self#structfield.bg) at [`Self::content_opacity`] where
-    /// [`Self::vibrancy`] is on, and opaque where it is not.
+    /// [`Self::content_background`] at [`Self::content_opacity`] where
+    /// [`Self::vibrancy`] is on, and opaque [`Self::bg`](Self#structfield.bg)
+    /// where it is not.
     pub fn content_bg(&self) -> Hsla {
         match self.vibrancy {
-            true => self.bg.opacity(self.content_opacity),
+            true => self.content_background.opacity(self.content_opacity),
             false => self.bg,
         }
     }

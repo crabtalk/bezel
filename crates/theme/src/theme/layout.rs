@@ -126,8 +126,8 @@ impl Theme {
     /// The coverage [`Brand::content_opacity`](crate::Brand::content_opacity)
     /// starts from.
     pub const CONTENT_OPACITY: f32 = crate::Material::Thick.opacity();
-    /// The chrome `bezel::ui::window::content`'s floating card keeps
-    /// between itself and whatever surrounds it, on every side.
+    /// The chrome between a floating `bezel::ui::window::content` card and the
+    /// window's edge, and between two such cards.
     pub const CONTENT_INSET: f32 = 8.0;
     /// Reserved status strip under the content outlet (the reference `h-6`) — the
     /// WorkingIndicator row; reserving it keeps the composer from shifting.
