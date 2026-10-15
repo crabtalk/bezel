@@ -48,6 +48,8 @@ pub const KEY_CONTEXT: &str = "MultiSelect";
 
 /// The card's width until [`MultiSelect::with_width`] says otherwise.
 const WIDTH: f32 = 280.0;
+const SEARCH: &str = "Search…";
+const SEARCH_OR_CREATE: &str = "Search or create…";
 
 /// Install the bindings — [`bindings`], bound. Call once, alongside
 /// [`crate::input::init`].
@@ -113,6 +115,10 @@ pub enum MultiSelectEvent {
     Deleted(SharedString),
     /// Escape, or a press outside the card.
     Dismissed,
+    /// The query changed, in a picker the host searches — see
+    /// [`MultiSelect::with_search`]. Answered with
+    /// [`MultiSelect::set_choices`].
+    Searched(SharedString),
 }
 
 /// The rows the list pane shows, in the order they paint.
@@ -140,6 +146,12 @@ pub struct MultiSelect {
     /// Position in `rows`.
     active: Option<usize>,
     create: Option<Rc<Normalize>>,
+    placeholder: Option<SharedString>,
+    /// Rows paint their names as text rather than as chips — see
+    /// [`MultiSelect::with_plain_rows`].
+    plain: bool,
+    /// The host answers each query — see [`MultiSelect::with_search`].
+    searched: bool,
     manage: bool,
     tint: Rc<Tint>,
     /// The card's narrowest and widest.
@@ -158,13 +170,16 @@ impl EventEmitter<MultiSelectEvent> for MultiSelect {}
 
 impl MultiSelect {
     pub fn new(choices: Vec<Choice>, cx: &mut Context<Self>) -> Self {
-        let query = cx.new(|cx| search::query_field("Search or create…", cx));
+        let query = cx.new(|cx| search::query_field(SEARCH, cx));
         cx.subscribe(&query, |view, query, event: &FieldEvent, cx| {
             if matches!(event, FieldEvent::Changed(_)) {
                 let text = query.read(cx).content().clone();
                 if view.text != text {
-                    view.text = text;
+                    view.text = text.clone();
                     view.refilter();
+                    if view.searched {
+                        cx.emit(MultiSelectEvent::Searched(text));
+                    }
                     cx.notify();
                 }
             }
@@ -177,6 +192,9 @@ impl MultiSelect {
             rows: Vec::new(),
             active: None,
             create: None,
+            placeholder: None,
+            plain: false,
+            searched: false,
             manage: false,
             tint: Rc::new(|name, theme| tint(theme, name)),
             width: (px(WIDTH), px(WIDTH)),
@@ -200,6 +218,30 @@ impl MultiSelect {
     ) -> Self {
         self.create = Some(Rc::new(normalize));
         self.refilter();
+        self
+    }
+
+    /// Paint each row's name as text rather than as a chip, for choices that
+    /// are not labels. The choices that are on stay chips over the query.
+    pub fn with_plain_rows(mut self) -> Self {
+        self.plain = true;
+        self
+    }
+
+    /// Let the host search: each change of the query is a
+    /// [`MultiSelectEvent::Searched`], and the rows are the choices that are
+    /// off, in the order [`Self::set_choices`] answers them, unfiltered. The
+    /// choices that are on show only as chips. An empty query shows no rows.
+    pub fn with_search(mut self) -> Self {
+        self.searched = true;
+        self.refilter();
+        self
+    }
+
+    /// What the empty query field says. Left out, it is "Search…", or
+    /// "Search or create…" with [`Self::with_create`].
+    pub fn with_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.placeholder = Some(placeholder.into());
         self
     }
 
@@ -244,9 +286,16 @@ impl MultiSelect {
     }
 
     /// Start a fresh pick: an empty query, the list pane, and focus in the
-    /// query. Call it as the popover opens.
+    /// query. Call it as the popover opens: the builders' placeholder takes
+    /// effect here.
     pub fn reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.managing = None;
+        let placeholder = self.placeholder.clone().unwrap_or(match self.create {
+            Some(_) => SEARCH_OR_CREATE.into(),
+            None => SEARCH.into(),
+        });
+        self.query
+            .update(cx, |query, cx| query.set_placeholder(placeholder, cx));
         self.clear_query(cx);
         window.focus(&self.query.focus_handle(cx), cx);
         cx.notify();
@@ -254,6 +303,9 @@ impl MultiSelect {
 
     fn clear_query(&mut self, cx: &mut Context<Self>) {
         self.query.update(cx, |query, cx| query.clear(cx));
+        if self.searched && !self.text.is_empty() {
+            cx.emit(MultiSelectEvent::Searched("".into()));
+        }
         self.text = "".into();
         self.refilter();
     }
@@ -273,9 +325,14 @@ impl MultiSelect {
             .map(Row::Create)
             .into_iter()
             .chain(
-                popover::filter_indices(&self.text, &names)
-                    .into_iter()
-                    .map(Row::Choice),
+                match self.searched {
+                    true => (0..self.choices.len())
+                        .filter(|&ix| !self.text.is_empty() && self.choices[ix].check != Check::On)
+                        .collect(),
+                    false => popover::filter_indices(&self.text, &names),
+                }
+                .into_iter()
+                .map(Row::Choice),
             )
             .collect();
         self.active = (!self.rows.is_empty()).then_some(0);
@@ -395,8 +452,8 @@ impl MultiSelect {
         }
     }
 
-    /// The query line: every choice that is on as a chip with a ×, then the
-    /// field.
+    /// Every choice that is on as a chip with a ×, then the field on a line
+    /// of its own.
     fn query_line(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::Div {
         let chips = self
             .choices
@@ -420,21 +477,33 @@ impl MultiSelect {
                             ),
                     )
             });
-        popover::search_line(
-            theme,
-            div()
-                .flex()
-                .flex_row()
-                .flex_wrap()
-                .items_center()
-                .gap(px(4.0))
-                .children(chips)
-                .child(div().flex_1().min_w(px(80.0)).child(self.query.clone()))
-                .into_any_element(),
-        )
+        let chips: Vec<_> = chips.collect();
+        div()
+            .flex()
+            .flex_col()
+            .when(!chips.is_empty(), |line| {
+                line.child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(4.0))
+                        .px(px(popover::MENU_ROW_INSET))
+                        .py(px(4.0))
+                        .children(chips),
+                )
+            })
+            .child(popover::search_line(
+                theme,
+                self.query.clone().into_any_element(),
+            ))
     }
 
     fn list(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if self.rows.is_empty() && self.searched && self.text.is_empty() {
+            return div().into_any_element();
+        }
         if self.rows.is_empty() {
             return div()
                 .px(px(popover::MENU_ROW_INSET))
@@ -481,12 +550,18 @@ impl MultiSelect {
                     base.id(("multi-select-row", index))
                         .on_click(cx.listener(move |view, _, _, cx| view.take(position, cx)))
                         .child(
-                            div().flex_1().min_w_0().flex().child(
-                                theme
+                            div().flex_1().min_w_0().flex().child(match self.plain {
+                                true => div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(choice.name.clone())
+                                    .into_any_element(),
+                                false => theme
                                     .chip(choice.name.clone(), (self.tint)(&choice.name, theme))
                                     .flex_shrink_1()
-                                    .min_w_0(),
-                            ),
+                                    .min_w_0()
+                                    .into_any_element(),
+                            }),
                         )
                         .when_some(choice.count, |row, count| {
                             row.child(

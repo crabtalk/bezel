@@ -29,12 +29,20 @@ fn picker(
     cx: &mut TestAppContext,
     choices: Vec<Choice>,
 ) -> (Entity<MultiSelect>, Events, VisualTestContext) {
+    picker_with(cx, choices, |select| select.with_create(normalize))
+}
+
+fn picker_with(
+    cx: &mut TestAppContext,
+    choices: Vec<Choice>,
+    build: impl FnOnce(MultiSelect) -> MultiSelect + 'static,
+) -> (Entity<MultiSelect>, Events, VisualTestContext) {
     cx.update(|cx| {
         theme::Theme::install(theme::Appearance::Dark, cx);
         input::init(cx);
         multi_select::init(cx);
     });
-    let window = cx.add_window(|_, cx| MultiSelect::new(choices, cx).with_create(normalize));
+    let window = cx.add_window(|_, cx| build(MultiSelect::new(choices, cx)));
     let picker = window.root(cx).unwrap();
     let events = Events::default();
     cx.update(|cx| {
@@ -120,4 +128,33 @@ fn escape_asks_to_be_dismissed(cx: &mut TestAppContext) {
     let (_, events, mut cx) = picker(cx, vec![choice("design", Check::Off)]);
     cx.simulate_keystrokes("escape");
     assert_eq!(*events.borrow(), [MultiSelectEvent::Dismissed]);
+}
+
+/// A searched picker lists nothing until a query is typed, asks its host for
+/// each query, and lists the choices that are off in the host's order.
+#[gpui::test]
+fn a_searched_picker_lists_what_the_host_answers(cx: &mut TestAppContext) {
+    let (_, events, mut cx) = picker_with(
+        cx,
+        vec![choice("design", Check::On), choice("q3", Check::Off)],
+        MultiSelect::with_search,
+    );
+    cx.simulate_keystrokes("enter");
+    assert!(events.borrow().is_empty(), "an empty query lists nothing");
+
+    cx.simulate_input("z");
+    assert_eq!(*events.borrow(), [MultiSelectEvent::Searched("z".into())]);
+    cx.simulate_keystrokes("enter");
+    assert_eq!(
+        *events.borrow(),
+        [
+            MultiSelectEvent::Searched("z".into()),
+            MultiSelectEvent::Toggled {
+                name: "q3".into(),
+                on: true
+            },
+            MultiSelectEvent::Searched("".into()),
+        ],
+        "the first row is the first choice that is off, and taking it clears the query"
+    );
 }
