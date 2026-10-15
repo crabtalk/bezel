@@ -87,7 +87,7 @@ impl Demo {
                 .map(|(id, items)| Pane {
                     id,
                     tabs: items.into_iter().collect(),
-                    reorder: tabs::Reorder::new(painter),
+                    reorder: tabs::Reorder::new(),
                 })
                 .collect(),
             layout: Layout::Split {
@@ -117,7 +117,7 @@ impl Demo {
             self.panes.push(Pane {
                 id,
                 tabs: [event.item].into_iter().collect(),
-                reorder: tabs::Reorder::new(Painter::of(cx)),
+                reorder: tabs::Reorder::new(),
             });
             self.layout.split(event.pane, id, event.zone);
             id

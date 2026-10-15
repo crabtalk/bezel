@@ -753,9 +753,9 @@ impl State {
             split_dragging: false,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             tab_choice: 0,
-            reorder: tabs::Reorder::new(motion::Painter::of(cx)),
+            reorder: tabs::Reorder::new(),
             docking: cx.new(super::docking::Demo::new),
-            sortable: ui::drag::Domain::new(motion::Painter::of(cx)),
+            sortable: ui::drag::Domain::new(),
             sorting: [
                 vec![
                     "Sketch the new sidebar",

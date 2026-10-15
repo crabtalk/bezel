@@ -6,7 +6,6 @@ use gpui::{
     App, Axis, Div, ElementId, IntoElement, Pixels, Point, RenderOnce, ScrollHandle, Stateful,
     Window, div, prelude::*, px,
 };
-use motion::Painter;
 
 use super::{GAP, Strip};
 use crate::drag::{self, Domain};
@@ -26,10 +25,16 @@ impl<Id> Clone for Reorder<Id> {
     }
 }
 
+impl<Id: Clone + PartialEq + 'static> Default for Reorder<Id> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<Id: Clone + PartialEq + 'static> Reorder<Id> {
-    pub fn new(painter: Painter) -> Self {
+    pub fn new() -> Self {
         Self {
-            domain: Domain::new(painter),
+            domain: Domain::new(),
             scroll: ScrollHandle::new(),
         }
     }

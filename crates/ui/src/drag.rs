@@ -11,7 +11,8 @@
 //! frame being drawn, and nothing else. A landing names its neighbours by id,
 //! so a list with rows that were not painted still gets an exact place.
 //!
-//! Keep one domain on the view that renders all of its regions.
+//! A domain may span views: each region's view is redrawn for the frames
+//! the domain owes.
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -20,7 +21,6 @@ use gpui::{
     IntoElement, LayoutId, Pixels, Point, Render, SharedString, StatefulInteractiveElement, Window,
     div, point, prelude::*, px,
 };
-use motion::Painter;
 use theme::{TextStyle, Theme, Typeset};
 
 use crate::surface::{Surface, Surfaced};
@@ -137,23 +137,23 @@ impl<R, I> Clone for Domain<R, I> {
     }
 }
 
+impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Default for Domain<R, I> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Domain<R, I> {
     /// The carried item is painted in place, following the pointer.
-    pub fn new(painter: Painter) -> Self {
-        Self(Rc::new(RefCell::new(State::new(painter, None))))
+    pub fn new() -> Self {
+        Self(Rc::new(RefCell::new(State::new(None))))
     }
 
     /// The carried item's own element stays hidden in its slot and gpui paints
     /// `ghost` under the pointer instead. For virtualized regions, where the
     /// item's element can scroll out of the painted range.
-    pub fn with_ghost(
-        painter: Painter,
-        ghost: impl Fn(&I, &mut Window, &mut App) -> AnyElement + 'static,
-    ) -> Self {
-        Self(Rc::new(RefCell::new(State::new(
-            painter,
-            Some(Rc::new(ghost)),
-        ))))
+    pub fn with_ghost(ghost: impl Fn(&I, &mut Window, &mut App) -> AnyElement + 'static) -> Self {
+        Self(Rc::new(RefCell::new(State::new(Some(Rc::new(ghost))))))
     }
 
     /// A drop target laid out by the host. `child` holds this region's handles.

@@ -4,6 +4,7 @@ use gpui::{
     Axis, Context, Entity, Modifiers, MouseButton, Render, ScrollHandle, TestAppContext,
     VisualTestContext, Window, div, point, prelude::*, px, size,
 };
+use motion::AppExt as _;
 use ui::{
     docking::{self, Dock, Zone},
     drag::{self, Domain, Feedback},
@@ -87,8 +88,8 @@ fn open(
 ) -> (Entity<Board>, VisualTestContext) {
     cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
     let count = lanes.len();
-    let window = cx.add_window(|_, cx| Board {
-        domain: Domain::new(motion::Painter::of(cx)),
+    let window = cx.add_window(|_, _| Board {
+        domain: Domain::new(),
         lanes,
         scrolls: (0..count).map(|_| ScrollHandle::new()).collect(),
         only: None,
@@ -309,7 +310,7 @@ fn a_tab_pulled_off_its_strip_lands_on_a_docking_surface(cx: &mut TestAppContext
     let window = cx.add_window(|_, cx| Workspace {
         dock: Dock::new(motion::Painter::of(cx), |_, _, _| div().into_any_element()),
         strip: ["x", "y"].into_iter().collect(),
-        reorder: tabs::Reorder::new(motion::Painter::of(cx)),
+        reorder: tabs::Reorder::new(),
         docked: Vec::new(),
     });
     let view = window.root(cx).unwrap();
@@ -399,8 +400,8 @@ impl Render for Outline {
 
 fn outline(cx: &mut TestAppContext) -> (Entity<Outline>, VisualTestContext) {
     cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
-    let window = cx.add_window(|_, cx| Outline {
-        domain: Domain::new(motion::Painter::of(cx)),
+    let window = cx.add_window(|_, _| Outline {
+        domain: Domain::new(),
         rows: vec!["H", "G1", "a", "b", "G2", "c", "d"],
         shown: Vec::new(),
         drops: Vec::new(),
@@ -531,22 +532,19 @@ fn stack(
     cx: &mut TestAppContext,
 ) -> (Entity<Stack>, VisualTestContext) {
     cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
-    let window = cx.add_window(|_, cx| {
-        let painter = motion::Painter::of(cx);
-        Stack {
-            domain: match ghost {
-                Some(width) => Domain::with_ghost(painter, move |_, _, _| {
-                    div()
-                        .debug_selector(|| "ghost".into())
-                        .w(px(width))
-                        .h(px(30.))
-                        .into_any_element()
-                }),
-                None => Domain::new(painter),
-            },
-            rows,
-            skip: None,
-        }
+    let window = cx.add_window(|_, _| Stack {
+        domain: match ghost {
+            Some(width) => Domain::with_ghost(move |_, _, _| {
+                div()
+                    .debug_selector(|| "ghost".into())
+                    .w(px(width))
+                    .h(px(30.))
+                    .into_any_element()
+            }),
+            None => Domain::new(),
+        },
+        rows,
+        skip: None,
     });
     let view = window.root(cx).unwrap();
     let cx = VisualTestContext::from_window(window.into(), cx);
@@ -659,4 +657,48 @@ fn an_item_moved_outside_a_gesture_does_not_slide(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     assert_eq!((top("b", &mut cx), top("c", &mut cx)), (0., 30.));
+}
+
+/// A window whose domain's one region is drawn by a cached view inside it.
+struct Host {
+    stack: Entity<Stack>,
+}
+
+impl Render for Host {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().child(
+            gpui::AnyView::from(self.stack.clone())
+                .cached(gpui::StyleRefinement::default().size_full()),
+        )
+    }
+}
+
+#[gpui::test]
+fn a_region_in_a_cached_view_settles_without_a_refresh(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        theme::Theme::install(theme::Appearance::Dark, cx);
+        // A test window is never the active one, and the clock refuses
+        // leases for an app nobody is looking at.
+        cx.set_pause_when_inactive(false);
+    });
+    let window = cx.add_window(|_, cx| Host {
+        stack: cx.new(|_| Stack {
+            domain: Domain::with_ghost(|_, _, _| div().w(px(120.)).h(px(30.)).into_any_element()),
+            rows: vec!["a", "b", "c"],
+            skip: None,
+        }),
+    });
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(size(px(300.), px(400.)));
+    cx.run_until_parked();
+    down(10., 10., &mut cx);
+    travel(10., 70., &mut cx);
+    travel(10., 75., &mut cx);
+    up(10., 75., &mut cx);
+    assert_eq!(top("a", &mut cx), 65.);
+    for _ in 0..100 {
+        cx.executor().advance_clock(Duration::from_millis(10));
+        cx.run_until_parked();
+    }
+    assert_eq!(top("a", &mut cx), 60.);
 }

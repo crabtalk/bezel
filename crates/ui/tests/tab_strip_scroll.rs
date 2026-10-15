@@ -56,9 +56,9 @@ fn open(sortable: bool, cx: &mut TestAppContext) -> (gpui::Entity<Host>, VisualT
         theme::Theme::install(theme::Appearance::Dark, cx);
         cx.set_scrollbar_visibility(Visibility::Always);
     });
-    let window = cx.add_window(|_, cx| Host {
+    let window = cx.add_window(|_, _| Host {
         strip: ["a", "b", "c"].into_iter().collect(),
-        reorder: tabs::Reorder::new(motion::Painter::of(cx)),
+        reorder: tabs::Reorder::new(),
         sortable,
         changes: 0,
         outside: Vec::new(),
