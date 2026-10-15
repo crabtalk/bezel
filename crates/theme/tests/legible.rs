@@ -1,5 +1,5 @@
 use gpui::{Hsla, hsla};
-use theme::{LEGIBLE, Theme, contrast_ratio, flatten, kept, legible, stack};
+use theme::{LEGIBLE, Theme, contrast_ratio, flatten, kept, legible, over, stack};
 
 fn reads(text: Hsla, plate: Hsla) -> f32 {
     contrast_ratio(flatten(text, plate), plate)
@@ -54,4 +54,15 @@ fn every_selection_and_highlight_stack_keeps_body_text_legible() {
             assert!(reads(ink, plate) >= LEGIBLE, "{:?}", theme.appearance);
         }
     }
+}
+
+#[test]
+fn two_translucent_layers_composite_to_one_that_paints_the_same() {
+    let page = hsla(0.6, 0.2, 0.3, 1.0);
+    let under = hsla(0.0, 0.0, 0.9, 0.6);
+    let top = hsla(0.0, 0.0, 0.1, 0.5);
+    let one = over(top, under);
+    assert!((one.a - 0.8).abs() < 1e-4);
+    let (a, b) = (stack(page, [under, top]), stack(page, [one]));
+    assert!((a.l - b.l).abs() < 1e-4 && (a.s - b.s).abs() < 1e-4);
 }

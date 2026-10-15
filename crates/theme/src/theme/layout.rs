@@ -94,8 +94,8 @@ impl Theme {
     /// MATERIAL, which pre-darkens the blur; a bare backdrop blur has no such
     /// layer, so ours runs heavier to land on the same perceived tone.
     ///
-    /// A coverage, not a switch: whether a window frosts at all is
-    /// [`frosted_window`](crate::frosted_window).
+    /// A coverage, not a switch: whether a window has a material behind it at
+    /// all is [`behind_window_blending`](crate::behind_window_blending).
     pub const VIBRANCY_ALPHA: f32 = 0.80;
     /// The radius [`Brand::window_blur`](crate::Brand::window_blur) starts
     /// from: gpui's own default for a `Blurred` window.
@@ -123,6 +123,12 @@ impl Theme {
     /// Handed to `Window::set_client_inset`, so the compositor's own resize
     /// area and the one `bezel::ui::window` hit-tests are the same band.
     pub const CLIENT_INSET: f32 = 10.0;
+    /// The coverage [`Brand::content_opacity`](crate::Brand::content_opacity)
+    /// starts from.
+    pub const CONTENT_OPACITY: f32 = crate::Material::Thick.opacity();
+    /// The chrome `bezel::ui::window::content`'s floating card keeps
+    /// between itself and whatever surrounds it, on every side.
+    pub const CONTENT_INSET: f32 = 8.0;
     /// Reserved status strip under the content outlet (the reference `h-6`) — the
     /// WorkingIndicator row; reserving it keeps the composer from shifting.
     pub const STATUS_STRIP_HEIGHT: f32 = 24.0;

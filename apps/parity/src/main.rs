@@ -1,4 +1,4 @@
-//! `reference.swift` in bezel: one 168x168 r34 glass square over the frosted
+//! `reference.swift` in bezel: one 168x168 r34 glass square over the translucent
 //! window background, with text under it to refract. The Swift probe holds a
 //! real `NSGlassEffectView`, this holds ours, and the two are the same scene at
 //! the same measurements — so a difference on screen is our lens and nothing
@@ -259,7 +259,7 @@ impl Parity {
     /// The window mode alone: the frost's coverage and the chrome's glass both
     /// stay where they are, so the card is the one thing that has not changed
     /// between the two shots.
-    fn set_frosted(on: bool, cx: &mut App) {
+    fn set_translucent(on: bool, cx: &mut App) {
         let mut brand = cx.brand();
         brand.vibrancy = match on {
             true => Vibrancy::On,
@@ -273,7 +273,7 @@ impl Render for Parity {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::of(cx);
         let dark = matches!(theme.appearance, Appearance::Dark);
-        let frosted = theme.vibrancy;
+        let translucent = theme.vibrancy;
         // The card is painted from `spec` whichever chip named it, so the knobs
         // have one conduit into the lens.
         let tuned = Theme {
@@ -470,15 +470,15 @@ impl Render for Parity {
                                 .flex()
                                 .flex_row()
                                 .gap(px(8.0))
-                                .child(pick("frosted", frosted).on_click(cx.listener(
+                                .child(pick("translucent", translucent).on_click(cx.listener(
                                     |_, _, _, cx| {
-                                        Self::set_frosted(true, cx);
+                                        Self::set_translucent(true, cx);
                                         cx.notify();
                                     },
                                 )))
-                                .child(pick("opaque", !frosted).on_click(cx.listener(
+                                .child(pick("opaque", !translucent).on_click(cx.listener(
                                     |_, _, _, cx| {
-                                        Self::set_frosted(false, cx);
+                                        Self::set_translucent(false, cx);
                                         cx.notify();
                                     },
                                 )))

@@ -281,6 +281,21 @@ pub fn flatten(fg: Hsla, bg: Hsla) -> Hsla {
     hsla(h, s, l, 1.0)
 }
 
+/// Composite `top` over `under`, both of which may be translucent: the one
+/// color that paints what the two painted in that order do, over anything.
+pub fn over(top: Hsla, under: Hsla) -> Hsla {
+    let (at, au) = (top.a.clamp(0.0, 1.0), under.a.clamp(0.0, 1.0));
+    let a = at + au * (1.0 - at);
+    if a <= 0.0 {
+        return hsla(0.0, 0.0, 0.0, 0.0);
+    }
+    let [tr, tg, tb] = hsl_to_rgb(top.h, top.s, top.l);
+    let [ur, ug, ub] = hsl_to_rgb(under.h, under.s, under.l);
+    let mix = |t: f32, u: f32| (t * at + u * au * (1.0 - at)) / a;
+    let (h, s, l) = rgb_to_hsl(mix(tr, ur), mix(tg, ug), mix(tb, ub));
+    hsla(h, s, l, a)
+}
+
 /// Linear per-component mix of two colors (paint helper for the gradient spinner).
 pub fn mix(a: Hsla, b: Hsla, t: f32) -> Hsla {
     let t = t.clamp(0.0, 1.0);

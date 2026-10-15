@@ -653,7 +653,7 @@ const MENTIONS: [&str; 7] = [
     "todos/agent.md",
 ];
 
-/// The composer: a growing field in a frosted card, a send button that knows
+/// The composer: a growing field in a translucent card, a send button that knows
 /// when there is nothing to send, and the `#` picker.
 ///
 /// `Shape::Grow { min, max }` **is** `PromptEditor`'s `rows`/`maxRows`, and
@@ -763,7 +763,7 @@ impl Composer {
     /// Send, as a 24px disc — and inert until there is something to send.
     ///
     /// `Composer.svelte` dims the whole button to `opacity-30`, which on a
-    /// frosted card reads as a grey blob with a grey arrow inside it. bezel
+    /// translucent card reads as a grey blob with a grey arrow inside it. bezel
     /// already has a word for a control that is present but not pressable, and
     /// it is [`ui::pagination::step`]: the shape keeps its place, the
     /// glyph goes faint, and the pointer and hover simply are not there. Same
@@ -896,7 +896,7 @@ impl Render for Composer {
                     .gap(px(12.0))
                     .children(sent)
                     // The card: `Card variant="input"` — the field, then a row
-                    // of controls under it, both on one frosted surface.
+                    // of controls under it, both on one translucent surface.
                     .child(
                         div()
                             .rounded(px(Theme::surface_radius()))

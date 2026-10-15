@@ -44,7 +44,7 @@ pub enum Material {
 impl Material {
     /// How much of the backdrop the material covers. Measured off SwiftUI in
     /// dark; the steps come out even to within a point.
-    pub fn opacity(self) -> f32 {
+    pub const fn opacity(self) -> f32 {
         match self {
             Material::UltraThin => 0.440,
             Material::Thin => 0.543,
@@ -359,6 +359,8 @@ pub struct Theme {
     // nothing here is a parameter on a component.
     /// How opaque the tint over the blurred window is.
     pub vibrancy_alpha: f32,
+    /// How much of the chrome [`Self::content_bg`] covers.
+    pub content_opacity: f32,
     /// The tint over the blurred window, at full coverage — see
     /// [`Self::vibrancy_tint`].
     pub vibrancy_tone: Hsla,

@@ -240,7 +240,7 @@ impl Global for KeepBackground {}
 /// [`reapply_window_background`] reaches every open window, which is what keeps
 /// vibrancy alive across an appearance switch. A window that is opaque *on
 /// purpose* — a settings form the app behind it must not show through — says so
-/// here rather than being frosted by the next switch.
+/// here rather than being made translucent by the next switch.
 pub fn keep_background(window: &Window, cx: &mut App) {
     let id = window.window_handle().window_id();
     cx.default_global::<KeepBackground>().0.insert(id);

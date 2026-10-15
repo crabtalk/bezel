@@ -5,13 +5,14 @@
 //!
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`,
-//! `theme.segmented(..)`.
+//! `theme.segmented(..)`, `theme.picture_picker(..)`.
 
 use crate::stack;
 use std::rc::Rc;
 
 use gpui::{
-    App, Axis, Div, DragMoveEvent, ElementId, SharedString, Stateful, Window, div, prelude::*, px,
+    AnyElement, App, Axis, BoxShadow, Div, DragMoveEvent, ElementId, SharedString, Stateful,
+    Window, div, point, prelude::*, px,
 };
 use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
@@ -377,7 +378,81 @@ pub trait Controls: ThemeExt {
                     }),
             )
     }
+
+    /// A row of tiles, each a picture over its label — macOS's appearance
+    /// picker. The `selected` tile is ringed in [`Theme::accent`]; a click on
+    /// any reports its index to `on_pick`. Nothing is selected when `selected`
+    /// is out of range.
+    ///
+    /// Each picture is the caller's, at the size it draws itself; the tile
+    /// clips it to its rounded frame.
+    fn picture_picker(
+        &self,
+        id: impl Into<ElementId>,
+        tiles: impl IntoIterator<Item = (AnyElement, SharedString)>,
+        selected: usize,
+        on_pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
+    ) -> Stateful<Div> {
+        let theme = self.theme();
+        let on_pick = Rc::new(on_pick);
+        let radius = px(Theme::panel_radius());
+        div()
+            .id(id)
+            .flex()
+            .flex_row()
+            .gap(px(12.0))
+            .children(tiles.into_iter().enumerate().map(|(ix, (picture, label))| {
+                let on = ix == selected;
+                let on_pick = on_pick.clone();
+                let hover = theme.border_strong;
+                // The ring is a shadow, so choosing a tile moves nothing.
+                let ring = BoxShadow {
+                    color: theme.accent,
+                    offset: point(px(0.0), px(0.0)),
+                    blur_radius: px(0.0),
+                    spread_radius: px(PICTURE_RING),
+                    inset: false,
+                };
+                div()
+                    .id(ix)
+                    .group("picture-tile")
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(6.0))
+                    .cursor_pointer()
+                    .on_click(move |_, window, cx| on_pick(&ix, window, cx))
+                    .child(
+                        div()
+                            .rounded(radius)
+                            .border_1()
+                            .border_color(theme.border)
+                            .overflow_hidden()
+                            .when(on, |frame| frame.shadow(vec![ring]))
+                            .when(!on, |frame| {
+                                frame.group_hover("picture-tile", move |frame| {
+                                    frame.border_color(hover)
+                                })
+                            })
+                            .child(picture),
+                    )
+                    .child(
+                        div()
+                            .text_style(TextStyle::Callout)
+                            .text_color(match on {
+                                true => theme.text,
+                                false => theme.text_muted,
+                            })
+                            .when(on, |label| label.font_weight(gpui::FontWeight::MEDIUM))
+                            .child(label),
+                    )
+            }))
+    }
 }
+
+/// How far a [`Controls::picture_picker`] tile's selection ring stands
+/// outside its frame.
+const PICTURE_RING: f32 = 2.0;
 
 /// A 20px ring in `ring` around a disc of `color`.
 fn well(ring: gpui::Hsla, color: gpui::Hsla) -> Div {

@@ -109,7 +109,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
     var dark = !CommandLine.arguments.contains("light")
     var style = CommandLine.arguments.contains("clear") ? 1 : 0
-    var frosted = !CommandLine.arguments.contains("opaque")
+    var translucent = !CommandLine.arguments.contains("opaque")
     var coded = CommandLine.arguments.contains("coded")
     var mounted: [NSView] = []
     var readout: NSTextField!
@@ -162,9 +162,9 @@ final class Delegate: NSObject, NSApplicationDelegate {
         reset.frame = NSRect(x: PAD + 300, y: 72, width: 72, height: 26)
         root.addSubview(reset)
 
-        let backdrop = NSSegmentedControl(labels: ["frosted", "opaque"], trackingMode: .selectOne,
+        let backdrop = NSSegmentedControl(labels: ["translucent", "opaque"], trackingMode: .selectOne,
                                           target: self, action: #selector(pickBackdrop(_:)))
-        backdrop.selectedSegment = frosted ? 0 : 1
+        backdrop.selectedSegment = translucent ? 0 : 1
         backdrop.frame = NSRect(x: PAD, y: 44, width: 160, height: 24)
         root.addSubview(backdrop)
 
@@ -199,14 +199,14 @@ final class Delegate: NSObject, NSApplicationDelegate {
         // `window_background_appearance()` does at the same threshold.
         let content = Well(frame: root.bounds)
         content.dark = dark
-        content.solid = !frosted
+        content.solid = !translucent
         content.coded = coded
         content.rect = NSRect(x: PAD, y: TOP, width: WELL.width, height: WELL.height)
         content.autoresizingMask = [.width, .height]
-        window.isOpaque = !frosted
-        window.backgroundColor = frosted ? .clear : page(dark: dark)
+        window.isOpaque = !translucent
+        window.backgroundColor = translucent ? .clear : page(dark: dark)
         let backdrop: NSView
-        if frosted {
+        if translucent {
             let blur = NSVisualEffectView(frame: root.bounds)
             blur.material = .underWindowBackground
             blur.blendingMode = .behindWindow
@@ -248,7 +248,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
     @objc func resetCard() { build(into: window.contentView!) }
 
     @objc func pickBackdrop(_ sender: NSSegmentedControl) {
-        frosted = sender.selectedSegment == 0
+        translucent = sender.selectedSegment == 0
         build(into: window.contentView!)
     }
 

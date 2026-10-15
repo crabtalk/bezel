@@ -1,5 +1,6 @@
 //! [`frame`] — the border, corners, shadow and resize edges of a window the
-//! system does not decorate.
+//! system does not decorate. [`content`] — the card an app's main view sits
+//! on, inside that window.
 //!
 //! `Window::window_decorations` answers which of the two is in force, and it
 //! is not a target: GNOME has never implemented `xdg-decoration`, so a Wayland
@@ -16,8 +17,8 @@
 //! ```
 
 use gpui::{
-    App, Bounds, CursorStyle, Decorations, Div, HitboxBehavior, IntoElement, MouseButton, Pixels,
-    Point, ResizeEdge, Size, Tiling, Window, canvas, div, point, prelude::*, px, size,
+    App, Bounds, CursorStyle, Decorations, Div, HitboxBehavior, Hsla, IntoElement, MouseButton,
+    Pixels, Point, ResizeEdge, Size, Tiling, Window, canvas, div, point, prelude::*, px, size,
 };
 
 use theme::Theme;
@@ -114,6 +115,46 @@ pub fn frame(child: impl IntoElement, window: &mut Window, cx: &App) -> Div {
                 })
                 .child(child),
         )
+}
+
+/// The element an app's main view is drawn in.
+///
+/// Floating, it is a card on the window's chrome, [`Theme::sidebar_bg`],
+/// which its parent paints: [`Theme::CONTENT_INSET`] of margin on every side,
+/// [`Theme::panel_radius`] corners, a hairline border and
+/// [`Theme::content_bg`] over the chrome. An opaque card casts
+/// [`theme::content_shadows`]; under [`Theme::vibrancy`] it casts none, since a
+/// shadow shows through a translucent fill. Flat, it is a plain
+/// [`Theme::window_bg`] fill with none of those.
+///
+/// The caller sizes it: it is handed back unsized, as a flex row or column
+/// item would want it.
+pub fn content(floating: bool, cx: &App) -> Div {
+    let theme = Theme::of(cx);
+    match floating {
+        true => div()
+            .bg(theme.content_bg())
+            .m(px(Theme::CONTENT_INSET))
+            .rounded(px(Theme::panel_radius()))
+            .border_1()
+            .border_color(theme.border)
+            .when(!theme.vibrancy, |card| {
+                card.shadow(theme::content_shadows())
+            })
+            // Without this the child's own background paints over the
+            // corners the border rounds.
+            .overflow_hidden(),
+        false => div().bg(theme.window_bg()),
+    }
+}
+
+/// The one colour [`content`] shows, chrome included, for an element inside
+/// it that has to cover what is under it in the same colour.
+pub fn content_fill(floating: bool, theme: &Theme) -> Hsla {
+    match floating {
+        true => theme::over(theme.content_bg(), theme.sidebar_bg()),
+        false => theme.window_bg(),
+    }
 }
 
 /// Which edge a press at `pos` resizes, or `None` for a press on the content.

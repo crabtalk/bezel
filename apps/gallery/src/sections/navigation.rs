@@ -702,7 +702,7 @@ impl Gallery {
                          and sheet in the app mounts on.",
                     ))
                     .child(theme.field_label("Material — Regular"))
-                    .child(band(SurfaceStyle::Material(Material::Regular), "m-frosted"))
+                    .child(band(SurfaceStyle::Material(Material::Regular), "m-material"))
                     .child(theme.field_label("Glass — Regular"))
                     .child(band(SurfaceStyle::Glass(Glass::Regular), "m-regular"))
                     .into_any_element()

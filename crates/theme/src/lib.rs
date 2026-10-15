@@ -47,15 +47,15 @@ mod theme;
 
 pub use brand::{BASE_COLORS, Brand, Ink, TextInk, Tint, Vibrancy};
 
-pub use platform::{LENSED, frosted_window};
+pub use platform::{LENSED, behind_window_blending};
 
 pub use color::{
     LEGIBLE, contrast_ratio, flatten, grey, hsl_to_rgb, kept, legible, legible_on, lightness, mix,
-    mix_oklab, neutral, oklch, oklch_to_srgb, relative_luminance, rgb_to_hsl, stack, tint,
+    mix_oklab, neutral, oklch, oklch_to_srgb, over, relative_luminance, rgb_to_hsl, stack, tint,
 };
 pub use paint::{
     INK_FILL_SCALE, INK_HAIRLINE_SCALE, SCRIM_ALPHA_DARK, band, card_selected_bg,
-    card_selected_shadows, current_appearance, frame_shadows, glass_selected_bg,
+    card_selected_shadows, content_shadows, current_appearance, frame_shadows, glass_selected_bg,
     glass_selected_shadows, hairline, ink, lock_appearance, scrim, set_current_appearance,
     surface_shadows, theme_generation, user_bubble_bg, wash,
 };
