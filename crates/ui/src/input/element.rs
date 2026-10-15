@@ -333,6 +333,8 @@ pub(super) struct FieldPrepaint {
     matches: Vec<PaintQuad>,
     /// One quad per visual row the selection covers.
     selection: Vec<PaintQuad>,
+    /// The text drawn again over the selection and the matches.
+    overdraws: Vec<overdraw::Overdraw>,
 }
 
 /// The glyph a solid block caret covers, for [`caret::paint_covered`].
@@ -508,6 +510,18 @@ impl Element for TextFieldElement {
             Some(marked) => underlined(runs, marked),
             None => runs,
         };
+        // In the order they are painted.
+        let match_wash = theme.warning.opacity(0.25);
+        let focused = field.focus_handle.contains_focused(window, cx);
+        let layers: Vec<_> = (focused && !selected_range.is_empty())
+            .then(|| (selected_range.clone(), theme.selection))
+            .into_iter()
+            .chain(matches.iter().map(|range| (range.clone(), match_wash)))
+            .collect();
+        let overdraws = match is_placeholder {
+            true => Vec::new(),
+            false => overdraw::overdraws(&runs, theme.bg, &layers),
+        };
 
         let font_size = style.font_size.to_pixels(window.rem_size());
         let line_height = field.line_height();
@@ -605,12 +619,7 @@ impl Element for TextFieldElement {
             matches
                 .iter()
                 .flat_map(|range| selection_rows(&lines, range, line_height))
-                .map(|rect| {
-                    fill(
-                        Bounds::new(origin + rect.origin, rect.size),
-                        theme.warning.opacity(0.25),
-                    )
-                })
+                .map(|rect| fill(Bounds::new(origin + rect.origin, rect.size), match_wash))
                 .collect()
         };
 
@@ -625,7 +634,7 @@ impl Element for TextFieldElement {
                         layout: line.unwrapped_layout.clone(),
                         range: cursor - start..next_boundary(&text, cursor) - start,
                         at: origin + at,
-                        color: theme.bg,
+                        color: theme::legible(theme.bg, theme.caret, theme::LEGIBLE),
                     })
                 })
                 .flatten();
@@ -675,6 +684,7 @@ impl Element for TextFieldElement {
             covered,
             matches,
             selection,
+            overdraws,
         }
     }
 
@@ -732,7 +742,7 @@ impl Element for TextFieldElement {
         // Scrolled text runs past the box in both directions, so everything the
         // field draws is masked to it — text, selection and caret alike.
         window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
-            for quad in matches.into_iter().chain(selection) {
+            for quad in selection.into_iter().chain(matches) {
                 window.paint_quad(quad);
             }
 
@@ -742,6 +752,14 @@ impl Element for TextFieldElement {
                     .ok();
                 top.y += line.size(line_height).height;
             }
+            overdraw::paint(
+                lines.iter().map(|line| &***line),
+                origin,
+                line_height,
+                px(0.),
+                &prepaint.overdraws,
+                window,
+            );
 
             // The caret only exists while focused — an unfocused field showing
             // one reads as two cursors on screen.

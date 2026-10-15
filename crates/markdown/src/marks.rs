@@ -119,7 +119,7 @@ pub(crate) fn set_marks(cx: &mut App, marks: Marks) {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct MarkPaint {
     pub color: Option<Hsla>,
-    /// Painted under the text and under the selection.
+    /// Painted under the text and over the selection.
     pub background: Option<Hsla>,
     pub weight: Option<FontWeight>,
     pub italic: bool,
@@ -226,7 +226,7 @@ pub fn highlight_solid(color: HighlightColor, theme: &Theme) -> Hsla {
 }
 
 /// The shipped washes: [`highlight_solid`] at a fixed alpha, translucent so a
-/// selection over one still shows.
+/// selection under one still shows.
 pub fn default_highlight(color: HighlightColor, theme: &Theme) -> Hsla {
     let alpha = match theme.appearance {
         theme::Appearance::Dark => 0.32,

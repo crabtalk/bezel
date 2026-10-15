@@ -3,6 +3,9 @@
 
 use gpui::{Hsla, hsla};
 
+/// WCAG AA for body text: the most contrast [`kept`] asks text to keep.
+pub const LEGIBLE: f32 = 4.5;
+
 /// A neutral (chroma 0) oklch tone as Hsla. Chroma 0 means r == g == b exactly,
 /// so this goes straight to an achromatic Hsla (skipping the hue math avoids
 /// float-noise saturation).
@@ -224,6 +227,44 @@ pub fn legible_on(plate: Hsla, a: Hsla, b: Hsla) -> Hsla {
     } else {
         b
     }
+}
+
+/// `layers`, each of which may be translucent, painted in order over the
+/// opaque `base`: the color the eye receives where they all overlap.
+pub fn stack(base: Hsla, layers: impl IntoIterator<Item = Hsla>) -> Hsla {
+    layers
+        .into_iter()
+        .fold(opaque(base), |under, layer| flatten(layer, under))
+}
+
+/// The contrast `text` keeps when something is painted under it: what it has
+/// over `page`, up to [`LEGIBLE`]. Faint text is held to its own contrast, not
+/// raised to body text's.
+pub fn kept(text: Hsla, page: Hsla) -> f32 {
+    let page = opaque(page);
+    contrast_ratio(flatten(text, page), page).min(LEGIBLE)
+}
+
+/// `color` at full alpha: a translucent surface measured as though nothing
+/// showed through it.
+fn opaque(color: Hsla) -> Hsla {
+    hsla(color.h, color.s, color.l, 1.0)
+}
+
+/// The color to draw `text` (which may be translucent) in over the opaque
+/// `plate`: `text` where it reads at `floor` there, else `text` with its
+/// lightness inverted where that does, else whichever of black and white reads
+/// better.
+pub fn legible(text: Hsla, plate: Hsla, floor: f32) -> Hsla {
+    let reads = |color: Hsla| contrast_ratio(flatten(color, plate), plate) >= floor;
+    if reads(text) {
+        return text;
+    }
+    let inverted = hsla(text.h, text.s, 1.0 - text.l, text.a);
+    if reads(inverted) {
+        return inverted;
+    }
+    legible_on(plate, hsla(0.0, 0.0, 1.0, 1.0), hsla(0.0, 0.0, 0.0, 1.0))
 }
 
 /// Composite `fg` (which may be translucent) over an opaque `bg`, returning the
