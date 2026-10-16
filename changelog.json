@@ -11,7 +11,8 @@
       "`drag::Domain` and `tabs::Reorder` implement `Default`.",
       "`theme::ink_over(text, page, surface, plate)` is the colour a glyph is drawn in over what is painted under it: its own where it reads at the better of the contrasts it `kept` on the page and on the surface its washes make, else the surface's colour (inverse video), else black or white.",
       "`input::overdraw::Layers` is what is painted under a text — washes and a selection, each in a shape its painter gives it. A painter draws `Layers::painted` (the selection, the washes, then `theme::selection_over`, the selection at `theme::SELECTION_OVER` of its alpha) and the overdraw takes its plates from the same order.",
-      "`input::caret::cover` is the colour a solid caret draws the glyph it covers in."
+      "`input::caret::cover` is the colour a solid caret draws the glyph it covers in.",
+      "`ui::color::SystemColor` is each of Apple's system colours, with its swatch and a stored name (`name`, `from_name`). `default_swatches` is every one, and `HighlightColor::system` is the one a highlight colour paints in."
     ],
     "changed": [
       "`input::overdraw::overdraws` and `input::caret::cover` take a `Layers`.",

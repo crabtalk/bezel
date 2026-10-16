@@ -25,3 +25,11 @@ fn a_swatch_resolves_by_appearance(cx: &mut TestAppContext) {
         assert_eq!(swatch.resolve(Theme::of(cx)), swatch.dark);
     });
 }
+
+#[test]
+fn every_system_colour_reads_back_by_its_name() {
+    for color in ui::color::SystemColor::ALL {
+        assert_eq!(ui::color::SystemColor::from_name(color.name()), Some(color));
+    }
+    assert_eq!(ui::color::SystemColor::from_name("magenta"), None);
+}

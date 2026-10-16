@@ -50,25 +50,90 @@ impl Swatch {
     }
 }
 
-/// Apple's macOS system colors, red through brown.
-pub fn default_swatches() -> Rc<[Swatch]> {
-    let swatch = |name: &'static str, light: u32, dark: u32| {
+/// One of Apple's macOS system colors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SystemColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Mint,
+    Teal,
+    Cyan,
+    Blue,
+    Indigo,
+    Purple,
+    Pink,
+    Brown,
+}
+
+impl SystemColor {
+    /// Every one, red through brown.
+    pub const ALL: [Self; 12] = [
+        Self::Red,
+        Self::Orange,
+        Self::Yellow,
+        Self::Green,
+        Self::Mint,
+        Self::Teal,
+        Self::Cyan,
+        Self::Blue,
+        Self::Indigo,
+        Self::Purple,
+        Self::Pink,
+        Self::Brown,
+    ];
+
+    pub fn swatch(self) -> Swatch {
+        let (name, light, dark) = match self {
+            Self::Red => ("Red", 0xFF3B30, 0xFF453A),
+            Self::Orange => ("Orange", 0xFF9500, 0xFF9F0A),
+            Self::Yellow => ("Yellow", 0xFFCC00, 0xFFD60A),
+            Self::Green => ("Green", 0x28CD41, 0x32D74B),
+            Self::Mint => ("Mint", 0x00C7BE, 0x63E6E2),
+            Self::Teal => ("Teal", 0x59ADC4, 0x6AC4DC),
+            Self::Cyan => ("Cyan", 0x55BEF0, 0x5AC8F5),
+            Self::Blue => ("Blue", 0x007AFF, 0x0A84FF),
+            Self::Indigo => ("Indigo", 0x5856D6, 0x5E5CE6),
+            Self::Purple => ("Purple", 0xAF52DE, 0xBF5AF2),
+            Self::Pink => ("Pink", 0xFF2D55, 0xFF375F),
+            Self::Brown => ("Brown", 0xA2845E, 0xAC8E68),
+        };
         Swatch::new(name, gpui::rgb(light), gpui::rgb(dark))
-    };
-    Rc::from([
-        swatch("Red", 0xFF3B30, 0xFF453A),
-        swatch("Orange", 0xFF9500, 0xFF9F0A),
-        swatch("Yellow", 0xFFCC00, 0xFFD60A),
-        swatch("Green", 0x28CD41, 0x32D74B),
-        swatch("Mint", 0x00C7BE, 0x63E6E2),
-        swatch("Teal", 0x59ADC4, 0x6AC4DC),
-        swatch("Cyan", 0x55BEF0, 0x5AC8F5),
-        swatch("Blue", 0x007AFF, 0x0A84FF),
-        swatch("Indigo", 0x5856D6, 0x5E5CE6),
-        swatch("Purple", 0xAF52DE, 0xBF5AF2),
-        swatch("Pink", 0xFF2D55, 0xFF375F),
-        swatch("Brown", 0xA2845E, 0xAC8E68),
-    ])
+    }
+
+    /// The value for `theme`'s appearance.
+    pub fn resolve(self, theme: &Theme) -> Hsla {
+        self.swatch().resolve(theme)
+    }
+
+    /// The name to store. Stable across releases; [`Self::from_name`] reads it
+    /// back.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Red => "red",
+            Self::Orange => "orange",
+            Self::Yellow => "yellow",
+            Self::Green => "green",
+            Self::Mint => "mint",
+            Self::Teal => "teal",
+            Self::Cyan => "cyan",
+            Self::Blue => "blue",
+            Self::Indigo => "indigo",
+            Self::Purple => "purple",
+            Self::Pink => "pink",
+            Self::Brown => "brown",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|color| color.name() == name)
+    }
+}
+
+/// Every [`SystemColor`], red through brown.
+pub fn default_swatches() -> Rc<[Swatch]> {
+    SystemColor::ALL.map(SystemColor::swatch).into()
 }
 
 struct Swatches(Rc<[Swatch]>);
