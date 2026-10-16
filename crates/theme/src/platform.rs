@@ -6,15 +6,15 @@
 /// platform, and the DirectX renderer carries no such primitive.
 pub const LENSED: bool = cfg!(any(target_os = "macos", target_family = "wasm"));
 
-/// Whether the compositor puts anything behind a translucent window — AppKit's
-/// vibrancy, and Mica on Windows.
+/// Whether the compositor blends a material behind a translucent window —
+/// AppKit's `.behindWindow` blending, and Mica on Windows.
 ///
 /// Read at runtime rather than from a `cfg`, because the Windows answer is a
 /// build number: `DWMWA_SYSTEMBACKDROP_TYPE` lands in build 22621, and below it
 /// gpui's backend applies no backdrop while its renderer still clears the
 /// window transparent — the desktop then shows through unblurred. The build is
 /// read once.
-pub fn frosted_window() -> bool {
+pub fn behind_window_blending() -> bool {
     #[cfg(target_os = "windows")]
     {
         static MICA: std::sync::OnceLock<bool> = std::sync::OnceLock::new();

@@ -96,6 +96,8 @@ pub(super) struct Frame<R, I> {
     pub visible: Bounds<Pixels>,
     pub handles: Vec<Mark<I>>,
     pub config: Rc<Config<R, I>>,
+    /// The view that drew the region.
+    pub painter: Painter,
 }
 
 impl<R, I: PartialEq> Frame<R, I> {
@@ -184,7 +186,6 @@ pub(super) struct Placement {
 }
 
 pub(super) struct State<R, I> {
-    pub painter: Painter,
     pub ghost: Option<Rc<Ghost<I>>>,
     pub live: Option<Live<R, I>>,
     pub press: Option<(I, Point<Pixels>)>,
@@ -236,9 +237,8 @@ fn on(axis: Axis, value: Pixels) -> Point<Pixels> {
 const DETACH: Pixels = px(12.);
 
 impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
-    pub fn new(painter: Painter, ghost: Option<Rc<Ghost<I>>>) -> Self {
+    pub fn new(ghost: Option<Rc<Ghost<I>>>) -> Self {
         Self {
-            painter,
             ghost,
             live: None,
             press: None,
@@ -281,6 +281,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         bounds: Bounds<Pixels>,
         visible: Bounds<Pixels>,
         config: Rc<Config<R, I>>,
+        painter: Painter,
     ) -> Option<usize> {
         let frame = Frame {
             id,
@@ -294,6 +295,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             visible,
             handles: Vec::new(),
             config,
+            painter,
         };
         let at = match self.building.iter().position(|old| old.id == frame.id) {
             Some(at) => {
@@ -306,6 +308,18 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             }
         };
         self.current.replace(at)
+    }
+
+    /// Redraw every view that drew one of the regions, in the frame being
+    /// built or the last complete one.
+    pub fn notify(&self, cx: &mut App) {
+        let mut painters: Vec<Painter> = Vec::new();
+        for frame in self.frames.iter().chain(&self.building) {
+            if !painters.contains(&frame.painter) {
+                painters.push(frame.painter);
+                frame.painter.notify(cx);
+            }
+        }
     }
 
     pub fn leave(&mut self, previous: Option<usize>) {
@@ -374,7 +388,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             }
             _ => bounds.origin,
         };
-        let painter = self.painter;
+        let painter = self.building[ix].painter;
         let moving = self.live.is_some() || self.settling;
         let slot = match self.slots.iter().position(|slot| &slot.item == item) {
             Some(at) => &mut self.slots[at],
@@ -514,7 +528,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
         });
         self.press = None;
         self.aim(window.mouse_position());
-        self.painter.notify(cx);
+        self.notify(cx);
         grab
     }
 
@@ -639,7 +653,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
                 None => window.blur(cx),
             }
         }
-        self.painter.notify(cx);
+        self.notify(cx);
         Some(live)
     }
 
@@ -707,7 +721,7 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             .drift_since
             .map(|since| now.saturating_duration_since(since).as_secs_f32().min(0.05))
             .unwrap_or(0.);
-        let mut drifting = false;
+        let mut drifting = Vec::new();
         for frame in &self.frames {
             let Some(scroll) = frame.config.scroll.as_ref() else {
                 continue;
@@ -734,19 +748,22 @@ impl<R: Clone + PartialEq, I: Clone + PartialEq> State<R, I> {
             if !can_move {
                 continue;
             }
-            drifting = true;
+            if !drifting.contains(&frame.painter) {
+                drifting.push(frame.painter);
+            }
             let value = (along(axis, old) + px(speed * dt)).clamp(-max, px(0.));
             scroll.set_offset(match axis {
                 Axis::Horizontal => point(value, old.y),
                 Axis::Vertical => point(old.x, value),
             });
         }
-        match drifting {
-            true => {
-                self.drift_since = Some(now);
-                self.painter.lease(120., Duration::from_millis(100), cx);
-            }
-            false => self.drift_since = None,
+        if drifting.is_empty() {
+            self.drift_since = None;
+            return;
+        }
+        self.drift_since = Some(now);
+        for painter in drifting {
+            painter.lease(120., Duration::from_millis(100), cx);
         }
     }
 }

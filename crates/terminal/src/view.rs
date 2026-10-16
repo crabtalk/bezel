@@ -612,11 +612,15 @@ impl gpui::Element for TerminalElement {
                     ),
                     line: line.clone(),
                     range,
-                    color: theme::legible(
-                        glyph_color(&cell.under_cursor(), &theme),
-                        theme.cursor,
-                        theme::LEGIBLE,
-                    ),
+                    color: {
+                        let page = resolve_color(cell.display_colors().1, &theme);
+                        theme::ink_over(
+                            glyph_color(cell, &theme),
+                            page,
+                            page,
+                            theme::stack(page, [theme.cursor]),
+                        )
+                    },
                 })
             });
 
@@ -740,7 +744,7 @@ fn ink(cell: &CellSnapshot, theme: &Theme) -> Hsla {
     }
     let page = resolve_color(cell.display_colors().1, theme);
     let plate = theme::stack(page, [terminal_selection_for(theme.appearance)]);
-    theme::legible(color, plate, theme::kept(color, page))
+    theme::ink_over(color, page, page, plate)
 }
 
 /// Shape one grid row into COLUMN-PINNED segments.

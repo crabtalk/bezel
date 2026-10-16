@@ -245,6 +245,24 @@ pub fn kept(text: Hsla, page: Hsla) -> f32 {
     contrast_ratio(flatten(text, page), page).min(LEGIBLE)
 }
 
+/// The colour to draw `text` in over `plate`. `surface` is what `text` was
+/// coloured for: the opaque `page` with the washes under it, a highlight mark
+/// or a find match. `plate` is what is painted under it now, a selection or a
+/// solid caret over that surface. `text` where it reads there at the better
+/// of the contrasts it [`kept`] on the page and on the surface, else the
+/// surface's own colour (inverse video) where that does, else whichever of
+/// black and white reads better.
+pub fn ink_over(text: Hsla, page: Hsla, surface: Hsla, plate: Hsla) -> Hsla {
+    let floor = kept(text, page).max(kept(text, surface));
+    let reads = |color: Hsla| contrast_ratio(flatten(color, plate), plate) >= floor;
+    let surface = opaque(surface);
+    match (reads(text), reads(surface)) {
+        (true, _) => text,
+        (false, true) => surface,
+        (false, false) => legible_on(plate, hsla(0.0, 0.0, 1.0, 1.0), hsla(0.0, 0.0, 0.0, 1.0)),
+    }
+}
+
 /// `color` at full alpha: a translucent surface measured as though nothing
 /// showed through it.
 fn opaque(color: Hsla) -> Hsla {
@@ -279,6 +297,21 @@ pub fn flatten(fg: Hsla, bg: Hsla) -> Hsla {
         fb * a + bb * (1.0 - a),
     );
     hsla(h, s, l, 1.0)
+}
+
+/// Composite `top` over `under`, both of which may be translucent: the one
+/// color that paints what the two painted in that order do, over anything.
+pub fn over(top: Hsla, under: Hsla) -> Hsla {
+    let (at, au) = (top.a.clamp(0.0, 1.0), under.a.clamp(0.0, 1.0));
+    let a = at + au * (1.0 - at);
+    if a <= 0.0 {
+        return hsla(0.0, 0.0, 0.0, 0.0);
+    }
+    let [tr, tg, tb] = hsl_to_rgb(top.h, top.s, top.l);
+    let [ur, ug, ub] = hsl_to_rgb(under.h, under.s, under.l);
+    let mix = |t: f32, u: f32| (t * at + u * au * (1.0 - at)) / a;
+    let (h, s, l) = rgb_to_hsl(mix(tr, ur), mix(tg, ug), mix(tb, ub));
+    hsla(h, s, l, a)
 }
 
 /// Linear per-component mix of two colors (paint helper for the gradient spinner).

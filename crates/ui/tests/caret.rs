@@ -5,7 +5,7 @@ use gpui::{
 use theme::{Appearance, Theme};
 use ui::{
     AppExt as _,
-    input::{CaretHeight, CaretShape, TextField},
+    input::{CaretHeight, CaretShape, TextField, overdraw::Layers},
 };
 
 struct Page(Entity<TextField>);
@@ -209,6 +209,49 @@ fn recoloured_cuts_runs_at_the_range() {
     let runs = ui::input::caret::recoloured(vec![run(3, red), run(3, blue)], &(2..4), bg);
     let pieces: Vec<_> = runs.iter().map(|run| (run.len, run.color)).collect();
     assert_eq!(pieces, [(2, red), (1, bg), (1, bg), (2, blue)]);
+}
+
+#[test]
+fn a_block_covers_its_glyph_in_the_ink_a_selection_of_its_colour_gives() {
+    let run = |len, color| gpui::TextRun {
+        len,
+        font: gpui::font("Helvetica"),
+        color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let page = gpui::hsla(0.0, 0.0, 0.1, 1.0);
+    let caret = gpui::hsla(0.5, 0.8, 0.6, 1.0);
+    let beige = gpui::hsla(0.11, 0.4, 0.75, 1.0);
+    let runs = [run(3, gpui::white()), run(3, beige)];
+    let selected =
+        ui::input::overdraw::overdraws(&runs, page, &Layers::new().select(4..5, caret, ()));
+    assert_eq!(
+        ui::input::caret::cover(&runs, 4, page, &Layers::<()>::new(), caret),
+        selected[0].ink
+    );
+}
+
+#[test]
+fn a_block_over_a_highlight_keeps_the_highlight_text_legible() {
+    let run = |len, color| gpui::TextRun {
+        len,
+        font: gpui::font("Helvetica"),
+        color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let page = gpui::hsla(0.0, 0.0, 0.1, 1.0);
+    let caret = gpui::hsla(0.67, 0.6, 0.3, 1.0);
+    let mark = gpui::hsla(0.14, 1.0, 0.5, 1.0);
+    let dark = gpui::hsla(0.0, 0.0, 0.12, 1.0);
+    let layers = Layers::new().wash(0..6, mark, ());
+    let ink = ui::input::caret::cover(&[run(6, dark)], 2, page, &layers, caret);
+    let plate = theme::stack(page, [caret]);
+    let reads = theme::contrast_ratio(theme::flatten(ink, plate), plate);
+    assert!(reads >= theme::LEGIBLE, "{reads:.2}");
 }
 
 #[gpui::test]

@@ -7,6 +7,8 @@ use gpui::{
     fill, point, prelude::*, px, size,
 };
 
+use motion::Painter;
+
 use crate::scroll::Scroller;
 
 use super::{
@@ -218,6 +220,7 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
             bounds,
             visible,
             self.config.clone(),
+            Painter::from(window.current_view()),
         );
         self.child.prepaint(window, cx);
         let mut state = self.domain.0.borrow_mut();
@@ -256,7 +259,7 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
             }
             let mut state = moving.0.borrow_mut();
             if state.aim(event.position) {
-                state.painter.notify(cx);
+                state.notify(cx);
             }
         });
         let released = self.domain.clone();

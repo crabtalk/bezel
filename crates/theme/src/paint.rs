@@ -294,6 +294,20 @@ pub fn frame_shadows() -> Vec<BoxShadow> {
     }]
 }
 
+/// The shadow `bezel::ui::window::content`'s floating card casts on the
+/// chrome around it. Its blur stays inside
+/// [`Theme::CONTENT_INSET`](crate::Theme::CONTENT_INSET), which the card's
+/// parent may clip at.
+pub fn content_shadows() -> Vec<BoxShadow> {
+    vec![BoxShadow {
+        color: hsla(0.0, 0.0, 0.0, 0.08),
+        offset: point(px(0.0), px(1.0)),
+        blur_radius: px(crate::Theme::CONTENT_INSET / 2.0),
+        spread_radius: px(0.0),
+        inset: false,
+    }]
+}
+
 /// Selection outline for rows and chips INSIDE a floating card (menu rows,
 /// the picker rail, segmented chips): the inset ring alone, in both
 /// appearances. Card rows fill with a translucent wash

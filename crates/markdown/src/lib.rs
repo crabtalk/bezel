@@ -57,12 +57,13 @@ pub use block::{BlockRenderer, Fence, Rewrite};
 pub use comment::{CommentPaint, CommentWashes, default_comment};
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Quoted, Text};
 pub use edit::{Shortcut, Splice, shortcut};
-pub use find::{FindPaint, default_find};
+pub use find::{FindPaint, default_find, find_washes};
 pub use highlight::Highlighter;
 pub use layout::Layout;
 pub use link::{Link, Links};
 pub use marks::{
     HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, highlight_solid,
+    highlight_wash,
 };
 pub use parse::{
     ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges,

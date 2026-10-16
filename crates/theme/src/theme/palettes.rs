@@ -71,10 +71,13 @@ impl Theme {
             terminal_bg: color::grey(0x09),
             terminal_ansi: ansi(ANSI_DARK),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            // SwiftUI's material tone, below.
+            content_background: color::grey(47),
+            content_opacity: Self::CONTENT_OPACITY,
             // Darker than `surface`: the reference vibrancy scrim, `hsl(0 0% 3%)`.
             vibrancy_tone: color::grey(8),
             window_blur: Self::WINDOW_BLUR,
-            vibrancy: crate::frosted_window(),
+            vibrancy: crate::behind_window_blending(),
             glass: crate::LENSED,
             // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
             // one tone across all five thicknesses (49.8 down to 45.3), and the
@@ -232,10 +235,13 @@ impl Theme {
             terminal_bg: color::grey(0xfa),
             terminal_ansi: ansi(ANSI_LIGHT),
             vibrancy_alpha: Self::VIBRANCY_ALPHA,
+            // SwiftUI's material tone, below.
+            content_background: color::grey(235),
+            content_opacity: Self::CONTENT_OPACITY,
             // The material's own measured tone.
             vibrancy_tone: color::grey(235),
             window_blur: Self::WINDOW_BLUR,
-            vibrancy: crate::frosted_window(),
+            vibrancy: crate::behind_window_blending(),
             glass: crate::LENSED,
             // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The
             // material is not a tone-flip of dark: `regular` keeps its opacity

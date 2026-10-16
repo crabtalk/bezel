@@ -149,13 +149,13 @@ impl Vibrancy {
     /// Whether to composite translucent for `appearance`.
     ///
     /// The platform gate rides on [`Vibrancy::Auto`] rather than on the caller:
-    /// it asks for a frost only where the compositor paints one behind the
-    /// window ([`frosted_window`](crate::frosted_window)), since a window that is merely transparent
+    /// it asks for a material only where the compositor blends one behind the
+    /// window ([`behind_window_blending`](crate::behind_window_blending)), since a window that is merely transparent
     /// shows raw desktop through the sidebar. An app that knows its compositor
     /// says [`Vibrancy::On`] and gets it anywhere.
     pub fn on(self, appearance: Appearance) -> bool {
         match self {
-            Self::Auto => crate::frosted_window() && matches!(appearance, Appearance::Dark),
+            Self::Auto => crate::behind_window_blending() && matches!(appearance, Appearance::Dark),
             Self::On => true,
             Self::Off => false,
         }
@@ -180,6 +180,9 @@ pub struct Brand {
     /// How opaque the tint over the blurred window is. See
     /// [`Theme::VIBRANCY_ALPHA`], where it starts, and [`Theme::vibrancy_tint`].
     pub vibrancy_alpha: f32,
+    /// How much of the chrome a floating content card covers. See
+    /// [`Theme::CONTENT_OPACITY`], where it starts, and [`Theme::content_bg`].
+    pub content_opacity: f32,
     /// The blur behind the translucent window. See [`Theme::window_blur`].
     pub window_blur: f32,
     /// Whether the window composites translucent, which is a question about
@@ -205,6 +208,7 @@ impl Default for Brand {
             accent: Tint::NONE,
             radius: Theme::BASE_RADIUS,
             vibrancy_alpha: Theme::VIBRANCY_ALPHA,
+            content_opacity: Theme::CONTENT_OPACITY,
             window_blur: Theme::WINDOW_BLUR,
             vibrancy: Vibrancy::Auto,
             glass: crate::LENSED,
@@ -248,6 +252,7 @@ impl Brand {
         // wants the coverage it tuned, not a value that was overwritten while
         // nothing was looking at it.
         theme.vibrancy_alpha = self.vibrancy_alpha;
+        theme.content_opacity = self.content_opacity;
         theme.window_blur = self.window_blur;
         theme.glass = self.glass;
         self.ink.for_appearance(theme.appearance).paint(theme);

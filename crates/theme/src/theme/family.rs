@@ -250,6 +250,12 @@ impl Seed {
         }
         theme.terminal_bg = bg;
         theme.vibrancy_tone = bg;
+        // As far toward the ink as the shipped dark tone stands from its
+        // `bg`; the shipped light tone is its chrome's.
+        theme.content_background = match dark {
+            true => toward(0.22),
+            false => bg,
+        };
         let comment = toward(0.45);
         theme.syntax = if dark {
             SyntaxPalette::dark(ink, comment, theme.danger)
@@ -326,6 +332,7 @@ impl Theme {
             ("diff_del", &mut self.diff_del),
             ("diff_hunk_bg", &mut self.diff_hunk_bg),
             ("vibrancy_tone", &mut self.vibrancy_tone),
+            ("content_background", &mut self.content_background),
             ("syntax.comment", &mut syntax.comment),
             ("syntax.keyword", &mut syntax.keyword),
             ("syntax.string", &mut syntax.string),

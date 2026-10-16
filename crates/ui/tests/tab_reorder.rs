@@ -54,9 +54,9 @@ impl Render for Host {
 
 fn open(cx: &mut TestAppContext) -> (Entity<Host>, VisualTestContext) {
     cx.update(|cx| Theme::install(Appearance::Dark, cx));
-    let window = cx.add_window(|_, cx| Host {
+    let window = cx.add_window(|_, _| Host {
         strip: ["a", "b", "c"].into_iter().collect(),
-        reorder: Reorder::new(motion::Painter::of(cx)),
+        reorder: Reorder::new(),
         moves: Vec::new(),
         clicks: 0,
         outside: Vec::new(),

@@ -1,6 +1,7 @@
 //! Code blocks, source mode, and the copy button.
 
 use super::*;
+use ui::input::overdraw::Layers;
 
 /// A source text and what [`render_source`] reads off it every frame: its
 /// lines, a hash of each, and its highlight spans.
@@ -621,11 +622,9 @@ struct RowPaint {
     height: ui::input::CaretHeight,
     hollow: bool,
     font: SharedString,
-    selected: Option<Range<usize>>,
-    annotated: Vec<(Range<usize>, Hsla)>,
+    /// What is painted under the code, over the whole text.
+    layers: Layers<()>,
     caret_color: Hsla,
-    cover: Hsla,
-    selection_color: Hsla,
     /// What the code is painted on.
     page: Hsla,
     code_size: f32,
@@ -642,11 +641,17 @@ impl RowPaint {
             height: overlay.caret_height,
             hollow: overlay.caret_hollow(),
             font: theme.font_mono.clone(),
-            selected: overlay.selected(code.len()),
-            annotated: overlay.annotated(code.len(), theme),
+            layers: {
+                let mut layers = Layers::new();
+                for (range, color) in overlay.annotated(code.len(), theme) {
+                    layers = layers.wash(range, color, ());
+                }
+                if let Some(range) = overlay.selected(code.len()) {
+                    layers = layers.select(range, theme.selection, ());
+                }
+                layers
+            },
             caret_color: theme.caret,
-            cover: theme::legible(theme.bg, theme.caret, theme::LEGIBLE),
-            selection_color: theme.selection,
             page: theme.bg,
             code_size,
         }
@@ -660,34 +665,18 @@ impl RowPaint {
     }
 
     fn paint_under(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
-        let wash = |range: &Range<usize>, color: Hsla, window: &mut Window| {
-            let (from, to) = (range.start.max(span.start), range.end.min(span.end));
-            if from < to {
-                for rect in range_rects(layout, &(from - span.start..to - span.start), 0.0, 0.0) {
-                    window.paint_quad(quad(
-                        rect,
-                        px(2.0),
-                        color,
-                        px(0.0),
-                        gpui::transparent_black(),
-                        BorderStyle::default(),
-                    ));
-                }
+        for (range, color, ()) in self.layers.clipped(span).painted() {
+            for rect in range_rects(layout, range, 0.0, 0.0) {
+                window.paint_quad(quad(
+                    rect,
+                    px(2.0),
+                    color,
+                    px(0.0),
+                    gpui::transparent_black(),
+                    BorderStyle::default(),
+                ));
             }
-        };
-        for (range, color) in self.layers() {
-            wash(&range, color, window);
         }
-    }
-
-    /// The selection, then the annotations, which are translucent: a
-    /// highlight shows through over a selection. Over the whole text, in the
-    /// order they are painted.
-    fn layers(&self) -> impl Iterator<Item = (Range<usize>, Hsla)> + '_ {
-        self.selected
-            .iter()
-            .map(|range| (range.clone(), self.selection_color))
-            .chain(self.annotated.iter().cloned())
     }
 
     /// `runs` are the line's, `span` its slice of the whole text.
@@ -698,13 +687,7 @@ impl RowPaint {
         runs: &[TextRun],
         window: &mut Window,
     ) {
-        let layers: Vec<_> = self
-            .layers()
-            .filter_map(|(range, color)| {
-                let (from, to) = (range.start.max(span.start), range.end.min(span.end));
-                (from < to).then(|| (from - span.start..to - span.start, color))
-            })
-            .collect();
+        let layers = self.layers.clipped(span);
         ui::input::overdraw::paint(
             layout.line_layouts().iter().map(|line| &**line),
             layout.bounds().origin,
@@ -727,7 +710,13 @@ impl RowPaint {
                     height: self.height,
                     hollow: self.hollow,
                     color: self.caret_color,
-                    cover: self.cover,
+                    cover: ui::input::caret::cover(
+                        runs,
+                        offset - span.start,
+                        self.page,
+                        &layers,
+                        self.caret_color,
+                    ),
                     size: self.code_size,
                     face: font(self.font.clone()),
                 },

@@ -478,7 +478,10 @@ fn both_palettes_define_a_frost_and_lights_runs_heavier() {
 /// compositor still gets one from `On`.
 #[test]
 fn auto_frosts_dark_alone_and_the_named_answers_stand() {
-    assert_eq!(Vibrancy::Auto.on(Appearance::Dark), frosted_window());
+    assert_eq!(
+        Vibrancy::Auto.on(Appearance::Dark),
+        behind_window_blending()
+    );
     assert!(!Vibrancy::Auto.on(Appearance::Light));
 
     for appearance in [Appearance::Dark, Appearance::Light] {
@@ -495,11 +498,11 @@ fn auto_frosts_dark_alone_and_the_named_answers_stand() {
 fn a_brand_asks_for_the_frost_its_palette_was_built_for() {
     assert_eq!(Brand::default().vibrancy, Vibrancy::Auto);
 
-    // And it reaches the installed palette: light opaque, dark frosted.
+    // And it reaches the installed palette: light opaque, dark translucent.
     let light = Theme::branded(&Brand::default(), Appearance::Light);
     assert!(!light.vibrancy, "light composites opaque");
     let dark = Theme::branded(&Brand::default(), Appearance::Dark);
-    assert_eq!(dark.vibrancy, frosted_window());
+    assert_eq!(dark.vibrancy, behind_window_blending());
 }
 
 /// An input plate has to read as *lifted* in both appearances. Dark does that
@@ -578,7 +581,7 @@ fn appearance_mirror_tracks_installed_theme() {
 /// backdrop; `Blurred` there is the accent API's acrylic at a zero tint, which
 /// leaves the desktop showing through as if nothing were applied.
 #[test]
-fn a_frosted_window_asks_for_the_backdrop_its_platform_has() {
+fn a_window_with_behind_window_blending_asks_for_the_backdrop_its_platform_has() {
     let mut theme = Theme::dark();
 
     theme.vibrancy = false;
@@ -608,7 +611,7 @@ fn a_card_frosts_on_the_renderer_and_a_window_on_the_compositor() {
     assert_eq!(Brand::default().glass, LENSED);
     if LENSED {
         assert!(
-            frosted_window(),
+            behind_window_blending(),
             "a lens implies a backdrop behind the window"
         );
     }
