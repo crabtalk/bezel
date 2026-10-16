@@ -74,9 +74,9 @@ fn a_piece_under_two_washes_takes_their_stack() {
 }
 
 #[test]
-fn a_selection_over_a_wash_shows_both_under_the_text() {
+fn a_selection_shows_through_a_translucent_wash_over_it() {
     let selection = hsla(0.67, 0.7, 0.6, 1.0);
-    let mark = hsla(0.14, 1.0, 0.5, 1.0);
+    let mark = hsla(0.14, 1.0, 0.5, 0.32);
     let pieces = overdraws(
         &[run(10, WHITE)],
         PAGE,
@@ -88,18 +88,17 @@ fn a_selection_over_a_wash_shows_both_under_the_text() {
         .iter()
         .find(|piece| piece.range == (3..6))
         .expect("{pieces:?}");
-    let over = theme::selection_over(selection);
-    assert_eq!(piece.plate, theme::stack(PAGE, [selection, mark, over]));
+    assert_eq!(piece.plate, theme::stack(PAGE, [selection, mark]));
     assert_ne!(piece.plate, theme::stack(PAGE, [mark]));
     assert_ne!(piece.plate, theme::stack(PAGE, [selection]));
 }
 
 #[test]
-fn text_coloured_for_its_wash_reads_under_a_selection() {
-    // A highlight's dark text, which barely reads on the dark page.
+fn text_coloured_for_its_wash_keeps_its_contrast_under_a_selection() {
+    // Dark text an app chose for its wash, which barely reads on the page.
     let dark = hsla(0.0, 0.0, 0.12, 1.0);
     let selection = hsla(0.67, 0.6, 0.3, 1.0);
-    let mark = hsla(0.14, 1.0, 0.5, 1.0);
+    let mark = hsla(0.14, 1.0, 0.5, 0.6);
     let pieces = overdraws(
         &[run(10, dark)],
         PAGE,
@@ -107,30 +106,23 @@ fn text_coloured_for_its_wash_reads_under_a_selection() {
             .wash(0..10, mark, ())
             .select(0..10, selection, ()),
     );
-    let over = theme::selection_over(selection);
-    let plate = theme::stack(PAGE, [selection, mark, over]);
+    let surface = theme::stack(PAGE, [mark]);
+    let plate = theme::stack(PAGE, [selection, mark]);
     let ink = pieces.first().map_or(dark, |piece| piece.ink);
     let reads = theme::contrast_ratio(theme::flatten(ink, plate), plate);
-    assert!(reads >= theme::LEGIBLE, "{reads:.2}");
+    assert!(reads >= theme::kept(dark, surface), "{reads:.2}");
 }
 
 #[test]
-fn layers_paint_the_selection_under_the_washes_and_again_over_them() {
+fn layers_paint_the_selection_under_the_washes() {
     let selection = hsla(0.67, 0.7, 0.6, 1.0);
-    let mark = hsla(0.14, 1.0, 0.5, 1.0);
+    let mark = hsla(0.14, 1.0, 0.5, 0.32);
     let layers = Layers::new()
-        .select(0..4, selection, 'S')
-        .wash(1..3, mark, 'W');
+        .wash(1..3, mark, 'W')
+        .select(0..4, selection, 'S');
     let painted: Vec<_> = layers
         .painted()
         .map(|(range, color, shape)| (range.clone(), color, *shape))
         .collect();
-    assert_eq!(
-        painted,
-        [
-            (0..4, selection, 'S'),
-            (1..3, mark, 'W'),
-            (0..4, theme::selection_over(selection), 'S'),
-        ]
-    );
+    assert_eq!(painted, [(0..4, selection, 'S'), (1..3, mark, 'W')]);
 }

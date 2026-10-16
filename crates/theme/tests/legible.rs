@@ -1,7 +1,5 @@
 use gpui::{Hsla, hsla};
-use theme::{
-    LEGIBLE, Theme, contrast_ratio, flatten, ink_over, kept, legible, over, selection_over, stack,
-};
+use theme::{LEGIBLE, Theme, contrast_ratio, flatten, ink_over, kept, legible, over, stack};
 
 fn reads(text: Hsla, plate: Hsla) -> f32 {
     contrast_ratio(flatten(text, plate), plate)
@@ -67,15 +65,6 @@ fn two_translucent_layers_composite_to_one_that_paints_the_same() {
     assert!((one.a - 0.8).abs() < 1e-4);
     let (a, b) = (stack(page, [under, top]), stack(page, [one]));
     assert!((a.l - b.l).abs() < 1e-4 && (a.s - b.s).abs() < 1e-4);
-}
-
-#[test]
-fn the_selection_over_itself_changes_nothing() {
-    for theme in [Theme::dark(), Theme::light()] {
-        let alone = stack(theme.bg, [theme.selection]);
-        let again = stack(theme.bg, [theme.selection, selection_over(theme.selection)]);
-        assert!((alone.l - again.l).abs() < 1e-4 && (alone.s - again.s).abs() < 1e-4);
-    }
 }
 
 #[test]

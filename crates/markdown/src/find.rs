@@ -17,9 +17,15 @@ pub(crate) fn set_find_paint(cx: &mut App, paint: FindPaint) {
     cx.set_global(Installed(paint));
 }
 
-/// The shipped accent washes: 22% for matches and 48% for the current match.
+/// `(match, current)` washes cut from `color`: 22% for matches and 48% for
+/// the current match.
+pub fn find_washes(color: Hsla) -> (Hsla, Hsla) {
+    (color.opacity(0.22), color.opacity(0.48))
+}
+
+/// [`find_washes`] of the theme's accent.
 pub fn default_find(theme: &Theme) -> (Hsla, Hsla) {
-    (theme.accent.opacity(0.22), theme.accent.opacity(0.48))
+    find_washes(theme.accent)
 }
 
 pub(crate) fn find_paint_of(cx: &App) -> FindPaint {

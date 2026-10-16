@@ -224,11 +224,17 @@ pub fn highlight_solid(color: HighlightColor, theme: &Theme) -> Hsla {
     color.system().resolve(theme)
 }
 
-/// The shipped washes: [`highlight_solid`] at a fixed alpha.
-pub fn default_highlight(color: HighlightColor, theme: &Theme) -> Hsla {
+/// The wash a highlight of `color` paints under text: `color` at 32% in the
+/// dark appearance and 45% in the light.
+pub fn highlight_wash(color: Hsla, theme: &Theme) -> Hsla {
     let alpha = match theme.appearance {
         theme::Appearance::Dark => 0.32,
         theme::Appearance::Light => 0.45,
     };
-    highlight_solid(color, theme).opacity(alpha)
+    color.opacity(alpha)
+}
+
+/// The shipped washes: [`highlight_wash`] of [`highlight_solid`].
+pub fn default_highlight(color: HighlightColor, theme: &Theme) -> Hsla {
+    highlight_wash(highlight_solid(color, theme), theme)
 }

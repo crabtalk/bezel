@@ -59,23 +59,13 @@ impl<S> Layers<S> {
         self
     }
 
-    /// In the order they are painted: the selection, the washes in the order
-    /// given, then the selection again in [`theme::selection_over`]. Over a
-    /// wash the two show mixed.
+    /// In the order they are painted: the selection, then the washes in the
+    /// order given.
     pub fn painted(&self) -> impl Iterator<Item = (&Range<usize>, Hsla, &S)> {
-        let selection = self.selection.as_ref();
-        selection
+        self.selection
+            .iter()
+            .chain(&self.washes)
             .map(|(range, color, shape)| (range, *color, shape))
-            .into_iter()
-            .chain(
-                self.washes
-                    .iter()
-                    .map(|(range, color, shape)| (range, *color, shape)),
-            )
-            .chain(
-                selection
-                    .map(|(range, color, shape)| (range, theme::selection_over(*color), shape)),
-            )
     }
 
     /// What the text over `piece` was coloured for: the washes covering it

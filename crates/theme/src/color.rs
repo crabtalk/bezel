@@ -6,9 +6,6 @@ use gpui::{Hsla, hsla};
 /// WCAG AA for body text: the most contrast [`kept`] asks text to keep.
 pub const LEGIBLE: f32 = 4.5;
 
-/// How much of the selection [`selection_over`] lays over the washes above it.
-pub const SELECTION_OVER: f32 = 0.5;
-
 /// A neutral (chroma 0) oklch tone as Hsla. Chroma 0 means r == g == b exactly,
 /// so this goes straight to an achromatic Hsla (skipping the hue math avoids
 /// float-noise saturation).
@@ -264,18 +261,6 @@ pub fn ink_over(text: Hsla, page: Hsla, surface: Hsla, plate: Hsla) -> Hsla {
         (false, true) => surface,
         (false, false) => legible_on(plate, hsla(0.0, 0.0, 1.0, 1.0), hsla(0.0, 0.0, 0.0, 1.0)),
     }
-}
-
-/// The selection laid again over the washes painted above it, at
-/// [`SELECTION_OVER`] of its alpha. Over an opaque selection alone it changes
-/// nothing; over a wash the two show mixed.
-pub fn selection_over(selection: Hsla) -> Hsla {
-    hsla(
-        selection.h,
-        selection.s,
-        selection.l,
-        selection.a * SELECTION_OVER,
-    )
 }
 
 /// `color` at full alpha: a translucent surface measured as though nothing
