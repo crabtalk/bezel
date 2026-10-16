@@ -2,14 +2,17 @@
   {
     "version": "0.2.16",
     "date": "2026-10-16",
-    "summary": "A card for an app's main view that floats on the window's chrome, and a picture picker.",
+    "summary": "A card for an app's main view that floats on the window's chrome, a picture picker, and drag domains that span views.",
     "new": [
       "`window::content(floating, cx)` is the element an app's main view is drawn in: floating, a rounded, bordered card on the `Theme::sidebar_bg` chrome its parent paints, with half `Theme::CONTENT_INSET` of margin and the parent padded by the other half, so cards side by side meet the inset apart, filled with `Theme::content_bg` — `Theme::content_background` covering `Brand::content_opacity` of the chrome (from `Theme::CONTENT_OPACITY`, `Material::Thick`'s) under `Theme::vibrancy`, opaque otherwise, and casting `theme::content_shadows` only when opaque; flat, a plain `Theme::window_bg` fill. `window::content_fill` is the one colour it shows, chrome included.",
       "`Controls::picture_picker` is a row of tiles, each a picture the caller draws over its label, the chosen one ringed in the accent — macOS's appearance picker.",
-      "`theme::over` composites one translucent colour over another."
+      "`theme::over` composites one translucent colour over another.",
+      "`Theme::content_background` is the floating card's fill at full coverage, set by a `ThemeFamily` file as `content_background` and derived from a family's seed.",
+      "`drag::Domain` and `tabs::Reorder` implement `Default`."
     ],
     "changed": [
-      "`theme::frosted_window` is `theme::behind_window_blending`, after AppKit's `.behindWindow` blending."
+      "`theme::frosted_window` is `theme::behind_window_blending`, after AppKit's `.behindWindow` blending.",
+      "`drag::Domain::new`, `drag::Domain::with_ghost` and `tabs::Reorder::new` take no `Painter`: a domain may span views, and each region's view is redrawn for the frames the domain owes."
     ]
   },
   {
