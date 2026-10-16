@@ -283,7 +283,7 @@ impl Theme {
                 edge: 0.10,
                 edge_width: 1.0,
                 edge_aa: 0.5,
-                shadow: false,
+                shadow: true,
             },
             // Carries dark's rim, sigma and edge: light has not been
             // re-measured since the instrument learned to hold the window key.

@@ -138,9 +138,8 @@ pub struct SurfaceSpec {
     /// is one device pixel at 2x — the plain rasteriser's answer; 0 is the hard
     /// edge it replaced.
     pub edge_aa: f32,
-    /// Whether the surface casts a shadow. A lens separates itself from the
-    /// page by bending it, and reads as a slab under one; a wash has nothing
-    /// to bend and needs it.
+    /// Whether the surface casts [`paint::surface_shadows`], painted outside
+    /// its shape.
     pub shadow: bool,
 }
 

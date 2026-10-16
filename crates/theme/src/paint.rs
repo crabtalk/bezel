@@ -261,8 +261,8 @@ pub fn glass_selected_shadows() -> Vec<BoxShadow> {
 /// The elevation shadow a floating surface casts — `shadow_lg`'s shape, which
 /// is where it lived until the surface moved into the material. Painted cut to
 /// outside the shape, because the same drop shadow under a translucent fill is
-/// the grey plate [`card_selected_shadows`] records. `GlassSpec::shadow` says
-/// which looks carry one.
+/// the grey plate [`card_selected_shadows`] records. [`SurfaceSpec::shadow`](crate::SurfaceSpec::shadow)
+/// says which looks carry one.
 pub fn surface_shadows() -> Vec<BoxShadow> {
     vec![
         BoxShadow {

@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.2.17",
+    "date": "2026-10-16",
+    "summary": "Light glass casts a shadow, so it stands off a white page.",
+    "fixed": [
+      "Light `Glass::Regular` casts `theme::surface_shadows`, as macOS light glass does: over a white page, such as a floating `window::content` card, its white lift and rim left it with no edge."
+    ]
+  },
+  {
     "version": "0.2.16",
     "date": "2026-10-16",
     "summary": "A card for an app's main view that floats on the window's chrome, a picture picker, drag domains that span views, and one paint order under text that a selection shows through.",
