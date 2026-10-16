@@ -2,17 +2,25 @@
   {
     "version": "0.2.16",
     "date": "2026-10-16",
-    "summary": "A card for an app's main view that floats on the window's chrome, a picture picker, and drag domains that span views.",
+    "summary": "A card for an app's main view that floats on the window's chrome, a picture picker, drag domains that span views, and a selection that shows over highlights.",
     "new": [
       "`window::content(floating, cx)` is the element an app's main view is drawn in: floating, a rounded, bordered card on the `Theme::sidebar_bg` chrome its parent paints, with half `Theme::CONTENT_INSET` of margin and the parent padded by the other half, so cards side by side meet the inset apart, filled with `Theme::content_bg` — `Theme::content_background` covering `Brand::content_opacity` of the chrome (from `Theme::CONTENT_OPACITY`, `Material::Thick`'s) under `Theme::vibrancy`, opaque otherwise, and casting `theme::content_shadows` only when opaque; flat, a plain `Theme::window_bg` fill. `window::content_fill` is the one colour it shows, chrome included.",
       "`Controls::picture_picker` is a row of tiles, each a picture the caller draws over its label, the chosen one ringed in the accent — macOS's appearance picker.",
       "`theme::over` composites one translucent colour over another.",
       "`Theme::content_background` is the floating card's fill at full coverage, set by a `ThemeFamily` file as `content_background` and derived from a family's seed.",
-      "`drag::Domain` and `tabs::Reorder` implement `Default`."
+      "`drag::Domain` and `tabs::Reorder` implement `Default`.",
+      "`theme::ink_over(text, page, surface, plate)` is the colour a glyph is drawn in over what is painted under it: its own where it reads at the better of the contrasts it `kept` on the page and on the surface its washes make, else the surface's colour (inverse video), else black or white.",
+      "`input::overdraw::Layers` is what is painted under a text — washes and a selection, each in a shape its painter gives it. A painter draws `Layers::painted` (the selection, the washes, then `theme::selection_over`, the selection at `theme::SELECTION_OVER` of its alpha) and the overdraw takes its plates from the same order.",
+      "`input::caret::cover` is the colour a solid caret draws the glyph it covers in."
     ],
     "changed": [
+      "`input::overdraw::overdraws` and `input::caret::cover` take a `Layers`.",
       "`theme::frosted_window` is `theme::behind_window_blending`, after AppKit's `.behindWindow` blending.",
       "`drag::Domain::new`, `drag::Domain::with_ghost` and `tabs::Reorder::new` take no `Painter`: a domain may span views, and each region's view is redrawn for the frames the domain owes."
+    ],
+    "fixed": [
+      "A selection and a solid caret of one colour give a glyph one ink, in text fields, markdown text, code blocks and the terminal: a glyph that does not read on them takes the colour of what it sits on.",
+      "Where a selection overlaps a mark's wash, a comment, a find match or inline code, both show: the selection is laid again over them in `theme::selection_over`, and the glyphs' ink is taken over the result, held to the contrast the text had on its wash: a highlight's dark text stays legible under a selection or a solid caret."
     ]
   },
   {

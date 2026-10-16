@@ -1,6 +1,7 @@
 //! Inline text: flattening to runs, painting, carets and selection rects.
 
 use super::*;
+use ui::input::overdraw::Layers;
 
 /// Inline content flattened for shaping: one string, its runs, and the ranges
 /// that need painting underneath (link clicks, inline-code washes, mentions).
@@ -39,6 +40,36 @@ pub use ui::input::Shown;
 /// What stands in a mention's favicon slot. An em space is as wide as the
 /// type is tall.
 const ICON_SLOT: &str = "\u{2003}";
+
+/// The rows a layer under the text is painted in: [`range_rects`] padded by
+/// `pad_x` and inset by `inset_y`, corners rounded by `radius`.
+#[derive(Clone, Copy, Debug)]
+struct Rows {
+    radius: f32,
+    pad_x: f32,
+    inset_y: f32,
+}
+
+impl Rows {
+    /// A mark's background.
+    const FLUSH: Self = Self {
+        radius: 0.0,
+        pad_x: 0.0,
+        inset_y: 0.0,
+    };
+    /// A selection or an annotation.
+    const ROUNDED: Self = Self {
+        radius: 2.0,
+        pad_x: 0.0,
+        inset_y: 0.0,
+    };
+    /// Inline code.
+    const CODE: Self = Self {
+        radius: INLINE_CODE_RADIUS,
+        pad_x: INLINE_CODE_PAD_X,
+        inset_y: INLINE_CODE_INSET_Y,
+    };
+}
 
 /// Marks are ranges, gpui wants consecutive runs — so cut the text at every
 /// mark boundary and ask which marks cover each piece.
@@ -343,26 +374,34 @@ pub(super) fn painted_text(
     let washes = flat.washes;
     let (icon_color, icon_wash) = (theme.text_muted, theme.element_hover);
     let caret_color = theme.caret;
-    let selection_color = theme.selection;
     let annotated: Vec<_> = overlay
         .annotated(len, theme)
         .into_iter()
         .map(|(range, wash)| (shown.range(&range), wash))
         .collect();
     let layouts = overlay.layouts.cloned();
-    // In the order the underlay paints them.
-    let layers: Vec<_> = selected
-        .iter()
-        .map(|range| (range.clone(), selection_color))
-        .chain(washes.iter().cloned())
-        .chain(annotated.iter().cloned())
-        .chain(code_ranges.iter().map(|range| (range.clone(), wash)))
-        .collect();
+    // One quad per visual row of each, so a wrapped selection is a stack of
+    // rows rather than a box around all of them.
+    let mut layers = Layers::new();
+    for (range, color) in washes {
+        layers = layers.wash(range, color, Rows::FLUSH);
+    }
+    for (range, color) in annotated {
+        layers = layers.wash(range, color, Rows::ROUNDED);
+    }
+    for range in code_ranges {
+        layers = layers.wash(range, wash, Rows::CODE);
+    }
+    if let Some(range) = selected {
+        layers = layers.select(range, theme.selection, Rows::ROUNDED);
+    }
     let overdraws = ui::input::overdraw::overdraws(&runs, theme.bg, &layers);
     // Over the text, which a solid block hides: the glyph it covers is painted
     // again on top of it.
     let caret_layout = layout.clone();
-    let cover = theme::legible(theme.bg, caret_color, theme::LEGIBLE);
+    let cover = caret.map_or(caret_color, |offset| {
+        ui::input::caret::cover(&runs, offset, theme.bg, &layers, caret_color)
+    });
     let over = canvas(
         |_, _, _| (),
         move |_, _, window, cx| {
@@ -418,52 +457,13 @@ pub(super) fn painted_text(
             if let Some(layouts) = &layouts {
                 layouts.record(ix, part, span.clone(), layout.clone(), shown.clone());
             }
-            // Under the glyphs, like the inline-code wash — one quad per visual
-            // row, so a wrapped selection is a stack of rows rather than a box
-            // around all of them. Under the marks and the annotations, which
-            // are translucent: a highlight shows through over a selection.
-            if let Some(range) = &selected {
-                for rect in range_rects(&layout, range, 0.0, 0.0) {
+            // Under the glyphs.
+            for (range, color, rows) in layers.painted() {
+                for rect in range_rects(&layout, range, rows.pad_x, rows.inset_y) {
                     window.paint_quad(quad(
                         rect,
-                        px(2.0),
-                        selection_color,
-                        px(0.0),
-                        gpui::transparent_black(),
-                        BorderStyle::default(),
-                    ));
-                }
-            }
-            for (range, wash) in &washes {
-                for rect in range_rects(&layout, range, 0.0, 0.0) {
-                    window.paint_quad(quad(
-                        rect,
-                        px(0.0),
-                        *wash,
-                        px(0.0),
-                        gpui::transparent_black(),
-                        BorderStyle::default(),
-                    ));
-                }
-            }
-            for (range, wash) in &annotated {
-                for rect in range_rects(&layout, range, 0.0, 0.0) {
-                    window.paint_quad(quad(
-                        rect,
-                        px(2.0),
-                        *wash,
-                        px(0.0),
-                        gpui::transparent_black(),
-                        BorderStyle::default(),
-                    ));
-                }
-            }
-            for range in &code_ranges {
-                for rect in range_rects(&layout, range, INLINE_CODE_PAD_X, INLINE_CODE_INSET_Y) {
-                    window.paint_quad(quad(
-                        rect,
-                        px(INLINE_CODE_RADIUS),
-                        wash,
+                        px(rows.radius),
+                        color,
                         px(0.0),
                         gpui::transparent_black(),
                         BorderStyle::default(),

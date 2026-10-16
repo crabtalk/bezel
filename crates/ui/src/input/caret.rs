@@ -7,6 +7,8 @@ use gpui::{
     Window, WrappedLineLayout, fill, outline, point, px,
 };
 
+use super::overdraw::Layers;
+
 /// The app-wide caret shape. Terminal cursors follow their terminal instead.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CaretShape {
@@ -175,6 +177,29 @@ pub fn paint_covered(
             false => window.paint_glyph(origin, font_id, glyph.id, layout.font_size, color),
         };
     }
+}
+
+/// The colour [`paint_covered`] draws the glyph at `offset` of `runs` in, under
+/// a solid `caret` over the opaque `page`: [`theme::ink_over`] the caret, from
+/// the [`Layers::surface`] there, as a selected glyph is.
+pub fn cover<S>(
+    runs: &[TextRun],
+    offset: usize,
+    page: Hsla,
+    layers: &Layers<S>,
+    caret: Hsla,
+) -> Hsla {
+    let mut at = 0;
+    let text = runs
+        .iter()
+        .find(|run| {
+            at += run.len;
+            offset < at
+        })
+        .or(runs.last())
+        .map_or(page, |run| run.color);
+    let surface = layers.surface(page, &(offset..offset + 1));
+    theme::ink_over(text, page, surface, theme::stack(page, [caret]))
 }
 
 /// `runs` cut at `range`'s edges, the pieces inside it in `color`.

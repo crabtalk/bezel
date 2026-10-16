@@ -23,18 +23,120 @@ pub struct Overdraw {
     pub ink: Hsla,
 }
 
-/// The pieces of `runs` to draw again over `layers`, which are painted in the
-/// order given over the opaque `page`. A piece sits under one set of layers,
-/// its ink [`theme::legible`] on their plate; text that reads there already,
-/// and text under no layer, is left out.
-pub fn overdraws(runs: &[TextRun], page: Hsla, layers: &[(Range<usize>, Hsla)]) -> Vec<Overdraw> {
+/// What is painted under a text, in its offsets: washes (a highlight, a find
+/// match, a comment) and a selection, each in the shape `S` its painter draws
+/// it in. A painter draws [`Layers::painted`] and [`overdraws`] reads the same
+/// order.
+#[derive(Clone, Debug)]
+pub struct Layers<S> {
+    washes: Vec<(Range<usize>, Hsla, S)>,
+    selection: Option<(Range<usize>, Hsla, S)>,
+}
+
+impl<S> Default for Layers<S> {
+    fn default() -> Self {
+        Self {
+            washes: Vec::new(),
+            selection: None,
+        }
+    }
+}
+
+impl<S> Layers<S> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A wash over `range`, painted over the washes before it.
+    pub fn wash(mut self, range: Range<usize>, color: Hsla, shape: S) -> Self {
+        self.washes.push((range, color, shape));
+        self
+    }
+
+    /// The selection, replacing any before it.
+    pub fn select(mut self, range: Range<usize>, color: Hsla, shape: S) -> Self {
+        self.selection = Some((range, color, shape));
+        self
+    }
+
+    /// In the order they are painted: the selection, the washes in the order
+    /// given, then the selection again in [`theme::selection_over`]. Over a
+    /// wash the two show mixed.
+    pub fn painted(&self) -> impl Iterator<Item = (&Range<usize>, Hsla, &S)> {
+        let selection = self.selection.as_ref();
+        selection
+            .map(|(range, color, shape)| (range, *color, shape))
+            .into_iter()
+            .chain(
+                self.washes
+                    .iter()
+                    .map(|(range, color, shape)| (range, *color, shape)),
+            )
+            .chain(
+                selection
+                    .map(|(range, color, shape)| (range, theme::selection_over(*color), shape)),
+            )
+    }
+
+    /// What the text over `piece` was coloured for: the washes covering it
+    /// over the opaque `page`.
+    pub fn surface(&self, page: Hsla, piece: &Range<usize>) -> Hsla {
+        theme::stack(
+            page,
+            self.washes
+                .iter()
+                .filter(|(range, ..)| covers(range, piece))
+                .map(|(_, color, _)| *color),
+        )
+    }
+
+    /// Everything [`Self::painted`] covering `piece`, over the opaque `page`,
+    /// or `None` where nothing does.
+    pub fn plate(&self, page: Hsla, piece: &Range<usize>) -> Option<Hsla> {
+        let mut over = self
+            .painted()
+            .filter(|(range, ..)| covers(range, piece))
+            .map(|(_, color, _)| color)
+            .peekable();
+        over.peek()?;
+        Some(theme::stack(page, over))
+    }
+
+    /// These layers cut to `span` of the text, in its offsets.
+    pub fn clipped(&self, span: &Range<usize>) -> Self
+    where
+        S: Clone,
+    {
+        let clip = |(range, color, shape): &(Range<usize>, Hsla, S)| {
+            let (from, to) = (range.start.max(span.start), range.end.min(span.end));
+            (from < to).then(|| (from - span.start..to - span.start, *color, shape.clone()))
+        };
+        Self {
+            washes: self.washes.iter().filter_map(clip).collect(),
+            selection: self.selection.as_ref().and_then(clip),
+        }
+    }
+
+    fn edges(&self) -> impl Iterator<Item = usize> + '_ {
+        self.washes
+            .iter()
+            .map(|(range, ..)| range)
+            .chain(self.selection.as_ref().map(|(range, ..)| range))
+            .flat_map(|range| [range.start, range.end])
+    }
+}
+
+/// The pieces of `runs` to draw again over `layers` on the opaque `page`: each
+/// on its [`Layers::plate`], its ink [`theme::ink_over`] that plate from its
+/// [`Layers::surface`]. Text that reads there already, and text under nothing,
+/// is left out.
+pub fn overdraws<S>(runs: &[TextRun], page: Hsla, layers: &Layers<S>) -> Vec<Overdraw> {
     let mut out: Vec<Overdraw> = Vec::new();
     let mut at = 0;
     for run in runs {
         let end = at + run.len;
         let mut cuts: Vec<usize> = layers
-            .iter()
-            .flat_map(|(range, _)| [range.start, range.end])
+            .edges()
             .filter(|cut| (at + 1..end).contains(cut))
             .chain([at, end])
             .collect();
@@ -42,16 +144,11 @@ pub fn overdraws(runs: &[TextRun], page: Hsla, layers: &[(Range<usize>, Hsla)]) 
         cuts.dedup();
         for piece in cuts.windows(2) {
             let (from, to) = (piece[0], piece[1]);
-            let mut over = layers
-                .iter()
-                .filter(|(range, _)| range.start <= from && to <= range.end)
-                .map(|(_, color)| *color)
-                .peekable();
-            if over.peek().is_none() {
+            let Some(plate) = layers.plate(page, &(from..to)) else {
                 continue;
-            }
-            let plate = theme::stack(page, over);
-            let ink = theme::legible(run.color, plate, theme::kept(run.color, page));
+            };
+            let surface = layers.surface(page, &(from..to));
+            let ink = theme::ink_over(run.color, page, surface, plate);
             if ink == run.color {
                 continue;
             }
@@ -69,6 +166,10 @@ pub fn overdraws(runs: &[TextRun], page: Hsla, layers: &[(Range<usize>, Hsla)]) 
         at = end;
     }
     out
+}
+
+fn covers(range: &Range<usize>, piece: &Range<usize>) -> bool {
+    range.start <= piece.start && piece.end <= range.end
 }
 
 /// Draws `pieces` again over what is already painted: each row of a piece
