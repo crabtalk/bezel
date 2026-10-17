@@ -1,7 +1,7 @@
 [
   {
     "version": "0.2.17",
-    "date": "2026-10-16",
+    "date": "2026-10-18",
     "summary": "Light glass casts a shadow, so it stands off a white page, and a hovered bookmark card stays opaque.",
     "fixed": [
       "Light `Glass::Regular` casts `theme::surface_shadows`, as macOS light glass does: over a white page, such as a floating `window::content` card, its white lift and rim left it with no edge.",
