@@ -282,7 +282,7 @@ pub(super) fn bookmark(
         .border_color(theme.border)
         .bg(theme.surface_card)
         .cursor(CursorStyle::PointingHand)
-        .hover(|el| el.bg(theme.element_hover))
+        .hover(|el| el.bg(theme::over(theme.element_hover, theme.surface_card)))
         .on_click(move |_, window, cx| {
             crate::link::open(crate::Link::new(&open, base.as_deref()), window, cx)
         });
