@@ -112,3 +112,23 @@ fn venn() {
 fn ishikawa() {
     check("ishikawa");
 }
+
+#[test]
+fn journey() {
+    check("journey");
+}
+
+#[test]
+fn kanban() {
+    check("kanban");
+}
+
+#[test]
+fn gantt() {
+    check("gantt");
+}
+
+#[test]
+fn timeline() {
+    check("timeline");
+}

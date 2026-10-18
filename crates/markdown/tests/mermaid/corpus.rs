@@ -86,3 +86,23 @@ fn venn() {
 fn ishikawa() {
     draws("ishikawa-docs.json");
 }
+
+#[test]
+fn journey() {
+    draws("journey-docs.json");
+}
+
+#[test]
+fn kanban() {
+    draws("kanban-docs.json");
+}
+
+#[test]
+fn gantt() {
+    draws("gantt-docs.json");
+}
+
+#[test]
+fn timeline() {
+    draws("timeline-docs.json");
+}

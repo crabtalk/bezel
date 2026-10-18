@@ -5,9 +5,12 @@ use serde::Serialize;
 use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 
 pub mod common;
+pub mod gantt;
 pub mod git;
 pub mod info;
 pub mod ishikawa;
+pub mod journey;
+pub mod kanban;
 pub mod mindmap;
 pub mod packet;
 pub mod pie;
@@ -15,6 +18,7 @@ pub mod quadrant;
 pub mod radar;
 pub mod railroad;
 pub mod sankey;
+pub mod timeline;
 pub mod treemap;
 pub mod treeview;
 pub mod venn;
@@ -54,6 +58,7 @@ pub trait Diagram: Sync {
 #[allow(clippy::large_enum_variant)]
 pub enum Model {
     GitGraph(git::GitModel),
+    Gantt(Box<gantt::GanttDb>),
     Info(info::InfoModel),
     XyChart(xychart::XyChartModel),
     Quadrant(quadrant::QuadrantModel),
@@ -67,12 +72,16 @@ pub enum Model {
     Ishikawa(ishikawa::db::IshikawaDb),
     Railroad(railroad::db::RailroadDb),
     Venn(venn::db::VennDb),
+    Journey(journey::JourneyModel),
+    Kanban(kanban::KanbanModel),
+    Timeline(timeline::TimelineModel),
 }
 
 /// The type `kind`, when this build has it.
 pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
     Some(match kind {
         Kind::GitGraph => &git::GitGraph,
+        Kind::Gantt => &gantt::Gantt,
         Kind::Info => &info::Info,
         Kind::XyChart => &xychart::XyChart,
         Kind::QuadrantChart => &quadrant::Quadrant,
@@ -86,6 +95,9 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Ishikawa => &ishikawa::Ishikawa,
         Kind::Railroad => &railroad::Railroad,
         Kind::Venn => &venn::Venn,
+        Kind::Journey => &journey::Journey,
+        Kind::Kanban => &kanban::Kanban,
+        Kind::Timeline => &timeline::Timeline,
         _ => return None,
     })
 }

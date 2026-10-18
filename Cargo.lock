@@ -917,6 +917,7 @@ dependencies = [
  "bezel-icons",
  "bezel-theme",
  "bezel-ui",
+ "chrono",
  "indexmap",
  "pulldown-cmark",
  "serde",

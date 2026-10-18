@@ -1,6 +1,7 @@
 //! What JavaScript does with numbers and strings, where Rust's own answer
 //! differs and a drawing would come out different.
 
+pub(crate) mod date;
 pub(crate) mod re;
 
 pub(crate) use re::{Lazy, Regex};

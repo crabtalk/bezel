@@ -1,0 +1,33 @@
+[
+ {
+  "source": "journey\ntitle Adding journey diagram functionality to mermaid",
+  "model": {
+   "type": "journey",
+   "title": "Adding journey diagram functionality to mermaid",
+   "sections": [],
+   "tasks": [],
+   "currentSection": ""
+  }
+ },
+ {
+  "source": "journey\n",
+  "model": {
+   "type": "journey",
+   "sections": [],
+   "tasks": [],
+   "currentSection": ""
+  }
+ },
+ {
+  "source": "journey\n    accTitle: The title\n    section Order from website",
+  "model": {
+   "type": "journey",
+   "accTitle": "The title",
+   "sections": [
+    "Order from website"
+   ],
+   "tasks": [],
+   "currentSection": "Order from website"
+  }
+ }
+]
