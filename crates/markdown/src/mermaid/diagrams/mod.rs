@@ -7,14 +7,17 @@ use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 pub mod common;
 pub mod git;
 pub mod info;
+pub mod ishikawa;
 pub mod mindmap;
 pub mod packet;
 pub mod pie;
 pub mod quadrant;
 pub mod radar;
+pub mod railroad;
 pub mod sankey;
 pub mod treemap;
 pub mod treeview;
+pub mod venn;
 pub mod xychart;
 
 /// What a diagram type provides. `source` has been through preprocessing and
@@ -61,6 +64,9 @@ pub enum Model {
     Mindmap(mindmap::MindmapModel),
     Packet(packet::PacketModel),
     TreeView(treeview::TreeViewModel),
+    Ishikawa(ishikawa::db::IshikawaDb),
+    Railroad(railroad::db::RailroadDb),
+    Venn(venn::db::VennDb),
 }
 
 /// The type `kind`, when this build has it.
@@ -77,6 +83,9 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Mindmap => &mindmap::Mindmap,
         Kind::Packet => &packet::Packet,
         Kind::TreeView => &treeview::TreeView,
+        Kind::Ishikawa => &ishikawa::Ishikawa,
+        Kind::Railroad => &railroad::Railroad,
+        Kind::Venn => &venn::Venn,
         _ => return None,
     })
 }

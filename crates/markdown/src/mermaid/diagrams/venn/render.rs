@@ -1,0 +1,386 @@
+//! Pele's `diagrams/venn/render.ts`.
+
+use indexmap::{IndexMap, IndexSet};
+
+use super::{
+    db::{VennDb, normalize_text},
+    layout::{Circle, Spot, find_spot, layout_circles, region_path},
+    types::VennSubset,
+};
+use crate::mermaid::{
+    Config, Options, Rendered, js,
+    svg::{
+        builder::{esc_text, label_svg, num},
+        root::{Accessible, svg_document},
+        theme::{ResolvedStyle, resolve_style, series_color},
+    },
+    text::{Label, Style, layout_label},
+};
+
+const RADIUS: f64 = 100.0;
+const MAX_GROWTH: f64 = 1.6;
+
+/// A line written in a region. The id is that of a text.
+struct Line {
+    id: Option<String>,
+    raw: String,
+    size: f64,
+    base: u8,
+    label: Label,
+}
+
+struct Region {
+    sets: Vec<String>,
+    inside: Vec<usize>,
+    spot: Spot,
+    /// What is written in the region: its label first, then its texts.
+    lines: Vec<Line>,
+    style: ResolvedStyle,
+}
+
+/// `JSON.stringify` of a list of strings.
+fn json_strings(ids: &[String]) -> String {
+    let mut out = String::from("[");
+    for (i, id) in ids.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push('"');
+        for c in id.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\u{8}' => out.push_str("\\b"),
+                '\u{c}' => out.push_str("\\f"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+                c => out.push(c),
+            }
+        }
+        out.push('"');
+    }
+    out.push(']');
+    out
+}
+
+/// One key for a list of set ids. Ids may hold any character, so they are not
+/// simply joined.
+fn key_of(ids: &[String]) -> String {
+    if ids.len() == 1 {
+        ids[0].clone()
+    } else {
+        json_strings(ids)
+    }
+}
+
+pub fn render_venn(model: &VennDb, _config: &Config, options: &Options) -> Rendered {
+    let size = options.font_size.unwrap_or(16.0);
+    let small = js::round(size * 0.875);
+    let tiny = js::round(size * 0.8125);
+    let measurer = options.measurer();
+    let measure = &*measurer;
+    let pad = options.padding.unwrap_or(8.0);
+    let p = crate::mermaid::PREFIX;
+
+    let circles = layout_circles(&model.subsets);
+    let mut index: IndexMap<&str, usize> = IndexMap::new();
+    for (i, c) in circles.iter().enumerate() {
+        index.insert(&c.id, i);
+    }
+
+    // Styles for the same targets add up, later declarations winning.
+    let mut styles: IndexMap<String, IndexMap<String, String>> = IndexMap::new();
+    for style in &model.styles {
+        let merged = styles.entry(key_of(&style.targets)).or_default();
+        for (property, value) in &style.styles {
+            merged.insert(property.clone(), value.clone());
+        }
+    }
+    let style_of = |key: &str| -> ResolvedStyle {
+        let Some(declared) = styles.get(key) else {
+            return ResolvedStyle::default();
+        };
+        let list: Vec<String> = declared
+            .iter()
+            .map(|(property, value)| format!("{property}:{value}"))
+            .collect();
+        resolve_style(&list)
+    };
+
+    // Circles that touch each circle; only those can cut into a region of it.
+    let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); circles.len()];
+    for a in 0..circles.len() {
+        for b in a + 1..circles.len() {
+            if (circles[a].x - circles[b].x).hypot(circles[a].y - circles[b].y)
+                < circles[a].r + circles[b].r
+            {
+                neighbors[a].push(b);
+                neighbors[b].push(a);
+            }
+        }
+    }
+
+    // One region for each set and each stated overlap; a later statement
+    // about the same sets replaces an earlier one.
+    let mut stated: IndexMap<String, &VennSubset> = IndexMap::new();
+    for subset in &model.subsets {
+        stated.insert(key_of(&subset.sets), subset);
+    }
+    let mut regions: IndexMap<String, Region> = IndexMap::new();
+    for (key, subset) in stated {
+        let sets: Vec<String> = subset
+            .sets
+            .iter()
+            .collect::<IndexSet<_>>()
+            .into_iter()
+            .cloned()
+            .collect();
+        let inside: Vec<usize> = sets.iter().map(|id| index[id.as_str()]).collect();
+        let mut smallest = inside[0];
+        for &i in &inside {
+            if circles[i].r < circles[smallest].r {
+                smallest = i;
+            }
+        }
+        let style = style_of(&key);
+        let text = subset
+            .label
+            .clone()
+            .or_else(|| (subset.sets.len() == 1).then(|| subset.sets[0].clone()));
+        let base = (if style.bold { Style::BOLD } else { 0 })
+            | (if style.italic { Style::ITALIC } else { 0 });
+        let outside: Vec<usize> = neighbors[smallest]
+            .iter()
+            .copied()
+            .filter(|i| !inside.contains(i))
+            .collect();
+        let mut spot = find_spot(&circles, &inside, &outside);
+        // A region that other circles cover, or all but cover, is written
+        // across them instead.
+        if spot.margin < circles[smallest].r * 0.2 {
+            spot = find_spot(&circles, &inside, &[]);
+        }
+        let mut region = Region {
+            sets,
+            inside,
+            spot,
+            lines: Vec::new(),
+            style,
+        };
+        if let Some(text) = text.filter(|text| !text.is_empty()) {
+            let font_size = if region.sets.len() == 1 { size } else { small };
+            let label = layout_label(Some(&text), false, measure, font_size, 4000.0, base);
+            region.lines.push(Line {
+                id: None,
+                raw: text,
+                size: font_size,
+                base,
+                label,
+            });
+        }
+        regions.insert(key, region);
+    }
+    for node in &model.text_nodes {
+        let raw = node.label.clone().unwrap_or_else(|| node.id.clone());
+        if let Some(region) = regions.get_mut(&key_of(&node.sets)) {
+            let label = layout_label(Some(&raw), false, measure, tiny, 4000.0, 0);
+            region.lines.push(Line {
+                id: Some(node.id.clone()),
+                raw,
+                size: tiny,
+                base: 0,
+                label,
+            });
+        }
+    }
+
+    // Lengths so far are in units of the layout. The scale gives the largest
+    // circle a set radius, and grows, within limits, until every region holds
+    // what is written in it.
+    let mut largest = 0.0;
+    for c in &circles {
+        if c.r > largest {
+            largest = c.r;
+        }
+    }
+    let mut scale = if largest > 0.0 { RADIUS / largest } else { 1.0 };
+    let mut growth = 1f64;
+    for region in regions.values() {
+        if region.spot.margin <= 0.0 {
+            continue;
+        }
+        let mut width = 0f64;
+        let mut height = 0.0;
+        for line in &region.lines {
+            width = width.max(line.label.width);
+            height += line.label.height;
+        }
+        let need = width.hypot(height) / 2.0 + 4.0;
+        growth = growth.max((need / (region.spot.margin * scale)).min(MAX_GROWTH));
+    }
+    scale *= growth;
+
+    // What is still too wide for its region is wrapped to it.
+    for region in regions.values_mut() {
+        let room = (region.spot.margin * scale * 1.8).max(72.0);
+        for line in &mut region.lines {
+            if line.label.width > room {
+                line.label =
+                    layout_label(Some(&line.raw), false, measure, line.size, room, line.base);
+            }
+        }
+    }
+
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for c in &circles {
+        min_x = min_x.min((c.x - c.r) * scale);
+        min_y = min_y.min((c.y - c.r) * scale);
+        max_x = max_x.max((c.x + c.r) * scale);
+        max_y = max_y.max((c.y + c.r) * scale);
+    }
+    for region in regions.values() {
+        let mut wide = 0f64;
+        let mut tall = 0.0;
+        for line in &region.lines {
+            wide = wide.max(line.label.width);
+            tall += line.label.height;
+        }
+        min_x = min_x.min(region.spot.x * scale - wide / 2.0);
+        max_x = max_x.max(region.spot.x * scale + wide / 2.0);
+        min_y = min_y.min(region.spot.y * scale - tall / 2.0);
+        max_y = max_y.max(region.spot.y * scale + tall / 2.0);
+    }
+    if circles.is_empty() {
+        min_x = 0.0;
+        min_y = 0.0;
+        max_x = 0.0;
+        max_y = 0.0;
+    }
+
+    let title_text = model.title.as_deref().map(normalize_text);
+    let title = layout_label(
+        title_text.as_deref(),
+        false,
+        measure,
+        size,
+        4000.0,
+        Style::BOLD,
+    );
+    let title_height = if title.height > 0.0 {
+        title.height + 12.0
+    } else {
+        0.0
+    };
+    let inner = (max_x - min_x).max(title.width);
+    let ox = pad + (inner - (max_x - min_x)) / 2.0 - min_x;
+    let oy = pad + title_height - min_y;
+    let width = (inner + 2.0 * pad).ceil();
+    let height = (max_y - min_y + title_height + 2.0 * pad).ceil();
+    let placed: Vec<Circle> = circles
+        .iter()
+        .map(|c| Circle {
+            id: c.id.clone(),
+            x: c.x * scale + ox,
+            y: c.y * scale + oy,
+            r: c.r * scale,
+        })
+        .collect();
+
+    let mut sets = String::new();
+    for (i, c) in placed.iter().enumerate() {
+        let color = series_color(i as i64);
+        let shape = regions
+            .get(&c.id)
+            .map_or("", |region| region.style.shape.as_str());
+        sets += &format!(
+            "<circle class=\"{p}-venn-set\" data-id=\"{}\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{color}\" fill-opacity=\"0.2\" stroke=\"{color}\"{shape}/>",
+            esc_text(&c.id),
+            num(c.x),
+            num(c.y),
+            num(c.r)
+        );
+    }
+
+    let mut overlaps = String::new();
+    let mut labels = String::new();
+    for region in regions.values() {
+        let id = esc_text(&region.sets.join("|"));
+        // An overlap is only drawn when a style gives it a look of its own;
+        // otherwise the circles show it.
+        if region.sets.len() > 1 && !region.style.shape.is_empty() {
+            let outline: Vec<Circle> = region.inside.iter().map(|&i| placed[i].clone()).collect();
+            let d = region_path(&outline, num);
+            if !d.is_empty() {
+                overlaps += &format!(
+                    "<path class=\"{p}-venn-overlap\" data-id=\"{id}\" d=\"{d}\" fill=\"none\"{}/>",
+                    region.style.shape
+                );
+            }
+        }
+        let mut total = 0.0;
+        for line in &region.lines {
+            total += line.label.height;
+        }
+        if total == 0.0 {
+            continue;
+        }
+        let x = region.spot.x * scale + ox;
+        let mut y = region.spot.y * scale + oy - total / 2.0;
+        let mut content = String::new();
+        for line in &region.lines {
+            let attrs = match &line.id {
+                None => {
+                    let font = if line.size == size {
+                        String::new()
+                    } else {
+                        format!(" font-size=\"{}\"", js::num_str(line.size))
+                    };
+                    format!(" class=\"{p}-label\"{font}{}", region.style.text)
+                }
+                Some(text_id) => format!(
+                    " class=\"{p}-venn-text\" data-id=\"{}\" font-size=\"{}\" fill=\"var(--_m)\"{}",
+                    esc_text(text_id),
+                    js::num_str(tiny),
+                    style_of(text_id).text
+                ),
+            };
+            content += &label_svg(&line.label, x, y + line.label.height / 2.0, &attrs);
+            y += line.label.height;
+        }
+        labels += &format!("<g class=\"{p}-venn-region\" data-id=\"{id}\">{content}</g>");
+    }
+
+    let mut body = label_svg(
+        &title,
+        width / 2.0,
+        pad + title.height / 2.0,
+        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    );
+    body += &format!("<g class=\"{p}-venn-sets\">{sets}</g>");
+    if !overlaps.is_empty() {
+        body += &format!("<g class=\"{p}-venn-overlaps\">{overlaps}</g>");
+    }
+    if !labels.is_empty() {
+        body += &format!("<g class=\"{p}-venn-labels\">{labels}</g>");
+    }
+    let svg = svg_document(
+        "venn",
+        width,
+        height,
+        size,
+        options,
+        Accessible::default(),
+        &body,
+    );
+    Rendered {
+        svg,
+        width,
+        height,
+        links: Vec::new(),
+    }
+}

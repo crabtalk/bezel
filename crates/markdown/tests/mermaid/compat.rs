@@ -97,3 +97,18 @@ fn git() {
 fn mindmap() {
     check("mindmap");
 }
+
+#[test]
+fn railroad() {
+    check("railroad");
+}
+
+#[test]
+fn venn() {
+    check("venn");
+}
+
+#[test]
+fn ishikawa() {
+    check("ishikawa");
+}

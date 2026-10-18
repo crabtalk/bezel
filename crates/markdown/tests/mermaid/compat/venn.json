@@ -1,0 +1,713 @@
+[
+ {
+  "source": "venn-beta\n          title foo bar\n          set A\n          set B\n          union A,B\n      ",
+  "model": {
+   "type": "venn",
+   "title": "foo bar",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 2.5
+    }
+   ],
+   "textNodes": [],
+   "styles": [],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": true
+  }
+ },
+ {
+  "source": "venn-beta\n          set A[\"Alpha\"]\n          set B[\"Beta\"]\n          union A,B[\"AB\"]\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10,
+     "label": "Alpha"
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10,
+     "label": "Beta"
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 2.5,
+     "label": "AB"
+    }
+   ],
+   "textNodes": [],
+   "styles": [],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": true
+  }
+ },
+ {
+  "source": "venn-beta\n          set A[Alpha]\n          set B[Beta]\n          union A,B[AB]\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10,
+     "label": "Alpha"
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10,
+     "label": "Beta"
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 2.5,
+     "label": "AB"
+    }
+   ],
+   "textNodes": [],
+   "styles": [],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": true
+  }
+ },
+ {
+  "source": "venn-beta\n          set A:20\n          set B:12\n          union A,B:3\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 20
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 12
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 3
+    }
+   ],
+   "textNodes": [],
+   "styles": [],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": true
+  }
+ },
+ {
+  "source": "venn-beta\n          title foo bar\n          set A[\"Alpha\"]:20\n          set B[\"Beta\"]:12\n          set C[\"Gamma\"]:30\n          union A,B[\"AB\"]:5.3\n          union C,A,B:1\n      ",
+  "model": {
+   "type": "venn",
+   "title": "foo bar",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 20,
+     "label": "Alpha"
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 12,
+     "label": "Beta"
+    },
+    {
+     "sets": [
+      "C"
+     ],
+     "size": 30,
+     "label": "Gamma"
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 5.3,
+     "label": "AB"
+    },
+    {
+     "sets": [
+      "A",
+      "B",
+      "C"
+     ],
+     "size": 1
+    }
+   ],
+   "textNodes": [],
+   "styles": [],
+   "known": [
+    "A",
+    "B",
+    "C"
+   ],
+   "current": [
+    "A",
+    "B",
+    "C"
+   ],
+   "indent": true
+  }
+ },
+ {
+  "source": "venn-beta\n          set A\n            text A1[\"foo bar\"]\n          set B\n            text B1[\"hello, world\"]\n          union A,B\n            text AB1[\"shared note\"]\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 2.5
+    }
+   ],
+   "textNodes": [
+    {
+     "sets": [
+      "A"
+     ],
+     "id": "A1",
+     "label": "foo bar"
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "id": "B1",
+     "label": "hello, world"
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "id": "AB1",
+     "label": "shared note"
+    }
+   ],
+   "styles": [],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": true
+  }
+ },
+ {
+  "source": "venn-beta\n          set A[\"Frontend\"]\n            text A1\n            text A2\n          set B[\"Backend\"]\n            text B1\n          union A,B[\"APIs\"]\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10,
+     "label": "Frontend"
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10,
+     "label": "Backend"
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 2.5,
+     "label": "APIs"
+    }
+   ],
+   "textNodes": [
+    {
+     "sets": [
+      "A"
+     ],
+     "id": "A1"
+    },
+    {
+     "sets": [
+      "A"
+     ],
+     "id": "A2"
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "id": "B1"
+    }
+   ],
+   "styles": [],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": true
+  }
+ },
+ {
+  "source": "venn-beta\n          set A\n          set B\n          union A,B\n          style A fill:#ff6b6b\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 2.5
+    }
+   ],
+   "textNodes": [],
+   "styles": [
+    {
+     "targets": [
+      "A"
+     ],
+     "styles": {
+      "fill": "#ff6b6b"
+     }
+    }
+   ],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": false
+  }
+ },
+ {
+  "source": "venn-beta\n          set A\n          set B\n          union A,B\n          style A,B color:#333\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 2.5
+    }
+   ],
+   "textNodes": [],
+   "styles": [
+    {
+     "targets": [
+      "A",
+      "B"
+     ],
+     "styles": {
+      "color": "#333"
+     }
+    }
+   ],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": false
+  }
+ },
+ {
+  "source": "venn-beta\n          set A\n            text A1[\"React\"]\n          style A1 color:red\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10
+    }
+   ],
+   "textNodes": [
+    {
+     "sets": [
+      "A"
+     ],
+     "id": "A1",
+     "label": "React"
+    }
+   ],
+   "styles": [
+    {
+     "targets": [
+      "A1"
+     ],
+     "styles": {
+      "color": "red"
+     }
+    }
+   ],
+   "known": [
+    "A"
+   ],
+   "current": [
+    "A"
+   ],
+   "indent": false
+  }
+ },
+ {
+  "source": "venn-beta\n          set A\n          set B\n          union A,B\n          style A fill:#ff6b6b, color:#333\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 2.5
+    }
+   ],
+   "textNodes": [],
+   "styles": [
+    {
+     "targets": [
+      "A"
+     ],
+     "styles": {
+      "fill": "#ff6b6b",
+      "color": "#333"
+     }
+    }
+   ],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": false
+  }
+ },
+ {
+  "source": "venn-beta\n          set A\n          set B\n          style A fill:rgb(255, 0, 128)\n          style B fill:rgba(255, 0, 128, 0.5)\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 10
+    }
+   ],
+   "textNodes": [],
+   "styles": [
+    {
+     "targets": [
+      "A"
+     ],
+     "styles": {
+      "fill": "rgb(255, 0, 128)"
+     }
+    },
+    {
+     "targets": [
+      "B"
+     ],
+     "styles": {
+      "fill": "rgba(255, 0, 128, 0.5)"
+     }
+    }
+   ],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "B"
+   ],
+   "indent": false
+  }
+ },
+ {
+  "source": "venn-beta\n          set A[\"Frontend\"]:20\n            text A1[\"React\"]\n          set B[\"Backend\"]:12\n          union A,B[\"Shared\"]:3\n            text AB1[\"OpenAPI\"]\n          style A fill:#ff6b6b\n          style A,B color:#333\n          style A1 color:red\n      ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "A"
+     ],
+     "size": 20,
+     "label": "Frontend"
+    },
+    {
+     "sets": [
+      "B"
+     ],
+     "size": 12,
+     "label": "Backend"
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "size": 3,
+     "label": "Shared"
+    }
+   ],
+   "textNodes": [
+    {
+     "sets": [
+      "A"
+     ],
+     "id": "A1",
+     "label": "React"
+    },
+    {
+     "sets": [
+      "A",
+      "B"
+     ],
+     "id": "AB1",
+     "label": "OpenAPI"
+    }
+   ],
+   "styles": [
+    {
+     "targets": [
+      "A"
+     ],
+     "styles": {
+      "fill": "#ff6b6b"
+     }
+    },
+    {
+     "targets": [
+      "A",
+      "B"
+     ],
+     "styles": {
+      "color": "#333"
+     }
+    },
+    {
+     "targets": [
+      "A1"
+     ],
+     "styles": {
+      "color": "red"
+     }
+    }
+   ],
+   "known": [
+    "A",
+    "B"
+   ],
+   "current": [
+    "A",
+    "B"
+   ],
+   "indent": false
+  }
+ },
+ {
+  "source": "venn-beta\n        set A,B\n    ",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n        set A,B\n-------------^\nExpecting 'EOF', 'NEWLINE', 'TITLE', 'SET', 'UNION', 'TEXT', 'INDENT_TEXT', 'STYLE', got 'COMMA'"
+  }
+ },
+ {
+  "source": "venn-beta\n        union A\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "union requires multiple identifiers"
+  }
+ },
+ {
+  "source": "venn-beta\n        set Foo\n        union Foo,Buz\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "unknown set identifier: Buz"
+  }
+ },
+ {
+  "source": "venn-beta\n        set \"Foo Bar\"\n        set Buz\n        union \"Foo Bar\",Buz\n    ",
+  "model": {
+   "type": "venn",
+   "subsets": [
+    {
+     "sets": [
+      "Foo Bar"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "Buz"
+     ],
+     "size": 10
+    },
+    {
+     "sets": [
+      "Buz",
+      "Foo Bar"
+     ],
+     "size": 2.5
+    }
+   ],
+   "textNodes": [],
+   "styles": [],
+   "known": [
+    "Foo Bar",
+    "Buz"
+   ],
+   "current": [
+    "Buz",
+    "Foo Bar"
+   ],
+   "indent": true
+  }
+ }
+]

@@ -1,0 +1,189 @@
+[
+ {
+  "source": "ishikawa-beta\n    Blurry Photo\n        Process\n            Out of focus\n        User\n            Shaky hands\n",
+  "model": {
+   "type": "ishikawa",
+   "root": {
+    "text": "Blurry Photo",
+    "children": [
+     {
+      "text": "Process",
+      "children": [
+       {
+        "text": "Out of focus",
+        "children": []
+       }
+      ]
+     },
+     {
+      "text": "User",
+      "children": [
+       {
+        "text": "Shaky hands",
+        "children": []
+       }
+      ]
+     }
+    ]
+   },
+   "stack": [
+    {
+     "level": 0,
+     "node": {
+      "text": "Blurry Photo",
+      "children": [
+       {
+        "text": "Process",
+        "children": [
+         {
+          "text": "Out of focus",
+          "children": []
+         }
+        ]
+       },
+       {
+        "text": "User",
+        "children": [
+         {
+          "text": "Shaky hands",
+          "children": []
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "level": 1,
+     "node": {
+      "text": "User",
+      "children": [
+       {
+        "text": "Shaky hands",
+        "children": []
+       }
+      ]
+     }
+    },
+    {
+     "level": 5,
+     "node": {
+      "text": "Shaky hands",
+      "children": []
+     }
+    }
+   ],
+   "baseLevel": 8
+  }
+ },
+ {
+  "source": "ishikawa-beta\nProblem\nCause A\n  Subcause A1\nCause B\n",
+  "model": {
+   "type": "ishikawa",
+   "root": {
+    "text": "Problem",
+    "children": [
+     {
+      "text": "Cause A",
+      "children": [
+       {
+        "text": "Subcause A1",
+        "children": []
+       }
+      ]
+     },
+     {
+      "text": "Cause B",
+      "children": []
+     }
+    ]
+   },
+   "stack": [
+    {
+     "level": 0,
+     "node": {
+      "text": "Problem",
+      "children": [
+       {
+        "text": "Cause A",
+        "children": [
+         {
+          "text": "Subcause A1",
+          "children": []
+         }
+        ]
+       },
+       {
+        "text": "Cause B",
+        "children": []
+       }
+      ]
+     }
+    },
+    {
+     "level": 1,
+     "node": {
+      "text": "Cause B",
+      "children": []
+     }
+    }
+   ],
+   "baseLevel": 0
+  }
+ },
+ {
+  "source": "ishikawa-beta\n    Problem\nCause A\n  Subcause A1\nCause B\n",
+  "model": {
+   "type": "ishikawa",
+   "root": {
+    "text": "Problem",
+    "children": [
+     {
+      "text": "Cause A",
+      "children": [
+       {
+        "text": "Subcause A1",
+        "children": []
+       }
+      ]
+     },
+     {
+      "text": "Cause B",
+      "children": []
+     }
+    ]
+   },
+   "stack": [
+    {
+     "level": 0,
+     "node": {
+      "text": "Problem",
+      "children": [
+       {
+        "text": "Cause A",
+        "children": [
+         {
+          "text": "Subcause A1",
+          "children": []
+         }
+        ]
+       },
+       {
+        "text": "Cause B",
+        "children": []
+       }
+      ]
+     }
+    },
+    {
+     "level": 1,
+     "node": {
+      "text": "Cause B",
+      "children": []
+     }
+    }
+   ],
+   "baseLevel": 0
+  }
+ }
+]

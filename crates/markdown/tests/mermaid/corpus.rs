@@ -71,3 +71,18 @@ fn git() {
 fn mindmap() {
     draws("mindmap-docs.json");
 }
+
+#[test]
+fn railroad() {
+    draws("railroad-docs.json");
+}
+
+#[test]
+fn venn() {
+    draws("venn-docs.json");
+}
+
+#[test]
+fn ishikawa() {
+    draws("ishikawa-docs.json");
+}
