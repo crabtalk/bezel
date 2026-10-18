@@ -1,0 +1,541 @@
+//! Pele's `diagrams/mindmap/render.ts`.
+
+use super::db::{MindmapModel, MindmapNode};
+use crate::mermaid::{
+    Config, Options, Rendered, Value,
+    diagrams::common::{
+        fit_width::{title_room, turn_to_fit},
+        icon::icon_svg,
+    },
+    js,
+    svg::{
+        builder::{esc_text, label_svg, num},
+        root::{Accessible, svg_document},
+        shapes::{draw_shape, shape_inset, shape_size},
+        theme::{class_names, series_color},
+    },
+    text::{Label, Style, icon_markup, layout_label},
+};
+
+/// Indexed by Mermaid's node type. A node without delimiters is text on a
+/// line, except the root.
+const SHAPES: [&str; 7] = ["", "rounded", "rect", "circle", "cloud", "bang", "hex"];
+const ROOT_SHAPE: &str = "stadium";
+
+const GAP_X: f64 = 36.0;
+const GAP_Y: f64 = 8.0;
+/// Between two subtrees, of which at least one has children of its own.
+const GROUP_GAP: f64 = 18.0;
+const BRANCH_GAP_X: f64 = 52.0;
+const BRANCH_GAP_Y: f64 = 28.0;
+const TEXT_PAD: f64 = 6.0;
+const PILL_PAD: f64 = 12.0;
+const TINT: f64 = 0.22;
+const ICON_GAP: f64 = 6.0;
+/// Running down, each level is set in by this much, and links leave a node
+/// this far from its left edge.
+const INDENT: f64 = 28.0;
+const STEM: f64 = 12.0;
+const BEND: f64 = 8.0;
+const ROW_GAP: f64 = 10.0;
+
+/// A label with each line starting at `left`, for an outline, where centered
+/// lines would look ragged.
+fn left_label(label: &Label, left: f64, cy: f64) -> String {
+    let p = crate::mermaid::PREFIX;
+    let attrs = format!(" class=\"{p}-label\"");
+    if label.lines.len() < 2 {
+        return label_svg(label, left + label.width / 2.0, cy, &attrs);
+    }
+    let mut out = String::new();
+    let count = label.lines.len() as f64;
+    for (k, line) in label.lines.iter().enumerate() {
+        let width = label.widths[k];
+        let one = Label {
+            lines: vec![line.clone()],
+            widths: vec![width],
+            width,
+            height: label.line_height,
+            size: label.size,
+            line_height: label.line_height,
+        };
+        out.push_str(&label_svg(
+            &one,
+            left + width / 2.0,
+            cy + (k as f64 - (count - 1.0) / 2.0) * label.line_height,
+            &attrs,
+        ));
+    }
+    out
+}
+
+pub fn render_mindmap(model: &MindmapModel, config: &Config, options: &Options) -> Rendered {
+    turn_to_fit(options, |down| draw(model, config, options, down))
+}
+
+/// Where each subtree sits among its siblings: `rel` is a subtree's offset,
+/// `own` the node's offset inside its band, `kids` the offset of its
+/// children's bands, `extent` the height of its band.
+struct Bands {
+    extent: Vec<f64>,
+    rel: Vec<f64>,
+    own: Vec<f64>,
+    kids: Vec<f64>,
+    stacked: f64,
+}
+
+impl Bands {
+    /// Stacks subtrees top to bottom and returns the height at which their
+    /// parent's anchor belongs.
+    fn stack(
+        &mut self,
+        nodes: &[MindmapNode],
+        anchor: &[f64],
+        list: &[usize],
+        from: usize,
+        to: usize,
+        gap: f64,
+    ) -> f64 {
+        let mut y = 0.0;
+        let mut last = 0.0;
+        for k in from..to {
+            let c = list[k];
+            self.rel[c] = y;
+            let grouped = !nodes[c].children.is_empty()
+                || (k + 1 < to && !nodes[list[k + 1]].children.is_empty());
+            last = if grouped { gap.max(GROUP_GAP) } else { gap };
+            y += self.extent[c] + last;
+        }
+        self.stacked = y - last;
+        let a = list[from];
+        let b = list[to - 1];
+        (self.rel[a] + self.own[a] + anchor[a] + self.rel[b] + self.own[b] + anchor[b]) / 2.0
+    }
+}
+
+/// `down` draws the map as an outline: the root at the top, and each level
+/// set in under its parent. It is far narrower than branches spreading to
+/// both sides, and as tall as it needs to be.
+fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) -> Rendered {
+    let p = crate::mermaid::PREFIX;
+    let size = options.font_size.unwrap_or(16.0);
+    let measure = options.measurer();
+    let pad = options.padding.unwrap_or(8.0);
+    let wrap = match config
+        .section("mindmap")
+        .and_then(|mindmap| mindmap.get("maxNodeWidth"))
+    {
+        Some(Value::Number(max)) if *max > 0.0 => max.min(2000.0),
+        _ => 200.0,
+    };
+    let glyph = size * 1.25;
+
+    let nodes = &model.nodes;
+    let n = nodes.len();
+    let mut parent = vec![0usize; n];
+    let mut depth = vec![0i32; n];
+    for i in 0..n {
+        for &child in &nodes[i].children {
+            parent[child] = i;
+            depth[child] = depth[i] + 1;
+        }
+    }
+    // An outline has the width the host gives it, less what its level is set
+    // in.
+    let room = match options.max_width {
+        Some(max) if down && max > 0.0 => max - 2.0 * pad,
+        _ => f64::INFINITY,
+    };
+    let mut labels: Vec<Label> = Vec::with_capacity(n);
+    let mut shapes: Vec<&str> = Vec::with_capacity(n);
+    let mut w = vec![0.0; n];
+    let mut h = vec![0.0; n];
+    let mut dy = vec![0.0; n];
+    // Where links meet the node, measured down from its top: its middle.
+    let mut anchor = vec![0.0; n];
+    // Whether the host has the node's icon. One it does not have takes no
+    // room.
+    let mut drawn = vec![false; n];
+
+    for i in 0..n {
+        let node = &nodes[i];
+        drawn[i] = node
+            .icon
+            .as_deref()
+            .is_some_and(|icon| !icon_markup(icon).is_empty());
+        let fit = wrap.min(72f64.max(
+            room - f64::from(depth[i]) * INDENT
+                - 2.0 * TEXT_PAD
+                - if drawn[i] { glyph + ICON_GAP } else { 0.0 },
+        ));
+        let label = layout_label(Some(&node.descr), true, &*measure, size, fit, 0);
+        let tw = label.width
+            + if drawn[i] {
+                glyph + if label.width > 0.0 { ICON_GAP } else { 0.0 }
+            } else {
+                0.0
+            };
+        let th = label.height.max(js::round(size * 1.5));
+        let mut shape = usize::try_from(node.kind)
+            .ok()
+            .and_then(|kind| SHAPES.get(kind).copied())
+            .filter(|shape| !shape.is_empty())
+            .unwrap_or(if i == 0 { ROOT_SHAPE } else { "" });
+        // In an outline the root heads a column, and the trunk drops from
+        // under its left end. A circle or a cloud would stand wide of that, so
+        // the root is a pill there unless it is a box already.
+        if down && i == 0 && shape != "rect" && shape != "rounded" {
+            shape = ROOT_SHAPE;
+        }
+        shapes.push(shape);
+        if shape.is_empty() {
+            // A node with no shape of its own is plain text when it ends a
+            // branch, and text in a tinted pill when the branch goes on from
+            // it, which sets the levels apart.
+            let pill = !node.children.is_empty();
+            w[i] = tw + 2.0 * if pill { PILL_PAD } else { TEXT_PAD };
+            h[i] = th + if pill { 6.0 } else { 0.0 };
+            anchor[i] = h[i] / 2.0;
+        } else {
+            let s = shape_size(shape, tw, th);
+            w[i] = s.w;
+            h[i] = s.h;
+            dy[i] = s.dy;
+            anchor[i] = s.h / 2.0;
+        }
+        labels.push(label);
+    }
+
+    let mut bands = Bands {
+        extent: vec![0.0; n],
+        rel: vec![0.0; n],
+        own: vec![0.0; n],
+        kids: vec![0.0; n],
+        stacked: 0.0,
+    };
+
+    // Nodes are in depth-first order, so going backwards visits children
+    // before their parent.
+    for i in (1..n).rev() {
+        let children = &nodes[i].children;
+        if children.is_empty() {
+            bands.extent[i] = h[i];
+            continue;
+        }
+        let top = bands.stack(nodes, &anchor, children, 0, children.len(), GAP_Y) - anchor[i];
+        let low = 0f64.min(top);
+        bands.extent[i] = bands.stacked.max(top + h[i]) - low;
+        bands.own[i] = top - low;
+        bands.kids[i] = -low;
+    }
+
+    let mut x = vec![0.0; n];
+    let mut y = vec![0.0; n];
+    let mut band = vec![0.0; n];
+    let mut side = vec![0.0f64; n];
+    // Running down: how far the trunk under each node has been drawn.
+    let mut trunk = vec![0.0; n];
+
+    if down {
+        // Nodes are in depth-first order, which is the order of an outline's
+        // rows.
+        let mut row = 0.0;
+        for i in 0..n {
+            if i > 0 && parent[i] == 0 {
+                row += ROW_GAP;
+            }
+            x[i] = f64::from(depth[i]) * INDENT + w[i] / 2.0;
+            y[i] = row;
+            row += h[i] + ROW_GAP;
+        }
+    } else if n > 0 {
+        // The first branches go right and the rest left, split where the two
+        // sides are closest in height.
+        let branches = &nodes[0].children;
+        let count = branches.len();
+        let mut total = 0.0;
+        for &branch in branches {
+            total += bands.extent[branch];
+        }
+        let mut split = count;
+        let mut best = f64::INFINITY;
+        let mut right = 0.0;
+        for k in 1..count {
+            right += bands.extent[branches[k - 1]];
+            let diff = (2.0 * right - total + (2.0 * k as f64 - count as f64) * BRANCH_GAP_Y).abs();
+            if diff < best {
+                best = diff;
+                split = k;
+            }
+        }
+        let (mut from, mut to, mut dir) = (0, split, 1.0);
+        while from < count {
+            let middle = bands.stack(nodes, &anchor, branches, from, to, BRANCH_GAP_Y);
+            for &c in &branches[from..to] {
+                band[c] = bands.rel[c] - middle;
+                side[c] = dir;
+            }
+            (from, to, dir) = (to, count, -1.0);
+        }
+        y[0] = -h[0] / 2.0;
+        for i in 0..n {
+            if i > 0 {
+                y[i] = band[i] + bands.own[i];
+            }
+            for &c in &nodes[i].children {
+                if i > 0 {
+                    side[c] = side[i];
+                    band[c] = band[i] + bands.kids[i] + bands.rel[c];
+                }
+                x[c] = x[i]
+                    + side[c]
+                        * (w[i] / 2.0 + if i > 0 { GAP_X } else { BRANCH_GAP_X } + w[c] / 2.0);
+            }
+        }
+    }
+
+    let mut min_x = 0f64;
+    let mut max_x = 0f64;
+    let mut min_y = 0f64;
+    let mut max_y = 0f64;
+    let mut out = String::new();
+    let mut edges = String::new();
+    let mut body = String::new();
+    let mut color = String::new();
+    let flush = |out: &mut String,
+                 edges: &mut String,
+                 body: &mut String,
+                 color: &str,
+                 section: Option<usize>| {
+        if body.is_empty() {
+            return;
+        }
+        out.push_str(&format!(
+            "<g class=\"{p}-branch {p}-section-{}\"><g class=\"{p}-edges\" fill=\"none\" stroke=\"{color}\" stroke-width=\"1.5\">{edges}</g>{body}</g>",
+            section.unwrap_or(0)
+        ));
+        edges.clear();
+        body.clear();
+    };
+
+    // The root is drawn last, on top of the links that leave it.
+    for k in 1..=n {
+        let i = k % n;
+        let node = &nodes[i];
+        let shape = shapes[i];
+        let label = &labels[i];
+        let cx = x[i];
+        let top = y[i];
+        min_x = min_x.min(cx - w[i] / 2.0);
+        max_x = max_x.max(cx + w[i] / 2.0);
+        min_y = min_y.min(top);
+        max_y = max_y.max(top + h[i]);
+
+        if i == 0 || parent[i] == 0 {
+            flush(
+                &mut out,
+                &mut edges,
+                &mut body,
+                &color,
+                nodes[k - 1].section,
+            );
+        }
+        if i > 0 && down {
+            if parent[i] == 0 {
+                color = series_color(node.section.unwrap_or(0) as i64);
+            }
+            let p = parent[i];
+            // The link drops from under its parent and turns in to the node's
+            // left. It starts where the link to the sibling above turned in, so
+            // each stretch of a shared trunk has one color. Under the root's
+            // rounded end, the trunk starts where that end has come down to the
+            // bottom.
+            let stem = if p == 0 {
+                STEM.max(h[0] / 2.0).min(INDENT - BEND)
+            } else {
+                STEM
+            };
+            let x1 = x[p] - w[p] / 2.0 + stem.min(w[p] / 2.0);
+            let y1 = if js::truthy(trunk[p]) {
+                trunk[p]
+            } else {
+                y[p] + h[p]
+            };
+            let left = cx - w[i] / 2.0;
+            let x2 = left
+                + if shape.is_empty() {
+                    0.0
+                } else {
+                    shape_inset(shape, w[i], h[i], 3, 0.0)
+                };
+            let y2 = top + anchor[i];
+            let bend = 0f64.max(BEND.min(x2 - x1).min(y2 - y1));
+            // The next link carries on from where this one leaves the trunk,
+            // so the trunk has no gap.
+            trunk[p] = y2 - bend;
+            edges.push_str(&format!(
+                "<path class=\"{}-edge\" d=\"M{},{}V{}Q{},{} {},{}H{}\"/>",
+                crate::mermaid::PREFIX,
+                num(x1),
+                num(y1),
+                num(y2 - bend),
+                num(x1),
+                num(y2),
+                num(x1 + bend),
+                num(y2),
+                num(x2)
+            ));
+        } else if i > 0 {
+            if parent[i] == 0 {
+                color = series_color(node.section.unwrap_or(0) as i64);
+            }
+            let p = parent[i];
+            let dir = side[i];
+            let from = if dir > 0.0 { 1 } else { 3 };
+            let x1 = x[p]
+                + dir
+                    * (w[p] / 2.0
+                        - if shapes[p].is_empty() {
+                            0.0
+                        } else {
+                            shape_inset(shapes[p], w[p], h[p], from, 0.0)
+                        });
+            let y1 = y[p] + anchor[p];
+            let near = cx - (dir * w[i]) / 2.0;
+            let x2 = near
+                + if shape.is_empty() {
+                    0.0
+                } else {
+                    dir * shape_inset(shape, w[i], h[i], 4 - from, 0.0)
+                };
+            let y2 = top + anchor[i];
+            let mid = num((x1 + x2) / 2.0);
+            edges.push_str(&format!(
+                "<path class=\"{}-edge\" d=\"M{},{}C{mid},{} {mid},{} {},{}\"/>",
+                crate::mermaid::PREFIX,
+                num(x1),
+                num(y1),
+                num(y1),
+                num(y2),
+                num(x2),
+                num(y2)
+            ));
+        }
+
+        let pill = shape.is_empty() && !node.children.is_empty();
+        // Every node off the root is filled with a tint of its branch's color
+        // and outlined in it, whether its shape was given in the source or is
+        // the pill of a node that branches. The root is neutral.
+        let tint = format!(
+            " fill=\"{color}\" fill-opacity=\"{}\" stroke=\"{color}\"",
+            js::num_str(TINT)
+        );
+        let mut inner = if !shape.is_empty() {
+            if i > 0 {
+                draw_shape(shape, w[i], h[i], &tint, &format!(" stroke=\"{color}\""))
+            } else {
+                draw_shape(
+                    shape,
+                    w[i],
+                    h[i],
+                    " fill=\"var(--_s)\" stroke=\"var(--_b)\"",
+                    " stroke=\"var(--_b)\"",
+                )
+            }
+        } else if pill {
+            format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\"{tint}/>",
+                num(-w[i] / 2.0),
+                num(-h[i] / 2.0),
+                num(w[i]),
+                num(h[i]),
+                num(h[i] / 2.0)
+            )
+        } else {
+            String::new()
+        };
+        let mut shift = 0.0;
+        if let Some(icon) = node.icon.as_deref().filter(|icon| !icon.is_empty())
+            && drawn[i]
+        {
+            shift = (glyph + if label.width > 0.0 { ICON_GAP } else { 0.0 }) / 2.0;
+            inner.push_str(&icon_svg(
+                icon,
+                -shift - label.width / 2.0,
+                dy[i] - glyph / 2.0,
+                glyph,
+            ));
+        }
+        let kind = if !shape.is_empty() {
+            shape
+        } else if pill {
+            "branch"
+        } else {
+            "text"
+        };
+        let group = format!(
+            "<g class=\"{p}-node {p}-shape-{kind}{}{}\" data-id=\"{}\" transform=\"translate({},{})\">{inner}{}</g>",
+            if i > 0 {
+                String::new()
+            } else {
+                format!(" {p}-root")
+            },
+            class_names(node.class.as_deref().unwrap_or("")),
+            esc_text(&node.node_id),
+            num(cx),
+            num(top + h[i] / 2.0),
+            if down && shape.is_empty() {
+                left_label(label, shift - label.width / 2.0, dy[i])
+            } else {
+                label_svg(label, shift, dy[i], &format!(" class=\"{p}-label\""))
+            }
+        );
+        if i > 0 {
+            body.push_str(&group);
+        } else {
+            out.push_str(&group);
+        }
+    }
+
+    let title = layout_label(
+        model.title.as_deref(),
+        false,
+        &*measure,
+        size,
+        title_room(options),
+        Style::BOLD,
+    );
+    let title_height = if title.height > 0.0 {
+        title.height + 16.0
+    } else {
+        0.0
+    };
+    let width = (max_x - min_x).max(title.width);
+    let total_width = (width + 2.0 * pad).ceil();
+    let total_height = (max_y - min_y + title_height + 2.0 * pad).ceil();
+    let content = label_svg(
+        &title,
+        total_width / 2.0,
+        pad + title.height / 2.0,
+        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    ) + &format!(
+        "<g transform=\"translate({},{})\">{out}</g>",
+        num(pad - min_x + (width - max_x + min_x) / 2.0),
+        num(pad + title_height - min_y)
+    );
+
+    Rendered {
+        svg: svg_document(
+            "mindmap",
+            total_width,
+            total_height,
+            size,
+            options,
+            Accessible::default(),
+            &content,
+        ),
+        width: total_width,
+        height: total_height,
+        links: Vec::new(),
+    }
+}

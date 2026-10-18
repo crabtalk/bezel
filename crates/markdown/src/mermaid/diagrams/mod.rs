@@ -5,12 +5,16 @@ use serde::Serialize;
 use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 
 pub mod common;
+pub mod git;
 pub mod info;
+pub mod mindmap;
+pub mod packet;
 pub mod pie;
 pub mod quadrant;
 pub mod radar;
 pub mod sankey;
 pub mod treemap;
+pub mod treeview;
 pub mod xychart;
 
 /// What a diagram type provides. `source` has been through preprocessing and
@@ -46,6 +50,7 @@ pub trait Diagram: Sync {
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum Model {
+    GitGraph(git::GitModel),
     Info(info::InfoModel),
     XyChart(xychart::XyChartModel),
     Quadrant(quadrant::QuadrantModel),
@@ -53,11 +58,15 @@ pub enum Model {
     Treemap(treemap::TreemapModel),
     Radar(radar::RadarModel),
     Pie(pie::PieModel),
+    Mindmap(mindmap::MindmapModel),
+    Packet(packet::PacketModel),
+    TreeView(treeview::TreeViewModel),
 }
 
 /// The type `kind`, when this build has it.
 pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
     Some(match kind {
+        Kind::GitGraph => &git::GitGraph,
         Kind::Info => &info::Info,
         Kind::XyChart => &xychart::XyChart,
         Kind::QuadrantChart => &quadrant::Quadrant,
@@ -65,6 +74,9 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Treemap => &treemap::Treemap,
         Kind::Radar => &radar::Radar,
         Kind::Pie => &pie::Pie,
+        Kind::Mindmap => &mindmap::Mindmap,
+        Kind::Packet => &packet::Packet,
+        Kind::TreeView => &treeview::TreeView,
         _ => return None,
     })
 }

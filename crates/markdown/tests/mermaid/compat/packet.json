@@ -1,0 +1,258 @@
+[
+ {
+  "source": "packet diagrams",
+  "error": {
+   "code": "syntax",
+   "message": "Lexical error on line 1. Unrecognized text.\npacket diagrams\n-------^"
+  }
+ },
+ {
+  "source": "packet-beta",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": []
+  }
+ },
+ {
+  "source": "packet",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": []
+  }
+ },
+ {
+  "source": "packet\n    title Packet diagram\n    accTitle: Packet accTitle\n    accDescr: Packet accDescription\n    0-10: \"test\"\n    ",
+  "model": {
+   "type": "packet",
+   "title": "Packet diagram",
+   "accTitle": "Packet accTitle",
+   "accDescr": "Packet accDescription",
+   "bitsPerRow": 32,
+   "rows": [
+    [
+     {
+      "start": 0,
+      "end": 10,
+      "bits": 11,
+      "label": "test"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "source": "packet\n    0-10: \"test\"\n    11: \"single\"\n    ",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": [
+    [
+     {
+      "start": 0,
+      "end": 10,
+      "bits": 11,
+      "label": "test"
+     },
+     {
+      "start": 11,
+      "end": 11,
+      "bits": 1,
+      "label": "single"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "source": "packet\n    +8: \"byte\"\n    +16: \"word\"\n    ",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": [
+    [
+     {
+      "start": 0,
+      "end": 7,
+      "bits": 8,
+      "label": "byte"
+     },
+     {
+      "start": 8,
+      "end": 23,
+      "bits": 16,
+      "label": "word"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "source": "packet\n    0-10: \"test\"\n    11-90: \"multiple\"\n    ",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": [
+    [
+     {
+      "start": 0,
+      "end": 10,
+      "bits": 11,
+      "label": "test"
+     },
+     {
+      "start": 11,
+      "end": 31,
+      "bits": 20,
+      "label": "multiple"
+     }
+    ],
+    [
+     {
+      "start": 32,
+      "end": 63,
+      "bits": 31,
+      "label": "multiple"
+     }
+    ],
+    [
+     {
+      "start": 64,
+      "end": 90,
+      "bits": 26,
+      "label": "multiple"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "source": "packet\n    0-16: \"test\"\n    17-63: \"multiple\"\n    ",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": [
+    [
+     {
+      "start": 0,
+      "end": 16,
+      "bits": 17,
+      "label": "test"
+     },
+     {
+      "start": 17,
+      "end": 31,
+      "bits": 14,
+      "label": "multiple"
+     }
+    ],
+    [
+     {
+      "start": 32,
+      "end": 63,
+      "bits": 31,
+      "label": "multiple"
+     }
+    ]
+   ]
+  }
+ },
+ {
+  "source": "packet\n    0-16: \"test\"\n    18-20: \"error\"\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "Packet block 18 - 20 is not contiguous. It should start from 17."
+  }
+ },
+ {
+  "source": "packet\n    +16: \"test\"\n    18-20: \"error\"\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "Packet block 18 - 20 is not contiguous. It should start from 16."
+  }
+ },
+ {
+  "source": "packet\n    0-16: \"test\"\n    18: \"error\"\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "Packet block 18 - 18 is not contiguous. It should start from 17."
+  }
+ },
+ {
+  "source": "packet\n    +16: \"test\"\n    18: \"error\"\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "Packet block 18 - 18 is not contiguous. It should start from 16."
+  }
+ },
+ {
+  "source": "packet\n    0-16: \"test\"\n    17: \"good\"\n    19: \"error\"\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "Packet block 19 - 19 is not contiguous. It should start from 18."
+  }
+ },
+ {
+  "source": "packet\n    0-16: \"test\"\n    25-20: \"error\"\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "Packet block 25 - 20 is invalid. End must be greater than start."
+  }
+ },
+ {
+  "source": "packet\n    +0: \"test\"\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "Packet block 0 is invalid. Cannot have a zero bit field."
+  }
+ },
+ {
+  "source": "  packet-beta  ",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": []
+  }
+ },
+ {
+  "source": "\tpacket-beta\t",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": []
+  }
+ },
+ {
+  "source": "\n    \tpacket-beta\n    ",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": []
+  }
+ },
+ {
+  "source": "  packet  ",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": []
+  }
+ },
+ {
+  "source": "\tpacket\t",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": []
+  }
+ },
+ {
+  "source": "\n    \tpacket\n    ",
+  "model": {
+   "type": "packet",
+   "bitsPerRow": 32,
+   "rows": []
+  }
+ }
+]

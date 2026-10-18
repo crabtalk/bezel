@@ -51,3 +51,23 @@ fn quadrant() {
 fn xychart() {
     draws("xychart-docs.json");
 }
+
+#[test]
+fn packet() {
+    draws("packet-docs.json");
+}
+
+#[test]
+fn treeview() {
+    draws("treeview-docs.json");
+}
+
+#[test]
+fn git() {
+    draws("git-docs.json");
+}
+
+#[test]
+fn mindmap() {
+    draws("mindmap-docs.json");
+}

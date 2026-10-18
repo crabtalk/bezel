@@ -77,3 +77,23 @@ fn quadrant() {
 fn xychart() {
     check("xychart");
 }
+
+#[test]
+fn packet() {
+    check("packet");
+}
+
+#[test]
+fn treeview() {
+    check("treeview");
+}
+
+#[test]
+fn git() {
+    check("git");
+}
+
+#[test]
+fn mindmap() {
+    check("mindmap");
+}
