@@ -22,7 +22,11 @@ workspace = true
 # A painted fence that carries a parser is a feature, so a build that never
 # shows one never compiles the parser.
 [features]
+default = ["gpui"]
+# Everything that paints. Without it the crate is the document model alone.
+gpui = ["dep:gpui", "dep:theme", "dep:ui"]
 mermaid = [
+    "gpui",
     "dep:canvas-core",
     "canvas-core/mermaid",
     "dep:icons",
@@ -31,9 +35,10 @@ mermaid = [
 ]
 
 [dependencies]
-theme.workspace = true
-ui.workspace = true
-gpui.workspace = true
+gpui_shared_string.workspace = true
+theme = { workspace = true, optional = true }
+ui = { workspace = true, optional = true }
+gpui = { workspace = true, optional = true }
 pulldown-cmark = { version = "0.13", default-features = false }
 canvas-core = { workspace = true, optional = true }
 chart = { workspace = true, optional = true }

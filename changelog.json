@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.2.18",
+    "date": "2026-10-19",
+    "summary": "`bezel-markdown` builds without gpui: the document model alone, for any target.",
+    "changed": [
+      "`bezel-markdown`'s gpui, theme and ui are behind its `gpui` feature, on by default. Without it the crate is `doc`, `parse`, `serialize`, `select`, `edit`, `quote` and `synced`, and builds for `wasm32-unknown-unknown`; `Cursor::span`, the mark and highlight paints and everything that renders need the feature. `mermaid` turns it on."
+    ]
+  },
+  {
     "version": "0.2.17",
     "date": "2026-10-18",
     "summary": "Light glass casts a shadow, so it stands off a white page, and a hovered bookmark card stays opaque.",
