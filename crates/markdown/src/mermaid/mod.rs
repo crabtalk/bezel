@@ -19,6 +19,7 @@ pub mod detect;
 pub mod diagrams;
 pub mod error;
 pub(crate) mod js;
+pub mod layout;
 pub mod preprocess;
 pub mod svg;
 pub mod text;

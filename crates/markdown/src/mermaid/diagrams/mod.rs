@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 
-pub(crate) mod common;
+pub mod common;
 pub mod info;
 
 /// What a diagram type provides. `source` has been through preprocessing and

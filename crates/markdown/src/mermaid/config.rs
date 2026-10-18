@@ -174,8 +174,7 @@ impl Serialize for Value {
         match self {
             Self::Null => serializer.serialize_unit(),
             Self::Bool(b) => serializer.serialize_bool(*b),
-            Self::Number(n) if n.is_finite() => serializer.serialize_f64(*n),
-            Self::Number(_) => serializer.serialize_unit(),
+            Self::Number(n) => js::json_number(n, serializer),
             Self::String(text) => serializer.serialize_str(text),
             Self::List(items) => {
                 let mut seq = serializer.serialize_seq(Some(items.len()))?;

@@ -13,14 +13,19 @@ use crate::mermaid::{
 /// The end of a match at a position, or `None`.
 pub type Scanner = Box<dyn FnMut(&str, usize) -> Option<usize>>;
 
+pub(crate) enum Pattern {
+    Literal(Cow<'static, str>),
+    Regex(Regex),
+}
+
 pub struct TokenType {
     pub name: Cow<'static, str>,
-    pub pattern: Regex,
+    pub(crate) pattern: Pattern,
     pub hidden: bool,
     /// Start of a construct that needs a closer. When this matches but the
     /// whole pattern does not, no closer exists in the rest of the text, so
     /// the pattern is not tried again.
-    pub opener: Option<Regex>,
+    pub(crate) opener: Option<Regex>,
     /// Every ASCII character a match can start with, when that is known.
     pub first: Option<&'static str>,
     /// Chevrotain's `LONGER_ALT`, by name: tried at the same place when this
@@ -33,11 +38,24 @@ pub struct TokenType {
 }
 
 impl TokenType {
+    pub fn literal(name: &'static str, pattern: &'static str) -> Self {
+        Self {
+            name: Cow::Borrowed(name),
+            pattern: Pattern::Literal(Cow::Borrowed(pattern)),
+            hidden: false,
+            opener: None,
+            first: None,
+            longer: Vec::new(),
+            scanner: None,
+            matcher: None,
+        }
+    }
+
     /// A sticky regular expression.
     pub fn regex(name: &'static str, pattern: &str, first: Option<&'static str>) -> Self {
         Self {
             name: Cow::Borrowed(name),
-            pattern: Regex::new(pattern, "y"),
+            pattern: Pattern::Regex(Regex::new(pattern, "y")),
             hidden: false,
             opener: None,
             first,
@@ -57,8 +75,23 @@ impl TokenType {
         self
     }
 
+    pub fn longer(mut self, names: &[&'static str]) -> Self {
+        self.longer = names.to_vec();
+        self
+    }
+
     pub fn opener(mut self, pattern: &str) -> Self {
         self.opener = Some(Regex::new(pattern, "y"));
+        self
+    }
+
+    pub fn scanner(mut self, scanner: fn() -> Scanner) -> Self {
+        self.scanner = Some(scanner);
+        self
+    }
+
+    pub fn matcher(mut self, matcher: fn(&str, usize) -> Option<usize>) -> Self {
+        self.matcher = Some(matcher);
         self
     }
 }
@@ -81,7 +114,10 @@ impl Table {
                 every
                     .iter()
                     .copied()
-                    .filter(|&k| types[k].first.is_none_or(|first| first.contains(ch)))
+                    .filter(|&k| match &types[k].pattern {
+                        Pattern::Literal(text) => text.starts_with(ch),
+                        Pattern::Regex(_) => types[k].first.is_none_or(|first| first.contains(ch)),
+                    })
                     .collect(),
             );
         }
@@ -100,6 +136,13 @@ impl Table {
             every,
             longer,
         }
+    }
+
+    pub fn index(&self, name: &str) -> i32 {
+        self.types
+            .iter()
+            .position(|t| t.name == name)
+            .map_or(-1, |at| at as i32)
     }
 }
 
@@ -131,14 +174,19 @@ pub fn tokenize<'s>(src: &'s str, table: &Table, diagram: Kind) -> Result<Tokens
             let scanner = scanners[k].get_or_insert_with(make);
             return scanner(src, p);
         }
-        let end = ty.pattern.match_end(src, p);
-        if end.is_none()
-            && let Some(opener) = &ty.opener
-            && opener.match_end(src, p).is_some()
-        {
-            dead[k] = true;
+        match &ty.pattern {
+            Pattern::Literal(text) => src[p..].starts_with(text.as_ref()).then(|| p + text.len()),
+            Pattern::Regex(re) => {
+                let end = re.match_end(src, p);
+                if end.is_none()
+                    && let Some(opener) = &ty.opener
+                    && opener.match_end(src, p).is_some()
+                {
+                    dead[k] = true;
+                }
+                end
+            }
         }
-        end
     };
 
     let mut p = 0;
@@ -209,6 +257,10 @@ pub fn title() -> TokenType {
         r"[\t ]*title(?:[\t ][^\n\r]*?(?=%%)|[\t ][^\n\r]*|)",
         Some("\t t"),
     )
+}
+
+pub fn string() -> TokenType {
+    TokenType::regex("STRING", r#""([^"\\]|\\.)*"|'([^'\\]|\\.)*'"#, Some("\"'"))
 }
 
 pub fn newline() -> TokenType {
@@ -290,6 +342,34 @@ pub fn acc_descr_value(text: &str) -> String {
     let body = RE_TRAIL.replace(&body, |_| String::new());
     let body = RE_SPACES.replace(&body, |_| " ".into());
     RE_BREAKS.replace(&body, |_| "\n".into())
+}
+
+/// A quoted string's text, its escapes read.
+pub fn string_value(text: &str) -> String {
+    let inner = &text[1..text.len() - 1];
+    if !text.contains('\\') {
+        return inner.to_string();
+    }
+    let mut out = String::new();
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('b') => out.push('\u{8}'),
+            Some('f') => out.push('\u{c}'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some('v') => out.push('\u{b}'),
+            Some('0') => out.push('\0'),
+            Some(other) => out.push(other),
+            None => {}
+        }
+    }
+    out
 }
 
 /// Reads tokens for a hand-written parser, with Chevrotain-style messages on

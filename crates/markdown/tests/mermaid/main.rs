@@ -3,5 +3,6 @@
 
 mod compat;
 mod corpus;
+mod layout;
 mod parity;
 mod text;

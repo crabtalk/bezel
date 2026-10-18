@@ -27,7 +27,7 @@ default = ["gpui"]
 gpui = ["dep:gpui", "dep:theme", "dep:ui", "dep:canvas-core", "dep:chart", "dep:icons"]
 # The diagram engine, Mermaid source to SVG. With `gpui` it also paints a
 # ```mermaid fence.
-mermaid = ["dep:serde", "canvas-core?/mermaid", "chart?/mermaid"]
+mermaid = ["dep:serde", "dep:indexmap", "canvas-core?/mermaid", "chart?/mermaid"]
 
 [dependencies]
 gpui_shared_string.workspace = true
@@ -36,6 +36,7 @@ ui = { workspace = true, optional = true }
 gpui = { workspace = true, optional = true }
 pulldown-cmark = { version = "0.13", default-features = false }
 serde = { workspace = true, optional = true }
+indexmap = { workspace = true, optional = true, features = ["serde"] }
 canvas-core = { workspace = true, optional = true }
 chart = { workspace = true, optional = true }
 icons = { workspace = true, optional = true, features = ["layout"] }

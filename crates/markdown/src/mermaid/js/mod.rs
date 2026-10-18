@@ -209,3 +209,59 @@ pub(crate) fn parse_int(text: &str, radix: u32) -> f64 {
 pub(crate) fn truthy(x: f64) -> bool {
     x != 0.0 && !x.is_nan()
 }
+
+/// `Math.sign`: `0` for `0`, `NaN` for `NaN`.
+pub(crate) fn sign(x: f64) -> f64 {
+    if x > 0.0 {
+        1.0
+    } else if x < 0.0 {
+        -1.0
+    } else {
+        x
+    }
+}
+
+/// `Math.hypot` of two numbers as V8 works it out: each scaled by the larger
+/// and summed with Kahan's compensation, which can differ from the libm
+/// `hypot` in the last bit.
+pub(crate) fn hypot(a: f64, b: f64) -> f64 {
+    if a.is_infinite() || b.is_infinite() {
+        return f64::INFINITY;
+    }
+    if a.is_nan() || b.is_nan() {
+        return f64::NAN;
+    }
+    let (a, b) = (a.abs(), b.abs());
+    let max = a.max(b);
+    if max == 0.0 {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    let mut compensation = 0.0;
+    for value in [a, b] {
+        let n = value / max;
+        let summand = n * n - compensation;
+        let preliminary = sum + summand;
+        compensation = (preliminary - sum) - summand;
+        sum = preliminary;
+    }
+    sum.sqrt() * max
+}
+
+/// What `Array.prototype.sort` makes of a comparator's number: its sign,
+/// with `NaN` as equal.
+pub(crate) fn compare(x: f64) -> std::cmp::Ordering {
+    x.partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Equal)
+}
+
+/// A number as `JSON.stringify` writes it, for `serialize_with`: integers
+/// without a fraction, `NaN` and the infinities as `null`.
+pub(crate) fn json_number<S: serde::Serializer>(x: &f64, s: S) -> Result<S::Ok, S::Error> {
+    if !x.is_finite() {
+        s.serialize_unit()
+    } else if x.fract() == 0.0 && x.abs() < 9e18 {
+        s.serialize_i64(*x as i64)
+    } else {
+        s.serialize_f64(*x)
+    }
+}
