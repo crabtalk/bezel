@@ -4,6 +4,7 @@ use serde::Serialize;
 
 use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 
+pub mod class;
 pub mod common;
 pub mod gantt;
 pub mod git;
@@ -75,6 +76,7 @@ pub enum Model {
     Journey(journey::JourneyModel),
     Kanban(kanban::KanbanModel),
     Timeline(timeline::TimelineModel),
+    Class(Box<class::ClassModel>),
 }
 
 /// The type `kind`, when this build has it.
@@ -98,6 +100,7 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Journey => &journey::Journey,
         Kind::Kanban => &kanban::Kanban,
         Kind::Timeline => &timeline::Timeline,
+        Kind::Class => &class::Class,
         _ => return None,
     })
 }

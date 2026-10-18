@@ -72,6 +72,14 @@ impl Map {
         }
     }
 
+    /// The positive number under `key`, at most 2000, or `fallback`.
+    pub fn number_option(&self, key: &str, fallback: f64) -> f64 {
+        match self.get(key) {
+            Some(Value::Number(value)) if *value > 0.0 => value.min(2000.0),
+            _ => fallback,
+        }
+    }
+
     /// Mermaid's deep merge of `source` into `self`: objects merge, anything
     /// else replaces, and the keys that reach an object's prototype are
     /// dropped.

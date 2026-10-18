@@ -106,3 +106,8 @@ fn gantt() {
 fn timeline() {
     draws("timeline-docs.json");
 }
+
+#[test]
+fn class() {
+    draws("class-docs.json");
+}

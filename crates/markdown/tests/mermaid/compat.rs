@@ -132,3 +132,8 @@ fn gantt() {
 fn timeline() {
     check("timeline");
 }
+
+#[test]
+fn class() {
+    check("class");
+}
