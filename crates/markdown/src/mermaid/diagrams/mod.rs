@@ -6,6 +6,7 @@ use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 
 pub mod class;
 pub mod common;
+pub mod flowchart;
 pub mod gantt;
 pub mod git;
 pub mod info;
@@ -61,6 +62,7 @@ pub enum Model {
     GitGraph(git::GitModel),
     Gantt(Box<gantt::GanttDb>),
     Info(info::InfoModel),
+    Flowchart(Box<flowchart::FlowDb>),
     XyChart(xychart::XyChartModel),
     Quadrant(quadrant::QuadrantModel),
     Sankey(sankey::SankeyModel),
@@ -85,6 +87,7 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::GitGraph => &git::GitGraph,
         Kind::Gantt => &gantt::Gantt,
         Kind::Info => &info::Info,
+        Kind::Flowchart => &flowchart::Flowchart,
         Kind::XyChart => &xychart::XyChart,
         Kind::QuadrantChart => &quadrant::Quadrant,
         Kind::Sankey => &sankey::Sankey,

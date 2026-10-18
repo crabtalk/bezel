@@ -28,13 +28,9 @@ const LINE: f64 = 1.25;
 static RE_FILL: Lazy = Lazy::new(r#"[";]fill:"#, "");
 
 fn option(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    match config
-        .section("treemap")
-        .and_then(|treemap| treemap.get(key))
-    {
-        Some(Value::Number(value)) if *value >= min => value.min(max),
-        _ => fallback,
-    }
+    config.section("treemap").map_or(fallback, |treemap| {
+        treemap.number_in(key, fallback, min, max)
+    })
 }
 
 pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) -> Rendered {

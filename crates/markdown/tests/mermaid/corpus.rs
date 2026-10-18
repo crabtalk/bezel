@@ -111,3 +111,8 @@ fn timeline() {
 fn class() {
     draws("class-docs.json");
 }
+
+#[test]
+fn flowchart() {
+    draws("flowchart-docs.json");
+}

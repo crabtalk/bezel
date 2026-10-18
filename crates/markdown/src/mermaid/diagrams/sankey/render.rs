@@ -22,13 +22,6 @@ use crate::mermaid::{
 const LABEL_GAP: f64 = 6.0;
 const VALUE_GAP: f64 = 15.0;
 
-fn number_option(conf: &Map, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    match conf.get(key) {
-        Some(Value::Number(value)) if *value >= min => value.min(max),
-        _ => fallback,
-    }
-}
-
 fn text_option(conf: &Map, key: &str) -> String {
     match conf.get(key) {
         Some(Value::String(text)) => text.clone(),
@@ -65,7 +58,7 @@ pub fn render_sankey(
     let conf = config.section("sankey").unwrap_or(&empty);
     try_fit_width(
         options,
-        number_option(conf, "width", 600.0, 1.0, 10000.0),
+        conf.number_in("width", 600.0, 1.0, 10000.0),
         160.0,
         |chart_width, _| draw(model, conf, options, chart_width),
     )
@@ -83,8 +76,10 @@ fn draw(
     let measure = options.measurer();
     let pad = options.padding.unwrap_or(8.0);
 
-    let chart_height = number_option(conf, "height", 400.0, 1.0, 10000.0);
-    let node_width = number_option(conf, "nodeWidth", 10.0, 1.0, 200.0).min(chart_width);
+    let chart_height = conf.number_in("height", 400.0, 1.0, 10000.0);
+    let node_width = conf
+        .number_in("nodeWidth", 10.0, 1.0, 200.0)
+        .min(chart_width);
     let show_values = conf.get("showValues") != Some(&Value::Bool(false));
     let prefix = text_option(conf, "prefix");
     let suffix = text_option(conf, "suffix");
@@ -106,7 +101,7 @@ fn draw(
             width: chart_width,
             height: chart_height,
             node_width,
-            node_padding: number_option(conf, "nodePadding", 12.0, 0.0, 200.0)
+            node_padding: conf.number_in("nodePadding", 12.0, 0.0, 200.0)
                 + if show_values { VALUE_GAP } else { 0.0 },
             label_height: small * 1.15,
             alignment,

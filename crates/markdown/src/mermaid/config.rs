@@ -80,6 +80,15 @@ impl Map {
         }
     }
 
+    /// The number under `key` when it is at least `min`, capped at `max`, or
+    /// `fallback`.
+    pub fn number_in(&self, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
+        match self.get(key) {
+            Some(Value::Number(value)) if *value >= min => value.min(max),
+            _ => fallback,
+        }
+    }
+
     /// Mermaid's deep merge of `source` into `self`: objects merge, anything
     /// else replaces, and the keys that reach an object's prototype are
     /// dropped.

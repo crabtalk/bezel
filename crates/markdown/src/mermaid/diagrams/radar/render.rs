@@ -5,7 +5,6 @@ use std::f64::consts::PI;
 use super::model::RadarModel;
 use crate::mermaid::{
     Config, Options, Rendered,
-    config::Value,
     diagrams::common::fit_width::{fit_width, title_room},
     js,
     svg::{
@@ -27,10 +26,9 @@ pub struct Point {
 }
 
 fn option(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    match config.section("radar").and_then(|radar| radar.get(key)) {
-        Some(Value::Number(value)) if *value >= min => value.min(max),
-        _ => fallback,
-    }
+    config
+        .section("radar")
+        .map_or(fallback, |radar| radar.number_in(key, fallback, min, max))
 }
 
 pub fn relative_radius(value: f64, min: f64, max: f64, radius: f64) -> f64 {

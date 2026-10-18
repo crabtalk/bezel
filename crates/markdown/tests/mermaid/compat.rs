@@ -137,3 +137,8 @@ fn timeline() {
 fn class() {
     check("class");
 }
+
+#[test]
+fn flowchart() {
+    check("flowchart");
+}
