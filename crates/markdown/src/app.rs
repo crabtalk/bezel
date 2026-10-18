@@ -88,7 +88,7 @@ impl AppExt for App {
 
     #[cfg(feature = "mermaid")]
     fn set_mermaid_zoom(&mut self, zoom: crate::mermaid::Zoom) {
-        crate::mermaid::set_zoom(self, zoom)
+        crate::mermaid::fence::set_zoom(self, zoom)
     }
 
     fn set_links<L: crate::Links>(&mut self) {

@@ -918,6 +918,8 @@ dependencies = [
  "bezel-theme",
  "bezel-ui",
  "pulldown-cmark",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

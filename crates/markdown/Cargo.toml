@@ -24,15 +24,10 @@ workspace = true
 [features]
 default = ["gpui"]
 # Everything that paints. Without it the crate is the document model alone.
-gpui = ["dep:gpui", "dep:theme", "dep:ui"]
-mermaid = [
-    "gpui",
-    "dep:canvas-core",
-    "canvas-core/mermaid",
-    "dep:icons",
-    "dep:chart",
-    "chart/mermaid",
-]
+gpui = ["dep:gpui", "dep:theme", "dep:ui", "dep:canvas-core", "dep:chart", "dep:icons"]
+# The diagram engine, Mermaid source to SVG. With `gpui` it also paints a
+# ```mermaid fence.
+mermaid = ["dep:serde", "canvas-core?/mermaid", "chart?/mermaid"]
 
 [dependencies]
 gpui_shared_string.workspace = true
@@ -40,11 +35,13 @@ theme = { workspace = true, optional = true }
 ui = { workspace = true, optional = true }
 gpui = { workspace = true, optional = true }
 pulldown-cmark = { version = "0.13", default-features = false }
+serde = { workspace = true, optional = true }
 canvas-core = { workspace = true, optional = true }
 chart = { workspace = true, optional = true }
 icons = { workspace = true, optional = true, features = ["layout"] }
 
 [dev-dependencies]
+serde_json.workspace = true
 # `TestAppContext` — a window and a text layout without a display, which is
 # what lets a wrapped line be told from one that scrolled.
 gpui = { workspace = true, features = ["test-support"] }
@@ -52,3 +49,7 @@ gpui = { workspace = true, features = ["test-support"] }
 [[test]]
 name = "mermaid"
 required-features = ["mermaid"]
+
+[[test]]
+name = "mermaid_fence"
+required-features = ["mermaid", "gpui"]

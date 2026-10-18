@@ -35,7 +35,7 @@ pub use app::AppExt;
 
 #[cfg(feature = "gpui")]
 pub mod block;
-#[cfg(feature = "mermaid")]
+#[cfg(all(feature = "mermaid", feature = "gpui"))]
 pub mod charts;
 #[cfg(feature = "gpui")]
 pub mod comment;

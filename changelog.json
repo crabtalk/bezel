@@ -2,9 +2,13 @@
   {
     "version": "0.2.18",
     "date": "2026-10-19",
-    "summary": "`bezel-markdown` builds without gpui: the document model alone, for any target.",
+    "summary": "Mermaid source drawn as SVG by `bezel-markdown` itself, without gpui, and the document model builds without gpui.",
+    "new": [
+      "`markdown::mermaid` (feature `mermaid`) turns Mermaid source into SVG, a port of Pele 1.6.0: `render(source, &Options)` answers a `Drawing` (`kind`, `svg`, `width`, `height`, `links`), `parse` a `Parsed` whose `model` serializes as Pele's, `render_parsed`, `detect_type` and `supports`. Errors carry Pele's messages, a `Code`, and the line, column and snippet. Labels are measured by a `Measure`, `Metrics` (Arial's advances) by default. Colours and fonts are `--bezel-*` CSS variables. It builds without the `gpui` feature, for `wasm32-unknown-unknown` too. This release draws `info`."
+    ],
     "changed": [
-      "`bezel-markdown`'s gpui, theme and ui are behind its `gpui` feature, on by default. Without it the crate is `doc`, `parse`, `serialize`, `select`, `edit`, `quote` and `synced`, and builds for `wasm32-unknown-unknown`; `Cursor::span`, the mark and highlight paints and everything that renders need the feature. `mermaid` turns it on."
+      "`bezel-markdown`'s gpui, theme and ui are behind its `gpui` feature, on by default. Without it the crate is `doc`, `parse`, `serialize`, `select`, `edit`, `quote` and `synced`, and builds for `wasm32-unknown-unknown`; `Cursor::span`, the mark and highlight paints and everything that renders need the feature.",
+      "The mermaid fence's module is `markdown::mermaid::fence`; `Zoom`, `LANGUAGE` and `DIAGRAM_SELECTOR` stay at `markdown::mermaid`. `mermaid` no longer turns on `gpui`: a fence paints with both on."
     ]
   },
   {
