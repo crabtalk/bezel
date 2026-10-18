@@ -1,0 +1,517 @@
+[
+ {
+  "source": "radar-beta\n    axis A,B,C\n    curve mycurve{1,2,3}",
+  "model": {
+   "type": "radar",
+   "axes": [
+    {
+     "name": "A",
+     "label": "A"
+    },
+    {
+     "name": "B",
+     "label": "B"
+    },
+    {
+     "name": "C",
+     "label": "C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "mycurve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "radar-beta\n    title Radar diagram\n    accTitle: Radar accTitle\n    accDescr: Radar accDescription\n    axis A[\"Axis A\"], B[\"Axis B\"] ,C[\"Axis C\"]\n    curve mycurve[\"My Curve\"]{1,2,3}\n    ",
+  "model": {
+   "type": "radar",
+   "title": "Radar diagram",
+   "accTitle": "Radar accTitle",
+   "accDescr": "Radar accDescription",
+   "axes": [
+    {
+     "name": "A",
+     "label": "Axis A"
+    },
+    {
+     "name": "B",
+     "label": "Axis B"
+    },
+    {
+     "name": "C",
+     "label": "Axis C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "My Curve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "radar-beta\n    ticks 10\n    showLegend false\n    graticule polygon\n    min 1\n    max 10\n    ",
+  "model": {
+   "type": "radar",
+   "axes": [],
+   "curves": [],
+   "options": {
+    "showLegend": false,
+    "ticks": 10,
+    "max": 10,
+    "min": 1,
+    "graticule": "polygon"
+   }
+  }
+ },
+ {
+  "source": "radar-beta\n    axis A,B,C\n    curve mycurve{ C: 3, A: 1, B: 2 }",
+  "model": {
+   "type": "radar",
+   "axes": [
+    {
+     "name": "A",
+     "label": "A"
+    },
+    {
+     "name": "B",
+     "label": "B"
+    },
+    {
+     "name": "C",
+     "label": "C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "mycurve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "radar-beta\n    %% This is a comment\n    axis A,B,C\n    %% This is another comment\n    curve mycurve{1,2,3}\n    ",
+  "model": {
+   "type": "radar",
+   "axes": [
+    {
+     "name": "A",
+     "label": "A"
+    },
+    {
+     "name": "B",
+     "label": "B"
+    },
+    {
+     "name": "C",
+     "label": "C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "mycurve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "\n    %%{init: {'radar': {'marginTop': 80, 'axisLabelFactor': 1.25}}}%%\n    radar-beta\n    axis A,B,C\n    curve mycurve{1,2,3}\n    ",
+  "model": {
+   "type": "radar",
+   "axes": [
+    {
+     "name": "A",
+     "label": "A"
+    },
+    {
+     "name": "B",
+     "label": "B"
+    },
+    {
+     "name": "C",
+     "label": "C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "mycurve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "\n    %%{init: { \"theme\": \"base\", \"themeVariables\": {'fontSize': 80, 'cScale0': '#123456' }}}%%\n    radar-beta:\n    axis A,B,C\n    curve mycurve{1,2,3}\n    ",
+  "model": {
+   "type": "radar",
+   "axes": [
+    {
+     "name": "A",
+     "label": "A"
+    },
+    {
+     "name": "B",
+     "label": "B"
+    },
+    {
+     "name": "C",
+     "label": "C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "mycurve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "\n    %%{init: { \"theme\": \"base\", \"themeVariables\": {'fontSize': 10, 'radar': { 'axisColor': '#FF0000' }}}}%%\n    radar-beta\n    axis A,B,C\n    curve mycurve{1,2,3}\n    ",
+  "model": {
+   "type": "radar",
+   "axes": [
+    {
+     "name": "A",
+     "label": "A"
+    },
+    {
+     "name": "B",
+     "label": "B"
+    },
+    {
+     "name": "C",
+     "label": "C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "mycurve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "radar-beta\n        axis A,B,C\n        curve mycurve{1,2,3}",
+  "model": {
+   "type": "radar",
+   "axes": [
+    {
+     "name": "A",
+     "label": "A"
+    },
+    {
+     "name": "B",
+     "label": "B"
+    },
+    {
+     "name": "C",
+     "label": "C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "mycurve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "radar-beta\n        title Radar diagram\n        accTitle: Radar accTitle\n        accDescr: Radar accDescription\n        axis A[\"Axis A\"], B[\"Axis B\"] ,C[\"Axis C\"]\n        curve mycurve[\"My Curve\"]{1,2,3}\n        curve mycurve2[\"My Curve 2\"]{ C: 1, A: 2, B: 3 }\n        graticule polygon\n        ",
+  "model": {
+   "type": "radar",
+   "title": "Radar diagram",
+   "accTitle": "Radar accTitle",
+   "accDescr": "Radar accDescription",
+   "axes": [
+    {
+     "name": "A",
+     "label": "Axis A"
+    },
+    {
+     "name": "B",
+     "label": "Axis B"
+    },
+    {
+     "name": "C",
+     "label": "Axis C"
+    }
+   ],
+   "curves": [
+    {
+     "name": "mycurve",
+     "label": "My Curve",
+     "entries": [
+      1,
+      2,
+      3
+     ]
+    },
+    {
+     "name": "mycurve2",
+     "label": "My Curve 2",
+     "entries": [
+      2,
+      3,
+      1
+     ]
+    }
+   ],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "polygon"
+   }
+  }
+ },
+ {
+  "source": "radar-beta",
+  "model": {
+   "type": "radar",
+   "axes": [],
+   "curves": [],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "radar-beta:",
+  "model": {
+   "type": "radar",
+   "axes": [],
+   "curves": [],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "radar-beta :",
+  "model": {
+   "type": "radar",
+   "axes": [],
+   "curves": [],
+   "options": {
+    "showLegend": true,
+    "ticks": 5,
+    "max": null,
+    "min": 0,
+    "graticule": "circle"
+   }
+  }
+ },
+ {
+  "source": "radar-beta\n      axis",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n      axis\n----------^\nExpecting token of type 'ID' but found `\n`."
+  }
+ },
+ {
+  "source": "radar-beta\n      axis my-axis my-axis2",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n      axis my-axis my-axis2\n-------------------^\nExpecting an axis, a curve, an option, a title, or a line break but found `my-axis2`."
+  }
+ },
+ {
+  "source": "radar-beta\n      curve my-curve",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n      curve my-curve\n--------------------^\nExpecting token of type '{' but found `\n`."
+  }
+ },
+ {
+  "source": "radar-beta\n      curve my-curve[\"My Curve Label\"]",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n      curve my-curve[\"My Curve Label\"]\n--------------------------------------^\nExpecting token of type '{' but found `\n`."
+  }
+ },
+ {
+  "source": "radar-beta\n      axis my-axis\n      curve my-curve",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 3:\n      curve my-curve\n--------------------^\nExpecting token of type '{' but found `\n`."
+  }
+ },
+ {
+  "source": "radar-beta\n      axis my-axis\n      curve my-curve[\"My Curve Label\"]",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 3:\n      curve my-curve[\"My Curve Label\"]\n--------------------------------------^\nExpecting token of type '{' but found `\n`."
+  }
+ },
+ {
+  "source": "radar-beta\n      axis my-axis\n      curve",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 3:\n      curve\n-----------^\nExpecting token of type 'ID' but found `\n`."
+  }
+ },
+ {
+  "source": "radar-beta\n      axis ax1, ax2\n      curve my-curve { 1, ax1 2 }",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 3:\n      curve my-curve { 1, ax1 2 }\n--------------------------^\nExpecting token of type 'NUMBER' but found `ax1`."
+  }
+ },
+ {
+  "source": "radar-beta\n      axis ax1, ax2\n      curve my-curve { ax1 1 ax2 2 }",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 3:\n      curve my-curve { ax1 1 ax2 2 }\n-----------------------------^\nExpecting token of type '}' but found `ax2`."
+  }
+ },
+ {
+  "source": "radar-beta\n  title Restaurant Comparison\n  axis food[\"Food Quality\"], service[\"Service\"], price[\"Price\"]\n  axis ambiance[\"Ambiance\"],\n\n  curve a[\"Restaurant A\"]{4, 3, 2, 4}",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 4:\n  axis ambiance[\"Ambiance\"],\n----------------------------^\nExpecting token of type 'ID' but found `\n`."
+  }
+ },
+ {
+  "source": "radar-beta\n  axis my-axis\n  curve my-curve",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 3:\n  curve my-curve\n----------------^\nExpecting token of type '{' but found `\n`."
+  }
+ },
+ {
+  "source": "radar-beta\n  axis my-axis my-axis2",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n  axis my-axis my-axis2\n---------------^\nExpecting an axis, a curve, an option, a title, or a line break but found `my-axis2`."
+  }
+ },
+ {
+  "source": "radar-beta\n  axis A\n  curve B{1}\n  invalid@symbol",
+  "error": {
+   "code": "syntax",
+   "message": "Lexical error on line 4. Unrecognized text.\n  invalid@symbol\n---------^"
+  }
+ },
+ {
+  "source": "radar-beta\n  axis",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n  axis\n------^\nExpecting token of type 'ID' but found `\n`."
+  }
+ }
+]

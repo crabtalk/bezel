@@ -1,6 +1,8 @@
 //! Charts drawn to the width the host has. Pele's
 //! `diagrams/common/fit-width.ts`.
 
+use std::convert::Infallible;
+
 use crate::mermaid::{Options, Rendered};
 
 const BREAKPOINT: f64 = 640.0;
@@ -19,23 +21,39 @@ pub fn fit_width(
     least: f64,
     mut draw: impl FnMut(f64, bool) -> Rendered,
 ) -> Rendered {
-    let mut result = draw(natural, false);
+    match try_fit_width(options, natural, least, |plot, narrow| {
+        Ok::<_, Infallible>(draw(plot, narrow))
+    }) {
+        Ok(result) => result,
+        Err(never) => match never {},
+    }
+}
+
+/// [`fit_width`] for a chart whose drawing can fail: the first failure is
+/// the answer.
+pub fn try_fit_width<E>(
+    options: &Options,
+    natural: f64,
+    least: f64,
+    mut draw: impl FnMut(f64, bool) -> Result<Rendered, E>,
+) -> Result<Rendered, E> {
+    let mut result = draw(natural, false)?;
     let Some(available) = available(options) else {
-        return result;
+        return Ok(result);
     };
     if result.width <= available {
-        return result;
+        return Ok(result);
     }
     let floor = least.min(natural);
     let mut plot = natural;
-    result = draw(plot, true);
+    result = draw(plot, true)?;
     let mut round = 0;
     while round < 3 && result.width > available && plot > floor {
         plot = floor.max(plot - (result.width - available));
-        result = draw(plot, true);
+        result = draw(plot, true)?;
         round += 1;
     }
-    result
+    Ok(result)
 }
 
 /// The width a title may take before it wraps.

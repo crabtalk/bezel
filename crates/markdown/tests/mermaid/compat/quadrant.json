@@ -1,0 +1,869 @@
+[
+ {
+  "source": "quadrantChart",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nx-axis urgent --> not urgent",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "urgent",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "not urgent",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n       x-AxIs         Urgent     -->        Not Urgent    \n",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "Urgent",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "Not Urgent",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n       x-AxIs         \"Urgent(* +=[❤\"     -->        \"Not Urgent (* +=[❤\"\n    ",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "Urgent(* +=[❤",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "Not Urgent (* +=[❤",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n       x-AxIs         \"Urgent(* +=[❤\"",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "Urgent(* +=[❤",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n       x-AxIs         \"Urgent(* +=[❤\"  --> ",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "Urgent(* +=[❤ ⟶",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\ny-axis urgent --> not urgent",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "yAxisBottom": {
+    "text": "urgent",
+    "type": "text"
+   },
+   "yAxisTop": {
+    "text": "not urgent",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n       y-AxIs         Urgent     -->        Not Urgent    \n",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "yAxisBottom": {
+    "text": "Urgent",
+    "type": "text"
+   },
+   "yAxisTop": {
+    "text": "Not Urgent",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n       Y-AxIs         \"Urgent(* +=[❤\"     -->        \"Not Urgent (* +=[❤\"\n    ",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "yAxisBottom": {
+    "text": "Urgent(* +=[❤",
+    "type": "text"
+   },
+   "yAxisTop": {
+    "text": "Not Urgent (* +=[❤",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n       y-AxIs         \"Urgent(* +=[❤\"",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "yAxisBottom": {
+    "text": "Urgent(* +=[❤",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n       y-AxIs         \"Urgent(* +=[❤\"  --> ",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "yAxisBottom": {
+    "text": "Urgent(* +=[❤ ⟶",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-1 Plan",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    {
+     "text": "Plan",
+     "type": "text"
+    },
+    null,
+    null,
+    null
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-2 do",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    {
+     "text": "do",
+     "type": "text"
+    },
+    null,
+    null
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-3 delegate",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    {
+     "text": "delegate",
+     "type": "text"
+    },
+    null
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-4 delete",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    {
+     "text": "delete",
+     "type": "text"
+    }
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\ntitle this is title",
+  "model": {
+   "type": "quadrantChart",
+   "title": "this is title",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\npoint1: [0.1, 0.4]",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "points": [
+    {
+     "x": 0.1,
+     "y": 0.4,
+     "text": {
+      "text": "point1",
+      "type": "text"
+     },
+     "className": ""
+    }
+   ],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n      title Analytics and Business Intelligence Platforms\n      x-axis \"Completeness of Vision ❤\" --> \"x-axis-2\"\n      y-axis Ability to Execute --> \"y-axis-2\"\n      quadrant-1 Leaders\n      quadrant-2 Challengers\n      quadrant-3 Niche\n      quadrant-4 Visionaries\n      Microsoft: [0.75, 0.75]\n      Salesforce: [0.55, 0.60]\n      IBM: [0.51, 0.40]\n      Incorta: [0.20, 0.30]",
+  "model": {
+   "type": "quadrantChart",
+   "title": "Analytics and Business Intelligence Platforms",
+   "quadrants": [
+    {
+     "text": "Leaders",
+     "type": "text"
+    },
+    {
+     "text": "Challengers",
+     "type": "text"
+    },
+    {
+     "text": "Niche",
+     "type": "text"
+    },
+    {
+     "text": "Visionaries",
+     "type": "text"
+    }
+   ],
+   "xAxisLeft": {
+    "text": "Completeness of Vision ❤",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "x-axis-2",
+    "type": "text"
+   },
+   "yAxisBottom": {
+    "text": "Ability to Execute",
+    "type": "text"
+   },
+   "yAxisTop": {
+    "text": "y-axis-2",
+    "type": "text"
+   },
+   "points": [
+    {
+     "x": 0.75,
+     "y": 0.75,
+     "text": {
+      "text": "Microsoft",
+      "type": "text"
+     },
+     "className": ""
+    },
+    {
+     "x": 0.55,
+     "y": 0.6,
+     "text": {
+      "text": "Salesforce",
+      "type": "text"
+     },
+     "className": ""
+    },
+    {
+     "x": 0.51,
+     "y": 0.4,
+     "text": {
+      "text": "IBM",
+      "type": "text"
+     },
+     "className": ""
+    },
+    {
+     "x": 0.2,
+     "y": 0.3,
+     "text": {
+      "text": "Incorta",
+      "type": "text"
+     },
+     "className": ""
+    }
+   ],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n      title Analytics and Business Intelligence Platforms\n      x-axis \"Completeness of Vision ❤\" --> \"x-axis-2\"\n      y-axis Ability to Execute --> \"y-axis-2\"\n      quadrant-1 Leaders\n      quadrant-2 Challengers\n      quadrant-3 Niche\n      quadrant-4 Visionaries\n      Microsoft: [0.75, 0.75] radius: 10\n      Salesforce: [0.55, 0.60] radius: 10, color: #ff0000\n      IBM: [0.51, 0.40] radius: 10, color: #ff0000, stroke-color: #ff00ff\n      Incorta: [0.20, 0.30] radius: 10 ,color: #ff0000 ,stroke-color: #ff00ff ,stroke-width: 10px",
+  "model": {
+   "type": "quadrantChart",
+   "title": "Analytics and Business Intelligence Platforms",
+   "quadrants": [
+    {
+     "text": "Leaders",
+     "type": "text"
+    },
+    {
+     "text": "Challengers",
+     "type": "text"
+    },
+    {
+     "text": "Niche",
+     "type": "text"
+    },
+    {
+     "text": "Visionaries",
+     "type": "text"
+    }
+   ],
+   "xAxisLeft": {
+    "text": "Completeness of Vision ❤",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "x-axis-2",
+    "type": "text"
+   },
+   "yAxisBottom": {
+    "text": "Ability to Execute",
+    "type": "text"
+   },
+   "yAxisTop": {
+    "text": "y-axis-2",
+    "type": "text"
+   },
+   "points": [
+    {
+     "x": 0.75,
+     "y": 0.75,
+     "text": {
+      "text": "Microsoft",
+      "type": "text"
+     },
+     "className": "",
+     "radius": 10
+    },
+    {
+     "x": 0.55,
+     "y": 0.6,
+     "text": {
+      "text": "Salesforce",
+      "type": "text"
+     },
+     "className": "",
+     "radius": 10,
+     "color": "#ff0000"
+    },
+    {
+     "x": 0.51,
+     "y": 0.4,
+     "text": {
+      "text": "IBM",
+      "type": "text"
+     },
+     "className": "",
+     "radius": 10,
+     "color": "#ff0000",
+     "strokeColor": "#ff00ff"
+    },
+    {
+     "x": 0.2,
+     "y": 0.3,
+     "text": {
+      "text": "Incorta",
+      "type": "text"
+     },
+     "className": "",
+     "radius": 10,
+     "color": "#ff0000",
+     "strokeColor": "#ff00ff",
+     "strokeWidth": "10px"
+    }
+   ],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n      title Analytics and Business Intelligence Platforms\n      x-axis \"Completeness of Vision ❤\" --> \"x-axis-2\"\n      y-axis Ability to Execute --> \"y-axis-2\"\n      quadrant-1 Leaders\n      quadrant-2 Challengers\n      quadrant-3 Niche\n      quadrant-4 Visionaries\n      Microsoft: [0.75, 0.75] stroke-color: #ff00ff ,stroke-width: 10px, color: #ff0000, radius: 10\n      Salesforce:::class1: [0.55, 0.60] radius: 10, color: #ff0000\n      IBM: [0.51, 0.40] stroke-color: #ff00ff ,stroke-width: 10px\n      Incorta: [0.20, 0.30] stroke-width: 10px",
+  "model": {
+   "type": "quadrantChart",
+   "title": "Analytics and Business Intelligence Platforms",
+   "quadrants": [
+    {
+     "text": "Leaders",
+     "type": "text"
+    },
+    {
+     "text": "Challengers",
+     "type": "text"
+    },
+    {
+     "text": "Niche",
+     "type": "text"
+    },
+    {
+     "text": "Visionaries",
+     "type": "text"
+    }
+   ],
+   "xAxisLeft": {
+    "text": "Completeness of Vision ❤",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "x-axis-2",
+    "type": "text"
+   },
+   "yAxisBottom": {
+    "text": "Ability to Execute",
+    "type": "text"
+   },
+   "yAxisTop": {
+    "text": "y-axis-2",
+    "type": "text"
+   },
+   "points": [
+    {
+     "x": 0.75,
+     "y": 0.75,
+     "text": {
+      "text": "Microsoft",
+      "type": "text"
+     },
+     "className": "",
+     "strokeColor": "#ff00ff",
+     "strokeWidth": "10px",
+     "color": "#ff0000",
+     "radius": 10
+    },
+    {
+     "x": 0.55,
+     "y": 0.6,
+     "text": {
+      "text": "Salesforce",
+      "type": "text"
+     },
+     "className": "class1",
+     "radius": 10,
+     "color": "#ff0000"
+    },
+    {
+     "x": 0.51,
+     "y": 0.4,
+     "text": {
+      "text": "IBM",
+      "type": "text"
+     },
+     "className": "",
+     "strokeColor": "#ff00ff",
+     "strokeWidth": "10px"
+    },
+    {
+     "x": 0.2,
+     "y": 0.3,
+     "text": {
+      "text": "Incorta",
+      "type": "text"
+     },
+     "className": "",
+     "strokeWidth": "10px"
+    }
+   ],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n    classDef constructor fill:#ff0000\n    Microsoft:::constructor: [0.75, 0.75]\n    ",
+  "error": {
+   "code": "semantic",
+   "message": "style named fill is not supported."
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-1 需要扩展",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    {
+     "text": "需要扩展",
+     "type": "text"
+    },
+    null,
+    null,
+    null
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-2 需要推广\nquadrant-3 重新评估\nquadrant-4 可以改进",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    {
+     "text": "需要推广",
+     "type": "text"
+    },
+    {
+     "text": "重新评估",
+     "type": "text"
+    },
+    {
+     "text": "可以改进",
+     "type": "text"
+    }
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nx-axis 低覆盖率 --> 高覆盖率",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "低覆盖率",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "高覆盖率",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\ny-axis 低参与度 --> 高参与度",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "yAxisBottom": {
+    "text": "低参与度",
+    "type": "text"
+   },
+   "yAxisTop": {
+    "text": "高参与度",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\n产品A: [0.3, 0.6]",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "points": [
+    {
+     "x": 0.3,
+     "y": 0.6,
+     "text": {
+      "text": "产品A",
+      "type": "text"
+     },
+     "className": ""
+    }
+   ],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\ntitle 分析象限图\nx-axis 低覆盖率 --> 高覆盖率\ny-axis 低参与度 --> 高参与度\nquadrant-1 需要扩展\nquadrant-2 需要推广\nquadrant-3 重新评估\nquadrant-4 可以改进\n产品A: [0.3, 0.6]\n产品B: [0.45, 0.23]",
+  "model": {
+   "type": "quadrantChart",
+   "title": "分析象限图",
+   "quadrants": [
+    {
+     "text": "需要扩展",
+     "type": "text"
+    },
+    {
+     "text": "需要推广",
+     "type": "text"
+    },
+    {
+     "text": "重新评估",
+     "type": "text"
+    },
+    {
+     "text": "可以改进",
+     "type": "text"
+    }
+   ],
+   "xAxisLeft": {
+    "text": "低覆盖率",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "高覆盖率",
+    "type": "text"
+   },
+   "yAxisBottom": {
+    "text": "低参与度",
+    "type": "text"
+   },
+   "yAxisTop": {
+    "text": "高参与度",
+    "type": "text"
+   },
+   "points": [
+    {
+     "x": 0.3,
+     "y": 0.6,
+     "text": {
+      "text": "产品A",
+      "type": "text"
+     },
+     "className": ""
+    },
+    {
+     "x": 0.45,
+     "y": 0.23,
+     "text": {
+      "text": "产品B",
+      "type": "text"
+     },
+     "className": ""
+    }
+   ],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-1 拡張が必要\nx-axis 低い --> 高い",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    {
+     "text": "拡張が必要",
+     "type": "text"
+    },
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "低い",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "高い",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nx-axis 낮음 --> 높음",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "낮음",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "높음",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-2 🚀Growth",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    {
+     "text": "🚀Growth",
+     "type": "text"
+    },
+    null,
+    null
+   ],
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nx-axis Café --> Größe",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "xAxisLeft": {
+    "text": "Café",
+    "type": "text"
+   },
+   "xAxisRight": {
+    "text": "Größe",
+    "type": "text"
+   },
+   "points": [],
+   "classes": {}
+  }
+ },
+ {
+  "source": "quadrantChart\nquadrant-1 catégoría\nquadrant-2 naïve",
+  "model": {
+   "type": "quadrantChart",
+   "quadrants": [
+    {
+     "text": "catégoría",
+     "type": "text"
+    },
+    {
+     "text": "naïve",
+     "type": "text"
+    },
+    null,
+    null
+   ],
+   "points": [],
+   "classes": {}
+  }
+ }
+]

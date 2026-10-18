@@ -47,3 +47,33 @@ fn check(name: &str) {
 fn info() {
     check("info");
 }
+
+#[test]
+fn pie() {
+    check("pie");
+}
+
+#[test]
+fn radar() {
+    check("radar");
+}
+
+#[test]
+fn treemap() {
+    check("treemap");
+}
+
+#[test]
+fn sankey() {
+    check("sankey");
+}
+
+#[test]
+fn quadrant() {
+    check("quadrant");
+}
+
+#[test]
+fn xychart() {
+    check("xychart");
+}

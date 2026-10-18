@@ -21,3 +21,33 @@ fn draws(file: &str) {
 fn info() {
     draws("info-docs.json");
 }
+
+#[test]
+fn pie() {
+    draws("pie-docs.json");
+}
+
+#[test]
+fn radar() {
+    draws("radar-docs.json");
+}
+
+#[test]
+fn treemap() {
+    draws("treemap-docs.json");
+}
+
+#[test]
+fn sankey() {
+    draws("sankey-docs.json");
+}
+
+#[test]
+fn quadrant() {
+    draws("quadrant-docs.json");
+}
+
+#[test]
+fn xychart() {
+    draws("xychart-docs.json");
+}

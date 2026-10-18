@@ -64,3 +64,16 @@ pub fn is_hex(c: u32) -> bool {
 pub fn is_word(c: u32) -> bool {
     (48..=57).contains(&c) || (65..=90).contains(&c) || (97..=122).contains(&c) || c == 95
 }
+
+/// The UTF-16 unit after the character at byte `at`, as `charCodeAt(i + 1)`
+/// reads it, and the byte where that unit's character starts. After an
+/// astral character it is the second half of the pair, which is none of
+/// these tests' characters.
+pub fn code_after(src: &str, at: usize) -> (u32, usize) {
+    let width = width_at(src, at);
+    if width == 4 {
+        (0xdc00, at + 4)
+    } else {
+        (code_at(src, at + width), at + width)
+    }
+}

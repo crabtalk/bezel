@@ -254,6 +254,124 @@ pub(crate) fn compare(x: f64) -> std::cmp::Ordering {
     x.partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Equal)
 }
 
+/// The exact decimal digits of `x.abs()`: the integer part and the fraction.
+fn exact_digits(x: f64) -> (String, String) {
+    // A double's fraction has at most 1074 binary digits, so as many decimal
+    // digits write it exactly.
+    let text = format!("{:.1074}", x.abs());
+    let (int, frac) = text.split_once('.').unwrap_or((&text, ""));
+    (int.to_string(), frac.trim_end_matches('0').to_string())
+}
+
+/// `digits` rounded to its first `keep` digits, a half going up, as a
+/// string of `keep` digits and whether it carried into a new leading digit.
+fn round_digits(digits: &[u8], keep: usize) -> (Vec<u8>, bool) {
+    let mut head: Vec<u8> = (0..keep)
+        .map(|i| digits.get(i).copied().unwrap_or(b'0'))
+        .collect();
+    if digits.get(keep).is_some_and(|&d| d >= b'5') {
+        let mut i = keep;
+        loop {
+            if i == 0 {
+                head.insert(0, b'1');
+                return (head, true);
+            }
+            i -= 1;
+            if head[i] == b'9' {
+                head[i] = b'0';
+            } else {
+                head[i] += 1;
+                break;
+            }
+        }
+    }
+    (head, false)
+}
+
+/// `x.toFixed(digits)`.
+pub(crate) fn to_fixed(x: f64, digits: usize) -> String {
+    if !x.is_finite() || x.abs() >= 1e21 {
+        return num_str(x);
+    }
+    let (int, frac) = exact_digits(x);
+    let mut all = int.clone().into_bytes();
+    all.extend(frac.bytes());
+    let keep = int.len() + digits;
+    let (rounded, carried) = round_digits(&all, keep);
+    let int_len = int.len() + usize::from(carried);
+    let text = String::from_utf8(rounded).unwrap_or_default();
+    let (int, frac) = text.split_at(int_len);
+    let int = int.trim_start_matches('0');
+    let int = if int.is_empty() { "0" } else { int };
+    let body = if digits == 0 {
+        int.to_string()
+    } else {
+        format!("{int}.{frac}")
+    };
+    // A negative number rounded to zero keeps its sign.
+    if x < 0.0 { format!("-{body}") } else { body }
+}
+
+/// The significant digits of `x.abs()`, not zero, and the decimal exponent of
+/// the first.
+fn significant(x: f64) -> (Vec<u8>, i64) {
+    let (int, frac) = exact_digits(x);
+    let int = int.trim_start_matches('0');
+    if !int.is_empty() {
+        let mut all = int.as_bytes().to_vec();
+        all.extend(frac.bytes());
+        (all, int.len() as i64 - 1)
+    } else {
+        let zeros = frac.bytes().take_while(|&b| b == b'0').count();
+        (frac.as_bytes()[zeros..].to_vec(), -(zeros as i64) - 1)
+    }
+}
+
+/// `x.toExponential(digits)`.
+pub(crate) fn to_exponential(x: f64, digits: usize) -> String {
+    if !x.is_finite() {
+        return num_str(x);
+    }
+    let (mantissa, exponent) = if x == 0.0 {
+        (vec![b'0'; digits + 1], 0)
+    } else {
+        let (all, exponent) = significant(x);
+        let (mut rounded, carried) = round_digits(&all, digits + 1);
+        rounded.truncate(digits + 1);
+        (rounded, exponent + i64::from(carried))
+    };
+    let mantissa = String::from_utf8(mantissa).unwrap_or_default();
+    let body = if digits == 0 {
+        mantissa
+    } else {
+        format!("{}.{}", &mantissa[..1], &mantissa[1..])
+    };
+    let sign = if x < 0.0 { "-" } else { "" };
+    let e = if exponent >= 0 {
+        format!("+{exponent}")
+    } else {
+        exponent.to_string()
+    };
+    format!("{sign}{body}e{e}")
+}
+
+/// `Number(x.toPrecision(precision))`: `x` rounded to `precision`
+/// significant digits.
+pub(crate) fn to_precision_number(x: f64, precision: usize) -> f64 {
+    if !x.is_finite() || x == 0.0 {
+        return x;
+    }
+    let (digits, exponent) = significant(x);
+    let (rounded, _) = round_digits(&digits, precision);
+    let text = format!(
+        "{}{}e{}",
+        if x < 0.0 { "-" } else { "" },
+        String::from_utf8(rounded).unwrap_or_default(),
+        exponent - precision as i64 + 1
+    );
+    text.parse().unwrap_or(f64::NAN)
+}
+
 /// A number as `JSON.stringify` writes it, for `serialize_with`: integers
 /// without a fraction, `NaN` and the infinities as `null`.
 pub(crate) fn json_number<S: serde::Serializer>(x: &f64, s: S) -> Result<S::Ok, S::Error> {
@@ -263,5 +381,58 @@ pub(crate) fn json_number<S: serde::Serializer>(x: &f64, s: S) -> Result<S::Ok, 
         s.serialize_i64(*x as i64)
     } else {
         s.serialize_f64(*x)
+    }
+}
+
+/// [`json_number`] for an optional number.
+pub(crate) fn json_number_opt<S: serde::Serializer>(
+    x: &Option<f64>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    match x {
+        Some(x) => json_number(x, s),
+        None => s.serialize_unit(),
+    }
+}
+
+/// [`json_number`] for each of a list.
+pub(crate) fn json_numbers<S: serde::Serializer>(xs: &[f64], s: S) -> Result<S::Ok, S::Error> {
+    s.collect_seq(xs.iter().map(|x| JsonNumber(*x)))
+}
+
+/// A number serialized by [`json_number`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct JsonNumber(pub f64);
+
+impl serde::Serialize for JsonNumber {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        json_number(&self.0, s)
+    }
+}
+
+/// [`json_number`] for each value of a map, as `JSON.stringify` writes a
+/// `Map` turned into an object.
+pub(crate) fn json_number_map<S: serde::Serializer, K: serde::Serialize>(
+    map: &indexmap::IndexMap<K, f64>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    s.collect_map(map.iter().map(|(k, v)| (k, JsonNumber(*v))))
+}
+
+/// `Math.max` of two: `NaN` when either is.
+pub(crate) fn max(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
+    }
+}
+
+/// `Math.min` of two: `NaN` when either is.
+pub(crate) fn min(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.min(b)
     }
 }
