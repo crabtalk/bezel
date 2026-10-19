@@ -1,6 +1,9 @@
 //! Pele's `diagrams/git/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use super::db::{GitCommit, GitModel, commit_type};
 use crate::{
@@ -8,7 +11,7 @@ use crate::{
     diagrams::common::{fit::plain_label, fit_width::turn_to_fit},
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{EscText, LabelSvg, Point, fragment, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, series_color},
     },
@@ -50,51 +53,53 @@ fn tag_width(tag: &Label) -> f64 {
     NOTCH + 4.0 + tag.width + 6.0
 }
 
-fn symbol(kind: u8, x: f64, y: f64, color: &str) -> String {
-    let at = format!("cx=\"{}\" cy=\"{}\"", num(x), num(y));
-    if kind == commit_type::HIGHLIGHT {
-        return format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{color}\"/>",
-            num(x - DOT - 1.0),
-            num(y - DOT - 1.0),
-            js::num_str(2.0 * DOT + 2.0),
-            js::num_str(2.0 * DOT + 2.0)
-        );
-    }
-    if kind == commit_type::MERGE {
-        return format!(
-            "<circle {at} r=\"{}\" fill=\"var(--_bg)\" stroke=\"{color}\" stroke-width=\"2\"/><circle {at} r=\"2.5\" fill=\"{color}\"/>",
-            js::num_str(DOT - 1.0)
-        );
-    }
-    let dot = format!("<circle {at} r=\"{}\" fill=\"{color}\"/>", js::num_str(DOT));
-    if kind == commit_type::REVERSE {
-        return dot
-            + &format!(
-                "<path d=\"M{},{}l6,6M{},{}l6,-6\" fill=\"none\" stroke=\"var(--_bg)\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>",
-                num(x - 3.0),
-                num(y - 3.0),
-                num(x - 3.0),
-                num(y + 3.0)
+fn symbol(kind: u8, x: f64, y: f64, color: impl fmt::Display) -> impl fmt::Display {
+    fragment(move |f| {
+        let at = fragment(|f| write!(f, "cx=\"{}\" cy=\"{}\"", num(x), num(y)));
+        if kind == commit_type::HIGHLIGHT {
+            return write!(
+                f,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{color}\"/>",
+                num(x - DOT - 1.0),
+                num(y - DOT - 1.0),
+                js::Number(2.0 * DOT + 2.0),
+                js::Number(2.0 * DOT + 2.0)
             );
-    }
-    if kind == commit_type::CHERRY_PICK {
-        return dot
-            + &format!(
-                "<path d=\"M{},{}L{},{}L{},{}\" fill=\"none\" stroke=\"var(--_bg)\" stroke-linejoin=\"round\"/><circle cx=\"{}\" cy=\"{}\" r=\"1.8\" fill=\"var(--_bg)\"/><circle cx=\"{}\" cy=\"{}\" r=\"1.8\" fill=\"var(--_bg)\"/>",
-                num(x - 2.6),
-                num(y + 1.0),
-                num(x + 0.8),
-                num(y - 4.2),
-                num(x + 2.6),
-                num(y + 1.0),
+        }
+        if kind == commit_type::MERGE {
+            return write!(
+                f,
+                "<circle {at} r=\"{}\" fill=\"var(--_bg)\" stroke=\"{color}\" stroke-width=\"2\"/><circle {at} r=\"2.5\" fill=\"{color}\"/>",
+                js::Number(DOT - 1.0)
+            );
+        }
+        write!(
+            f,
+            "<circle {at} r=\"{}\" fill=\"{color}\"/>",
+            js::Number(DOT)
+        )?;
+        if kind == commit_type::REVERSE {
+            write!(
+                f,
+                "<path d=\"M{}l6,6M{}l6,-6\" fill=\"none\" stroke=\"var(--_bg)\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>",
+                Point(x - 3.0, y - 3.0),
+                Point(x - 3.0, y + 3.0)
+            )?;
+        } else if kind == commit_type::CHERRY_PICK {
+            write!(
+                f,
+                "<path d=\"M{}L{}L{}\" fill=\"none\" stroke=\"var(--_bg)\" stroke-linejoin=\"round\"/><circle cx=\"{}\" cy=\"{}\" r=\"1.8\" fill=\"var(--_bg)\"/><circle cx=\"{}\" cy=\"{}\" r=\"1.8\" fill=\"var(--_bg)\"/>",
+                Point(x - 2.6, y + 1.0),
+                Point(x + 0.8, y - 4.2),
+                Point(x + 2.6, y + 1.0),
                 num(x - 2.6),
                 num(y + 2.2),
                 num(x + 2.6),
                 num(y + 2.2)
-            );
-    }
-    dot
+            )?;
+        }
+        Ok(())
+    })
 }
 
 pub fn render_git(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
@@ -320,7 +325,7 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
             c
         }
     };
-    let point = |m: f64, c: f64| format!("{},{}", num(px(m, c)), num(py(m, c)));
+    let point = |m: f64, c: f64| Point(px(m, c), py(m, c));
 
     let mut bounds = Bounds {
         min_x: f64::INFINITY,
@@ -360,7 +365,7 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
             let _ = write!(
                 branches,
                 "<g class=\"{p}-branch\" data-id=\"{}\"><path class=\"{p}-lane\" d=\"M{}L{}\" stroke=\"{color}\" stroke-dasharray=\"2 4\"/>",
-                esc_text(&model.lanes[i]),
+                EscText(&model.lanes[i]),
                 point(-LABEL_GAP, c),
                 point(end + TAIL, c)
             );
@@ -374,12 +379,11 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
                     num(w),
                     num(h)
                 );
-                branches.push_str(&label_svg(
-                    name,
-                    cx,
-                    cy,
-                    &format!(" class=\"{p}-label\" fill=\"var(--_bg)\""),
-                ));
+                let _ = write!(
+                    branches,
+                    "{}",
+                    LabelSvg(name, cx, cy, crate::class!("label", "fill=\"var(--_bg)\""),)
+                );
             }
             branches.push_str("</g>");
         }
@@ -417,6 +421,7 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
 
     let mut curves = String::new();
     let mut lines = String::new();
+    let mut d = String::new();
     for view in &views {
         let commit = view.commit;
         let c2 = cross[view.lane];
@@ -443,7 +448,8 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
             }
             let merged = j > 0 && commit.kind == commit_type::MERGE;
             let picked = j > 0 && !merged;
-            let mut d = format!("M{}", point(m1, c1));
+            d.clear();
+            let _ = write!(d, "M{}", point(m1, c1));
             if m2 <= m1 {
                 let mid = (m1 + m2) / 2.0;
                 let _ = write!(
@@ -504,13 +510,15 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
                     let _ = write!(d, "L{}", point(m2, c2));
                 }
             }
-            let class = if merged {
-                format!(" {p}-edge-merge")
-            } else if picked {
-                format!(" {p}-edge-cherry-pick")
-            } else {
-                String::new()
-            };
+            let class = fragment(|f| {
+                if merged {
+                    write!(f, " {p}-edge-merge")
+                } else if picked {
+                    write!(f, " {p}-edge-cherry-pick")
+                } else {
+                    Ok(())
+                }
+            });
             let _ = write!(
                 curves,
                 "<path class=\"{p}-edge{class}\" d=\"{d}\" stroke=\"{}\"{}/>",
@@ -534,12 +542,26 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
         // Merges and cherry-picks carry a message Mermaid makes up; only a
         // written one is worth showing.
         let written = commit.kind < commit_type::MERGE && !commit.message.is_empty();
-        let mut body = if written {
-            format!("<title>{}</title>", esc_text(&commit.message))
-        } else {
-            String::new()
-        };
-        body.push_str(&symbol(kind, x, y, &series_color(view.lane as i64)));
+        let merge = commit.kind == commit_type::MERGE && kind != commit_type::MERGE;
+        let _ = write!(
+            commits,
+            "<g class=\"{p}-commit {p}-commit-{}{}\" data-id=\"{}\">",
+            CLASSES.get(kind as usize).unwrap_or(&CLASSES[0]),
+            fragment(|f| if merge {
+                write!(f, " {p}-commit-merge")
+            } else {
+                Ok(())
+            }),
+            EscText(&commit.id)
+        );
+        if written {
+            let _ = write!(commits, "<title>{}</title>", EscText(&commit.message));
+        }
+        let _ = write!(
+            commits,
+            "{}",
+            symbol(kind, x, y, series_color(view.lane as i64))
+        );
 
         if let Some(label) = &view.label
             && !label.lines.is_empty()
@@ -547,13 +569,16 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
             let w = label.width;
             let h = label.height;
             let back = |cx: f64, cy: f64| {
-                format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\" fill=\"var(--_bg)\"/>",
-                    num(cx - w / 2.0 - 2.0),
-                    num(cy - h / 2.0 + 2.0),
-                    num(w + 4.0),
-                    num(h - 4.0)
-                )
+                fragment(move |f| {
+                    write!(
+                        f,
+                        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\" fill=\"var(--_bg)\"/>",
+                        num(cx - w / 2.0 - 2.0),
+                        num(cy - h / 2.0 + 2.0),
+                        num(w + 4.0),
+                        num(h - 4.0)
+                    )
+                })
             };
             if rotate {
                 // The text ends beside the commit and trails back the way the
@@ -569,23 +594,23 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
                     if flip { ay + k } else { ay + reach },
                 );
                 let _ = write!(
-                    body,
+                    commits,
                     "<g class=\"{p}-commit-label\" transform=\"rotate({} {} {})\">{}{}</g>",
                     if flip { 45 } else { -45 },
                     num(ax),
                     num(ay),
                     back(ax - w / 2.0, ay),
-                    label_svg(label, ax - w / 2.0, ay, "")
+                    LabelSvg(label, ax - w / 2.0, ay, "")
                 );
             } else {
                 let cx = if vertical { x - DOT - 6.0 - w / 2.0 } else { x };
                 let cy = if vertical { y } else { y + DOT + 6.0 + h / 2.0 };
                 bounds.grow(cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0);
                 let _ = write!(
-                    body,
+                    commits,
                     "<g class=\"{p}-commit-label\">{}{}</g>",
                     back(cx, cy),
-                    label_svg(label, cx, cy, "")
+                    LabelSvg(label, cx, cy, "")
                 );
             }
         }
@@ -607,7 +632,7 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
             offset += if vertical { w + 4.0 } else { h + 3.0 };
             bounds.grow(left, cy - h / 2.0, left + w, cy + h / 2.0);
             let _ = write!(
-                body,
+                commits,
                 "<g class=\"{p}-tag\"><path d=\"M{},{}L{},{}H{}V{}H{}Z\" fill=\"var(--_s)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"/><circle cx=\"{}\" cy=\"{}\" r=\"1.5\" fill=\"var(--_b)\"/>{}</g>",
                 num(left),
                 num(cy),
@@ -618,7 +643,7 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
                 num(left + NOTCH),
                 num(left + NOTCH),
                 num(cy),
-                label_svg(
+                LabelSvg(
                     tag,
                     left + NOTCH + 4.0 + tag.width / 2.0,
                     cy,
@@ -627,19 +652,8 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
             );
         }
 
-        let merge = if commit.kind == commit_type::MERGE && kind != commit_type::MERGE {
-            format!(" {p}-commit-merge")
-        } else {
-            String::new()
-        };
-        let _ = write!(
-            commits,
-            "<g class=\"{p}-commit {p}-commit-{}{merge}\" data-id=\"{}\">{body}</g>",
-            CLASSES.get(kind as usize).unwrap_or(&CLASSES[0]),
-            esc_text(&commit.id)
-        );
+        commits.push_str("</g>");
     }
-
     if bounds.min_x > bounds.max_x {
         bounds.grow(0.0, 0.0, 0.0, 0.0);
     }
@@ -668,11 +682,13 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
     let dx = pad - min_x + (inner - (max_x - min_x)) / 2.0;
     let dy = pad + title_height - min_y;
 
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content =
+        String::with_capacity(branches.len() + curves.len() + lines.len() + commits.len() + 512);
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
     );
     let _ = write!(
         content,
@@ -684,7 +700,7 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
         let _ = write!(
             content,
             "<g class=\"{p}-branches\" fill=\"none\" font-size=\"{}\">{branches}</g>",
-            js::num_str(medium)
+            js::Number(medium)
         );
     }
     if !curves.is_empty() || !lines.is_empty() {
@@ -697,7 +713,7 @@ fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: 
         let _ = write!(
             content,
             "<g class=\"{p}-commits\" font-size=\"{}\" fill=\"var(--_m)\">{commits}</g>",
-            js::num_str(small)
+            js::Number(small)
         );
     }
     content.push_str("</g>");

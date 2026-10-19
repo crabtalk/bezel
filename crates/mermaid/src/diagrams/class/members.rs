@@ -152,7 +152,7 @@ impl ClassMember {
             );
             if !self.return_type.is_empty() {
                 display_text += " : ";
-                display_text += &parse_generic_types(&self.return_type);
+                let _ = write!(display_text, "{}", parse_generic_types(&self.return_type));
             }
         }
         DisplayDetails {

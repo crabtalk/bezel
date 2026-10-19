@@ -30,8 +30,24 @@ pub use error::{Code, Error};
 pub use svg::theme::{Colors, Rgba};
 pub use text::{Host, Metrics};
 
+/// [`PREFIX`] as a literal, for `concat!`.
+macro_rules! prefix {
+    () => {
+        "bezel"
+    };
+}
+pub(crate) use prefix;
+
+/// ` class="bezel-<class>"` as a literal, and any attributes after it.
+macro_rules! class {
+    ($class:literal $(, $rest:literal)?) => {
+        concat!(" class=\"", $crate::prefix!(), "-", $class, "\"" $(, " ", $rest)?)
+    };
+}
+pub(crate) use class;
+
 /// What class names, CSS variables and element ids start with.
-pub const PREFIX: &str = "bezel";
+pub const PREFIX: &str = prefix!();
 
 /// How a diagram is drawn: Pele's `RenderOptions`. `Default` draws as Pele
 /// does with no options.

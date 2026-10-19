@@ -1,6 +1,10 @@
 //! Pele's `diagrams/journey/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::{EscText, LabelSvg};
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use super::db::{JourneyModel, journey_actors};
 use crate::{
@@ -11,7 +15,7 @@ use crate::{
     },
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, series_color},
     },
@@ -52,15 +56,18 @@ fn mood(score: f64) -> &'static str {
     }
 }
 
-fn face(x: f64, y: f64, mood: &str) -> String {
-    let p = crate::PREFIX;
-    format!(
-        "<g class=\"{p}-face {p}-face-{mood}\" transform=\"translate({},{})\"><circle r=\"{}\" fill=\"var(--_bg)\" stroke=\"var(--_l)\"/><g fill=\"var(--_l)\">{EYES}</g><path d=\"{}\" fill=\"none\" stroke=\"var(--_l)\" stroke-linecap=\"round\"/></g>",
-        num(x),
-        num(y),
-        js::num_str(FACE),
-        mouth(mood),
-    )
+fn face(x: f64, y: f64, mood: &str) -> impl fmt::Display + '_ {
+    fragment(move |f| {
+        write!(
+            f,
+            "<g class=\"{p}-face {p}-face-{mood}\" transform=\"translate({},{})\"><circle r=\"{}\" fill=\"var(--_bg)\" stroke=\"var(--_l)\"/><g fill=\"var(--_l)\">{EYES}</g><path d=\"{}\" fill=\"none\" stroke=\"var(--_l)\" stroke-linecap=\"round\"/></g>",
+            num(x),
+            num(y),
+            js::Number(FACE),
+            mouth(mood),
+            p = crate::PREFIX,
+        )
+    })
 }
 
 fn accessible(model: &JourneyModel) -> Accessible<'_> {
@@ -232,7 +239,12 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
     let chart_bottom = chart_top + 4.0 * LEVEL;
     let right = left + plot_w;
 
-    let mut body = String::new();
+    let mut body = String::with_capacity(16 * 1024);
+    let _ = write!(
+        body,
+        "{}",
+        LabelSvg(&title, pad + width / 2.0, pad + title.height / 2.0, TITLE)
+    );
     let mut bottom = top;
     if n > 0 {
         let mut grid = String::new();
@@ -250,13 +262,16 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
         let _ = write!(
             body,
             "<path class=\"{p}-grid\" d=\"{grid}\" fill=\"none\" stroke=\"var(--_a)\"/><g class=\"{p}-scale\" font-size=\"{}\" text-anchor=\"end\" fill=\"var(--_m)\">{scale}</g>",
-            js::num_str(tiny)
+            js::Number(tiny)
         );
 
         let mut line = String::new();
         let mut stems = String::new();
         let mut faces = String::new();
-        let mut cards: Vec<String> = Vec::new();
+        let mut cards = String::new();
+        // Where each task's card in `cards` ends.
+        let mut ends: Vec<usize> = Vec::with_capacity(tasks.len());
+        let card_attrs = format!(" font-size=\"{}\"", js::Number(small));
         for (i, task) in tasks.iter().enumerate() {
             let x = left + i as f64 * pitch;
             let cx = x + card_w / 2.0;
@@ -281,37 +296,34 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
                 num(cards_y + card_h),
                 num(y - FACE)
             );
-            faces += &face(cx, y, mood(score));
+            let _ = write!(faces, "{}", face(cx, y, mood(score)));
 
-            let mut dots = String::new();
+            let _ = write!(
+                cards,
+                "<g class=\"{p}-node {p}-task\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>{}",
+                EscText(js::trim(&task.task)),
+                num(x),
+                num(cards_y),
+                num(card_w),
+                num(card_h),
+                LabelSvg(&labels[i], cx, cards_y + PAD_Y + text_h / 2.0, &card_attrs),
+            );
             let people: Vec<&String> = task.people.iter().filter(|name| !name.is_empty()).collect();
             let count = people.len() as f64;
             let step = DOT_STEP.min((card_w - 2.0 * PAD_X - 2.0 * DOT) / (count - 1.0).max(1.0));
             for (k, name) in people.iter().enumerate() {
                 let _ = write!(
-                    dots,
+                    cards,
                     "<circle class=\"{p}-actor\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"var(--_s)\"><title>{}</title></circle>",
                     num(cx + (k as f64 - (count - 1.0) / 2.0) * step),
                     num(cards_y + card_h - PAD_Y - DOT),
-                    js::num_str(DOT),
+                    js::Number(DOT),
                     series_color(actor.get(name.as_str()).copied().unwrap_or(0)),
-                    esc_text(name)
+                    EscText(name)
                 );
             }
-            cards.push(format!(
-                "<g class=\"{p}-node {p}-task\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>{}{dots}</g>",
-                esc_text(js::trim(&task.task)),
-                num(x),
-                num(cards_y),
-                num(card_w),
-                num(card_h),
-                label_svg(
-                    &labels[i],
-                    cx,
-                    cards_y + PAD_Y + text_h / 2.0,
-                    &format!(" font-size=\"{}\"", js::num_str(small))
-                ),
-            ));
+            cards.push_str("</g>");
+            ends.push(cards.len());
         }
         let _ = write!(
             body,
@@ -323,12 +335,21 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
                 "<path class=\"{p}-edge\" d=\"{line}\" fill=\"none\" stroke=\"var(--_l)\" stroke-linejoin=\"round\"/>"
             );
         }
-        body += &faces;
+        body.push_str(&faces);
 
+        let band_attrs = format!(
+            " font-size=\"{}\" font-weight=\"var(--_hw)\"",
+            js::Number(small)
+        );
         for run in &runs {
-            let members = cards[run.start..run.start + run.count].join("");
+            let from = if run.start == 0 {
+                0
+            } else {
+                ends[run.start - 1]
+            };
+            let members = &cards[from..ends[run.start + run.count - 1]];
             let Some(label) = &run.label else {
-                body += &members;
+                body.push_str(members);
                 continue;
             };
             let x = left + run.start as f64 * pitch;
@@ -336,20 +357,12 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
             let _ = write!(
                 body,
                 "<g class=\"{p}-cluster {p}-section\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\"/>{}{members}</g>",
-                esc_text(js::trim(&tasks[run.start].section)),
+                EscText(js::trim(&tasks[run.start].section)),
                 num(x),
                 num(top),
                 num(w),
                 num(band_h),
-                label_svg(
-                    label,
-                    x + w / 2.0,
-                    top + band_h / 2.0,
-                    &format!(
-                        " font-size=\"{}\" font-weight=\"var(--_hw)\"",
-                        js::num_str(small)
-                    )
-                ),
+                LabelSvg(label, x + w / 2.0, top + band_h / 2.0, &band_attrs),
             );
         }
         bottom = chart_bottom + FACE;
@@ -363,12 +376,12 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
                 let _ = write!(
                     items,
                     "<g class=\"{p}-legend-item\" data-id=\"{}\"><circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\"/>{}</g>",
-                    esc_text(&item.name),
+                    EscText(&item.name),
                     num(x0 + item.x + DOT),
                     num(cy),
-                    js::num_str(DOT),
+                    js::Number(DOT),
                     series_color(actor.get(item.name.as_str()).copied().unwrap_or(0)),
-                    label_svg(
+                    LabelSvg(
                         &item.label,
                         x0 + item.x + 2.0 * DOT + 6.0 + item.label.width / 2.0,
                         cy,
@@ -379,7 +392,7 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
             let _ = write!(
                 body,
                 "<g class=\"{p}-legend\" font-size=\"{}\">{items}</g>",
-                js::num_str(small)
+                js::Number(small)
             );
             bottom = y0 + legend_h;
         }
@@ -387,12 +400,6 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
 
     let total_width = (width + 2.0 * pad).ceil();
     let total_height = (bottom.max(pad) + pad).ceil();
-    let content = label_svg(
-        &title,
-        pad + width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &body;
     Rendered {
         svg: svg_document(
             "journey",
@@ -401,7 +408,7 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
             size,
             ctx,
             accessible(model),
-            &content,
+            &body,
         ),
         width: total_width,
         height: total_height,
@@ -436,16 +443,24 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
     let mut body = String::new();
     let mut width = title.width;
     let count = model.tasks.len();
+    let actor_attrs = format!(
+        " class=\"{p}-journey-actor\" font-size=\"{}\"",
+        js::Number(small)
+    );
     for (index, task) in model.tasks.iter().enumerate() {
         if section != Some(task.section.as_str()) {
             section = Some(&task.section);
             let head = fit_label(section, measure, size, room - 16.0, Style::BOLD);
             if js::truthy(head.height) {
-                body += &label_svg(
-                    &head,
-                    pad + 8.0 + head.width / 2.0,
-                    y + head.height / 2.0,
-                    &format!(" class=\"{p}-cluster-label\" font-weight=\"var(--_hw)\""),
+                let _ = write!(
+                    body,
+                    "{}",
+                    LabelSvg(
+                        &head,
+                        pad + 8.0 + head.width / 2.0,
+                        y + head.height / 2.0,
+                        crate::class!("cluster-label", "font-weight=\"var(--_hw)\""),
+                    )
                 );
                 width = width.max(head.width + 16.0);
                 y += head.height + 8.0;
@@ -477,21 +492,25 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
             num(w),
             num(h)
         );
-        body += &label_svg(
-            &label,
-            pad + PAD_X + label.width / 2.0,
-            y + PAD_Y + label.height / 2.0,
-            &format!(" class=\"{p}-label\""),
+        let _ = write!(
+            body,
+            "{}",
+            LabelSvg(
+                &label,
+                pad + PAD_X + label.width / 2.0,
+                y + PAD_Y + label.height / 2.0,
+                crate::class!("label"),
+            )
         );
         let cx = pad + w - 28.0;
-        body += &face(cx, y + PAD_Y + FACE, mood(task.score));
+        let _ = write!(body, "{}", face(cx, y + PAD_Y + FACE, mood(task.score)));
         if !task.score.is_nan() {
             let _ = write!(
                 body,
                 "<text class=\"{p}-journey-score\" x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"middle\">{}</text>",
                 num(cx),
                 num(y + PAD_Y + 2.0 * FACE + small),
-                js::num_str(small),
+                js::Number(small),
                 num(task.score.clamp(1.0, 5.0))
             );
         }
@@ -503,21 +522,22 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
                 "<circle class=\"{p}-actor\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\"/>",
                 num(pad + 16.0),
                 num(py + ph / 2.0),
-                js::num_str(DOT),
+                js::Number(DOT),
                 series_color(actors[name])
             );
-            body += &label_svg(
-                person,
-                pad + 28.0 + person.width / 2.0,
-                py + ph / 2.0,
-                &format!(
-                    " class=\"{p}-journey-actor\" font-size=\"{}\"",
-                    js::num_str(small)
-                ),
+            let _ = write!(
+                body,
+                "{}",
+                LabelSvg(
+                    person,
+                    pad + 28.0 + person.width / 2.0,
+                    py + ph / 2.0,
+                    &actor_attrs,
+                )
             );
             py += ph + 4.0;
         }
-        body += "</g>";
+        body.push_str("</g>");
         y += h;
         if index + 1 < count {
             let _ = write!(
@@ -532,12 +552,12 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
     }
     let total_width = (width + 2.0 * pad).ceil();
     let height = ((pad + title.height).max(y - if count > 0 { 16.0 } else { 0.0 }) + pad).ceil();
-    let content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &body;
+    let mut content = String::with_capacity(body.len() + 512);
+    let _ = write!(
+        content,
+        "{}{body}",
+        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+    );
     Rendered {
         svg: svg_document(
             "journey",

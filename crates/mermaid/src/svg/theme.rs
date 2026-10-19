@@ -1,7 +1,8 @@
 //! The colours, fonts and user styles of a drawing, as CSS. Pele's
 //! `svg/theme.ts`, with `--bezel-*` for `--pele-*`.
 
-use std::{collections::HashSet, fmt::Write as _};
+use crate::svg::builder::Esc;
+use std::{borrow::Cow, collections::HashSet, fmt::Write as _};
 
 use super::builder::{esc, push_esc};
 use crate::js::{self, Lazy};
@@ -79,7 +80,7 @@ pub fn push_font_style(out: &mut String, size: f64, family: Option<&str>, mono: 
     out.push_str(";--_fm:var(--bezel-font-mono,");
     push_esc(out, families(mono, "monospace"));
     out.push_str(");font:");
-    out.push_str(&js::num_str(size));
+    let _ = write!(out, "{}", js::Number(size));
     out.push_str("px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--bezel-font,");
     push_esc(out, families(family, "sans-serif"));
     out.push(')');
@@ -96,6 +97,16 @@ pub struct ResolvedStyle {
     pub bold: bool,
     pub italic: bool,
     pub font_size: Option<f64>,
+}
+
+impl ResolvedStyle {
+    /// The colour of a line in this style and of its arrowheads.
+    pub fn line_color(&self) -> Cow<'static, str> {
+        match self.stroke.as_deref().filter(|stroke| !stroke.is_empty()) {
+            Some(stroke) => Cow::Owned(esc(stroke)),
+            None => Cow::Borrowed("var(--_l)"),
+        }
+    }
 }
 
 pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
@@ -164,7 +175,7 @@ pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
         if css.is_empty() {
             String::new()
         } else {
-            format!(" style=\"{}\"", esc(css))
+            format!(" style=\"{}\"", Esc(css))
         }
     };
     ResolvedStyle {
@@ -193,9 +204,18 @@ pub fn class_names(raw: &str) -> String {
 
 /// The colour for the `index`th data series in a chart, cycling through
 /// eight tokens.
-pub fn series_color(index: i64) -> String {
-    let k = index.rem_euclid(8) as usize;
-    format!("var(--bezel-series-{},{})", k + 1, SERIES[k])
+pub fn series_color(index: i64) -> SeriesColor {
+    SeriesColor(index.rem_euclid(8) as usize)
+}
+
+/// A [`series_color`], written where it is formatted.
+#[derive(Clone, Copy, Debug)]
+pub struct SeriesColor(usize);
+
+impl std::fmt::Display for SeriesColor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "var(--bezel-series-{},{})", self.0 + 1, SERIES[self.0])
+    }
 }
 
 /// An sRGB colour with alpha, each channel 0–255.

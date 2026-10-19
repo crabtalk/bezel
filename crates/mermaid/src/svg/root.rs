@@ -1,13 +1,11 @@
 //! The `<svg>` element around a drawing. Pele's `svg/root.ts`.
 
+use crate::svg::builder::{Esc, EscText};
 use std::{fmt::Write as _, sync::LazyLock};
 
 use memchr::memmem::Finder;
 
-use super::{
-    builder::{esc, esc_text},
-    theme::{RADIUS, ROOT_STYLE, push_font_style, resolve},
-};
+use super::theme::{RADIUS, ROOT_STYLE, push_font_style, resolve};
 use crate::js;
 use crate::{Ctx, Host};
 
@@ -116,57 +114,21 @@ pub fn svg_document(
     acc: Accessible,
     content: &str,
 ) -> String {
-    let mut head = String::new();
-    let mut aria = String::new();
     let title = acc.acc_title.filter(|title| !title.is_empty());
     let descr = acc.acc_descr.filter(|descr| !descr.is_empty());
-    if title.is_some() || descr.is_some() {
-        let prefix = esc(ctx.options.id_prefix.as_str());
-        if let Some(title) = title {
-            let _ = write!(
-                head,
-                "<title id=\"{prefix}-title\">{}</title>",
-                esc_text(title)
-            );
-            let _ = write!(aria, " aria-labelledby=\"{prefix}-title\"");
-        }
-        if let Some(descr) = descr {
-            let _ = write!(
-                head,
-                "<desc id=\"{prefix}-desc\">{}</desc>",
-                esc_text(descr)
-            );
-            let _ = write!(aria, " aria-describedby=\"{prefix}-desc\"");
-        }
-    }
+    let prefix = Esc(ctx.options.id_prefix.as_str());
     let fit = if !ctx.responsive {
         ""
     } else {
         "max-width:100%;height:auto;"
     };
     let p = crate::PREFIX;
-    let mut out = String::with_capacity(content.len() + head.len() + aria.len() + 1024);
-    let w = js::num_str(width);
-    let h = js::num_str(height);
-    for piece in [
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"",
-        p,
-        " ",
-        p,
-        "-",
-        kind,
-        "\" viewBox=\"0 0 ",
-        &w,
-        " ",
-        &h,
-        "\" width=\"",
-        &w,
-        "\" height=\"",
-        &h,
-        "\" style=\"",
-    ] {
-        out.push_str(piece);
-    }
+    let mut out = String::with_capacity(content.len() + 1024);
+    let (w, h) = (js::Number(width), js::Number(height));
+    let _ = write!(
+        out,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"{p} {p}-{kind}\" viewBox=\"0 0 {w} {h}\" width=\"{w}\" height=\"{h}\" style=\""
+    );
     let style = out.len();
     out.push_str(fit);
     out.push_str(ROOT_STYLE);
@@ -186,15 +148,26 @@ pub fn svg_document(
         ctx.options.font_family_mono.as_deref(),
     );
     let style = style..out.len();
-    for piece in [
-        "\" fill=\"var(--_fg)\" role=\"graphics-document document\" aria-roledescription=\"",
-        kind,
-        "\"",
-        &aria,
-        ">",
-        &head,
-    ] {
-        out.push_str(piece);
+    let _ = write!(
+        out,
+        "\" fill=\"var(--_fg)\" role=\"graphics-document document\" aria-roledescription=\"{kind}\""
+    );
+    if title.is_some() {
+        let _ = write!(out, " aria-labelledby=\"{prefix}-title\"");
+    }
+    if descr.is_some() {
+        let _ = write!(out, " aria-describedby=\"{prefix}-desc\"");
+    }
+    out.push('>');
+    if let Some(title) = title {
+        let _ = write!(
+            out,
+            "<title id=\"{prefix}-title\">{}</title>",
+            EscText(title)
+        );
+    }
+    if let Some(descr) = descr {
+        let _ = write!(out, "<desc id=\"{prefix}-desc\">{}</desc>", EscText(descr));
     }
     match &ctx.options.colors {
         Some(_) => out.push_str(content),

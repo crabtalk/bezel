@@ -1,5 +1,6 @@
 //! Pele's `diagrams/cynefin/render.ts`.
 
+use crate::svg::builder::{EscText, LabelSvg};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -14,7 +15,7 @@ use crate::{
     config::Value,
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{Point, TITLE, fragment, num},
         edges::{marker, marker_trim},
         root::{Accessible, svg_document},
         theme::{RADIUS, series_color},
@@ -258,21 +259,18 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
         },
     );
     let drop = cliff(cx, cy, bottom, width * 0.03);
-    let at = |curve: &[f64], end: bool| -> String {
+    let at = |curve: &[f64], end: bool| -> Point {
         if end {
-            format!(
-                "{},{}",
-                num(curve[curve.len() - 2]),
-                num(curve[curve.len() - 1])
-            )
+            Point(curve[curve.len() - 2], curve[curve.len() - 1])
         } else {
-            format!("{},{}", num(curve[0]), num(curve[1]))
+            Point(curve[0], curve[1])
         }
     };
 
-    let region = |name: &str| -> String {
-        match name {
-            "complex" => format!(
+    let region = |f: &mut String, name: &str| {
+        let _ = match name {
+            "complex" => write!(
+                f,
                 "M{},{}L{}{}{}Z",
                 num(x0),
                 num(y0),
@@ -280,7 +278,8 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
                 forward(&fold),
                 backward(&west)
             ),
-            "complicated" => format!(
+            "complicated" => write!(
+                f,
                 "M{}L{},{}L{}{}{}Z",
                 at(&fold, false),
                 num(right),
@@ -289,7 +288,8 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
                 backward(&east),
                 backward(&fold)
             ),
-            "chaotic" => format!(
+            "chaotic" => write!(
+                f,
                 "M{}{}{}L{},{}Z",
                 at(&west, false),
                 forward(&west),
@@ -297,7 +297,8 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
                 num(x0),
                 num(bottom)
             ),
-            _ => format!(
+            _ => write!(
+                f,
                 "M{}{}L{},{}L{}{}Z",
                 at(&east, false),
                 forward(&east),
@@ -306,19 +307,32 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
                 at(&drop, true),
                 backward(&drop)
             ),
-        }
+        };
     };
 
-    let mut fills = String::new();
+    let total_width = (width.max(title.width) + 2.0 * pad).ceil();
+    let total_height = (height + title_height + 2.0 * pad).ceil();
+    let mut content = String::with_capacity(16 * 1024);
+    let _ = write!(
+        content,
+        "{}<g class=\"{p}-cynefin-regions\">",
+        LabelSvg(&title, x0 + width / 2.0, pad + title.height / 2.0, TITLE)
+    );
     for (name, _, _, color) in QUADRANTS {
         let _ = write!(
-            fills,
-            "<path class=\"{p}-cynefin-region\" data-id=\"{name}\" d=\"{}\" fill=\"{}\" fill-opacity=\"0.14\"/>",
-            region(name),
+            content,
+            "<path class=\"{p}-cynefin-region\" data-id=\"{name}\" d=\""
+        );
+        region(&mut content, name);
+        let _ = write!(
+            content,
+            "\" fill=\"{}\" fill-opacity=\"0.14\"/>",
             series_color(color)
         );
     }
-    let boundaries = format!(
+    content.push_str("</g>");
+    let _ = write!(
+        content,
         "<g class=\"{p}-cynefin-boundaries\" fill=\"none\" stroke=\"var(--_b)\" stroke-dasharray=\"6 3\"><path d=\"{}\"/><path d=\"{}\"/><path d=\"{}\"/><path class=\"{p}-cynefin-cliff\" d=\"{}\" stroke=\"var(--_l)\" stroke-width=\"2\" stroke-dasharray=\"none\" stroke-linecap=\"round\"/></g>",
         curve_path(&fold),
         curve_path(&west),
@@ -326,30 +340,38 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
         curve_path(&drop)
     );
     let oval = ellipse_path(cx, cy, rx, ry);
-    let ellipse = format!(
+    let _ = write!(
+        content,
         "<path d=\"{oval}\" fill=\"var(--_bg)\"/><path class=\"{p}-cynefin-region\" data-id=\"confusion\" d=\"{oval}\" fill=\"{}\" fill-opacity=\"0.18\" stroke=\"var(--_b)\" stroke-dasharray=\"4 2\"/>",
         series_color(CONFUSION_COLOR)
     );
 
-    let draw_block = |b: &Block| -> String {
+    let subtitle_attrs = format!(
+        " class=\"{p}-cynefin-subtitle\" font-size=\"{}\" font-style=\"italic\" fill=\"var(--_m)\"",
+        num(small)
+    );
+    let item_attrs = format!(" class=\"{p}-label\" font-size=\"{}\"", num(item_size));
+    let overflow_attrs = format!("{item_attrs} fill=\"var(--_m)\"");
+    let draw_block = |out: &mut String, b: &Block| {
         let mut y = b.cy - b.h / 2.0;
-        let mut out = label_svg(
-            &b.title,
-            b.cx,
-            y + b.title.height / 2.0,
-            &format!(" class=\"{p}-label\" font-weight=\"var(--_hw)\""),
+        let _ = write!(
+            out,
+            "<g class=\"{p}-cynefin-domain\" data-id=\"{}\">{}",
+            b.name,
+            LabelSvg(
+                &b.title,
+                b.cx,
+                y + b.title.height / 2.0,
+                crate::class!("label", "font-weight=\"var(--_hw)\""),
+            )
         );
         y += b.title.height;
         for s in &b.subtitles {
-            out.push_str(&label_svg(
-                s,
-                b.cx,
-                y + s.height / 2.0,
-                &format!(
-                    " class=\"{p}-cynefin-subtitle\" font-size=\"{}\" font-style=\"italic\" fill=\"var(--_m)\"",
-                    num(small)
-                ),
-            ));
+            let _ = write!(
+                out,
+                "{}",
+                LabelSvg(s, b.cx, y + s.height / 2.0, &subtitle_attrs)
+            );
             y += s.height;
         }
         y += HEAD_GAP - ITEM_GAP;
@@ -359,15 +381,15 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
                 out,
                 "<g class=\"{p}-node{}\"{}><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"{}/>{}</g>",
                 if item.overflow {
-                    format!(" {p}-cynefin-overflow")
+                    concat!(" ", crate::prefix!(), "-cynefin-overflow")
                 } else {
-                    String::new()
+                    ""
                 },
-                if item.overflow {
-                    String::new()
+                fragment(|f| if item.overflow {
+                    Ok(())
                 } else {
-                    format!(" data-id=\"{}\"", esc_text(&item.text))
-                },
+                    write!(f, " data-id=\"{}\"", EscText(&item.text))
+                }),
                 num(b.cx - item.w / 2.0),
                 num(y),
                 num(item.w),
@@ -377,42 +399,34 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
                 } else {
                     ""
                 },
-                label_svg(
+                LabelSvg(
                     &item.label,
                     b.cx,
                     y + item.h / 2.0,
-                    &format!(
-                        " class=\"{p}-label\" font-size=\"{}\"{}",
-                        num(item_size),
-                        if item.overflow {
-                            " fill=\"var(--_m)\""
-                        } else {
-                            ""
-                        }
-                    )
+                    if item.overflow {
+                        &overflow_attrs
+                    } else {
+                        &item_attrs
+                    }
                 )
             );
             y += item.h;
         }
-        format!(
-            "<g class=\"{p}-cynefin-domain\" data-id=\"{}\">{out}</g>",
-            b.name
-        )
+        out.push_str("</g>");
     };
 
     let mut by_name: HashMap<&str, usize> = HashMap::new();
-    let mut domains = String::new();
     for (index, &(name, col, row, _)) in QUADRANTS.iter().enumerate() {
         let b = &mut blocks[index];
         b.cx = x0 + quad_w * (col + 0.5);
         b.cy = y0 + quad_h * (row + 0.5);
         by_name.insert(name, index);
-        domains.push_str(&draw_block(&blocks[index]));
+        draw_block(&mut content, &blocks[index]);
     }
     blocks[CONFUSION].cx = cx;
     blocks[CONFUSION].cy = cy;
     by_name.insert("confusion", CONFUSION);
-    domains.push_str(&draw_block(&blocks[CONFUSION]));
+    draw_block(&mut content, &blocks[CONFUSION]);
 
     let inside = |b: usize, x: f64, y: f64| -> bool {
         if b == CONFUSION {
@@ -423,7 +437,8 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
         }
     };
 
-    let mut edges = String::new();
+    let edges_at = content.len();
+    let edge_attrs = format!(" class=\"{p}-edge-label\" font-size=\"{}\"", num(small));
     let mut seen: HashMap<String, f64> = HashMap::new();
     for transition in &model.transitions {
         let (Some(&fi), Some(&ti)) = (
@@ -526,25 +541,12 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
         ex -= ux * marker_trim("arrow_point");
         ey -= uy * marker_trim("arrow_point");
 
-        let mut text = String::new();
-        if let Some(raw) = transition.label.as_deref().filter(|l| !l.is_empty()) {
-            let label = layout_label(Some(raw), false, measure, small, ITEM_MAX_WIDTH, 0);
-            let (lx, ly) = point((t0 + t1) / 2.0);
-            let away = (nx.abs() * label.width) / 2.0 + (ny.abs() * label.height) / 2.0 + 6.0;
-            let half = label.width / 2.0 + 4.0;
-            let tx = (lx + nx * away)
-                .max(x0 + half)
-                .min((right - half).max(x0 + half));
-            text = label_svg(
-                &label,
-                tx,
-                ly + ny * away,
-                &format!(" class=\"{p}-edge-label\" font-size=\"{}\"", num(small)),
-            );
+        if content.len() == edges_at {
+            let _ = write!(content, "<g class=\"{p}-edges\">");
         }
         let _ = write!(
-            edges,
-            "<g class=\"{p}-edge\" data-id=\"{}-{}\"><path d=\"M{},{}Q{},{} {},{}\" fill=\"none\" stroke=\"var(--_l)\"/>{head}{text}</g>",
+            content,
+            "<g class=\"{p}-edge\" data-id=\"{}-{}\"><path d=\"M{},{}Q{},{} {},{}\" fill=\"none\" stroke=\"var(--_l)\"/>{head}",
             transition.from,
             transition.to,
             num(sx),
@@ -554,22 +556,24 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
             num(ex),
             num(ey)
         );
+        if let Some(raw) = transition.label.as_deref().filter(|l| !l.is_empty()) {
+            let label = layout_label(Some(raw), false, measure, small, ITEM_MAX_WIDTH, 0);
+            let (lx, ly) = point((t0 + t1) / 2.0);
+            let away = (nx.abs() * label.width) / 2.0 + (ny.abs() * label.height) / 2.0 + 6.0;
+            let half = label.width / 2.0 + 4.0;
+            let tx = (lx + nx * away)
+                .max(x0 + half)
+                .min((right - half).max(x0 + half));
+            let _ = write!(
+                content,
+                "{}",
+                LabelSvg(&label, tx, ly + ny * away, &edge_attrs)
+            );
+        }
+        content.push_str("</g>");
     }
-
-    let total_width = (width.max(title.width) + 2.0 * pad).ceil();
-    let total_height = (height + title_height + 2.0 * pad).ceil();
-    let mut content = label_svg(
-        &title,
-        x0 + width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    );
-    let _ = write!(content, "<g class=\"{p}-cynefin-regions\">{fills}</g>");
-    content.push_str(&boundaries);
-    content.push_str(&ellipse);
-    content.push_str(&domains);
-    if !edges.is_empty() {
-        let _ = write!(content, "<g class=\"{p}-edges\">{edges}</g>");
+    if content.len() != edges_at {
+        content.push_str("</g>");
     }
 
     Rendered {

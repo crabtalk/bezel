@@ -1,8 +1,9 @@
 //! Pele's `diagrams/eventmodeling/render.ts`.
 
+use crate::svg::builder::{Esc, EscText, LabelSvg, TITLE, fragment};
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Write as _,
+    fmt::{self, Write as _},
 };
 
 use super::model::{EmBox, EventModelingModel};
@@ -11,16 +12,16 @@ use crate::{
     Config, Rendered,
     diagrams::common::{
         fit_width::turn_to_fit,
-        literal_label::{break_label, left_label_svg, literal_label},
+        literal_label::{StartLines, break_label, literal_label},
     },
     js,
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::num,
         edges::{marker, marker_trim},
         root::{Accessible, svg_document},
         theme::{FONT_MONO, RADIUS, series_color},
     },
-    text::{Host, Label, Style, decode_entities, layout_label},
+    text::{Host, Label, Span, Style, decode_entities, layout_label},
 };
 
 const BOX_PAD_X: f64 = 12.0;
@@ -86,24 +87,81 @@ fn hard_wrap(text: &str, columns: usize) -> Vec<String> {
     out
 }
 
-fn lines(rows: &[String], x: f64, y: f64, step: f64, attrs: &str) -> String {
-    let mut body = String::new();
-    for (i, row) in rows.iter().enumerate() {
-        if !row.is_empty() {
-            let _ = write!(
-                body,
-                "<tspan x=\"{}\" y=\"{}\">{}</tspan>",
-                num(x),
-                num(y + i as f64 * step),
-                esc(row)
-            );
+/// A line of text [`lines`] writes.
+trait Row {
+    fn is_blank(&self) -> bool;
+    fn write_esc(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
+
+impl Row for String {
+    fn is_blank(&self) -> bool {
+        self.is_empty()
+    }
+
+    fn write_esc(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Esc(self))
+    }
+}
+
+impl Row for Vec<Span> {
+    fn is_blank(&self) -> bool {
+        self.iter().all(|span| span.text.is_empty())
+    }
+
+    fn write_esc(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.iter()
+            .try_for_each(|span| write!(f, "{}", Esc(&span.text)))
+    }
+}
+
+fn lines<'a>(
+    rows: &'a [impl Row],
+    x: f64,
+    y: f64,
+    step: f64,
+    attrs: &'a str,
+) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        if rows.iter().all(Row::is_blank) {
+            return Ok(());
         }
-    }
-    if body.is_empty() {
-        String::new()
+        write!(f, "<text{attrs} xml:space=\"preserve\">")?;
+        for (i, row) in rows.iter().enumerate() {
+            if !row.is_blank() {
+                write!(
+                    f,
+                    "<tspan x=\"{}\" y=\"{}\">",
+                    num(x),
+                    num(y + i as f64 * step)
+                )?;
+                row.write_esc(f)?;
+                f.write_str("</tspan>")?;
+            }
+        }
+        f.write_str("</text>")
+    })
+}
+
+fn reset(box_: &EmBox) -> &'static str {
+    if box_.reset {
+        concat!(" ", crate::prefix!(), "-em-reset")
     } else {
-        format!("<text{attrs} xml:space=\"preserve\">{body}</text>")
+        ""
     }
+}
+
+/// A box's frame: the attributes its rectangles share.
+fn frame(x: f64, y: f64, w: f64, h: f64) -> impl fmt::Display {
+    fragment(move |f| {
+        write!(
+            f,
+            "x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"",
+            num(x),
+            num(y),
+            num(w),
+            num(h)
+        )
+    })
 }
 
 fn widest(measure: &impl Host, rows: &[String], font_size: f64, style: u8) -> f64 {
@@ -241,25 +299,26 @@ fn draw(
 
     let mut y = top;
     let mut lanes = String::new();
+    let lane_attrs = format!(
+        " class=\"{p}-cluster-label\" font-size=\"{}\" font-weight=\"var(--_hw)\" fill=\"var(--_m)\"",
+        num(small)
+    );
     for band in &mut bands {
         band.y = y;
         band.h += 2.0 * LANE_PAD;
         let _ = write!(
             lanes,
             "<g class=\"{p}-cluster {p}-em-lane\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\"/>{}</g>",
-            esc_text(band.lane_label),
+            EscText(band.lane_label),
             num(left),
             num(y),
             num(lane_width),
             num(band.h),
-            label_svg(
+            LabelSvg(
                 &band.label,
                 left + LANE_PAD + band.label.width / 2.0,
                 y + band.h / 2.0,
-                &format!(
-                    " class=\"{p}-cluster-label\" font-size=\"{}\" font-weight=\"var(--_hw)\" fill=\"var(--_m)\"",
-                    num(small)
-                )
+                &lane_attrs
             )
         );
         y += band.h + LANE_GAP;
@@ -267,58 +326,55 @@ fn draw(
     let mut bottom = if bands.is_empty() { top } else { y - LANE_GAP };
 
     let mut nodes = String::new();
+    let name_attrs = format!(
+        " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
+        num(name_size)
+    );
+    let data_attrs = format!(
+        " class=\"{p}-em-data\" font-family=\"{FONT_MONO}\" font-size=\"{}\"",
+        num(mono)
+    );
     for (index, item) in placed.iter_mut().enumerate() {
         let box_ = &model.boxes[index];
         let band = &bands[band_of[&box_.lane.key]];
         item.x += left + label_column;
         item.y = band.y + (band.h - item.h) / 2.0;
-        let frame = format!(
-            "x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"",
-            num(item.x),
-            num(item.y),
-            num(item.w),
-            num(item.h)
+        let frame = frame(item.x, item.y, item.w, item.h);
+        let _ = write!(
+            nodes,
+            "<g class=\"{p}-node {p}-em-{}{}\" data-id=\"{}\">",
+            box_.kind,
+            reset(box_),
+            EscText(&box_.id)
         );
-        let shape = match series(box_.kind) {
-            None => format!("<rect {frame} fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>"),
-            Some(series) => format!(
+        let _ = match series(box_.kind) {
+            None => write!(
+                nodes,
+                "<rect {frame} fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>"
+            ),
+            Some(series) => write!(
+                nodes,
                 "<rect {frame} fill=\"var(--_bg)\"/><rect {frame} fill=\"{0}\" fill-opacity=\"0.22\" stroke=\"{0}\"/>",
                 series_color(series)
             ),
         };
         let name_y = item.y + BOX_PAD_Y + item.name.height / 2.0;
-        let text = label_svg(
-            &item.name,
-            item.x + item.w / 2.0,
-            name_y,
-            &format!(
-                " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
-                num(name_size)
-            ),
-        ) + &lines(
-            &item.data,
-            item.x + BOX_PAD_X,
-            item.y + BOX_PAD_Y + item.name.height + 6.0 + mono_step / 2.0 + mono * 0.35,
-            mono_step,
-            &format!(
-                " class=\"{p}-em-data\" font-family=\"{FONT_MONO}\" font-size=\"{}\"",
-                num(mono)
-            ),
-        );
         let _ = write!(
             nodes,
-            "<g class=\"{p}-node {p}-em-{}{}\" data-id=\"{}\">{shape}{text}</g>",
-            box_.kind,
-            if box_.reset {
-                format!(" {p}-em-reset")
-            } else {
-                String::new()
-            },
-            esc_text(&box_.id)
+            "{}{}</g>",
+            LabelSvg(&item.name, item.x + item.w / 2.0, name_y, &name_attrs),
+            lines(
+                &item.data,
+                item.x + BOX_PAD_X,
+                item.y + BOX_PAD_Y + item.name.height + 6.0 + mono_step / 2.0 + mono * 0.35,
+                mono_step,
+                &data_attrs,
+            )
         );
     }
 
     let mut edges = String::new();
+    let mut d = String::new();
     let trim = marker_trim("arrow_point");
     for relation in &model.relations {
         let (si, ti) = (relation.source_index, relation.target_index);
@@ -326,7 +382,8 @@ fn draw(
             continue;
         }
         let (s, t) = (&placed[si], &placed[ti]);
-        let (d, head) = if model.boxes[si].lane.key == model.boxes[ti].lane.key {
+        d.clear();
+        let head = if model.boxes[si].lane.key == model.boxes[ti].lane.key {
             // Along the lane, from the side of one box to the side of the
             // other.
             let forward = t.x >= s.x;
@@ -335,16 +392,15 @@ fn draw(
             let sy = s.y + s.h / 2.0;
             let ty = t.y + t.h / 2.0;
             let dir = if tx >= sx { 1.0 } else { -1.0 };
-            (
-                format!(
-                    "M{},{}L{},{}",
-                    num(sx),
-                    num(sy),
-                    num(tx - dir * trim),
-                    num(ty)
-                ),
-                marker("arrow_point", tx, ty, dir, 0.0, "var(--_l)"),
-            )
+            let _ = write!(
+                d,
+                "M{},{}L{},{}",
+                num(sx),
+                num(sy),
+                num(tx - dir * trim),
+                num(ty)
+            );
+            marker("arrow_point", tx, ty, dir, 0.0, "var(--_l)")
         } else {
             // Between lanes, straight down or up where the boxes overlap,
             // else in an S.
@@ -371,26 +427,29 @@ fn draw(
             let dir = if down { 1.0 } else { -1.0 };
             let end = ty - dir * trim;
             let mid = (sy + end) / 2.0;
-            (
-                if sx == tx {
-                    format!("M{},{}V{}", num(sx), num(sy), num(end))
-                } else {
-                    format!(
-                        "M{},{}C{},{} {},{} {},{}",
-                        num(sx),
-                        num(sy),
-                        num(sx),
-                        num(mid),
-                        num(tx),
-                        num(mid),
-                        num(tx),
-                        num(end)
-                    )
-                },
-                marker("arrow_point", tx, ty, 0.0, dir, "var(--_l)"),
-            )
+            let _ = if sx == tx {
+                write!(d, "M{},{}V{}", num(sx), num(sy), num(end))
+            } else {
+                write!(
+                    d,
+                    "M{},{}C{},{} {},{} {},{}",
+                    num(sx),
+                    num(sy),
+                    num(sx),
+                    num(mid),
+                    num(tx),
+                    num(mid),
+                    num(tx),
+                    num(end)
+                )
+            };
+            marker("arrow_point", tx, ty, 0.0, dir, "var(--_l)")
         };
-        edges.push_str(&edge(&relation.source, &relation.target, &d, &head));
+        let _ = write!(
+            edges,
+            "{}",
+            edge(&relation.source, &relation.target, &d, head)
+        );
     }
 
     // Notes and given/when/then specifications, listed under the lanes with
@@ -398,6 +457,8 @@ fn draw(
     let names = frame_names(&model.boxes);
     let mut cards = String::new();
     let mut cards_right = 0f64;
+    let head_attrs = format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(small));
+    let row_attrs = format!(" font-size=\"{}\"", num(small));
     let mut card = |kind: &str, heading: &str, frame: &str, rows: Vec<String>| {
         let head = layout_label(
             Some(&card_heading(&names, heading, frame)),
@@ -418,23 +479,23 @@ fn draw(
         let _ = write!(
             cards,
             "<g class=\"{p}-em-{kind}\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>{}{}</g>",
-            esc_text(frame),
+            EscText(frame),
             num(left),
             num(cy),
             num(w),
             num(h),
-            label_svg(
+            LabelSvg(
                 &head,
                 left + BOX_PAD_X + head.width / 2.0,
                 cy + BOX_PAD_Y + head.height / 2.0,
-                &format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(small))
+                &head_attrs
             ),
             lines(
                 &rows,
                 left + BOX_PAD_X,
                 cy + BOX_PAD_Y + head.height + small_step / 2.0 + small * 0.35,
                 small_step,
-                &format!(" font-size=\"{}\"", num(small))
+                &row_attrs
             )
         );
         bottom = cy + h;
@@ -465,26 +526,27 @@ fn draw(
         .max(title.width);
     let total_width = (width + 2.0 * pad).ceil();
     let total_height = (bottom + pad).ceil();
-    let content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &lanes
-        + &edges
-        + &nodes
-        + &cards;
+    let mut content =
+        String::with_capacity(lanes.len() + edges.len() + nodes.len() + cards.len() + 512);
+    let _ = write!(
+        content,
+        "{}{lanes}{edges}{nodes}{cards}",
+        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+    );
 
     document(model, ctx, size, total_width, total_height, &content)
 }
 
-fn edge(source: &EmBox, target: &EmBox, d: &str, head: &str) -> String {
-    let p = crate::PREFIX;
-    format!(
-        "<g class=\"{p}-edge\" data-id=\"{}-{}\"><path d=\"{d}\" fill=\"none\" stroke=\"var(--_l)\"/>{head}</g>",
-        esc_text(&source.id),
-        esc_text(&target.id)
-    )
+fn edge(source: &EmBox, target: &EmBox, d: &str, head: impl fmt::Display) -> impl fmt::Display {
+    fragment(move |f| {
+        write!(
+            f,
+            "<g class=\"{p}-edge\" data-id=\"{}-{}\"><path d=\"{d}\" fill=\"none\" stroke=\"var(--_l)\"/>{head}</g>",
+            EscText(&source.id),
+            EscText(&target.id),
+            p = crate::PREFIX,
+        )
+    })
 }
 
 /// Each frame id with the name of its box, the last box of an id winning.
@@ -628,15 +690,20 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
     let mut edges = String::new();
     let mut cards = String::new();
     let mut placed: Vec<Card> = Vec::with_capacity(n);
+    let lane_attrs = format!(
+        " class=\"{p}-cluster-label\" font-size=\"{}\" font-weight=\"var(--_hw)\" fill=\"var(--_m)\"",
+        num(small)
+    );
+    let name_attrs = format!(
+        " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
+        num(small)
+    );
+    let data_attrs = format!(
+        " class=\"{p}-em-data\" font-family=\"{FONT_MONO}\" font-size=\"{}\"",
+        num(mono)
+    );
     let text = |raw: &str, font_size: f64, style: u8| -> Label {
         literal_label(&decode_entities(raw), measure, font_size, text_room, style)
-    };
-    let joined = |label: &Label| -> Vec<String> {
-        label
-            .lines
-            .iter()
-            .map(|line| line.iter().map(|span| span.text.as_str()).collect())
-            .collect()
     };
     for (index, box_) in model.boxes.iter().enumerate() {
         let lane_room = if passed.contains(&index) {
@@ -676,37 +743,23 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
         let head_h = lane.height + 12.0;
         let h = 2.0 * BOX_PAD_Y + name.height + data.as_ref().map_or(0.0, |data| data.height + 6.0);
         let cy = y + head_h;
-        let frame = format!(
-            "x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"",
-            num(pad),
-            num(cy),
-            num(w),
-            num(h)
-        );
+        let frame = frame(pad, cy, w, h);
         let _ = write!(
             nodes,
             "<g class=\"{p}-cluster {p}-em-lane\" data-id=\"{}\">",
-            esc_text(&box_.lane.label)
+            EscText(&box_.lane.label)
         );
-        nodes.push_str(&left_label_svg(
-            &lane,
-            pad + BOX_PAD_X,
-            y,
-            &format!(
-                " class=\"{p}-cluster-label\" font-size=\"{}\" font-weight=\"var(--_hw)\" fill=\"var(--_m)\"",
-                num(small)
-            ),
-        ));
+        let _ = write!(
+            nodes,
+            "{}",
+            StartLines(&lane, pad + BOX_PAD_X, y, &lane_attrs,)
+        );
         let _ = write!(
             nodes,
             "<g class=\"{p}-node {p}-em-{}{}\" data-id=\"{}\"><rect {frame} fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>",
             box_.kind,
-            if box_.reset {
-                format!(" {p}-em-reset")
-            } else {
-                String::new()
-            },
-            esc_text(&box_.id)
+            reset(box_),
+            EscText(&box_.id)
         );
         if let Some(series) = series(box_.kind) {
             let _ = write!(
@@ -715,34 +768,36 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
                 series_color(series)
             );
         }
-        nodes.push_str(&label_svg(
-            &name,
-            pad + BOX_PAD_X + name.width / 2.0,
-            cy + BOX_PAD_Y + name.height / 2.0,
-            &format!(
-                " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
-                num(small)
-            ),
-        ));
+        let _ = write!(
+            nodes,
+            "{}",
+            LabelSvg(
+                &name,
+                pad + BOX_PAD_X + name.width / 2.0,
+                cy + BOX_PAD_Y + name.height / 2.0,
+                &name_attrs,
+            )
+        );
         let _ = write!(
             nodes,
             "<text class=\"{p}-em-frame\" x=\"{}\" y=\"{}\" text-anchor=\"end\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
             num(pad + w - BOX_PAD_X),
             num(cy + BOX_PAD_Y + small),
             num(mono),
-            esc(&box_.id)
+            Esc(&box_.id)
         );
         if let Some(data) = &data {
-            nodes.push_str(&lines(
-                &joined(data),
-                pad + BOX_PAD_X,
-                cy + BOX_PAD_Y + name.height + 6.0 + data.line_height / 2.0 + mono * 0.35,
-                data.line_height,
-                &format!(
-                    " class=\"{p}-em-data\" font-family=\"{FONT_MONO}\" font-size=\"{}\"",
-                    num(mono)
-                ),
-            ));
+            let _ = write!(
+                nodes,
+                "{}",
+                lines(
+                    &data.lines,
+                    pad + BOX_PAD_X,
+                    cy + BOX_PAD_Y + name.height + 6.0 + data.line_height / 2.0 + mono * 0.35,
+                    data.line_height,
+                    &data_attrs,
+                )
+            );
         }
         nodes.push_str("</g></g>");
         placed.push(Card {
@@ -756,30 +811,31 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
         bottom = cy + h;
         y = bottom + 28.0;
     }
+    let mut d = String::new();
     for relation in &model.relations {
         let (si, ti) = (relation.source_index, relation.target_index);
         if si == ti {
             continue;
         }
         let (s, t) = (&placed[si], &placed[ti]);
+        d.clear();
         let down = t.y > s.y;
         let dir = if down { 1.0 } else { -1.0 };
         let sy = if down { s.y + s.h } else { s.y };
         let ty = if down { t.y } else { t.y + t.h };
-        let (d, head) = if s.index.abs_diff(t.index) == 1 {
+        let head = if s.index.abs_diff(t.index) == 1 {
             // The lower card's lane heading sits in the gap, and wraps to
             // leave the arrow room beside it.
             let cx =
                 pad + (s.w.min(t.w) / 2.0).max(BOX_PAD_X + (if down { t } else { s }).lane + 16.0);
-            (
-                format!(
-                    "M{},{}V{}",
-                    num(cx),
-                    num(sy),
-                    num(ty - dir * marker_trim("arrow_point"))
-                ),
-                marker("arrow_point", cx, ty, 0.0, dir, "var(--_l)"),
-            )
+            let _ = write!(
+                d,
+                "M{},{}V{}",
+                num(cx),
+                num(sy),
+                num(ty - dir * marker_trim("arrow_point"))
+            );
+            marker("arrow_point", cx, ty, 0.0, dir, "var(--_l)")
         } else {
             let rail = pad + width - gutter
                 + 12.0
@@ -788,21 +844,26 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
             // above and arrive below its middle.
             let from = s.y + s.h / 2.0 - 5.0;
             let to = t.y + t.h / 2.0 + 5.0;
-            (
-                format!(
-                    "M{},{}H{}V{}H{}",
-                    num(pad + s.w),
-                    num(from),
-                    num(rail),
-                    num(to),
-                    num(pad + t.w + marker_trim("arrow_point"))
-                ),
-                marker("arrow_point", pad + t.w, to, -1.0, 0.0, "var(--_l)"),
-            )
+            let _ = write!(
+                d,
+                "M{},{}H{}V{}H{}",
+                num(pad + s.w),
+                num(from),
+                num(rail),
+                num(to),
+                num(pad + t.w + marker_trim("arrow_point"))
+            );
+            marker("arrow_point", pad + t.w, to, -1.0, 0.0, "var(--_l)")
         };
-        edges.push_str(&edge(&relation.source, &relation.target, &d, &head));
+        let _ = write!(
+            edges,
+            "{}",
+            edge(&relation.source, &relation.target, &d, head)
+        );
     }
     let names = frame_names(&model.boxes);
+    let head_attrs = format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(small));
+    let row_attrs = format!(" font-size=\"{}\"", num(small));
     let mut card = |kind: &str, heading: &str, frame: &str, raw: &str| {
         let head = layout_label(
             Some(&card_heading(&names, heading, frame)),
@@ -820,23 +881,23 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
         let _ = write!(
             cards,
             "<g class=\"{p}-em-{kind}\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>{}{}</g>",
-            esc_text(frame),
+            EscText(frame),
             num(pad),
             num(y),
             num(w),
             num(h),
-            label_svg(
+            LabelSvg(
                 &head,
                 pad + BOX_PAD_X + head.width / 2.0,
                 y + BOX_PAD_Y + head.height / 2.0,
-                &format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(small))
+                &head_attrs
             ),
             lines(
-                &joined(&body),
+                &body.lines,
                 pad + BOX_PAD_X,
                 y + BOX_PAD_Y + head.height + body.line_height / 2.0 + small * 0.35,
                 body.line_height,
-                &format!(" font-size=\"{}\"", num(small))
+                &row_attrs
             )
         );
         bottom = y + h;
@@ -856,13 +917,11 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
     }
     let total_width = (width + 2.0 * pad).ceil();
     let height = (bottom + pad).ceil();
-    let content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &edges
-        + &nodes
-        + &cards;
+    let mut content = String::with_capacity(edges.len() + nodes.len() + cards.len() + 512);
+    let _ = write!(
+        content,
+        "{}{edges}{nodes}{cards}",
+        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+    );
     document(model, ctx, size, total_width, height, &content)
 }

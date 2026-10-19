@@ -4,7 +4,7 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     f64::consts::PI,
-    fmt::Write as _,
+    fmt::{self, Write as _},
 };
 
 use indexmap::IndexMap;
@@ -412,9 +412,11 @@ struct Corner {
 
 /// The outline of the region all the given circles share, as an SVG path, or
 /// `""` if they share none.
-pub fn region_path(circles: &[Circle], format: impl Fn(f64) -> String) -> String {
+pub fn region_path<D: fmt::Display>(circles: &[Circle], format: impl Fn(f64) -> D) -> String {
     let whole = |c: &Circle| {
-        format!(
+        let mut d = String::new();
+        let _ = write!(
+            d,
             "M{},{}A{},{} 0 1 1 {},{}A{},{} 0 1 1 {},{}Z",
             format(c.x - c.r),
             format(c.y),
@@ -426,7 +428,8 @@ pub fn region_path(circles: &[Circle], format: impl Fn(f64) -> String) -> String
             format(c.r),
             format(c.x - c.r),
             format(c.y)
-        )
+        );
+        d
     };
     if circles.len() == 1 {
         return whole(&circles[0]);
@@ -496,7 +499,7 @@ pub fn region_path(circles: &[Circle], format: impl Fn(f64) -> String) -> String
         let from = &corners[i];
         let to = &corners[(i + 1) % corners.len()];
         if i == 0 {
-            d = format!("M{},{}", format(from.x), format(from.y));
+            let _ = write!(d, "M{},{}", format(from.x), format(from.y));
         }
         // The side between two corners is an arc of a circle that passes
         // through both; of those, the one whose arc stays inside the others.
@@ -523,7 +526,9 @@ pub fn region_path(circles: &[Circle], format: impl Fn(f64) -> String) -> String
             }
         }
         match arc {
-            None => d += &format!("L{},{}", format(to.x), format(to.y)),
+            None => {
+                let _ = write!(d, "L{},{}", format(to.x), format(to.y));
+            }
             Some(k) => {
                 let r = circles[k].r;
                 let _ = write!(
@@ -537,5 +542,6 @@ pub fn region_path(circles: &[Circle], format: impl Fn(f64) -> String) -> String
             }
         }
     }
-    d + "Z"
+    d.push('Z');
+    d
 }

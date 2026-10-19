@@ -1,20 +1,21 @@
 //! Pele's `diagrams/quadrant/render.ts`.
 
 use super::db::{QuadrantModel, QuadrantText};
+use crate::svg::builder::{EscText, LabelSvg};
 use crate::{
     Config, Rendered,
     config::Value,
     diagrams::common::fit_width::cap_width,
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names, resolve_style, series_color},
     },
     text::{Label, Style, layout_label},
 };
 use crate::{Ctx, Host};
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 
 const GAP: f64 = 4.0;
 const CAREFUL: usize = 300;
@@ -37,12 +38,13 @@ fn length(config: &Config, key: &str, fallback: f64, max: f64) -> f64 {
     }
 }
 
-fn hex(color: &str) -> String {
-    if color.starts_with('#') {
-        color.to_string()
-    } else {
-        format!("#{color}")
-    }
+fn hex(color: &str) -> impl fmt::Display + '_ {
+    fragment(move |f| {
+        if !color.starts_with('#') {
+            f.write_str("#")?;
+        }
+        f.write_str(color)
+    })
 }
 
 pub fn render_quadrant(
@@ -191,11 +193,11 @@ pub fn render_quadrant(
             num(y),
             num(tile_w),
             num(tile_h),
-            label_svg(
+            LabelSvg(
                 &text,
                 cx,
                 cy,
-                &format!(" class=\"{p}-label\" fill=\"var(--_fg)\" stroke=\"none\"")
+                crate::class!("label", "fill=\"var(--_fg)\" stroke=\"none\"")
             )
         );
     }
@@ -207,17 +209,25 @@ pub fn render_quadrant(
         } else {
             top - x_pad - x_height / 2.0
         };
-        axes.push_str(&label_svg(
-            &x_left,
-            if x_right.height > 0.0 {
-                left + w / 4.0
-            } else {
-                left + x_left.width / 2.0
-            },
-            y,
-            "",
-        ));
-        axes.push_str(&label_svg(&x_right, left + (w * 3.0) / 4.0, y, ""));
+        let _ = write!(
+            axes,
+            "{}",
+            LabelSvg(
+                &x_left,
+                if x_right.height > 0.0 {
+                    left + w / 4.0
+                } else {
+                    left + x_left.width / 2.0
+                },
+                y,
+                "",
+            )
+        );
+        let _ = write!(
+            axes,
+            "{}",
+            LabelSvg(&x_right, left + (w * 3.0) / 4.0, y, "")
+        );
     }
     if has_y {
         let x = if y_right {
@@ -225,34 +235,35 @@ pub fn render_quadrant(
         } else {
             left - y_pad - y_height / 2.0
         };
-        let turned = |text: &Label, y: f64| -> String {
+        let mut turned = |text: &Label, y: f64| {
             if text.height > 0.0 {
-                format!(
+                let _ = write!(
+                    axes,
                     "<g transform=\"translate({},{}) rotate(-90)\">{}</g>",
                     num(x),
                     num(y),
-                    label_svg(text, 0.0, 0.0, "")
-                )
-            } else {
-                String::new()
+                    LabelSvg(text, 0.0, 0.0, "")
+                );
             }
         };
-        axes.push_str(&turned(
+        turned(
             &y_bottom,
             if y_top.height > 0.0 {
                 top + (h * 3.0) / 4.0
             } else {
                 top + h - y_bottom.width / 2.0
             },
-        ));
-        axes.push_str(&turned(&y_top, top + h / 4.0));
+        );
+        turned(&y_top, top + h / 4.0);
     }
 
     let radius = length(config, "pointRadius", 5.0, 200.0);
     let text_pad = length(config, "pointTextPadding", 5.0, 200.0);
     let fill = series_color(0);
     let mut dots: Vec<Dot> = Vec::new();
-    let mut circles: Vec<String> = Vec::new();
+    let mut circles = String::new();
+    // Where each circle in `circles` ends.
+    let mut ends: Vec<usize> = Vec::new();
     for point in &model.points {
         if !(point.x >= 0.0 && point.x <= 1.0 && point.y >= 0.0 && point.y <= 1.0) {
             continue;
@@ -299,20 +310,22 @@ pub fn render_quadrant(
             reach: r + stroke_width.map_or(0.0, |w| js::parse_int(w, 10).min(400.0) / 2.0),
             text: label(Some(&point.text), point_size, 200.0),
         });
-        circles.push(format!(
+        let _ = write!(
+            circles,
             "<circle class=\"{p}-point{}\" data-id=\"{}\" cx=\"{}\" cy=\"{}\" r=\"{}\"{}{}/>",
             class_names(&point.class_name),
-            esc_text(&point.text.text),
+            EscText(&point.text.text),
             num(cx),
             num(cy),
             num(r),
-            if stroke_width.is_some() && stroke_color.is_none() {
-                format!(" stroke=\"{fill}\"")
+            fragment(|f| if stroke_width.is_some() && stroke_color.is_none() {
+                write!(f, " stroke=\"{fill}\"")
             } else {
-                String::new()
-            },
+                Ok(())
+            }),
             resolve_style(&styles).shape
-        ));
+        );
+        ends.push(circles.len());
     }
 
     // A label goes below its point, or above, right or left of it when that is
@@ -388,15 +401,21 @@ pub fn render_quadrant(
         if careful {
             taken.extend([tx - half_w, ty - half_h, tx + half_w, ty + half_h]);
         }
-        labels.push_str(&label_svg(text, tx, ty, &format!(" class=\"{p}-label\"")));
+        let _ = write!(labels, "{}", LabelSvg(text, tx, ty, crate::class!("label")));
     }
 
     // Mermaid puts each new point under the ones before it.
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        title_pad / 2.0 + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let mut content =
+        String::with_capacity(quadrants.len() + axes.len() + circles.len() + labels.len() + 1024);
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(
+            &title,
+            width / 2.0,
+            title_pad / 2.0 + title.height / 2.0,
+            TITLE
+        )
     );
     let _ = write!(
         content,
@@ -406,16 +425,19 @@ pub fn render_quadrant(
         let _ = write!(
             content,
             "<g class=\"{p}-axis-labels\" font-size=\"{}\" fill=\"var(--_m)\">{axes}</g>",
-            js::num_str(axis_size)
+            js::Number(axis_size)
         );
     }
     if !dots.is_empty() {
-        circles.reverse();
+        let _ = write!(content, "<g class=\"{p}-points\" fill=\"{fill}\">");
+        for (i, &end) in ends.iter().enumerate().rev() {
+            let start = if i == 0 { 0 } else { ends[i - 1] };
+            content.push_str(&circles[start..end]);
+        }
         let _ = write!(
             content,
-            "<g class=\"{p}-points\" fill=\"{fill}\">{}</g><g class=\"{p}-point-labels\" font-size=\"{}\">{labels}</g>",
-            circles.concat(),
-            js::num_str(point_size)
+            "</g><g class=\"{p}-point-labels\" font-size=\"{}\">{labels}</g>",
+            js::Number(point_size)
         );
     }
 

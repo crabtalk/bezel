@@ -1,12 +1,19 @@
 //! Writing SVG: escaping, coordinates, and a measured label as `<text>`.
 //! Pele's `svg/builder.ts`.
 
-use std::fmt::Write as _;
+use std::{
+    borrow::Cow,
+    fmt::{self, Write},
+    ops::Range,
+};
 
 use crate::{
     js,
-    text::{Label, Style, decode_entities},
+    text::{Label, Span, Style, decoded},
 };
+
+/// The attributes of a diagram's title.
+pub const TITLE: &str = crate::class!("title", "font-weight=\"var(--_tw)\"");
 
 const BOLD: &str = " font-weight=\"var(--_w)\"";
 const ITALIC: &str = " font-style=\"italic\"";
@@ -34,33 +41,55 @@ pub fn esc(text: &str) -> String {
 
 /// [`esc`] appended to `out`.
 pub fn push_esc(out: &mut String, text: &str) {
+    let _ = write_esc(out, text);
+}
+
+fn write_esc(out: &mut impl Write, text: &str) -> fmt::Result {
     // Without an early exit, so the check runs over many bytes at a time.
     if !text
         .bytes()
         .fold(false, |found, b| found | needs_escape_byte(b))
     {
-        out.push_str(text);
-        return;
+        return out.write_str(text);
     }
-    out.reserve(text.len() + 8);
-    for c in text.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            c if needs_escape(c) => {}
-            c => out.push(c),
-        }
+    let mut last = 0;
+    for (at, c) in text.char_indices() {
+        let entity = match c {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '"' => "&quot;",
+            c if needs_escape(c) => "",
+            _ => continue,
+        };
+        out.write_str(&text[last..at])?;
+        out.write_str(entity)?;
+        last = at + c.len_utf8();
+    }
+    out.write_str(&text[last..])
+}
+
+/// [`esc`] as a value `write!` writes in place.
+#[derive(Clone, Copy)]
+pub struct Esc<'a>(pub &'a str);
+
+impl fmt::Display for Esc<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_esc(f, self.0)
     }
 }
 
 /// Escapes text that is only ever read as text — a tooltip, an accessible
 /// name, a `data-id` — with entity codes turned into their characters
 /// first. A value checked before it is written (a style, a colour, a URL)
-/// goes through [`esc`] instead, so what was checked is what is written.
-pub fn esc_text(text: &str) -> String {
-    esc(&decode_entities(text))
+/// goes through [`Esc`] instead, so what was checked is what is written.
+#[derive(Clone, Copy)]
+pub struct EscText<'a>(pub &'a str);
+
+impl fmt::Display for EscText<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_esc(f, &decoded(self.0))
+    }
 }
 
 /// A coordinate to two decimals, without trailing zeros.
@@ -70,137 +99,290 @@ pub fn num(value: f64) -> Num {
 
 /// [`num`] appended to `out`.
 pub fn push_num(out: &mut String, value: f64) {
-    let _ = write!(out, "{}", Num(value));
+    let mut buf = [0u8; 16];
+    match digits(value, &mut buf) {
+        Some(text) => out.push_str(text),
+        None => out.push_str(&js::num_str(js::round(value * 100.0) / 100.0)),
+    }
+}
+
+/// `value` to two decimals in `buf`, or `None` past what `buf` holds.
+fn digits(value: f64, buf: &mut [u8; 16]) -> Option<&str> {
+    let n = js::round(value * 100.0);
+    if n == 0.0 {
+        return Some("0");
+    }
+    let (negative, m) = if n > 0.0 { (false, n) } else { (true, -n) };
+    if m >= 1e11 {
+        return None;
+    }
+    // Integer digits, then up to two decimals, written from the right.
+    let mut at = buf.len();
+    let mut q = (m / 100.0).floor() as u64;
+    let mut r = (m as u64 - q * 100) as u8;
+    if r != 0 {
+        if r.is_multiple_of(10) {
+            r /= 10;
+        } else {
+            at -= 1;
+            buf[at] = b'0' + r % 10;
+            r /= 10;
+        }
+        at -= 1;
+        buf[at] = b'0' + r;
+        at -= 1;
+        buf[at] = b'.';
+    }
+    loop {
+        at -= 1;
+        buf[at] = b'0' + (q % 10) as u8;
+        q /= 10;
+        if q == 0 {
+            break;
+        }
+    }
+    if negative {
+        at -= 1;
+        buf[at] = b'-';
+    }
+    // Only ASCII digits, a point and a sign were written.
+    std::str::from_utf8(&buf[at..]).ok()
+}
+
+/// A fragment written when it is formatted, so `write!` puts it straight
+/// into the document. Stands in for `std::fmt::from_fn` (Rust 1.93); the
+/// workspace's `rust-version` is 1.90.
+pub struct Fragment<F>(pub F);
+
+impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> fmt::Display for Fragment<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (self.0)(f)
+    }
+}
+
+/// A [`Fragment`] of `write`.
+pub fn fragment<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result>(write: F) -> Fragment<F> {
+    Fragment(write)
+}
+
+/// `buf` cleared and holding what `args` writes: a scratch buffer reused
+/// across a loop.
+pub fn rewrite<'b>(buf: &'b mut String, args: fmt::Arguments<'_>) -> &'b str {
+    buf.clear();
+    let _ = buf.write_fmt(args);
+    buf
+}
+
+/// `attrs` and then `style`, an attribute that is often `""`.
+pub fn styled<'a>(attrs: &'a str, style: &str) -> Cow<'a, str> {
+    if style.is_empty() {
+        return Cow::Borrowed(attrs);
+    }
+    let mut out = String::with_capacity(attrs.len() + style.len());
+    out.push_str(attrs);
+    out.push_str(style);
+    Cow::Owned(out)
+}
+
+/// `x,y`, each as [`num`] writes it.
+#[derive(Clone, Copy, Debug)]
+pub struct Point(pub f64, pub f64);
+
+impl fmt::Display for Point {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{},{}", Num(self.0), Num(self.1))
+    }
 }
 
 /// A coordinate as [`num`] writes it.
 #[derive(Clone, Copy, Debug)]
 pub struct Num(f64);
 
-impl std::fmt::Display for Num {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let n = js::round(self.0 * 100.0);
-        if n == 0.0 {
-            return f.write_str("0");
-        }
-        let (negative, m) = if n > 0.0 { (false, n) } else { (true, -n) };
-        if m >= 1e11 {
-            return f.write_str(&js::num_str(n / 100.0));
-        }
-        // Integer digits, then up to two decimals, written from the right.
+impl fmt::Display for Num {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buf = [0u8; 16];
-        let mut at = buf.len();
-        let mut q = (m / 100.0).floor() as u64;
-        let mut r = (m as u64 - q * 100) as u8;
-        if r != 0 {
-            if r.is_multiple_of(10) {
-                r /= 10;
-            } else {
-                at -= 1;
-                buf[at] = b'0' + r % 10;
-                r /= 10;
-            }
-            at -= 1;
-            buf[at] = b'0' + r;
-            at -= 1;
-            buf[at] = b'.';
+        match digits(self.0, &mut buf) {
+            Some(text) => f.write_str(text),
+            None => f.write_str(&js::num_str(js::round(self.0 * 100.0) / 100.0)),
         }
-        loop {
-            at -= 1;
-            buf[at] = b'0' + (q % 10) as u8;
-            q /= 10;
-            if q == 0 {
-                break;
-            }
-        }
-        if negative {
-            at -= 1;
-            buf[at] = b'-';
-        }
-        // Only ASCII digits, a point and a sign were written.
-        f.write_str(std::str::from_utf8(&buf[at..]).unwrap_or_default())
     }
 }
 
-/// A measured label as SVG text centred on (`cx`, `cy`). `attrs` go on the
-/// `<text>` as written.
-pub fn label_svg(label: &Label, cx: f64, cy: f64, attrs: &str) -> String {
-    let lines = &label.lines;
+/// A measured label as SVG text centred on (`cx`, `cy`), as a value `write!`
+/// writes in place. `attrs` go on the `<text>` as written.
+#[derive(Clone, Copy)]
+pub struct LabelSvg<'a>(pub &'a Label, pub f64, pub f64, pub &'a str);
+
+impl fmt::Display for LabelSvg<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_label(f, self.0, self.1, self.2, self.3)
+    }
+}
+
+/// A label with each line starting at `left`, centred on `cy` as a whole:
+/// each line is drawn as a one-line label of its own width.
+#[derive(Clone, Copy)]
+pub struct LeftLabel<'a>(pub &'a Label, pub f64, pub f64, pub &'a str);
+
+impl fmt::Display for LeftLabel<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let LeftLabel(label, left, cy, attrs) = *self;
+        if label.lines.len() < 2 {
+            return write_label(f, label, left + label.width / 2.0, cy, attrs);
+        }
+        for i in 0..label.lines.len() {
+            let line_cy = cy - label.height / 2.0 + (i as f64 + 0.5) * label.line_height;
+            let cx = left + label.widths[i] / 2.0;
+            write!(f, "{}", LineSvg(label, i, cx, line_cy, attrs))?;
+        }
+        Ok(())
+    }
+}
+
+/// Line `index` of a label, as a one-line label of its own width centred on
+/// (`cx`, `cy`).
+#[derive(Clone, Copy)]
+pub struct LineSvg<'a>(pub &'a Label, pub usize, pub f64, pub f64, pub &'a str);
+
+impl fmt::Display for LineSvg<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let LineSvg(label, i, cx, cy, attrs) = *self;
+        write_lines(f, label, i..i + 1, label.line_height, cx, cy, attrs)
+    }
+}
+
+/// A square of `side` at (`x`, `y`) holding icon `name`, drawn by `markup`
+/// on a 24-unit grid.
+pub fn icon_element<'a>(
+    name: &'a str,
+    x: f64,
+    y: f64,
+    side: f64,
+    markup: impl fmt::Display + 'a,
+) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        write!(
+            f,
+            "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{markup}</svg>",
+            EscText(name),
+            num(x),
+            num(y),
+            num(side),
+            num(side),
+            p = crate::PREFIX,
+        )
+    })
+}
+
+fn write_label(out: &mut impl Write, label: &Label, cx: f64, cy: f64, attrs: &str) -> fmt::Result {
+    write_lines(
+        out,
+        label,
+        0..label.lines.len(),
+        label.height,
+        cx,
+        cy,
+        attrs,
+    )
+}
+
+/// `label`'s lines in `range` as a label `height` tall, centred on (`cx`,
+/// `cy`).
+fn write_lines(
+    out: &mut impl Write,
+    label: &Label,
+    range: Range<usize>,
+    height: f64,
+    cx: f64,
+    cy: f64,
+    attrs: &str,
+) -> fmt::Result {
+    let widths = &label.widths[range.clone()];
+    let lines = &label.lines[range];
     if lines.is_empty() {
-        return String::new();
+        return Ok(());
     }
     let lh = label.line_height;
     let shift = label.size * 0.35;
-    let mut y = cy - label.height / 2.0 + lh / 2.0 + shift;
+    let top = cy - height / 2.0 + lh / 2.0 + shift;
 
     if lines.len() == 1
         && lines[0].len() == 1
         && lines[0][0].icon.is_none()
         && lines[0][0].style == 0
     {
-        return format!(
+        return write!(
+            out,
             "<text{attrs} x=\"{}\" y=\"{}\" text-anchor=\"middle\">{}</text>",
             num(cx),
-            num(y),
-            esc(&lines[0][0].text)
+            num(top),
+            Esc(&lines[0][0].text)
         );
     }
 
-    let shared = shared_style(label);
-    let attrs = text_style(attrs, shared);
-    let mut body = String::new();
-    let mut extra = String::new();
+    let shared = shared_of(lines);
+    write!(
+        out,
+        "<text{}{} text-anchor=\"middle\" xml:space=\"preserve\">",
+        attrs,
+        TextStyle(attrs, shared)
+    )?;
+    let mut y = top;
     for (i, line) in lines.iter().enumerate() {
-        let has_icon = line.iter().any(|span| span.icon.is_some());
-        if has_icon {
-            let mut x = cx - label.widths[i] / 2.0;
+        if line.iter().any(|span| span.icon.is_some()) {
+            let mut x = cx - widths[i] / 2.0;
             for span in line {
-                if let Some(icon) = &span.icon {
-                    let side = label.size * 1.1;
-                    let inner = &icon.markup;
-                    let _ = write!(
-                        extra,
-                        "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{inner}</svg>",
-                        esc_text(&icon.name),
-                        num(x),
-                        num(y - shift - side / 2.0),
-                        num(side),
-                        num(side),
-                        p = crate::PREFIX,
-                    );
-                } else if !span.text.is_empty() {
-                    let _ = write!(
-                        body,
+                if span.icon.is_none() && !span.text.is_empty() {
+                    write!(
+                        out,
                         "<tspan x=\"{}\" y=\"{}\" text-anchor=\"start\"{}>{}</tspan>",
                         num(x),
                         num(y),
                         span_style(span.style & !shared),
-                        esc(&span.text)
-                    );
+                        Esc(&span.text)
+                    )?;
                 }
                 x += span.width;
             }
         } else {
             for (j, span) in line.iter().enumerate() {
-                let pos = if j == 0 {
-                    format!(" x=\"{}\" y=\"{}\"", num(cx), num(y))
+                if j == 0 {
+                    write!(out, "<tspan x=\"{}\" y=\"{}\"", num(cx), num(y))?;
                 } else {
-                    String::new()
-                };
-                let _ = write!(
-                    body,
-                    "<tspan{pos}{}>{}</tspan>",
+                    out.write_str("<tspan")?;
+                }
+                write!(
+                    out,
+                    "{}>{}</tspan>",
                     span_style(span.style & !shared),
-                    esc(&span.text)
-                );
+                    Esc(&span.text)
+                )?;
             }
             if line.is_empty() {
-                let _ = write!(body, "<tspan x=\"{}\" y=\"{}\"> </tspan>", num(cx), num(y));
+                write!(out, "<tspan x=\"{}\" y=\"{}\"> </tspan>", num(cx), num(y))?;
             }
         }
         y += lh;
     }
-    format!("<text{attrs} text-anchor=\"middle\" xml:space=\"preserve\">{body}</text>{extra}")
+    out.write_str("</text>")?;
+    // Icons are drawn after the text, in the order they appear.
+    let mut y = top;
+    for (i, line) in lines.iter().enumerate() {
+        let mut x = cx - widths[i] / 2.0;
+        for span in line {
+            if let Some(icon) = &span.icon {
+                let side = label.size * 1.1;
+                write!(
+                    out,
+                    "{}",
+                    icon_element(&icon.name, x, y - shift - side / 2.0, side, &icon.markup)
+                )?;
+            }
+            x += span.width;
+        }
+        y += lh;
+    }
+    Ok(())
 }
 
 pub fn span_style(style: u8) -> &'static str {
@@ -215,9 +397,13 @@ pub fn span_style(style: u8) -> &'static str {
 /// The emphasis every span of a label has. It is written once, on the text
 /// element, where a CSS rule for the label reaches it.
 pub fn shared_style(label: &Label) -> u8 {
+    shared_of(&label.lines)
+}
+
+fn shared_of(lines: &[Vec<Span>]) -> u8 {
     let mut shared = Style::BOLD | Style::ITALIC;
     let mut any = false;
-    for line in &label.lines {
+    for line in lines {
         for span in line {
             if span.icon.is_some() || span.text.is_empty() {
                 continue;
@@ -231,13 +417,22 @@ pub fn shared_style(label: &Label) -> u8 {
 
 /// Adds that emphasis to a text element's attributes, unless they give a
 /// weight of their own.
-pub fn text_style(attrs: &str, shared: u8) -> String {
-    let mut out = attrs.to_string();
-    if shared & Style::BOLD != 0 && !attrs.contains(" font-weight=\"") {
-        out.push_str(BOLD);
+pub fn text_style(attrs: &str, shared: u8) -> impl fmt::Display + '_ {
+    fragment(move |f| write!(f, "{attrs}{}", TextStyle(attrs, shared)))
+}
+
+/// The emphasis [`text_style`] adds after `attrs`.
+struct TextStyle<'a>(&'a str, u8);
+
+impl fmt::Display for TextStyle<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let TextStyle(attrs, shared) = *self;
+        if shared & Style::BOLD != 0 && !attrs.contains(" font-weight=\"") {
+            f.write_str(BOLD)?;
+        }
+        if shared & Style::ITALIC != 0 && !attrs.contains(" font-style=\"") {
+            f.write_str(ITALIC)?;
+        }
+        Ok(())
     }
-    if shared & Style::ITALIC != 0 && !attrs.contains(" font-style=\"") {
-        out.push_str(ITALIC);
-    }
-    out
 }

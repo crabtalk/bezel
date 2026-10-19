@@ -11,6 +11,7 @@
 //! Positions are byte offsets into UTF-8, and `.` takes a code point where
 //! JavaScript takes a UTF-16 unit.
 
+use std::fmt::Write as _;
 use std::{
     ops::{Deref, Range},
     sync::OnceLock,
@@ -492,7 +493,7 @@ impl Regex {
         for caps in self.captures_iter(text) {
             any = true;
             out.push_str(&text[last..caps.start()]);
-            out.push_str(&with(&caps));
+            let _ = write!(out, "{}", with(&caps));
             last = caps.end();
             if !self.flags.global {
                 break;

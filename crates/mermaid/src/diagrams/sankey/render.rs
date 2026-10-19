@@ -1,5 +1,6 @@
 //! Pele's `diagrams/sankey/render.ts`.
 
+use crate::svg::builder::{Esc, EscText};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -12,7 +13,7 @@ use crate::{
     diagrams::common::fit_width::{title_room, try_fit_width},
     js,
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{LabelSvg, TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::{resolve_style, series_color},
     },
@@ -141,13 +142,15 @@ fn draw(
     let mut max_y = chart_height;
     let mut labels_out = String::new();
     let mut nodes_out = String::new();
+    let mut value = String::new();
+    let mut measured = String::new();
     for (i, node) in nodes.iter().enumerate() {
         let id = &model.nodes[i].id;
         let height = node.height.max(1.0);
         let _ = write!(
             nodes_out,
             "<rect class=\"{p}-sankey-node\" data-id=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" fill=\"{}\"{}/>",
-            esc_text(id),
+            EscText(id),
             num(node.x),
             num(node.y),
             num(node_width),
@@ -157,25 +160,22 @@ fn draw(
             node_style(i)
         );
 
-        let value = if show_values {
-            format!("{prefix}{}{suffix}", js::num_str(rounded(node.value)))
-        } else {
-            String::new()
-        };
+        value.clear();
+        if show_values {
+            let _ = write!(value, "{prefix}{}{suffix}", js::Number(rounded(node.value)));
+        }
         let after = if outlined {
             node.layer >= central
         } else {
             node.x < chart_width / 2.0
         };
-        let text_width = measure.width(
-            &if value.is_empty() {
-                id.clone()
-            } else {
-                format!("{id} {value}")
-            },
-            small,
-            0,
-        );
+        measured.clear();
+        measured.push_str(id);
+        if !value.is_empty() {
+            measured.push(' ');
+            measured.push_str(&value);
+        }
+        let text_width = measure.width(&measured, small, 0);
         let x = if after {
             node.x + node_width + LABEL_GAP
         } else {
@@ -186,39 +186,41 @@ fn draw(
         max_x = max_x.max(if after { x + text_width } else { x });
         min_y = min_y.min(y - small * 0.75);
         max_y = max_y.max(y + small * 0.75);
-        let position = format!(
-            " x=\"{}\" y=\"{}\" text-anchor=\"{}\"",
-            num(x),
-            num(y + small * 0.35),
-            if after { "start" } else { "end" }
-        );
-        let text = esc(id)
-            + &if value.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    " <tspan class=\"{p}-sankey-value\" fill=\"var(--_m)\">{}</tspan>",
-                    esc(&value)
-                )
-            };
+        let position = fragment(|f| {
+            write!(
+                f,
+                " x=\"{}\" y=\"{}\" text-anchor=\"{}\"",
+                num(x),
+                num(y + small * 0.35),
+                if after { "start" } else { "end" }
+            )
+        });
         let _ = write!(
             labels_out,
             "<g class=\"{p}-label\" data-id=\"{}\">",
-            esc_text(id)
+            EscText(id)
         );
         if outlined {
             let _ = write!(
                 labels_out,
                 "<text{position} fill=\"none\" stroke=\"var(--_bg)\" stroke-width=\"3\" stroke-linejoin=\"round\">{}{}</text>",
-                esc(id),
-                if value.is_empty() {
-                    String::new()
+                Esc(id),
+                fragment(|f| if value.is_empty() {
+                    Ok(())
                 } else {
-                    format!(" {}", esc(&value))
-                }
+                    write!(f, " {}", Esc(&value))
+                })
             );
         }
-        let _ = write!(labels_out, "<text{position}>{text}</text></g>");
+        let _ = write!(labels_out, "<text{position}>{}", Esc(id));
+        if !value.is_empty() {
+            let _ = write!(
+                labels_out,
+                " <tspan class=\"{p}-sankey-value\" fill=\"var(--_m)\">{}</tspan>",
+                Esc(&value)
+            );
+        }
+        labels_out.push_str("</text></g>");
     }
 
     let fixed = if matches!(link_color, "gradient" | "source" | "target") {
@@ -239,8 +241,8 @@ fn draw(
         let x0 = nodes[link.source].x + node_width;
         let x1 = nodes[link.target].x;
         let mid = num((x0 + x1) / 2.0);
-        let from = esc_text(&model.nodes[link.source].id);
-        let to = esc_text(&model.nodes[link.target].id);
+        let from = EscText(&model.nodes[link.source].id);
+        let to = EscText(&model.nodes[link.target].id);
         let _ = write!(
             links_out,
             "<path class=\"{p}-sankey-link\" data-id=\"{from}-&gt;{to}\" d=\"M{},{}C{mid},{} {mid},{} {},{}L{},{}C{mid},{} {mid},{} {},{}Z\" fill=\"{}\"{}><title>{from} → {to}: {}{}{}</title></path>",
@@ -262,9 +264,9 @@ fn draw(
             } else {
                 fixed.as_str()
             },
-            esc_text(&prefix),
-            js::num_str(rounded(link.value)),
-            esc_text(&suffix)
+            EscText(&prefix),
+            js::Number(rounded(link.value)),
+            EscText(&suffix)
         );
     }
 
@@ -287,16 +289,15 @@ fn draw(
     let width = (inner + 2.0 * pad).ceil();
     let height = (max_y - min_y + title_height + 2.0 * pad).ceil();
 
-    let content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &format!(
-        "<g transform=\"translate({},{})\"><g class=\"{p}-sankey-links\" fill-opacity=\"0.4\">{links_out}</g><g class=\"{p}-sankey-nodes\">{nodes_out}</g><g class=\"{p}-labels\" font-size=\"{}\">{labels_out}</g></g>",
+    let mut content =
+        String::with_capacity(links_out.len() + nodes_out.len() + labels_out.len() + 1024);
+    let _ = write!(
+        content,
+        "{}<g transform=\"translate({},{})\"><g class=\"{p}-sankey-links\" fill-opacity=\"0.4\">{links_out}</g><g class=\"{p}-sankey-nodes\">{nodes_out}</g><g class=\"{p}-labels\" font-size=\"{}\">{labels_out}</g></g>",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE),
         num(ox),
         num(oy),
-        js::num_str(small)
+        js::Number(small)
     );
     let svg = svg_document(
         "sankey",

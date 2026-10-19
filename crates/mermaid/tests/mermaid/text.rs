@@ -6,7 +6,7 @@ use mermaid::{
     config::parse_json,
     detect::{Kind, detect},
     preprocess::{cleanup_comments, encode_entities, preprocess},
-    svg::builder::{esc, label_svg, num},
+    svg::builder::{LabelSvg, esc, num},
     text::{Host, Metrics, Style, decode_entities, layout_label},
     yaml::parse_yaml,
 };
@@ -207,7 +207,7 @@ fn markdown_labels_read_emphasis() {
 fn a_one_span_label_is_one_text_element() {
     let label = layout_label(Some("Hi"), false, &Metrics, 16.0, 4000.0, 0);
     assert_eq!(
-        label_svg(&label, 10.0, 10.0, " class=\"t\""),
+        LabelSvg(&label, 10.0, 10.0, " class=\"t\"").to_string(),
         "<text class=\"t\" x=\"10\" y=\"15.6\" text-anchor=\"middle\">Hi</text>"
     );
 }
@@ -222,7 +222,7 @@ fn bold_spans_share_their_weight_on_the_element() {
         4000.0,
         Style::BOLD,
     );
-    let svg = label_svg(&label, 0.0, 0.0, "");
+    let svg = LabelSvg(&label, 0.0, 0.0, "").to_string();
     assert!(
         svg.starts_with("<text font-weight=\"var(--_w)\" text-anchor=\"middle\""),
         "{svg}"

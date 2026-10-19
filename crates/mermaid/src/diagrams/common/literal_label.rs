@@ -3,10 +3,10 @@
 
 use crate::{
     js,
-    svg::builder::{esc, label_svg, num, shared_style, span_style, text_style},
+    svg::builder::{Esc, LineSvg, fragment, num, shared_style, span_style, text_style},
     text::{Host, Label, Span},
 };
-use std::fmt::Write as _;
+use std::fmt;
 
 fn is_space(c: char) -> bool {
     js::is_space(c)
@@ -185,41 +185,41 @@ pub fn break_label(label: &Label, measure: &impl Host, room: f64) -> Label {
 /// A label with every line starting at `x`. A line is anchored at its start
 /// and keeps its spaces, so where it begins does not depend on how its text
 /// was measured.
-pub fn left_label_svg(label: &Label, x: f64, top: f64, attrs: &str) -> String {
-    let shared = shared_style(label);
-    let open = format!("<text{}", text_style(attrs, shared));
-    let mut body = String::new();
-    for (i, spans) in label.lines.iter().enumerate() {
-        let cy = top + (i as f64 + 0.5) * label.line_height;
-        if spans.iter().any(|span| span.icon.is_some()) {
-            let width = label.widths[i];
-            let one = Label {
-                lines: vec![spans.clone()],
-                widths: vec![width],
-                width,
-                height: label.line_height,
-                ..label.clone()
-            };
-            body.push_str(&label_svg(&one, x + width / 2.0, cy, attrs));
-            continue;
-        }
-        let mut text = String::new();
-        for span in spans {
-            let own = span_style(span.style & !shared);
-            if own.is_empty() {
-                text.push_str(&esc(&span.text));
-            } else {
-                let _ = write!(text, "<tspan{own}>{}</tspan>", esc(&span.text));
+pub struct StartLines<'a>(pub &'a Label, pub f64, pub f64, pub &'a str);
+
+impl fmt::Display for StartLines<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let StartLines(label, x, top, attrs) = *self;
+        let shared = shared_style(label);
+        let open = fragment(|f| write!(f, "<text{}", text_style(attrs, shared)));
+        for (i, spans) in label.lines.iter().enumerate() {
+            let cy = top + (i as f64 + 0.5) * label.line_height;
+            if spans.iter().any(|span| span.icon.is_some()) {
+                let width = label.widths[i];
+                write!(f, "{}", LineSvg(label, i, x + width / 2.0, cy, attrs))?;
+                continue;
             }
-        }
-        if !text.is_empty() {
-            let _ = write!(
-                body,
-                "{open} x=\"{}\" y=\"{}\" text-anchor=\"start\" xml:space=\"preserve\">{text}</text>",
+            let shown =
+                |span: &Span| !span.text.is_empty() || !span_style(span.style & !shared).is_empty();
+            if !spans.iter().any(shown) {
+                continue;
+            }
+            write!(
+                f,
+                "{open} x=\"{}\" y=\"{}\" text-anchor=\"start\" xml:space=\"preserve\">",
                 num(x),
                 num(cy + label.size * 0.35)
-            );
+            )?;
+            for span in spans {
+                let own = span_style(span.style & !shared);
+                if own.is_empty() {
+                    write!(f, "{}", Esc(&span.text))?;
+                } else {
+                    write!(f, "<tspan{own}>{}</tspan>", Esc(&span.text))?;
+                }
+            }
+            f.write_str("</text>")?;
         }
+        Ok(())
     }
-    body
 }

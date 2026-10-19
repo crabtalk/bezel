@@ -1,6 +1,9 @@
 //! Pele's `diagrams/sequence/render.ts`.
 
-use std::{collections::HashSet, fmt::Write as _};
+use std::{
+    collections::HashSet,
+    fmt::{self, Write as _},
+};
 
 use indexmap::IndexMap;
 
@@ -19,7 +22,7 @@ use crate::{
     },
     js,
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{Esc, EscText, LabelSvg, Point, fragment, num},
         edges::{ARROW, marker},
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names, resolve_style},
@@ -220,21 +223,21 @@ fn option(conf: &Map, key: &str, fallback: f64) -> f64 {
     }
 }
 
-fn half(x: f64, y: f64, dir: f64, up: f64, stick: bool) -> String {
+fn half(f: &mut fmt::Formatter<'_>, x: f64, y: f64, dir: f64, up: f64, stick: bool) -> fmt::Result {
     let p = crate::PREFIX;
     let bx = num(x - dir * ARROW);
     if stick {
-        return format!(
-            "<path class=\"{p}-marker\" d=\"M{},{}L{bx},{}\"/>",
-            num(x),
-            num(y),
+        return write!(
+            f,
+            "<path class=\"{p}-marker\" d=\"M{}L{bx},{}\"/>",
+            Point(x, y),
             num(y + up * 5.0)
         );
     }
-    format!(
-        "<path class=\"{p}-marker\" d=\"M{},{}L{bx},{}V{}Z\" fill=\"var(--_l)\" stroke=\"none\"/>",
-        num(x),
-        num(y),
+    write!(
+        f,
+        "<path class=\"{p}-marker\" d=\"M{}L{bx},{}V{}Z\" fill=\"var(--_l)\" stroke=\"none\"/>",
+        Point(x, y),
         num(y + up * 4.5),
         num(y)
     )
@@ -242,24 +245,24 @@ fn half(x: f64, y: f64, dir: f64, up: f64, stick: bool) -> String {
 
 /// Draws the head whose tip is at (x, y) and points along dir. `up` is the
 /// side a half head sits on.
-fn head(kind: Head, x: f64, y: f64, dir: f64, up: f64) -> String {
-    let p = crate::PREFIX;
-    match kind {
-        Head::Arrow => marker("arrow_point", x, y, dir, 0.0, "var(--_l)"),
-        Head::Cross => marker("arrow_cross", x, y, dir, 0.0, "var(--_l)"),
-        Head::Open => format!(
-            "<path class=\"{p}-marker\" d=\"M{},{}L{},{}L{},{}\" stroke-linejoin=\"round\"/>",
-            num(x - dir * ARROW),
-            num(y - 4.5),
-            num(x),
-            num(y),
-            num(x - dir * ARROW),
-            num(y + 4.5)
-        ),
-        Head::HalfSolid => half(x, y, dir, up, false),
-        Head::HalfStick => half(x, y, dir, up, true),
-        Head::None => String::new(),
-    }
+fn head(kind: Head, x: f64, y: f64, dir: f64, up: f64) -> impl fmt::Display {
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        match kind {
+            Head::Arrow => write!(f, "{}", marker("arrow_point", x, y, dir, 0.0, "var(--_l)")),
+            Head::Cross => write!(f, "{}", marker("arrow_cross", x, y, dir, 0.0, "var(--_l)")),
+            Head::Open => write!(
+                f,
+                "<path class=\"{p}-marker\" d=\"M{}L{}L{}\" stroke-linejoin=\"round\"/>",
+                Point(x - dir * ARROW, y - 4.5),
+                Point(x, y),
+                Point(x - dir * ARROW, y + 4.5)
+            ),
+            Head::HalfSolid => half(f, x, y, dir, up, false),
+            Head::HalfStick => half(f, x, y, dir, up, true),
+            Head::None => Ok(()),
+        }
+    })
 }
 
 fn trim(kind: Head) -> f64 {
@@ -275,13 +278,13 @@ pub fn render_sequence(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl H
 }
 
 /// The drawing's horizontal extent and what it has drawn so far.
-struct Out {
+struct Out<'m> {
     min_x: f64,
     max_x: f64,
     /// Shaded blocks and activations close from the inside out. They are
     /// written in reverse, so that the inner ones end up on top.
     rects: Vec<String>,
-    activations: Vec<String>,
+    activations: Vec<Activation<'m>>,
     frames: String,
     edges: String,
     labels: String,
@@ -290,7 +293,15 @@ struct Out {
     crosses: String,
 }
 
-impl Out {
+/// An activation bar on participant `id`.
+struct Activation<'m> {
+    id: &'m str,
+    x: f64,
+    top: f64,
+    height: f64,
+}
+
+impl<'m> Out<'m> {
     fn extend(&mut self, x0: f64, x1: f64) {
         if x0 < self.min_x {
             self.min_x = x0;
@@ -300,64 +311,57 @@ impl Out {
         }
     }
 
-    fn end_activation(&mut self, col: &mut Column, end: f64) -> f64 {
-        let p = crate::PREFIX;
+    fn end_activation(&mut self, col: &mut Column<'m>, end: f64) -> f64 {
         let start = col.activations.pop().unwrap_or(end);
         let bottom = end.max(start + ACT_MIN);
         let x = col.x - ACT_W / 2.0 + col.activations.len() as f64 * ACT_STEP;
         self.extend(x, x + ACT_W);
-        self.activations.push(format!(
-            "<rect class=\"{p}-activation\" data-id=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\"/>",
-            esc_text(col.id),
-            num(x),
-            num(start),
-            js::num_str(ACT_W),
-            num(bottom - start)
-        ));
+        self.activations.push(Activation {
+            id: col.id,
+            x,
+            top: start,
+            height: bottom - start,
+        });
         bottom
     }
 
     /// The lifeline of a destroyed participant ends in a cross a little below
     /// the message that ends it.
-    fn destroy(&mut self, col: &mut Column, line_y: f64) -> f64 {
+    fn destroy(&mut self, col: &mut Column<'m>, line_y: f64) -> f64 {
         let p = crate::PREFIX;
         let cx = col.x;
         let cy = line_y + 16.0;
         col.life_end = cy;
         let _ = write!(
             self.crosses,
-            "<path class=\"{p}-destroy\" data-id=\"{}\" d=\"M{},{}L{},{}M{},{}L{},{}\"/>",
-            esc_text(col.id),
-            num(cx - 6.0),
-            num(cy - 6.0),
-            num(cx + 6.0),
-            num(cy + 6.0),
-            num(cx + 6.0),
-            num(cy - 6.0),
-            num(cx - 6.0),
-            num(cy + 6.0)
+            "<path class=\"{p}-destroy\" data-id=\"{}\" d=\"M{}L{}M{}L{}\"/>",
+            EscText(col.id),
+            Point(cx - 6.0, cy - 6.0),
+            Point(cx + 6.0, cy + 6.0),
+            Point(cx + 6.0, cy - 6.0),
+            Point(cx - 6.0, cy + 6.0)
         );
         cy + 6.0
     }
 }
 
-fn actor_svg(col: &Column, top: f64, footer: bool) -> String {
-    let p = crate::PREFIX;
-    let cls = match col.actor.properties.get("class") {
-        Some(Value::String(cls)) => class_names(cls),
-        _ => String::new(),
-    };
-    format!(
-        "<g class=\"{p}-node {p}-actor {p}-actor-{}{}{cls}\" data-id=\"{}\">{}</g>",
-        col.kind,
+fn actor_svg<'a>(col: &'a Column, top: f64, footer: bool) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        write!(f, "<g class=\"{p}-node {p}-actor {p}-actor-{}", col.kind)?;
         if footer {
-            format!(" {p}-actor-footer")
-        } else {
-            String::new()
-        },
-        esc_text(col.id),
-        draw_actor(col.kind, col.x, top, col.size, &col.label)
-    )
+            write!(f, " {p}-actor-footer")?;
+        }
+        if let Some(Value::String(cls)) = col.actor.properties.get("class") {
+            f.write_str(&class_names(cls))?;
+        }
+        write!(
+            f,
+            "\" data-id=\"{}\">{}</g>",
+            EscText(col.id),
+            draw_actor(col.kind, col.x, top, col.size, &col.label)
+        )
+    })
 }
 
 fn left_edge(col: &Column, extra: usize) -> f64 {
@@ -915,42 +919,43 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
         }
         lo < xs.len() && xs[lo] < x1
     };
-    let backed = |label: &Label, cx: f64, cy: f64, attrs: &str| -> String {
+    let backed = |out: &mut String, label: &Label, cx: f64, cy: f64, attrs: &str| {
         if label.width == 0.0 {
-            return String::new();
+            return;
         }
         let l = cx - label.width / 2.0;
-        let back = if crosses(l, l + label.width) {
-            format!(
+        if crosses(l, l + label.width) {
+            let _ = write!(
+                out,
                 "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\" fill=\"var(--_bg)\" stroke=\"none\"/>",
                 num(l - 3.0),
                 num(cy - label.height / 2.0 + 2.0),
                 num(label.width + 6.0),
                 num(label.height - 4.0)
-            )
-        } else {
-            String::new()
-        };
-        back + &label_svg(label, cx, cy, attrs)
+            );
+        }
+        let _ = write!(out, "{}", LabelSvg(label, cx, cy, attrs));
     };
-    let badge = |i: usize, cx: f64, cy: f64, w: f64| -> String {
-        format!(
+    let badge = |out: &mut String, i: usize, cx: f64, cy: f64, w: f64| {
+        let _ = write!(
+            out,
             "<g class=\"{p}-sequence-number\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" fill=\"var(--_l)\" stroke=\"none\"/><text x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"{}\" fill=\"var(--_bg)\" stroke=\"none\">{}</text></g>",
             num(cx - w / 2.0),
             num(cy - BADGE_H / 2.0),
             num(w),
-            js::num_str(BADGE_H),
-            js::num_str(BADGE_H / 2.0),
+            js::Number(BADGE_H),
+            js::Number(BADGE_H / 2.0),
             num(cx),
             num(cy + tiny * 0.35),
-            js::num_str(tiny),
-            esc(&js::num_str(numbering.index[i]))
-        )
+            js::Number(tiny),
+            Esc(&js::num_str(numbering.index[i]))
+        );
     };
     let frame_label = format!(" class=\"{p}-frame-label\" fill=\"var(--_m)\" stroke=\"none\"");
 
     let mut y = head_bottom + 6.0;
     let mut stack: Vec<usize> = Vec::new();
+    let mut extras = String::new();
     for (i, m) in messages.iter().enumerate() {
         let kind = m.kind;
         let frame = frames[i];
@@ -998,48 +1003,48 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                     }
                 ));
             } else {
-                let mut inner = format!(
-                    "<rect x=\"{x}\" y=\"{}\" width=\"{w}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"none\"/>",
+                let _ = write!(
+                    out.frames,
+                    "<g class=\"{p}-frame {p}-frame-{}\"><rect x=\"{x}\" y=\"{}\" width=\"{w}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"none\"/>",
+                    frame.kind,
                     num(frame.top),
                     num(bottom - frame.top)
                 );
                 for (k, &dy) in frame.divider_y.iter().enumerate() {
                     let label = &frame.divider_labels[k];
                     let _ = write!(
-                        inner,
+                        out.frames,
                         "<path d=\"M{x},{}H{}\"{DASH}/>",
                         num(dy),
                         num(frame.x1)
                     );
-                    inner.push_str(&backed(
+                    backed(
+                        &mut out.frames,
                         label,
                         frame.x0 + 8.0 + label.width / 2.0,
                         dy + 2.0 + label.height / 2.0,
                         &frame_label,
-                    ));
+                    );
                 }
                 let _ = write!(
-                    inner,
+                    out.frames,
                     "<rect x=\"{x}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\"/><text class=\"{p}-frame-kind\" x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"{}\" font-weight=\"var(--_hw)\" fill=\"var(--_m)\" stroke=\"none\">{}</text>",
                     num(frame.top),
                     num(frame.tab_w),
-                    js::num_str(TAB_H),
+                    js::Number(TAB_H),
                     num(frame.x0 + frame.tab_w / 2.0),
                     num(frame.top + TAB_H / 2.0 + tiny * 0.35),
-                    js::num_str(tiny),
+                    js::Number(tiny),
                     frame.kind
                 );
-                inner.push_str(&backed(
+                backed(
+                    &mut out.frames,
                     &frame.title,
                     frame.x0 + frame.tab_w + 8.0 + frame.title.width / 2.0,
                     frame.top + TAB_H.max(frame.title.height) / 2.0,
                     &frame_label,
-                ));
-                let _ = write!(
-                    out.frames,
-                    "<g class=\"{p}-frame {p}-frame-{}\">{inner}</g>",
-                    frame.kind
                 );
+                out.frames.push_str("</g>");
             }
             y = bottom;
         } else if matches!(
@@ -1069,16 +1074,16 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
             let _ = write!(
                 out.notes,
                 "<g class=\"{p}-note\" data-id=\"i{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"/>{}</g>",
-                esc_text(&m.id),
+                EscText(&m.id),
                 num(x),
                 num(top),
                 num(view.w),
                 num(h),
-                label_svg(
+                LabelSvg(
                     &view.label,
                     x + view.w / 2.0,
                     top + h / 2.0,
-                    &format!(" class=\"{p}-label\" stroke=\"none\" fill=\"var(--_fg)\"")
+                    crate::class!("label", "stroke=\"none\" fill=\"var(--_fg)\"")
                 )
             );
             y = top + h;
@@ -1120,17 +1125,18 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                 cc,
                 Some(line::CENTRAL_CONNECTION_REVERSE | line::CENTRAL_CONNECTION_DUAL)
             );
-            let circle = |cx: f64, cy: f64| -> String {
-                format!(
+            let circle = |out: &mut String, cx: f64, cy: f64| {
+                let _ = write!(
+                    out,
                     "<circle class=\"{p}-central\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_l)\" stroke=\"none\"/>",
                     num(cx),
                     num(cy),
-                    js::num_str(CENTRAL_R)
-                )
+                    js::Number(CENTRAL_R)
+                );
             };
             let tail_at_end = st.at_start && !st.at_end;
             let head_trim = trim(st.head);
-            let mut inner = String::new();
+            extras.clear();
             let line_y;
 
             if view.kind == V::SelfLine {
@@ -1149,18 +1155,19 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                 };
                 let reach = x0.max(x1) + SELF_W + bw / 2.0;
                 if circle_from {
-                    inner.push_str(&circle(a.x, top));
+                    circle(&mut extras, a.x, top);
                 }
                 if circle_to {
-                    inner.push_str(&circle(a.x, bottom));
+                    circle(&mut extras, a.x, bottom);
                 }
                 if bw > 0.0 {
-                    inner.push_str(&badge(
+                    badge(
+                        &mut extras,
                         i,
                         if tail_at_end { x1 } else { x0 },
                         if tail_at_end { bottom } else { top },
                         bw,
-                    ));
+                    );
                     if tail_at_end {
                         x1 += bw / 2.0;
                     } else {
@@ -1169,40 +1176,47 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                 }
                 // The loop leaves to the right and comes back heading left,
                 // which turns a half head over.
-                let heads = (if st.at_start {
-                    head(st.head, x0, top, -1.0, up)
-                } else {
-                    String::new()
-                }) + &(if st.at_end {
-                    head(st.head, x1, bottom, -1.0, -up)
-                } else {
-                    String::new()
-                });
                 let from = num(x0 + if st.at_start { head_trim } else { 0.0 });
                 let to = num(x1 + if st.at_end { head_trim } else { 0.0 });
-                let d = if right_angles {
-                    format!("M{from},{}H{}V{}H{to}", num(top), num(reach), num(bottom))
-                } else {
-                    format!(
-                        "M{from},{}H{}A6,6 0 0 1 {},{}V{}A6,6 0 0 1 {},{}H{to}",
+                let _ = write!(
+                    out.edges,
+                    "<g class=\"{p}-edge {p}-message\" data-id=\"i{}\"><path d=\"",
+                    EscText(&m.id)
+                );
+                let _ = if right_angles {
+                    write!(
+                        out.edges,
+                        "M{from},{}H{}V{}H{to}",
                         num(top),
-                        num(reach - 6.0),
                         num(reach),
-                        num(top + 6.0),
-                        num(bottom - 6.0),
-                        num(reach - 6.0),
                         num(bottom)
                     )
+                } else {
+                    write!(
+                        out.edges,
+                        "M{from},{}H{}A6,6 0 0 1 {}V{}A6,6 0 0 1 {}H{to}",
+                        num(top),
+                        num(reach - 6.0),
+                        Point(reach, top + 6.0),
+                        num(bottom - 6.0),
+                        Point(reach - 6.0, bottom)
+                    )
                 };
-                inner = format!("<path d=\"{d}\"{attrs}/>") + &heads + &inner;
+                let _ = write!(out.edges, "\"{attrs}/>");
+                if st.at_start {
+                    let _ = write!(out.edges, "{}", head(st.head, x0, top, -1.0, up));
+                }
+                if st.at_end {
+                    let _ = write!(out.edges, "{}", head(st.head, x1, bottom, -1.0, -up));
+                }
                 let ax = a.x;
                 out.extend(ax, reach + 8.0 + label.width);
                 if label.width > 0.0 {
                     let _ = write!(
                         out.labels,
                         "<g class=\"{p}-edge-label\" data-id=\"i{}\">{}</g>",
-                        esc_text(&m.id),
-                        label_svg(
+                        EscText(&m.id),
+                        LabelSvg(
                             label,
                             reach + 8.0 + label.width / 2.0,
                             (top + bottom) / 2.0,
@@ -1251,11 +1265,11 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                             };
                 }
                 if circle_from {
-                    inner.push_str(&circle(ax, line_y));
+                    circle(&mut extras, ax, line_y);
                     x0 = ax + dir * CENTRAL_R;
                 }
                 if circle_to {
-                    inner.push_str(&circle(bx, line_y));
+                    circle(&mut extras, bx, line_y);
                     x1 = bx - dir * CENTRAL_R;
                 }
                 if bw > 0.0 {
@@ -1267,7 +1281,7 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                         } else {
                             x1
                         };
-                        inner.push_str(&badge(i, cx, line_y, bw));
+                        badge(&mut extras, i, cx, line_y, bw);
                         x1 = cx - (dir * bw) / 2.0;
                     } else {
                         let cx = if circle_from {
@@ -1275,28 +1289,25 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                         } else {
                             x0
                         };
-                        inner.push_str(&badge(i, cx, line_y, bw));
+                        badge(&mut extras, i, cx, line_y, bw);
                         x0 = cx + (dir * bw) / 2.0;
                     }
                 }
-                let heads = (if st.at_start {
-                    head(st.head, x0, line_y, -dir, up * dir)
-                } else {
-                    String::new()
-                }) + &(if st.at_end {
-                    head(st.head, x1, line_y, dir, up * dir)
-                } else {
-                    String::new()
-                });
                 let from = x0 + if st.at_start { dir * head_trim } else { 0.0 };
                 let to = x1 - if st.at_end { dir * head_trim } else { 0.0 };
-                inner = format!(
-                    "<path d=\"M{},{}H{}\"{attrs}/>",
-                    num(from),
-                    num(line_y),
+                let _ = write!(
+                    out.edges,
+                    "<g class=\"{p}-edge {p}-message\" data-id=\"i{}\"><path d=\"M{}H{}\"{attrs}/>",
+                    EscText(&m.id),
+                    Point(from, line_y),
                     num(to)
-                ) + &heads
-                    + &inner;
+                );
+                if st.at_start {
+                    let _ = write!(out.edges, "{}", head(st.head, x0, line_y, -dir, up * dir));
+                }
+                if st.at_end {
+                    let _ = write!(out.edges, "{}", head(st.head, x1, line_y, dir, up * dir));
+                }
                 if label.width > 0.0 {
                     let l = x0.min(x1);
                     let r = x0.max(x1);
@@ -1308,20 +1319,23 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                     out.extend(cx - label.width / 2.0, cx + label.width / 2.0);
                     let _ = write!(
                         out.labels,
-                        "<g class=\"{p}-edge-label\" data-id=\"i{}\">{}</g>",
-                        esc_text(&m.id),
-                        backed(label, cx, line_y - 4.0 - label.height / 2.0, "")
+                        "<g class=\"{p}-edge-label\" data-id=\"i{}\">",
+                        EscText(&m.id)
                     );
+                    backed(
+                        &mut out.labels,
+                        label,
+                        cx,
+                        line_y - 4.0 - label.height / 2.0,
+                        "",
+                    );
+                    out.labels.push_str("</g>");
                 }
                 if creating {
                     y = line_y + b_size.h / 2.0 - 6.0;
                 }
             }
-            let _ = write!(
-                out.edges,
-                "<g class=\"{p}-edge {p}-message\" data-id=\"i{}\">{inner}</g>",
-                esc_text(&m.id)
-            );
+            let _ = write!(out.edges, "{extras}</g>");
             y = y.max(line_y);
             if cols[va].destroy_at == i as i64 {
                 y = y.max(out.destroy(&mut cols[va], line_y));
@@ -1346,19 +1360,19 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                 continue;
             }
             foot_h = foot_h.max(col.size.h);
-            out.actors.push_str(&actor_svg(col, y, true));
+            let _ = write!(out.actors, "{}", actor_svg(col, y, true));
         }
         bottom = y + foot_h;
     }
     let mut lifelines = String::new();
     for col in &cols {
-        out.actors.push_str(&actor_svg(col, col.top, false));
+        let _ = write!(out.actors, "{}", actor_svg(col, col.top, false));
         let end = if col.life_end >= 0.0 { col.life_end } else { y };
         if end > col.life_start {
             let _ = write!(
                 lifelines,
                 "<path class=\"{p}-lifeline\" data-id=\"{}\" d=\"M{},{}V{}\"/>",
-                esc_text(col.id),
+                EscText(col.id),
                 num(col.x),
                 num(col.life_start),
                 num(end)
@@ -1380,7 +1394,7 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
             boxes_out,
             "<g class=\"{p}-cluster {p}-box\"{}><rect x=\"{}\" y=\"0\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\" stroke=\"var(--_b)\"{}{fill}/>{}</g>",
             match b.name.as_deref().filter(|name| !name.is_empty()) {
-                Some(name) => format!(" data-id=\"{}\"", esc_text(name)),
+                Some(name) => format!(" data-id=\"{}\"", EscText(name)),
                 None => String::new(),
             },
             num(x0),
@@ -1391,11 +1405,11 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
             } else {
                 ""
             },
-            label_svg(
+            LabelSvg(
                 &run.title,
                 (x0 + x1) / 2.0,
                 box_pad / 2.0 + 2.0 + run.title.height / 2.0,
-                &format!(" class=\"{p}-cluster-label\" fill=\"var(--_m)\"")
+                crate::class!("cluster-label", "fill=\"var(--_m)\"")
             )
         );
     }
@@ -1419,11 +1433,11 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
         let cx = (out.min_x + out.max_x) / 2.0;
         out.extend(cx - title.width / 2.0, cx + title.width / 2.0);
         min_y = -title.height - 12.0;
-        title_out = label_svg(
-            &title,
-            cx,
-            min_y + title.height / 2.0,
-            &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+        let title_attrs = crate::svg::builder::TITLE;
+        let _ = write!(
+            title_out,
+            "{}",
+            LabelSvg(&title, cx, min_y + title.height / 2.0, title_attrs)
         );
     }
 
@@ -1434,7 +1448,7 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
         num(pad - out.min_x),
         num(pad - min_y)
     );
-    let small_str = js::num_str(small);
+    let small_str = js::Number(small);
     if !boxes_out.is_empty() {
         let _ = write!(
             content,
@@ -1442,12 +1456,11 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
         );
     }
     if !out.rects.is_empty() {
-        out.rects.reverse();
-        let _ = write!(
-            content,
-            "<g class=\"{p}-rects\" fill=\"var(--_a)\">{}</g>",
-            out.rects.concat()
-        );
+        let _ = write!(content, "<g class=\"{p}-rects\" fill=\"var(--_a)\">");
+        for rect in out.rects.iter().rev() {
+            content.push_str(rect);
+        }
+        content.push_str("</g>");
     }
     if !lifelines.is_empty() {
         let _ = write!(
@@ -1456,12 +1469,22 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
         );
     }
     if !out.activations.is_empty() {
-        out.activations.reverse();
         let _ = write!(
             content,
-            "<g class=\"{p}-activations\" fill=\"var(--_s)\" stroke=\"var(--_b)\">{}</g>",
-            out.activations.concat()
+            "<g class=\"{p}-activations\" fill=\"var(--_s)\" stroke=\"var(--_b)\">"
         );
+        for bar in out.activations.iter().rev() {
+            let _ = write!(
+                content,
+                "<rect class=\"{p}-activation\" data-id=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\"/>",
+                EscText(bar.id),
+                num(bar.x),
+                num(bar.top),
+                js::Number(ACT_W),
+                num(bar.height)
+            );
+        }
+        content.push_str("</g>");
     }
     if !out.frames.is_empty() {
         let _ = write!(

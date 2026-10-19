@@ -1,6 +1,10 @@
 //! Pele's `diagrams/requirement/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::rewrite;
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use indexmap::IndexMap;
 
@@ -18,7 +22,9 @@ use crate::{
         layered::LayeredOptions,
     },
     svg::{
-        builder::{esc, esc_text, label_svg, num, shared_style, span_style, text_style},
+        builder::{
+            Esc, EscText, LabelSvg, Point, fragment, num, shared_style, span_style, text_style,
+        },
         edges::{EdgePath, edge_label_svg, route_path},
         root::{Accessible, svg_document},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
@@ -110,79 +116,90 @@ fn restyle(label: Label, bits: u8, measure: &impl Host) -> Label {
 
 /// A measured label with its lines starting at `x`, the first line's box
 /// starting at `top`.
-fn start_text(label: &Label, x: f64, top: f64, attrs: &str) -> String {
-    let mut y = top + label.line_height / 2.0 + label.size * 0.35;
-    let shared = shared_style(label);
-    let mut body = String::new();
-    for line in &label.lines {
-        let mut first = true;
-        for span in line {
-            if span.icon.is_some() || span.text.is_empty() {
-                continue;
-            }
-            let pos = if first {
-                format!(" x=\"{}\" y=\"{}\"", num(x), num(y))
-            } else {
-                String::new()
-            };
-            let _ = write!(
-                body,
-                "<tspan{pos}{}>{}</tspan>",
-                span_style(span.style & !shared),
-                esc(&span.text)
-            );
-            first = false;
+struct StartText<'a, A>(&'a Label, f64, f64, A);
+
+impl<A: fmt::Display> fmt::Display for StartText<'_, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let StartText(label, x, top, ref attrs) = *self;
+        let spans = || {
+            label
+                .lines
+                .iter()
+                .flatten()
+                .any(|span| span.icon.is_none() && !span.text.is_empty())
+        };
+        if !spans() {
+            return Ok(());
         }
-        y += label.line_height;
-    }
-    if body.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "<text{} text-anchor=\"start\" xml:space=\"preserve\">{body}</text>",
-            text_style(attrs, shared)
-        )
+        let shared = shared_style(label);
+        let attrs = attrs.to_string();
+        write!(
+            f,
+            "<text{} text-anchor=\"start\" xml:space=\"preserve\">",
+            text_style(&attrs, shared)
+        )?;
+        let mut y = top + label.line_height / 2.0 + label.size * 0.35;
+        for line in &label.lines {
+            let mut first = true;
+            for span in line {
+                if span.icon.is_some() || span.text.is_empty() {
+                    continue;
+                }
+                f.write_str("<tspan")?;
+                if first {
+                    write!(f, " x=\"{}\" y=\"{}\"", num(x), num(y))?;
+                }
+                write!(
+                    f,
+                    "{}>{}</tspan>",
+                    span_style(span.style & !shared),
+                    Esc(&span.text)
+                )?;
+                first = false;
+            }
+            y += label.line_height;
+        }
+        f.write_str("</text>")
     }
 }
 
 /// The containment mark: a circled plus whose rim touches (`x`, `y`), where
 /// (`dx`, `dy`) points at the node.
-fn contains_marker(x: f64, y: f64, dx: f64, dy: f64) -> String {
-    let p = crate::PREFIX;
-    let r = CONTAINS_RADIUS;
-    let cx = x - dx * r;
-    let cy = y - dy * r;
-    format!(
-        "<circle class=\"{p}-marker\" cx=\"{}\" cy=\"{}\" r=\"{}\"/><path class=\"{p}-marker\" d=\"M{},{}L{},{}M{},{}L{},{}\"/>",
-        num(cx),
-        num(cy),
-        js::num_str(r),
-        num(cx - dx * r),
-        num(cy - dy * r),
-        num(cx + dx * r),
-        num(cy + dy * r),
-        num(cx + dy * r),
-        num(cy - dx * r),
-        num(cx - dy * r),
-        num(cy + dx * r)
-    )
+fn contains_marker(x: f64, y: f64, dx: f64, dy: f64) -> impl fmt::Display {
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        let r = CONTAINS_RADIUS;
+        let cx = x - dx * r;
+        let cy = y - dy * r;
+        write!(
+            f,
+            "<circle class=\"{p}-marker\" cx=\"{}\" cy=\"{}\" r=\"{}\"/><path class=\"{p}-marker\" d=\"M{}L{}M{}L{}\"/>",
+            num(cx),
+            num(cy),
+            js::Number(r),
+            Point(cx - dx * r, cy - dy * r),
+            Point(cx + dx * r, cy + dy * r),
+            Point(cx + dy * r, cy - dx * r),
+            Point(cx - dy * r, cy + dx * r)
+        )
+    })
 }
 
 /// An open arrowhead with its tip at (`x`, `y`), pointing along (`dx`,
 /// `dy`).
-fn arrow_marker(x: f64, y: f64, dx: f64, dy: f64) -> String {
-    let p = crate::PREFIX;
-    let bx = x - dx * ARROW_LENGTH;
-    let by = y - dy * ARROW_LENGTH;
-    format!(
-        "<path class=\"{p}-marker\" d=\"M{},{}L{},{}L{},{}\" stroke-linejoin=\"round\"/>",
-        num(bx - dy * ARROW_HALF),
-        num(by + dx * ARROW_HALF),
-        num(x),
-        num(y),
-        num(bx + dy * ARROW_HALF),
-        num(by - dx * ARROW_HALF)
-    )
+fn arrow_marker(x: f64, y: f64, dx: f64, dy: f64) -> impl fmt::Display {
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        let bx = x - dx * ARROW_LENGTH;
+        let by = y - dy * ARROW_LENGTH;
+        write!(
+            f,
+            "<path class=\"{p}-marker\" d=\"M{}L{}L{}\" stroke-linejoin=\"round\"/>",
+            Point(bx - dy * ARROW_HALF, by + dx * ARROW_HALF),
+            Point(x, y),
+            Point(bx + dy * ARROW_HALF, by - dx * ARROW_HALF)
+        )
+    })
 }
 
 struct End {
@@ -441,84 +458,95 @@ fn draw(
     let height = (layout.height + title_height + 2.0 * pad).ceil();
 
     let mut nodes_out = String::new();
+    let mut kind_attrs_buf = String::new();
+    let mut name_attrs_buf = String::new();
     for (i, view) in views.iter().enumerate() {
         let (w, h, style) = (view.w, view.h, &view.style);
         let left = -w / 2.0;
         let top = -h / 2.0;
-        let mut body = format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"{}/>",
-            num(left),
-            num(top),
-            num(w),
-            num(h),
-            style.shape
-        );
-        body.push_str(&label_svg(
-            &view.kind,
-            0.0,
-            top + PAD_Y + view.kind.height / 2.0,
-            &format!(
-                " class=\"{p}-stereotype\" font-size=\"{}\" fill=\"var(--_m)\"{}",
-                js::num_str(view.kind.size),
-                style.text
-            ),
-        ));
-        body.push_str(&label_svg(
-            &view.name,
-            0.0,
-            top + PAD_Y + view.kind.height + view.name.height / 2.0,
-            &format!(
-                " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"{}",
-                js::num_str(view.name.size),
-                style.text
-            ),
-        ));
-        if let Some(first) = view.rows.first() {
-            let divider = top + view.head_height;
-            let _ = write!(
-                body,
-                "<path class=\"{p}-divider\" d=\"M{},{}H{}\" stroke=\"var(--_b)\"{}/>",
-                num(left),
-                num(divider),
-                num(-left),
-                style.line
-            );
-            let mut y = divider + PAD_Y;
-            let mut rows = String::new();
-            for row in &view.rows {
-                rows.push_str(&start_text(
-                    &row.key,
-                    left + PAD_X,
-                    y,
-                    &format!(" class=\"{p}-field\" fill=\"var(--_m)\"{}", style.text),
-                ));
-                rows.push_str(&start_text(
-                    &row.value,
-                    left + PAD_X + view.key_width + COLUMN_GAP,
-                    y,
-                    &format!(" class=\"{p}-value\"{}", style.text),
-                ));
-                y += row.height + ROW_GAP;
-            }
-            let _ = write!(
-                body,
-                "<g class=\"{p}-fields\" font-size=\"{}\">{rows}</g>",
-                js::num_str(first.key.size)
-            );
-        }
         let _ = write!(
             nodes_out,
-            "<g class=\"{p}-node {p}-{}{}\" data-id=\"{}\" transform=\"translate({},{})\">{body}</g>",
+            "<g class=\"{p}-node {p}-{}{}\" data-id=\"{}\" transform=\"translate({},{})\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"{}/>",
             if view.node.requirement.is_some() {
                 "requirement"
             } else {
                 "element"
             },
             class_names(&RE_DEFAULT.replace(&view.node.css_classes, |_| String::new())),
-            esc_text(view.node.id),
+            EscText(view.node.id),
             num(cnodes[i].x + ox),
-            num(cnodes[i].y + oy)
+            num(cnodes[i].y + oy),
+            num(left),
+            num(top),
+            num(w),
+            num(h),
+            style.shape
         );
+        let kind_attrs = rewrite(
+            &mut kind_attrs_buf,
+            format_args!(
+                " class=\"{p}-stereotype\" font-size=\"{}\" fill=\"var(--_m)\"{}",
+                js::Number(view.kind.size),
+                style.text
+            ),
+        );
+        let name_attrs = rewrite(
+            &mut name_attrs_buf,
+            format_args!(
+                " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"{}",
+                js::Number(view.name.size),
+                style.text
+            ),
+        );
+        let _ = write!(
+            nodes_out,
+            "{}{}",
+            LabelSvg(
+                &view.kind,
+                0.0,
+                top + PAD_Y + view.kind.height / 2.0,
+                kind_attrs
+            ),
+            LabelSvg(
+                &view.name,
+                0.0,
+                top + PAD_Y + view.kind.height + view.name.height / 2.0,
+                name_attrs
+            )
+        );
+        if let Some(first) = view.rows.first() {
+            let divider = top + view.head_height;
+            let _ = write!(
+                nodes_out,
+                "<path class=\"{p}-divider\" d=\"M{}H{}\" stroke=\"var(--_b)\"{}/><g class=\"{p}-fields\" font-size=\"{}\">",
+                Point(left, divider),
+                num(-left),
+                style.line,
+                js::Number(first.key.size)
+            );
+            let mut y = divider + PAD_Y;
+            for row in &view.rows {
+                let _ = write!(
+                    nodes_out,
+                    "{}{}",
+                    StartText(
+                        &row.key,
+                        left + PAD_X,
+                        y,
+                        format_args!(" class=\"{p}-field\" fill=\"var(--_m)\"{}", style.text),
+                    ),
+                    StartText(
+                        &row.value,
+                        left + PAD_X + view.key_width + COLUMN_GAP,
+                        y,
+                        format_args!(" class=\"{p}-value\"{}", style.text),
+                    )
+                );
+                y += row.height + ROW_GAP;
+            }
+            nodes_out.push_str("</g>");
+        }
+        nodes_out.push_str("</g>");
     }
 
     let mut edges_out = String::new();
@@ -546,11 +574,11 @@ fn draw(
             let reach = LOOP + k * 8.0;
             // Local frame: `out` points away from the node, `along` runs
             // along its side.
-            let at = |out: f64, along: f64| -> String {
+            let at = |out: f64, along: f64| {
                 if sideways {
-                    format!("{},{}", num(cx + along), num(cy + view.h / 2.0 + out))
+                    Point(cx + along, cy + view.h / 2.0 + out)
                 } else {
-                    format!("{},{}", num(cx + view.w / 2.0 + out), num(cy + along))
+                    Point(cx + view.w / 2.0 + out, cy + along)
                 }
             };
             // A cubic whose control points are this far out peaks at
@@ -608,27 +636,37 @@ fn draw(
             edges_out,
             "<g class=\"{p}-edge {p}-relationship-{}\" data-id=\"{}\"><path d=\"{}\"{}/>{}</g>",
             if edge.contains { "contains" } else { "arrow" },
-            esc_text(&edge.id),
+            EscText(&edge.id),
             path.d,
             if edge.contains {
                 ""
             } else {
                 " stroke-dasharray=\"5 4\""
             },
-            if edge.contains {
-                contains_marker(path.sx, path.sy, path.sdx, path.sdy)
+            fragment(|f| if edge.contains {
+                write!(
+                    f,
+                    "{}",
+                    contains_marker(path.sx, path.sy, path.sdx, path.sdy)
+                )
             } else {
-                arrow_marker(path.ex, path.ey, path.edx, path.edy)
-            }
+                write!(f, "{}", arrow_marker(path.ex, path.ey, path.edx, path.edy))
+            })
         );
-        labels_out.push_str(&edge_label_svg(&edge.id, label, label_x, label_y, ""));
+        let _ = write!(
+            labels_out,
+            "{}",
+            edge_label_svg(&edge.id, label, label_x, label_y, "")
+        );
     }
 
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content =
+        String::with_capacity(edges_out.len() + labels_out.len() + nodes_out.len() + 512);
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
     );
     if !edges_out.is_empty() {
         let _ = write!(
@@ -640,7 +678,7 @@ fn draw(
         let _ = write!(
             content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\" fill=\"var(--_m)\">{labels_out}</g>",
-            js::num_str(small)
+            js::Number(small)
         );
     }
     let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");

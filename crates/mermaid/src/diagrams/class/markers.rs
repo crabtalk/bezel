@@ -2,9 +2,10 @@
 
 use super::graph::EndMarker;
 use crate::svg::{
-    builder::num,
+    builder::{fragment, num},
     edges::{marker, marker_trim},
 };
+use std::fmt;
 
 const TRIANGLE: f64 = 12.0;
 const DIAMOND: f64 = 16.0;
@@ -24,52 +25,63 @@ pub fn class_marker_trim(kind: EndMarker) -> f64 {
 }
 
 /// Draws an end marker whose tip is at (x, y), pointing along (dx, dy).
-pub fn class_marker(kind: EndMarker, x: f64, y: f64, dx: f64, dy: f64, color: &str) -> String {
-    let p = crate::PREFIX;
-    let nx = -dy;
-    let ny = dx;
-    match kind {
-        EndMarker::Extension => {
-            let bx = x - dx * TRIANGLE;
-            let by = y - dy * TRIANGLE;
-            format!(
-                "<path class=\"{p}-marker\" d=\"M{},{}L{},{}L{},{}Z\" stroke-linejoin=\"round\"/>",
-                num(x),
-                num(y),
-                num(bx + nx * HALF),
-                num(by + ny * HALF),
-                num(bx - nx * HALF),
-                num(by - ny * HALF)
-            )
-        }
-        EndMarker::Composition | EndMarker::Aggregation => {
-            let mx = x - (dx * DIAMOND) / 2.0;
-            let my = y - (dy * DIAMOND) / 2.0;
-            let half = HALF - 1.0;
-            format!(
-                "<path class=\"{p}-marker\" d=\"M{},{}L{},{}L{},{}L{},{}Z\" stroke-linejoin=\"round\"{}/>",
-                num(x),
-                num(y),
-                num(mx + nx * half),
-                num(my + ny * half),
-                num(x - dx * DIAMOND),
-                num(y - dy * DIAMOND),
-                num(mx - nx * half),
-                num(my - ny * half),
+pub fn class_marker(
+    kind: EndMarker,
+    x: f64,
+    y: f64,
+    dx: f64,
+    dy: f64,
+    color: &str,
+) -> impl fmt::Display + '_ {
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        let nx = -dy;
+        let ny = dx;
+        match kind {
+            EndMarker::Extension => {
+                let bx = x - dx * TRIANGLE;
+                let by = y - dy * TRIANGLE;
+                write!(
+                    f,
+                    "<path class=\"{p}-marker\" d=\"M{},{}L{},{}L{},{}Z\" stroke-linejoin=\"round\"/>",
+                    num(x),
+                    num(y),
+                    num(bx + nx * HALF),
+                    num(by + ny * HALF),
+                    num(bx - nx * HALF),
+                    num(by - ny * HALF)
+                )
+            }
+            EndMarker::Composition | EndMarker::Aggregation => {
+                let mx = x - (dx * DIAMOND) / 2.0;
+                let my = y - (dy * DIAMOND) / 2.0;
+                let half = HALF - 1.0;
+                write!(
+                    f,
+                    "<path class=\"{p}-marker\" d=\"M{},{}L{},{}L{},{}L{},{}Z\" stroke-linejoin=\"round\"",
+                    num(x),
+                    num(y),
+                    num(mx + nx * half),
+                    num(my + ny * half),
+                    num(x - dx * DIAMOND),
+                    num(y - dy * DIAMOND),
+                    num(mx - nx * half),
+                    num(my - ny * half),
+                )?;
                 if kind == EndMarker::Composition {
-                    format!(" fill=\"{color}\"")
-                } else {
-                    String::new()
+                    write!(f, " fill=\"{color}\"")?;
                 }
-            )
+                f.write_str("/>")
+            }
+            EndMarker::Lollipop => write!(
+                f,
+                "<circle class=\"{p}-marker\" cx=\"{}\" cy=\"{}\" r=\"{}\"/>",
+                num(x - dx * RING),
+                num(y - dy * RING),
+                num(RING)
+            ),
+            EndMarker::Dependency => write!(f, "{}", marker("arrow_point", x, y, dx, dy, color)),
+            EndMarker::None => Ok(()),
         }
-        EndMarker::Lollipop => format!(
-            "<circle class=\"{p}-marker\" cx=\"{}\" cy=\"{}\" r=\"{}\"/>",
-            num(x - dx * RING),
-            num(y - dy * RING),
-            num(RING)
-        ),
-        EndMarker::Dependency => marker("arrow_point", x, y, dx, dy, color),
-        EndMarker::None => String::new(),
-    }
+    })
 }

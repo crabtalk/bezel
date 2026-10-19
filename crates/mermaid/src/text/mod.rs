@@ -6,7 +6,7 @@ mod label;
 mod measure;
 mod metrics;
 
-pub use entities::decode_entities;
+pub use entities::{decode_entities, decoded};
 pub use icons::{icon, icon_markup};
 pub use label::{Icon, LINE_HEIGHT, Label, Span, layout_label};
 pub use measure::{Host, Metrics, Style};

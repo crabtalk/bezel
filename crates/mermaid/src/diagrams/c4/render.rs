@@ -1,8 +1,9 @@
 //! Pele's `diagrams/c4/render.ts`.
 
+use crate::svg::builder::rewrite;
 use std::{
     collections::{HashMap, HashSet},
-    fmt::Write as _,
+    fmt::{self, Write as _},
 };
 
 use super::{
@@ -15,17 +16,17 @@ use crate::{
     Config, Error, Kind, Link, Rendered,
     diagrams::common::{
         fit_width::{title_room, try_tighten},
-        literal_label::left_label_svg,
+        literal_label::StartLines,
     },
     js::{self, Lazy, max, min},
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{EscText, LabelSvg, fragment, num},
         edges::{ARROW, marker, marker_trim},
         root::{Accessible, svg_document},
         shapes::draw_shape,
         theme::{RADIUS, ResolvedStyle, resolve_style},
     },
-    text::{Style, layout_label},
+    text::{Label, Style, layout_label},
     util::url::{linked, sanitize_url},
 };
 use crate::{Ctx, Host};
@@ -59,15 +60,18 @@ fn user_style(fill: Option<&str>, stroke: Option<&str>, color: Option<&str>) -> 
     resolve_style(&declarations)
 }
 
+/// Writes `body`, inside a link to `url` where there is one.
 fn link(
-    body: &str,
+    out: &mut String,
+    body: impl fmt::Display,
     url: Option<&str>,
     id: &str,
     links: &mut Vec<Link>,
     ctx: &Ctx<'_, impl Host>,
-) -> String {
+) {
     let Some(url) = url.filter(|url| !url.is_empty()) else {
-        return body.to_string();
+        let _ = write!(out, "{body}");
+        return;
     };
     // Entity encoding has hidden any `#name;` in the address. Put it back, so
     // that the check sees what a browser would.
@@ -76,7 +80,23 @@ fn link(
     } else {
         url.to_string()
     };
-    linked(body, &sanitize_url(&url), id, links, ctx, "")
+    let _ = write!(
+        out,
+        "{}",
+        linked(body, Some(&sanitize_url(&url)), id, links, ctx, "")
+    );
+}
+
+/// A relation's label where it was placed.
+struct Placed {
+    rel: usize,
+    label: Label,
+    techn: Label,
+    style: ResolvedStyle,
+    cx: f64,
+    top: f64,
+    lw: f64,
+    lh: f64,
 }
 
 pub fn render_c4(
@@ -153,7 +173,6 @@ fn draw(
     let small = js::round(size * 0.8125);
     let measurer = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
-    let mut links: Vec<Link> = Vec::new();
     let room = tight.then(|| max(80.0, ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad));
     let mut layout = layout_c4(db, measurer, size, small, room, gap);
     let root = layout.order[0];
@@ -207,9 +226,8 @@ fn draw(
     let careful =
         rels * (nodes.len() as f64 + layout.order.len() as f64 + 3.0 * rels) <= CARE_BUDGET;
 
-    // Every line is drawn before any label is placed, so that labels can keep
-    // off the arrowheads.
-    let mut edges_out = String::new();
+    // Every line is routed before any label is placed, so that labels can
+    // keep off the arrowheads.
     let trim = marker_trim("arrow_point");
     let mut lanes = Lanes::default();
     for &at in &layout.order {
@@ -218,15 +236,10 @@ fn draw(
         }
     }
     let mut routes = Vec::with_capacity(db.rels.len());
+    let mut line_styles = Vec::with_capacity(db.rels.len());
     for (index, rel) in db.rels.iter().enumerate() {
         let a = ends[index * 2];
         let b = ends[index * 2 + 1];
-        let style = user_style(None, rel.line_color.as_deref(), None);
-        let color = style
-            .stroke
-            .as_deref()
-            .filter(|stroke| !stroke.is_empty())
-            .map_or_else(|| "var(--_l)".to_string(), esc);
         let start_arrow = rel.ty == "birel" || rel.ty == "rel_b";
         let end_arrow = rel.ty != "rel_b";
         let reverse = a.id != b.id && pairs.get(&b.id).is_some_and(|set| set.contains(&a.id));
@@ -251,21 +264,8 @@ fn draw(
         if end_arrow && careful {
             taken.extend([r.ex - ARROW, r.ey - ARROW, r.ex + ARROW, r.ey + ARROW]);
         }
-        let _ = write!(
-            edges_out,
-            "<g class=\"{p}-edge\" data-id=\"{}\"{}><path d=\"{}\"/>",
-            esc_text(&format!("{}-{}", rel.from, rel.to)),
-            style.line,
-            r.d
-        );
-        if start_arrow {
-            edges_out += &marker("arrow_point", r.sx, r.sy, r.sdx, r.sdy, &color);
-        }
-        if end_arrow {
-            edges_out += &marker("arrow_point", r.ex, r.ey, r.edx, r.edy, &color);
-        }
-        edges_out += "</g>";
         routes.push(r);
+        line_styles.push(user_style(None, rel.line_color.as_deref(), None));
     }
 
     // A boundary's heading goes at the left, the middle or the right of its
@@ -311,17 +311,18 @@ fn draw(
         ]);
     }
 
-    let mut labels_out = String::new();
+    let mut placed: Vec<Placed> = Vec::new();
     for (index, rel) in db.rels.iter().enumerate() {
         let r = &routes[index];
-        let id = format!("{}-{}", rel.from, rel.to);
         let style = user_style(None, None, rel.text_color.as_deref());
+        let numbered;
         let text = if db.c4_type.as_deref() == Some("C4Dynamic") {
-            format!("{}: {}", index + 1, rel.label)
+            numbered = format!("{}: {}", index + 1, rel.label);
+            &numbered
         } else {
-            rel.label.clone()
+            &rel.label
         };
-        let label = layout_label(Some(&text), false, measurer, small, r.room, 0);
+        let label = layout_label(Some(text), false, measurer, small, r.room, 0);
         let techn_text = rel
             .techn
             .as_deref()
@@ -396,199 +397,16 @@ fn draw(
             taken.extend([cx - lw / 2.0, top, cx + lw / 2.0, top + lh]);
         }
         bounds.grow(cx - lw / 2.0, top, cx + lw / 2.0, top + lh);
-        let _ = write!(
-            labels_out,
-            "<g class=\"{p}-edge-label\" data-id=\"{}\">",
-            esc_text(&id)
-        );
-        if let Some(descr) = rel.descr.as_deref().filter(|descr| !descr.is_empty()) {
-            let _ = write!(labels_out, "<title>{}</title>", esc_text(descr));
-        }
-        let _ = write!(
-            labels_out,
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\" fill=\"var(--_bg)\"/>",
-            num(cx - lw / 2.0),
-            num(top),
-            num(lw),
-            num(lh)
-        );
-        let body = label_svg(&label, cx, top + label.height / 2.0, &style.text)
-            + &label_svg(
-                &techn,
-                cx,
-                top + label.height + techn.height / 2.0,
-                &format!(" class=\"{p}-c4-techn\" fill=\"var(--_m)\"{}", style.text),
-            );
-        labels_out += &link(&body, rel.link.as_deref(), &id, &mut links, ctx);
-        labels_out += "</g>";
-    }
-
-    let small_str = js::num_str(small);
-    let mut clusters = String::new();
-    let mut nodes_out = String::new();
-    for &at in &layout.order {
-        let group = &layout.groups[at];
-        if at != root {
-            let boundary = &db.boundaries[group.boundary];
-            let style = user_style(
-                boundary.bg_color.as_deref(),
-                boundary.border_color.as_deref(),
-                boundary.font_color.as_deref(),
-            );
-            let x = group.bx.x + group.head_x;
-            let mut y = group.bx.y + HEAD_TOP;
-            let mut text = left_label_svg(
-                &group.labels[0],
-                x,
-                y,
-                &format!(
-                    " class=\"{p}-cluster-label\" font-weight=\"var(--_hw)\"{}",
-                    style.text
-                ),
-            );
-            y += group.labels[0].height;
-            text += &left_label_svg(
-                &group.labels[1],
-                x,
-                y,
-                &format!(
-                    " class=\"{p}-c4-type\" font-size=\"{small_str}\" fill=\"var(--_m)\"{}",
-                    style.text
-                ),
-            );
-            y += group.labels[1].height;
-            text += &left_label_svg(
-                &group.labels[2],
-                x,
-                y,
-                &format!(
-                    " class=\"{p}-c4-descr\" font-size=\"{small_str}\" fill=\"var(--_m)\"{}",
-                    style.text
-                ),
-            );
-            let node = boundary.node_type.as_deref().is_some_and(|t| !t.is_empty());
-            let _ = write!(
-                clusters,
-                "<g class=\"{p}-cluster {p}-c4-{}\" data-id=\"{}\">",
-                if node { "node" } else { "boundary" },
-                esc_text(&boundary.alias)
-            );
-            let _ = write!(
-                clusters,
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"none\" stroke=\"var(--_b)\"{}{}/>",
-                num(group.bx.x),
-                num(group.bx.y),
-                num(group.bx.w),
-                num(group.bx.h),
-                if node {
-                    ""
-                } else {
-                    " stroke-dasharray=\"6 4\""
-                },
-                style.shape
-            );
-            clusters += &link(
-                &text,
-                boundary.link.as_deref(),
-                &boundary.alias,
-                &mut links,
-                ctx,
-            );
-            clusters += "</g>";
-        }
-        for node in &group.nodes {
-            let shape = &db.shapes[node.shape];
-            let kind = shape.kind.as_deref().unwrap_or("");
-            let external = kind.starts_with("external");
-            let style = user_style(
-                shape.bg_color.as_deref(),
-                shape.border_color.as_deref(),
-                shape.font_color.as_deref(),
-            );
-            let stroke = format!(
-                " stroke=\"var(--_b)\"{}",
-                if external {
-                    " stroke-dasharray=\"4 3\""
-                } else {
-                    ""
-                }
-            );
-            let C4Box { w, h, form, .. } = node.bx;
-            let labels = &node.labels;
-            let dx = if form == "h-cyl" {
-                -queue_rx(h) / 2.0
-            } else {
-                0.0
-            };
-            let dy = match form {
-                "person" => HEAD / 2.0,
-                "cyl" => cyl_ry(w) / 2.0,
-                _ => 0.0,
-            };
-            let muted = format!(" fill=\"var(--_m)\"{}", style.text);
-            let mut y = dy - node.text_h / 2.0;
-            let mut text = label_svg(
-                &labels[0],
-                dx,
-                y + labels[0].height / 2.0,
-                &format!(
-                    " class=\"{p}-c4-type\" font-size=\"{}\"{muted}",
-                    js::num_str(small - 1.0)
-                ),
-            );
-            y += labels[0].height;
-            text += &label_svg(
-                &labels[1],
-                dx,
-                y + labels[1].height / 2.0,
-                &format!(
-                    " class=\"{p}-label\" font-weight=\"var(--_hw)\"{}",
-                    style.text
-                ),
-            );
-            y += labels[1].height;
-            text += &label_svg(
-                &labels[2],
-                dx,
-                y + labels[2].height / 2.0,
-                &format!(" class=\"{p}-c4-techn\" font-size=\"{small_str}\"{muted}"),
-            );
-            y += labels[2].height + 4.0;
-            text += &label_svg(
-                &labels[3],
-                dx,
-                y + labels[3].height / 2.0,
-                &format!(
-                    " class=\"{p}-c4-descr\" font-size=\"{small_str}\"{}",
-                    style.text
-                ),
-            );
-            let _ = write!(
-                nodes_out,
-                "<g class=\"{p}-node {p}-shape-{form} {p}-c4-{kind}{}\" data-id=\"{}\" transform=\"translate({},{})\">",
-                if external {
-                    format!(" {p}-c4-external")
-                } else {
-                    String::new()
-                },
-                esc_text(&shape.alias),
-                num(node.bx.x + w / 2.0),
-                num(node.bx.y + h / 2.0)
-            );
-            let body = draw_shape(
-                form,
-                w,
-                h,
-                &format!(
-                    " fill=\"var({})\"{stroke}{}",
-                    if external { "--_bg" } else { "--_s" },
-                    style.shape
-                ),
-                &format!("{stroke}{}", style.line),
-            ) + &text;
-            nodes_out += &link(&body, shape.link.as_deref(), &shape.alias, &mut links, ctx);
-            nodes_out += "</g>";
-        }
+        placed.push(Placed {
+            rel: index,
+            label,
+            techn,
+            style,
+            cx,
+            top,
+            lw,
+            lh,
+        });
     }
 
     let title = layout_label(
@@ -616,35 +434,310 @@ fn draw(
     let ox = pad - min_x + (inner - (max_x - min_x)) / 2.0;
     let oy = pad + title_height - min_y;
 
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    );
+    let mut content = String::new();
     let _ = write!(
         content,
-        "<g transform=\"translate({},{})\">",
+        "{}<g transform=\"translate({},{})\">",
+        LabelSvg(
+            &title,
+            width / 2.0,
+            pad + title.height / 2.0,
+            crate::svg::builder::TITLE,
+        ),
         num(ox),
         num(oy)
     );
-    if !clusters.is_empty() {
-        let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
+
+    let small_str = js::Number(small);
+    let mut links: Vec<Link> = Vec::new();
+    let mut nodes_out = String::new();
+    let mut shape_svg = String::new();
+    let mut clusters = false;
+    let mut label_attrs_buf = String::new();
+    let mut type_attrs_buf = String::new();
+    let mut descr_attrs_buf = String::new();
+    for &at in &layout.order {
+        let group = &layout.groups[at];
+        if at != root {
+            if !clusters {
+                let _ = write!(content, "<g class=\"{p}-clusters\">");
+                clusters = true;
+            }
+            let boundary = &db.boundaries[group.boundary];
+            let style = user_style(
+                boundary.bg_color.as_deref(),
+                boundary.border_color.as_deref(),
+                boundary.font_color.as_deref(),
+            );
+            let x = group.bx.x + group.head_x;
+            let y = group.bx.y + HEAD_TOP;
+            let node = boundary.node_type.as_deref().is_some_and(|t| !t.is_empty());
+            let _ = write!(
+                content,
+                "<g class=\"{p}-cluster {p}-c4-{}\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"none\" stroke=\"var(--_b)\"{}{}/>",
+                if node { "node" } else { "boundary" },
+                EscText(&boundary.alias),
+                num(group.bx.x),
+                num(group.bx.y),
+                num(group.bx.w),
+                num(group.bx.h),
+                if node {
+                    ""
+                } else {
+                    " stroke-dasharray=\"6 4\""
+                },
+                style.shape
+            );
+            let label_attrs = rewrite(
+                &mut label_attrs_buf,
+                format_args!(
+                    " class=\"{p}-cluster-label\" font-weight=\"var(--_hw)\"{}",
+                    style.text
+                ),
+            );
+            let type_attrs = rewrite(
+                &mut type_attrs_buf,
+                format_args!(
+                    " class=\"{p}-c4-type\" font-size=\"{small_str}\" fill=\"var(--_m)\"{}",
+                    style.text
+                ),
+            );
+            let descr_attrs = rewrite(
+                &mut descr_attrs_buf,
+                format_args!(
+                    " class=\"{p}-c4-descr\" font-size=\"{small_str}\" fill=\"var(--_m)\"{}",
+                    style.text
+                ),
+            );
+            let (name, kind, descr) = (&group.labels[0], &group.labels[1], &group.labels[2]);
+            let text = fragment(|f| {
+                write!(
+                    f,
+                    "{}{}{}",
+                    StartLines(name, x, y, label_attrs),
+                    StartLines(kind, x, y + name.height, type_attrs),
+                    StartLines(descr, x, y + name.height + kind.height, descr_attrs)
+                )
+            });
+            link(
+                &mut content,
+                text,
+                boundary.link.as_deref(),
+                &boundary.alias,
+                &mut links,
+                ctx,
+            );
+            content.push_str("</g>");
+        }
+        let mut muted_buf = String::new();
+        let mut line_attrs = String::new();
+        let mut shape_attrs = String::new();
+        for node in &group.nodes {
+            let shape = &db.shapes[node.shape];
+            let kind = shape.kind.as_deref().unwrap_or("");
+            let external = kind.starts_with("external");
+            let style = user_style(
+                shape.bg_color.as_deref(),
+                shape.border_color.as_deref(),
+                shape.font_color.as_deref(),
+            );
+            let stroke = if external {
+                " stroke=\"var(--_b)\" stroke-dasharray=\"4 3\""
+            } else {
+                " stroke=\"var(--_b)\""
+            };
+            let C4Box { w, h, form, .. } = node.bx;
+            let labels = &node.labels;
+            let dx = if form == "h-cyl" {
+                -queue_rx(h) / 2.0
+            } else {
+                0.0
+            };
+            let dy = match form {
+                "person" => HEAD / 2.0,
+                "cyl" => cyl_ry(w) / 2.0,
+                _ => 0.0,
+            };
+            let _ = write!(
+                nodes_out,
+                "<g class=\"{p}-node {p}-shape-{form} {p}-c4-{kind}{}\" data-id=\"{}\" transform=\"translate({},{})\">",
+                fragment(|f| if external {
+                    write!(f, " {p}-c4-external")
+                } else {
+                    Ok(())
+                }),
+                EscText(&shape.alias),
+                num(node.bx.x + w / 2.0),
+                num(node.bx.y + h / 2.0)
+            );
+            let muted = rewrite(
+                &mut muted_buf,
+                format_args!(" fill=\"var(--_m)\"{}", style.text),
+            );
+            let attrs = [
+                format!(
+                    " class=\"{p}-c4-type\" font-size=\"{}\"{muted}",
+                    js::Number(small - 1.0)
+                ),
+                format!(
+                    " class=\"{p}-label\" font-weight=\"var(--_hw)\"{}",
+                    style.text
+                ),
+                format!(" class=\"{p}-c4-techn\" font-size=\"{small_str}\"{muted}"),
+                format!(
+                    " class=\"{p}-c4-descr\" font-size=\"{small_str}\"{}",
+                    style.text
+                ),
+            ];
+            shape_svg.clear();
+            {
+                draw_shape(
+                    &mut shape_svg,
+                    form,
+                    w,
+                    h,
+                    rewrite(
+                        &mut shape_attrs,
+                        format_args!(
+                            " fill=\"var({})\"{stroke}{}",
+                            if external { "--_bg" } else { "--_s" },
+                            style.shape
+                        ),
+                    ),
+                    rewrite(&mut line_attrs, format_args!("{stroke}{}", style.line)),
+                );
+            }
+            let body = fragment(|f| {
+                f.write_str(&shape_svg)?;
+                let mut y = dy - node.text_h / 2.0;
+                for (i, (label, attrs)) in labels.iter().zip(&attrs).enumerate() {
+                    write!(f, "{}", LabelSvg(label, dx, y + label.height / 2.0, attrs))?;
+                    y += label.height + if i == 2 { 4.0 } else { 0.0 };
+                }
+                Ok(())
+            });
+            link(
+                &mut nodes_out,
+                body,
+                shape.link.as_deref(),
+                &shape.alias,
+                &mut links,
+                ctx,
+            );
+            nodes_out.push_str("</g>");
+        }
     }
-    if !edges_out.is_empty() {
+    if clusters {
+        content.push_str("</g>");
+    }
+
+    if !db.rels.is_empty() {
         let _ = write!(
             content,
-            "<g class=\"{p}-edges\" fill=\"none\" stroke=\"var(--_l)\" stroke-linecap=\"round\">{edges_out}</g>"
+            "<g class=\"{p}-edges\" fill=\"none\" stroke=\"var(--_l)\" stroke-linecap=\"round\">"
         );
+        for ((rel, r), style) in db.rels.iter().zip(&routes).zip(&line_styles) {
+            let color = style.line_color();
+            let _ = write!(
+                content,
+                "<g class=\"{p}-edge\" data-id=\"{}-{}\"{}><path d=\"{}\"/>",
+                EscText(&rel.from),
+                EscText(&rel.to),
+                style.line,
+                r.d
+            );
+            if rel.ty == "birel" || rel.ty == "rel_b" {
+                let _ = write!(
+                    content,
+                    "{}",
+                    marker("arrow_point", r.sx, r.sy, r.sdx, r.sdy, &color)
+                );
+            }
+            if rel.ty != "rel_b" {
+                let _ = write!(
+                    content,
+                    "{}",
+                    marker("arrow_point", r.ex, r.ey, r.edx, r.edy, &color)
+                );
+            }
+            content.push_str("</g>");
+        }
+        content.push_str("</g>");
     }
     if !nodes_out.is_empty() {
         let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");
     }
-    if !labels_out.is_empty() {
-        content +=
-            &format!("<g class=\"{p}-edge-labels\" font-size=\"{small_str}\">{labels_out}</g>");
+    // Links are listed with the labels' first.
+    let mut label_links: Vec<Link> = Vec::new();
+    if !placed.is_empty() {
+        let _ = write!(
+            content,
+            "<g class=\"{p}-edge-labels\" font-size=\"{small_str}\">"
+        );
+        let mut id_buf = String::new();
+        let mut techn_attrs_buf = String::new();
+        for Placed {
+            rel,
+            label,
+            techn,
+            style,
+            cx,
+            top,
+            lw,
+            lh,
+        } in &placed
+        {
+            let rel = &db.rels[*rel];
+            let id = rewrite(&mut id_buf, format_args!("{}-{}", rel.from, rel.to));
+            let (cx, top) = (*cx, *top);
+            let _ = write!(
+                content,
+                "<g class=\"{p}-edge-label\" data-id=\"{}\">",
+                EscText(id)
+            );
+            if let Some(descr) = rel.descr.as_deref().filter(|descr| !descr.is_empty()) {
+                let _ = write!(content, "<title>{}</title>", EscText(descr));
+            }
+            let _ = write!(
+                content,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\" fill=\"var(--_bg)\"/>",
+                num(cx - lw / 2.0),
+                num(top),
+                num(*lw),
+                num(*lh)
+            );
+            let techn_attrs = rewrite(
+                &mut techn_attrs_buf,
+                format_args!(" class=\"{p}-c4-techn\" fill=\"var(--_m)\"{}", style.text),
+            );
+            let body = fragment(|f| {
+                write!(
+                    f,
+                    "{}{}",
+                    LabelSvg(label, cx, top + label.height / 2.0, &style.text),
+                    LabelSvg(
+                        techn,
+                        cx,
+                        top + label.height + techn.height / 2.0,
+                        techn_attrs
+                    )
+                )
+            });
+            link(
+                &mut content,
+                body,
+                rel.link.as_deref(),
+                id,
+                &mut label_links,
+                ctx,
+            );
+            content.push_str("</g>");
+        }
+        content.push_str("</g>");
     }
-    content += "</g>";
+    content.push_str("</g>");
+    label_links.append(&mut links);
+    let links = label_links;
     let svg = svg_document(
         "c4",
         width,

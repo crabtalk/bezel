@@ -2,20 +2,21 @@
 
 use super::db::{KanbanModel, KanbanNode};
 use crate::Ctx;
+use crate::svg::builder::{Esc, EscText};
 use crate::{
     Config, Link, Rendered,
     config::Value,
     diagrams::common::{fit_width::title_room, icon::icon_svg},
     js,
     svg::{
-        builder::{esc, esc_text, label_svg, num, text_style},
+        builder::{LabelSvg, LineSvg, TITLE, fragment, num, text_style},
         root::{Accessible, svg_document},
         theme::{CRITICAL, RADIUS, class_names},
     },
     text::{Host, Label, Span, Style, icon_markup, layout_label},
     util::url::{link_url, rel_attr, safe_url},
 };
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 
 const COLUMN_GAP: f64 = 12.0;
 const COLUMN_PAD: f64 = 8.0;
@@ -28,14 +29,21 @@ const ICON_GAP: f64 = 6.0;
 /// ignores case. The high ones are marked in the critical color and the low
 /// ones in the muted one, the nearer to Medium the fainter. They are not
 /// series colors, as a theme may put those in any order.
-fn priority_color(priority: &str) -> Option<String> {
-    Some(match priority {
-        "very high" => format!("stroke=\"{CRITICAL}\""),
-        "high" => format!("stroke=\"{CRITICAL}\" opacity=\"0.5\""),
-        "low" => "stroke=\"var(--_m)\" opacity=\"0.5\"".into(),
-        "very low" => "stroke=\"var(--_m)\"".into(),
+fn priority_color(priority: &str) -> Option<impl fmt::Display> {
+    let (stroke, faint) = match priority {
+        "very high" => (CRITICAL, false),
+        "high" => (CRITICAL, true),
+        "low" => ("var(--_m)", true),
+        "very low" => ("var(--_m)", false),
         _ => return None,
-    })
+    };
+    Some(fragment(move |f| {
+        write!(f, "stroke=\"{stroke}\"")?;
+        if faint {
+            f.write_str(" opacity=\"0.5\"")?;
+        }
+        Ok(())
+    }))
 }
 
 /// Lays out text for a fixed width. A word too long for a line is broken
@@ -122,38 +130,34 @@ fn fit_label(
 
 /// Writes a label with every line starting at x, or ending there, and the
 /// first line's box starting at y.
-fn text_block(label: &Label, x: f64, y: f64, attrs: &str, end: bool) -> String {
-    let mut out = String::new();
-    for (i, line) in label.lines.iter().enumerate() {
-        let cy = y + (i as f64 + 0.5) * label.line_height;
-        if line.len() == 1 && line[0].icon.is_none() {
-            let _ = write!(
-                out,
-                "<text{} x=\"{}\" y=\"{}\"{}>{}</text>",
-                text_style(attrs, line[0].style),
-                num(x),
-                num(cy + label.size * 0.35),
-                if end { " text-anchor=\"end\"" } else { "" },
-                esc(&line[0].text)
-            );
-        } else {
-            let width = label.widths[i];
-            let one = Label {
-                lines: vec![line.clone()],
-                widths: vec![width],
-                width,
-                height: label.line_height,
-                ..label.clone()
-            };
-            out += &label_svg(
-                &one,
-                x + (if end { -width } else { width }) / 2.0,
-                cy,
-                attrs,
-            );
+fn text_block<'a>(
+    label: &'a Label,
+    x: f64,
+    y: f64,
+    attrs: &'a str,
+    end: bool,
+) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        for (i, line) in label.lines.iter().enumerate() {
+            let cy = y + (i as f64 + 0.5) * label.line_height;
+            if line.len() == 1 && line[0].icon.is_none() {
+                write!(
+                    f,
+                    "<text{} x=\"{}\" y=\"{}\"{}>{}</text>",
+                    text_style(attrs, line[0].style),
+                    num(x),
+                    num(cy + label.size * 0.35),
+                    if end { " text-anchor=\"end\"" } else { "" },
+                    Esc(&line[0].text)
+                )?;
+            } else {
+                let width = label.widths[i];
+                let cx = x + (if end { -width } else { width }) / 2.0;
+                write!(f, "{}", LineSvg(label, i, cx, cy, attrs))?;
+            }
         }
-    }
-    out
+        Ok(())
+    })
 }
 
 struct Card<'a> {
@@ -332,24 +336,38 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Ho
     let mut out = String::new();
     for (index, section) in sections.iter().enumerate() {
         let row = index / per_row;
-        let mut body = format!(
+        let _ = write!(
+            out,
+            "<g class=\"{p}-cluster {p}-column{}\" data-id=\"{}\" transform=\"translate({},{})\">",
+            class_names(section.node.css_classes.as_deref().unwrap_or("")),
+            EscText(&section.node.id),
+            num(left + (index % per_row) as f64 * (column_width + COLUMN_GAP)),
+            num(pad + title_height + row_tops[row])
+        );
+        let body = &mut out;
+        let _ = write!(
+            body,
             "<rect width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\"/>",
-            js::num_str(column_width),
+            js::Number(column_width),
             num(row_heights[row])
         );
-        body += &text_block(
-            &titles[index],
-            COLUMN_PAD + 4.0,
-            COLUMN_PAD,
-            &format!(" class=\"{p}-cluster-label\" font-weight=\"var(--_hw)\""),
-            false,
+        let _ = write!(
+            body,
+            "{}",
+            text_block(
+                &titles[index],
+                COLUMN_PAD + 4.0,
+                COLUMN_PAD,
+                crate::class!("cluster-label", "font-weight=\"var(--_hw)\""),
+                false,
+            )
         );
         let _ = write!(
             body,
             "<text class=\"{p}-count\" x=\"{}\" y=\"{}\" text-anchor=\"end\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
-            js::num_str(edge),
+            js::Number(edge),
             num(COLUMN_PAD + line / 2.0 + small * 0.35),
-            js::num_str(small),
+            js::Number(small),
             section.items.len()
         );
         if let Some(icon) = section
@@ -358,12 +376,16 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Ho
             .as_deref()
             .filter(|icon| has(Some(icon), ctx.host))
         {
-            body += &icon_svg(
-                ctx.host,
-                icon,
-                edge - count_widths[index] - ICON_GAP - glyph,
-                COLUMN_PAD + (line - glyph) / 2.0,
-                glyph,
+            let _ = write!(
+                body,
+                "{}",
+                icon_svg(
+                    ctx.host,
+                    icon,
+                    edge - count_widths[index] - ICON_GAP - glyph,
+                    COLUMN_PAD + (line - glyph) / 2.0,
+                    glyph,
+                )
             );
         }
 
@@ -372,9 +394,29 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Ho
             let item = card.item;
             let priority = js::trim(item.priority.as_deref().unwrap_or("")).to_lowercase();
             let color = priority_color(&priority);
-            let mut inner = format!(
+            let _ = write!(
+                body,
+                "<g class=\"{p}-node {p}-card{}{}\" data-id=\"{}\" transform=\"translate({},{})\" font-size=\"{}\">",
+                fragment(|f| if color.is_none() {
+                    Ok(())
+                } else {
+                    write!(f, " {p}-priority-")?;
+                    match priority.split_once(' ') {
+                        Some((a, b)) => write!(f, "{a}-{b}"),
+                        None => f.write_str(&priority),
+                    }
+                }),
+                class_names(item.css_classes.as_deref().unwrap_or("")),
+                EscText(&item.id),
+                js::Number(COLUMN_PAD),
+                num(y),
+                js::Number(small)
+            );
+            let inner = &mut *body;
+            let _ = write!(
+                inner,
                 "<rect width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>",
-                js::num_str(card_width),
+                js::Number(card_width),
                 num(card.height)
             );
             if let Some(color) = &color {
@@ -384,24 +426,32 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Ho
                     num(card.height - 5.0)
                 );
             }
-            inner += &text_block(
-                &card.label,
-                CARD_PAD,
-                CARD_PAD,
-                &format!(" class=\"{p}-label\""),
-                false,
+            let _ = write!(
+                inner,
+                "{}",
+                text_block(
+                    &card.label,
+                    CARD_PAD,
+                    CARD_PAD,
+                    crate::class!("label"),
+                    false,
+                )
             );
             if let Some(icon) = item
                 .icon
                 .as_deref()
                 .filter(|icon| has(Some(icon), ctx.host))
             {
-                inner += &icon_svg(
-                    ctx.host,
-                    icon,
-                    card_width - CARD_PAD - glyph,
-                    CARD_PAD + (small_line - glyph) / 2.0,
-                    glyph,
+                let _ = write!(
+                    inner,
+                    "{}",
+                    icon_svg(
+                        ctx.host,
+                        icon,
+                        card_width - CARD_PAD - glyph,
+                        CARD_PAD + (small_line - glyph) / 2.0,
+                        glyph,
+                    )
                 );
             }
             let bottom = card.height - CARD_PAD;
@@ -414,25 +464,29 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Ho
                 };
                 match href {
                     None => {
-                        inner += &text_block(
-                            &card.ticket,
-                            CARD_PAD,
-                            top,
-                            &format!(" class=\"{p}-ticket\" fill=\"var(--_m)\""),
-                            false,
+                        let _ = write!(
+                            inner,
+                            "{}",
+                            text_block(
+                                &card.ticket,
+                                CARD_PAD,
+                                top,
+                                crate::class!("ticket", "fill=\"var(--_m)\""),
+                                false,
+                            )
                         );
                     }
                     Some(href) => {
                         let _ = write!(
                             inner,
                             "<a href=\"{}\" target=\"_blank\"{}>{}</a>",
-                            esc(&href),
+                            Esc(&href),
                             rel_attr(ctx),
                             text_block(
                                 &card.ticket,
                                 CARD_PAD,
                                 top,
-                                &format!(" class=\"{p}-ticket\" fill=\"var(--_c)\""),
+                                crate::class!("ticket", "fill=\"var(--_c)\""),
                                 false,
                             )
                         );
@@ -449,49 +503,32 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Ho
                 .as_deref()
                 .is_some_and(|assigned| !assigned.is_empty())
             {
-                inner += &text_block(
-                    &card.assigned,
-                    card_width - CARD_PAD,
-                    bottom - card.assigned.height,
-                    &format!(" class=\"{p}-assigned\" fill=\"var(--_m)\""),
-                    true,
+                let _ = write!(
+                    inner,
+                    "{}",
+                    text_block(
+                        &card.assigned,
+                        card_width - CARD_PAD,
+                        bottom - card.assigned.height,
+                        crate::class!("assigned", "fill=\"var(--_m)\""),
+                        true,
+                    )
                 );
             }
-            let _ = write!(
-                body,
-                "<g class=\"{p}-node {p}-card{}{}\" data-id=\"{}\" transform=\"translate({},{})\" font-size=\"{}\">{inner}</g>",
-                if color.is_none() {
-                    String::new()
-                } else {
-                    format!(" {p}-priority-{}", priority.replacen(' ', "-", 1))
-                },
-                class_names(item.css_classes.as_deref().unwrap_or("")),
-                esc_text(&item.id),
-                js::num_str(COLUMN_PAD),
-                num(y),
-                js::num_str(small)
-            );
+            inner.push_str("</g>");
             y += card.height + CARD_GAP;
         }
-
-        let _ = write!(
-            out,
-            "<g class=\"{p}-cluster {p}-column{}\" data-id=\"{}\" transform=\"translate({},{})\">{body}</g>",
-            class_names(section.node.css_classes.as_deref().unwrap_or("")),
-            esc_text(&section.node.id),
-            num(left + (index % per_row) as f64 * (column_width + COLUMN_GAP)),
-            num(pad + title_height + row_tops[row])
-        );
+        body.push_str("</g>");
     }
 
     let total_width = (width + 2.0 * pad).ceil();
     let total_height = (board_height + title_height + 2.0 * pad).ceil();
-    let content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &out;
+    let mut content = String::with_capacity(out.len() + 512);
+    let _ = write!(
+        content,
+        "{}{out}",
+        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+    );
 
     Rendered {
         svg: svg_document(

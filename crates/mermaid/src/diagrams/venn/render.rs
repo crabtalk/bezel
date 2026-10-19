@@ -1,5 +1,6 @@
 //! Pele's `diagrams/venn/render.ts`.
 
+use crate::svg::builder::EscText;
 use indexmap::{IndexMap, IndexSet};
 use std::fmt::Write as _;
 
@@ -13,7 +14,7 @@ use crate::{
     config::Value,
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{LabelSvg, TITLE, num},
         root::{Accessible, svg_document},
         theme::{ResolvedStyle, resolve_style, series_color},
     },
@@ -277,7 +278,7 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
         let _ = write!(
             sets,
             "<circle class=\"{p}-venn-set\" data-id=\"{}\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{color}\" fill-opacity=\"0.2\" stroke=\"{color}\"{shape}/>",
-            esc_text(&c.id),
+            EscText(&c.id),
             num(c.x),
             num(c.y),
             num(c.r)
@@ -286,13 +287,15 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
 
     let mut overlaps = String::new();
     let mut labels = String::new();
+    let mut attrs = String::new();
     for region in regions.values() {
-        let id = esc_text(&region.sets.join("|"));
+        let joined = region.sets.join("|");
+        let id = EscText(&joined);
         // An overlap is only drawn when a style gives it a look of its own;
         // otherwise the circles show it.
         if region.sets.len() > 1 && !region.style.shape.is_empty() {
             let outline: Vec<Circle> = region.inside.iter().map(|&i| placed[i].clone()).collect();
-            let d = region_path(&outline, |x| num(x).to_string());
+            let d = region_path(&outline, num);
             if !d.is_empty() {
                 let _ = write!(
                     overlaps,
@@ -310,38 +313,40 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
         }
         let x = region.spot.x * scale + ox;
         let mut y = region.spot.y * scale + oy - total / 2.0;
-        let mut content = String::new();
+        let _ = write!(labels, "<g class=\"{p}-venn-region\" data-id=\"{id}\">");
         for line in &region.lines {
-            let attrs = match &line.id {
+            attrs.clear();
+            let _ = match &line.id {
                 None => {
-                    let font = if line.size == size {
-                        String::new()
-                    } else {
-                        format!(" font-size=\"{}\"", js::num_str(line.size))
-                    };
-                    format!(" class=\"{p}-label\"{font}{}", region.style.text)
+                    let _ = write!(attrs, " class=\"{p}-label\"");
+                    if line.size != size {
+                        let _ = write!(attrs, " font-size=\"{}\"", js::Number(line.size));
+                    }
+                    write!(attrs, "{}", region.style.text)
                 }
-                Some(text_id) => format!(
+                Some(text_id) => write!(
+                    attrs,
                     " class=\"{p}-venn-text\" data-id=\"{}\" font-size=\"{}\" fill=\"var(--_m)\"{}",
-                    esc_text(text_id),
-                    js::num_str(tiny),
+                    EscText(text_id),
+                    js::Number(tiny),
                     style_of(text_id).text
                 ),
             };
-            content += &label_svg(&line.label, x, y + line.label.height / 2.0, &attrs);
+            let _ = write!(
+                labels,
+                "{}",
+                LabelSvg(&line.label, x, y + line.label.height / 2.0, &attrs)
+            );
             y += line.label.height;
         }
-        let _ = write!(
-            labels,
-            "<g class=\"{p}-venn-region\" data-id=\"{id}\">{content}</g>"
-        );
+        labels.push_str("</g>");
     }
 
-    let mut body = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let mut body = String::with_capacity(sets.len() + overlaps.len() + labels.len() + 512);
+    let _ = write!(
+        body,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE)
     );
     let _ = write!(body, "<g class=\"{p}-venn-sets\">{sets}</g>");
     if !overlaps.is_empty() {

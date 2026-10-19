@@ -2,9 +2,12 @@
 //! `svg/edges.ts`. Marker types are Mermaid's: `arrow_point`,
 //! `arrow_circle`, `arrow_cross`; anything else draws nothing.
 
-use std::{collections::HashMap, fmt::Write as _};
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
-use super::builder::{esc_text, label_svg, num};
+use super::builder::{EscText, LabelSvg, Point, fragment, num};
 use crate::{
     js,
     layout::{
@@ -234,7 +237,8 @@ pub fn route_path(
         last += 1;
     }
 
-    let mut d = format!("M{},{}", num(xs[0]), num(ys[0]));
+    let mut d = String::new();
+    let _ = write!(d, "M{}", Point(xs[0], ys[0]));
     let mut at_x = xs[0];
     let mut at_y = ys[0];
     let line_to = |d: &mut String, at_x: &mut f64, at_y: &mut f64, x: f64, y: f64| {
@@ -348,69 +352,83 @@ pub fn marker_trim(kind: &str) -> f64 {
 }
 
 /// A marker whose tip is at (`x`, `y`), pointing along (`dx`, `dy`).
-pub fn marker(kind: &str, x: f64, y: f64, dx: f64, dy: f64, color: &str) -> String {
-    let p = crate::PREFIX;
-    let nx = -dy;
-    let ny = dx;
-    match kind {
-        "arrow_point" => {
-            let bx = x - dx * ARROW;
-            let by = y - dy * ARROW;
-            let half = ARROW * 0.42;
-            format!(
-                "<path class=\"{p}-marker\" d=\"M{},{}L{},{}L{},{}Z\" fill=\"{color}\" stroke=\"none\"/>",
-                num(x),
-                num(y),
-                num(bx + nx * half),
-                num(by + ny * half),
-                num(bx - nx * half),
-                num(by - ny * half)
-            )
+pub fn marker<'a>(
+    kind: &'a str,
+    x: f64,
+    y: f64,
+    dx: f64,
+    dy: f64,
+    color: &'a str,
+) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        let nx = -dy;
+        let ny = dx;
+        match kind {
+            "arrow_point" => {
+                let bx = x - dx * ARROW;
+                let by = y - dy * ARROW;
+                let half = ARROW * 0.42;
+                write!(
+                    f,
+                    "<path class=\"{p}-marker\" d=\"M{}L{}L{}Z\" fill=\"{color}\" stroke=\"none\"/>",
+                    Point(x, y),
+                    Point(bx + nx * half, by + ny * half),
+                    Point(bx - nx * half, by - ny * half)
+                )
+            }
+            "arrow_circle" => write!(
+                f,
+                "<circle class=\"{p}-marker\" cx=\"{}\" cy=\"{}\" r=\"3.5\" fill=\"{color}\" stroke=\"none\"/>",
+                num(x - dx * 4.0),
+                num(y - dy * 4.0)
+            ),
+            "arrow_cross" => {
+                let cx = x - dx * 4.0;
+                let cy = y - dy * 4.0;
+                let a = 3.5;
+                let ux = (dx + nx) * a;
+                let uy = (dy + ny) * a;
+                let vx = (dx - nx) * a;
+                let vy = (dy - ny) * a;
+                write!(
+                    f,
+                    "<path class=\"{p}-marker\" d=\"M{}L{}M{}L{}\"/>",
+                    Point(cx - ux, cy - uy),
+                    Point(cx + ux, cy + uy),
+                    Point(cx - vx, cy - vy),
+                    Point(cx + vx, cy + vy)
+                )
+            }
+            _ => Ok(()),
         }
-        "arrow_circle" => format!(
-            "<circle class=\"{p}-marker\" cx=\"{}\" cy=\"{}\" r=\"3.5\" fill=\"{color}\" stroke=\"none\"/>",
-            num(x - dx * 4.0),
-            num(y - dy * 4.0)
-        ),
-        "arrow_cross" => {
-            let cx = x - dx * 4.0;
-            let cy = y - dy * 4.0;
-            let a = 3.5;
-            let ux = (dx + nx) * a;
-            let uy = (dy + ny) * a;
-            let vx = (dx - nx) * a;
-            let vy = (dy - ny) * a;
-            format!(
-                "<path class=\"{p}-marker\" d=\"M{},{}L{},{}M{},{}L{},{}\"/>",
-                num(cx - ux),
-                num(cy - uy),
-                num(cx + ux),
-                num(cy + uy),
-                num(cx - vx),
-                num(cy - vy),
-                num(cx + vx),
-                num(cy + vy)
-            )
-        }
-        _ => String::new(),
-    }
+    })
 }
 
 /// An edge label on a patch of the background, so the line does not run
 /// through the text.
-pub fn edge_label_svg(id: &str, label: &Label, x: f64, y: f64, attrs: &str) -> String {
-    let p = crate::PREFIX;
-    let w = label.width + 8.0;
-    let h = label.height;
-    format!(
-        "<g class=\"{p}-edge-label\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\" fill=\"var(--_bg)\"/>{}</g>",
-        esc_text(id),
-        num(x - w / 2.0),
-        num(y - h / 2.0),
-        num(w),
-        num(h),
-        label_svg(label, x, y, attrs)
-    )
+pub fn edge_label_svg<'a>(
+    id: &'a str,
+    label: &'a Label,
+    x: f64,
+    y: f64,
+    attrs: &'a str,
+) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        let w = label.width + 8.0;
+        let h = label.height;
+        write!(
+            f,
+            "<g class=\"{p}-edge-label\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"3\" fill=\"var(--_bg)\"/>{}</g>",
+            EscText(id),
+            num(x - w / 2.0),
+            num(y - h / 2.0),
+            num(w),
+            num(h),
+            LabelSvg(label, x, y, attrs)
+        )
+    })
 }
 
 /// A self-loop beside a node of drawn size `w` by `h`: out of the side that
@@ -437,9 +455,9 @@ pub fn loop_path(
     // side.
     let at = |out: f64, along: f64| {
         if sideways {
-            format!("{},{}", num(cx + along), num(cy + h / 2.0 + out))
+            Point(cx + along, cy + h / 2.0 + out)
         } else {
-            format!("{},{}", num(cx + w / 2.0 + out), num(cy + along))
+            Point(cx + w / 2.0 + out, cy + along)
         }
     };
     let tx = (reach / len) * trim;

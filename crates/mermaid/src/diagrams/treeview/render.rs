@@ -1,5 +1,6 @@
 //! Pele's `diagrams/treeview/render.ts`.
 
+use crate::svg::builder::{Esc, EscText};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -10,11 +11,11 @@ use crate::{
     Config, Rendered, Value,
     diagrams::common::{
         fit_width::{tighten, title_room},
-        literal_label::{left_label_svg, literal_label},
+        literal_label::{StartLines, literal_label},
     },
     js,
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{LabelSvg, TITLE, fragment, icon_element, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names},
     },
@@ -263,8 +264,10 @@ fn draw(model: &TreeViewModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight:
         let tick = gx.max(inset + row.x + step - padding_x);
         let last = top + cy_of(last_child);
         let r = ELBOW.min(tick - gx);
-        let mut d = format!(
-            "M{},{}V{}",
+        let d = &mut guides;
+        let _ = write!(
+            d,
+            "<path d=\"M{},{}V{}",
             num(gx),
             num(top + row.top + row.height - 2.0),
             num(last - r)
@@ -285,11 +288,23 @@ fn draw(model: &TreeViewModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight:
                 let _ = write!(d, "M{},{}H{}", num(gx), num(top + cy_of(child)), num(tick));
             }
         }
-        let _ = write!(guides, "<path d=\"{d}\"/>");
+        d.push_str("\"/>");
     }
 
+    let mut content = String::with_capacity(guides.len() + 16 * 1024);
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+    );
+    if !guides.is_empty() {
+        let _ = write!(
+            content,
+            "<g class=\"{p}-tree-guides\" fill=\"none\" stroke=\"var(--_b)\" stroke-width=\"{}\">{guides}</g>",
+            num(line_thickness)
+        );
+    }
     let baseline = size * 0.35;
-    let mut body = String::new();
     for row in &rows {
         let node = row.node;
         let cy = top + row.cy;
@@ -299,7 +314,19 @@ fn draw(model: &TreeViewModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight:
         } else {
             ""
         };
-        let mut inner = String::new();
+        let label_attrs = if directory {
+            crate::class!("label", "font-weight=\"var(--_hw)\"")
+        } else {
+            crate::class!("label")
+        };
+        let _ = write!(
+            content,
+            "<g class=\"{p}-node {p}-tree-{}{}\" data-id=\"{}\">",
+            if directory { "dir" } else { "file" },
+            class_names(node.css_class.as_deref().unwrap_or("")),
+            EscText(&node.name)
+        );
+        let inner = &mut content;
         if row.highlighted {
             let x = inset + row.x - HIGHLIGHT_OVERHANG;
             let _ = write!(
@@ -319,76 +346,66 @@ fn draw(model: &TreeViewModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight:
             let glyph = glyph(name)
                 .or_else(|| glyph(if directory { "folder" } else { "file" }))
                 .expect("a built-in glyph");
-            let drawn = crate::text::icon(ctx.host, icon).unwrap_or_else(|| {
-                format!("<path d=\"{glyph}\" stroke=\"var(--_m)\" stroke-width=\"1.5\"/>")
+            let drawn = fragment(|f| match crate::text::icon(ctx.host, icon) {
+                Some(markup) => f.write_str(&markup),
+                None => write!(
+                    f,
+                    "<path d=\"{glyph}\" stroke=\"var(--_m)\" stroke-width=\"1.5\"/>"
+                ),
             });
             let _ = write!(
                 inner,
-                "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{drawn}</svg>",
-                esc_text(icon),
-                num(inset + row.x),
-                num(cy - icon_size / 2.0),
-                num(icon_size),
-                num(icon_size)
+                "{}",
+                icon_element(icon, inset + row.x, cy - icon_size / 2.0, icon_size, drawn)
             );
         }
         if let Some(label) = &row.label {
-            inner.push_str(&left_label_svg(
-                label,
-                inset + row.label_x,
-                top + row.top + padding_y,
-                &format!(" class=\"{p}-label\"{weight}"),
-            ));
+            let _ = write!(
+                inner,
+                "{}",
+                StartLines(
+                    label,
+                    inset + row.label_x,
+                    top + row.top + padding_y,
+                    label_attrs,
+                )
+            );
         } else if !row.text.is_empty() {
             let _ = write!(
                 inner,
                 "<text class=\"{p}-label\" x=\"{}\" y=\"{}\"{weight} xml:space=\"preserve\">{}</text>",
                 num(inset + row.label_x),
                 num(cy + baseline),
-                esc(&row.text)
+                Esc(&row.text)
             );
         }
         if let Some(description) = &row.description {
-            inner.push_str(&left_label_svg(
-                description,
-                inset + row.label_x,
-                top + row.top + padding_y + row.label.as_ref().map_or(0.0, |label| label.height),
-                &format!(
-                    " class=\"{p}-tree-description\" font-style=\"italic\" fill=\"var(--_m)\""
-                ),
-            ));
+            let _ = write!(
+                inner,
+                "{}",
+                StartLines(
+                    description,
+                    inset + row.label_x,
+                    top + row.top
+                        + padding_y
+                        + row.label.as_ref().map_or(0.0, |label| label.height),
+                    crate::class!(
+                        "tree-description",
+                        "font-style=\"italic\" fill=\"var(--_m)\""
+                    ),
+                )
+            );
         } else if let Some(description) = node.description.as_deref().filter(|d| !d.is_empty()) {
             let _ = write!(
                 inner,
                 "<text class=\"{p}-tree-description\" x=\"{}\" y=\"{}\" font-style=\"italic\" fill=\"var(--_m)\" xml:space=\"preserve\">{}</text>",
                 num(inset + desc_x),
                 num(cy + baseline),
-                esc(&decode_entities(description))
+                Esc(&decode_entities(description))
             );
         }
-        let _ = write!(
-            body,
-            "<g class=\"{p}-node {p}-tree-{}{}\" data-id=\"{}\">{inner}</g>",
-            if directory { "dir" } else { "file" },
-            class_names(node.css_class.as_deref().unwrap_or("")),
-            esc_text(&node.name)
-        );
+        content.push_str("</g>");
     }
-
-    let mut content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    );
-    if !guides.is_empty() {
-        let _ = write!(
-            content,
-            "<g class=\"{p}-tree-guides\" fill=\"none\" stroke=\"var(--_b)\" stroke-width=\"{}\">{guides}</g>",
-            num(line_thickness)
-        );
-    }
-    content.push_str(&body);
 
     Rendered {
         svg: svg_document(

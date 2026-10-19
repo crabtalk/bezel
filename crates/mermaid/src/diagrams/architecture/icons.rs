@@ -1,5 +1,9 @@
 //! Pele's `diagrams/architecture/icons.ts`.
 
+use std::fmt;
+
+use crate::svg::builder::fragment;
+
 /// Outlines for the icon names Mermaid's architecture diagrams know without
 /// an icon pack, drawn on a 24 by 24 grid. Any other name is left to the
 /// host's icon resolver.
@@ -27,11 +31,16 @@ const GLYPHS: [(&str, &str); 5] = [
 ];
 
 /// The built-in outline for icon `name`, or `""` for a name it has none for.
-pub fn builtin_icon(name: &str) -> String {
-    GLYPHS
+pub fn builtin_icon(name: &str) -> impl fmt::Display {
+    let d = GLYPHS
         .iter()
         .find(|(glyph, _)| *glyph == name)
-        .map_or_else(String::new, |(_, d)| {
-            format!("<path d=\"{d}\" stroke=\"var(--_fg)\" stroke-width=\"1.5\"/>")
-        })
+        .map(|(_, d)| *d);
+    fragment(move |f| match d {
+        Some(d) => write!(
+            f,
+            "<path d=\"{d}\" stroke=\"var(--_fg)\" stroke-width=\"1.5\"/>"
+        ),
+        None => Ok(()),
+    })
 }

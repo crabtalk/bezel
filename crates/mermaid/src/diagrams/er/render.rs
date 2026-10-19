@@ -1,6 +1,11 @@
 //! Pele's `diagrams/er/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::rewrite;
+use crate::svg::builder::{Esc, EscText, LabelSvg, Point, fragment, icon_element};
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use indexmap::IndexMap;
 
@@ -21,14 +26,14 @@ use crate::{
         layered::LayeredOptions,
     },
     svg::{
-        builder::{esc, esc_text, label_svg, num, shared_style, span_style, text_style},
+        builder::{num, shared_style, span_style, text_style},
         cluster::{Crossings, cluster_title_x, mark_crossings},
         edges::{edge_label_svg, route_path},
         root::{Accessible, svg_document},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
     text::{Label, Style, decode_entities, layout_label},
-    util::url::{link_url, rel_attr, sanitize_url},
+    util::url::NoteLink,
 };
 use crate::{Ctx, Host};
 
@@ -52,7 +57,6 @@ const PORT_MARGIN: f64 = 14.0;
 const BOX_ATTRS: &str = " fill=\"var(--_s)\" stroke=\"var(--_b)\"";
 
 static RE_DEFAULT: Lazy = Lazy::new(r"^default\s?", "");
-static RE_INTERNAL_LINK: Lazy = Lazy::new(r" internal-link(?: |$)", "");
 
 /// Type, name, keys, comment.
 type Cells = [Label; 4];
@@ -89,66 +93,84 @@ struct Loop {
 
 /// A measured label starting at `x`, with the baseline of its first line at
 /// `y`.
-fn text_left(label: &Label, x: f64, mut y: f64, attrs: &str) -> String {
-    let p = crate::PREFIX;
-    let lines = &label.lines;
-    if lines.is_empty() {
-        return String::new();
-    }
-    if lines.len() == 1
-        && lines[0].len() == 1
-        && lines[0][0].icon.is_none()
-        && lines[0][0].style == 0
-    {
-        return format!(
-            "<text{attrs} x=\"{}\" y=\"{}\">{}</text>",
-            num(x),
-            num(y),
-            esc(&lines[0][0].text)
-        );
-    }
-    let shared = shared_style(label);
-    let mut body = String::new();
-    let mut extra = String::new();
-    for line in lines {
-        let has_icon = line.iter().any(|span| span.icon.is_some());
-        let mut sx = x;
-        let mut placed = false;
-        for span in line {
-            if let Some(icon) = &span.icon {
-                let side = label.size * 1.1;
-                let _ = write!(
-                    extra,
-                    "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{}</svg>",
-                    esc_text(&icon.name),
-                    num(sx),
-                    num(y - label.size * 0.35 - side / 2.0),
-                    num(side),
-                    num(side),
-                    icon.markup
-                );
-            } else if !span.text.is_empty() {
-                let pos = if has_icon || !placed {
-                    format!(" x=\"{}\" y=\"{}\"", num(sx), num(y))
-                } else {
-                    String::new()
-                };
-                let _ = write!(
-                    body,
-                    "<tspan{pos}{}>{}</tspan>",
-                    span_style(span.style & !shared),
-                    esc(&span.text)
-                );
-                placed = true;
-            }
-            sx += span.width;
+struct TextLeft<'a, A>(&'a Label, f64, f64, A);
+
+impl<A: fmt::Display> fmt::Display for TextLeft<'_, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let TextLeft(label, x, mut y, ref attrs) = *self;
+        let _p = crate::PREFIX;
+        let lines = &label.lines;
+        if lines.is_empty() {
+            return Ok(());
         }
-        y += label.line_height;
+        if lines.len() == 1
+            && lines[0].len() == 1
+            && lines[0][0].icon.is_none()
+            && lines[0][0].style == 0
+        {
+            return write!(
+                f,
+                "<text{attrs} x=\"{}\" y=\"{}\">{}</text>",
+                num(x),
+                num(y),
+                Esc(&lines[0][0].text)
+            );
+        }
+        let shared = shared_style(label);
+        let attrs = attrs.to_string();
+        write!(
+            f,
+            "<text{} xml:space=\"preserve\">",
+            text_style(&attrs, shared)
+        )?;
+        let top = y;
+        for line in lines {
+            let has_icon = line.iter().any(|span| span.icon.is_some());
+            let mut sx = x;
+            let mut placed = false;
+            for span in line {
+                if span.icon.is_none() && !span.text.is_empty() {
+                    f.write_str("<tspan")?;
+                    if has_icon || !placed {
+                        write!(f, " x=\"{}\" y=\"{}\"", num(sx), num(y))?;
+                    }
+                    write!(
+                        f,
+                        "{}>{}</tspan>",
+                        span_style(span.style & !shared),
+                        Esc(&span.text)
+                    )?;
+                    placed = true;
+                }
+                sx += span.width;
+            }
+            y += label.line_height;
+        }
+        f.write_str("</text>")?;
+        let mut y = top;
+        for line in lines {
+            let mut sx = x;
+            for span in line {
+                if let Some(icon) = &span.icon {
+                    let side = label.size * 1.1;
+                    write!(
+                        f,
+                        "{}",
+                        icon_element(
+                            &icon.name,
+                            sx,
+                            y - label.size * 0.35 - side / 2.0,
+                            side,
+                            &icon.markup
+                        )
+                    )?;
+                }
+                sx += span.width;
+            }
+            y += label.line_height;
+        }
+        Ok(())
     }
-    format!(
-        "<text{} xml:space=\"preserve\">{body}</text>{extra}",
-        text_style(attrs, shared)
-    )
 }
 
 /// Mermaid reads `~` pairs as angle brackets. They are written as entities
@@ -503,6 +525,8 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
 
     let mut clusters = String::new();
     let mut nodes_out = String::new();
+    let mut name_attrs_buf = String::new();
+    let mut attrs_buf = String::new();
     for i in 0..views.len() {
         let c = &cnodes[i];
         let view = &mut views[i];
@@ -517,19 +541,22 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
             let _ = write!(
                 clusters,
                 "<g class=\"{p}-cluster{classes}\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"{}/>{}</g>",
-                esc_text(node.id),
+                EscText(node.id),
                 num(x),
                 num(y),
                 num(c.w),
                 num(c.h),
                 view.style.shape,
-                label_svg(
+                LabelSvg(
                     &view.label,
                     title_x,
                     y + 8.0 + view.label.height / 2.0,
-                    &format!(
-                        " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
-                        view.style.text
+                    rewrite(
+                        &mut attrs_buf,
+                        format_args!(
+                            " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
+                            view.style.text
+                        )
                     )
                 )
             );
@@ -541,136 +568,144 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         let x0 = -w / 2.0;
         let y0 = -h / 2.0;
         let text = &view.style.text;
-        let shape = format!(
-            "x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"",
-            num(x0),
-            num(y0),
-            num(w),
-            num(h)
-        );
-        let mut name = label_svg(
-            &view.label,
-            0.0,
-            if view.rows.is_empty() {
-                0.0
-            } else {
-                y0 + view.head_h / 2.0
-            },
-            &format!(" class=\"{p}-label\"{text}"),
-        );
-        let display = decode_entities(if node.alias.is_empty() {
-            node.label
-        } else {
-            node.alias
-        });
-        if RE_INTERNAL_LINK.test(&format!("{classes} ")) && !name.is_empty() && ctx.options.links {
-            // The name ends up in an href, so it gets the same check as a
-            // URL.
-            let safe = link_url(&sanitize_url(&display), ctx).is_some();
-            let target = esc(&display);
-            let href = if safe {
-                format!(" href=\"{target}\"{}", rel_attr(ctx))
-            } else {
-                String::new()
-            };
-            name = format!("<a class=\"internal-link\"{href} data-href=\"{target}\">{name}</a>");
-            links.push(Link {
-                id: node.label.to_string(),
-                href: display.clone(),
-                internal: true,
-            });
-        }
-
-        let body = if view.rows.is_empty() {
-            format!("<rect {shape}{BOX_ATTRS}{}/>{name}", view.style.shape)
-        } else {
-            let row_line = js::round(view.row_size * 1.5);
-            let line_color = match &view.style.stroke {
-                Some(stroke) if !stroke.is_empty() => esc(stroke),
-                _ => "var(--_b)".to_string(),
-            };
-            let mut stripes = String::new();
-            let mut cells = String::new();
-            let mut y = y0 + view.head_h;
-            for (r, row) in view.rows.iter().enumerate() {
-                if r % 2 == 0 {
-                    let span = format!("x=\"{}\" width=\"{}\"", num(x0), num(w));
-                    if r == view.rows.len() - 1 {
-                        // The last row follows the box's rounded bottom
-                        // corners: a rounded rect, squared off on top.
-                        let _ = write!(
-                            stripes,
-                            "<rect {span} y=\"{}\" height=\"{}\" rx=\"{RADIUS}\"/><rect {span} y=\"{}\" height=\"{}\"/>",
-                            num(y),
-                            num(row.h),
-                            num(y),
-                            num(row.h / 2.0)
-                        );
-                    } else {
-                        let _ = write!(
-                            stripes,
-                            "<rect {span} y=\"{}\" height=\"{}\"/>",
-                            num(y),
-                            num(row.h)
-                        );
-                    }
-                }
-                let baseline = y + ROW_PAD / 2.0 + row_line / 2.0 + view.row_size * 0.35;
-                let [kind, attribute, keys, comment] = &row.cells;
-                cells.push_str(&text_left(
-                    kind,
-                    x0 + view.cols[0],
-                    baseline,
-                    &format!(" class=\"{p}-er-type\" fill=\"var(--_m)\"{text}"),
-                ));
-                cells.push_str(&text_left(
-                    attribute,
-                    x0 + view.cols[1],
-                    baseline,
-                    &format!(" class=\"{p}-er-name\"{text}"),
-                ));
-                cells.push_str(&text_left(
-                    keys,
-                    x0 + view.cols[2],
-                    baseline,
-                    &format!(
-                        " class=\"{p}-er-keys\" font-size=\"{}\" fill=\"var(--_m)\"{text}",
-                        js::num_str(view.key_size)
-                    ),
-                ));
-                cells.push_str(&text_left(
-                    comment,
-                    x0 + view.cols[3],
-                    baseline,
-                    &format!(" class=\"{p}-er-comment\" fill=\"var(--_m)\"{text}"),
-                ));
-                y += row.h;
-            }
-            let divider_y = num(y0 + view.head_h);
-            // Over a fill the diagram chose, the shading is a tint of that
-            // fill. The opacity is on the group because the two parts of the
-            // last row overlap.
-            let opacity = if view.style.shape.contains("fill:") {
-                " opacity=\"0.6\""
-            } else {
-                ""
-            };
-            format!(
-                "<rect {shape}{BOX_ATTRS}{}/><g class=\"{p}-er-stripes\" fill=\"var(--_bg)\"{opacity}>{stripes}</g><path class=\"{p}-er-divider\" d=\"M{},{divider_y}H{}\" stroke=\"{line_color}\"/><rect {shape} fill=\"none\" stroke=\"var(--_b)\"{}/>{name}<g class=\"{p}-er-attributes\" font-size=\"{}\">{cells}</g>",
-                view.style.shape,
+        let shape = fragment(|f| {
+            write!(
+                f,
+                "x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"",
                 num(x0),
-                num(x0 + w),
-                view.style.line,
-                js::num_str(view.row_size)
+                num(y0),
+                num(w),
+                num(h)
             )
+        });
+        let name_attrs = rewrite(
+            &mut name_attrs_buf,
+            format_args!(" class=\"{p}-label\"{text}"),
+        );
+        let name_y = if view.rows.is_empty() {
+            0.0
+        } else {
+            y0 + view.head_h / 2.0
+        };
+        let name = LabelSvg(&view.label, 0.0, name_y, name_attrs);
+        let note = (!view.label.lines.is_empty()
+            && ctx.options.links
+            && NoteLink::marked(&classes))
+        .then(|| {
+            let display = decode_entities(if node.alias.is_empty() {
+                node.label
+            } else {
+                node.alias
+            });
+            NoteLink::new(display, node.label, &mut links, ctx)
+        });
+        let name = fragment(|f| match &note {
+            Some(note) => write!(f, "{}", note.around(name, ctx)),
+            None => write!(f, "{name}"),
+        });
+
+        let _ = write!(
+            nodes_out,
+            "<g class=\"{p}-node {p}-entity{classes}\" data-id=\"{}\" transform=\"translate({},{})\"><rect {shape}{BOX_ATTRS}{}/>",
+            EscText(node.label),
+            num(c.x),
+            num(c.y),
+            view.style.shape
+        );
+        if view.rows.is_empty() {
+            let _ = write!(nodes_out, "{name}</g>");
+            continue;
+        }
+        let row_line = js::round(view.row_size * 1.5);
+        // Over a fill the diagram chose, the shading is a tint of that fill.
+        // The opacity is on the group because the two parts of the last row
+        // overlap.
+        let opacity = if view.style.shape.contains("fill:") {
+            " opacity=\"0.6\""
+        } else {
+            ""
         };
         let _ = write!(
             nodes_out,
-            "<g class=\"{p}-node {p}-entity{classes}\" data-id=\"{}\" transform=\"translate({},{})\">{body}</g>",
-            esc_text(node.label),
-            num(c.x),
-            num(c.y)
+            "<g class=\"{p}-er-stripes\" fill=\"var(--_bg)\"{opacity}>"
         );
+        let mut y = y0 + view.head_h;
+        for (r, row) in view.rows.iter().enumerate() {
+            if r % 2 == 0 {
+                let span = fragment(|f| write!(f, "x=\"{}\" width=\"{}\"", num(x0), num(w)));
+                let _ = if r == view.rows.len() - 1 {
+                    // The last row follows the box's rounded bottom corners:
+                    // a rounded rect, squared off on top.
+                    write!(
+                        nodes_out,
+                        "<rect {span} y=\"{}\" height=\"{}\" rx=\"{RADIUS}\"/><rect {span} y=\"{}\" height=\"{}\"/>",
+                        num(y),
+                        num(row.h),
+                        num(y),
+                        num(row.h / 2.0)
+                    )
+                } else {
+                    write!(
+                        nodes_out,
+                        "<rect {span} y=\"{}\" height=\"{}\"/>",
+                        num(y),
+                        num(row.h)
+                    )
+                };
+            }
+            y += row.h;
+        }
+        let line_color = match &view.style.stroke {
+            Some(stroke) if !stroke.is_empty() => Esc(stroke),
+            _ => Esc("var(--_b)"),
+        };
+        let _ = write!(
+            nodes_out,
+            "</g><path class=\"{p}-er-divider\" d=\"M{},{}H{}\" stroke=\"{line_color}\"/><rect {shape} fill=\"none\" stroke=\"var(--_b)\"{}/>{name}<g class=\"{p}-er-attributes\" font-size=\"{}\">",
+            num(x0),
+            num(y0 + view.head_h),
+            num(x0 + w),
+            view.style.line,
+            js::Number(view.row_size)
+        );
+        let mut y = y0 + view.head_h;
+        for row in &view.rows {
+            let baseline = y + ROW_PAD / 2.0 + row_line / 2.0 + view.row_size * 0.35;
+            let [kind, attribute, keys, comment] = &row.cells;
+            let _ = write!(
+                nodes_out,
+                "{}{}{}{}",
+                TextLeft(
+                    kind,
+                    x0 + view.cols[0],
+                    baseline,
+                    format_args!(" class=\"{p}-er-type\" fill=\"var(--_m)\"{text}"),
+                ),
+                TextLeft(
+                    attribute,
+                    x0 + view.cols[1],
+                    baseline,
+                    format_args!(" class=\"{p}-er-name\"{text}"),
+                ),
+                TextLeft(
+                    keys,
+                    x0 + view.cols[2],
+                    baseline,
+                    format_args!(
+                        " class=\"{p}-er-keys\" font-size=\"{}\" fill=\"var(--_m)\"{text}",
+                        js::Number(view.key_size)
+                    ),
+                ),
+                TextLeft(
+                    comment,
+                    x0 + view.cols[3],
+                    baseline,
+                    format_args!(" class=\"{p}-er-comment\" fill=\"var(--_m)\"{text}"),
+                ),
+            );
+            y += row.h;
+        }
+        let _ = write!(nodes_out, "</g></g>");
     }
 
     // Self-relationships share the side they loop out of, squeezed together
@@ -694,12 +729,13 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
 
     let mut edges_out = String::new();
     let mut labels_out = String::new();
+    let mut d = String::new();
     for i in 0..cedges.len() {
         let edge = drawn[i];
         let label = &edge_labels[i];
-        let d: String;
-        let start: String;
-        let end: String;
+        d.clear();
+        let start;
+        let end;
         if let Some(k) = loop_of[i] {
             let lp = &loop_list[k];
             let ce = &cedges[i];
@@ -713,7 +749,8 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 let y = c.y + view.h / 2.0;
                 let turn = num(y + MARKER_LENGTH);
                 let out = num(y + MARKER_LENGTH + LOOP);
-                d = format!(
+                let _ = write!(
+                    d,
                     "M{},{}V{turn}C{},{out} {},{out} {},{turn}V{}",
                     num(x - spread),
                     num(y),
@@ -731,7 +768,8 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 let y = c.y + lp.at;
                 let turn = num(x + MARKER_LENGTH);
                 let out = num(x + MARKER_LENGTH + LOOP);
-                d = format!(
+                let _ = write!(
+                    d,
                     "M{},{}H{turn}C{out},{} {out},{} {turn},{}H{}",
                     num(x),
                     num(y - spread),
@@ -764,17 +802,16 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 && (dx < 0.01 || dy < 0.01 || js::hypot(dx, dy) <= 3.0 * MARKER_LENGTH);
             let stub = if direct { 0.0 } else { MARKER_LENGTH };
             let path = route_path(&route, None, stub, stub, None, None);
-            d = if stub > 0.0 {
-                format!(
-                    "M{},{}L{}L{},{}",
-                    num(path.sx),
-                    num(path.sy),
+            let _ = if stub > 0.0 {
+                write!(
+                    d,
+                    "M{}L{}L{}",
+                    Point(path.sx, path.sy),
                     &path.d[1..],
-                    num(path.ex),
-                    num(path.ey)
+                    Point(path.ex, path.ey)
                 )
             } else {
-                path.d.clone()
+                write!(d, "{}", path.d)
             };
             start = er_marker(edge.arrow_type_start, path.sx, path.sy, path.sdx, path.sdy);
             end = er_marker(edge.arrow_type_end, path.ex, path.ey, path.edx, path.edy);
@@ -788,7 +825,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
             } else {
                 "identifying"
             },
-            esc_text(&edge.id),
+            EscText(&edge.id),
             if dashed {
                 " stroke-dasharray=\"4 3\""
             } else {
@@ -796,21 +833,22 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
             }
         );
         if label.width > 0.0 {
-            labels_out.push_str(&edge_label_svg(
-                &edge.id,
-                label,
-                cedges[i].label_x,
-                cedges[i].label_y,
-                "",
-            ));
+            let _ = write!(
+                labels_out,
+                "{}",
+                edge_label_svg(&edge.id, label, cedges[i].label_x, cedges[i].label_y, "",)
+            );
         }
     }
 
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content = String::with_capacity(
+        clusters.len() + edges_out.len() + labels_out.len() + nodes_out.len() + 512,
+    );
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
@@ -825,7 +863,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         let _ = write!(
             content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
-            js::num_str(small_size)
+            js::Number(small_size)
         );
     }
     let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");

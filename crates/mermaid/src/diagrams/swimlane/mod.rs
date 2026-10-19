@@ -18,12 +18,13 @@ use crate::{
         layered::LayeredOptions,
     },
     svg::{
-        builder::{label_svg, num},
+        builder::{EscText, LabelSvg, num},
         theme::ResolvedStyle,
     },
     text::Label,
 };
 use crate::{Ctx, Host};
+use std::fmt::Write as _;
 
 const DEFAULT_LANE: &str = "__swimlane_default__";
 
@@ -103,13 +104,14 @@ impl FlowVariant for Lanes {
     // at the start.
     fn draw_group(
         &self,
+        out: &mut String,
         c: &CNode,
         label: &Label,
         style: &ResolvedStyle,
         classes: &str,
         id: &str,
         dir: Dir,
-    ) -> String {
+    ) {
         let p = crate::PREFIX;
         let left = c.x - c.w / 2.0;
         let top = c.y - c.h / 2.0;
@@ -120,17 +122,15 @@ impl FlowVariant for Lanes {
             c.x
         };
         let cy = if sideways { c.y } else { top + c.pad_top / 2.0 };
-        let text = label_svg(
-            label,
-            cx,
-            cy,
-            &format!(
-                " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
-                style.text
-            ),
+        let attrs = format!(
+            " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
+            style.text
         );
-        format!(
-            "<g class=\"{p}-cluster {p}-lane{classes}\" data-id=\"{id}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"var(--_b)\"/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"var(--_a)\" stroke=\"var(--_b)\"{}/>{}</g>",
+        let text = LabelSvg(label, cx, cy, &attrs);
+        let _ = write!(
+            out,
+            "<g class=\"{p}-cluster {p}-lane{classes}\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"var(--_b)\"/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"var(--_a)\" stroke=\"var(--_b)\"{}/>",
+            EscText(id),
             num(left),
             num(top),
             num(c.w),
@@ -140,16 +140,17 @@ impl FlowVariant for Lanes {
             num(if sideways { c.pad_top } else { c.w }),
             num(if sideways { c.h } else { c.pad_top }),
             style.shape,
-            if sideways && !text.is_empty() {
-                format!(
-                    "<g transform=\"rotate(-90 {} {})\">{text}</g>",
-                    num(cx),
-                    num(cy)
-                )
-            } else {
-                text
-            }
-        )
+        );
+        let _ = if sideways && !label.lines.is_empty() {
+            write!(
+                out,
+                "<g transform=\"rotate(-90 {} {})\">{text}</g></g>",
+                num(cx),
+                num(cy)
+            )
+        } else {
+            write!(out, "{text}</g>")
+        };
     }
 }
 

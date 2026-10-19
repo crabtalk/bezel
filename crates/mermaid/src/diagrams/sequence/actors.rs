@@ -1,8 +1,10 @@
 //! Pele's `diagrams/sequence/actors.ts`.
 
+use std::fmt;
+
 use crate::{
     svg::{
-        builder::{label_svg, num},
+        builder::{LabelSvg, fragment, num},
         theme::RADIUS,
     },
     text::Label,
@@ -76,11 +78,12 @@ pub fn actor_size(
     }
 }
 
-fn figure(kind: &str, cx: f64, top: f64) -> String {
+fn figure(f: &mut fmt::Formatter<'_>, kind: &str, cx: f64, top: f64) -> fmt::Result {
     let x = num(cx);
     let y = |dy: f64| num(top + dy);
     match kind {
-        "actor" => format!(
+        "actor" => write!(
+            f,
             "<circle cx=\"{x}\" cy=\"{}\" r=\"6\"{SHAPE}/><path d=\"M{x},{}V{}M{},{}H{}M{},{}L{x},{}L{},{}\"{LINE}/>",
             y(7.0),
             y(13.0),
@@ -94,7 +97,8 @@ fn figure(kind: &str, cx: f64, top: f64) -> String {
             num(cx + 8.0),
             y(34.0)
         ),
-        "boundary" => format!(
+        "boundary" => write!(
+            f,
             "<path d=\"M{},{}V{}M{},{}H{}\"{LINE}/><circle cx=\"{}\" cy=\"{}\" r=\"11\"{SHAPE}/>",
             num(cx - 19.0),
             y(6.0),
@@ -105,7 +109,8 @@ fn figure(kind: &str, cx: f64, top: f64) -> String {
             num(cx + 3.0),
             y(17.0)
         ),
-        "control" => format!(
+        "control" => write!(
+            f,
             "<circle cx=\"{x}\" cy=\"{}\" r=\"11\"{SHAPE}/><path d=\"M{},{}L{},{}L{},{}\"{LINE}/>",
             y(21.0),
             num(cx + 5.0),
@@ -115,7 +120,8 @@ fn figure(kind: &str, cx: f64, top: f64) -> String {
             num(cx + 5.0),
             y(15.0)
         ),
-        "entity" => format!(
+        "entity" => write!(
+            f,
             "<circle cx=\"{x}\" cy=\"{}\" r=\"11\"{SHAPE}/><path d=\"M{},{}H{}\"{LINE}/>",
             y(15.0),
             num(cx - 11.0),
@@ -125,7 +131,8 @@ fn figure(kind: &str, cx: f64, top: f64) -> String {
         _ => {
             let l = num(cx - 14.0);
             let r = num(cx + 14.0);
-            format!(
+            write!(
+                f,
                 "<path d=\"M{l},{}V{}A14,5 0 0 0 {r},{}V{}A14,5 0 0 0 {l},{}Z\"{SHAPE}/><path d=\"M{l},{}A14,5 0 0 0 {r},{}\"{LINE}/>",
                 y(7.0),
                 y(27.0),
@@ -140,54 +147,68 @@ fn figure(kind: &str, cx: f64, top: f64) -> String {
 }
 
 /// Draws a participant whose bounding box has its top center at (cx, top).
-pub fn draw_actor(kind: &str, cx: f64, top: f64, size: ActorSize, label: &Label) -> String {
-    let p = crate::PREFIX;
-    let ActorSize { w, h } = size;
-    let text = format!(" class=\"{p}-label\"");
-    if is_figure(kind) {
-        return figure(kind, cx, top)
-            + &label_svg(
-                label,
-                cx,
-                top + GLYPH + GLYPH_GAP + label.height / 2.0,
-                &text,
+pub fn draw_actor<'a>(
+    kind: &'a str,
+    cx: f64,
+    top: f64,
+    size: ActorSize,
+    label: &'a Label,
+) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        let ActorSize { w, h } = size;
+        let text = format!(" class=\"{p}-label\"");
+        if is_figure(kind) {
+            figure(f, kind, cx, top)?;
+            return write!(
+                f,
+                "{}",
+                LabelSvg(
+                    label,
+                    cx,
+                    top + GLYPH + GLYPH_GAP + label.height / 2.0,
+                    &text
+                )
             );
-    }
-    let left = cx - w / 2.0;
-    if kind == "collections" {
-        let bw = w - STACK;
-        let bh = h - STACK;
-        let back = format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE}/>",
-            num(left + STACK),
-            num(top),
-            num(bw),
-            num(bh)
-        );
-        let front = format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE}/>",
+        }
+        let left = cx - w / 2.0;
+        if kind == "collections" {
+            let bw = w - STACK;
+            let bh = h - STACK;
+            return write!(
+                f,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE}/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE}/>{}",
+                num(left + STACK),
+                num(top),
+                num(bw),
+                num(bh),
+                num(left),
+                num(top + STACK),
+                num(bw),
+                num(bh),
+                LabelSvg(label, left + bw / 2.0, top + STACK + bh / 2.0, &text)
+            );
+        }
+        if kind == "queue" {
+            let l = num(left + CAP);
+            let r = num(left + w - CAP);
+            let b = num(top + h);
+            let ry = num(h / 2.0);
+            let t = num(top);
+            return write!(
+                f,
+                "<path d=\"M{l},{t}H{r}A{CAP},{ry} 0 0 1 {r},{b}H{l}A{CAP},{ry} 0 0 1 {l},{t}Z\"{SHAPE}/><path d=\"M{r},{t}A{CAP},{ry} 0 0 0 {r},{b}\"{LINE}/>{}",
+                LabelSvg(label, cx - CAP / 2.0, top + h / 2.0, &text)
+            );
+        }
+        write!(
+            f,
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE}/>{}",
             num(left),
-            num(top + STACK),
-            num(bw),
-            num(bh)
-        );
-        return back + &front + &label_svg(label, left + bw / 2.0, top + STACK + bh / 2.0, &text);
-    }
-    if kind == "queue" {
-        let l = num(left + CAP);
-        let r = num(left + w - CAP);
-        let b = num(top + h);
-        let ry = num(h / 2.0);
-        let t = num(top);
-        return format!(
-            "<path d=\"M{l},{t}H{r}A{CAP},{ry} 0 0 1 {r},{b}H{l}A{CAP},{ry} 0 0 1 {l},{t}Z\"{SHAPE}/><path d=\"M{r},{t}A{CAP},{ry} 0 0 0 {r},{b}\"{LINE}/>",
-        ) + &label_svg(label, cx - CAP / 2.0, top + h / 2.0, &text);
-    }
-    format!(
-        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE}/>",
-        num(left),
-        num(top),
-        num(w),
-        num(h)
-    ) + &label_svg(label, cx, top + h / 2.0, &text)
+            num(top),
+            num(w),
+            num(h),
+            LabelSvg(label, cx, top + h / 2.0, &text)
+        )
+    })
 }

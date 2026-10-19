@@ -1,5 +1,6 @@
 //! Pele's `diagrams/packet/render.ts`.
 
+use crate::svg::builder::Esc;
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::model::{PacketBlock, PacketModel, packet_option};
@@ -12,7 +13,7 @@ use crate::{
     },
     js,
     svg::{
-        builder::{esc, label_svg, num},
+        builder::{LabelSvg, TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::RADIUS,
     },
@@ -205,34 +206,35 @@ fn draw(model: &PacketModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bo
             let _ = write!(
                 fields,
                 "<g class=\"{p}-node\" data-id=\"{}-{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>",
-                js::num_str(block.start),
-                js::num_str(block.end),
+                js::Number(block.start),
+                js::Number(block.end),
                 num(x),
                 num(y),
                 num(w),
                 num(row_height)
             );
             if down {
-                fields.push_str(&label_svg(
-                    &labels[index][at],
-                    x + w / 2.0,
-                    y + row_height / 2.0,
-                    "",
-                ));
+                let _ = write!(
+                    fields,
+                    "{}",
+                    LabelSvg(&labels[index][at], x + w / 2.0, y + row_height / 2.0, "")
+                );
             } else if let Some((text, text_size)) = fit(&block.label, w - 6.0)
                 && text_size <= row_height
             {
-                let font = if text_size == label_size {
-                    String::new()
-                } else {
-                    format!(" font-size=\"{}\"", num(text_size))
-                };
+                let font = fragment(|f| {
+                    if text_size == label_size {
+                        Ok(())
+                    } else {
+                        write!(f, " font-size=\"{}\"", num(text_size))
+                    }
+                });
                 let _ = write!(
                     fields,
                     "<text x=\"{}\" y=\"{}\"{font}>{}</text>",
                     num(x + w / 2.0),
                     num(y + row_height / 2.0 + text_size * 0.35),
-                    esc(&text)
+                    Esc(&text)
                 );
             }
             fields.push_str("</g>");
@@ -247,7 +249,7 @@ fn draw(model: &PacketModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bo
                     "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\">{}</text>",
                     num(x + w / 2.0),
                     num(y - 4.0),
-                    js::num_str(leading)
+                    js::Number(leading)
                 );
             } else {
                 let _ = write!(
@@ -255,10 +257,10 @@ fn draw(model: &PacketModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bo
                     "<text x=\"{}\" y=\"{}\">{}</text><text x=\"{}\" y=\"{}\" text-anchor=\"end\">{}</text>",
                     num(x),
                     num(y - 4.0),
-                    js::num_str(leading),
+                    js::Number(leading),
                     num(x + w),
                     num(y - 4.0),
-                    js::num_str(trailing)
+                    js::Number(trailing)
                 );
             }
         }
@@ -266,28 +268,32 @@ fn draw(model: &PacketModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bo
 
     let total_width = (width.max(title.width) + 2.0 * pad).ceil();
     let total_height = (rows_height + title_height + 2.0 * pad).ceil();
-    let mut content = String::new();
+    let mut content = String::with_capacity(fields.len() + bits.len() + 512);
     if !fields.is_empty() {
         let _ = write!(
             content,
             "<g class=\"{p}-packet-fields\" font-size=\"{}\" text-anchor=\"middle\">{fields}</g>",
-            js::num_str(label_size)
+            js::Number(label_size)
         );
     }
     if !bits.is_empty() {
         let _ = write!(
             content,
             "<g class=\"{p}-packet-bits\" font-size=\"{}\" fill=\"var(--_m)\">{bits}</g>",
-            js::num_str(bit_size)
+            js::Number(bit_size)
         );
     }
     // Mermaid puts a packet's title under it.
-    content.push_str(&label_svg(
-        &title,
-        total_width / 2.0,
-        total_height - pad - title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ));
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(
+            &title,
+            total_width / 2.0,
+            total_height - pad - title.height / 2.0,
+            TITLE,
+        )
+    );
 
     Rendered {
         svg: svg_document(

@@ -1,9 +1,9 @@
 //! Cluster titles, kept clear of the edges that enter a cluster at its top.
 //! Pele's `svg/cluster.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
-use super::builder::{label_svg, num};
+use super::builder::{LabelSvg, fragment, num};
 use crate::{js, layout::compound::CNode, text::Label};
 
 /// The x of every route point, by its rounded y: the edges that cross a
@@ -70,16 +70,15 @@ pub fn title_crossed(c: &CNode, width: f64, x: f64, crossings: &Crossings) -> bo
 /// outline in the colour of the cluster behind it, so only the line is seen
 /// to stop short of the letters. `nodes` and `index` find how many clusters
 /// deep the title is, each of which tints the background.
-pub fn struck_title(
-    label: &Label,
+pub fn struck_title<'a>(
+    label: &'a Label,
     x: f64,
     y: f64,
-    attrs: &str,
-    id: &str,
+    attrs: &'a str,
+    id: impl fmt::Display + 'a,
     nodes: &[CNode],
     index: usize,
-) -> String {
-    let p = crate::PREFIX;
+) -> impl fmt::Display + 'a {
     let mut depth = 1;
     let mut parent = nodes[index].parent;
     while parent >= 0 && depth < 8 {
@@ -87,20 +86,18 @@ pub fn struck_title(
         parent = nodes[parent as usize].parent;
     }
     // Each cluster is half its fill over what is behind it.
-    let fill = format!(
-        "color-mix(in srgb,var(--_a) {}%,var(--_bg))",
-        num(100.0 * (1.0 - 0.5f64.powi(depth)))
-    );
-    format!(
-        "<g class=\"{p}-cluster-title\" data-id=\"{id}\">{}{}</g>",
-        label_svg(
-            label,
-            x,
-            y,
-            &format!(
-                " fill=\"none\" stroke=\"{fill}\" stroke-width=\"5\" stroke-linejoin=\"round\""
-            )
-        ),
-        label_svg(label, x, y, attrs)
-    )
+    let mix = num(100.0 * (1.0 - 0.5f64.powi(depth)));
+    fragment(move |f| {
+        let p = crate::PREFIX;
+        write!(f, "<g class=\"{p}-cluster-title\" data-id=\"{id}\">")?;
+        let outline = format!(
+            " fill=\"none\" stroke=\"color-mix(in srgb,var(--_a) {mix}%,var(--_bg))\" stroke-width=\"5\" stroke-linejoin=\"round\""
+        );
+        write!(
+            f,
+            "{}{}</g>",
+            LabelSvg(label, x, y, &outline),
+            LabelSvg(label, x, y, attrs)
+        )
+    })
 }

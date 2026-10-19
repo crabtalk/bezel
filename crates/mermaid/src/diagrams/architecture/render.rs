@@ -1,6 +1,10 @@
 //! Pele's `diagrams/architecture/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::{EscText, LabelSvg, TITLE, fragment, icon_element};
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use super::{
     db::ArchitectureModel,
@@ -14,7 +18,7 @@ use crate::{
     diagrams::common::fit_width::{tighten, title_room},
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::num,
         edges::{edge_label_svg, marker, marker_trim},
         root::{Accessible, svg_document},
         theme::RADIUS,
@@ -51,17 +55,18 @@ fn rank(mut values: Vec<i64>) -> HashMap<i64, usize> {
     out
 }
 
-fn icon_slot(name: &str, x: f64, y: f64, side: f64, ctx: &Ctx<'_, impl Host>) -> String {
-    let markup = crate::text::icon(ctx.host, name).unwrap_or_else(|| builtin_icon(name));
-    format!(
-        "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{markup}</svg>",
-        esc_text(name),
-        num(x),
-        num(y),
-        num(side),
-        num(side),
-        p = crate::PREFIX,
-    )
+fn icon_slot<'a>(
+    name: &'a str,
+    x: f64,
+    y: f64,
+    side: f64,
+    ctx: &'a Ctx<'_, impl Host>,
+) -> impl fmt::Display + 'a {
+    let markup = fragment(move |f| match crate::text::icon(ctx.host, name) {
+        Some(markup) => f.write_str(&markup),
+        None => write!(f, "{}", builtin_icon(name)),
+    });
+    icon_element(name, x, y, side, markup)
 }
 
 /// The first `units` UTF-16 units of `text`, taking the whole of a pair the
@@ -282,7 +287,7 @@ fn simplify(p: &[f64]) -> Vec<f64> {
     out
 }
 
-fn path_data(p: &[f64], start_trim: f64, end_trim: f64) -> String {
+fn path_data(out: &mut String, p: &[f64], start_trim: f64, end_trim: f64) {
     let n = p.len() / 2;
     let mut xs: Vec<f64> = (0..n).map(|i| p[i * 2]).collect();
     let mut ys: Vec<f64> = (0..n).map(|i| p[i * 2 + 1]).collect();
@@ -296,7 +301,8 @@ fn path_data(p: &[f64], start_trim: f64, end_trim: f64) -> String {
     };
     trim(0, 1, start_trim);
     trim(n - 1, n - 2, end_trim);
-    let mut d = format!("M{},{}", num(xs[0]), num(ys[0]));
+    let d = out;
+    let _ = write!(d, "M{},{}", num(xs[0]), num(ys[0]));
     for i in 1..n - 1 {
         let before = js::hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
         let after = js::hypot(xs[i + 1] - xs[i], ys[i + 1] - ys[i]);
@@ -320,7 +326,7 @@ fn path_data(p: &[f64], start_trim: f64, end_trim: f64) -> String {
             num(out_y)
         );
     }
-    d + &format!("L{},{}", num(xs[n - 1]), num(ys[n - 1]))
+    let _ = write!(d, "L{},{}", num(xs[n - 1]), num(ys[n - 1]));
 }
 
 pub fn render_architecture(
@@ -640,6 +646,7 @@ fn draw(
 
     let mut edges_out = String::new();
     let mut labels_out = String::new();
+    let mut id = String::new();
     // Vertical runs of the edges, to keep group titles out from under them.
     let mut runs: Vec<f64> = Vec::new();
     let trim_length = marker_trim("arrow_point");
@@ -667,43 +674,54 @@ fn draw(
         if points.len() < 4 {
             continue;
         }
-        let id = format!("{}-{}", edge.lhs_id, edge.rhs_id);
+        id.clear();
+        let _ = write!(id, "{}-{}", edge.lhs_id, edge.rhs_id);
         let _ = write!(
             edges_out,
-            "<g class=\"{p}-edge\" data-id=\"{}\"><path d=\"{}\"/>",
-            esc_text(&id),
-            path_data(
-                &points,
-                if edge.lhs_into && !s.wire {
-                    trim_length + s.gap
-                } else {
-                    0.0
-                },
-                if edge.rhs_into && !e.wire {
-                    trim_length + e.gap
-                } else {
-                    0.0
-                },
-            )
+            "<g class=\"{p}-edge\" data-id=\"{}\"><path d=\"",
+            EscText(&id)
         );
+        path_data(
+            &mut edges_out,
+            &points,
+            if edge.lhs_into && !s.wire {
+                trim_length + s.gap
+            } else {
+                0.0
+            },
+            if edge.rhs_into && !e.wire {
+                trim_length + e.gap
+            } else {
+                0.0
+            },
+        );
+        edges_out.push_str("\"/>");
         if edge.lhs_into {
-            edges_out += &marker(
-                "arrow_point",
-                s.x + s.dx * s.gap,
-                s.y + s.dy * s.gap,
-                -s.dx,
-                -s.dy,
-                "var(--_l)",
+            let _ = write!(
+                edges_out,
+                "{}",
+                marker(
+                    "arrow_point",
+                    s.x + s.dx * s.gap,
+                    s.y + s.dy * s.gap,
+                    -s.dx,
+                    -s.dy,
+                    "var(--_l)",
+                )
             );
         }
         if edge.rhs_into {
-            edges_out += &marker(
-                "arrow_point",
-                e.x + e.dx * e.gap,
-                e.y + e.dy * e.gap,
-                -e.dx,
-                -e.dy,
-                "var(--_l)",
+            let _ = write!(
+                edges_out,
+                "{}",
+                marker(
+                    "arrow_point",
+                    e.x + e.dx * e.gap,
+                    e.y + e.dy * e.gap,
+                    -e.dx,
+                    -e.dy,
+                    "var(--_l)",
+                )
             );
         }
         edges_out += "</g>";
@@ -775,7 +793,7 @@ fn draw(
             max_x = max_x.max(x + w / 2.0);
             min_y = min_y.min(y - label.height / 2.0);
             max_y = max_y.max(y + label.height / 2.0);
-            labels_out += &edge_label_svg(&id, label, x, y, "");
+            let _ = write!(labels_out, "{}", edge_label_svg(&id, label, x, y, ""));
         }
     }
 
@@ -785,7 +803,15 @@ fn draw(
         let y = top(g);
         let w = right(g) - x;
         let label = &group_labels[g];
-        let mut head = String::new();
+        let _ = write!(
+            clusters,
+            "<g class=\"{p}-cluster\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"/>",
+            EscText(&group.id),
+            num(x),
+            num(y),
+            num(w),
+            num(bottom(g) - y),
+        );
         if head_w[g] > 0.0 {
             // The title starts at the left, or after the edges that come down
             // through that corner.
@@ -811,49 +837,66 @@ fn draw(
             let cy = y + 6.0 + head_h[g] / 2.0;
             let mut text_x = start;
             if let Some(icon) = group.icon.as_deref().filter(|icon| has_icon(Some(icon))) {
-                head += &icon_slot(icon, start, cy - badge / 2.0, badge, ctx);
+                let _ = write!(
+                    clusters,
+                    "{}",
+                    icon_slot(icon, start, cy - badge / 2.0, badge, ctx)
+                );
                 text_x += badge + 6.0;
             }
-            head += &label_svg(
-                label,
-                text_x + label.width / 2.0,
-                cy,
-                &format!(" class=\"{p}-cluster-label\" fill=\"var(--_m)\""),
+            let _ = write!(
+                clusters,
+                "{}",
+                LabelSvg(
+                    label,
+                    text_x + label.width / 2.0,
+                    cy,
+                    crate::class!("cluster-label", "fill=\"var(--_m)\""),
+                )
             );
         }
-        let _ = write!(
-            clusters,
-            "<g class=\"{p}-cluster\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"/>{head}</g>",
-            esc_text(&group.id),
-            num(x),
-            num(y),
-            num(w),
-            num(bottom(g) - y),
-        );
+        clusters.push_str("</g>");
     }
 
     let mut nodes_out = String::new();
     let glyph = icon_size * 0.5;
     let text_size = 6f64.max(js::round(size * 0.75));
+    let icon_text_attrs = format!(
+        " class=\"{p}-icon-text\" font-size=\"{}\"",
+        js::Number(text_size)
+    );
     for (i, node) in nodes.iter().enumerate() {
-        let at = format!(
-            "data-id=\"{}\" transform=\"translate({},{})\"",
-            esc_text(&node.id),
-            num(center_x(i)),
-            num(ys[node_row[i]])
-        );
+        let at = fragment(|f| {
+            write!(
+                f,
+                "data-id=\"{}\" transform=\"translate({},{})\"",
+                EscText(&node.id),
+                num(center_x(i)),
+                num(ys[node_row[i]])
+            )
+        });
         if node.is_junction() {
             let _ = write!(
                 nodes_out,
                 "<g class=\"{p}-node {p}-junction\" {at}><circle cy=\"{}\" r=\"{}\" fill=\"var(--_l)\"/></g>",
                 num(half),
-                js::num_str(DOT)
+                js::Number(DOT)
             );
             continue;
         }
-        let mut inner = String::new();
+        let _ = write!(
+            nodes_out,
+            "<g class=\"{p}-node {p}-service\" {at}><rect x=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>",
+            num(-half),
+            num(icon_size),
+            num(icon_size),
+        );
         if let Some(icon) = node.icon.as_deref().filter(|icon| has_icon(Some(icon))) {
-            inner = icon_slot(icon, -glyph / 2.0, (icon_size - glyph) / 2.0, glyph, ctx);
+            let _ = write!(
+                nodes_out,
+                "{}",
+                icon_slot(icon, -glyph / 2.0, (icon_size - glyph) / 2.0, glyph, ctx)
+            );
         } else if let Some(text) = node.icon_text.as_deref().filter(|text| !text.is_empty()) {
             let text = layout_label(Some(text), false, measure, text_size, icon_size - 8.0, 0);
             let line_height = if js::truthy(text.line_height) {
@@ -862,27 +905,25 @@ fn draw(
                 1.0
             };
             let lines = 1f64.max(((icon_size - 4.0) / line_height).floor());
-            inner = label_svg(
-                &fit(&text, icon_size - 8.0, lines, measure),
-                0.0,
-                half,
-                &format!(
-                    " class=\"{p}-icon-text\" font-size=\"{}\"",
-                    js::num_str(text_size)
-                ),
+            let _ = write!(
+                nodes_out,
+                "{}",
+                LabelSvg(
+                    &fit(&text, icon_size - 8.0, lines, measure),
+                    0.0,
+                    half,
+                    &icon_text_attrs,
+                )
             );
         }
         let _ = write!(
             nodes_out,
-            "<g class=\"{p}-node {p}-service\" {at}><rect x=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>{inner}{}</g>",
-            num(-half),
-            num(icon_size),
-            num(icon_size),
-            label_svg(
+            "{}</g>",
+            LabelSvg(
                 &labels[i],
                 0.0,
                 icon_size + LABEL_GAP + labels[i].height / 2.0,
-                &format!(" class=\"{p}-label\""),
+                crate::class!("label"),
             ),
         );
     }
@@ -904,7 +945,27 @@ fn draw(
     let height = (max_y - min_y + title_height + 2.0 * pad).ceil();
     let ox = js::round((width - (max_x - min_x)) / 2.0 - min_x);
     let oy = js::round(pad + title_height - min_y);
-    let mut body = String::new();
+    let mut content = String::with_capacity(
+        clusters.len() + edges_out.len() + labels_out.len() + nodes_out.len() + 1024,
+    );
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE)
+    );
+    let any = !(clusters.is_empty()
+        && edges_out.is_empty()
+        && labels_out.is_empty()
+        && nodes_out.is_empty());
+    if any {
+        let _ = write!(
+            content,
+            "<g transform=\"translate({},{})\">",
+            js::Number(ox),
+            js::Number(oy)
+        );
+    }
+    let body = &mut content;
     if !clusters.is_empty() {
         let _ = write!(body, "<g class=\"{p}-clusters\">{clusters}</g>");
     }
@@ -918,25 +979,14 @@ fn draw(
         let _ = write!(
             body,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
-            js::num_str(small)
+            js::Number(small)
         );
     }
     if !nodes_out.is_empty() {
         let _ = write!(body, "<g class=\"{p}-nodes\">{nodes_out}</g>");
     }
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    );
-    if !body.is_empty() {
-        let _ = write!(
-            content,
-            "<g transform=\"translate({},{})\">{body}</g>",
-            js::num_str(ox),
-            js::num_str(oy)
-        );
+    if any {
+        content.push_str("</g>");
     }
     let svg = svg_document(
         "architecture",

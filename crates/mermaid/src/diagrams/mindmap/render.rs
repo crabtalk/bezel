@@ -1,6 +1,7 @@
 //! Pele's `diagrams/mindmap/render.ts`.
 
 use super::db::{MindmapModel, MindmapNode};
+use crate::svg::builder::{EscText, LabelSvg, LeftLabel, fragment};
 use crate::{
     Config, Rendered, Value,
     diagrams::common::{
@@ -9,10 +10,10 @@ use crate::{
     },
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{TITLE, num},
         root::{Accessible, svg_document},
         shapes::{draw_shape, shape_inset, shape_size},
-        theme::{class_names, series_color},
+        theme::{SeriesColor, class_names, series_color},
     },
     text::{Label, Style, icon_markup, layout_label},
 };
@@ -40,36 +41,6 @@ const INDENT: f64 = 28.0;
 const STEM: f64 = 12.0;
 const BEND: f64 = 8.0;
 const ROW_GAP: f64 = 10.0;
-
-/// A label with each line starting at `left`, for an outline, where centered
-/// lines would look ragged.
-fn left_label(label: &Label, left: f64, cy: f64) -> String {
-    let p = crate::PREFIX;
-    let attrs = format!(" class=\"{p}-label\"");
-    if label.lines.len() < 2 {
-        return label_svg(label, left + label.width / 2.0, cy, &attrs);
-    }
-    let mut out = String::new();
-    let count = label.lines.len() as f64;
-    for (k, line) in label.lines.iter().enumerate() {
-        let width = label.widths[k];
-        let one = Label {
-            lines: vec![line.clone()],
-            widths: vec![width],
-            width,
-            height: label.line_height,
-            size: label.size,
-            line_height: label.line_height,
-        };
-        out.push_str(&label_svg(
-            &one,
-            left + width / 2.0,
-            cy + (k as f64 - (count - 1.0) / 2.0) * label.line_height,
-            &attrs,
-        ));
-    }
-    out
-}
 
 pub fn render_mindmap(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     turn_to_fit(ctx, |down| draw(model, config, ctx, down))
@@ -120,6 +91,7 @@ impl Bands {
 /// both sides, and as tall as it needs to be.
 fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
     let p = crate::PREFIX;
+    let label_attrs = crate::class!("label");
     let size = ctx.options.font_size;
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
@@ -303,19 +275,29 @@ fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: b
     let mut out = String::new();
     let mut edges = String::new();
     let mut body = String::new();
-    let mut color = String::new();
+    // No colour before the first branch.
+    let mut color: Option<SeriesColor> = None;
+    let paint = |color: Option<SeriesColor>| {
+        fragment(move |f| match color {
+            Some(color) => write!(f, "{color}"),
+            None => Ok(()),
+        })
+    };
+    let mut tint = String::new();
+    let mut stroke = String::new();
     let flush = |out: &mut String,
                  edges: &mut String,
                  body: &mut String,
-                 color: &str,
+                 color: Option<SeriesColor>,
                  section: Option<usize>| {
         if body.is_empty() {
             return;
         }
         let _ = write!(
             out,
-            "<g class=\"{p}-branch {p}-section-{}\"><g class=\"{p}-edges\" fill=\"none\" stroke=\"{color}\" stroke-width=\"1.5\">{edges}</g>{body}</g>",
-            section.unwrap_or(0)
+            "<g class=\"{p}-branch {p}-section-{}\"><g class=\"{p}-edges\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\">{edges}</g>{body}</g>",
+            section.unwrap_or(0),
+            paint(color)
         );
         edges.clear();
         body.clear();
@@ -335,17 +317,11 @@ fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: b
         max_y = max_y.max(top + h[i]);
 
         if i == 0 || parent[i] == 0 {
-            flush(
-                &mut out,
-                &mut edges,
-                &mut body,
-                &color,
-                nodes[k - 1].section,
-            );
+            flush(&mut out, &mut edges, &mut body, color, nodes[k - 1].section);
         }
         if i > 0 && down {
             if parent[i] == 0 {
-                color = series_color(node.section.unwrap_or(0) as i64);
+                color = Some(series_color(node.section.unwrap_or(0) as i64));
             }
             let p = parent[i];
             // The link drops from under its parent and turns in to the node's
@@ -391,7 +367,7 @@ fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: b
             );
         } else if i > 0 {
             if parent[i] == 0 {
-                color = series_color(node.section.unwrap_or(0) as i64);
+                color = Some(series_color(node.section.unwrap_or(0) as i64));
             }
             let p = parent[i];
             let dir = side[i];
@@ -431,47 +407,13 @@ fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: b
         // Every node off the root is filled with a tint of its branch's color
         // and outlined in it, whether its shape was given in the source or is
         // the pill of a node that branches. The root is neutral.
-        let tint = format!(
-            " fill=\"{color}\" fill-opacity=\"{}\" stroke=\"{color}\"",
-            js::num_str(TINT)
+        tint.clear();
+        let _ = write!(
+            tint,
+            " fill=\"{0}\" fill-opacity=\"{1}\" stroke=\"{0}\"",
+            paint(color),
+            js::Number(TINT)
         );
-        let mut inner = if !shape.is_empty() {
-            if i > 0 {
-                draw_shape(shape, w[i], h[i], &tint, &format!(" stroke=\"{color}\""))
-            } else {
-                draw_shape(
-                    shape,
-                    w[i],
-                    h[i],
-                    " fill=\"var(--_s)\" stroke=\"var(--_b)\"",
-                    " stroke=\"var(--_b)\"",
-                )
-            }
-        } else if pill {
-            format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\"{tint}/>",
-                num(-w[i] / 2.0),
-                num(-h[i] / 2.0),
-                num(w[i]),
-                num(h[i]),
-                num(h[i] / 2.0)
-            )
-        } else {
-            String::new()
-        };
-        let mut shift = 0.0;
-        if let Some(icon) = node.icon.as_deref().filter(|icon| !icon.is_empty())
-            && drawn[i]
-        {
-            shift = (glyph + if label.width > 0.0 { ICON_GAP } else { 0.0 }) / 2.0;
-            inner.push_str(&icon_svg(
-                ctx.host,
-                icon,
-                -shift - label.width / 2.0,
-                dy[i] - glyph / 2.0,
-                glyph,
-            ));
-        }
         let kind = if !shape.is_empty() {
             shape
         } else if pill {
@@ -482,21 +424,72 @@ fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: b
         let group = if i > 0 { &mut body } else { &mut out };
         let _ = write!(
             group,
-            "<g class=\"{p}-node {p}-shape-{kind}{}{}\" data-id=\"{}\" transform=\"translate({},{})\">{inner}{}</g>",
+            "<g class=\"{p}-node {p}-shape-{kind}{}{}\" data-id=\"{}\" transform=\"translate({},{})\">",
             if i > 0 {
-                String::new()
+                ""
             } else {
-                format!(" {p}-root")
+                concat!(" ", crate::prefix!(), "-root")
             },
             class_names(node.class.as_deref().unwrap_or("")),
-            esc_text(&node.node_id),
+            EscText(&node.node_id),
             num(cx),
             num(top + h[i] / 2.0),
-            if down && shape.is_empty() {
-                left_label(label, shift - label.width / 2.0, dy[i])
+        );
+        if !shape.is_empty() {
+            if i > 0 {
+                stroke.clear();
+                let _ = write!(stroke, " stroke=\"{}\"", paint(color));
+                draw_shape(group, shape, w[i], h[i], &tint, &stroke);
             } else {
-                label_svg(label, shift, dy[i], &format!(" class=\"{p}-label\""))
+                draw_shape(
+                    group,
+                    shape,
+                    w[i],
+                    h[i],
+                    " fill=\"var(--_s)\" stroke=\"var(--_b)\"",
+                    " stroke=\"var(--_b)\"",
+                );
             }
+        } else if pill {
+            let _ = write!(
+                group,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\"{tint}/>",
+                num(-w[i] / 2.0),
+                num(-h[i] / 2.0),
+                num(w[i]),
+                num(h[i]),
+                num(h[i] / 2.0)
+            );
+        }
+        let mut shift = 0.0;
+        if let Some(icon) = node.icon.as_deref().filter(|icon| !icon.is_empty())
+            && drawn[i]
+        {
+            shift = (glyph + if label.width > 0.0 { ICON_GAP } else { 0.0 }) / 2.0;
+            let _ = write!(
+                group,
+                "{}",
+                icon_svg(
+                    ctx.host,
+                    icon,
+                    -shift - label.width / 2.0,
+                    dy[i] - glyph / 2.0,
+                    glyph,
+                )
+            );
+        }
+        let _ = write!(
+            group,
+            "{}</g>",
+            fragment(|f| if down && shape.is_empty() {
+                write!(
+                    f,
+                    "{}",
+                    LeftLabel(label, shift - label.width / 2.0, dy[i], label_attrs)
+                )
+            } else {
+                write!(f, "{}", LabelSvg(label, shift, dy[i], label_attrs))
+            })
         );
     }
 
@@ -516,13 +509,11 @@ fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: b
     let width = (max_x - min_x).max(title.width);
     let total_width = (width + 2.0 * pad).ceil();
     let total_height = (max_y - min_y + title_height + 2.0 * pad).ceil();
-    let content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &format!(
-        "<g transform=\"translate({},{})\">{out}</g>",
+    let mut content = String::with_capacity(out.len() + 512);
+    let _ = write!(
+        content,
+        "{}<g transform=\"translate({},{})\">{out}</g>",
+        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE),
         num(pad - min_x + (width - max_x + min_x) / 2.0),
         num(pad + title_height - min_y)
     );

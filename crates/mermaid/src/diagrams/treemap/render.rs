@@ -5,6 +5,7 @@ use super::{
     layout::{Insets, layout_treemap},
     model::TreemapModel,
 };
+use crate::svg::builder::{Esc, EscText};
 use crate::{
     Config, Rendered,
     config::Value,
@@ -14,7 +15,7 @@ use crate::{
     },
     js::{self, Lazy},
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{LabelSvg, TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names, resolve_style, series_color},
     },
@@ -107,18 +108,33 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, ctx: &Ctx<'_, impl 
         } else {
             String::new()
         };
-        let group = format!("data-id=\"{}\">", esc_text(&node.name));
-        let rect = format!(
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"{color}\"",
-            num(x),
-            num(y),
-            num(b.w),
-            num(b.h)
-        );
+        let group = EscText(&node.name);
+        let rect = fragment(|f| {
+            write!(
+                f,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"{color}\"",
+                num(x),
+                num(y),
+                num(b.w),
+                num(b.h)
+            )
+        });
         let classes = class_names(node.class_selector.as_deref().unwrap_or(""));
 
         if node.children.is_some() {
-            let mut text = String::new();
+            // A section is a tint of its color, unless a class gives it a
+            // fill of its own.
+            let tint = if RE_FILL.test(&style.shape) {
+                ""
+            } else {
+                " fill-opacity=\"0.12\""
+            };
+            let _ = write!(
+                sections,
+                "<g class=\"{p}-node {p}-section{classes}\" data-id=\"{group}\">{rect}{tint} stroke=\"{color}\"{}/>",
+                style.shape
+            );
+            let text = &mut sections;
             if b.h >= HEADER {
                 let room = b.w - 2.0 * SIDE - 4.0;
                 let value_width = if value.is_empty() {
@@ -147,7 +163,7 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, ctx: &Ctx<'_, impl 
                         num(x + SIDE + 2.0),
                         num(baseline + small * 0.35),
                         style.text,
-                        esc(&label.text)
+                        Esc(&label.text)
                     );
                 }
                 if with_value {
@@ -156,28 +172,22 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, ctx: &Ctx<'_, impl 
                         "<text class=\"{p}-value\" x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"end\" fill=\"var(--_m)\"{}>{}</text>",
                         num(x + b.w - SIDE - 2.0),
                         num(baseline + tiny * 0.35),
-                        js::num_str(tiny),
+                        js::Number(tiny),
                         style.text,
-                        esc(&value)
+                        Esc(&value)
                     );
                 }
             }
-            // A section is a tint of its color, unless a class gives it a
-            // fill of its own.
-            let tint = if RE_FILL.test(&style.shape) {
-                ""
-            } else {
-                " fill-opacity=\"0.12\""
-            };
-            let _ = write!(
-                sections,
-                "<g class=\"{p}-node {p}-section{classes}\" {group}{rect}{tint} stroke=\"{color}\"{}/>{text}</g>",
-                style.shape
-            );
+            sections.push_str("</g>");
             continue;
         }
 
-        let mut text = String::new();
+        let _ = write!(
+            leaves,
+            "<g class=\"{p}-node {p}-leaf{classes}\" data-id=\"{group}\">{rect}{}/>",
+            style.shape
+        );
+        let text = &mut leaves;
         let room = b.w - 8.0;
         let tallest = size.min(((b.h - 4.0) / LINE).floor());
         let label = if tallest >= least {
@@ -196,47 +206,45 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, ctx: &Ctx<'_, impl 
             {
                 let first = cy - lines / 2.0 + (label.size * LINE) / 2.0;
                 let second = cy + lines / 2.0 - (value_size * LINE) / 2.0;
-                text = format!(
+                let _ = write!(
+                    text,
                     "<text x=\"{cx}\" y=\"{}\" font-size=\"{}\"{}>{}</text><text class=\"{p}-value\" x=\"{cx}\" y=\"{}\" font-size=\"{}\"{}>{}</text>",
                     num(first + label.size * 0.35),
                     num(label.size),
                     style.text,
-                    esc(&label.text),
+                    Esc(&label.text),
                     num(second + value_size * 0.35),
                     num(value_size),
                     style.text,
-                    esc(&value)
+                    Esc(&value)
                 );
             } else {
-                text = format!(
+                let _ = write!(
+                    text,
                     "<text x=\"{cx}\" y=\"{}\" font-size=\"{}\"{}>{}</text>",
                     num(cy + label.size * 0.35),
                     num(label.size),
                     style.text,
-                    esc(&label.text)
+                    Esc(&label.text)
                 );
             }
         }
-        let _ = write!(
-            leaves,
-            "<g class=\"{p}-node {p}-leaf{classes}\" {group}{rect}{}/>{text}</g>",
-            style.shape
-        );
+        leaves.push_str("</g>");
     }
 
     let total_width = (width.max(title.width) + 2.0 * pad).ceil();
     let total_height = (height + title_height + 2.0 * pad).ceil();
-    let mut content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let mut content = String::with_capacity(sections.len() + leaves.len() + 512);
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
     );
     if !sections.is_empty() {
         let _ = write!(
             content,
             "<g class=\"{p}-sections\" font-size=\"{}\">{sections}</g>",
-            js::num_str(small)
+            js::Number(small)
         );
     }
     if !leaves.is_empty() {

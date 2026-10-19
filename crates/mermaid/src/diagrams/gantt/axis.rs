@@ -8,6 +8,7 @@ use crate::js::{
     self, Lazy,
     date::{Date, LocalZone},
 };
+use std::fmt::Write as _;
 
 const SECOND: f64 = 1000.0;
 const MINUTE: f64 = 60.0 * SECOND;
@@ -445,7 +446,7 @@ pub(crate) fn time_format(specifier: &str, date: Date) -> String {
             None if c == Some('e') => " ",
             None => "0",
         };
-        out += &directive(c, date, fill);
+        let _ = write!(out, "{}", directive(c, date, fill));
     }
     out
 }

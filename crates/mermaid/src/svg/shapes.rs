@@ -3,11 +3,11 @@
 
 use std::{
     f64::consts::{FRAC_1_SQRT_2, PI},
-    fmt::Write as _,
+    fmt::{self, Write as _},
 };
 
 use super::{
-    builder::{num, push_num},
+    builder::{Point, fragment, num},
     theme::RADIUS,
 };
 use crate::layout::compound::CNode;
@@ -27,7 +27,7 @@ pub struct ShapeSize {
 }
 
 type Sizer = fn(f64, f64) -> ShapeSize;
-type Drawer = fn(f64, f64, &str, &str) -> String;
+type Drawer = fn(&mut String, f64, f64, &str, &str);
 /// Distance from the bounding box to the outline on a side: 0 top, 1 right,
 /// 2 bottom, 3 left. `t` is how far along the side from its middle, to the
 /// right or down.
@@ -123,8 +123,8 @@ fn tri_size(tw: f64, th: f64, flip: bool) -> ShapeSize {
     }
 }
 
-fn path(d: &str, a: &str) -> String {
-    format!("<path d=\"{d}\"{a}/>")
+fn path(d: impl fmt::Display, a: impl fmt::Display) -> impl fmt::Display {
+    fragment(move |f| write!(f, "<path d=\"{d}\"{a}/>"))
 }
 
 fn lean_inset(_w: f64, h: f64, side: i32, _t: f64) -> f64 {
@@ -139,77 +139,86 @@ fn box_size(tw: f64, th: f64) -> ShapeSize {
     }
 }
 
-fn poly(points: &[f64], a: &str) -> String {
-    let mut d = String::new();
-    for (i, pair) in points.chunks(2).enumerate() {
-        if i > 0 {
-            d.push(' ');
+fn poly<'a>(points: &'a [f64], a: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        f.write_str("<polygon points=\"")?;
+        for (i, pair) in points.chunks(2).enumerate() {
+            if i > 0 {
+                f.write_str(" ")?;
+            }
+            write!(f, "{}", Point(pair[0], pair[1]))?;
         }
-        push_num(&mut d, pair[0]);
-        d.push(',');
-        push_num(&mut d, pair[1]);
-    }
-    format!("<polygon points=\"{d}\"{a}/>")
+        write!(f, "\"{a}/>")
+    })
 }
 
-fn rect(w: f64, h: f64, a: &str, rx: &str) -> String {
-    format!(
-        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{rx}{a}/>",
-        num(-w / 2.0),
-        num(-h / 2.0),
-        num(w),
-        num(h)
-    )
+fn rect(w: f64, h: f64, a: impl fmt::Display, rx: impl fmt::Display) -> impl fmt::Display {
+    fragment(move |f| {
+        write!(
+            f,
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{rx}{a}/>",
+            num(-w / 2.0),
+            num(-h / 2.0),
+            num(w),
+            num(h)
+        )
+    })
 }
 
-fn rounded() -> String {
-    format!(" rx=\"{RADIUS}\"")
+fn rounded() -> impl fmt::Display {
+    fragment(|f| write!(f, " rx=\"{RADIUS}\""))
 }
 
 fn padded(h: f64) -> f64 {
     h + 2.0 * PAD_Y
 }
 
-fn brace(x: f64, h: f64, dir: f64, line: &str) -> String {
+fn brace(x: f64, h: f64, dir: f64, line: &str) -> impl fmt::Display + '_ {
     let y = h / 2.0;
     let k = 6.0 * dir;
-    format!(
-        "<path d=\"M{},{}q{},0 {},6V-6q0,6 {},6q{},0 {},6V{}q0,6 {},6\" fill=\"none\"{line}/>",
-        num(x),
-        num(-y),
-        num(k),
-        num(k),
-        num(k),
-        num(-k),
-        num(-k),
-        num(y - 6.0),
-        num(-k)
-    )
+    fragment(move |f| {
+        write!(
+            f,
+            "<path d=\"M{},{}q{},0 {},6V-6q0,6 {},6q{},0 {},6V{}q0,6 {},6\" fill=\"none\"{line}/>",
+            num(x),
+            num(-y),
+            num(k),
+            num(k),
+            num(k),
+            num(-k),
+            num(-k),
+            num(y - 6.0),
+            num(-k)
+        )
+    })
 }
 
-fn wave(w: f64, h: f64, a: &str) -> String {
+fn wave(w: f64, h: f64, a: impl fmt::Display) -> impl fmt::Display {
     let x = w / 2.0;
     let top = -h / 2.0;
     let base = h / 2.0 - 10.0;
     let q = w / 4.0;
-    format!(
-        "<path d=\"M{},{}H{}V{}q{},-12 {},0t{},0Z\"{a}/>",
-        num(-x),
-        num(top),
-        num(x),
-        num(base),
-        num(-q),
-        num(-2.0 * q),
-        num(-2.0 * q)
-    )
+    fragment(move |f| {
+        write!(
+            f,
+            "<path d=\"M{},{}H{}V{}q{},-12 {},0t{},0Z\"{a}/>",
+            num(-x),
+            num(top),
+            num(x),
+            num(base),
+            num(-q),
+            num(-2.0 * q),
+            num(-2.0 * q)
+        )
+    })
 }
 
 fn lookup(name: &str) -> Option<ShapeDef> {
     Some(match name {
-        "rect" => def(box_size, |w, h, a, _| rect(w, h, a, &rounded())).span(flat),
-        "rounded" => def(box_size, |w, h, a, _| {
-            rect(w, h, a, &format!(" rx=\"{}\"", num(12f64.min(h / 2.0))))
-        })
+        "rect" => def(box_size, |out, w, h, a, _| { let _ = write!(out, "{}", rect(w, h, a, rounded())); }).span(flat),
+        "rounded" => def(box_size, |out, w, h, a, _| {
+let _ = write!(out, "{}", rect(w, h, a, format_args!(" rx=\"{}\"", num(12f64.min(h / 2.0)))));
+})
         .span(flat),
         "stadium" => def(
             |tw, th| {
@@ -220,8 +229,7 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: 0.0,
                 }
             },
-            |w, h, a, _| rect(w, h, a, &format!(" rx=\"{}\"", num(h / 2.0))),
-        )
+            |out, w, h, a, _| { let _ = write!(out, "{}", rect(w, h, a, format_args!(" rx=\"{}\"", num(h / 2.0)))); })
         .inset(|_w, h, side, t| {
             if side & 1 != 0 {
                 bulge(t, h / 2.0, h / 2.0)
@@ -236,10 +244,9 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: padded(th),
                 dy: 0.0,
             },
-            |w, h, a, line| {
+            |out, w, h, a, line| {
                 let x = w / 2.0 - 8.0;
-                rect(w, h, a, &rounded())
-                    + &format!(
+let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}V{}M{},{}V{}\" fill=\"none\"{line}/>",
                         num(-x),
                         num(-h / 2.0),
@@ -247,9 +254,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(x),
                         num(-h / 2.0),
                         num(h / 2.0)
-                    )
-            },
-        )
+                    ));
+})
         .span(flat),
         "cyl" => def(
             |tw, th| {
@@ -261,12 +267,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: ry / 2.0,
                 }
             },
-            |w, h, a, line| {
+            |out, w, h, a, line| {
                 let rx = w / 2.0;
                 let ry = 12f64.min(6f64.max(w / 14.0));
                 let top = -h / 2.0 + ry;
                 let bottom = h / 2.0 - ry;
-                format!(
+let _ = write!(out, "{}", format_args!(
                     "<path d=\"M{},{}A{},{} 0 0 1 {},{}V{}A{},{} 0 0 1 {},{}Z\"{a}/><path d=\"M{},{}A{},{} 0 0 0 {},{}\" fill=\"none\"{line}/>",
                     num(-rx),
                     num(top),
@@ -285,9 +291,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     num(ry),
                     num(rx),
                     num(top)
-                )
-            },
-        )
+                ));
+})
         .inset(cap_inset)
         .span(|w, h, sideways| {
             if sideways {
@@ -301,8 +306,7 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 let d = ((tw * tw + th * th).sqrt() + 16.0).max(44.0);
                 ShapeSize { w: d, h: d, dy: 0.0 }
             },
-            |w, _h, a, _| format!("<circle r=\"{}\"{a}/>", num(w / 2.0)),
-        )
+            |out, w, _h, a, _| { let _ = write!(out, "{}", format_args!("<circle r=\"{}\"{a}/>", num(w / 2.0))); })
         .inset(round_inset)
         .span(round_span),
         "dbl-circ" => def(
@@ -310,14 +314,13 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 let d = ((tw * tw + th * th).sqrt() + 26.0).max(54.0);
                 ShapeSize { w: d, h: d, dy: 0.0 }
             },
-            |w, _h, a, line| {
-                format!(
+            |out, w, _h, a, line| {
+let _ = write!(out, "{}", format_args!(
                     "<circle r=\"{}\"{a}/><circle r=\"{}\" fill=\"none\"{line}/>",
                     num(w / 2.0),
                     num(w / 2.0 - 5.0)
-                )
-            },
-        )
+                ));
+})
         .inset(round_inset)
         .span(round_span),
         "ellipse" => def(
@@ -326,14 +329,13 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th * 1.2 + 2.0 * PAD_Y,
                 dy: 0.0,
             },
-            |w, h, a, _| {
-                format!(
+            |out, w, h, a, _| {
+let _ = write!(out, "{}", format_args!(
                     "<ellipse rx=\"{}\" ry=\"{}\"{a}/>",
                     num(w / 2.0),
                     num(h / 2.0)
-                )
-            },
-        )
+                ));
+})
         .inset(round_inset)
         .span(round_span),
         "diam" => def(
@@ -346,8 +348,7 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: 0.0,
                 }
             },
-            |w, h, a, _| poly(&[0.0, -h / 2.0, w / 2.0, 0.0, 0.0, h / 2.0, -w / 2.0, 0.0], a),
-        )
+            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[0.0, -h / 2.0, w / 2.0, 0.0, 0.0, h / 2.0, -w / 2.0, 0.0], a)); })
         .inset(|w, h, side, t| {
             if side & 1 != 0 {
                 t.abs() * w / h
@@ -365,9 +366,9 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: 0.0,
                 }
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let m = h / 4.0;
-                poly(
+let _ = write!(out, "{}", poly(
                     &[
                         -w / 2.0 + m,
                         -h / 2.0,
@@ -383,9 +384,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         0.0,
                     ],
                     a,
-                )
-            },
-        )
+                ));
+})
         .inset(|_w, _h, side, t| if side & 1 != 0 { t.abs() / 2.0 } else { 0.0 })
         .span(|w, h, sideways| {
             if sideways {
@@ -403,9 +403,9 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: 0.0,
                 }
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let notch = h / 4.0;
-                poly(
+let _ = write!(out, "{}", poly(
                     &[
                         -w / 2.0,
                         -h / 2.0,
@@ -419,14 +419,13 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         0.0,
                     ],
                     a,
-                )
-            },
-        )
+                ));
+})
         .inset(|_w, h, side, _t| if side == 3 { h / 4.0 } else { 0.0 })
         .span(|w, h, sideways| flat_across(w, h, sideways, 0.0)),
-        "lean-r" => def(lean_size, |w, h, a, _| {
+        "lean-r" => def(lean_size, |out, w, h, a, _| {
             let s = h / 4.0;
-            poly(
+let _ = write!(out, "{}", poly(
                 &[
                     -w / 2.0 + s,
                     -h / 2.0,
@@ -438,13 +437,13 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     h / 2.0,
                 ],
                 a,
-            )
-        })
+            ));
+})
         .inset(lean_inset)
         .span(quarter_across),
-        "lean-l" => def(lean_size, |w, h, a, _| {
+        "lean-l" => def(lean_size, |out, w, h, a, _| {
             let s = h / 4.0;
-            poly(
+let _ = write!(out, "{}", poly(
                 &[
                     -w / 2.0,
                     -h / 2.0,
@@ -456,13 +455,13 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     h / 2.0,
                 ],
                 a,
-            )
-        })
+            ));
+})
         .inset(lean_inset)
         .span(quarter_across),
-        "trap-b" => def(lean_size, |w, h, a, _| {
+        "trap-b" => def(lean_size, |out, w, h, a, _| {
             let s = h / 4.0;
-            poly(
+let _ = write!(out, "{}", poly(
                 &[
                     -w / 2.0 + s,
                     -h / 2.0,
@@ -474,13 +473,13 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     h / 2.0,
                 ],
                 a,
-            )
-        })
+            ));
+})
         .inset(lean_inset)
         .span(quarter_across),
-        "trap-t" => def(lean_size, |w, h, a, _| {
+        "trap-t" => def(lean_size, |out, w, h, a, _| {
             let s = h / 4.0;
-            poly(
+let _ = write!(out, "{}", poly(
                 &[
                     -w / 2.0,
                     -h / 2.0,
@@ -492,8 +491,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     h / 2.0,
                 ],
                 a,
-            )
-        })
+            ));
+})
         .inset(lean_inset)
         .span(quarter_across),
         "text" => def(
@@ -502,18 +501,17 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 8.0,
                 dy: 0.0,
             },
-            |w, h, _, _| rect(w, h, " fill=\"none\" stroke=\"none\"", ""),
-        )
+            |out, w, h, _, _| { let _ = write!(out, "{}", rect(w, h, " fill=\"none\" stroke=\"none\"", "")); })
         .span(flat),
-        "sm-circ" => def(fixed14, |w, _h, a, _| {
-            format!("<circle r=\"{}\"{a}/>", num(w / 2.0))
-        })
+        "sm-circ" => def(fixed14, |out, w, _h, a, _| {
+let _ = write!(out, "{}", format_args!("<circle r=\"{}\"{a}/>", num(w / 2.0)));
+})
         .no_label()
         .inset(round_inset)
         .span(round_span),
-        "f-circ" => def(fixed14, |w, _h, _a, line| {
-            format!("<circle r=\"{}\" fill=\"var(--_l)\"{line}/>", num(w / 2.0))
-        })
+        "f-circ" => def(fixed14, |out, w, _h, _a, line| {
+let _ = write!(out, "{}", format_args!("<circle r=\"{}\" fill=\"var(--_l)\"{line}/>", num(w / 2.0)));
+})
         .no_label()
         .inset(round_inset)
         .span(round_span),
@@ -523,14 +521,13 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: 18.0,
                 dy: 0.0,
             },
-            |w, _h, a, line| {
-                format!(
+            |out, w, _h, a, line| {
+let _ = write!(out, "{}", format_args!(
                     "<circle r=\"{}\"{a}/><circle r=\"{}\" fill=\"var(--_l)\"{line}/>",
                     num(w / 2.0),
                     num(w / 2.0 - 4.0)
-                )
-            },
-        )
+                ));
+})
         .no_label()
         .inset(round_inset)
         .span(round_span),
@@ -540,13 +537,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: 8.0,
                 dy: 0.0,
             },
-            |w, h, _a, line| rect(w, h, &format!(" fill=\"var(--_l)\"{line}"), " rx=\"2\""),
-        )
+            |out, w, h, _a, line| { let _ = write!(out, "{}", rect(w, h, format_args!(" fill=\"var(--_l)\"{line}"), " rx=\"2\"")); })
         .no_label()
         .span(|w, h, sideways| (if sideways { h } else { w }) - 8.0),
-        "notch-rect" => def(box_size, |w, h, a, _| {
+        "notch-rect" => def(box_size, |out, w, h, a, _| {
             let c = 10.0;
-            poly(
+let _ = write!(out, "{}", poly(
                 &[
                     -w / 2.0 + c,
                     -h / 2.0,
@@ -560,8 +556,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     -h / 2.0 + c,
                 ],
                 a,
-            )
-        })
+            ));
+})
         .span(flat),
         "lin-rect" => def(
             |tw, th| ShapeSize {
@@ -569,16 +565,14 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: padded(th),
                 dy: 0.0,
             },
-            |w, h, a, line| {
-                rect(w, h, a, &rounded())
-                    + &format!(
+            |out, w, h, a, line| {
+let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}V{}\" fill=\"none\"{line}/>",
                         num(-w / 2.0 + 8.0),
                         num(-h / 2.0),
                         num(h / 2.0)
-                    )
-            },
-        )
+                    ));
+})
         .span(flat),
         "div-rect" => def(
             |tw, th| ShapeSize {
@@ -586,16 +580,14 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 8.0,
                 dy: 4.0,
             },
-            |w, h, a, line| {
-                rect(w, h, a, &rounded())
-                    + &format!(
+            |out, w, h, a, line| {
+let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}H{}\" fill=\"none\"{line}/>",
                         num(-w / 2.0),
                         num(-h / 2.0 + 8.0),
                         num(w / 2.0)
-                    )
-            },
-        )
+                    ));
+})
         .span(flat),
         "win-pane" => def(
             |tw, th| ShapeSize {
@@ -603,9 +595,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 8.0,
                 dy: 4.0,
             },
-            |w, h, a, line| {
-                rect(w, h, a, &rounded())
-                    + &format!(
+            |out, w, h, a, line| {
+let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}V{}M{},{}H{}\" fill=\"none\"{line}/>",
                         num(-w / 2.0 + 8.0),
                         num(-h / 2.0),
@@ -613,19 +604,16 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(-w / 2.0),
                         num(-h / 2.0 + 8.0),
                         num(w / 2.0)
-                    )
-            },
-        )
+                    ));
+})
         .span(flat),
         "tri" => def(
             |tw, th| tri_size(tw, th, false),
-            |w, h, a, _| poly(&[0.0, -h / 2.0, w / 2.0, h / 2.0, -w / 2.0, h / 2.0], a),
-        )
+            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[0.0, -h / 2.0, w / 2.0, h / 2.0, -w / 2.0, h / 2.0], a)); })
         .inset(|w, _h, side, _t| if side & 1 != 0 { w / 4.0 } else { 0.0 }),
         "flip-tri" => def(
             |tw, th| tri_size(tw, th, true),
-            |w, h, a, _| poly(&[-w / 2.0, -h / 2.0, w / 2.0, -h / 2.0, 0.0, h / 2.0], a),
-        )
+            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[-w / 2.0, -h / 2.0, w / 2.0, -h / 2.0, 0.0, h / 2.0], a)); })
         .inset(|w, _h, side, _t| if side & 1 != 0 { w / 4.0 } else { 0.0 }),
         "sl-rect" => def(
             |tw, th| ShapeSize {
@@ -633,8 +621,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 10.0,
                 dy: 5.0,
             },
-            |w, h, a, _| {
-                poly(
+            |out, w, h, a, _| {
+let _ = write!(out, "{}", poly(
                     &[
                         -w / 2.0,
                         -h / 2.0 + 10.0,
@@ -646,9 +634,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         h / 2.0,
                     ],
                     a,
-                )
-            },
-        )
+                ));
+})
         .inset(|_w, _h, side, _t| if side == 0 { 5.0 } else { 0.0 }),
         "notch-pent" => def(
             |tw, th| ShapeSize {
@@ -656,9 +643,9 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: padded(th),
                 dy: 0.0,
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let c = 10.0;
-                poly(
+let _ = write!(out, "{}", poly(
                     &[
                         -w / 2.0 + c,
                         -h / 2.0,
@@ -674,9 +661,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         -h / 2.0 + c,
                     ],
                     a,
-                )
-            },
-        )
+                ));
+})
         .span(flat),
         "hourglass" => def(
             |_, _| ShapeSize {
@@ -684,8 +670,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: 40.0,
                 dy: 0.0,
             },
-            |w, h, a, _| {
-                poly(
+            |out, w, h, a, _| {
+let _ = write!(out, "{}", poly(
                     &[
                         -w / 2.0,
                         -h / 2.0,
@@ -697,9 +683,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         h / 2.0,
                     ],
                     a,
-                )
-            },
-        )
+                ));
+})
         .no_label()
         .inset(|w, _h, side, _t| if side & 1 != 0 { w / 2.0 } else { 0.0 }),
         "delay" => def(
@@ -711,9 +696,9 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: 0.0,
                 }
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let r = h / 2.0;
-                format!(
+let _ = write!(out, "{}", format_args!(
                     "<path d=\"M{},{}H{}A{},{} 0 0 1 {},{}H{}Z\"{a}/>",
                     num(-w / 2.0),
                     num(-r),
@@ -723,9 +708,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     num(w / 2.0 - r),
                     num(r),
                     num(-w / 2.0)
-                )
-            },
-        ),
+                ));
+}),
         "h-cyl" => def(
             |tw, th| {
                 let h = padded(th);
@@ -736,12 +720,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: 0.0,
                 }
             },
-            |w, h, a, line| {
+            |out, w, h, a, line| {
                 let ry = h / 2.0;
                 let rx = 12f64.min(h / 4.0);
                 let l = -w / 2.0 + rx;
                 let r = w / 2.0 - rx;
-                format!(
+let _ = write!(out, "{}", format_args!(
                     "<path d=\"M{},{}H{}A{},{} 0 0 1 {},{}H{}A{},{} 0 0 1 {},{}Z\"{a}/><path d=\"M{},{}A{},{} 0 0 0 {},{}\" fill=\"none\"{line}/>",
                     num(l),
                     num(-ry),
@@ -761,19 +745,18 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     num(ry),
                     num(r),
                     num(ry)
-                )
-            },
-        ),
+                ));
+}),
         "cross-circ" => def(
             |_, _| ShapeSize {
                 w: 44.0,
                 h: 44.0,
                 dy: 0.0,
             },
-            |w, _h, a, line| {
+            |out, w, _h, a, line| {
                 let r = w / 2.0;
                 let k = r * FRAC_1_SQRT_2;
-                format!(
+let _ = write!(out, "{}", format_args!(
                     "<circle r=\"{}\"{a}/><path d=\"M{},{}L{},{}M{},{}L{},{}\" fill=\"none\"{line}/>",
                     num(r),
                     num(-k),
@@ -784,9 +767,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     num(-k),
                     num(-k),
                     num(k)
-                )
-            },
-        )
+                ));
+})
         .no_label()
         .inset(round_inset)
         .span(round_span),
@@ -796,10 +778,9 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 8.0,
                 dy: 4.0,
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let bw = w - 8.0;
                 let bh = h - 8.0;
-                let mut out = String::new();
                 for i in 0..3 {
                     let x = -w / 2.0 + f64::from(2 - i) * 4.0;
                     let y = -h / 2.0 + f64::from(i) * 4.0;
@@ -812,9 +793,7 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         rounded()
                     );
                 }
-                out
-            },
-        )
+            })
         .span(|w, h, sideways| (if sideways { h } else { w }) - 2.0 * CORNER - 8.0),
         "doc" => def(
             |tw, th| ShapeSize {
@@ -822,8 +801,7 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 10.0,
                 dy: -5.0,
             },
-            |w, h, a, _| wave(w, h, a),
-        )
+            |out, w, h, a, _| { let _ = write!(out, "{}", wave(w, h, a)); })
         .inset(|_w, _h, side, _t| if side == 2 { 10.0 } else { 0.0 }),
         "flag" => def(
             |tw, th| ShapeSize {
@@ -831,11 +809,11 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 16.0,
                 dy: 0.0,
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let x = w / 2.0;
                 let y = h / 2.0 - 8.0;
                 let q = w / 4.0;
-                format!(
+let _ = write!(out, "{}", format_args!(
                     "<path d=\"M{},{}q{},-10 {},0t{},0V{}q{},10 {},0t{},0Z\"{a}/>",
                     num(-x),
                     num(-y),
@@ -846,17 +824,16 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     num(-q),
                     num(-2.0 * q),
                     num(-2.0 * q)
-                )
-            },
-        )
+                ));
+})
         .inset(|_w, _h, side, _t| if side & 1 != 0 { 0.0 } else { 8.0 }),
-        "datastore" => def(box_size, |w, h, a, line| {
-            rect(
+        "datastore" => def(box_size, |out, w, h, a, line| {
+let _ = write!(out, "{}{}", rect(
                 w,
                 h,
                 &a.replacen("stroke=\"var(--_b)\"", "stroke=\"none\"", 1),
                 "",
-            ) + &format!(
+            ), format_args!(
                 "<path d=\"M{},{}H{}M{},{}H{}\" fill=\"none\"{line}/>",
                 num(-w / 2.0),
                 num(-h / 2.0),
@@ -864,8 +841,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 num(-w / 2.0),
                 num(h / 2.0),
                 num(w / 2.0)
-            )
-        })
+            ));
+})
         .span(flat),
         "folder" => def(
             |tw, th| ShapeSize {
@@ -873,12 +850,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 8.0,
                 dy: 4.0,
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let x = w / 2.0;
                 let y = h / 2.0;
                 let tab = (w * 0.4).min(48.0);
-                path(
-                    &format!(
+let _ = write!(out, "{}", path(
+                    format_args!(
                         "M{},{}H{}L{},{}H{}V{}H{}Z",
                         num(-x),
                         num(-y),
@@ -890,22 +867,21 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(-x)
                     ),
                     a,
-                )
-            },
-        ),
+                ));
+}),
         "bucket" => def(
             |tw, th| ShapeSize {
                 w: tw + 2.0 * PAD_X + 20.0,
                 h: th + 2.0 * PAD_Y + 10.0,
                 dy: 3.0,
             },
-            |w, h, a, line| {
+            |out, w, h, a, line| {
                 let x = w / 2.0;
                 let y = h / 2.0;
                 let ry = 5.0;
                 let taper = h / 6.0;
-                path(
-                    &format!(
+let _ = write!(out, "{}{}", path(
+                    format_args!(
                         "M{},{}A{},{} 0 0 1 {},{}L{},{}A{},{} 0 0 1 {},{}Z",
                         num(-x),
                         num(-y + ry),
@@ -921,7 +897,7 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(y - ry)
                     ),
                     a,
-                ) + &format!(
+                ), format_args!(
                     "<path d=\"M{},{}A{},{} 0 0 0 {},{}\" fill=\"none\"{line}/>",
                     num(-x),
                     num(-y + ry),
@@ -929,9 +905,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     num(ry),
                     num(x),
                     num(-y + ry)
-                )
-            },
-        )
+                ));
+})
         .inset(|_w, h, side, _t| if side & 1 != 0 { h / 12.0 } else { 0.0 }),
         "console" => def(
             |tw, th| ShapeSize {
@@ -939,9 +914,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 12.0,
                 dy: 6.0,
             },
-            |w, h, a, line| {
-                rect(w, h, a, &rounded())
-                    + &format!(
+            |out, w, h, a, line| {
+let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}H{}M{},{}l3,2.5l-3,2.5M{},{}h4\" fill=\"none\"{line}/>",
                         num(-w / 2.0),
                         num(-h / 2.0 + 12.0),
@@ -950,9 +924,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(-h / 2.0 + 4.0),
                         num(-w / 2.0 + 13.0),
                         num(-h / 2.0 + 9.0)
-                    )
-            },
-        )
+                    ));
+})
         .span(flat),
         "browser" => def(
             |tw, th| ShapeSize {
@@ -960,25 +933,23 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 12.0,
                 dy: 6.0,
             },
-            |w, h, a, line| {
-                let mut dots = String::new();
+            |out, w, h, a, line| {
+                let _ = write!(
+                    out,
+                    "{}<path d=\"M{},{}H{}\" fill=\"none\"{line}/>",
+                    rect(w, h, a, rounded()),
+                    num(-w / 2.0),
+                    num(-h / 2.0 + 12.0),
+                    num(w / 2.0)
+                );
                 for i in 0..3 {
-                    let _ = write!(dots,
+                    let _ = write!(out,
                         "<circle cx=\"{}\" cy=\"{}\" r=\"1.5\" fill=\"none\"{line}/>",
                         num(-w / 2.0 + 8.0 + f64::from(i) * 7.0),
                         num(-h / 2.0 + 6.0)
                     );
                 }
-                rect(w, h, a, &rounded())
-                    + &format!(
-                        "<path d=\"M{},{}H{}\" fill=\"none\"{line}/>",
-                        num(-w / 2.0),
-                        num(-h / 2.0 + 12.0),
-                        num(w / 2.0)
-                    )
-                    + &dots
-            },
-        )
+            })
         .span(flat),
         "person" => def(
             |tw, th| ShapeSize {
@@ -986,25 +957,24 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 26.0,
                 dy: 13.0,
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let top = -h / 2.0;
-                format!(
+let _ = write!(out, "{}", format_args!(
                     "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"12\"{a}/><circle cy=\"{}\" r=\"13\"{a}/>",
                     num(-w / 2.0),
                     num(top + 26.0),
                     num(w),
                     num(h - 26.0),
                     num(top + 14.0)
-                )
-            },
-        ),
+                ));
+}),
         "bang" => def(
             |tw, th| ShapeSize {
                 w: tw + 2.0 * PAD_X + 28.0,
                 h: th + 2.0 * PAD_Y + 24.0,
                 dy: 0.0,
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let spikes = 14.0;
                 let mut pts = Vec::new();
                 for i in 0..28 {
@@ -1014,9 +984,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     pts.push(angle.cos() * (w / 2.0) * k);
                     pts.push(angle.sin() * (h / 2.0) * k);
                 }
-                poly(&pts, a)
-            },
-        )
+                let _ = write!(out, "{}", poly(&pts, a));
+            })
         .inset(|_, _, _, _| 3.0),
         "cloud" => def(
             |tw, th| ShapeSize {
@@ -1024,12 +993,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 24.0,
                 dy: 0.0,
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let x = w / 2.0;
                 let y = h / 2.0;
                 let r = y * 0.55;
-                path(
-                    &format!(
+let _ = write!(out, "{}", path(
+                    format_args!(
                         "M{},{}A{},{} 0 0 1 {},{}A{},{} 0 0 1 {},{}A{},{} 0 0 1 {},{}A{},{} 0 0 1 {},{}Z",
                         num(-x + r),
                         num(y),
@@ -1051,29 +1020,26 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(y)
                     ),
                     a,
-                )
-            },
-        )
+                ));
+})
         .inset(|_w, _h, side, _t| if side & 1 != 0 { 2.0 } else { 1.0 }),
-        "brace" => def(one_brace, |w, h, _a, line| {
-            rect(w, h, " fill=\"none\" stroke=\"none\"", "") + &brace(-w / 2.0 + 12.0, h, -1.0, line)
-        }),
-        "brace-r" => def(one_brace, |w, h, _a, line| {
-            rect(w, h, " fill=\"none\" stroke=\"none\"", "") + &brace(w / 2.0 - 12.0, h, 1.0, line)
-        }),
-        "braces" => def(two_braces, |w, h, _a, line| {
-            rect(w, h, " fill=\"none\" stroke=\"none\"", "")
-                + &brace(-w / 2.0 + 12.0, h, -1.0, line)
-                + &brace(w / 2.0 - 12.0, h, 1.0, line)
-        }),
+        "brace" => def(one_brace, |out, w, h, _a, line| {
+let _ = write!(out, "{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(-w / 2.0 + 12.0, h, -1.0, line));
+}),
+        "brace-r" => def(one_brace, |out, w, h, _a, line| {
+let _ = write!(out, "{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(w / 2.0 - 12.0, h, 1.0, line));
+}),
+        "braces" => def(two_braces, |out, w, h, _a, line| {
+let _ = write!(out, "{}{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(-w / 2.0 + 12.0, h, -1.0, line), brace(w / 2.0 - 12.0, h, 1.0, line));
+}),
         "bolt" => def(
             |_, _| ShapeSize {
                 w: 36.0,
                 h: 56.0,
                 dy: 0.0,
             },
-            |w, h, a, _| {
-                poly(
+            |out, w, h, a, _| {
+let _ = write!(out, "{}", poly(
                     &[
                         w * 0.15,
                         -h / 2.0,
@@ -1089,9 +1055,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         -h * 0.08,
                     ],
                     a,
-                )
-            },
-        )
+                ));
+})
         .no_label()
         .inset(|w, _h, side, _t| if side & 1 != 0 { w / 4.0 } else { 0.0 }),
         "lin-cyl" => def(
@@ -1104,7 +1069,7 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: ry / 2.0 + 4.0,
                 }
             },
-            |w, h, a, line| {
+            |out, w, h, a, line| {
                 let rx = w / 2.0;
                 let ry = 12f64.min(6f64.max(w / 14.0));
                 let top = -h / 2.0 + ry;
@@ -1120,8 +1085,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(y)
                     )
                 };
-                path(
-                    &format!(
+let _ = write!(out, "{}{}", path(
+                    format_args!(
                         "M{},{}A{},{} 0 0 1 {},{}V{}A{},{} 0 0 1 {},{}Z",
                         num(-rx),
                         num(top),
@@ -1136,13 +1101,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(bottom)
                     ),
                     a,
-                ) + &format!(
+                ), format_args!(
                     "<path d=\"{}{}\" fill=\"none\"{line}/>",
                     arc(top),
                     arc(top + 8.0)
-                )
-            },
-        )
+                ));
+})
         .inset(cap_inset)
         .span(|w, h, sideways| {
             if sideways {
@@ -1160,12 +1124,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: 0.0,
                 }
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let x = w / 2.0;
                 let y = h / 2.0;
                 let k = h * 0.3;
-                path(
-                    &format!(
+let _ = write!(out, "{}", path(
+                    format_args!(
                         "M{},{}H{}A{},{} 0 0 1 {},{}H{}L{},0Z",
                         num(-x + k),
                         num(-y),
@@ -1178,17 +1142,15 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(-x)
                     ),
                     a,
-                )
-            },
-        ),
+                ));
+}),
         "docs" => def(
             |tw, th| ShapeSize {
                 w: tw + 2.0 * PAD_X + 8.0,
                 h: th + 2.0 * PAD_Y + 18.0,
                 dy: -1.0,
             },
-            |w, h, a, _| {
-                let mut out = String::new();
+            |out, w, h, a, _| {
                 for i in 0..3 {
                     let _ = write!(out,
                         "<g transform=\"translate({},{})\">{}</g>",
@@ -1197,9 +1159,7 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         wave(w - 8.0, h - 8.0, a)
                     );
                 }
-                out
-            },
-        )
+            })
         .inset(|_w, _h, side, _t| if side == 2 { 10.0 } else { 0.0 }),
         "bow-rect" => def(
             |tw, th| {
@@ -1210,12 +1170,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     dy: 0.0,
                 }
             },
-            |w, h, a, _| {
+            |out, w, h, a, _| {
                 let x = w / 2.0;
                 let y = h / 2.0;
                 let k = h * 0.2;
-                path(
-                    &format!(
+let _ = write!(out, "{}", path(
+                    format_args!(
                         "M{},{}H{}A{},{} 0 0 0 {},{}H{}A{},{} 0 0 1 {},{}Z",
                         num(-x + k),
                         num(-y),
@@ -1231,20 +1191,18 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                         num(-y)
                     ),
                     a,
-                )
-            },
-        )
+                ));
+})
         .inset(|_w, h, side, _t| if side == 1 { h * 0.2 } else { 0.0 }),
-        "tag-rect" => def(box_size, |w, h, a, line| {
-            rect(w, h, a, &rounded())
-                + &format!(
+        "tag-rect" => def(box_size, |out, w, h, a, line| {
+let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                     "<path d=\"M{},{}L{},{}\" fill=\"none\"{line}/>",
                     num(w / 2.0 - 12.0),
                     num(h / 2.0),
                     num(w / 2.0),
                     num(h / 2.0 - 12.0)
-                )
-        })
+                ));
+})
         .span(flat),
         "tag-doc" => def(
             |tw, th| ShapeSize {
@@ -1252,17 +1210,15 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 10.0,
                 dy: -5.0,
             },
-            |w, h, a, line| {
-                wave(w, h, a)
-                    + &format!(
+            |out, w, h, a, line| {
+let _ = write!(out, "{}{}", wave(w, h, a), format_args!(
                         "<path d=\"M{},{}L{},{}\" fill=\"none\"{line}/>",
                         num(w / 2.0 - 12.0),
                         num(h / 2.0 - 14.0),
                         num(w / 2.0),
                         num(h / 2.0 - 26.0)
-                    )
-            },
-        )
+                    ));
+})
         .inset(|_w, _h, side, _t| if side == 2 { 10.0 } else { 0.0 }),
         "lin-doc" => def(
             |tw, th| ShapeSize {
@@ -1270,16 +1226,14 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 10.0,
                 dy: -5.0,
             },
-            |w, h, a, line| {
-                wave(w, h, a)
-                    + &format!(
+            |out, w, h, a, line| {
+let _ = write!(out, "{}{}", wave(w, h, a), format_args!(
                         "<path d=\"M{},{}V{}\" fill=\"none\"{line}/>",
                         num(-w / 2.0 + 8.0),
                         num(-h / 2.0),
                         num(h / 2.0 - 6.0)
-                    )
-            },
-        )
+                    ));
+})
         .inset(|_w, _h, side, _t| if side == 2 { 10.0 } else { 0.0 }),
         "collapsedGroup" => def(
             |tw, th| ShapeSize {
@@ -1287,8 +1241,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 h: th + 2.0 * PAD_Y + 8.0,
                 dy: -2.0,
             },
-            |w, h, a, _| {
-                format!(
+            |out, w, h, a, _| {
+let _ = write!(out, "{}", format_args!(
                     "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{}{a}/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{}{a}/>",
                     num(-w / 2.0 + 6.0),
                     num(-h / 2.0 + 8.0),
@@ -1300,9 +1254,8 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                     num(w),
                     num(h - 4.0),
                     rounded()
-                )
-            },
-        ),
+                ));
+}),
         _ => return None,
     })
 }
@@ -1355,8 +1308,9 @@ pub fn shape_size(shape: &str, tw: f64, th: f64) -> ShapeSize {
     (of(shape).size)(tw, th)
 }
 
-pub fn draw_shape(shape: &str, w: f64, h: f64, a: &str, line: &str) -> String {
-    (of(shape).draw)(w, h, a, line)
+/// `shape`, `w` by `h` around the origin, appended to `out`.
+pub fn draw_shape(out: &mut String, shape: &str, w: f64, h: f64, a: &str, line: &str) {
+    (of(shape).draw)(out, w, h, a, line)
 }
 
 pub fn shape_inset(shape_name: &str, w: f64, h: f64, side: i32, t: f64) -> f64 {

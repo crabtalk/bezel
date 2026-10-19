@@ -1,6 +1,10 @@
 //! Pele's `diagrams/pie/render.ts`.
 
-use std::{f64::consts::PI, fmt::Write as _};
+use crate::svg::builder::{EscText, LabelSvg, Point, fragment};
+use std::{
+    f64::consts::PI,
+    fmt::{self, Write as _},
+};
 
 use super::model::PieModel;
 use crate::{
@@ -9,7 +13,7 @@ use crate::{
     diagrams::common::fit_width::{fit_width, title_room},
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::num,
         root::{Accessible, svg_document},
         theme::series_color,
     },
@@ -27,56 +31,56 @@ fn option<'c>(config: &'c Config, key: &str) -> Option<&'c Value> {
     config.section("pie").and_then(|pie| pie.get(key))
 }
 
-fn point(angle: f64, radius: f64) -> String {
-    format!(
-        "{},{}",
-        num(angle.sin() * radius),
-        num(-angle.cos() * radius)
-    )
+fn point(angle: f64, radius: f64) -> Point {
+    Point(angle.sin() * radius, -angle.cos() * radius)
 }
 
-fn slice(start: f64, end: f64, outer: f64, inner: f64) -> String {
-    if end - start >= PI * 2.0 - 1e-9 {
-        let ring = |r: f64, sweep: u8| {
-            format!(
-                "M0,{}A{},{} 0 1 {sweep} 0,{}A{},{} 0 1 {sweep} 0,{}Z",
-                num(-r),
-                num(r),
-                num(r),
-                num(r),
-                num(r),
-                num(r),
-                num(-r)
-            )
-        };
-        return ring(outer, 1)
-            + &if inner > 0.0 {
-                ring(inner, 0)
-            } else {
-                String::new()
+fn slice(start: f64, end: f64, outer: f64, inner: f64) -> impl fmt::Display {
+    fragment(move |f| {
+        if end - start >= PI * 2.0 - 1e-9 {
+            let ring = |f: &mut fmt::Formatter<'_>, r: f64, sweep: u8| {
+                write!(
+                    f,
+                    "M0,{}A{},{} 0 1 {sweep} 0,{}A{},{} 0 1 {sweep} 0,{}Z",
+                    num(-r),
+                    num(r),
+                    num(r),
+                    num(r),
+                    num(r),
+                    num(r),
+                    num(-r)
+                )
             };
-    }
-    let large = if end - start > PI { 1 } else { 0 };
-    if inner <= 0.0 {
-        return format!(
-            "M0,0L{}A{},{} 0 {large} 1 {}Z",
+            ring(f, outer, 1)?;
+            if inner > 0.0 {
+                ring(f, inner, 0)?;
+            }
+            return Ok(());
+        }
+        let large = if end - start > PI { 1 } else { 0 };
+        if inner <= 0.0 {
+            return write!(
+                f,
+                "M0,0L{}A{},{} 0 {large} 1 {}Z",
+                point(start, outer),
+                num(outer),
+                num(outer),
+                point(end, outer)
+            );
+        }
+        write!(
+            f,
+            "M{}A{},{} 0 {large} 1 {}L{}A{},{} 0 {large} 0 {}Z",
             point(start, outer),
             num(outer),
             num(outer),
-            point(end, outer)
-        );
-    }
-    format!(
-        "M{}A{},{} 0 {large} 1 {}L{}A{},{} 0 {large} 0 {}Z",
-        point(start, outer),
-        num(outer),
-        num(outer),
-        point(end, outer),
-        point(end, inner),
-        num(inner),
-        num(inner),
-        point(start, inner)
-    )
+            point(end, outer),
+            point(end, inner),
+            num(inner),
+            num(inner),
+            point(start, inner)
+        )
+    })
 }
 
 pub fn render_pie(model: &PieModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
@@ -128,7 +132,7 @@ fn draw(
         .iter()
         .map(|(label, value)| {
             let text = if model.show_data {
-                format!("{label} [{}]", js::num_str(*value))
+                format!("{label} [{}]", js::Number(*value))
             } else {
                 label.to_string()
             };
@@ -229,35 +233,96 @@ fn draw(
             height / 2.0
         };
 
-    let mut slices = String::new();
-    let mut labels = String::new();
-    let mut outside = String::new();
-    let mut angle = 0.0;
-    let rim = radius + OUTSIDE / 2.0;
-    let mut placed_outside: Vec<(f64, f64, f64)> = Vec::new();
-    for (index, (label, _)) in entries.iter().enumerate() {
-        let share = shares[index];
-        if share == 0.0 {
-            continue;
-        }
-        let end = angle + share * PI * 2.0;
+    let total_width = (width + 2.0 * pad).ceil();
+    let total_height = (height + title_height + 2.0 * pad).ceil();
+    let mut content = String::new();
+    let _ = write!(
+        content,
+        "{}<g class=\"{p}-slices\" transform=\"translate({},{})\" stroke=\"var(--_bg)\" stroke-width=\"1\" stroke-linejoin=\"round\">",
+        LabelSvg(
+            &title,
+            total_width / 2.0,
+            pad + title.height / 2.0,
+            crate::svg::builder::TITLE,
+        ),
+        num(cx),
+        num(cy)
+    );
+    let arcs = || {
+        shares
+            .iter()
+            .enumerate()
+            .scan(0.0, |angle, (index, &share)| {
+                let start = *angle;
+                if share != 0.0 {
+                    *angle = start + share * PI * 2.0;
+                }
+                Some((index, share, start, *angle))
+            })
+            .filter(|&(_, share, _, _)| share != 0.0)
+    };
+    let mut drawn = false;
+    for (index, _, start, end) in arcs() {
+        drawn = true;
         let _ = write!(
-            slices,
+            content,
             "<path class=\"{p}-slice\" data-id=\"{}\" d=\"{}\" fill=\"{}\"/>",
-            esc_text(label),
-            slice(angle, end, radius, inner),
+            EscText(entries[index].0),
+            slice(start, end, radius, inner),
             series_color(index as i64)
         );
-        let mid = (angle + end) / 2.0;
-        let text = js::to_fixed(share * 100.0, 0) + "%";
-        if narrow[index] {
+    }
+    if !drawn {
+        let _ = write!(
+            content,
+            "<circle class=\"{p}-slice\" r=\"{}\" fill=\"none\" stroke=\"var(--_b)\"/>",
+            js::Number(radius)
+        );
+    }
+    content.push_str("</g>");
+
+    let percent = |share: f64| js::to_fixed(share * 100.0, 0) + "%";
+    let mut inside = arcs().filter(|&(index, ..)| !narrow[index]).peekable();
+    if inside.peek().is_some() {
+        let _ = write!(
+            content,
+            "<g class=\"{p}-slice-labels\" transform=\"translate({},{})\" font-size=\"{}\" text-anchor=\"middle\" fill=\"var(--_bg)\">",
+            num(cx),
+            num(cy),
+            num(small)
+        );
+        let r = radius * text_position;
+        for (_, share, start, end) in inside {
+            let mid = (start + end) / 2.0;
+            let _ = write!(
+                content,
+                "<text x=\"{}\" y=\"{}\">{}</text>",
+                num(mid.sin() * r),
+                num(-mid.cos() * r + small * 0.35),
+                percent(share)
+            );
+        }
+        content.push_str("</g>");
+    }
+    if narrow.contains(&true) {
+        let _ = write!(
+            content,
+            "<g class=\"{p}-slice-labels\" transform=\"translate({},{})\" font-size=\"{}\" text-anchor=\"middle\">",
+            num(cx),
+            num(cy),
+            num(small)
+        );
+        let rim = radius + OUTSIDE / 2.0;
+        let mut placed_outside: Vec<(f64, f64, f64)> = Vec::new();
+        for (_, share, start, end) in arcs().filter(|&(index, ..)| narrow[index]) {
+            let text = percent(share);
             let width = measure.width(&text, small, 0);
             let clear = |x: f64, y: f64, placed: &[(f64, f64, f64)]| {
                 placed.iter().all(|&(ox, oy, ow)| {
                     (x - ox).abs() >= (width + ow) / 2.0 + 2.0 || (y - oy).abs() >= small + 2.0
                 })
             };
-            let mut at = mid;
+            let mut at = (start + end) / 2.0;
             let mut step = 0;
             while step < 360 && !clear(at.sin() * rim, -at.cos() * rim, &placed_outside) {
                 at += 2.0 / rim;
@@ -267,30 +332,15 @@ fn draw(
             let y = -at.cos() * rim;
             placed_outside.push((x, y, width));
             let _ = write!(
-                outside,
+                content,
                 "<text x=\"{}\" y=\"{}\">{text}</text>",
                 num(x),
                 num(y + small * 0.35)
             );
-        } else {
-            let r = radius * text_position;
-            let _ = write!(
-                labels,
-                "<text x=\"{}\" y=\"{}\">{text}</text>",
-                num(mid.sin() * r),
-                num(-mid.cos() * r + small * 0.35)
-            );
         }
-        angle = end;
-    }
-    if slices.is_empty() {
-        slices = format!(
-            "<circle class=\"{p}-slice\" r=\"{}\" fill=\"none\" stroke=\"var(--_b)\"/>",
-            js::num_str(radius)
-        );
+        content.push_str("</g>");
     }
 
-    let mut legend_out = String::new();
     let (lx, ly) = if side == "right" {
         (
             cx + diameter / 2.0 + GAP,
@@ -310,57 +360,27 @@ fn draw(
             },
         )
     };
-    for (index, label) in legend.iter().enumerate() {
-        let y = ly + index as f64 * ROW + ROW / 2.0;
-        let _ = write!(
-            legend_out,
-            "<g class=\"{p}-legend-item\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{}\"/>{}</g>",
-            esc_text(entries[index].0),
-            num(lx),
-            num(y - SWATCH / 2.0),
-            js::num_str(SWATCH),
-            js::num_str(SWATCH),
-            series_color(index as i64),
-            label_svg(label, lx + SWATCH + 8.0 + label.width / 2.0, y, "")
-        );
-    }
-
-    let total_width = (width + 2.0 * pad).ceil();
-    let total_height = (height + title_height + 2.0 * pad).ceil();
-    let small_str = js::num_str(small);
-    let mut content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    );
-    let _ = write!(
-        content,
-        "<g class=\"{p}-slices\" transform=\"translate({},{})\" stroke=\"var(--_bg)\" stroke-width=\"1\" stroke-linejoin=\"round\">{slices}</g>",
-        num(cx),
-        num(cy)
-    );
-    if !labels.is_empty() {
+    if !legend.is_empty() {
         let _ = write!(
             content,
-            "<g class=\"{p}-slice-labels\" transform=\"translate({},{})\" font-size=\"{small_str}\" text-anchor=\"middle\" fill=\"var(--_bg)\">{labels}</g>",
-            num(cx),
-            num(cy)
+            "<g class=\"{p}-legend\" font-size=\"{}\">",
+            num(small)
         );
-    }
-    if !outside.is_empty() {
-        let _ = write!(
-            content,
-            "<g class=\"{p}-slice-labels\" transform=\"translate({},{})\" font-size=\"{small_str}\" text-anchor=\"middle\">{outside}</g>",
-            num(cx),
-            num(cy)
-        );
-    }
-    if !legend_out.is_empty() {
-        let _ = write!(
-            content,
-            "<g class=\"{p}-legend\" font-size=\"{small_str}\">{legend_out}</g>"
-        );
+        for (index, label) in legend.iter().enumerate() {
+            let y = ly + index as f64 * ROW + ROW / 2.0;
+            let _ = write!(
+                content,
+                "<g class=\"{p}-legend-item\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{}\"/>{}</g>",
+                EscText(entries[index].0),
+                num(lx),
+                num(y - SWATCH / 2.0),
+                num(SWATCH),
+                num(SWATCH),
+                series_color(index as i64),
+                LabelSvg(label, lx + SWATCH + 8.0 + label.width / 2.0, y, "")
+            );
+        }
+        content.push_str("</g>");
     }
 
     Rendered {

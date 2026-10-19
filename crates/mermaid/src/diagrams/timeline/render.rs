@@ -10,15 +10,15 @@ use crate::{
     },
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{EscText, LabelSvg, Point, fragment, num},
         edges::{ARROW, marker},
         root::{Accessible, svg_document},
-        theme::{RADIUS, series_color},
+        theme::{RADIUS, SeriesColor, series_color},
     },
     text::{Label, Style},
 };
 use crate::{Ctx, Host};
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 
 const PAD_X: f64 = 12.0;
 const PAD_Y: f64 = 8.0;
@@ -40,14 +40,33 @@ struct Group {
     periods: Vec<usize>,
 }
 
-fn rect(x: f64, y: f64, w: f64, h: f64, attrs: &str) -> String {
-    format!(
-        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{attrs}/>",
-        num(x),
-        num(y),
-        num(w),
-        num(h)
-    )
+fn rect(x: f64, y: f64, w: f64, h: f64, attrs: impl fmt::Display) -> impl fmt::Display {
+    fragment(move |f| {
+        write!(
+            f,
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{attrs}/>",
+            num(x),
+            num(y),
+            num(w),
+            num(h)
+        )
+    })
+}
+
+/// A period's colour: its series, or muted.
+#[derive(Clone, Copy)]
+enum Hue {
+    Series(SeriesColor),
+    Muted,
+}
+
+impl fmt::Display for Hue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Hue::Series(color) => write!(f, "{color}"),
+            Hue::Muted => f.write_str("var(--_m)"),
+        }
+    }
 }
 
 pub fn render_timeline(
@@ -181,13 +200,13 @@ fn draw(
     let event_w = event_text_w(text_w) + 2.0 * PAD_X;
     let chip_height = |label: &Label| label.height.max(line_height) + 2.0 * PAD_Y;
     let event_height = |label: &Label| label.height.max(js::round(small * 1.5)) + 2.0 * PAD_Y;
-    let color_of = |group: &Group, period: usize| -> String {
+    let color_of = |group: &Group, period: usize| {
         if group.section >= 0 {
-            series_color(group.section)
+            Hue::Series(series_color(group.section))
         } else if has_sections {
-            "var(--_m)".into()
+            Hue::Muted
         } else {
-            series_color(if multicolor { period as i64 } else { 0 })
+            Hue::Series(series_color(if multicolor { period as i64 } else { 0 }))
         }
     };
 
@@ -235,118 +254,130 @@ fn draw(
             Style::BOLD,
         )
     };
-    let header = |group: &Group, label: &Label, x: f64, y: f64, w: f64, h: f64| -> String {
-        rect(
-            x,
-            y,
-            w,
-            h,
-            &format!(" fill=\"{}\"", series_color(group.section)),
-        ) + &label_svg(
-            label,
-            x + w / 2.0,
-            y + h / 2.0,
-            &format!(" font-weight=\"var(--_hw)\"{ON_COLOR}"),
-        )
+    let header_attrs = format!(" font-weight=\"var(--_hw)\"{ON_COLOR}");
+    let header =
+        |out: &mut String, group: &Group, label: &Label, x: f64, y: f64, w: f64, h: f64| {
+            let _ = write!(
+                out,
+                "{}{}",
+                rect(
+                    x,
+                    y,
+                    w,
+                    h,
+                    format_args!(" fill=\"{}\"", series_color(group.section))
+                ),
+                LabelSvg(label, x + w / 2.0, y + h / 2.0, &header_attrs)
+            );
+        };
+    let period = |out: &mut String, i: usize, color: Hue, x: f64, y: f64, h: f64| {
+        let _ = write!(
+            out,
+            "{}{}",
+            rect(x, y, col_w, h, format_args!(" fill=\"{color}\"")),
+            LabelSvg(&period_labels[i], x + col_w / 2.0, y + h / 2.0, ON_COLOR)
+        );
     };
-    let period = |i: usize, color: &str, x: f64, y: f64, h: f64| -> String {
-        rect(x, y, col_w, h, &format!(" fill=\"{color}\""))
-            + &label_svg(&period_labels[i], x + col_w / 2.0, y + h / 2.0, ON_COLOR)
-    };
-    let event = |label: &Label, color: &str, x: f64, y: f64, h: f64| -> String {
-        format!(
+    let event_attrs = format!(" font-size=\"{}\"", js::Number(small));
+    let event = |out: &mut String, label: &Label, color: Hue, x: f64, y: f64, h: f64| {
+        let _ = write!(
+            out,
             "<g class=\"{p}-node {p}-event\">{}{}</g>",
             rect(
                 x,
                 y,
                 event_w,
                 h,
-                &format!(" fill=\"{color}\" fill-opacity=\"0.16\"")
+                format_args!(" fill=\"{color}\" fill-opacity=\"0.16\"")
             ),
-            label_svg(
-                label,
-                x + event_w / 2.0,
-                y + h / 2.0,
-                &format!(" font-size=\"{}\"", js::num_str(small))
-            )
-        )
+            LabelSvg(label, x + event_w / 2.0, y + h / 2.0, &event_attrs)
+        );
     };
-    let dot = |x: f64, y: f64, color: &str| -> String {
-        format!(
+    let dot = |out: &mut String, x: f64, y: f64, color: Hue| {
+        let _ = write!(
+            out,
             "<circle class=\"{p}-dot\" cx=\"{}\" cy=\"{}\" r=\"4\" fill=\"{color}\" stroke=\"var(--_bg)\" stroke-width=\"2\"/>",
             num(x),
             num(y)
-        )
+        );
     };
-    let open = |group: &Group| -> String {
+    let open = |out: &mut String, group: &Group| {
         if group.section >= 0 {
-            format!(
+            let _ = write!(
+                out,
                 "<g class=\"{p}-cluster {p}-section\" data-id=\"{}\">",
-                esc_text(js::trim(&model.sections[group.section as usize]))
-            )
-        } else {
-            String::new()
+                EscText(js::trim(&model.sections[group.section as usize]))
+            );
         }
     };
-    let open_period = |i: usize| -> String {
-        format!(
+    let open_period = |out: &mut String, i: usize| {
+        let _ = write!(
+            out,
             "<g class=\"{p}-node {p}-period\" data-id=\"{}\">",
-            esc_text(js::trim(&periods[i].text))
-        )
+            EscText(js::trim(&periods[i].text))
+        );
     };
 
     let mut body = String::new();
+    let mut axis = String::new();
     let height = if vertical {
         let axis_x = left + col_w + AXIS;
         let spine_x = axis_x + SPINE;
         let events_x = spine_x + SPINE;
         let mut y = top;
         for group in &groups {
-            body += &open(group);
+            open(&mut body, group);
             if group.section >= 0 {
                 let label = section_label(group, body_w);
                 let h = chip_height(&label);
-                body += &header(group, &label, left, y, body_w, h);
+                header(&mut body, group, &label, left, y, body_w, h);
                 y += h + SECTION_GAP + 4.0;
             }
             for &i in &group.periods {
                 let color = color_of(group, i);
                 let h = chip_height(&period_labels[i]);
                 let cy = y + h / 2.0;
-                let mut d = format!("M{},{}H{}", num(left + col_w), num(cy), num(axis_x));
-                let mut cards = String::new();
+                open_period(&mut body, i);
+                period(&mut body, i, color, left, y, h);
+                let _ = write!(
+                    body,
+                    "<path class=\"{p}-edge\" d=\"M{}H{}",
+                    Point(left + col_w, cy),
+                    num(axis_x)
+                );
                 let mut ey = y;
                 let mut last = cy;
                 for label in &event_labels[i] {
                     let eh = event_height(label);
                     last = ey + eh / 2.0;
-                    let _ = write!(d, "M{},{}H{}", num(spine_x), num(last), num(events_x));
-                    cards += &event(label, &color, events_x, ey, eh);
+                    let _ = write!(body, "M{}H{}", Point(spine_x, last), num(events_x));
                     ey += eh + EVENT_GAP;
                 }
-                if !cards.is_empty() {
+                if !event_labels[i].is_empty() {
                     let _ = write!(
-                        d,
-                        "M{},{}H{}V{}",
-                        num(axis_x),
-                        num(cy),
+                        body,
+                        "M{}H{}V{}",
+                        Point(axis_x, cy),
                         num(spine_x),
                         num(last)
                     );
                 }
-                body += &open_period(i);
-                body += &period(i, &color, left, y, h);
-                let _ = write!(body, "<path class=\"{p}-edge\" d=\"{d}\"{LINE}/>");
-                body += &dot(axis_x, cy, &color);
-                body += &cards;
-                body += "</g>";
+                let _ = write!(body, "\"{LINE}/>");
+                dot(&mut body, axis_x, cy, color);
+                let mut ey = y;
+                for label in &event_labels[i] {
+                    let eh = event_height(label);
+                    event(&mut body, label, color, events_x, ey, eh);
+                    ey += eh + EVENT_GAP;
+                }
+                body.push_str("</g>");
                 y = (y + h).max(ey - EVENT_GAP) + GAP;
             }
             if group.periods.is_empty() {
                 y += GAP - SECTION_GAP - 4.0;
             }
             if group.section >= 0 {
-                body += "</g>";
+                body.push_str("</g>");
             }
         }
         if !groups.is_empty() {
@@ -354,13 +385,13 @@ fn draw(
         }
         if drawn {
             let tip = y + TAIL + ARROW;
-            body = format!(
-                "<path class=\"{p}-axis\" d=\"M{},{}V{}\" fill=\"none\" stroke=\"var(--_l)\"/>",
-                num(axis_x),
-                num(top),
-                num(tip - ARROW + 1.0)
-            ) + &marker("arrow_point", axis_x, tip, 0.0, 1.0, "var(--_l)")
-                + &body;
+            let _ = write!(
+                axis,
+                "<path class=\"{p}-axis\" d=\"M{}V{}\" fill=\"none\" stroke=\"var(--_l)\"/>{}",
+                Point(axis_x, top),
+                num(tip - ARROW + 1.0),
+                marker("arrow_point", axis_x, tip, 0.0, 1.0, "var(--_l)")
+            );
             y = tip;
         }
         y + pad
@@ -394,68 +425,85 @@ fn draw(
         for (g, group) in groups.iter().enumerate() {
             let span = group.periods.len().max(1);
             let gx = left + slot as f64 * pitch;
-            body += &open(group);
+            open(&mut body, group);
             if let Some(label) = &section_labels[g] {
-                body += &header(group, label, gx, top, span as f64 * pitch - GAP, header_h);
+                header(
+                    &mut body,
+                    group,
+                    label,
+                    gx,
+                    top,
+                    span as f64 * pitch - GAP,
+                    header_h,
+                );
             }
             for (k, &i) in group.periods.iter().enumerate() {
                 let color = color_of(group, i);
                 let x = gx + k as f64 * pitch;
                 let cx = x + col_w / 2.0;
-                let mut d = format!(
-                    "M{},{}V{}",
-                    num(cx),
-                    num(periods_y + chip_h),
+                open_period(&mut body, i);
+                period(&mut body, i, color, x, periods_y, chip_h);
+                let _ = write!(
+                    body,
+                    "<path class=\"{p}-edge\" d=\"M{}V{}",
+                    Point(cx, periods_y + chip_h),
                     num(if !event_labels[i].is_empty() {
                         events_y
                     } else {
                         axis_y
                     })
                 );
-                let mut cards = String::new();
                 let mut ey = events_y;
                 for event_label in &event_labels[i] {
                     let eh = event_height(event_label);
                     if ey > events_y {
-                        let _ = write!(d, "M{},{}V{}", num(cx), num(ey - EVENT_GAP), num(ey));
+                        let _ = write!(body, "M{}V{}", Point(cx, ey - EVENT_GAP), num(ey));
                     }
-                    cards += &event(event_label, &color, x, ey, eh);
                     ey += eh + EVENT_GAP;
                 }
                 bottom = bottom.max(ey - EVENT_GAP);
-                body += &open_period(i);
-                body += &period(i, &color, x, periods_y, chip_h);
-                let _ = write!(body, "<path class=\"{p}-edge\" d=\"{d}\"{LINE}/>");
-                body += &dot(cx, axis_y, &color);
-                body += &cards;
-                body += "</g>";
+                let _ = write!(body, "\"{LINE}/>");
+                dot(&mut body, cx, axis_y, color);
+                let mut ey = events_y;
+                for event_label in &event_labels[i] {
+                    let eh = event_height(event_label);
+                    event(&mut body, event_label, color, x, ey, eh);
+                    ey += eh + EVENT_GAP;
+                }
+                body.push_str("</g>");
             }
             if group.section >= 0 {
-                body += "</g>";
+                body.push_str("</g>");
             }
             slot += span;
         }
         if drawn {
             let tip = left + body_w;
-            body = format!(
-                "<path class=\"{p}-axis\" d=\"M{},{}H{}\" fill=\"none\" stroke=\"var(--_l)\"/>",
-                num(left),
-                num(axis_y),
-                num(tip - ARROW + 1.0)
-            ) + &marker("arrow_point", tip, axis_y, 1.0, 0.0, "var(--_l)")
-                + &body;
+            let _ = write!(
+                axis,
+                "<path class=\"{p}-axis\" d=\"M{}H{}\" fill=\"none\" stroke=\"var(--_l)\"/>{}",
+                Point(left, axis_y),
+                num(tip - ARROW + 1.0),
+                marker("arrow_point", tip, axis_y, 1.0, 0.0, "var(--_l)")
+            );
         }
         bottom + pad
     };
 
     let total_width = (width + 2.0 * pad).ceil();
     let total_height = height.max(pad * 2.0).ceil();
-    let content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &body;
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content = String::with_capacity(axis.len() + body.len() + 512);
+    let _ = write!(
+        content,
+        "{}{axis}{body}",
+        LabelSvg(
+            &title,
+            total_width / 2.0,
+            pad + title.height / 2.0,
+            title_attrs
+        )
+    );
     Rendered {
         svg: svg_document(
             "timeline",

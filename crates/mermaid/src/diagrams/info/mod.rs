@@ -9,12 +9,13 @@ use crate::{
     Config, Error, ParseLimits, Rendered,
     js::Lazy,
     svg::{
-        builder::label_svg,
+        builder::{LabelSvg, TITLE},
         root::{Accessible, svg_document},
     },
     text::{Style, layout_label},
 };
 use crate::{Ctx, Host};
+use std::fmt::Write as _;
 
 static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
 static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
@@ -94,17 +95,17 @@ pub fn render(
 
     let width = (title.width.max(text.width) + 2.0 * pad).ceil();
     let height = (title_height + text.height + 2.0 * pad).ceil();
-    let p = crate::PREFIX;
-    let content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &label_svg(
-        &text,
-        width / 2.0,
-        pad + title_height + text.height / 2.0,
-        &format!(" class=\"{p}-version\" fill=\"var(--_m)\""),
+    let mut content = String::new();
+    let _ = write!(
+        content,
+        "{}{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE),
+        LabelSvg(
+            &text,
+            width / 2.0,
+            pad + title_height + text.height / 2.0,
+            crate::class!("version", "fill=\"var(--_m)\""),
+        )
     );
     Ok(Rendered {
         svg: svg_document(

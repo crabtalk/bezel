@@ -1,6 +1,11 @@
 //! Pele's `diagrams/state/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::styled;
+use crate::svg::builder::{Esc, EscText, LabelSvg, Point, fragment};
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use super::{
     graph::{StateEdge, StateNode},
@@ -16,7 +21,7 @@ use crate::{
         layered::LayeredOptions,
     },
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::num,
         edges::{EdgePath, SideReach, edge_label_svg, marker, marker_trim, route_path},
         root::{Accessible, svg_document},
         shapes::end_side,
@@ -118,14 +123,44 @@ fn clamp(value: f64, min: f64, max: f64) -> f64 {
     }
 }
 
-fn rect(x: f64, y: f64, w: f64, h: f64, rest: &str) -> String {
-    format!(
-        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{rest}/>",
-        num(x),
-        num(y),
-        num(w),
-        num(h)
-    )
+fn rect(x: f64, y: f64, w: f64, h: f64, rest: impl fmt::Display) -> impl fmt::Display {
+    fragment(move |f| {
+        write!(
+            f,
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{rest}/>",
+            num(x),
+            num(y),
+            num(w),
+            num(h)
+        )
+    })
+}
+
+/// Writes `open`, what `body` writes, and `</g>` to `out`; nothing when
+/// `body` writes nothing.
+fn wrapped(out: &mut String, open: impl fmt::Display, body: impl FnOnce(&mut String)) {
+    let mark = out.len();
+    let _ = write!(out, "{open}");
+    let start = out.len();
+    body(out);
+    if out.len() == start {
+        out.truncate(mark);
+    } else {
+        out.push_str("</g>");
+    }
+}
+
+/// The `{PREFIX}-` classes of a kind of state.
+fn classes(kind: K) -> impl fmt::Display {
+    fragment(move |f| {
+        for (k, name) in CLASSES[kind as usize].split(' ').enumerate() {
+            if k > 0 {
+                f.write_str(" ")?;
+            }
+            write!(f, "{}-{name}", crate::PREFIX)?;
+        }
+        Ok(())
+    })
 }
 
 fn group(dir: Dir, pad_x: f64, pad_top: f64, pad_bottom: f64) -> CNode {
@@ -156,7 +191,7 @@ fn divide(
     cnodes: &[CNode],
     views: &[View],
     pad: f64,
-    dividers: &mut String,
+    out: &mut String,
 ) {
     let p = crate::PREFIX;
     let regions: Vec<usize> = items
@@ -190,12 +225,21 @@ fn divide(
         }
         for k in 1..sorted.len() {
             let at = num((hi(sorted[k - 1], x) + lo(sorted[k], x)) / 2.0 + pad);
-            let d = if x {
-                format!("{at},{}V{}", num(top), num(bottom))
+            let _ = if x {
+                write!(
+                    out,
+                    "<path class=\"{p}-divider\" d=\"M{at},{}V{}\"/>",
+                    num(top),
+                    num(bottom)
+                )
             } else {
-                format!("{},{at}H{}", num(left), num(right))
+                write!(
+                    out,
+                    "<path class=\"{p}-divider\" d=\"M{},{at}H{}\"/>",
+                    num(left),
+                    num(right)
+                )
             };
-            let _ = write!(dividers, "<path class=\"{p}-divider\" d=\"M{d}\"/>");
         }
         return;
     }
@@ -203,13 +247,17 @@ fn divide(
     // outline.
     for &i in &regions {
         let c = &cnodes[i];
-        dividers.push_str(&rect(
-            c.x - c.w / 2.0 + pad,
-            c.y - c.h / 2.0 + pad,
-            c.w,
-            c.h,
-            &format!(" class=\"{p}-divider\" rx=\"{}\"", js::num_str(CORNER)),
-        ));
+        let _ = write!(
+            out,
+            "{}",
+            rect(
+                c.x - c.w / 2.0 + pad,
+                c.y - c.h / 2.0 + pad,
+                c.w,
+                c.h,
+                format_args!(" class=\"{p}-divider\" rx=\"{}\"", num(CORNER)),
+            )
+        );
     }
 }
 
@@ -254,7 +302,6 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
     let graph = &db.graph;
     let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let small_str = js::num_str(small);
     let measure_rc = ctx.host;
     let measure = measure_rc;
     let wrap_width = config.number_option("wrappingWidth", 200.0);
@@ -753,69 +800,95 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
         q += 1;
     }
 
-    let mut clusters = String::new();
-    let mut dividers = String::new();
+    let mut content = String::new();
     let mut nodes_out = String::new();
     let mut notes_out = String::new();
-    divide(
-        &roots,
-        pad / 2.0,
-        pad / 2.0,
-        width - pad / 2.0,
-        height - pad / 2.0,
-        &cnodes,
-        &views,
-        pad,
-        &mut dividers,
-    );
-
-    for &i in &order {
-        let view = &views[i];
-        let (Some(node), Some(style)) = (view.node, view.style.as_ref()) else {
-            continue;
-        };
-        if view.kind >= K::Region {
-            continue;
-        }
-        let c = &cnodes[i];
-        let x = c.x + pad;
-        let y = c.y + pad;
-        let w = view.w;
-        let h = view.h;
-        let label_attrs = format!(" class=\"{p}-label\"{}", style.text);
-        let mut body: String;
-
-        match view.kind {
-            K::Composite => {
-                let left = x - c.w / 2.0;
-                let top = y - c.h / 2.0;
-                body = rect(
-                    left,
-                    top,
-                    c.w,
-                    c.h,
-                    &format!(
-                        " rx=\"{}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"{}",
-                        js::num_str(CORNER),
-                        style.shape
-                    ),
-                );
-                if view.title_h > 0.0 {
-                    let _ = write!(
-                        body,
-                        "<path d=\"M{},{}H{}\"{RULE}{}/>",
-                        num(left),
-                        num(top + view.title_h),
-                        num(left + c.w),
-                        style.line
-                    );
-                    body.push_str(&label_svg(
-                        &view.label,
-                        title_x(c, view.label.width, &crossings) + pad,
-                        top + view.title_h / 2.0,
-                        &format!(" class=\"{p}-cluster-label\"{}", style.text),
-                    ));
+    wrapped(
+        &mut content,
+        format_args!("<g class=\"{p}-clusters\">"),
+        |clusters| {
+            for &i in &order {
+                let view = &views[i];
+                let (Some(node), Some(style)) = (view.node, view.style.as_ref()) else {
+                    continue;
+                };
+                if view.kind >= K::Region {
+                    continue;
                 }
+                let c = &cnodes[i];
+                let out = match view.kind {
+                    K::Composite => &mut *clusters,
+                    K::Note => &mut notes_out,
+                    _ => &mut nodes_out,
+                };
+                let _ = write!(
+                    out,
+                    "<g class=\"{}{}\" data-id=\"{}\"",
+                    classes(view.kind),
+                    class_names(&MERMAID_CLASSES.replace(&node.css_classes, |_| String::new())),
+                    EscText(&node.id)
+                );
+                if view.kind != K::Composite {
+                    let _ = write!(
+                        out,
+                        " transform=\"translate({},{})\"",
+                        num(c.x + pad),
+                        num(c.y + pad)
+                    );
+                }
+                out.push('>');
+                let body = node_body(view, c, style, &crossings, pad, small);
+                if let Some(link) = db.links.get(&node.id) {
+                    // Entity codes are resolved first, so the URL is checked in the
+                    // form a browser would follow.
+                    let tooltip = decode_entities(unquote(&link.tooltip));
+                    let mut inner = String::new();
+                    if !tooltip.is_empty() {
+                        let _ = write!(inner, "<title>{}</title>", Esc(&tooltip));
+                    }
+                    let _ = write!(inner, "{body}");
+                    let _ = write!(
+                        out,
+                        "{}",
+                        linked(
+                            &inner,
+                            Some(&safe_url(unquote(&link.url))),
+                            &node.id,
+                            &mut links,
+                            ctx,
+                            " target=\"_blank\"",
+                        )
+                    );
+                } else {
+                    let _ = write!(out, "{body}");
+                }
+                out.push_str("</g>");
+            }
+        },
+    );
+    wrapped(
+        &mut content,
+        format_args!("<g class=\"{p}-dividers\" stroke-dasharray=\"4 4\"{RULE}>"),
+        |out| {
+            divide(
+                &roots,
+                pad / 2.0,
+                pad / 2.0,
+                width - pad / 2.0,
+                height - pad / 2.0,
+                &cnodes,
+                &views,
+                pad,
+                out,
+            );
+            for &i in &order {
+                let view = &views[i];
+                if view.kind != K::Composite {
+                    continue;
+                }
+                let c = &cnodes[i];
+                let left = c.x + pad - c.w / 2.0;
+                let top = c.y + pad - c.h / 2.0;
                 divide(
                     &children[i],
                     left,
@@ -825,139 +898,11 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                     &cnodes,
                     &views,
                     pad,
-                    &mut dividers,
+                    out,
                 );
             }
-            K::Start => {
-                body = format!("<circle r=\"7\" fill=\"var(--_l)\"{}/>", style.shape);
-            }
-            K::End => {
-                body = format!(
-                    "<circle r=\"8.5\" fill=\"var(--_bg)\" stroke=\"var(--_l)\"{}/><circle r=\"5\" fill=\"var(--_l)\"{}/>",
-                    style.line, style.shape
-                );
-            }
-            K::Choice => {
-                body = format!(
-                    "<polygon points=\"0,{} {},0 0,{} {},0\"{SURFACE}{}/>",
-                    num(-h / 2.0),
-                    num(w / 2.0),
-                    num(h / 2.0),
-                    num(-w / 2.0),
-                    style.shape
-                );
-            }
-            K::Fork | K::Join => {
-                body = rect(
-                    -w / 2.0,
-                    -h / 2.0,
-                    w,
-                    h,
-                    &format!(" rx=\"2\" fill=\"var(--_l)\"{}", style.shape),
-                );
-            }
-            K::Note => {
-                let r = num(w / 2.0);
-                let b = num(h / 2.0);
-                let fold = num(w / 2.0 - FOLD);
-                let corner = num(FOLD - h / 2.0);
-                body = format!(
-                    "<path d=\"M-{r},-{b}H{fold}L{r},{corner}V{b}H-{r}Z\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/><path d=\"M{fold},-{b}V{corner}H{r}\"{RULE}/>"
-                );
-                body.push_str(&label_svg(
-                    &view.label,
-                    0.0,
-                    0.0,
-                    &format!(" class=\"{p}-label\" font-size=\"{small_str}\" fill=\"var(--_m)\""),
-                ));
-            }
-            _ => {
-                body = rect(
-                    -w / 2.0,
-                    -h / 2.0,
-                    w,
-                    h,
-                    &format!(
-                        " rx=\"{}\"{SURFACE}{}",
-                        num(CORNER.min(h / 2.0)),
-                        style.shape
-                    ),
-                );
-                if view.kind == K::State {
-                    body.push_str(&label_svg(&view.label, 0.0, 0.0, &label_attrs));
-                } else {
-                    let mut at = PAD_Y - h / 2.0 + view.label.height;
-                    let _ = write!(
-                        body,
-                        "<path d=\"M{},{}H{}\"{RULE}{}/>",
-                        num(-w / 2.0),
-                        num(at + 6.0),
-                        num(w / 2.0),
-                        style.line
-                    );
-                    body.push_str(&label_svg(
-                        &view.label,
-                        0.0,
-                        at - view.label.height / 2.0,
-                        &label_attrs,
-                    ));
-                    at += 14.0;
-                    for line in &view.lines {
-                        body.push_str(&label_svg(
-                            line,
-                            0.0,
-                            at + line.height / 2.0,
-                            &format!(
-                                " class=\"{p}-state-description\" font-size=\"{small_str}\"{}",
-                                style.text
-                            ),
-                        ));
-                        at += line.height;
-                    }
-                }
-            }
-        }
-
-        if let Some(link) = db.links.get(&node.id) {
-            // Entity codes are resolved first, so the URL is checked in the
-            // form a browser would follow.
-            let tooltip = decode_entities(unquote(&link.tooltip));
-            if !tooltip.is_empty() {
-                body = format!("<title>{}</title>{body}", esc(&tooltip));
-            }
-            body = linked(
-                &body,
-                &safe_url(unquote(&link.url)),
-                &node.id,
-                &mut links,
-                ctx,
-                " target=\"_blank\"",
-            );
-        }
-        let open = format!(
-            "<g class=\"{}{}\" data-id=\"{}\"",
-            CLASSES[view.kind as usize]
-                .split(' ')
-                .map(|name| format!("{p}-{name}"))
-                .collect::<Vec<_>>()
-                .join(" "),
-            class_names(&MERMAID_CLASSES.replace(&node.css_classes, |_| String::new())),
-            esc_text(&node.id)
-        );
-        match view.kind {
-            K::Composite => clusters.push_str(&format!("{open}>{body}</g>")),
-            K::Note => notes_out.push_str(&format!(
-                "{open} transform=\"translate({},{})\">{body}</g>",
-                num(x),
-                num(y)
-            )),
-            _ => nodes_out.push_str(&format!(
-                "{open} transform=\"translate({},{})\">{body}</g>",
-                num(x),
-                num(y)
-            )),
-        }
-    }
+        },
+    );
 
     let mut reach = SideReach::new();
     for (i, ce) in cedges.iter().enumerate() {
@@ -971,173 +916,163 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
         );
     }
 
-    let mut edges_out = String::new();
-    let mut labels_out = String::new();
     let mut loop_seen = vec![0i32; states];
     let mut loop_text = vec![0.0f64; states];
-    for i in 0..cedges.len() {
-        let edge = drawn[i];
-        let label = &edge_labels[i];
-        let note = edge.pattern == Some("dashed");
-        let end_type = if note { "none" } else { "arrow_point" };
-        let path: EdgePath;
-        let (src, dst) = (cedges[i].src, cedges[i].dst);
-        if src == dst {
-            let a = &cnodes[src];
-            let view = &views[src];
-            let k = f64::from(loop_seen[src]);
-            loop_seen[src] += 1;
-            // The loop hangs off a side the flow does not use: the right, or
-            // below when the flow is horizontal.
-            let side = across(&views, &logical, src);
-            let w = if a.is_group { a.w } else { view.w };
-            let h = if a.is_group { a.h } else { view.h };
-            let out = (if side { w } else { h }) / 2.0;
-            let spread = ((if side { h } else { w }) / 2.0 - 4.0)
-                .min(8.0 + k * 6.0)
-                .max(2.0);
-            let reach = LOOP + k * 8.0;
-            let trim = marker_trim(end_type) / or_one(js::hypot(reach, spread));
-            // Offsets are given for a loop on the right and turned a quarter
-            // for one below.
-            let (ax, ay) = (a.x, a.y);
-            let px = |dx: f64, dy: f64| ax + pad + if side { out + dx } else { -dy };
-            let py = |dx: f64, dy: f64| ay + pad + if side { dy } else { out + dx };
-            let at = |dx: f64, dy: f64| format!("{},{}", num(px(dx, dy)), num(py(dx, dy)));
-            let mut lp = EdgePath {
-                d: format!(
-                    "M{}C{} {} {}",
-                    at(0.0, -spread),
-                    at(reach, -2.0 * spread),
-                    at(reach, 2.0 * spread),
-                    at(reach * trim, spread + spread * trim)
-                ),
-                sx: 0.0,
-                sy: 0.0,
-                sdx: 0.0,
-                sdy: 0.0,
-                ex: px(0.0, spread),
-                ey: py(0.0, spread),
-                edx: px(-reach, -spread) - px(0.0, 0.0),
-                edy: py(-reach, -spread) - py(0.0, 0.0),
-            };
-            let len = or_one(js::hypot(lp.edx, lp.edy));
-            lp.edx /= len;
-            lp.edy /= len;
-            path = lp;
-            // Labels stack beyond the outermost loop, in the order of their
-            // transitions.
-            let furthest = LOOP + f64::from(loop_count[src] - 1) * 8.0;
-            let below = loop_text[src] + label.height / 2.0;
-            loop_text[src] += label.height;
-            let ce = &mut cedges[i];
-            ce.label_x = if side {
-                ax + out + furthest + 4.0 + ce.label_w / 2.0
-            } else {
-                ax
-            };
-            ce.label_y = if side {
-                ay - loop_height[src] / 2.0 + below
-            } else {
-                ay + out + furthest * 0.75 + 4.0 + below
-            };
-        } else {
-            let mut route = cedges[i].route.clone();
-            let leaves = reach.of(src as i64, end_side(&route, 0, &cnodes[src]));
-            let arrives = reach.of(dst as i64, end_side(&route, route.len() - 3, &cnodes[dst]));
-            for k in (0..route.len()).step_by(3) {
-                route[k] += pad;
-                route[k + 1] += pad;
-            }
-            attach(&mut route, 0, src, &cnodes, &views, pad);
-            let last = route.len() - 3;
-            attach(&mut route, last, dst, &cnodes, &views, pad);
-            if let Some(&composite) = anchors.get(&i)
-                && route.len() >= 6
-            {
-                let g = &cnodes[composite];
-                let inward = views[src].kind == K::Hidden;
-                let at = if inward { 0 } else { route.len() - 3 };
-                let near = matches!(g.dir, Some(Dir::TB | Dir::LR)) == inward;
-                let point = if vertical(g.dir) {
-                    [
-                        route[at],
-                        g.y + pad
-                            + if near {
-                                views[composite].title_h - g.h / 2.0
-                            } else {
-                                g.h / 2.0
-                            },
+    wrapped(
+        &mut content,
+        format_args!(
+            "<g class=\"{p}-edges\" fill=\"none\" stroke=\"var(--_l)\" stroke-linecap=\"round\">"
+        ),
+        |out| {
+            for i in 0..cedges.len() {
+                let edge = drawn[i];
+                let label = &edge_labels[i];
+                let note = edge.pattern == Some("dashed");
+                let end_type = if note { "none" } else { "arrow_point" };
+                let path: EdgePath;
+                let (src, dst) = (cedges[i].src, cedges[i].dst);
+                if src == dst {
+                    let a = &cnodes[src];
+                    let view = &views[src];
+                    let k = f64::from(loop_seen[src]);
+                    loop_seen[src] += 1;
+                    // The loop hangs off a side the flow does not use: the right, or
+                    // below when the flow is horizontal.
+                    let side = across(&views, &logical, src);
+                    let w = if a.is_group { a.w } else { view.w };
+                    let h = if a.is_group { a.h } else { view.h };
+                    let out = (if side { w } else { h }) / 2.0;
+                    let spread = ((if side { h } else { w }) / 2.0 - 4.0)
+                        .min(8.0 + k * 6.0)
+                        .max(2.0);
+                    let reach = LOOP + k * 8.0;
+                    let trim = marker_trim(end_type) / or_one(js::hypot(reach, spread));
+                    // Offsets are given for a loop on the right and turned a quarter
+                    // for one below.
+                    let (ax, ay) = (a.x, a.y);
+                    let px = |dx: f64, dy: f64| ax + pad + if side { out + dx } else { -dy };
+                    let py = |dx: f64, dy: f64| ay + pad + if side { dy } else { out + dx };
+                    let at = |dx: f64, dy: f64| Point(px(dx, dy), py(dx, dy));
+                    let mut lp = EdgePath {
+                        d: format!(
+                            "M{}C{} {} {}",
+                            at(0.0, -spread),
+                            at(reach, -2.0 * spread),
+                            at(reach, 2.0 * spread),
+                            at(reach * trim, spread + spread * trim)
+                        ),
+                        sx: 0.0,
+                        sy: 0.0,
+                        sdx: 0.0,
+                        sdy: 0.0,
+                        ex: px(0.0, spread),
+                        ey: py(0.0, spread),
+                        edx: px(-reach, -spread) - px(0.0, 0.0),
+                        edy: py(-reach, -spread) - py(0.0, 0.0),
+                    };
+                    let len = or_one(js::hypot(lp.edx, lp.edy));
+                    lp.edx /= len;
+                    lp.edy /= len;
+                    path = lp;
+                    // Labels stack beyond the outermost loop, in the order of their
+                    // transitions.
+                    let furthest = LOOP + f64::from(loop_count[src] - 1) * 8.0;
+                    let below = loop_text[src] + label.height / 2.0;
+                    loop_text[src] += label.height;
+                    let ce = &mut cedges[i];
+                    ce.label_x = if side {
+                        ax + out + furthest + 4.0 + ce.label_w / 2.0
+                    } else {
+                        ax
+                    };
+                    ce.label_y = if side {
+                        ay - loop_height[src] / 2.0 + below
+                    } else {
+                        ay + out + furthest * 0.75 + 4.0 + below
+                    };
+                } else {
+                    let mut route = cedges[i].route.clone();
+                    let leaves = reach.of(src as i64, end_side(&route, 0, &cnodes[src]));
+                    let arrives =
+                        reach.of(dst as i64, end_side(&route, route.len() - 3, &cnodes[dst]));
+                    for k in (0..route.len()).step_by(3) {
+                        route[k] += pad;
+                        route[k + 1] += pad;
+                    }
+                    attach(&mut route, 0, src, &cnodes, &views, pad);
+                    let last = route.len() - 3;
+                    attach(&mut route, last, dst, &cnodes, &views, pad);
+                    if let Some(&composite) = anchors.get(&i)
+                        && route.len() >= 6
+                    {
+                        let g = &cnodes[composite];
+                        let inward = views[src].kind == K::Hidden;
+                        let at = if inward { 0 } else { route.len() - 3 };
+                        let near = matches!(g.dir, Some(Dir::TB | Dir::LR)) == inward;
+                        let point = if vertical(g.dir) {
+                            [
+                                route[at],
+                                g.y + pad
+                                    + if near {
+                                        views[composite].title_h - g.h / 2.0
+                                    } else {
+                                        g.h / 2.0
+                                    },
+                                0.0,
+                            ]
+                        } else {
+                            [
+                                g.x + pad + if near { -g.w / 2.0 } else { g.w / 2.0 },
+                                route[at + 1],
+                                1.0,
+                            ]
+                        };
+                        if inward {
+                            route.splice(0..0, point);
+                        } else {
+                            route.extend(point);
+                        }
+                    }
+                    path = route_path(
+                        &route,
+                        None,
                         0.0,
-                    ]
-                } else {
-                    [
-                        g.x + pad + if near { -g.w / 2.0 } else { g.w / 2.0 },
-                        route[at + 1],
-                        1.0,
-                    ]
-                };
-                if inward {
-                    route.splice(0..0, point);
-                } else {
-                    route.extend(point);
+                        marker_trim(end_type),
+                        Some(leaves),
+                        Some(arrives),
+                    );
+                }
+                let _ = write!(
+                    out,
+                    "<g class=\"{p}-edge {p}-{}\" data-id=\"{}\"><path d=\"{}\"/>{}</g>",
+                    if note {
+                        "note-edge\" stroke=\"var(--_b)\" stroke-dasharray=\"3 4"
+                    } else {
+                        "transition"
+                    },
+                    EscText(&edge.id),
+                    path.d,
+                    marker(end_type, path.ex, path.ey, path.edx, path.edy, "var(--_l)")
+                );
+            }
+        },
+    );
+    wrapped(
+        &mut content,
+        format_args!("<g class=\"{p}-edge-labels\" font-size=\"{}\">", num(small)),
+        |out| {
+            for (i, ce) in cedges.iter().enumerate() {
+                let label = &edge_labels[i];
+                if label.width > 0.0 {
+                    let _ = write!(
+                        out,
+                        "{}",
+                        edge_label_svg(&drawn[i].id, label, ce.label_x + pad, ce.label_y + pad, "")
+                    );
                 }
             }
-            path = route_path(
-                &route,
-                None,
-                0.0,
-                marker_trim(end_type),
-                Some(leaves),
-                Some(arrives),
-            );
-        }
-        let _ = write!(
-            edges_out,
-            "<g class=\"{p}-edge {}\" data-id=\"{}\"><path d=\"{}\"/>{}</g>",
-            if note {
-                format!("{p}-note-edge\" stroke=\"var(--_b)\" stroke-dasharray=\"3 4")
-            } else {
-                format!("{p}-transition")
-            },
-            esc_text(&edge.id),
-            path.d,
-            marker(end_type, path.ex, path.ey, path.edx, path.edy, "var(--_l)")
-        );
-        if label.width > 0.0 {
-            let ce = &cedges[i];
-            labels_out.push_str(&edge_label_svg(
-                &edge.id,
-                label,
-                ce.label_x + pad,
-                ce.label_y + pad,
-                "",
-            ));
-        }
-    }
-
-    let mut content = String::new();
-    if !clusters.is_empty() {
-        let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
-    }
-    if !dividers.is_empty() {
-        let _ = write!(
-            content,
-            "<g class=\"{p}-dividers\" stroke-dasharray=\"4 4\"{RULE}>{dividers}</g>"
-        );
-    }
-    if !edges_out.is_empty() {
-        let _ = write!(
-            content,
-            "<g class=\"{p}-edges\" fill=\"none\" stroke=\"var(--_l)\" stroke-linecap=\"round\">{edges_out}</g>"
-        );
-    }
-    if !labels_out.is_empty() {
-        let _ = write!(
-            content,
-            "<g class=\"{p}-edge-labels\" font-size=\"{small_str}\">{labels_out}</g>"
-        );
-    }
+        },
+    );
     let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}{notes_out}</g>");
     let titled = with_title(
         db.title.as_deref(),
@@ -1167,6 +1102,149 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
         height: titled.height,
         links,
     }
+}
+
+/// The drawing of a state or note, centred on its origin, or of a composite
+/// in place.
+fn node_body<'a>(
+    view: &'a View,
+    c: &'a CNode,
+    style: &'a ResolvedStyle,
+    crossings: &'a HashMap<i64, Vec<f64>>,
+    pad: f64,
+    small: f64,
+) -> impl fmt::Display + 'a {
+    let p = crate::PREFIX;
+    let (w, h) = (view.w, view.h);
+    fragment(move |f| match view.kind {
+        K::Composite => {
+            let left = c.x + pad - c.w / 2.0;
+            let top = c.y + pad - c.h / 2.0;
+            write!(
+                f,
+                "{}",
+                rect(
+                    left,
+                    top,
+                    c.w,
+                    c.h,
+                    format_args!(
+                        " rx=\"{}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"{}",
+                        num(CORNER),
+                        style.shape
+                    ),
+                )
+            )?;
+            if view.title_h > 0.0 {
+                write!(
+                    f,
+                    "<path d=\"M{},{}H{}\"{RULE}{}/>{}",
+                    num(left),
+                    num(top + view.title_h),
+                    num(left + c.w),
+                    style.line,
+                    LabelSvg(
+                        &view.label,
+                        title_x(c, view.label.width, crossings) + pad,
+                        top + view.title_h / 2.0,
+                        &styled(crate::class!("cluster-label"), &style.text),
+                    )
+                )?;
+            }
+            Ok(())
+        }
+        K::Start => write!(f, "<circle r=\"7\" fill=\"var(--_l)\"{}/>", style.shape),
+        K::End => write!(
+            f,
+            "<circle r=\"8.5\" fill=\"var(--_bg)\" stroke=\"var(--_l)\"{}/><circle r=\"5\" fill=\"var(--_l)\"{}/>",
+            style.line, style.shape
+        ),
+        K::Choice => write!(
+            f,
+            "<polygon points=\"0,{} {},0 0,{} {},0\"{SURFACE}{}/>",
+            num(-h / 2.0),
+            num(w / 2.0),
+            num(h / 2.0),
+            num(-w / 2.0),
+            style.shape
+        ),
+        K::Fork | K::Join => write!(
+            f,
+            "{}",
+            rect(
+                -w / 2.0,
+                -h / 2.0,
+                w,
+                h,
+                format_args!(" rx=\"2\" fill=\"var(--_l)\"{}", style.shape),
+            )
+        ),
+        K::Note => {
+            let r = num(w / 2.0);
+            let b = num(h / 2.0);
+            let fold = num(w / 2.0 - FOLD);
+            let corner = num(FOLD - h / 2.0);
+            write!(
+                f,
+                "<path d=\"M-{r},-{b}H{fold}L{r},{corner}V{b}H-{r}Z\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/><path d=\"M{fold},-{b}V{corner}H{r}\"{RULE}/>{}",
+                LabelSvg(
+                    &view.label,
+                    0.0,
+                    0.0,
+                    &format!(
+                        " class=\"{p}-label\" font-size=\"{}\" fill=\"var(--_m)\"",
+                        num(small)
+                    ),
+                )
+            )
+        }
+        _ => {
+            write!(
+                f,
+                "{}",
+                rect(
+                    -w / 2.0,
+                    -h / 2.0,
+                    w,
+                    h,
+                    format_args!(
+                        " rx=\"{}\"{SURFACE}{}",
+                        num(CORNER.min(h / 2.0)),
+                        style.shape
+                    ),
+                )
+            )?;
+            let label_attrs = styled(crate::class!("label"), &style.text);
+            if view.kind == K::State {
+                return write!(f, "{}", LabelSvg(&view.label, 0.0, 0.0, &label_attrs));
+            }
+            let mut at = PAD_Y - h / 2.0 + view.label.height;
+            write!(
+                f,
+                "<path d=\"M{},{}H{}\"{RULE}{}/>{}",
+                num(-w / 2.0),
+                num(at + 6.0),
+                num(w / 2.0),
+                style.line,
+                LabelSvg(&view.label, 0.0, at - view.label.height / 2.0, &label_attrs)
+            )?;
+            at += 14.0;
+            let line_attrs = format!(
+                " class=\"{p}-state-description\" font-size=\"{}\"{}",
+                num(small),
+                style.text
+            );
+            for line in &view.lines {
+                write!(
+                    f,
+                    "{}",
+                    LabelSvg(line, 0.0, at + line.height / 2.0, &line_attrs)
+                )?;
+                at += line.height;
+            }
+            Ok(())
+        }
+    })
 }
 
 fn node_of<'a>(views: &[View<'a>], i: usize) -> &'a StateNode {

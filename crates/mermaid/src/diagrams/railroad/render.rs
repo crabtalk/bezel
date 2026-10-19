@@ -13,7 +13,7 @@ use crate::{
     diagrams::common::fit_width::{tighten, title_room},
     js,
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{Esc, EscText, LabelSvg, Point, fragment, num},
         root::{Accessible, svg_document},
         theme::{FONT_MONO, RADIUS},
     },
@@ -445,10 +445,10 @@ impl<H: Host> Drawn<'_, H> {
                                 "M{},{}l{},{}l{},{}z",
                                 num(start - ARROW),
                                 num(y + next_offset - ARROW / 2.0),
-                                js::num_str(ARROW),
-                                js::num_str(ARROW / 2.0),
-                                js::num_str(-ARROW),
-                                js::num_str(ARROW / 2.0)
+                                js::Number(ARROW),
+                                js::Number(ARROW / 2.0),
+                                js::Number(-ARROW),
+                                js::Number(ARROW / 2.0)
                             );
                             offset = next_offset;
                         } else {
@@ -484,30 +484,30 @@ impl<H: Host> Drawn<'_, H> {
                             self.line(x, y, kx);
                             self.line(kx + kid.width, y, right);
                         } else {
-                            let mut d = if last {
-                                format!(
-                                    "M{},{}{}V{}",
-                                    num(x),
-                                    num(y),
+                            let d = &mut self.track;
+                            let _ = if last {
+                                write!(
+                                    d,
+                                    "M{}{}V{}",
+                                    Point(x, y),
                                     self.east_to_south,
                                     num(ky - arc)
                                 )
                             } else {
-                                format!("M{},{}", num(rail_in), num(ky - arc))
+                                write!(d, "M{}", Point(rail_in, ky - arc))
                             };
-                            d += &self.south_to_east;
+                            d.push_str(&self.south_to_east);
                             if kx > rail_in + arc {
                                 let _ = write!(d, "H{}", num(kx));
                             }
-                            let _ = write!(d, "M{},{}", num(kx + kid.width), num(ky));
+                            let _ = write!(d, "M{}", Point(kx + kid.width, ky));
                             if kx > rail_in + arc {
                                 let _ = write!(d, "H{}", num(rail_out - arc));
                             }
-                            d += &self.east_to_north;
+                            d.push_str(&self.east_to_north);
                             if last {
                                 let _ = write!(d, "V{}{}", num(y + arc), self.north_to_east);
                             }
-                            self.track += &d;
                         }
                         stack.push(kids[i]);
                         at.push(ky);
@@ -565,9 +565,9 @@ impl<H: Host> Drawn<'_, H> {
                         "M{},{}l{},{}v{}z",
                         num(middle - ARROW / 2.0),
                         num(loop_y),
-                        js::num_str(ARROW),
-                        js::num_str(-ARROW / 2.0),
-                        js::num_str(ARROW)
+                        js::Number(ARROW),
+                        js::Number(-ARROW / 2.0),
+                        js::Number(ARROW)
                     );
                     if !laid.text.is_empty() {
                         let _ = write!(
@@ -575,8 +575,8 @@ impl<H: Host> Drawn<'_, H> {
                             "<text class=\"{p}-edge-label {p}-count\" x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
                             num(middle),
                             num(loop_y + COUNT_SIZE + 3.0),
-                            js::num_str(COUNT_SIZE),
-                            esc(&laid.text)
+                            js::Number(COUNT_SIZE),
+                            Esc(&laid.text)
                         );
                     }
                     stack.push(kids[0]);
@@ -591,36 +591,45 @@ impl<H: Host> Drawn<'_, H> {
                         } else {
                             ""
                         };
-                    let shape = format!(
-                        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"",
-                        num(x),
-                        num(y - self.box_top),
-                        num(laid.width),
-                        num(m.height)
-                    );
-                    let label = format!(
-                        "<text x=\"{}\" y=\"{}\"{space}",
-                        num(x + laid.width / 2.0),
-                        num(y + self.text_shift)
-                    );
+                    let shape = fragment(|f| {
+                        write!(
+                            f,
+                            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"",
+                            num(x),
+                            num(y - self.box_top),
+                            num(laid.width),
+                            num(m.height)
+                        )
+                    });
+                    let label = fragment(|f| {
+                        write!(
+                            f,
+                            "<text x=\"{}\" y=\"{}\"{space}",
+                            num(x + laid.width / 2.0),
+                            num(y + self.text_shift)
+                        )
+                    });
                     let stroke = &self.stroke;
-                    let drawn = match laid.kind {
-                        Kind::Terminal => format!(
+                    let nodes = &mut self.nodes;
+                    let _ = match laid.kind {
+                        Kind::Terminal => write!(
+                            nodes,
                             "<g class=\"{p}-node {p}-terminal\">{shape} rx=\"{}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"{stroke}/>{label} font-family=\"{FONT_MONO}\">{}</text></g>",
                             num(self.box_top),
-                            esc(text)
+                            Esc(text)
                         ),
-                        Kind::NonTerminal => format!(
+                        Kind::NonTerminal => write!(
+                            nodes,
                             "<g class=\"{p}-node {p}-nonterminal\" data-id=\"{}\">{shape} rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"{stroke}/>{label}>{}</text></g>",
-                            esc_text(&laid.id),
-                            esc(text)
+                            EscText(&laid.id),
+                            Esc(text)
                         ),
-                        _ => format!(
+                        _ => write!(
+                            nodes,
                             "<g class=\"{p}-node {p}-special\">{shape} rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\" stroke-dasharray=\"4 3\"{stroke}/>{label} font-style=\"italic\"><tspan fill=\"var(--_m)\">? </tspan>{}<tspan fill=\"var(--_m)\"> ?</tspan></text></g>",
-                            esc(&text[2..text.len() - 2])
+                            Esc(&text[2..text.len() - 2])
                         ),
                     };
-                    self.nodes += &drawn;
                 }
             }
         }
@@ -738,27 +747,30 @@ fn draw(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
         drawn.line(start, baseline, left);
         drawn.line(left + laid_box.width, baseline, end);
         drawn.place(&boxes, laid, left, baseline);
-        let markers = if radius > 0.0 {
-            format!(
-                "<circle class=\"{p}-marker {p}-start\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_l)\"/><circle class=\"{p}-marker {p}-end\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_l)\"/>",
-                num(pad + radius),
-                num(baseline),
-                num(radius),
-                num(end + radius),
-                num(baseline),
-                num(radius)
-            )
-        } else {
-            String::new()
-        };
+        let markers = fragment(|f| {
+            if radius > 0.0 {
+                write!(
+                    f,
+                    "<circle class=\"{p}-marker {p}-start\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_l)\"/><circle class=\"{p}-marker {p}-end\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_l)\"/>",
+                    num(pad + radius),
+                    num(baseline),
+                    num(radius),
+                    num(end + radius),
+                    num(baseline),
+                    num(radius)
+                )
+            } else {
+                Ok(())
+            }
+        });
         let _ = write!(
             rules,
             "<g class=\"{p}-rule\" data-id=\"{}\"><text class=\"{p}-rule-name\" x=\"{}\" y=\"{}\" font-size=\"{}\" font-weight=\"var(--_hw)\" text-anchor=\"start\">{}</text><path class=\"{p}-edge {p}-track\" d=\"{}\" fill=\"none\" stroke=\"var(--_l)\"{stroke}/>",
-            esc_text(&rule.name),
+            EscText(&rule.name),
             num(pad),
             num(top + head_height / 2.0 + head_size * 0.35),
             num(head_size),
-            esc(&name),
+            Esc(&name),
             drawn.track
         );
         if !drawn.arrows.is_empty() {
@@ -768,9 +780,7 @@ fn draw(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
                 drawn.arrows
             );
         }
-        rules += &markers;
-        rules += &drawn.nodes;
-        rules += "</g>";
+        let _ = write!(rules, "{markers}{}</g>", drawn.nodes);
         width =
             width
                 .max(end + 2.0 * radius - pad)
@@ -781,11 +791,17 @@ fn draw(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
 
     let total_width = (width + 2.0 * pad).ceil();
     let total_height = (bottom + pad).ceil();
-    let mut content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content = String::with_capacity(rules.len() + 512);
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(
+            &title,
+            total_width / 2.0,
+            pad + title.height / 2.0,
+            title_attrs
+        )
     );
     if !rules.is_empty() {
         let _ = write!(

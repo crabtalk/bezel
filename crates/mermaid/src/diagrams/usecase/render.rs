@@ -1,6 +1,11 @@
 //! Pele's `diagrams/usecase/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::rewrite;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use indexmap::IndexMap;
 
@@ -9,6 +14,7 @@ use super::{
     types::{ActorType, BoundaryType, LabelType, UsecaseModel},
 };
 use crate::Ctx;
+use crate::diagrams::common::icon::icon_svg;
 use crate::{
     Config, Rendered,
     diagrams::common::fit_width::{runs_across, turn_to_fit},
@@ -18,13 +24,13 @@ use crate::{
         layered::LayeredOptions,
     },
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{EscText, LabelSvg, LeftLabel, Point, fragment, num},
         cluster::{Crossings, mark_crossings},
         edges::{EdgePath, edge_label_svg, marker, marker_trim, route_path},
         root::{Accessible, svg_document},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Host, Label, Style, icon_markup, layout_label},
+    text::{Host, Label, Style, layout_label},
 };
 
 const NODE_SEP: f64 = 32.0;
@@ -212,19 +218,24 @@ fn attach_ends(cedges: &mut [CEdge], cnodes: &[CNode], views: &[View]) {
 }
 
 /// The hollow triangle of a generalization, with its tip at (x, y).
-fn extension(x: f64, y: f64, dx: f64, dy: f64, color: &str) -> String {
+fn extension(
+    f: &mut fmt::Formatter<'_>,
+    x: f64,
+    y: f64,
+    dx: f64,
+    dy: f64,
+    color: &str,
+) -> fmt::Result {
     let p = crate::PREFIX;
     let bx = x - dx * EXTENSION;
     let by = y - dy * EXTENSION;
     let half = EXTENSION * 0.5;
-    format!(
-        "<path class=\"{p}-marker\" d=\"M{},{}L{},{}L{},{}Z\" fill=\"var(--_bg)\" stroke=\"{color}\" stroke-linejoin=\"round\"/>",
-        num(x),
-        num(y),
-        num(bx - dy * half),
-        num(by + dx * half),
-        num(bx + dy * half),
-        num(by - dx * half)
+    write!(
+        f,
+        "<path class=\"{p}-marker\" d=\"M{}L{}L{}Z\" fill=\"var(--_bg)\" stroke=\"{color}\" stroke-linejoin=\"round\"/>",
+        Point(x, y),
+        Point(bx - dy * half, by + dx * half),
+        Point(bx + dy * half, by - dx * half)
     )
 }
 
@@ -236,42 +247,55 @@ fn trim(kind: &str) -> f64 {
     }
 }
 
-fn mark(kind: &str, x: f64, y: f64, dx: f64, dy: f64, color: &str) -> String {
-    if kind == "extension" {
-        extension(x, y, dx, dy, color)
-    } else {
-        marker(kind, x, y, dx, dy, color)
-    }
+fn mark<'a>(
+    kind: &'a str,
+    x: f64,
+    y: f64,
+    dx: f64,
+    dy: f64,
+    color: &'a str,
+) -> impl fmt::Display + 'a {
+    fragment(move |f| {
+        if kind == "extension" {
+            extension(f, x, y, dx, dy, color)
+        } else {
+            write!(f, "{}", marker(kind, x, y, dx, dy, color))
+        }
+    })
 }
 
-fn figure(view: &View, host: &impl Host) -> String {
+/// Appends an actor's figure to `out`.
+fn figure(out: &mut String, view: &View, host: &impl Host) {
     let p = crate::PREFIX;
     let node = view.node;
     let shape = &view.style.shape;
-    let line = format!(" fill=\"none\" stroke=\"var(--_b)\"{}", view.style.line);
+    let line = fragment(|f| write!(f, " fill=\"none\" stroke=\"var(--_b)\"{}", view.style.line));
     let mut head = -21.0;
     let mut radius = 9.0;
-    let mut out = match node.actor_type {
+    let _ = match node.actor_type {
         Some(ActorType::Hollow) => {
             radius = 8.0;
-            format!(
+            write!(
+                out,
                 "<circle cy=\"-21\" r=\"8\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"{shape}/><path d=\"M-20,-9H20V0H5.5L20,15.5L12,25.5L0,12L-12,25.5L-20,15.5L-5.5,0H-20Z\" fill=\"var(--_bg)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"{shape}/>"
             )
         }
-        Some(ActorType::Awesome) => format!(
+        Some(ActorType::Awesome) => write!(
+            out,
             "<path d=\"M0,-30A11,11 0 1 1 0,-8A11,11 0 1 1 0,-30ZM-20,25C-20,9 -12,-3 0,-3C12,-3 20,9 20,25C20,28 18,30 15,30H-15C-18,30 -20,28 -20,25Z\" fill=\"var(--_b)\"{shape}/>"
         ),
         Some(ActorType::Icon) => {
             head = -14.0;
             radius = 12.0;
             let icon = node.icon.as_deref().unwrap_or("");
-            format!(
-                "<rect x=\"-22\" y=\"-26\" width=\"44\" height=\"44\" rx=\"{RADIUS}\"{SHAPE_ATTRS}{shape}/><svg class=\"{p}-icon\" data-icon=\"{}\" x=\"-14\" y=\"-18\" width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{}</svg>",
-                esc_text(icon),
-                icon_markup(host, icon)
+            write!(
+                out,
+                "<rect x=\"-22\" y=\"-26\" width=\"44\" height=\"44\" rx=\"{RADIUS}\"{SHAPE_ATTRS}{shape}/>{}",
+                icon_svg(host, icon, -14.0, -18.0, 28.0)
             )
         }
-        _ => format!(
+        _ => write!(
+            out,
             "<circle cy=\"-21\" r=\"9\"{SHAPE_ATTRS}{shape}/><path d=\"M0,-12V10M-14,-3H14M0,10L-12,30M0,10L12,30\"{line}/>"
         ),
     };
@@ -280,14 +304,11 @@ fn figure(view: &View, host: &impl Host) -> String {
         // the head.
         let _ = write!(
             out,
-            "<path class=\"{p}-business\" d=\"M{},{}L{},{}\"{line}/>",
-            num(0.12 * radius),
-            num(head + 0.99 * radius),
-            num(0.92 * radius),
-            num(head - 0.39 * radius)
+            "<path class=\"{p}-business\" d=\"M{}L{}\"{line}/>",
+            Point(0.12 * radius, head + 0.99 * radius),
+            Point(0.92 * radius, head - 0.39 * radius)
         );
     }
-    out
 }
 
 pub fn render_usecase(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
@@ -333,28 +354,6 @@ fn title_x(c: &CNode, width: f64, crossings: &Crossings) -> f64 {
         from = cut;
     }
     best
-}
-
-fn left_label(label: &Label, x: f64, cy: f64, attrs: &str) -> String {
-    if label.lines.len() < 2 {
-        return label_svg(label, x + label.width / 2.0, cy, attrs);
-    }
-    let mut out = String::new();
-    for i in 0..label.lines.len() {
-        let line = Label {
-            lines: vec![label.lines[i].clone()],
-            widths: vec![label.widths[i]],
-            height: label.line_height,
-            ..label.clone()
-        };
-        out.push_str(&label_svg(
-            &line,
-            x + label.widths[i] / 2.0,
-            cy - label.height / 2.0 + (i as f64 + 0.5) * label.line_height,
-            attrs,
-        ));
-    }
-    out
 }
 
 /// `turned` draws a diagram that runs across as one that runs down.
@@ -637,12 +636,17 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
 
     let mut clusters = String::new();
     let mut nodes_out = String::new();
+    let mut stereotype_attrs_buf = String::new();
+    let mut label_attrs_buf = String::new();
+    let mut key_attrs_buf = String::new();
+    let mut value_attrs_buf = String::new();
+    let mut title_attrs_buf = String::new();
     for i in 0..views.len() {
         let view = &views[i];
         let c = &cnodes[i];
         let node = view.node;
         let classes = class_names(&RE_DEFAULT.replace(&node.css_classes, |_| String::new()));
-        let id = esc_text(&node.id);
+        let id = EscText(&node.id);
         let text_attrs = &view.style.text;
         let shape = &view.style.shape;
         let w = view.w;
@@ -651,15 +655,26 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
         if view.kind == ViewKind::Boundary {
             let x = c.x - c.w / 2.0;
             let y = c.y - c.h / 2.0;
-            let boxed =
-                format!(" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"{shape}");
-            let title_attrs =
-                format!(" class=\"{p}-cluster-label\" fill=\"var(--_m)\"{text_attrs}");
-            let body = if node.boundary_type == Some(BoundaryType::Package) {
+            let boxed = fragment(|f| {
+                write!(
+                    f,
+                    " fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"{shape}"
+                )
+            });
+            let title_attrs = rewrite(
+                &mut title_attrs_buf,
+                format_args!(" class=\"{p}-cluster-label\" fill=\"var(--_m)\"{text_attrs}"),
+            );
+            let _ = write!(
+                clusters,
+                "<g class=\"{p}-cluster {p}-boundary{classes}\" data-id=\"{id}\">"
+            );
+            let _ = if node.boundary_type == Some(BoundaryType::Package) {
                 let tab_w = (view.label.width + 2.0 * TAB_PAD + 8.0).min(c.w);
                 let tab_h = view.label.height + 2.0 * TAB_PAD;
-                format!(
-                    "<rect class=\"{p}-boundary-tab\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{boxed}/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{boxed}/>{}",
+                write!(
+                    clusters,
+                    "<rect class=\"{p}-boundary-tab\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{boxed}/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{boxed}/>{}</g>",
                     num(x),
                     num(y),
                     num(tab_w),
@@ -668,107 +683,137 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
                     num(y + tab_h),
                     num(c.w),
                     num(c.h - tab_h),
-                    label_svg(&view.label, x + tab_w / 2.0, y + tab_h / 2.0, &title_attrs)
+                    LabelSvg(&view.label, x + tab_w / 2.0, y + tab_h / 2.0, title_attrs)
                 )
             } else {
-                format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{boxed}/>{}",
+                write!(
+                    clusters,
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{boxed}/>{}</g>",
                     num(x),
                     num(y),
                     num(c.w),
                     num(c.h),
-                    label_svg(
+                    LabelSvg(
                         &view.label,
                         title_x(c, view.label.width, &crossings),
                         y + 8.0 + view.label.height / 2.0,
-                        &title_attrs
+                        title_attrs
                     )
                 )
             };
-            let _ = write!(
-                clusters,
-                "<g class=\"{p}-cluster {p}-boundary{classes}\" data-id=\"{id}\">{body}</g>"
-            );
             continue;
         }
 
-        let kind: String;
-        let body = if view.kind == ViewKind::Actor {
-            kind = format!("{p}-actor");
+        let kind = match view.kind {
+            ViewKind::Actor => "actor",
+            ViewKind::Json => "json",
+            _ if view.kind != ViewKind::Ellipse && node.shape == "note" => "note",
+            _ => "usecase",
+        };
+        let _ = write!(
+            nodes_out,
+            "<g class=\"{p}-node {p}-{kind}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">",
+            num(c.x),
+            num(c.y)
+        );
+        if view.kind == ViewKind::Actor {
             let top = -h / 2.0;
             let stereotype_y = top + FIGURE_H + FIGURE_GAP + view.stereotype.height / 2.0;
-            format!(
-                "<g class=\"{p}-actor-figure\" transform=\"translate(0,{})\">{}</g>{}{}",
-                num(top + FIGURE_H / 2.0),
-                figure(view, ctx.host),
-                label_svg(
-                    &view.stereotype,
-                    0.0,
-                    stereotype_y,
-                    &format!(
-                        " class=\"{p}-stereotype\" font-size=\"{}\" fill=\"var(--_m)\"",
-                        js::num_str(tiny)
-                    )
+            let _ = write!(
+                nodes_out,
+                "<g class=\"{p}-actor-figure\" transform=\"translate(0,{})\">",
+                num(top + FIGURE_H / 2.0)
+            );
+            figure(&mut nodes_out, view, ctx.host);
+            let stereotype_attrs = rewrite(
+                &mut stereotype_attrs_buf,
+                format_args!(
+                    " class=\"{p}-stereotype\" font-size=\"{}\" fill=\"var(--_m)\"",
+                    js::Number(tiny)
                 ),
-                label_svg(
+            );
+            let label_attrs = rewrite(
+                &mut label_attrs_buf,
+                format_args!(" class=\"{p}-label\"{text_attrs}"),
+            );
+            let _ = write!(
+                nodes_out,
+                "</g>{}{}",
+                LabelSvg(&view.stereotype, 0.0, stereotype_y, stereotype_attrs),
+                LabelSvg(
                     &view.label,
                     0.0,
                     h / 2.0 - view.label.height / 2.0,
-                    &format!(" class=\"{p}-label\"{text_attrs}")
+                    label_attrs
                 )
-            )
+            );
         } else if view.kind == ViewKind::Json {
-            kind = format!("{p}-json");
             let x0 = -w / 2.0;
-            let mut y = -h / 2.0 + view.head_h;
-            let mut cells = String::new();
-            let mut lines = format!("M{},{}H{}", num(x0), num(y), num(x0 + w));
-            if view.key_w > 0.0 {
-                let _ = write!(
-                    lines,
-                    "M{},{}V{}",
-                    num(x0 + view.key_w),
-                    num(y),
-                    num(h / 2.0)
-                );
-            }
-            for (key, value) in &view.rows {
-                let row_h = value.height.max(js::round(small * 1.5)) + ROW_PAD;
-                cells.push_str(&label_svg(
-                    key,
-                    x0 + CELL_PAD + key.width / 2.0,
-                    y + row_h / 2.0,
-                    &format!(" class=\"{p}-json-key\" fill=\"var(--_m)\""),
-                ));
-                cells.push_str(&left_label(
-                    value,
-                    x0 + view.key_w + CELL_PAD,
-                    y + row_h / 2.0,
-                    &format!(" class=\"{p}-json-value\"{text_attrs}"),
-                ));
-                y += row_h;
-            }
-            format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE_ATTRS}{shape}/><path class=\"{p}-json-lines\" d=\"{lines}\" fill=\"none\" stroke=\"var(--_b)\"{}/>{}<g font-size=\"{}\">{cells}</g>",
+            let head_y = -h / 2.0 + view.head_h;
+            let _ = write!(
+                nodes_out,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE_ATTRS}{shape}/><path class=\"{p}-json-lines\" d=\"M{}H{}",
                 num(x0),
                 num(-h / 2.0),
                 num(w),
                 num(h),
+                Point(x0, head_y),
+                num(x0 + w)
+            );
+            if view.key_w > 0.0 {
+                let _ = write!(
+                    nodes_out,
+                    "M{}V{}",
+                    Point(x0 + view.key_w, head_y),
+                    num(h / 2.0)
+                );
+            }
+            let title_attrs = rewrite(
+                &mut title_attrs_buf,
+                format_args!(" class=\"{p}-label\" font-weight=\"var(--_hw)\"{text_attrs}"),
+            );
+            let _ = write!(
+                nodes_out,
+                "\" fill=\"none\" stroke=\"var(--_b)\"{}/>{}<g font-size=\"{}\">",
                 view.style.line,
-                label_svg(
-                    &view.label,
-                    0.0,
-                    -h / 2.0 + view.head_h / 2.0,
-                    &format!(" class=\"{p}-label\" font-weight=\"var(--_hw)\"{text_attrs}")
-                ),
-                js::num_str(small)
-            )
+                LabelSvg(&view.label, 0.0, -h / 2.0 + view.head_h / 2.0, title_attrs),
+                js::Number(small)
+            );
+            let key_attrs = rewrite(
+                &mut key_attrs_buf,
+                format_args!(" class=\"{p}-json-key\" fill=\"var(--_m)\""),
+            );
+            let value_attrs = rewrite(
+                &mut value_attrs_buf,
+                format_args!(" class=\"{p}-json-value\"{text_attrs}"),
+            );
+            let mut y = head_y;
+            for (key, value) in &view.rows {
+                let row_h = value.height.max(js::round(small * 1.5)) + ROW_PAD;
+                let _ = write!(
+                    nodes_out,
+                    "{}{}",
+                    LabelSvg(
+                        key,
+                        x0 + CELL_PAD + key.width / 2.0,
+                        y + row_h / 2.0,
+                        key_attrs
+                    ),
+                    LeftLabel(
+                        value,
+                        x0 + view.key_w + CELL_PAD,
+                        y + row_h / 2.0,
+                        value_attrs
+                    )
+                );
+                y += row_h;
+            }
+            nodes_out.push_str("</g>");
         } else {
             let label_y = view.stereotype.height / 2.0;
-            let mut outline: String;
             if view.kind == ViewKind::Ellipse {
-                kind = format!("{p}-usecase");
-                outline = format!(
+                let _ = write!(
+                    nodes_out,
                     "<ellipse rx=\"{}\" ry=\"{}\"{SHAPE_ATTRS}{shape}/>",
                     num(w / 2.0),
                     num(h / 2.0)
@@ -780,37 +825,32 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
                     let to = w / 2.0 - 5.0;
                     let arc = |at: f64| (h / 2.0) * (1.0 - (at / (w / 2.0)).powi(2)).sqrt();
                     let _ = write!(
-                        outline,
-                        "<path class=\"{p}-business\" d=\"M{},{}L{},{}\" fill=\"none\" stroke=\"var(--_b)\"{}/>",
-                        num(from),
-                        num(arc(from)),
-                        num(to),
-                        num(-arc(to)),
+                        nodes_out,
+                        "<path class=\"{p}-business\" d=\"M{}L{}\" fill=\"none\" stroke=\"var(--_b)\"{}/>",
+                        Point(from, arc(from)),
+                        Point(to, -arc(to)),
                         view.style.line
                     );
                 }
             } else if node.shape == "note" {
-                kind = format!("{p}-note");
                 let r = w / 2.0;
                 let b = h / 2.0;
-                outline = format!(
-                    "<path d=\"M{},{}H{}L{},{}V{}H{}Z\" fill=\"var(--_a)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"{shape}/><path d=\"M{},{}V{}H{}\" fill=\"none\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"{}/>",
-                    num(-r),
-                    num(-b),
+                let _ = write!(
+                    nodes_out,
+                    "<path d=\"M{}H{}L{}V{}H{}Z\" fill=\"var(--_a)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"{shape}/><path d=\"M{}V{}H{}\" fill=\"none\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"{}/>",
+                    Point(-r, -b),
                     num(r - FOLD),
-                    num(r),
-                    num(FOLD - b),
+                    Point(r, FOLD - b),
                     num(b),
                     num(-r),
-                    num(r - FOLD),
-                    num(-b),
+                    Point(r - FOLD, -b),
                     num(FOLD - b),
                     num(r),
                     view.style.line
                 );
             } else {
-                kind = format!("{p}-usecase");
-                outline = format!(
+                let _ = write!(
+                    nodes_out,
                     "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{SHAPE_ATTRS}{shape}/>",
                     num(-w / 2.0),
                     num(-h / 2.0),
@@ -818,38 +858,37 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
                     num(h)
                 );
             }
-            format!(
-                "{outline}{}{}",
-                label_svg(
+            let stereotype_attrs = rewrite(
+                &mut stereotype_attrs_buf,
+                format_args!(
+                    " class=\"{p}-stereotype\" font-size=\"{}\" fill=\"var(--_m)\"",
+                    js::Number(tiny)
+                ),
+            );
+            let label_attrs = rewrite(
+                &mut label_attrs_buf,
+                format_args!(
+                    " class=\"{p}-label\"{}{text_attrs}",
+                    fragment(|f| if node.shape == "note" {
+                        write!(f, " font-size=\"{}\"", js::Number(small))
+                    } else {
+                        Ok(())
+                    })
+                ),
+            );
+            let _ = write!(
+                nodes_out,
+                "{}{}",
+                LabelSvg(
                     &view.stereotype,
                     0.0,
                     -view.label.height / 2.0,
-                    &format!(
-                        " class=\"{p}-stereotype\" font-size=\"{}\" fill=\"var(--_m)\"",
-                        js::num_str(tiny)
-                    )
+                    stereotype_attrs
                 ),
-                label_svg(
-                    &view.label,
-                    0.0,
-                    label_y,
-                    &format!(
-                        " class=\"{p}-label\"{}{text_attrs}",
-                        if node.shape == "note" {
-                            format!(" font-size=\"{}\"", js::num_str(small))
-                        } else {
-                            String::new()
-                        }
-                    )
-                )
-            )
-        };
-        let _ = write!(
-            nodes_out,
-            "<g class=\"{p}-node {kind}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">{body}</g>",
-            num(c.x),
-            num(c.y)
-        );
+                LabelSvg(&view.label, 0.0, label_y, label_attrs)
+            );
+        }
+        nodes_out.push_str("</g>");
     }
 
     let mut edges_out = String::new();
@@ -890,12 +929,12 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
             let et = trim(end_type);
             // Both ends leave the node leaning away from each other, and the
             // curve joins them outside it.
-            let out = |x: f64, y: f64, sign: f64, far: f64| -> String {
+            let out = |x: f64, y: f64, sign: f64, far: f64| {
                 let lean = if far != 0.0 { 1.0 } else { 0.0 };
                 if sideways {
-                    format!("{},{}", num(x + sign * spread * lean), num(y + far))
+                    Point(x + sign * spread * lean, y + far)
                 } else {
-                    format!("{},{}", num(x + far), num(y + sign * spread * lean))
+                    Point(x + far, y + sign * spread * lean)
                 }
             };
             let sx = if sideways { ax - ux * st } else { ax + ux * st };
@@ -904,13 +943,11 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
             let ey = by + uy * et;
             path = EdgePath {
                 d: format!(
-                    "M{},{}C{} {} {},{}",
-                    num(sx),
-                    num(sy),
+                    "M{}C{} {} {}",
+                    Point(sx, sy),
                     out(ax, ay, -1.0, reach),
                     out(bx, by, 1.0, reach),
-                    num(ex),
-                    num(ey)
+                    Point(ex, ey)
                 ),
                 sx: ax,
                 sy: ay,
@@ -941,10 +978,9 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
                 None,
             );
         }
-        let color = match style.as_ref().and_then(|s| s.stroke.as_deref()) {
-            Some(stroke) if !stroke.is_empty() => esc(stroke),
-            _ => "var(--_l)".to_string(),
-        };
+        let color = style
+            .as_ref()
+            .map_or(Cow::Borrowed("var(--_l)"), ResolvedStyle::line_color);
         // Mermaid animates these dashes. A still picture keeps the dashes.
         let dashes = if edge.internal {
             "2 3"
@@ -960,38 +996,46 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
             "<g class=\"{p}-edge {p}-{}{}\" data-id=\"{}\"{}><path d=\"{}\"{}/>{}{}</g>",
             edge.relationship_type,
             class_names(&RE_EDGE_CLASSES.replace(&edge.classes, |_| String::new())),
-            esc_text(&edge.id),
+            EscText(&edge.id),
             style.as_ref().map_or("", |s| s.line.as_str()),
             path.d,
-            if dashes.is_empty() {
-                String::new()
+            fragment(|f| if dashes.is_empty() {
+                Ok(())
             } else {
-                format!(" stroke-dasharray=\"{dashes}\"")
-            },
+                write!(f, " stroke-dasharray=\"{dashes}\"")
+            }),
             mark(start_type, path.sx, path.sy, path.sdx, path.sdy, &color),
             mark(end_type, path.ex, path.ey, path.edx, path.edy, &color),
         );
         if label.width > 0.0 {
             let semantic = matches!(edge.relationship_type, "include" | "extend");
-            labels_out.push_str(&edge_label_svg(
-                &edge.id,
-                label,
-                cedges[i].label_x,
-                cedges[i].label_y,
-                &format!(
-                    "{}{}",
-                    if semantic { " fill=\"var(--_m)\"" } else { "" },
-                    style.as_ref().map_or("", |s| s.text.as_str())
-                ),
-            ));
+            let label_attrs = format!(
+                "{}{}",
+                if semantic { " fill=\"var(--_m)\"" } else { "" },
+                style.as_ref().map_or("", |s| s.text.as_str())
+            );
+            let _ = write!(
+                labels_out,
+                "{}",
+                edge_label_svg(
+                    &edge.id,
+                    label,
+                    cedges[i].label_x,
+                    cedges[i].label_y,
+                    &label_attrs,
+                )
+            );
         }
     }
 
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content = String::with_capacity(
+        clusters.len() + edges_out.len() + labels_out.len() + nodes_out.len() + 512,
+    );
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
@@ -1006,7 +1050,7 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
         let _ = write!(
             content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
-            js::num_str(small)
+            js::Number(small)
         );
     }
     let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");

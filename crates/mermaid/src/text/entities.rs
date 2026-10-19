@@ -1,5 +1,6 @@
 //! HTML entity codes and Mermaid's `#name;` placeholders, read as characters.
 
+use std::fmt::Write as _;
 use std::{collections::HashMap, sync::OnceLock};
 
 use super::super::js::Lazy;
@@ -78,7 +79,7 @@ fn decode_placeholders(text: &str) -> String {
             let raw = &text[at..stop + CLOSE.len()];
             out.push_str(&text[last..at]);
             if numeric {
-                out.push_str(&code_point(super::super::js::number(body), raw));
+                let _ = write!(out, "{}", code_point(super::super::js::number(body), raw));
             } else {
                 match lookup(body) {
                     Some(c) => out.push(c),
@@ -104,6 +105,18 @@ fn decode_placeholders(text: &str) -> String {
 /// [`super::super::preprocess::encode_entities`], and HTML entities into
 /// characters.
 pub fn decode_entities(text: &str) -> String {
+    decoded(text).into_owned()
+}
+
+/// [`decode_entities`], borrowing `text` when it holds nothing to decode.
+pub fn decoded(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains(CLOSE) && !text.contains('&') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    std::borrow::Cow::Owned(decode_owned(text))
+}
+
+fn decode_owned(text: &str) -> String {
     let text = if text.contains(CLOSE) {
         decode_placeholders(text)
     } else {

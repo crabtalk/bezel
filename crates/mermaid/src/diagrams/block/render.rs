@@ -1,5 +1,6 @@
 //! Pele's `diagrams/block/render.ts`.
 
+use crate::svg::builder::rewrite;
 use std::{
     collections::{HashMap, HashSet},
     f64::consts::{FRAC_1_SQRT_2, PI},
@@ -18,7 +19,7 @@ use crate::{
     diagrams::common::fit_width::{title_room, try_tighten},
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{EscText, LabelSvg, num},
         edges::{EdgePath, edge_label_svg, marker, marker_trim},
         root::{Accessible, svg_document},
         shapes::{draw_shape, shape_inset, shape_size},
@@ -908,13 +909,17 @@ fn draw(
 
     let mut clusters = String::new();
     let mut nodes = String::new();
+    let mut shape_attrs_buf = String::new();
+    let mut label_attrs_buf = String::new();
+    let mut line_attrs = String::new();
+    let mut title_attrs = String::new();
     for (v, c) in views.iter().zip(&cells).skip(1) {
         if v.kind == ViewKind::Space {
             continue;
         }
         let block = model.block(v.block);
         let classes = class_names(&model.classes_of(block).join(" "));
-        let id = esc_text(block.id.as_deref().unwrap_or(""));
+        let id = EscText(block.id.as_deref().unwrap_or(""));
         if v.kind == ViewKind::Composite {
             let top = v.y - c.h / 2.0;
             let _ = write!(
@@ -925,48 +930,53 @@ fn draw(
                 num(c.w),
                 num(c.h),
                 v.style.shape,
-                label_svg(
+                LabelSvg(
                     &v.label,
                     v.x,
                     top + (c.head + gap) / 2.0 + 2.0,
-                    &format!(
-                        " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
-                        v.style.text
+                    rewrite(
+                        &mut title_attrs,
+                        format_args!(
+                            " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
+                            v.style.text
+                        )
                     ),
                 ),
             );
             continue;
         }
         let arrow = v.kind == ViewKind::Arrow;
-        let shape = if arrow {
-            draw_arrow(
-                v.mask,
-                v.bw,
-                v.bh,
-                &format!("{SHAPE_ATTRS}{}", v.style.shape),
-            )
+        let _ = write!(
+            nodes,
+            "<g class=\"{p}-node {p}-shape-{}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">",
+            if arrow { "block-arrow" } else { v.shape },
+            num(v.x),
+            num(v.y)
+        );
+        let shape_attrs = rewrite(
+            &mut shape_attrs_buf,
+            format_args!("{SHAPE_ATTRS}{}", v.style.shape),
+        );
+        if arrow {
+            draw_arrow(&mut nodes, v.mask, v.bw, v.bh, shape_attrs);
         } else {
             draw_shape(
+                &mut nodes,
                 v.shape,
                 v.bw,
                 v.bh,
-                &format!("{SHAPE_ATTRS}{}", v.style.shape),
-                &format!("{LINE_ATTRS}{}", v.style.line),
-            )
-        };
-        let _ = write!(
-            nodes,
-            "<g class=\"{p}-node {p}-shape-{}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">{shape}{}</g>",
-            if arrow { "block-arrow" } else { v.shape },
-            num(v.x),
-            num(v.y),
-            label_svg(
-                &v.label,
-                v.dx,
-                v.dy,
-                &format!(" class=\"{p}-label\"{}", v.style.text),
-            ),
+                shape_attrs,
+                rewrite(
+                    &mut line_attrs,
+                    format_args!("{LINE_ATTRS}{}", v.style.line),
+                ),
+            );
+        }
+        let label_attrs = rewrite(
+            &mut label_attrs_buf,
+            format_args!(" class=\"{p}-label\"{}", v.style.text),
         );
+        let _ = write!(nodes, "{}</g>", LabelSvg(&v.label, v.dx, v.dy, label_attrs));
     }
 
     let mut edges = String::new();
@@ -997,7 +1007,7 @@ fn draw(
         let _ = write!(
             edges,
             "<g class=\"{p}-edge\" data-id=\"{}\"><path d=\"{}\"{}{}/>{}{}</g>",
-            esc_text(id),
+            EscText(id),
             path.d,
             if edge.thickness.as_deref() == Some("thick") {
                 " stroke-width=\"2.5\""
@@ -1020,21 +1030,21 @@ fn draw(
             marker(end_type, path.ex, path.ey, path.edx, path.edy, "var(--_l)"),
         );
         if route.label.width > 0.0 {
-            labels.push_str(&edge_label_svg(
-                id,
-                &route.label,
-                route.lx + ox,
-                route.ly + oy,
-                "",
-            ));
+            let _ = write!(
+                labels,
+                "{}",
+                edge_label_svg(id, &route.label, route.lx + ox, route.ly + oy, "",)
+            );
         }
     }
 
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content =
+        String::with_capacity(clusters.len() + edges.len() + nodes.len() + labels.len() + 512);
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
@@ -1050,7 +1060,7 @@ fn draw(
         let _ = write!(
             content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels}</g>",
-            js::num_str(edge_size)
+            js::Number(edge_size)
         );
     }
     let svg = svg_document(

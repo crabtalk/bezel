@@ -1,6 +1,10 @@
 //! Pele's `diagrams/class/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::rewrite;
+use std::{
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use indexmap::IndexMap;
 
@@ -25,7 +29,7 @@ use crate::{
         layered::LayeredOptions,
     },
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{Esc, EscText, LabelSvg, fragment, num},
         cluster::{Crossings, cluster_title_x, mark_crossings, struck_title, title_crossed},
         edges::{EdgePath, edge_label_svg, route_path},
         root::{Accessible, svg_document},
@@ -895,13 +899,15 @@ fn draw(
     let mut clusters = String::new();
     let mut struck_titles = String::new();
     let mut nodes_out = String::new();
+    let mut member_attrs = String::new();
+    let mut method_attrs = String::new();
     for i in 0..views.len() {
         let view = &views[i];
         let c = &cnodes[i];
         let node = &graph.nodes[i];
         let x = c.x + ox;
         let y = c.y + oy;
-        let id = esc_text(node.id);
+        let id = EscText(node.id);
         let w = if c.is_group { c.w } else { view.w };
         let h = if c.is_group { c.h } else { view.h };
         if node.is_group {
@@ -914,14 +920,18 @@ fn draw(
             let title_attrs = format!(" class=\"{p}-cluster-label\" fill=\"var(--_m)\"");
             let struck = c.is_group && title_crossed(c, view.label.width, title_x, &crossings);
             if struck {
-                struck_titles += &struck_title(
-                    &view.label,
-                    title_x + ox,
-                    title_y,
-                    &title_attrs,
-                    &id,
-                    &cnodes,
-                    i,
+                let _ = write!(
+                    struck_titles,
+                    "{}",
+                    struck_title(
+                        &view.label,
+                        title_x + ox,
+                        title_y,
+                        &title_attrs,
+                        &id,
+                        &cnodes,
+                        i,
+                    )
                 );
             }
             let _ = write!(
@@ -931,17 +941,25 @@ fn draw(
                 num(y - h / 2.0),
                 num(w),
                 num(h),
-                if struck {
-                    String::new()
+                fragment(|f| if struck {
+                    Ok(())
                 } else {
-                    label_svg(&view.label, title_x + ox, title_y, &title_attrs)
-                }
+                    write!(
+                        f,
+                        "{}",
+                        LabelSvg(&view.label, title_x + ox, title_y, &title_attrs)
+                    )
+                })
             );
             continue;
         }
-        let at = format!(" transform=\"translate({},{})\"", num(x), num(y));
+        let at = fragment(|f| write!(f, " transform=\"translate({},{})\"", num(x), num(y)));
         if let Some(cls) = node.class_node {
-            nodes_out += &class_svg(view, cls, &id, &at, &sizes, &mut links, ctx);
+            let _ = write!(
+                nodes_out,
+                "{}",
+                class_svg(view, cls, id, at, &sizes, &mut links, ctx)
+            );
         } else if node.shape == NodeShape::Note {
             let r = w / 2.0;
             let t = -h / 2.0;
@@ -959,22 +977,28 @@ fn draw(
                 num(t),
                 num(t + FOLD),
                 num(r),
-                label_svg(
+                LabelSvg(
                     &view.label,
                     0.0,
                     0.0,
-                    &format!(" class=\"{p}-label\" font-size=\"{}\"", js::num_str(small))
+                    rewrite(
+                        &mut member_attrs,
+                        format_args!(" class=\"{p}-label\" font-size=\"{}\"", js::Number(small))
+                    )
                 )
             );
         } else {
             let _ = write!(
                 nodes_out,
                 "<g class=\"{p}-node {p}-interface\" data-id=\"{id}\"{at}>{}</g>",
-                label_svg(
+                LabelSvg(
                     &view.label,
                     0.0,
                     0.0,
-                    &format!(" class=\"{p}-label\" font-size=\"{}\"", js::num_str(small))
+                    rewrite(
+                        &mut method_attrs,
+                        format_args!(" class=\"{p}-label\" font-size=\"{}\"", js::Number(small))
+                    )
                 )
             );
         }
@@ -1042,13 +1066,17 @@ fn draw(
             } else {
                 format!(" {p}-relation")
             },
-            esc_text(&edge.id),
+            EscText(&edge.id),
             path.d,
             class_marker(start_type, path.sx, path.sy, path.sdx, path.sdy, LINE),
             class_marker(end_type, path.ex, path.ey, path.edx, path.edy, LINE)
         );
         if label.width > 0.0 {
-            labels_out += &edge_label_svg(&edge.id, label, ce.label_x + ox, ce.label_y + oy, "");
+            let _ = write!(
+                labels_out,
+                "{}",
+                edge_label_svg(&edge.id, label, ce.label_x + ox, ce.label_y + oy, "")
+            );
         }
     }
 
@@ -1059,7 +1087,7 @@ fn draw(
             "<text class=\"{p}-cardinality\" x=\"{}\" y=\"{}\" text-anchor=\"middle\">{}</text>",
             num(item.x + ox),
             num(item.y + oy + tiny * 0.35),
-            esc(&item.text)
+            Esc(&item.text)
         );
     }
 
@@ -1083,14 +1111,14 @@ fn draw(
         let _ = write!(
             content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
-            js::num_str(small)
+            js::Number(small)
         );
     }
     if !cards_out.is_empty() {
         let _ = write!(
             content,
             "<g class=\"{p}-cardinalities\" font-size=\"{}\" fill=\"var(--_m)\">{cards_out}</g>",
-            js::num_str(tiny)
+            js::Number(tiny)
         );
     }
     let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");
@@ -1125,15 +1153,15 @@ fn draw(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn class_svg(
-    view: &View,
-    cls: &ClassNode,
-    id: &str,
-    at: &str,
-    sizes: &Sizes<'_, impl Host>,
+fn class_svg<'a, H: Host>(
+    view: &'a View,
+    cls: &'a ClassNode,
+    id: impl fmt::Display + 'a,
+    at: impl fmt::Display + 'a,
+    sizes: &'a Sizes<'_, H>,
     links: &mut Vec<Link>,
-    ctx: &Ctx<'_, impl Host>,
-) -> String {
+    ctx: &'a Ctx<'_, impl Host>,
+) -> impl fmt::Display + 'a {
     let p = crate::PREFIX;
     let (w, h, style) = (view.w, view.h, &view.style);
     let tiny = sizes.tiny;
@@ -1142,108 +1170,122 @@ fn class_svg(
     let top = -h / 2.0;
     let member_size = js::round(view.font_size * 0.875);
     let line_height = js::round(member_size * 1.5);
-    let mut body = format!(
-        "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"{}/>",
-        num(left),
-        num(top),
-        num(w),
-        num(h),
-        style.shape
-    );
     let first = top + view.title_h;
     let second = first + view.attributes_h;
-    if h > view.title_h {
-        let stroke = match style.stroke.as_deref() {
-            Some(stroke) if !stroke.is_empty() => format!(" style=\"stroke:{}\"", esc(stroke)),
-            _ => String::new(),
-        };
-        let _ = write!(
-            body,
-            "<path class=\"{p}-divider\" d=\"M{},{}H{}M{},{}H{}\" fill=\"none\" stroke=\"var(--_b)\"{stroke}/>",
-            num(left),
-            num(first),
-            num(-left),
-            num(left),
-            num(second),
-            num(-left)
-        );
-    }
-    let mut y = top + TITLE_PAD;
-    for annotation in &view.annotations {
-        let _ = write!(
-            body,
-            "<text class=\"{p}-annotation\" x=\"0\" y=\"{}\" text-anchor=\"middle\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
-            num(y + tiny_height / 2.0 + tiny * 0.35),
-            js::num_str(tiny),
-            esc(annotation)
-        );
-        y += tiny_height;
-    }
-    let title_size = if view.font_size == sizes.size {
-        String::new()
-    } else {
-        format!(" font-size=\"{}\"", num(view.font_size))
-    };
-    body += &label_svg(
-        &view.label,
-        0.0,
-        (y + first - TITLE_PAD) / 2.0,
-        &format!(
-            " class=\"{p}-label\"{title_size} font-weight=\"var(--_hw)\"{}",
-            style.text
-        ),
+    let title_attrs = format!(
+        " class=\"{p}-label\"{} font-weight=\"var(--_hw)\"{}",
+        fragment(|f| if view.font_size == sizes.size {
+            Ok(())
+        } else {
+            write!(f, " font-size=\"{}\"", num(view.font_size))
+        }),
+        style.text
     );
-    let lines = |list: &[Line], kind: &str, from: f64| -> String {
-        let mut out = String::new();
+    let lines = move |f: &mut fmt::Formatter<'_>, list: &[Line], kind: &str, from: f64| {
         let mut baseline = from + SECTION_PAD + line_height / 2.0 + member_size * 0.35;
         for line in list {
-            let mark = match line.classifier.as_str() {
-                "$" => format!(
-                    " {p}-static\"{}",
-                    if style.text.is_empty() {
-                        " style=\"text-decoration:underline\"".to_string()
-                    } else {
-                        format!(
-                            "{}text-decoration:underline\"",
-                            &style.text[..style.text.len() - 1]
-                        )
-                    }
-                ),
-                "*" => format!(" {p}-abstract\" font-style=\"italic\"{}", style.text),
-                _ => format!("\"{}", style.text),
-            };
-            let _ = write!(
-                out,
-                "<text class=\"{p}-member {p}-{kind}{mark} x=\"{}\" y=\"{}\">{}</text>",
+            write!(f, "<text class=\"{p}-member {p}-{kind}")?;
+            match line.classifier.as_str() {
+                "$" if style.text.is_empty() => {
+                    write!(f, " {p}-static\" style=\"text-decoration:underline\"")?
+                }
+                "$" => write!(
+                    f,
+                    " {p}-static\"{}text-decoration:underline\"",
+                    &style.text[..style.text.len() - 1]
+                )?,
+                "*" => write!(f, " {p}-abstract\" font-style=\"italic\"{}", style.text)?,
+                _ => write!(f, "\"{}", style.text)?,
+            }
+            write!(
+                f,
+                " x=\"{}\" y=\"{}\">{}</text>",
                 num(left + PAD_X),
                 num(baseline),
-                esc(&line.text)
-            );
+                Esc(&line.text)
+            )?;
             baseline += line_height;
         }
-        out
+        Ok(())
     };
-    if !view.attributes.is_empty() || !view.methods.is_empty() {
-        let _ = write!(
-            body,
-            "<g class=\"{p}-members\" font-size=\"{}\">{}{}</g>",
-            js::num_str(member_size),
-            lines(&view.attributes, "attribute", first),
-            lines(&view.methods, "method", second)
-        );
-    }
-    if let Some(tooltip) = cls.tooltip.as_deref().filter(|tip| !tip.is_empty()) {
-        body = format!("<title>{}</title>{body}", esc_text(tooltip));
-    }
-    if let Some(link) = cls.link.as_deref().filter(|link| !link.is_empty()) {
-        let target = match cls.link_target.as_deref() {
-            Some(target) if TARGETS.contains(&target) => format!(" target=\"{target}\""),
-            _ => String::new(),
-        };
-        body = linked(&body, link, &cls.id, links, ctx, &target);
-    }
-    format!(
-        "<g class=\"{p}-node {p}-class{}\" data-id=\"{id}\"{at}>{body}</g>",
-        class_names(&RE_DEFAULT.replace(&cls.css_classes, |_| String::new()))
-    )
+    let body = fragment(move |f| {
+        if let Some(tooltip) = cls.tooltip.as_deref().filter(|tip| !tip.is_empty()) {
+            write!(f, "<title>{}</title>", EscText(tooltip))?;
+        }
+        write!(
+            f,
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"{}/>",
+            num(left),
+            num(top),
+            num(w),
+            num(h),
+            style.shape
+        )?;
+        if h > view.title_h {
+            write!(
+                f,
+                "<path class=\"{p}-divider\" d=\"M{},{}H{}M{},{}H{}\" fill=\"none\" stroke=\"var(--_b)\"",
+                num(left),
+                num(first),
+                num(-left),
+                num(left),
+                num(second),
+                num(-left)
+            )?;
+            if let Some(stroke) = style.stroke.as_deref().filter(|stroke| !stroke.is_empty()) {
+                write!(f, " style=\"stroke:{}\"", Esc(stroke))?;
+            }
+            f.write_str("/>")?;
+        }
+        let mut y = top + TITLE_PAD;
+        for annotation in &view.annotations {
+            write!(
+                f,
+                "<text class=\"{p}-annotation\" x=\"0\" y=\"{}\" text-anchor=\"middle\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
+                num(y + tiny_height / 2.0 + tiny * 0.35),
+                js::Number(tiny),
+                Esc(annotation)
+            )?;
+            y += tiny_height;
+        }
+        write!(
+            f,
+            "{}",
+            LabelSvg(
+                &view.label,
+                0.0,
+                (y + first - TITLE_PAD) / 2.0,
+                &title_attrs
+            )
+        )?;
+        if !view.attributes.is_empty() || !view.methods.is_empty() {
+            write!(
+                f,
+                "<g class=\"{p}-members\" font-size=\"{}\">",
+                js::Number(member_size)
+            )?;
+            lines(f, &view.attributes, "attribute", first)?;
+            lines(f, &view.methods, "method", second)?;
+            f.write_str("</g>")?;
+        }
+        Ok(())
+    });
+    let target = cls
+        .link_target
+        .as_deref()
+        .filter(|target| TARGETS.contains(target));
+    let target = fragment(move |f| match target {
+        Some(target) => write!(f, " target=\"{target}\""),
+        None => Ok(()),
+    });
+    let url = cls.link.as_deref().filter(|link| !link.is_empty());
+    let body = linked(body, url, &cls.id, links, ctx, target);
+    let classes = class_names(&RE_DEFAULT.replace(&cls.css_classes, |_| String::new()));
+    fragment(move |f| {
+        write!(
+            f,
+            "<g class=\"{p}-node {p}-class{classes}\" data-id=\"{id}\"{at}>"
+        )?;
+        write!(f, "{body}</g>")
+    })
 }

@@ -4,6 +4,7 @@ use super::{
     db::{XAxis, XyChartModel},
     ticks::{tick_index, tick_step, tick_value, ticks_between},
 };
+use crate::svg::builder::{Esc, EscText, LabelSvg, TITLE, fragment};
 use crate::{
     Config, Error, Rendered,
     config::{Map, Value},
@@ -11,14 +12,14 @@ use crate::{
     diagrams::common::fit_width::cap_width,
     js,
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::num,
         root::{Accessible, svg_document},
         theme::series_color,
     },
     text::{Label, Style, layout_label},
 };
 use crate::{Ctx, Host};
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 
 const TICK: f64 = 4.0;
 const SWATCH: f64 = 12.0;
@@ -79,25 +80,28 @@ fn widest(marks: &[Mark]) -> f64 {
 /// Writes a label with its left edge, center or right edge at x. A plain
 /// one-line label keeps its place when the text is wider or narrower than
 /// measured.
-fn aligned(label: &Label, x: f64, y: f64, anchor: Anchor) -> String {
-    if label.lines.len() == 1 {
-        let line = &label.lines[0];
-        if line.len() == 1 && line[0].icon.is_none() && line[0].style == 0 {
-            return format!(
-                "<text x=\"{}\" y=\"{}\" text-anchor=\"{}\">{}</text>",
-                num(x),
-                num(y + label.size * 0.35),
-                anchor.name(),
-                esc(&line[0].text)
-            );
+fn aligned(label: &Label, x: f64, y: f64, anchor: Anchor) -> impl fmt::Display {
+    fragment(move |f| {
+        if label.lines.len() == 1 {
+            let line = &label.lines[0];
+            if line.len() == 1 && line[0].icon.is_none() && line[0].style == 0 {
+                return write!(
+                    f,
+                    "<text x=\"{}\" y=\"{}\" text-anchor=\"{}\">{}</text>",
+                    num(x),
+                    num(y + label.size * 0.35),
+                    anchor.name(),
+                    Esc(&line[0].text)
+                );
+            }
         }
-    }
-    let shift = match anchor {
-        Anchor::Start => label.width / 2.0,
-        Anchor::End => -label.width / 2.0,
-        Anchor::Middle => 0.0,
-    };
-    label_svg(label, x + shift, y, "")
+        let shift = match anchor {
+            Anchor::Start => label.width / 2.0,
+            Anchor::End => -label.width / 2.0,
+            Anchor::Middle => 0.0,
+        };
+        write!(f, "{}", LabelSvg(label, x + shift, y, ""))
+    })
 }
 
 pub fn render_xy_chart(
@@ -523,12 +527,14 @@ pub fn render_xy_chart(
     let clamp = |v: f64| -> f64 { js::min(js::max(v, 0.0), 1.0) };
 
     // A line across the plot at a place on the value axis.
-    let rule = |v: f64| -> String {
-        if horizontal {
-            format!("M{},{}V{}", num(px(0.0, v)), num(top), num(bottom))
-        } else {
-            format!("M{},{}H{}", num(left), num(py(0.0, v)), num(right))
-        }
+    let rule = |v: f64| {
+        fragment(move |f| {
+            if horizontal {
+                write!(f, "M{},{}V{}", num(px(0.0, v)), num(top), num(bottom))
+            } else {
+                write!(f, "M{},{}H{}", num(left), num(py(0.0, v)), num(right))
+            }
+        })
     };
 
     let mut grid = String::new();
@@ -537,7 +543,7 @@ pub fn render_xy_chart(
     } else {
         &left_marks
     } {
-        grid.push_str(&rule(mark.at));
+        let _ = write!(grid, "{}", rule(mark.at));
     }
 
     let mut axis = String::new();
@@ -555,21 +561,14 @@ pub fn render_xy_chart(
             bottom - mark.at * plot_height
         };
         if left_tick != 0.0 {
-            let _ = write!(
-                axis,
-                "M{},{}h{}",
-                num(left),
-                num(y),
-                js::num_str(-left_tick)
-            );
+            let _ = write!(axis, "M{},{}h{}", num(left), num(y), js::Number(-left_tick));
         }
         if left_labels {
-            labels.push_str(&aligned(
-                &mark.label,
-                left - left_tick - 6.0,
-                y,
-                Anchor::End,
-            ));
+            let _ = write!(
+                labels,
+                "{}",
+                aligned(&mark.label, left - left_tick - 6.0, y, Anchor::End,)
+            );
         }
     }
     for mark in &bottom_marks {
@@ -580,16 +579,20 @@ pub fn render_xy_chart(
                 "M{},{}v{}",
                 num(at),
                 num(bottom),
-                js::num_str(bottom_tick)
+                js::Number(bottom_tick)
             );
         }
         if bottom_labels {
-            labels.push_str(&aligned(
-                &mark.label,
-                at,
-                bottom + bottom_tick + 4.0 + mark.label.height / 2.0,
-                Anchor::Middle,
-            ));
+            let _ = write!(
+                labels,
+                "{}",
+                aligned(
+                    &mark.label,
+                    at,
+                    bottom + bottom_tick + 4.0 + mark.label.height / 2.0,
+                    Anchor::Middle,
+                )
+            );
         }
     }
 
@@ -604,7 +607,7 @@ pub fn render_xy_chart(
     let base = clamp(scale(0.0));
     // Bars that go both ways get a line to stand on.
     if bars > 0 && base > 0.0 && base < 1.0 {
-        axis.push_str(&rule(base));
+        let _ = write!(axis, "{}", rule(base));
     }
     // Lines are drawn over the bars wherever they were declared, as a bar
     // would hide part of one under it. A series keeps the color of its place
@@ -615,13 +618,18 @@ pub fn render_xy_chart(
     let mut point_labels = String::new();
     let mut bar = 0;
     let bars_f = bars as f64;
+    let mut rects = String::new();
+    let mut d = String::new();
+    let mut dots = String::new();
     for (index, plot) in plots.iter().enumerate() {
         let color = series_color(index as i64);
-        let id = if plot.title.is_empty() {
-            String::new()
-        } else {
-            format!(" data-id=\"{}\"", esc_text(&plot.title))
-        };
+        let id = fragment(|f| {
+            if plot.title.is_empty() {
+                Ok(())
+            } else {
+                write!(f, " data-id=\"{}\"", EscText(&plot.title))
+            }
+        });
         // A series declared before the categories can hold more values than
         // there are categories.
         let n = if band {
@@ -632,7 +640,7 @@ pub fn render_xy_chart(
         if plot.kind == "bar" {
             let offset = (bar as f64 - (bars_f - 1.0) / 2.0) * thickness - (thickness - gap) / 2.0;
             bar += 1;
-            let mut rects = String::new();
+            rects.clear();
             for i in 0..n {
                 let Some(value) = finite(plot.data[i].1) else {
                     continue;
@@ -708,8 +716,8 @@ pub fn render_xy_chart(
 
         // A line is cut where it leaves the value range, so it stays inside
         // the plot.
-        let mut d = String::new();
-        let mut dots = String::new();
+        d.clear();
+        dots.clear();
         let mut pen = false;
         let mut pc = 0.0;
         let mut pv = f64::NAN;
@@ -775,16 +783,16 @@ pub fn render_xy_chart(
             );
             if label.height > 0.0 {
                 let half = label.width / 2.0;
-                point_labels.push_str(&if horizontal {
-                    aligned(&label, cx + 10.0, cy, Anchor::Start)
+                let (x, y, anchor) = if horizontal {
+                    (cx + 10.0, cy, Anchor::Start)
                 } else {
-                    aligned(
-                        &label,
+                    (
                         js::max(js::min(cx, right - half), left + half),
                         cy - 6.0 - label.height / 2.0,
                         Anchor::Middle,
                     )
-                });
+                };
+                let _ = write!(point_labels, "{}", aligned(&label, x, y, anchor));
             }
         }
         let _ = write!(
@@ -808,15 +816,19 @@ pub fn render_xy_chart(
             "<g transform=\"translate({},{}) rotate(-90)\">{}</g>",
             num(pad + left_title.height / 2.0),
             num(top + plot_height / 2.0),
-            label_svg(&left_title, 0.0, 0.0, "")
+            LabelSvg(&left_title, 0.0, 0.0, "")
         );
     }
-    titles.push_str(&label_svg(
-        &bottom_title,
-        left + plot_width / 2.0,
-        height - pad - bottom_title.height / 2.0,
-        "",
-    ));
+    let _ = write!(
+        titles,
+        "{}",
+        LabelSvg(
+            &bottom_title,
+            left + plot_width / 2.0,
+            height - pad - bottom_title.height / 2.0,
+            "",
+        )
+    );
 
     let mut legend_out = String::new();
     let mut legend_height = 0.0;
@@ -832,38 +844,54 @@ pub fn render_xy_chart(
         }
         let y = ly + row / 2.0;
         let color = series_color(*index as i64);
-        let swatch = if plots[*index].kind == "bar" {
-            format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{color}\"/>",
-                num(lx),
-                num(y - SWATCH / 2.0),
-                js::num_str(SWATCH),
-                js::num_str(SWATCH)
-            )
-        } else {
-            format!(
-                "<path d=\"M{},{}h{}\" stroke=\"{color}\" stroke-width=\"2\" stroke-linecap=\"round\"/>",
-                num(lx),
-                num(y),
-                js::num_str(SWATCH)
-            )
-        };
+        let bar = plots[*index].kind == "bar";
+        let swatch = fragment(|f| {
+            if bar {
+                write!(
+                    f,
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{color}\"/>",
+                    num(lx),
+                    num(y - SWATCH / 2.0),
+                    js::Number(SWATCH),
+                    js::Number(SWATCH)
+                )
+            } else {
+                write!(
+                    f,
+                    "<path d=\"M{},{}h{}\" stroke=\"{color}\" stroke-width=\"2\" stroke-linecap=\"round\"/>",
+                    num(lx),
+                    num(y),
+                    js::Number(SWATCH)
+                )
+            }
+        });
         let _ = write!(
             legend_out,
             "<g class=\"{p}-legend-item\" data-id=\"{}\">{swatch}{}</g>",
-            esc_text(&plots[*index].title),
-            label_svg(label, lx + SWATCH + 8.0 + label.width / 2.0, y, "")
+            EscText(&plots[*index].title),
+            LabelSvg(label, lx + SWATCH + 8.0 + label.width / 2.0, y, "")
         );
         ly += row;
     }
 
-    let small_str = js::num_str(small);
-    let tiny_str = js::num_str(tiny);
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let small_str = js::Number(small);
+    let tiny_str = js::Number(tiny);
+    let mut content = String::with_capacity(
+        grid.len()
+            + series.len()
+            + lines.len()
+            + axis.len()
+            + labels.len()
+            + titles.len()
+            + outside.len()
+            + point_labels.len()
+            + legend_out.len()
+            + 1024,
+    );
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE)
     );
     if !grid.is_empty() {
         let _ = write!(

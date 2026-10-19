@@ -1,5 +1,7 @@
 //! Pele's `diagrams/block/arrows.ts`.
 
+use std::fmt::Write as _;
+
 use crate::{js, svg::builder::push_num};
 
 pub const RIGHT: u32 = 1;
@@ -96,7 +98,7 @@ pub fn arrow_size(mask: u32, tw: f64, th: f64) -> ArrowSize {
     }
 }
 
-pub fn draw_arrow(mask: u32, w: f64, h: f64, attrs: &str) -> String {
+pub fn draw_arrow(out: &mut String, mask: u32, w: f64, h: f64, attrs: &str) {
     let axis = arrow_axis(mask);
     let x = w / 2.0;
     let y = h / 2.0;
@@ -158,14 +160,14 @@ pub fn draw_arrow(mask: u32, w: f64, h: f64, attrs: &str) -> String {
             }
         }
     }
-    let mut points = String::new();
+    out.push_str("<polygon points=\"");
     for (i, pair) in p.chunks(2).enumerate() {
         if i > 0 {
-            points.push(' ');
+            out.push(' ');
         }
-        push_num(&mut points, pair[0]);
-        points.push(',');
-        push_num(&mut points, pair[1]);
+        push_num(out, pair[0]);
+        out.push(',');
+        push_num(out, pair[1]);
     }
-    format!("<polygon points=\"{points}\" stroke-linejoin=\"round\"{attrs}/>")
+    let _ = write!(out, "\" stroke-linejoin=\"round\"{attrs}/>");
 }

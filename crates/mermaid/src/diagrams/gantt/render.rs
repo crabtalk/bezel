@@ -1,5 +1,6 @@
 //! Pele's `diagrams/gantt/render.ts`.
 
+use crate::svg::builder::rewrite;
 use indexmap::IndexMap;
 use std::fmt::Write as _;
 
@@ -19,7 +20,7 @@ use crate::{
         date::{Date, LocalZone},
     },
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{Esc, EscText, LabelSvg, Point, fragment, num},
         root::{Accessible, svg_document},
         theme::{CRITICAL, RADIUS, resolve_style},
     },
@@ -237,12 +238,17 @@ pub fn render_gantt(
     } else {
         0.0
     };
-    let title_attrs = format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\"");
+    let title_attrs = crate::svg::builder::TITLE;
 
     if !has_plot {
         let width = (title.width.max(1.0) + 2.0 * pad).ceil();
         let height = (title.height.max(1.0) + 2.0 * pad).ceil();
-        let content = label_svg(&title, width / 2.0, pad + title.height / 2.0, &title_attrs);
+        let mut content = String::new();
+        let _ = write!(
+            content,
+            "{}",
+            LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+        );
         return Ok(Rendered {
             svg: svg_document(
                 "gantt",
@@ -428,8 +434,7 @@ pub fn render_gantt(
         }
         last_right = tx + width / 2.0;
         extent = extent.max(last_right);
-        let body = format!("text-anchor=\"middle\">{}</text>", esc(&label));
-        last_label = label;
+        let body = fragment(|f| write!(f, "text-anchor=\"middle\">{}</text>", Esc(&label)));
         let _ = write!(
             axis_bottom,
             "<text x=\"{}\" y=\"{}\" {body}",
@@ -444,6 +449,7 @@ pub fn render_gantt(
                 num(top_y + tick_size * 0.35)
             );
         }
+        last_label = label;
     }
 
     // Vertical markers take no row. Their labels go under the axis, on as
@@ -477,19 +483,23 @@ pub fn render_gantt(
         let _ = write!(
             vert_lines,
             "<path class=\"{p}-vert\" data-id=\"{}\" d=\"M{},{}V{}\"/>",
-            esc_text(&task.id),
+            EscText(&task.id),
             num(vx),
             num(plot_top - grid_lead),
             num(plot_bottom)
         );
-        vert_labels += &label_svg(
-            &label,
-            cx,
-            vert_top + line as f64 * vert_line + vert_line / 2.0,
-            &format!(
-                " class=\"{p}-vert-label\" data-id=\"{}\"",
-                esc_text(&task.id)
-            ),
+        let _ = write!(
+            vert_labels,
+            "{}",
+            LabelSvg(
+                &label,
+                cx,
+                vert_top + line as f64 * vert_line + vert_line / 2.0,
+                &format!(
+                    " class=\"{p}-vert-label\" data-id=\"{}\"",
+                    EscText(&task.id)
+                ),
+            )
         );
     }
 
@@ -522,9 +532,9 @@ pub fn render_gantt(
             let _ = write!(
                 bands,
                 "<rect class=\"{p}-section {p}-section-{}\" x=\"0\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>",
-                js::num_str(index),
+                js::Number(index),
                 num(y),
-                js::num_str(width),
+                js::Number(width),
                 num(h),
                 if index % 2.0 == 0.0 {
                     "var(--_s)"
@@ -534,14 +544,18 @@ pub fn render_gantt(
             );
         }
         let label = &section_labels[section];
-        section_out += &label_svg(
-            label,
-            pad + 8.0 + label.width / 2.0,
-            y + h / 2.0,
-            &format!(
-                " class=\"{p}-section-label\" data-id=\"{}\"",
-                esc_text(section)
-            ),
+        let _ = write!(
+            section_out,
+            "{}",
+            LabelSvg(
+                label,
+                pad + 8.0 + label.width / 2.0,
+                y + h / 2.0,
+                &format!(
+                    " class=\"{p}-section-label\" data-id=\"{}\"",
+                    EscText(section)
+                ),
+            )
         );
         row = end;
     }
@@ -594,6 +608,7 @@ pub fn render_gantt(
 
     let mut links: Vec<Link> = Vec::new();
     let mut tasks_out = String::new();
+    let mut label_attrs_buf = String::new();
     for bar in &bars {
         let task = &tasks[bar.task];
         let cy = plot_top + bar.row as f64 * row_height + row_height / 2.0;
@@ -604,92 +619,85 @@ pub fn render_gantt(
         } else {
             ""
         };
-        let mut classes = format!("{p}-task");
+        let unscheduled = bar.x0.is_nan();
+        let _ = write!(tasks_out, "<g class=\"{p}-task");
         if !state.is_empty() {
-            let _ = write!(classes, " {p}-{state}");
+            let _ = write!(tasks_out, " {p}-{state}");
         }
         if task.crit {
-            let _ = write!(classes, " {p}-crit");
+            let _ = write!(tasks_out, " {p}-crit");
         }
         if task.milestone {
-            let _ = write!(classes, " {p}-milestone");
+            let _ = write!(tasks_out, " {p}-milestone");
         }
         if task.classes.iter().any(|class| class == "clickable") {
-            let _ = write!(classes, " {p}-clickable");
+            let _ = write!(tasks_out, " {p}-clickable");
         }
+        if unscheduled {
+            let _ = write!(tasks_out, " {p}-unscheduled");
+        }
+        let _ = write!(tasks_out, "\" data-id=\"{}\">", EscText(&task.id));
 
-        let mut shape = String::new();
-        let mut text_fill = "";
-        if bar.x0.is_nan() {
-            let _ = write!(classes, " {p}-unscheduled");
-            text_fill = " fill=\"var(--_m)\"";
+        // A critical task takes the critical color in place of the accent.
+        // Done, it keeps the fill of finished work and only its border is in
+        // that color.
+        let color = if task.crit { CRITICAL } else { "var(--_c)" };
+        let paint = fragment(|f| match state {
+            "done" => f.write_str("fill=\"var(--_a)\""),
+            "active" => write!(f, "fill=\"{color}\" fill-opacity=\"0.25\""),
+            _ => write!(f, "fill=\"{color}\""),
+        });
+        let stroke = if state == "done" && !task.crit {
+            "var(--_b)"
         } else {
-            // A critical task takes the critical color in place of the
-            // accent. Done, it keeps the fill of finished work and only its
-            // border is in that color.
-            let color = if task.crit { CRITICAL } else { "var(--_c)" };
-            let paint = match state {
-                "done" => "fill=\"var(--_a)\"".to_string(),
-                "active" => format!("fill=\"{color}\" fill-opacity=\"0.25\""),
-                _ => format!("fill=\"{color}\""),
-            };
-            let stroke = format!(
-                "stroke=\"{}\"",
-                if state == "done" && !task.crit {
-                    "var(--_b)"
-                } else {
-                    color
-                }
-            );
-            if task.milestone {
+            color
+        };
+        let text_fill = if unscheduled {
+            " fill=\"var(--_m)\""
+        } else if bar.inside {
+            if state.is_empty() {
+                " fill=\"var(--_bg)\""
+            } else {
+                ""
+            }
+        } else if state == "done" {
+            " fill=\"var(--_m)\""
+        } else {
+            ""
+        };
+        let label_attrs = rewrite(
+            &mut label_attrs_buf,
+            format_args!(" class=\"{p}-label\"{text_fill}"),
+        );
+        let body = fragment(|f| {
+            if unscheduled {
+                // No bar: the task has no dates.
+            } else if task.milestone {
                 let cx = (bar.x0 + bar.x1) / 2.0;
                 let r = bar_height / 2.0;
-                shape = format!(
-                    "<path d=\"M{},{}L{},{}L{},{}L{},{}Z\" {paint} {stroke} stroke-linejoin=\"round\"/>",
-                    num(cx),
-                    num(cy - r),
-                    num(cx + r),
-                    num(cy),
-                    num(cx),
-                    num(cy + r),
-                    num(cx - r),
-                    num(cy)
-                );
+                write!(
+                    f,
+                    "<path d=\"M{}L{}L{}L{}Z\" {paint} stroke=\"{stroke}\" stroke-linejoin=\"round\"/>",
+                    Point(cx, cy - r),
+                    Point(cx + r, cy),
+                    Point(cx, cy + r),
+                    Point(cx - r, cy)
+                )?;
             } else {
-                shape = format!(
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" {paint} {stroke}/>",
+                write!(
+                    f,
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" {paint} stroke=\"{stroke}\"/>",
                     num(bar.x0),
                     num(cy - bar_height / 2.0),
                     num(bar.x1 - bar.x0),
                     num(bar_height)
-                );
+                )?;
             }
-            if bar.inside {
-                text_fill = if state.is_empty() {
-                    " fill=\"var(--_bg)\""
-                } else {
-                    ""
-                };
-            } else if state == "done" {
-                text_fill = " fill=\"var(--_m)\"";
-            }
-        }
-
-        let mut body = shape
-            + &label_svg(
-                &bar.label,
-                bar.label_x,
-                cy,
-                &format!(" class=\"{p}-label\"{text_fill}"),
-            );
-        if let Some(url) = model.links.get(&task.id) {
-            body = linked(&body, url, &task.id, &mut links, ctx, "");
-        }
-        let _ = write!(
-            tasks_out,
-            "<g class=\"{classes}\" data-id=\"{}\">{body}</g>",
-            esc_text(&task.id)
-        );
+            write!(f, "{}", LabelSvg(&bar.label, bar.label_x, cy, label_attrs))
+        });
+        let url = model.links.get(&task.id).map(String::as_str);
+        let body = linked(body, url, &task.id, &mut links, ctx, "");
+        let _ = write!(tasks_out, "{body}</g>");
     }
 
     let mut today = String::new();
@@ -732,7 +740,14 @@ pub fn render_gantt(
             num(right)
         );
     }
-    let mut content = label_svg(&title, width / 2.0, pad + title.height / 2.0, &title_attrs);
+    let mut content = String::with_capacity(
+        bands.len() + excluded.len() + grid.len() + tasks_out.len() + section_out.len() + 1024,
+    );
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+    );
     if !bands.is_empty() {
         let _ = write!(content, "<g class=\"{p}-sections\">{bands}</g>");
     }
@@ -766,7 +781,7 @@ pub fn render_gantt(
     let _ = write!(
         content,
         "<g class=\"{p}-axis\" font-size=\"{}\" fill=\"var(--_m)\">{axis_bottom}{axis_top}</g>",
-        js::num_str(tick_size)
+        js::Number(tick_size)
     );
     if !vert_labels.is_empty() {
         let _ = write!(

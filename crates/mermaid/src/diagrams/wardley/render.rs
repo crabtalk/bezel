@@ -4,7 +4,7 @@ use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     f64::consts::{PI, SQRT_2},
-    fmt::Write as _,
+    fmt::{self, Write as _},
 };
 
 use indexmap::IndexMap;
@@ -16,7 +16,9 @@ use crate::{
     diagrams::common::fit_width::fit_width,
     js,
     svg::{
-        builder::{esc, esc_text, label_svg, num, shared_style, span_style, text_style},
+        builder::{
+            Esc, EscText, LabelSvg, Point, fragment, num, shared_style, span_style, text_style,
+        },
         edges::{marker, marker_trim},
         root::{Accessible, svg_document},
         theme::RADIUS,
@@ -65,40 +67,45 @@ fn clamp(value: f64, min: f64, max: f64) -> f64 {
     }
 }
 
-/// Writes a label with its lines starting at x and its first baseline at y.
-fn start_label(label: &Label, x: f64, y: f64, attrs: &str) -> String {
-    let shared = shared_style(label);
-    let mut body = String::new();
-    let mut baseline = y;
-    for line in &label.lines {
-        let mut first = true;
-        for span in line {
-            if span.icon.is_some() {
-                continue;
-            }
-            let style = span_style(span.style & !shared);
-            if first {
-                let _ = write!(
-                    body,
-                    "<tspan x=\"{}\" y=\"{}\"{style}>{}</tspan>",
-                    num(x),
-                    num(baseline),
-                    esc(&span.text)
-                );
-            } else {
-                let _ = write!(body, "<tspan{style}>{}</tspan>", esc(&span.text));
-            }
-            first = false;
+/// A label with its lines starting at x and its first baseline at y.
+struct StartLabel<'a>(&'a Label, f64, f64, &'a str);
+
+impl fmt::Display for StartLabel<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let StartLabel(label, x, y, attrs) = *self;
+        if !label.lines.iter().flatten().any(|span| span.icon.is_none()) {
+            return Ok(());
         }
-        baseline += label.line_height;
-    }
-    if body.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "<text{} xml:space=\"preserve\">{body}</text>",
+        let shared = shared_style(label);
+        write!(
+            f,
+            "<text{} xml:space=\"preserve\">",
             text_style(attrs, shared)
-        )
+        )?;
+        let mut baseline = y;
+        for line in &label.lines {
+            let mut first = true;
+            for span in line {
+                if span.icon.is_some() {
+                    continue;
+                }
+                let style = span_style(span.style & !shared);
+                if first {
+                    write!(
+                        f,
+                        "<tspan x=\"{}\" y=\"{}\"{style}>{}</tspan>",
+                        num(x),
+                        num(baseline),
+                        Esc(&span.text)
+                    )?;
+                } else {
+                    write!(f, "<tspan{style}>{}</tspan>", Esc(&span.text))?;
+                }
+                first = false;
+            }
+            baseline += label.line_height;
+        }
+        f.write_str("</text>")
     }
 }
 
@@ -178,23 +185,23 @@ fn draw(
         max_y: Cell::new(plot_h),
     };
     let grow = |x0: f64, y0: f64, x1: f64, y1: f64| bounds.grow(x0, y0, x1, y1);
-    let centered = |label: &Label, cx: f64, cy: f64, attrs: &str| -> String {
+    let centered = |out: &mut String, label: &Label, cx: f64, cy: f64, attrs: &str| {
         grow(
             cx - label.width / 2.0,
             cy - label.height / 2.0,
             cx + label.width / 2.0,
             cy + label.height / 2.0,
         );
-        label_svg(label, cx, cy, attrs)
+        let _ = write!(out, "{}", LabelSvg(label, cx, cy, attrs));
     };
-    let starting = |label: &Label, x: f64, y: f64, attrs: &str| -> String {
+    let starting = |out: &mut String, label: &Label, x: f64, y: f64, attrs: &str| {
         grow(
             x,
             y - label.size,
             x + label.width,
             y - label.size + label.height + 4.0,
         );
-        start_label(label, x, y, attrs)
+        let _ = write!(out, "{}", StartLabel(label, x, y, attrs));
     };
     let default_width = if tight {
         64f64.max(120f64.min(plot_w / 2.0))
@@ -225,6 +232,10 @@ fn draw(
     let mut stage_bottom = plot_h;
     let mut previous = 0.0;
     let count = stages.len() as f64;
+    let stage_attrs = format!(
+        " class=\"{p}-wardley-stage-label\" font-size=\"{}\" fill=\"var(--_m)\"",
+        num(small)
+    );
     for (index, stage) in stages.iter().enumerate() {
         let start = if custom {
             previous
@@ -251,15 +262,13 @@ fn draw(
             Some(48f64.max((end - start).abs() * plot_w - 12.0)),
             0,
         );
-        stage_labels.push_str(&centered(
+        centered(
+            &mut stage_labels,
             &label,
             ((start + end) / 2.0) * plot_w,
             plot_h + 8.0 + label.height / 2.0,
-            &format!(
-                " class=\"{p}-wardley-stage-label\" font-size=\"{}\" fill=\"var(--_m)\"",
-                num(small)
-            ),
-        ));
+            &stage_attrs,
+        );
         stage_bottom = stage_bottom.max(plot_h + 8.0 + label.height);
     }
     if show_grid {
@@ -297,19 +306,22 @@ fn draw(
         " class=\"{p}-wardley-axis-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
         num(small)
     );
-    let axis_labels = centered(
+    let mut axis_labels = String::new();
+    centered(
+        &mut axis_labels,
         &x_title,
         plot_w / 2.0,
         stage_bottom + 6.0 + x_title.height / 2.0,
         &axis_attrs,
-    ) + &label_svg(
-        &y_title,
-        -16.0,
-        plot_h / 2.0,
-        &format!(
-            "{axis_attrs} transform=\"rotate(-90 -16 {})\"",
-            num(plot_h / 2.0)
-        ),
+    );
+    let turned = format!(
+        "{axis_attrs} transform=\"rotate(-90 -16 {})\"",
+        num(plot_h / 2.0)
+    );
+    let _ = write!(
+        axis_labels,
+        "{}",
+        LabelSvg(&y_title, -16.0, plot_h / 2.0, &turned)
     );
     grow(-16.0 - y_title.height / 2.0, 0.0, 0.0, 0.0);
     let legend_top = stage_bottom + 6.0 + x_title.height + 10.0;
@@ -362,21 +374,21 @@ fn draw(
         let _ = write!(
             pipelines,
             "<g class=\"{p}-wardley-pipeline\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>{}</g>",
-            esc_text(&pipeline.node_id),
+            EscText(&pipeline.node_id),
             num(left - PIPELINE_PAD),
             num(top),
             num(right - left + 2.0 * PIPELINE_PAD),
             num(4.0 * R),
-            if parts.len() > 1 {
-                format!(
-                    "<path d=\"M{},{}H{}\" stroke=\"{LINE}\" stroke-dasharray=\"4 4\"/>",
-                    num(left),
-                    num(y),
+            fragment(|f| if parts.len() > 1 {
+                write!(
+                    f,
+                    "<path d=\"M{}H{}\" stroke=\"{LINE}\" stroke-dasharray=\"4 4\"/>",
+                    Point(left, y),
                     num(right)
                 )
             } else {
-                String::new()
-            }
+                Ok(())
+            })
         );
     }
 
@@ -428,6 +440,10 @@ fn draw(
     };
 
     let mut links = String::new();
+    let caption_attrs = format!(
+        " class=\"{p}-edge-label\" font-size=\"{}\" fill=\"var(--_m)\"",
+        num(tiny + 1.0)
+    );
     for link in &built.links {
         let (Some(fi), Some(ti)) = (
             positions.get_index_of(link.source.as_str()),
@@ -466,19 +482,50 @@ fn draw(
         let mut y1 = from.y + uy * start;
         let mut x2 = to.x - ux * end;
         let mut y2 = to.y - uy * end;
-        let mut heads = String::new();
         let flow = link.flow.unwrap_or("");
-        if flow == "forward" || flow == "bidirectional" {
-            heads.push_str(&marker("arrow_point", x2, y2, ux, uy, LINE));
+        let forward = flow == "forward" || flow == "bidirectional";
+        let backward = flow == "backward" || flow == "bidirectional";
+        let (head_x, head_y, tail_x, tail_y) = (x2, y2, x1, y1);
+        if forward {
             x2 -= ux * marker_trim("arrow_point");
             y2 -= uy * marker_trim("arrow_point");
         }
-        if flow == "backward" || flow == "bidirectional" {
-            heads.push_str(&marker("arrow_point", x1, y1, -ux, -uy, LINE));
+        if backward {
             x1 += ux * marker_trim("arrow_point");
             y1 += uy * marker_trim("arrow_point");
         }
-        let mut caption = String::new();
+        let _ = write!(
+            links,
+            "<g class=\"{p}-edge{}\" data-id=\"{}-{}\"><path d=\"M{}L{}\" stroke=\"{LINE}\"{}/>",
+            fragment(|f| if link.dashed {
+                write!(f, " {p}-wardley-dashed")
+            } else {
+                Ok(())
+            }),
+            EscText(&link.source),
+            EscText(&link.target),
+            Point(x1, y1),
+            Point(x2, y2),
+            if link.dashed {
+                " stroke-dasharray=\"6 6\""
+            } else {
+                ""
+            }
+        );
+        if forward {
+            let _ = write!(
+                links,
+                "{}",
+                marker("arrow_point", head_x, head_y, ux, uy, LINE)
+            );
+        }
+        if backward {
+            let _ = write!(
+                links,
+                "{}",
+                marker("arrow_point", tail_x, tail_y, -ux, -uy, LINE)
+            );
+        }
         if let Some(raw) = link.label.as_deref().filter(|l| !l.is_empty()) {
             let label = text(raw, tiny + 1.0, Some(200.0), 0);
             // Beside the middle of the line, on its upper side.
@@ -486,36 +533,15 @@ fn draw(
             let px = uy * side;
             let py = -ux * side;
             let away = 5.0 + (px.abs() * label.width) / 2.0 + (py.abs() * label.height) / 2.0;
-            caption = centered(
+            centered(
+                &mut links,
                 &label,
                 (from.x + to.x) / 2.0 + px * away,
                 (from.y + to.y) / 2.0 + py * away,
-                &format!(
-                    " class=\"{p}-edge-label\" font-size=\"{}\" fill=\"var(--_m)\"",
-                    num(tiny + 1.0)
-                ),
+                &caption_attrs,
             );
         }
-        let _ = write!(
-            links,
-            "<g class=\"{p}-edge{}\" data-id=\"{}-{}\"><path d=\"M{},{}L{},{}\" stroke=\"{LINE}\"{}/>{heads}{caption}</g>",
-            if link.dashed {
-                format!(" {p}-wardley-dashed")
-            } else {
-                String::new()
-            },
-            esc_text(&link.source),
-            esc_text(&link.target),
-            num(x1),
-            num(y1),
-            num(x2),
-            num(y2),
-            if link.dashed {
-                " stroke-dasharray=\"6 6\""
-            } else {
-                ""
-            }
-        );
+        links.push_str("</g>");
     }
 
     // Evolution: a dashed arrow to where the component is heading, drawn as
@@ -530,31 +556,36 @@ fn draw(
         let dx = tx - origin.x;
         let dy = ty - origin.y;
         let distance = js::hypot(dx, dy);
-        let mut arrow = String::new();
         let start = if distance > 0.0 {
             reach(origin, dx / distance, dy / distance)
         } else {
             0.0
         };
+        grow(tx - R, ty - R, tx + R, ty + R);
+        let _ = write!(
+            trends,
+            "<g class=\"{p}-wardley-trend\" data-id=\"{}\">",
+            EscText(&trend.node_id)
+        );
         if distance > start + R + 4.0 {
             let ux = dx / distance;
             let uy = dy / distance;
             let ex = tx - ux * (R + 2.0);
             let ey = ty - uy * (R + 2.0);
-            arrow = format!(
-                "<path d=\"M{},{}L{},{}\" stroke=\"{ACCENT}\" stroke-dasharray=\"4 4\"/>{}",
-                num(origin.x + ux * start),
-                num(origin.y + uy * start),
-                num(ex - ux * marker_trim("arrow_point")),
-                num(ey - uy * marker_trim("arrow_point")),
+            let _ = write!(
+                trends,
+                "<path d=\"M{}L{}\" stroke=\"{ACCENT}\" stroke-dasharray=\"4 4\"/>{}",
+                Point(origin.x + ux * start, origin.y + uy * start),
+                Point(
+                    ex - ux * marker_trim("arrow_point"),
+                    ey - uy * marker_trim("arrow_point")
+                ),
                 marker("arrow_point", ex, ey, ux, uy, ACCENT)
             );
         }
-        grow(tx - R, ty - R, tx + R, ty + R);
         let _ = write!(
             trends,
-            "<g class=\"{p}-wardley-trend\" data-id=\"{}\">{arrow}<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_bg)\" stroke=\"{ACCENT}\"/></g>",
-            esc_text(&trend.node_id),
+            "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_bg)\" stroke=\"{ACCENT}\"/></g>",
             num(tx),
             num(ty),
             num(R)
@@ -562,6 +593,11 @@ fn draw(
     }
 
     let mut nodes = String::new();
+    let anchor_attrs = format!(
+        " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
+        num(small)
+    );
+    let node_attrs = format!(" class=\"{p}-label\" font-size=\"{}\"", num(small));
     let tri = 1.2 * R;
     let dot = 0.7 * R;
     for (index, at) in positions.values().enumerate() {
@@ -571,7 +607,20 @@ fn draw(
         let strategy = node.source_strategy.as_deref().filter(|s| !s.is_empty());
         let pipeline_parent = node.is_pipeline_parent == Some(true);
         let in_pipeline = node.in_pipeline == Some(true);
-        let mut shape = String::new();
+        let class = if anchor {
+            "anchor"
+        } else if pipeline_parent {
+            "pipeline-parent"
+        } else if in_pipeline {
+            "pipeline-component"
+        } else {
+            "component"
+        };
+        let _ = write!(
+            nodes,
+            "<g class=\"{p}-node {p}-wardley-{class}\" data-id=\"{}\">",
+            EscText(&node.id)
+        );
         if let Some(strategy) = strategy {
             let fill = match strategy {
                 "outsource" => "var(--_m)",
@@ -580,7 +629,7 @@ fn draw(
                 _ => "var(--_bg)",
             };
             let _ = write!(
-                shape,
+                nodes,
                 "<circle class=\"{p}-wardley-{strategy}\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{fill}\" stroke=\"{LINE}\"/>",
                 num(x),
                 num(y),
@@ -591,7 +640,7 @@ fn draw(
             let bx = tri * (PI / 6.0).cos();
             let by = y + tri * (PI / 6.0).sin();
             let _ = write!(
-                shape,
+                nodes,
                 "<path d=\"M{},{}L{},{}H{}Z\" fill=\"none\" stroke=\"{LINE}\"/>",
                 num(x),
                 num(y - tri),
@@ -601,7 +650,7 @@ fn draw(
             );
             for (cx, cy) in [(x, y - tri), (x - bx, by), (x + bx, by)] {
                 let _ = write!(
-                    shape,
+                    nodes,
                     "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_bg)\" stroke=\"{LINE}\"/>",
                     num(cx),
                     num(cy),
@@ -610,7 +659,7 @@ fn draw(
             }
         } else if pipeline_parent {
             let _ = write!(
-                shape,
+                nodes,
                 "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"var(--_bg)\" stroke=\"{LINE}\"/>",
                 num(x - SQUARE / 2.0),
                 num(y - SQUARE / 2.0),
@@ -619,7 +668,7 @@ fn draw(
             );
         } else if !anchor {
             let _ = write!(
-                shape,
+                nodes,
                 "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_bg)\" stroke=\"{LINE}\"/>",
                 num(x),
                 num(y),
@@ -631,7 +680,7 @@ fn draw(
                 + 10.0
                 + (if strategy.is_some() { R + 4.0 } else { 0.0 });
             let _ = write!(
-                shape,
+                nodes,
                 "<rect class=\"{p}-wardley-inertia\" x=\"{}\" y=\"{}\" width=\"4\" height=\"{}\" fill=\"{LINE}\"/>",
                 num(x + offset),
                 num(y - R),
@@ -640,34 +689,39 @@ fn draw(
         }
         let ox = node.label_offset_x.map(|v| clamp(v, -5000.0, 5000.0));
         let oy = node.label_offset_y.map(|v| clamp(v, -5000.0, 5000.0));
-        let caption = if anchor {
+        if anchor {
             let label = anchor_labels
                 .borrow()
                 .get(&at.node)
                 .cloned()
                 .unwrap_or_else(|| text(&node.label, small, Some(anchor_width), Style::BOLD));
             centered(
+                &mut nodes,
                 &label,
                 x + ox.unwrap_or(0.0),
                 y + oy.unwrap_or(-3.0),
-                &format!(
-                    " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
-                    num(small)
-                ),
-            )
+                &anchor_attrs,
+            );
         } else {
             let label = text(&node.label, small, None, 0);
-            let attrs = format!(" class=\"{p}-label\" font-size=\"{}\"", num(small));
+            let attrs = &node_attrs;
             let lift = LABEL_OFFSET + if strategy.is_some() { 10.0 } else { 0.0 };
             if ox.is_some() || oy.is_some() {
                 starting(
+                    &mut nodes,
                     &label,
                     x + ox.unwrap_or(lift),
                     y + oy.unwrap_or(-lift),
-                    &attrs,
-                )
+                    attrs,
+                );
             } else if in_pipeline {
-                centered(&label, x, y + 2.0 * R + 4.0 + label.height / 2.0, &attrs)
+                centered(
+                    &mut nodes,
+                    &label,
+                    x,
+                    y + 2.0 * R + 4.0 + label.height / 2.0,
+                    attrs,
+                );
             } else {
                 // The label goes up and to the right unless a link leaves that
                 // way; then the next free corner.
@@ -686,6 +740,7 @@ fn draw(
                 let right = corner == 1 || corner == 2;
                 let up = corner == 1 || corner == 4;
                 starting(
+                    &mut nodes,
                     &label,
                     if right {
                         x + lift
@@ -697,28 +752,16 @@ fn draw(
                     } else {
                         y + lift + small * 0.75
                     },
-                    &attrs,
-                )
+                    attrs,
+                );
             }
-        };
+        }
         grow(x - 2.0 * R, y - 2.0 * R, x + 2.0 * R + 20.0, y + 2.0 * R);
-        let class = if anchor {
-            "anchor"
-        } else if pipeline_parent {
-            "pipeline-parent"
-        } else if in_pipeline {
-            "pipeline-component"
-        } else {
-            "component"
-        };
-        let _ = write!(
-            nodes,
-            "<g class=\"{p}-node {p}-wardley-{class}\" data-id=\"{}\">{shape}{caption}</g>",
-            esc_text(&node.id)
-        );
+        nodes.push_str("</g>");
     }
 
     let mut annotations = String::new();
+    let mark_attrs = format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(tiny));
     for annotation in &built.annotations {
         let label = text(
             &js::num_str(annotation.number),
@@ -726,31 +769,26 @@ fn draw(
             Some(4000.0),
             Style::BOLD,
         );
-        let mut marks = String::new();
+        let _ = write!(
+            annotations,
+            "<g class=\"{p}-wardley-annotation\" data-id=\"{}\">",
+            EscText(&js::num_str(annotation.number))
+        );
         for coordinate in &annotation.coordinates {
             let x = project_x(coordinate.x);
             let y = project_y(coordinate.y);
             let r = 10f64.max(label.width / 2.0 + 4.0);
             grow(x - r, y - r, x + r, y + r);
             let _ = write!(
-                marks,
+                annotations,
                 "<circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_bg)\" stroke=\"{LINE}\"/>{}",
                 num(x),
                 num(y),
                 num(r),
-                label_svg(
-                    &label,
-                    x,
-                    y,
-                    &format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(tiny))
-                )
+                LabelSvg(&label, x, y, &mark_attrs)
             );
         }
-        let _ = write!(
-            annotations,
-            "<g class=\"{p}-wardley-annotation\" data-id=\"{}\">{marks}</g>",
-            esc_text(&js::num_str(annotation.number))
-        );
+        annotations.push_str("</g>");
     }
     let mut listed: Vec<_> = built
         .annotations
@@ -770,7 +808,7 @@ fn draw(
                 text(
                     &format!(
                         "{}. {}",
-                        js::num_str(a.number),
+                        js::Number(a.number),
                         a.text.as_deref().unwrap_or("")
                     ),
                     small,
@@ -797,30 +835,40 @@ fn draw(
             None => (0.0, legend_top),
         };
         grow(bx, by, bx + width, by + height);
-        let mut rows = String::new();
-        let mut y = by + 7.0;
-        for line in &lines {
-            rows.push_str(&start_label(
-                line,
-                bx + 10.0,
-                y + line.line_height / 2.0 + small * 0.35,
-                &format!(" font-size=\"{}\"", num(small)),
-            ));
-            y += line.height;
-        }
         let _ = write!(
             annotations,
-            "<g class=\"{p}-wardley-annotations\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>{rows}</g>",
+            "<g class=\"{p}-wardley-annotations\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>",
             num(bx),
             num(by),
             num(width),
             num(height)
         );
+        let row_attrs = format!(" font-size=\"{}\"", num(small));
+        let mut y = by + 7.0;
+        for line in &lines {
+            let _ = write!(
+                annotations,
+                "{}",
+                StartLabel(
+                    line,
+                    bx + 10.0,
+                    y + line.line_height / 2.0 + small * 0.35,
+                    &row_attrs,
+                )
+            );
+            y += line.height;
+        }
+        annotations.push_str("</g>");
     }
 
     let mut notes = String::new();
+    let note_attrs = format!(
+        " class=\"{p}-wardley-note\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
+        num(small)
+    );
     for note in &built.notes {
-        notes.push_str(&starting(
+        starting(
+            &mut notes,
             &text(
                 &note.text,
                 small,
@@ -829,15 +877,16 @@ fn draw(
             ),
             project_x(note.x),
             project_y(note.y),
-            &format!(
-                " class=\"{p}-wardley-note\" font-size=\"{}\" font-weight=\"var(--_hw)\"",
-                num(small)
-            ),
-        ));
+            &note_attrs,
+        );
     }
 
     // Accelerators point right, deaccelerators left.
     let mut forces = String::new();
+    let force_attrs = format!(
+        " font-size=\"{}\" font-weight=\"var(--_hw)\"",
+        num(tiny + 1.0)
+    );
     let mut force = |name: &str, px: f64, py: f64, forward: bool| {
         let x = project_x(px);
         let y = project_y(py);
@@ -849,39 +898,32 @@ fn draw(
         } else {
             x + FORCE_HEAD
         };
-        let d = format!(
-            "M{},{}H{}V{}L{},{}L{},{}V{}H{}Z",
-            num(tail),
-            num(y - half),
-            num(neck),
-            num(y - half - 8.0),
-            num(tip),
-            num(y),
-            num(neck),
-            num(y + half + 8.0),
-            num(y + half),
-            num(tail)
-        );
         grow(x, y - half - 8.0, x + FORCE_WIDTH, y + half + 8.0);
         let _ = write!(
             forces,
-            "<g class=\"{p}-wardley-{}\" data-id=\"{}\"><path d=\"{d}\" fill=\"var(--_s)\" stroke=\"{LINE}\"/>{}</g>",
+            "<g class=\"{p}-wardley-{}\" data-id=\"{}\"><path d=\"M{}H{}V{}L{}L{}V{}H{}Z\" fill=\"var(--_s)\" stroke=\"{LINE}\"/>",
             if forward {
                 "accelerator"
             } else {
                 "deaccelerator"
             },
-            esc_text(name),
-            centered(
-                &text(name, tiny + 1.0, Some(160.0), Style::BOLD),
-                x + FORCE_WIDTH / 2.0,
-                y + half + 8.0 + 12.0,
-                &format!(
-                    " font-size=\"{}\" font-weight=\"var(--_hw)\"",
-                    num(tiny + 1.0)
-                )
-            )
+            EscText(name),
+            Point(tail, y - half),
+            num(neck),
+            num(y - half - 8.0),
+            Point(tip, y),
+            Point(neck, y + half + 8.0),
+            num(y + half),
+            num(tail)
         );
+        centered(
+            &mut forces,
+            &text(name, tiny + 1.0, Some(160.0), Style::BOLD),
+            x + FORCE_WIDTH / 2.0,
+            y + half + 8.0 + 12.0,
+            &force_attrs,
+        );
+        forces.push_str("</g>");
     };
     for a in &built.accelerators {
         force(&a.name, a.x, a.y, true);
@@ -911,11 +953,29 @@ fn draw(
     let ty = pad + title_height - min_y;
     let total_width = (right - left + 2.0 * pad).ceil();
     let total_height = (max_y - min_y + title_height + 2.0 * pad).ceil();
-    let mut content = label_svg(
-        &title,
-        tx + plot_w / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content = String::with_capacity(
+        frame.len()
+            + stage_labels.len()
+            + axis_labels.len()
+            + pipelines.len()
+            + links.len()
+            + trends.len()
+            + nodes.len()
+            + annotations.len()
+            + notes.len()
+            + forces.len()
+            + 512,
+    );
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(
+            &title,
+            tx + plot_w / 2.0,
+            pad + title.height / 2.0,
+            title_attrs
+        )
     );
     let _ = write!(
         content,

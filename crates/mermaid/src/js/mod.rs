@@ -6,6 +6,8 @@ pub(crate) mod re;
 
 pub(crate) use re::{Lazy, Regex};
 
+use std::fmt;
+
 /// `Math.round`: halves go up, `-2.5` to `-2`.
 pub(crate) fn round(x: f64) -> f64 {
     let floor = x.floor();
@@ -14,24 +16,39 @@ pub(crate) fn round(x: f64) -> f64 {
 
 /// `String(x)` for a number.
 pub fn num_str(x: f64) -> String {
-    if x.is_nan() {
-        return "NaN".into();
+    Number(x).to_string()
+}
+
+/// [`num_str`] as a value `write!` writes in place.
+#[derive(Clone, Copy, Debug)]
+pub struct Number(pub f64);
+
+impl fmt::Display for Number {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let x = self.0;
+        if x.is_nan() {
+            return f.write_str("NaN");
+        }
+        if x.is_infinite() {
+            return f.write_str(if x > 0.0 { "Infinity" } else { "-Infinity" });
+        }
+        if x == 0.0 {
+            return f.write_str("0");
+        }
+        let abs = x.abs();
+        if abs < 9_007_199_254_740_992.0 && x.fract() == 0.0 {
+            return write!(f, "{}", x as i64);
+        }
+        // In this range JavaScript writes the shortest digits without an
+        // exponent, as Rust's `Display` does.
+        if (1e-6..1e21).contains(&abs) {
+            return write!(f, "{x}");
+        }
+        f.write_str(&scientific(x))
     }
-    if x.is_infinite() {
-        return if x > 0.0 { "Infinity" } else { "-Infinity" }.into();
-    }
-    if x == 0.0 {
-        return "0".into();
-    }
-    let abs = x.abs();
-    if abs < 9_007_199_254_740_992.0 && x.fract() == 0.0 {
-        return (x as i64).to_string();
-    }
-    // In this range JavaScript writes the shortest digits without an
-    // exponent, as Rust's `Display` does.
-    if (1e-6..1e21).contains(&abs) {
-        return x.to_string();
-    }
+}
+
+fn scientific(x: f64) -> String {
     let sign = if x < 0.0 { "-" } else { "" };
     // Rust's `{:e}` writes the shortest digits that read back as `x`, which
     // is what JavaScript picks too; only the layout differs.

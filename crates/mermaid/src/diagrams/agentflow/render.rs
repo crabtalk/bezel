@@ -1,6 +1,11 @@
 //! Pele's `diagrams/agentflow/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::rewrite;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::{self, Write as _},
+};
 
 use super::{
     color_slots::{KIND_COUNT, kind_slot},
@@ -21,7 +26,7 @@ use crate::{
         layered::LayeredOptions,
     },
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::{Esc, EscText, LabelSvg, Point, fragment, num},
         cluster::{Crossings, cluster_title_x, mark_crossings},
         edges::{EdgePath, edge_label_svg, loop_path, marker, marker_trim, route_path},
         root::{Accessible, svg_document},
@@ -29,7 +34,7 @@ use crate::{
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style, series_color},
     },
     text::{Label, Style, decode_entities, layout_label},
-    util::url::{link_url, linked, rel_attr, sanitize_url},
+    util::url::{NoteLink, linked},
 };
 use crate::{Ctx, Host};
 
@@ -47,7 +52,6 @@ const COLLAPSED: &str = "collapsed";
 
 static RE_FILL: Lazy = Lazy::new(r#"[";]fill:"#, "");
 static RE_DEFAULT: Lazy = Lazy::new(r"^default\s?", "");
-static RE_INTERNAL: Lazy = Lazy::new(r" internal-link(?: |$)", "");
 static RE_EDGE_CLASSES: Lazy = Lazy::new(
     r"edge-thickness-normal|edge-pattern-solid|flowchart-link",
     "g",
@@ -81,22 +85,26 @@ fn number_option(config: &Config, key: &str, fallback: f64) -> f64 {
 
 /// A palette color as an outline with a light wash of the same color inside.
 /// A fill the author set replaces the wash and stays opaque.
-fn tint(slot: usize, wash: &str, style: &ResolvedStyle) -> String {
+fn tint<'a>(slot: usize, wash: &'a str, style: &ResolvedStyle) -> impl fmt::Display + 'a {
     let color = series_color(slot as i64);
-    let opacity = if RE_FILL.test(&style.shape) {
-        String::new()
-    } else {
-        format!(" fill-opacity=\"{wash}\"")
-    };
-    format!(" fill=\"{color}\"{opacity} stroke=\"{color}\"")
+    let filled = RE_FILL.test(&style.shape);
+    fragment(move |f| {
+        write!(f, " fill=\"{color}\"")?;
+        if !filled {
+            write!(f, " fill-opacity=\"{wash}\"")?;
+        }
+        write!(f, " stroke=\"{color}\"")
+    })
 }
 
-fn dot(x: f64, y: f64) -> String {
-    format!(
-        "M{},{}a1.75,1.75 0 1 0 3.5,0a1.75,1.75 0 1 0 -3.5,0Z",
-        num(x - 1.75),
-        num(y)
-    )
+fn dot(x: f64, y: f64) -> impl fmt::Display {
+    fragment(move |f| {
+        write!(
+            f,
+            "M{}a1.75,1.75 0 1 0 3.5,0a1.75,1.75 0 1 0 -3.5,0Z",
+            Point(x - 1.75, y)
+        )
+    })
 }
 
 struct NodeView<'g> {
@@ -520,6 +528,11 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
 
     let mut clusters = String::new();
     let mut nodes_out = String::new();
+    let mut inner = String::new();
+    let mut label_attrs_buf = String::new();
+    let mut line_attrs = String::new();
+    let mut shape_attrs = String::new();
+    let mut title_attrs = String::new();
     for i in 0..views.len() {
         let view = &views[i];
         let c = &cnodes[i];
@@ -527,7 +540,7 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
         let x = c.x;
         let y = c.y;
         let classes = class_names(&RE_DEFAULT.replace(&node.css_classes, |_| String::new()));
-        let id = esc_text(&node.id);
+        let id = EscText(&node.id);
         if c.is_group {
             let title_x = cluster_title_x(c, view.label.width, &crossings, GROUP_PAD);
             let _ = write!(
@@ -539,13 +552,16 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
                 num(c.h),
                 tint(node.color_index.unwrap_or(KIND_COUNT), "0.06", &view.style),
                 view.style.shape,
-                label_svg(
+                LabelSvg(
                     &view.label,
                     title_x,
                     y - c.h / 2.0 + 8.0 + view.label.height / 2.0,
-                    &format!(
-                        " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
-                        view.style.text
+                    rewrite(
+                        &mut title_attrs,
+                        format_args!(
+                            " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
+                            view.style.text
+                        )
                     ),
                 ),
             );
@@ -554,94 +570,98 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
 
         let w = view.w;
         let h = view.h;
-        let mut kind = String::new();
-        let shape: String;
-        if view.shape == COLLAPSED {
-            let slot = node.color_index.unwrap_or(KIND_COUNT);
-            let color = series_color(slot as i64);
-            let line = h / 2.0 - DOTS - 2.0;
-            let dots = line + (DOTS + 2.0) / 2.0;
-            shape = format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{}{}/><path d=\"M{},{}H{}\" fill=\"none\" stroke=\"{color}\" stroke-dasharray=\"3 3\"{}/><path class=\"{p}-collapsed-mark\" d=\"{}{}{}\" fill=\"{color}\" stroke=\"none\"/>",
-                num(-w / 2.0),
-                num(-h / 2.0),
-                num(w),
-                num(h),
-                tint(slot, "0.06", &view.style),
-                view.style.shape,
-                num(-w / 2.0 + 10.0),
-                num(line),
-                num(w / 2.0 - 10.0),
-                view.style.line,
-                dot(-9.0, dots),
-                dot(0.0, dots),
-                dot(9.0, dots),
-            );
-        } else {
-            let name = node.kind.unwrap_or("task");
-            let slot = kind_slot(name).unwrap_or(1);
-            kind = format!(" {p}-kind-{name}");
-            shape = draw_shape(
-                &view.shape,
-                w,
-                h,
-                &(tint(slot, "0.14", &view.style) + &view.style.shape),
-                &format!(
-                    " stroke=\"{}\"{}",
-                    series_color(slot as i64),
-                    view.style.line
-                ),
-            );
-        }
-
-        let mut text = label_svg(
-            &view.label,
-            0.0,
-            view.dy,
-            &format!(" class=\"{p}-label\"{}", view.style.text),
-        );
-        let internal = RE_INTERNAL.test(&format!("{classes} "));
-        if internal
-            && let Some(label) = node.label.as_deref().filter(|label| !label.is_empty())
-            && ctx.options.links
-        {
-            // The label is a note name, but it still ends up in an href, so
-            // it gets the same check as a URL.
-            let name = decode_entities(label);
-            let safe = link_url(&sanitize_url(&name), ctx).is_some();
-            let target = esc(&name);
-            text = format!(
-                "<a class=\"internal-link\"{} data-href=\"{target}\">{text}</a>",
-                if safe {
-                    format!(" href=\"{target}\"{}", rel_attr(ctx))
-                } else {
-                    String::new()
-                }
-            );
-            links.push(Link {
-                id: node.id.clone(),
-                href: name,
-                internal: true,
-            });
-        }
-        let mut body = shape + &text;
-        if let Some(tooltip) = node.tooltip.as_deref().filter(|t| !t.is_empty()) {
-            body = format!("<title>{}</title>{body}", esc_text(tooltip));
-        }
-        if let Some(link) = node.link.as_deref().filter(|l| !l.is_empty()) {
-            let target = match node.link_target.as_deref().filter(|t| !t.is_empty()) {
-                Some(target) => format!(" target=\"{}\"", esc(target)),
-                None => String::new(),
-            };
-            body = linked(&body, link, &node.id, &mut links, ctx, &target);
-        }
+        let kind = (view.shape != COLLAPSED).then(|| node.kind.unwrap_or("task"));
         let _ = write!(
             nodes_out,
-            "<g class=\"{p}-node {p}-shape-{}{kind}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">{body}</g>",
+            "<g class=\"{p}-node {p}-shape-{}{}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">",
             view.shape,
+            fragment(|f| match kind {
+                Some(name) => write!(f, " {p}-kind-{name}"),
+                None => Ok(()),
+            }),
             num(x),
             num(y)
         );
+        inner.clear();
+        match kind {
+            None => {
+                let slot = node.color_index.unwrap_or(KIND_COUNT);
+                let color = series_color(slot as i64);
+                let line = h / 2.0 - DOTS - 2.0;
+                let dots = line + (DOTS + 2.0) / 2.0;
+                let _ = write!(
+                    inner,
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{}{}/><path d=\"M{}H{}\" fill=\"none\" stroke=\"{color}\" stroke-dasharray=\"3 3\"{}/><path class=\"{p}-collapsed-mark\" d=\"{}{}{}\" fill=\"{color}\" stroke=\"none\"/>",
+                    num(-w / 2.0),
+                    num(-h / 2.0),
+                    num(w),
+                    num(h),
+                    tint(slot, "0.06", &view.style),
+                    view.style.shape,
+                    Point(-w / 2.0 + 10.0, line),
+                    num(w / 2.0 - 10.0),
+                    view.style.line,
+                    dot(-9.0, dots),
+                    dot(0.0, dots),
+                    dot(9.0, dots),
+                );
+            }
+            Some(name) => {
+                let slot = kind_slot(name).unwrap_or(1);
+                draw_shape(
+                    &mut inner,
+                    &view.shape,
+                    w,
+                    h,
+                    rewrite(
+                        &mut shape_attrs,
+                        format_args!("{}{}", tint(slot, "0.14", &view.style), view.style.shape),
+                    ),
+                    rewrite(
+                        &mut line_attrs,
+                        format_args!(
+                            " stroke=\"{}\"{}",
+                            series_color(slot as i64),
+                            view.style.line
+                        ),
+                    ),
+                );
+            }
+        }
+
+        let label_attrs = rewrite(
+            &mut label_attrs_buf,
+            format_args!(" class=\"{p}-label\"{}", view.style.text),
+        );
+        let text = LabelSvg(&view.label, 0.0, view.dy, label_attrs);
+        let note = node
+            .label
+            .as_deref()
+            .filter(|label| !label.is_empty() && ctx.options.links && NoteLink::marked(&classes))
+            .map(|label| NoteLink::new(decode_entities(label), &node.id, &mut links, ctx));
+        let tooltip = node.tooltip.as_deref().filter(|t| !t.is_empty());
+        let body = fragment(|f| {
+            if let Some(tooltip) = tooltip {
+                write!(f, "<title>{}</title>", EscText(tooltip))?;
+            }
+            f.write_str(&inner)?;
+            match &note {
+                Some(note) => write!(f, "{}", note.around(text, ctx)),
+                None => write!(f, "{text}"),
+            }
+        });
+        let target = node
+            .link_target
+            .as_deref()
+            .filter(|t| !t.is_empty())
+            .map(Esc);
+        let target = fragment(move |f| match target {
+            Some(target) => write!(f, " target=\"{target}\""),
+            None => Ok(()),
+        });
+        let link = node.link.as_deref().filter(|l| !l.is_empty());
+        let body = linked(body, link, &node.id, &mut links, ctx, target);
+        let _ = write!(nodes_out, "{body}</g>");
     }
 
     let mut edges_out = String::new();
@@ -655,10 +675,9 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
             None
         };
         let end_type = edge.arrow_type_end.as_str();
-        let color = match style.as_ref().and_then(|s| s.stroke.as_deref()) {
-            Some(stroke) if !stroke.is_empty() => esc(stroke),
-            _ => "var(--_l)".to_string(),
-        };
+        let color = style
+            .as_ref()
+            .map_or(Cow::Borrowed("var(--_l)"), ResolvedStyle::line_color);
         let dotted = edge.thickness.as_deref() == Some("dotted");
         let kind = if dotted {
             "reference"
@@ -671,7 +690,7 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
         let _ = write!(
             edges_out,
             "<g class=\"{p}-edge {p}-edge-{kind}{classes}\" data-id=\"{}\"{}><path d=\"{}\"{}/>{}</g>",
-            esc_text(&edge.id),
+            EscText(&edge.id),
             style.as_ref().map_or("", |s| s.line.as_str()),
             path.d,
             if dotted {
@@ -682,13 +701,17 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
             marker(end_type, path.ex, path.ey, path.edx, path.edy, &color),
         );
         if label.width > 0.0 {
-            labels_out.push_str(&edge_label_svg(
-                &edge.id,
-                label,
-                x,
-                y,
-                style.as_ref().map_or("", |s| s.text.as_str()),
-            ));
+            let _ = write!(
+                labels_out,
+                "{}",
+                edge_label_svg(
+                    &edge.id,
+                    label,
+                    x,
+                    y,
+                    style.as_ref().map_or("", |s| s.text.as_str()),
+                )
+            );
         }
     };
 
@@ -744,11 +767,14 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
         );
     }
 
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content = String::with_capacity(
+        clusters.len() + edges_out.len() + labels_out.len() + nodes_out.len() + 512,
+    );
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
@@ -763,7 +789,7 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
         let _ = write!(
             content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
-            js::num_str(edge_size)
+            js::Number(edge_size)
         );
     }
     let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");

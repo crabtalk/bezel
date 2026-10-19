@@ -1,6 +1,8 @@
 //! Pele's `diagrams/flowchart/render.ts`.
 
-use std::{collections::HashMap, fmt::Write as _};
+use crate::svg::builder::rewrite;
+use crate::svg::builder::{Esc, EscText, LabelSvg, fragment};
+use std::{borrow::Cow, collections::HashMap, fmt::Write as _};
 
 use super::{
     db::FlowDb,
@@ -8,6 +10,7 @@ use super::{
     shapes::canonical_shape,
     types::LabelType,
 };
+use crate::diagrams::common::icon::icon_svg;
 use crate::{
     Config, Link, Rendered,
     config::{Map, Value},
@@ -20,7 +23,7 @@ use crate::{
         layered::LayeredOptions,
     },
     svg::{
-        builder::{esc, esc_text, label_svg, num},
+        builder::num,
         cluster::{Crossings, cluster_title_x, mark_crossings, struck_title, title_crossed},
         edges::{EdgePath, SideReach, edge_label_svg, loop_path, marker, marker_trim, route_path},
         root::{Accessible, svg_document},
@@ -29,8 +32,8 @@ use crate::{
         },
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Label, Style, decode_entities, icon_markup, layout_label},
-    util::url::{image_url, link_url, linked, rel_attr, safe_url, sanitize_url},
+    text::{Label, Style, decode_entities, layout_label},
+    util::url::{NoteLink, image_url, linked, safe_url},
 };
 use crate::{Ctx, Host};
 
@@ -43,7 +46,6 @@ const SHAPE_ATTRS: &str = " fill=\"var(--_s)\" stroke=\"var(--_b)\"";
 const LINE_ATTRS: &str = " stroke=\"var(--_b)\"";
 
 static RE_DEFAULT: Lazy = Lazy::new(r"^default\s?", "");
-static RE_INTERNAL: Lazy = Lazy::new(r" internal-link(?: |$)", "");
 static RE_EDGE_CLASSES: Lazy = Lazy::new(
     r"edge-thickness-normal|edge-pattern-solid|flowchart-link",
     "g",
@@ -66,17 +68,18 @@ pub trait FlowVariant {
     fn draws_groups(&self) -> bool {
         false
     }
+    /// Appends the group to `out`. `id` is the node's id, unescaped.
     #[allow(clippy::too_many_arguments)]
     fn draw_group(
         &self,
+        _out: &mut String,
         _c: &CNode,
         _label: &Label,
         _style: &ResolvedStyle,
         _classes: &str,
         _id: &str,
         _dir: Dir,
-    ) -> String {
-        String::new()
+    ) {
     }
 }
 
@@ -405,6 +408,11 @@ fn draw(
     let mut clusters = String::new();
     let mut struck_titles = String::new();
     let mut nodes_out = String::new();
+    let mut inner = String::new();
+    let mut title_attrs_buf = String::new();
+    let mut label_attrs_buf = String::new();
+    let mut line_attrs = String::new();
+    let mut shape_attrs = String::new();
     for i in 0..views.len() {
         let view = &views[i];
         let c = &cnodes[i];
@@ -412,39 +420,39 @@ fn draw(
         let x = c.x;
         let y = c.y;
         let classes = class_names(&RE_DEFAULT.replace(&node.css_classes, |_| String::new()));
-        let id = esc_text(&node.id);
+        let id = EscText(&node.id);
         if c.is_group
             && let Some(variant) = variant.filter(|v| v.draws_groups())
             && c.parent < 0
         {
-            clusters.push_str(&variant.draw_group(
+            variant.draw_group(
+                &mut clusters,
                 c,
                 &view.label,
                 &view.style,
                 &classes,
-                &id,
+                &node.id,
                 root_dir,
-            ));
+            );
             continue;
         }
         if c.is_group {
             let title_x = cluster_title_x(c, view.label.width, &crossings, group_pad);
             let title_y = y - c.h / 2.0 + 8.0 + view.label.height / 2.0;
-            let title_attrs = format!(
-                " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
-                view.style.text
+            let title_attrs = rewrite(
+                &mut title_attrs_buf,
+                format_args!(
+                    " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
+                    view.style.text
+                ),
             );
             let struck = title_crossed(c, view.label.width, title_x, &crossings);
             if struck {
-                struck_titles.push_str(&struck_title(
-                    &view.label,
-                    title_x,
-                    title_y,
-                    &title_attrs,
-                    &id,
-                    &cnodes,
-                    i,
-                ));
+                let _ = write!(
+                    struck_titles,
+                    "{}",
+                    struck_title(&view.label, title_x, title_y, title_attrs, &id, &cnodes, i,)
+                );
             }
             let _ = write!(
                 clusters,
@@ -454,18 +462,22 @@ fn draw(
                 num(c.w),
                 num(c.h),
                 view.style.shape,
-                if struck {
-                    String::new()
+                fragment(|f| if struck {
+                    Ok(())
                 } else {
-                    label_svg(&view.label, title_x, title_y, &title_attrs)
-                }
+                    write!(
+                        f,
+                        "{}",
+                        LabelSvg(&view.label, title_x, title_y, title_attrs)
+                    )
+                })
             );
             continue;
         }
 
         let w = view.w;
         let h = view.h;
-        let inner: String;
+        inner.clear();
         if let Some(img) = node.img.as_deref().filter(|img| !img.is_empty()) {
             let aw = asset_size(node.asset_width, 80.0);
             let ah = asset_size(node.asset_height, 80.0);
@@ -478,11 +490,11 @@ fn draw(
             } else {
                 -ah / 2.0
             };
-            inner = match image_url(&safe_url(img), ctx) {
-                None => String::new(),
-                Some(src) => format!(
+            if let Some(src) = image_url(&safe_url(img), ctx) {
+                let _ = write!(
+                    inner,
                     "<image href=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"{}\"/>",
-                    esc(&src),
+                    Esc(&src),
                     num(-aw / 2.0),
                     num(top),
                     num(aw),
@@ -492,8 +504,8 @@ fn draw(
                     } else {
                         "none"
                     }
-                ),
-            };
+                );
+            }
         } else if let Some(icon) = node.icon.as_deref().filter(|icon| !icon.is_empty()) {
             let bx = asset_size(node.asset_height, 48.0);
             let top = if view.label.height > 0.0 {
@@ -505,17 +517,17 @@ fn draw(
             } else {
                 -bx / 2.0
             };
-            let frame = if node.shape == "icon" {
-                String::new()
-            } else if node.shape == "iconCircle" {
-                format!(
+            if node.shape == "iconCircle" {
+                let _ = write!(
+                    inner,
                     "<circle cy=\"{}\" r=\"{}\"{SHAPE_ATTRS}{}/>",
                     num(top + bx / 2.0),
                     num(bx / 2.0),
                     view.style.shape
-                )
-            } else {
-                format!(
+                );
+            } else if node.shape != "icon" {
+                let _ = write!(
+                    inner,
                     "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\"{SHAPE_ATTRS}{}/>",
                     num(-bx / 2.0),
                     num(top),
@@ -523,76 +535,83 @@ fn draw(
                     num(bx),
                     if node.shape == "iconRounded" { 8 } else { 0 },
                     view.style.shape
-                )
-            };
+                );
+            }
             let glyph = bx * 0.6;
-            inner = format!(
-                "{frame}<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{}</svg>",
-                esc_text(icon),
-                num(-glyph / 2.0),
-                num(top + (bx - glyph) / 2.0),
-                num(glyph),
-                num(glyph),
-                icon_markup(ctx.host, icon)
+            let _ = write!(
+                inner,
+                "{}",
+                icon_svg(
+                    ctx.host,
+                    icon,
+                    -glyph / 2.0,
+                    top + (bx - glyph) / 2.0,
+                    glyph
+                )
             );
         } else {
-            inner = draw_shape(
+            draw_shape(
+                &mut inner,
                 &view.shape,
                 w,
                 h,
-                &format!("{SHAPE_ATTRS}{}", view.style.shape),
-                &format!("{LINE_ATTRS}{}", view.style.line),
+                rewrite(
+                    &mut shape_attrs,
+                    format_args!("{SHAPE_ATTRS}{}", view.style.shape),
+                ),
+                rewrite(
+                    &mut line_attrs,
+                    format_args!("{LINE_ATTRS}{}", view.style.line),
+                ),
             );
         }
 
-        let mut text = label_svg(
-            &view.label,
-            0.0,
-            view.dy,
-            &format!(" class=\"{p}-label\"{}", view.style.text),
+        let label_attrs = rewrite(
+            &mut label_attrs_buf,
+            format_args!(" class=\"{p}-label\"{}", view.style.text),
         );
-        let internal = RE_INTERNAL.test(&format!("{classes} "));
-        if internal
-            && let Some(label) = node.label.as_deref().filter(|label| !label.is_empty())
-            && ctx.options.links
-        {
-            // The label is a note name, but it still ends up in an href, so
-            // it gets the same check as a URL.
-            let name = decode_entities(label);
-            let safe = link_url(&sanitize_url(&name), ctx).is_some();
-            let target = esc(&name);
-            text = format!(
-                "<a class=\"internal-link\"{} data-href=\"{target}\">{text}</a>",
-                if safe {
-                    format!(" href=\"{target}\"{}", rel_attr(ctx))
-                } else {
-                    String::new()
-                }
-            );
-            links.push(Link {
-                id: node.id.clone(),
-                href: name,
-                internal: true,
-            });
-        }
-        let mut body = inner + &text;
-        if let Some(tooltip) = node.tooltip.as_deref().filter(|t| !t.is_empty()) {
-            body = format!("<title>{}</title>{body}", esc_text(tooltip));
-        }
-        if let Some(link) = node.link.as_deref().filter(|l| !l.is_empty()) {
-            let target = match node.link_target.as_deref().filter(|t| !t.is_empty()) {
-                Some(target) => format!(" target=\"{}\"", esc(target)),
-                None => String::new(),
-            };
-            body = linked(&body, link, &node.id, &mut links, ctx, &target);
-        }
+        let text = LabelSvg(&view.label, 0.0, view.dy, label_attrs);
+        let note = node
+            .label
+            .as_deref()
+            .filter(|label| !label.is_empty() && ctx.options.links && NoteLink::marked(&classes))
+            .map(|label| NoteLink::new(decode_entities(label), &node.id, &mut links, ctx));
+        let tooltip = node.tooltip.as_deref().filter(|t| !t.is_empty());
+        let body = fragment(|f| {
+            if let Some(tooltip) = tooltip {
+                write!(f, "<title>{}</title>", EscText(tooltip))?;
+            }
+            f.write_str(&inner)?;
+            match &note {
+                Some(note) => write!(f, "{}", note.around(text, ctx)),
+                None => write!(f, "{text}"),
+            }
+        });
         let _ = write!(
             nodes_out,
-            "<g class=\"{p}-node {p}-shape-{}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">{body}</g>",
+            "<g class=\"{p}-node {p}-shape-{}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">",
             view.shape,
             num(x),
             num(y)
         );
+        match node.link.as_deref().filter(|l| !l.is_empty()) {
+            Some(link) => {
+                let target = node
+                    .link_target
+                    .as_deref()
+                    .filter(|t| !t.is_empty())
+                    .map(Esc);
+                let target = fragment(move |f| match target {
+                    Some(target) => write!(f, " target=\"{target}\""),
+                    None => Ok(()),
+                });
+                let body = linked(body, Some(link), &node.id, &mut links, ctx, target);
+                let _ = write!(nodes_out, "{body}</g>");
+            }
+            None => {
+                let _ = write!(nodes_out, "{body}</g>");
+            }
+        }
     }
 
     let mut reach = SideReach::new();
@@ -680,10 +699,9 @@ fn draw(
                     Some(arrives),
                 )
             };
-            let color = match style.as_ref().and_then(|s| s.stroke.as_deref()) {
-                Some(stroke) if !stroke.is_empty() => esc(stroke),
-                _ => "var(--_l)".to_string(),
-            };
+            let color = style
+                .as_ref()
+                .map_or(Cow::Borrowed("var(--_l)"), ResolvedStyle::line_color);
             let mut attrs = "";
             if edge.thickness.as_deref() == Some("thick") {
                 attrs = " stroke-width=\"2.5\"";
@@ -694,7 +712,7 @@ fn draw(
             let _ = write!(
                 edges_out,
                 "<g class=\"{p}-edge{classes}\" data-id=\"{}\"{}><path d=\"{}\"{attrs}/>{}{}</g>",
-                esc_text(&edge.id),
+                EscText(&edge.id),
                 style.as_ref().map_or("", |s| s.line.as_str()),
                 path.d,
                 marker(start_type, path.sx, path.sy, path.sdx, path.sdy, &color),
@@ -703,21 +721,33 @@ fn draw(
         }
         let label = &edge_labels[i];
         if label.width > 0.0 {
-            labels_out.push_str(&edge_label_svg(
-                &edge.id,
-                label,
-                cedges[i].label_x,
-                cedges[i].label_y,
-                style.as_ref().map_or("", |s| s.text.as_str()),
-            ));
+            let _ = write!(
+                labels_out,
+                "{}",
+                edge_label_svg(
+                    &edge.id,
+                    label,
+                    cedges[i].label_x,
+                    cedges[i].label_y,
+                    style.as_ref().map_or("", |s| s.text.as_str()),
+                )
+            );
         }
     }
 
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let title_attrs = crate::svg::builder::TITLE;
+    let mut content = String::with_capacity(
+        clusters.len()
+            + edges_out.len()
+            + struck_titles.len()
+            + labels_out.len()
+            + nodes_out.len()
+            + 512,
+    );
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
@@ -738,7 +768,7 @@ fn draw(
         let _ = write!(
             content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
-            js::num_str(edge_size)
+            js::Number(edge_size)
         );
     }
     let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");

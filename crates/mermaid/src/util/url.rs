@@ -1,11 +1,13 @@
 //! The URLs a diagram links to and shows images from. Pele's `util/url.ts`,
 //! after `@braintree/sanitize-url`, which Mermaid applies to click targets.
 
+use std::fmt;
+
+use crate::svg::builder::{Esc, esc, fragment};
 use crate::{Ctx, Host};
 use crate::{
     Link,
     js::{self, Lazy},
-    svg::builder::esc,
     text::decode_entities,
 };
 
@@ -169,35 +171,87 @@ pub fn image_url(url: &str, ctx: &Ctx<'_, impl Host>) -> Option<String> {
     allow(url, &ctx.options.image_schemes)
 }
 
-/// `body` inside a link to `url`, or `body` alone where the link is refused.
-pub fn linked(
-    body: &str,
-    url: &str,
+/// `body` inside a link to `url`, or `body` alone where there is no `url` or
+/// the link is refused. The link is added to `links` when this is called.
+pub fn linked<'b, B: fmt::Display + 'b, A: fmt::Display + 'b>(
+    body: B,
+    url: Option<&str>,
     id: &str,
     links: &mut Vec<Link>,
-    ctx: &Ctx<'_, impl Host>,
-    attrs: &str,
-) -> String {
-    let Some(href) = link_url(url, ctx) else {
-        return body.to_string();
-    };
-    links.push(Link {
-        id: id.to_string(),
-        href: href.clone(),
-        internal: false,
-    });
-    format!(
-        "<a href=\"{}\"{attrs}{}>{body}</a>",
-        esc(&href),
-        rel_attr(ctx)
-    )
+    ctx: &'b Ctx<'_, impl Host>,
+    attrs: A,
+) -> impl fmt::Display + 'b {
+    let href = url.and_then(|url| link_url(url, ctx));
+    if let Some(href) = &href {
+        links.push(Link {
+            id: id.to_string(),
+            href: href.clone(),
+            internal: false,
+        });
+    }
+    let rel = rel_attr(ctx);
+    fragment(move |f| match &href {
+        Some(href) => write!(f, "<a href=\"{}\"{attrs}{rel}>{body}</a>", Esc(href)),
+        None => write!(f, "{body}"),
+    })
 }
 
-pub fn rel_attr(ctx: &Ctx<'_, impl Host>) -> String {
-    let rel = ctx.options.link_rel.as_str();
-    if rel.is_empty() {
-        String::new()
-    } else {
-        format!(" rel=\"{}\"", esc(rel))
+/// An internal link to note `name`: the anchor goes around the label, with
+/// `data-href` naming the note and an `href` only where the name passes as a
+/// URL.
+pub struct NoteLink {
+    target: String,
+    safe: bool,
+}
+
+impl NoteLink {
+    /// Whether `classes`, as [`crate::svg::theme::class_names`] writes them,
+    /// mark a label as a note name.
+    pub fn marked(classes: &str) -> bool {
+        classes
+            .split(' ')
+            .skip(1)
+            .any(|class| class == "internal-link")
     }
+
+    /// The link from element `id` to note `name`, added to `links`.
+    pub fn new(name: String, id: &str, links: &mut Vec<Link>, ctx: &Ctx<'_, impl Host>) -> Self {
+        let safe = link_url(&sanitize_url(&name), ctx).is_some();
+        let target = esc(&name);
+        links.push(Link {
+            id: id.to_string(),
+            href: name,
+            internal: true,
+        });
+        Self { target, safe }
+    }
+
+    /// `text` inside this link's anchor.
+    pub fn around<'b>(
+        &'b self,
+        text: impl fmt::Display + 'b,
+        ctx: &'b Ctx<'_, impl Host>,
+    ) -> impl fmt::Display + 'b {
+        let rel = rel_attr(ctx);
+        fragment(move |f| {
+            let target = &self.target;
+            f.write_str("<a class=\"internal-link\"")?;
+            if self.safe {
+                write!(f, " href=\"{target}\"{rel}")?;
+            }
+            write!(f, " data-href=\"{target}\">{text}</a>")
+        })
+    }
+}
+
+/// A link's `rel` attribute, or nothing where the host gives none.
+pub fn rel_attr<'b>(ctx: &'b Ctx<'_, impl Host>) -> impl fmt::Display + 'b {
+    let rel = ctx.options.link_rel.as_str();
+    fragment(move |f| {
+        if rel.is_empty() {
+            Ok(())
+        } else {
+            write!(f, " rel=\"{}\"", Esc(rel))
+        }
+    })
 }

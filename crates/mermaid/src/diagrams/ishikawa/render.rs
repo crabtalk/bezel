@@ -5,6 +5,7 @@ use super::{
     types::{NodeId, Nodes},
 };
 use crate::Ctx;
+use crate::svg::builder::EscText;
 use crate::{
     Rendered,
     diagrams::common::{
@@ -13,7 +14,7 @@ use crate::{
     },
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{LabelSvg, TITLE, num},
         edges::{ARROW, marker},
         root::{Accessible, svg_document},
         theme::RADIUS,
@@ -269,7 +270,17 @@ fn draw(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
         min_x = tail;
         min_y = -head_h / 2.0;
         max_y = head_h / 2.0;
-        let mut groups = String::new();
+        let r = head_h / 2.0;
+        let _ = write!(
+            body,
+            "<path class=\"{p}-ishikawa-spine\" d=\"M{},0H{}\" fill=\"none\" stroke=\"var(--_l)\"/>{}",
+            num(tail),
+            num(-(ARROW - 1.0)),
+            marker("arrow_point", 0.0, 0.0, 1.0, 0.0, "var(--_l)")
+        );
+        let groups = &mut body;
+        let mut d = String::new();
+        let mut texts = String::new();
         let length = length();
         for (i, category) in categories.iter().enumerate() {
             let sign = if i % 2 == 0 { -1.0 } else { 1.0 };
@@ -280,14 +291,16 @@ fn draw(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
             // The bone stops short of the spine to leave its arrowhead a
             // clean point.
             let trim = ARROW - 1.0;
-            let mut d = format!(
+            d.clear();
+            texts.clear();
+            let _ = write!(
+                d,
                 "M{},{}L{},{}",
                 num(ax - (SLANT / length) * trim),
                 num((sign * trim) / length),
                 num(end_x),
                 num(end_y)
             );
-            let mut texts = String::new();
             for bone in &category.bones {
                 let y = sign * bone.rise;
                 if bone.depth.is_multiple_of(2) {
@@ -312,15 +325,19 @@ fn draw(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
                     );
                 }
                 let right = px(bone.text_end, bone.rise);
-                texts += &label_svg(
-                    &bone.label,
-                    right - bone.label.width / 2.0,
-                    y,
-                    if bone.depth > 2 {
-                        " fill=\"var(--_m)\""
-                    } else {
-                        ""
-                    },
+                let _ = write!(
+                    texts,
+                    "{}",
+                    LabelSvg(
+                        &bone.label,
+                        right - bone.label.width / 2.0,
+                        y,
+                        if bone.depth > 2 {
+                            " fill=\"var(--_m)\""
+                        } else {
+                            ""
+                        },
+                    )
                 );
                 min_x = min_x.min(right - bone.label.width);
             }
@@ -332,15 +349,19 @@ fn draw(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
             let _ = write!(
                 groups,
                 "<g class=\"{p}-ishikawa-category\" data-id=\"{}\"><path class=\"{p}-ishikawa-bones\" d=\"{d}\" fill=\"none\" stroke=\"var(--_l)\"/>",
-                esc_text(&nodes.get(category.node).text)
+                EscText(&nodes.get(category.node).text)
             );
-            groups += &marker(
-                "arrow_point",
-                ax,
-                0.0,
-                SLANT / length,
-                -sign / length,
-                "var(--_l)",
+            let _ = write!(
+                groups,
+                "{}",
+                marker(
+                    "arrow_point",
+                    ax,
+                    0.0,
+                    SLANT / length,
+                    -sign / length,
+                    "var(--_l)",
+                )
             );
             let _ = write!(
                 groups,
@@ -350,34 +371,25 @@ fn draw(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
                 num(category.box_w),
                 num(category.box_h)
             );
-            groups += &label_svg(
-                &category.label,
-                end_x,
-                box_y,
-                &format!(" class=\"{p}-label\""),
+            let _ = write!(
+                groups,
+                "{}",
+                LabelSvg(&category.label, end_x, box_y, crate::class!("label"))
             );
             if !texts.is_empty() {
                 let _ = write!(
                     groups,
                     "<g class=\"{p}-ishikawa-causes\" font-size=\"{}\">{texts}</g>",
-                    js::num_str(small)
+                    js::Number(small)
                 );
             }
-            groups += "</g>";
+            groups.push_str("</g>");
         }
 
-        let r = head_h / 2.0;
-        body = format!(
-            "<path class=\"{p}-ishikawa-spine\" d=\"M{},0H{}\" fill=\"none\" stroke=\"var(--_l)\"/>",
-            num(tail),
-            num(-(ARROW - 1.0))
-        );
-        body += &marker("arrow_point", 0.0, 0.0, 1.0, 0.0, "var(--_l)");
-        body += &groups;
         let _ = write!(
             body,
             "<g class=\"{p}-ishikawa-head\" data-id=\"{}\"><path d=\"M0,{}H{}A{},{} 0 0 1 {},{}H0Z\" fill=\"var(--_s)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"/>",
-            esc_text(&root.text),
+            EscText(&root.text),
             num(-r),
             num(head_w - r),
             num(r),
@@ -385,13 +397,17 @@ fn draw(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
             num(head_w - r),
             num(r)
         );
-        body += &label_svg(
-            &head,
-            12.0 + head.width / 2.0,
-            0.0,
-            &format!(" class=\"{p}-label\" font-weight=\"var(--_hw)\""),
+        let _ = write!(
+            body,
+            "{}",
+            LabelSvg(
+                &head,
+                12.0 + head.width / 2.0,
+                0.0,
+                crate::class!("label", "font-weight=\"var(--_hw)\""),
+            )
         );
-        body += "</g>";
+        body.push_str("</g>");
     }
 
     let inner = (max_x - min_x).max(title.width);
@@ -399,11 +415,11 @@ fn draw(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
     let height = (max_y - min_y + title_height + 2.0 * pad).ceil();
     let ox = pad + (inner - (max_x - min_x)) / 2.0 - min_x;
     let oy = pad + title_height - min_y;
-    let mut content = label_svg(
-        &title,
-        width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    let mut content = String::with_capacity(body.len() + 512);
+    let _ = write!(
+        content,
+        "{}",
+        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE)
     );
     if !body.is_empty() {
         let _ = write!(
@@ -489,6 +505,7 @@ fn vertical_causes(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>) -> Rendered {
     let mut width = title.width;
     let mut shapes = String::new();
     let mut edges = String::new();
+    let small_attrs = format!(" class=\"{p}-label\" font-size=\"{}\"", js::Number(small));
     for k in 0..order.len() {
         let entry = &order[k];
         let entry_depth = entry.depth as f64;
@@ -514,14 +531,14 @@ fn vertical_causes(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>) -> Rendered {
         width = width.max(x - pad + w);
         let framed = entry.depth < 2;
         let class = match entry.depth {
-            0 => format!("{p}-ishikawa-head"),
-            1 => format!("{p}-ishikawa-category"),
-            _ => format!("{p}-ishikawa-cause"),
+            0 => "head",
+            1 => "category",
+            _ => "cause",
         };
         let _ = write!(
             shapes,
-            "<g class=\"{p}-node {class}\" data-id=\"{}\">",
-            esc_text(text)
+            "<g class=\"{p}-node {p}-ishikawa-{class}\" data-id=\"{}\">",
+            EscText(text)
         );
         if framed {
             let _ = write!(
@@ -534,21 +551,16 @@ fn vertical_causes(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>) -> Rendered {
                 if entry.depth == 0 { 12 } else { 4 }
             );
         }
-        let attrs = format!(
-            " class=\"{p}-label\"{}{}",
-            if entry.depth < 2 {
-                " font-weight=\"var(--_hw)\""
-            } else {
-                ""
-            },
-            if entry.depth > 1 {
-                format!(" font-size=\"{}\"", js::num_str(small))
-            } else {
-                String::new()
-            }
+        let attrs = if entry.depth < 2 {
+            crate::class!("label", "font-weight=\"var(--_hw)\"")
+        } else {
+            &small_attrs
+        };
+        let _ = write!(
+            shapes,
+            "{}</g>",
+            LabelSvg(&label, x + w / 2.0, top + h / 2.0, attrs)
         );
-        shapes += &label_svg(&label, x + w / 2.0, top + h / 2.0, &attrs);
-        shapes += "</g>";
         if let Some(parent) = entry.parent {
             let parent = &order[parent];
             let gx = parent.x + indent / 2.0;
@@ -569,13 +581,12 @@ fn vertical_causes(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>) -> Rendered {
     }
     let total_width = (width + 2.0 * pad).ceil();
     let height = ((pad + title.height).max(y - 12.0) + pad).ceil();
-    let content = label_svg(
-        &title,
-        total_width / 2.0,
-        pad + title.height / 2.0,
-        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-    ) + &edges
-        + &shapes;
+    let mut content = String::with_capacity(edges.len() + shapes.len() + 512);
+    let _ = write!(
+        content,
+        "{}{edges}{shapes}",
+        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+    );
     Rendered {
         svg: svg_document(
             "ishikawa",

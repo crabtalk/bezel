@@ -4,8 +4,11 @@
 //! and an end point) per cubic segment. Pele's
 //! `diagrams/cynefin/boundaries.ts`.
 
-use crate::{js, svg::builder::num};
-use std::fmt::Write as _;
+use crate::{
+    js,
+    svg::builder::{Point, fragment, num},
+};
+use std::fmt;
 
 pub const FOLD: WaveOptions = WaveOptions {
     segments: 7,
@@ -146,59 +149,61 @@ pub fn cliff(cx: f64, top: f64, bottom: f64, amplitude: f64) -> Vec<f64> {
 }
 
 /// Path commands that continue from the curve's start point to its end.
-pub fn forward(curve: &[f64]) -> String {
-    let mut d = String::new();
-    let mut i = 2;
-    while i < curve.len() {
-        let _ = write!(
-            d,
-            "C{},{} {},{} {},{}",
-            num(curve[i]),
-            num(curve[i + 1]),
-            num(curve[i + 2]),
-            num(curve[i + 3]),
-            num(curve[i + 4]),
-            num(curve[i + 5])
-        );
-        i += 6;
-    }
-    d
+pub fn forward(curve: &[f64]) -> impl fmt::Display + '_ {
+    fragment(move |f| {
+        let mut i = 2;
+        while i < curve.len() {
+            write!(
+                f,
+                "C{},{} {},{} {},{}",
+                num(curve[i]),
+                num(curve[i + 1]),
+                num(curve[i + 2]),
+                num(curve[i + 3]),
+                num(curve[i + 4]),
+                num(curve[i + 5])
+            )?;
+            i += 6;
+        }
+        Ok(())
+    })
 }
 
 /// Path commands that continue from the curve's end point back to its start.
-pub fn backward(curve: &[f64]) -> String {
-    let mut d = String::new();
-    let mut i = curve.len() as isize - 6;
-    while i >= 2 {
-        let k = i as usize;
-        let _ = write!(
-            d,
-            "C{},{} {},{} {},{}",
-            num(curve[k + 2]),
-            num(curve[k + 3]),
-            num(curve[k]),
-            num(curve[k + 1]),
-            num(curve[k - 2]),
-            num(curve[k - 1])
-        );
-        i -= 6;
-    }
-    d
+pub fn backward(curve: &[f64]) -> impl fmt::Display + '_ {
+    fragment(move |f| {
+        let mut i = curve.len() as isize - 6;
+        while i >= 2 {
+            let k = i as usize;
+            write!(
+                f,
+                "C{},{} {},{} {},{}",
+                num(curve[k + 2]),
+                num(curve[k + 3]),
+                num(curve[k]),
+                num(curve[k + 1]),
+                num(curve[k - 2]),
+                num(curve[k - 1])
+            )?;
+            i -= 6;
+        }
+        Ok(())
+    })
 }
 
-pub fn curve_path(curve: &[f64]) -> String {
-    format!("M{},{}{}", num(curve[0]), num(curve[1]), forward(curve))
+pub fn curve_path(curve: &[f64]) -> impl fmt::Display + '_ {
+    fragment(move |f| write!(f, "M{}{}", Point(curve[0], curve[1]), forward(curve)))
 }
 
-pub fn ellipse_path(cx: f64, cy: f64, rx: f64, ry: f64) -> String {
-    let r = format!("{},{}", num(rx), num(ry));
-    format!(
-        "M{},{}A{r} 0 1,1 {},{}A{r} 0 1,1 {},{}Z",
-        num(cx - rx),
-        num(cy),
-        num(cx + rx),
-        num(cy),
-        num(cx - rx),
-        num(cy)
-    )
+pub fn ellipse_path(cx: f64, cy: f64, rx: f64, ry: f64) -> impl fmt::Display {
+    fragment(move |f| {
+        let r = Point(rx, ry);
+        write!(
+            f,
+            "M{}A{r} 0 1,1 {}A{r} 0 1,1 {}Z",
+            Point(cx - rx, cy),
+            Point(cx + rx, cy),
+            Point(cx - rx, cy)
+        )
+    })
 }
