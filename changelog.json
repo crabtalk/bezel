@@ -10,6 +10,8 @@
       "`Options::colors` takes a `Colors` (each an `Rgba`) for a renderer without CSS custom properties: the SVG names those colours and every other variable's value in place of each `var(…)`, computes its `color-mix`, and keeps rectangles' radii in `rx`. `markdown::fence::fence_note` puts a note under a fence's code, `NOTE_SELECTOR` on it."
     ],
     "changed": [
+      "`ui::fonts::add` hands fonts to gpui's text system and, in a browser, to `ui::fonts::database`, the fonts SVG is laid out and drawn in; natively that is the system's fonts. `ui::register_fonts` goes through it.",
+      "A ` ```mermaid ` fence lays out and rasterizes its diagram with `ui::fonts::database` instead of gpui's SVG renderer, so in a browser its labels are drawn in the app's fonts rather than left out, and natively in the face they were measured in.",
       "`bezel-syntax-std` is merged into `bezel-syntax`: `syntax_std::install` and `LANGS` are `syntax::grammars::install` and `syntax::grammars::LANGS`, and the `rust`, `python`, `typescript`, `json`, `go`, `bash` and `toml` features, on by default, are `bezel-syntax`'s.",
       "`bezel-canvas-core` is merged into `bezel-canvas`: its modules are `canvas::change`, `clip`, `contain`, `drag`, `handle`, `json_canvas`, `layout`, `mindmap`, `model`, `paint`, `path` and `snap`. `diagram`, the read-only painter the mermaid fences used, is gone.",
       "`bezel-markdown`'s gpui, theme and ui are behind its `gpui` feature, on by default. Without it the crate is `doc`, `parse`, `serialize`, `select`, `edit`, `quote` and `synced`, and builds for `wasm32-unknown-unknown`; `Cursor::span`, the mark and highlight paints and everything that renders need the feature.",

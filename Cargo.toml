@@ -77,6 +77,8 @@ tree-sitter-css = "0.25"
 # The parser gpui paints SVGs with, used by the icon tests to prove a generated
 # document renders rather than merely looking like markup.
 usvg = "0.46"
+# gpui's rasterizer, at its version: a mermaid fence draws with it.
+resvg = { version = "0.46", default-features = false, features = ["text", "raster-images"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_with = "3"

@@ -188,7 +188,12 @@ impl RowPaint {
             .filter(|_| self.shape.cuts_out(self.hollow))
     }
 
-    pub(super) fn paint_under(&self, span: &Range<usize>, layout: &TextLayout, window: &mut Window) {
+    pub(super) fn paint_under(
+        &self,
+        span: &Range<usize>,
+        layout: &TextLayout,
+        window: &mut Window,
+    ) {
         for (range, color, ()) in self.layers.clipped(span).painted() {
             for rect in range_rects(layout, range, 0.0, 0.0) {
                 window.paint_quad(quad(

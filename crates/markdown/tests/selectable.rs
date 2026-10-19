@@ -4,7 +4,12 @@
 //! markup (see `clipboard.rs`). This is the plain text a reader dragged over —
 //! what a paste into anything else should read like.
 
-use markdown::{BlockLayouts, Doc, parse::parse, render::selectable::{self, copied}, *};
+use markdown::{
+    BlockLayouts, Doc,
+    parse::parse,
+    render::selectable::{self, copied},
+    *,
+};
 
 fn body(block: usize, offset: usize) -> Cursor {
     Cursor::new(block, Part::Body, offset)

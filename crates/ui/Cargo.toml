@@ -44,6 +44,8 @@ icons = { workspace = true, features = [
 ] }
 motion.workspace = true
 gpui.workspace = true
+# The font database SVG is laid out and drawn with.
+usvg.workspace = true
 unicode-segmentation = "1"
 web-time.workspace = true
 

@@ -57,6 +57,8 @@ syntax.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# The samples on the Mermaid tab, drawn without a window.
+mermaid.workspace = true
 # `TestAppContext` — a window without a display, which is what lets the
 # catalog's declared examples be compared against the ones a page paints.
 gpui = { workspace = true, features = ["test-support"] }

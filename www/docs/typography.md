@@ -19,7 +19,7 @@ use std::borrow::Cow;
 
 static INTER: &[u8] = include_bytes!("../assets/Inter.ttf");
 
-cx.text_system().add_fonts(vec![Cow::Borrowed(INTER)]).ok();
+bezel::ui::fonts::add(cx, vec![Cow::Borrowed(INTER)]).ok();
 cx.set_palette(|appearance| {
     let mut theme = Theme::for_appearance(appearance);
     theme.font_sans = "Inter".into();

@@ -26,7 +26,6 @@
 
 use gpui_shared_string::SharedString;
 
-
 /// The custom marks a document is read and written with.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Marks {

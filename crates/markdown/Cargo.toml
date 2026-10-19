@@ -24,7 +24,15 @@ workspace = true
 [features]
 default = ["gpui"]
 # Everything that paints. Without it the crate is the document model alone.
-gpui = ["dep:gpui", "dep:theme", "dep:ui", "dep:usvg", "dep:rustybuzz"]
+gpui = [
+    "dep:gpui",
+    "dep:theme",
+    "dep:ui",
+    "dep:usvg",
+    "dep:resvg",
+    "dep:image",
+    "dep:rustybuzz",
+]
 # A ```mermaid fence painted as its diagram.
 mermaid = ["gpui", "dep:mermaid"]
 
@@ -35,8 +43,10 @@ ui = { workspace = true, optional = true }
 gpui = { workspace = true, optional = true }
 pulldown-cmark = { version = "0.13", default-features = false }
 mermaid = { workspace = true, optional = true }
-# The font database and shaping the SVG a fence draws is laid out with.
+# The SVG a fence draws: parsed, laid out and shaped, and rasterized.
 usvg = { workspace = true, optional = true }
+resvg = { workspace = true, optional = true }
+image = { version = "0.25", default-features = false, optional = true }
 rustybuzz = { workspace = true, optional = true }
 
 [dev-dependencies]

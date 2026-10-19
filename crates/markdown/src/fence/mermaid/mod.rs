@@ -7,7 +7,7 @@
 //! parsing run on gpui's background executor, each fence's on its own; until
 //! they finish the fence stands empty at its stated height, or at the height
 //! its last drawing had. The SVG names the theme's colours, and its labels are
-//! measured in the faces gpui's SVG renderer draws them in ([`fonts`]).
+//! measured and drawn in [`ui::fonts`] ([`fonts`]).
 //!
 //! A press on the diagram pans it and does not reach the editor; the band
 //! above it does, which is how the source is reached for editing.
@@ -24,8 +24,8 @@ use std::{
 
 use gpui::{
     AnyElement, App, AsyncApp, ElementId, Entity, Global, Hsla, ImageSource, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParsedSvg, Pixels, Point, RenderImage, Rgba as GpuiRgba,
-    SharedString, Size, Window, div, img, prelude::*, px,
+    MouseDownEvent, MouseMoveEvent, Pixels, Point, RenderImage, Rgba as GpuiRgba, SharedString,
+    Size, Window, div, img, prelude::*, px,
 };
 use theme::{TextStyle, Theme};
 use ui::{
@@ -130,7 +130,7 @@ impl Global for Cache {}
 /// A drawn diagram: its SVG parsed, its size, and its last raster with the
 /// device scale that was made at.
 struct Diagram {
-    svg: ParsedSvg,
+    svg: usvg::Tree,
     natural: (f32, f32),
     raster: RefCell<Option<(f32, Arc<RenderImage>)>>,
 }
@@ -144,12 +144,30 @@ impl Diagram {
         {
             return Some(image.clone());
         }
-        let image = cx.svg_renderer().render_parsed(&self.svg, scale).ok()?;
+        let image = rasterize(&self.svg, scale)?;
         if let Some((_, old)) = self.raster.replace(Some((scale, image.clone()))) {
             cx.drop_image(old, Some(window));
         }
         Some(image)
     }
+}
+
+/// `svg` at `scale` device pixels to its own, as gpui takes an image: BGRA,
+/// not premultiplied.
+fn rasterize(svg: &usvg::Tree, scale: f32) -> Option<Arc<RenderImage>> {
+    let size = svg.size().to_int_size().scale_by(scale)?;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())?;
+    resvg::render(
+        svg,
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    let mut pixels = pixmap.take();
+    for pixel in pixels.chunks_exact_mut(4) {
+        gpui::swap_rgba_pa_to_bgra(pixel);
+    }
+    let buffer = image::RgbaImage::from_raw(size.width(), size.height(), pixels)?;
+    Some(Arc::new(RenderImage::new([image::Frame::new(buffer)])))
 }
 
 /// One diagram's view: its scale, `None` until a zoom button is pressed; how
@@ -193,10 +211,11 @@ fn drawn(
     window: &mut Window,
     cx: &mut App,
 ) -> (u64, Option<Drawing>) {
-    let families = Families::resolve(&theme.font_sans, &theme.font_mono);
+    let fonts = ui::fonts::database();
+    let families = Families::resolve(&theme.font_sans, &theme.font_mono, &fonts);
     let colors = colors(theme);
     let mut hasher = DefaultHasher::new();
-    (code, size.to_bits(), &colors, &families).hash(&mut hasher);
+    (code, size.to_bits(), &colors, &families, fonts.generation).hash(&mut hasher);
     let key = hasher.finish();
     if let Some(found) = cx.default_global::<Cache>().0.get(&key) {
         return (key, found.clone());
@@ -213,25 +232,28 @@ fn drawn(
         cache
     };
     cx.default_global::<Cache>().0 = cache;
-    let shaper = Shaper(families.clone());
+    let parsing = usvg::Options {
+        font_family: families.sans.clone(),
+        fontdb: fonts.fonts.clone(),
+        ..usvg::Options::default()
+    };
     let options = Options {
-        font_family: Some(families.sans),
-        font_family_mono: Some(families.mono),
+        font_family: Some(families.sans.clone()),
+        font_family_mono: Some(families.mono.clone()),
         font_size: f64::from(size),
         colors: Some(colors),
         ..Options::default()
     };
-    let renderer = cx.svg_renderer();
+    let shaper = Shaper { families, fonts };
     let code = code.to_string();
     let job = cx.background_executor().spawn(async move {
         let drawing = ::mermaid::render(&code, &options, &shaper).map_err(|error| note(&error))?;
-        let svg = renderer
-            .parse_svg(drawing.svg.as_bytes())
+        let svg = usvg::Tree::from_data(drawing.svg.as_bytes(), &parsing)
             .map_err(|error| SharedString::from(error.to_string()))?;
         Ok((svg, (drawing.width as f32, drawing.height as f32)))
     });
     cx.spawn(async move |cx: &mut AsyncApp| {
-        let result: Result<(ParsedSvg, (f32, f32)), SharedString> = job.await;
+        let result: Result<(usvg::Tree, (f32, f32)), SharedString> = job.await;
         cx.update(|cx| {
             let drawing = result.map(|(svg, natural)| {
                 Rc::new(Diagram {

@@ -119,6 +119,7 @@ pub fn init(cx: &mut App) {
 pub mod highlight;
 
 pub mod brand;
+pub mod mermaid;
 pub mod patterns;
 pub mod preview;
 mod rail;
@@ -265,6 +266,7 @@ pub struct Gallery {
     material: material::State,
     foundations: foundations::State,
     patterns: patterns::State,
+    mermaid: mermaid::State,
 }
 
 impl Gallery {
@@ -349,6 +351,7 @@ impl Gallery {
             material: material::State::new(cx),
             foundations: foundations::State::new(cx),
             patterns: patterns::State::new(cx),
+            mermaid: mermaid::State::new(cx),
         }
     }
 

@@ -908,7 +908,9 @@ dependencies = [
  "bezel-mermaid",
  "bezel-theme",
  "bezel-ui",
+ "image",
  "pulldown-cmark",
+ "resvg",
  "rustybuzz",
  "usvg",
 ]
@@ -989,6 +991,7 @@ dependencies = [
  "bezel-theme",
  "libc",
  "unicode-segmentation",
+ "usvg",
  "web-time",
  "windows-sys 0.61.2",
 ]
@@ -2711,6 +2714,7 @@ dependencies = [
  "bezel-gpui-platform",
  "bezel-icons",
  "bezel-markdown",
+ "bezel-mermaid",
  "bezel-motion",
  "bezel-syntax",
  "bezel-terminal",

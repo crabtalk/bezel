@@ -420,6 +420,7 @@ impl Gallery {
             .or_else(|| self.material(key, window, cx))
             .or_else(|| self.data(key, window, cx))
             .or_else(|| self.patterns(key, window, cx))
+            .or_else(|| self.mermaid(key, window, cx))
             .unwrap_or_else(|| div().into_any_element())
     }
 }

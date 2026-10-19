@@ -116,6 +116,12 @@ pub const TABS: &[Tab] = &[
         home: "agent-avatar",
         full_bleed: true,
     },
+    Tab {
+        title: "Mermaid",
+        groups: MERMAID,
+        home: "mermaid",
+        full_bleed: true,
+    },
 ];
 
 /// Composed screens. The source path points at the gallery rather than into
@@ -194,6 +200,201 @@ pub const PATTERNS: &[Group] = &[
                 "apps/gallery/src/patterns/dialect.rs",
             ),
             section("syntax", "Syntax", "apps/gallery/src/patterns/syntax.rs"),
+        ],
+    },
+];
+
+/// One page per diagram type `bezel-mermaid` draws, each pointing at the
+/// module that parses and draws it. A row here needs a sample in
+/// [`crate::mermaid::SAMPLES`].
+pub const MERMAID: &[Group] = &[
+    Group {
+        title: "Overview",
+        sections: &[section(
+            "mermaid",
+            "Overview",
+            "crates/markdown/src/fence/mermaid/mod.rs",
+        )],
+    },
+    Group {
+        title: "Graphs",
+        sections: &[
+            section(
+                "mermaid-flowchart",
+                "Flowchart",
+                "crates/mermaid/src/diagrams/flowchart/mod.rs",
+            ),
+            section(
+                "mermaid-sequence",
+                "Sequence",
+                "crates/mermaid/src/diagrams/sequence/mod.rs",
+            ),
+            section(
+                "mermaid-class",
+                "Class",
+                "crates/mermaid/src/diagrams/class/mod.rs",
+            ),
+            section(
+                "mermaid-state",
+                "State",
+                "crates/mermaid/src/diagrams/state/mod.rs",
+            ),
+            section(
+                "mermaid-er",
+                "Entity relationship",
+                "crates/mermaid/src/diagrams/er/mod.rs",
+            ),
+            section(
+                "mermaid-requirement",
+                "Requirement",
+                "crates/mermaid/src/diagrams/requirement/mod.rs",
+            ),
+            section(
+                "mermaid-architecture",
+                "Architecture",
+                "crates/mermaid/src/diagrams/architecture/mod.rs",
+            ),
+            section(
+                "mermaid-block",
+                "Block",
+                "crates/mermaid/src/diagrams/block/mod.rs",
+            ),
+            section("mermaid-c4", "C4", "crates/mermaid/src/diagrams/c4/mod.rs"),
+        ],
+    },
+    Group {
+        title: "Process",
+        sections: &[
+            section(
+                "mermaid-usecase",
+                "Use case",
+                "crates/mermaid/src/diagrams/usecase/mod.rs",
+            ),
+            section(
+                "mermaid-swimlane",
+                "Swimlane",
+                "crates/mermaid/src/diagrams/swimlane/mod.rs",
+            ),
+            section(
+                "mermaid-agentflow",
+                "Agent flow",
+                "crates/mermaid/src/diagrams/agentflow/mod.rs",
+            ),
+            section(
+                "mermaid-eventmodeling",
+                "Event modeling",
+                "crates/mermaid/src/diagrams/eventmodeling/mod.rs",
+            ),
+            section(
+                "mermaid-journey",
+                "User journey",
+                "crates/mermaid/src/diagrams/journey/mod.rs",
+            ),
+            section(
+                "mermaid-gitgraph",
+                "Git graph",
+                "crates/mermaid/src/diagrams/git/mod.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Charts",
+        sections: &[
+            section(
+                "mermaid-pie",
+                "Pie",
+                "crates/mermaid/src/diagrams/pie/mod.rs",
+            ),
+            section(
+                "mermaid-xychart",
+                "XY chart",
+                "crates/mermaid/src/diagrams/xychart/mod.rs",
+            ),
+            section(
+                "mermaid-quadrant",
+                "Quadrant",
+                "crates/mermaid/src/diagrams/quadrant/mod.rs",
+            ),
+            section(
+                "mermaid-radar",
+                "Radar",
+                "crates/mermaid/src/diagrams/radar/mod.rs",
+            ),
+            section(
+                "mermaid-sankey",
+                "Sankey",
+                "crates/mermaid/src/diagrams/sankey/mod.rs",
+            ),
+            section(
+                "mermaid-treemap",
+                "Treemap",
+                "crates/mermaid/src/diagrams/treemap/mod.rs",
+            ),
+            section(
+                "mermaid-venn",
+                "Venn",
+                "crates/mermaid/src/diagrams/venn/mod.rs",
+            ),
+            section(
+                "mermaid-packet",
+                "Packet",
+                "crates/mermaid/src/diagrams/packet/mod.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Planning",
+        sections: &[
+            section(
+                "mermaid-gantt",
+                "Gantt",
+                "crates/mermaid/src/diagrams/gantt/mod.rs",
+            ),
+            section(
+                "mermaid-timeline",
+                "Timeline",
+                "crates/mermaid/src/diagrams/timeline/mod.rs",
+            ),
+            section(
+                "mermaid-kanban",
+                "Kanban",
+                "crates/mermaid/src/diagrams/kanban/mod.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Maps & trees",
+        sections: &[
+            section(
+                "mermaid-mindmap",
+                "Mindmap",
+                "crates/mermaid/src/diagrams/mindmap/mod.rs",
+            ),
+            section(
+                "mermaid-treeview",
+                "Tree view",
+                "crates/mermaid/src/diagrams/treeview/mod.rs",
+            ),
+            section(
+                "mermaid-ishikawa",
+                "Ishikawa",
+                "crates/mermaid/src/diagrams/ishikawa/mod.rs",
+            ),
+            section(
+                "mermaid-wardley",
+                "Wardley map",
+                "crates/mermaid/src/diagrams/wardley/mod.rs",
+            ),
+            section(
+                "mermaid-cynefin",
+                "Cynefin",
+                "crates/mermaid/src/diagrams/cynefin/mod.rs",
+            ),
+            section(
+                "mermaid-railroad",
+                "Railroad",
+                "crates/mermaid/src/diagrams/railroad/mod.rs",
+            ),
         ],
     },
 ];
