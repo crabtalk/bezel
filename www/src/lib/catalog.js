@@ -77,8 +77,6 @@ export const docsHome = documentedSections[0]?.key;
 
 export const repo = 'https://github.com/crabtalk/bezel';
 
-export const repoApi = repo.replace('https://github.com/', 'https://api.github.com/repos/');
-
 export const discord = 'https://discord.gg/yGZDYnwbx6';
 
 /** Where a section's implementation lives, for a reader who wants the real thing. */
@@ -96,7 +94,7 @@ export const docsUrl = (section) => {
 };
 
 /** The library in one line — search results, share cards, and the agent surface. */
-export const tagline = 'Design tokens, motion, and materials for native Rust apps, built on gpui.';
+export const tagline = 'A block editor, diagrams and components for native Rust apps, built on gpui.';
 
 /** Canonical URL, used for share links. */
 export const site = 'https://bezel.gallery';

@@ -1,0 +1,9 @@
+name = "Matrix"
+
+[dark.seed]
+surface = "#040805"
+ink = "#b8ffca"
+accent = "#1eff5a"
+added = "#1eff5a"
+removed = "#fa423e"
+highlight = "#1eff5a"

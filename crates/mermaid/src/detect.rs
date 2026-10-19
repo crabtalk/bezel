@@ -76,6 +76,43 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// Every variant, in declaration order.
+    pub const ALL: [Kind; 33] = [
+        Self::Flowchart,
+        Self::Sequence,
+        Self::Class,
+        Self::State,
+        Self::Er,
+        Self::Pie,
+        Self::Gantt,
+        Self::GitGraph,
+        Self::Mindmap,
+        Self::Timeline,
+        Self::Journey,
+        Self::XyChart,
+        Self::QuadrantChart,
+        Self::Requirement,
+        Self::C4,
+        Self::Sankey,
+        Self::Block,
+        Self::Packet,
+        Self::Kanban,
+        Self::Architecture,
+        Self::Radar,
+        Self::Treemap,
+        Self::Info,
+        Self::Agentflow,
+        Self::Usecase,
+        Self::Railroad,
+        Self::TreeView,
+        Self::Venn,
+        Self::Cynefin,
+        Self::Wardley,
+        Self::Swimlane,
+        Self::Ishikawa,
+        Self::Eventmodeling,
+    ];
+
     /// The name Pele and the SVG's `aria-roledescription` use.
     pub fn name(self) -> &'static str {
         match self {

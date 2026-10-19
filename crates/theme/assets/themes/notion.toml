@@ -1,0 +1,17 @@
+name = "Notion"
+
+[dark.seed]
+surface = "#191919"
+ink = "#d9d9d8"
+accent = "#3183d8"
+added = "#4ec9b0"
+removed = "#fa423e"
+highlight = "#3183d8"
+
+[light.seed]
+surface = "#ffffff"
+ink = "#37352f"
+accent = "#3183d8"
+added = "#008000"
+removed = "#a31515"
+highlight = "#0000ff"

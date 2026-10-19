@@ -1,0 +1,9 @@
+name = "Oscurange"
+
+[dark.seed]
+surface = "#0b0b0f"
+ink = "#e6e6e6"
+accent = "#f9b98c"
+added = "#40c977"
+removed = "#fa423e"
+highlight = "#479ffa"

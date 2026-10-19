@@ -41,8 +41,9 @@ thread_local! {
     static APPLICATION: RefCell<Option<ApplicationHandle>> = const { RefCell::new(None) };
 }
 
-/// `?s=<key>` embeds one section; without it the page is the whole browser.
-/// `?e=<example>` narrows that to one demo on the page.
+/// `?s=<key>` embeds one section; without it the page is the whole browser,
+/// opened at `?open=<key>` if given. `?e=<example>` narrows an embed to one demo
+/// on the page.
 fn requested(param: &str) -> Option<String> {
     let search = web_sys::window()?.location().search().ok()?;
     web_sys::UrlSearchParams::new_with_str(&search)
@@ -113,6 +114,7 @@ pub fn start() {
 
     let section = requested("s");
     let example = requested("e");
+    let opening = requested("open");
     // Filled by the window builder below, and read back once the app hands its
     // handle over — the listener needs both, and neither exists before the
     // other.
@@ -146,7 +148,10 @@ pub fn start() {
                         *slot.borrow_mut() = Some(gallery.clone());
                         gallery
                     }
-                    None => cx.new(Gallery::new),
+                    None => match opening.as_deref() {
+                        Some(key) => cx.new(|cx| Gallery::showing(key, cx)),
+                        None => cx.new(Gallery::new),
+                    },
                 },
             )
             .expect("failed to open the gallery window");

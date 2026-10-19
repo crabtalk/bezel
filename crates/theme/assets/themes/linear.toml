@@ -1,0 +1,17 @@
+name = "Linear"
+
+[dark.seed]
+surface = "#0f0f11"
+ink = "#e3e4e6"
+accent = "#606acc"
+added = "#69c967"
+removed = "#ff7e78"
+highlight = "#c2a1ff"
+
+[light.seed]
+surface = "#fcfcfd"
+ink = "#1b1b1b"
+accent = "#5e6ad2"
+added = "#52a450"
+removed = "#c94446"
+highlight = "#8160d8"

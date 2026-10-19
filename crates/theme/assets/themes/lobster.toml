@@ -1,0 +1,9 @@
+name = "Lobster"
+
+[dark.seed]
+surface = "#111827"
+ink = "#e4e4e7"
+accent = "#ff5c5c"
+added = "#22c55e"
+removed = "#ff5c5c"
+highlight = "#3b82f6"

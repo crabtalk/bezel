@@ -893,3 +893,11 @@ fn token_names_are_unique() {
     let unique: std::collections::BTreeSet<&str> = names.iter().copied().collect();
     assert_eq!(names.len(), unique.len());
 }
+
+#[test]
+fn bundled_families_parse() {
+    let families = ThemeFamily::bundled();
+    assert_eq!(families.len(), 27);
+    let gruvbox = ThemeFamily::named("gruvbox").expect("gruvbox is bundled");
+    assert!(gruvbox.theme(Appearance::Dark).is_some());
+}

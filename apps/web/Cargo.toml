@@ -15,9 +15,15 @@ crate-type = ["cdylib", "rlib"]
 # is the whole point — one catalog behind the rail and the website's sidebar.
 [dependencies]
 gallery.workspace = true
+theme.workspace = true
+
+# The `diagrams` and `stats` bins: what the home page draws and counts, at
+# build time.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+mermaid.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-theme.workspace = true
 # gpui-web loads no fonts of its own; these are the only faces the page has.
 ui = { workspace = true, features = ["geist-sans", "geist-mono", "geist-weights"] }
 console_error_panic_hook = "0.1"

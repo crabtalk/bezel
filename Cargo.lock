@@ -977,6 +977,7 @@ dependencies = [
  "objc",
  "serde",
  "serde_json",
+ "toml 0.8.23",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -7521,11 +7522,13 @@ version = "0.2.18"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-web",
+ "bezel-mermaid",
  "bezel-theme",
  "bezel-ui",
  "console_error_panic_hook",
  "gallery",
  "log",
+ "serde_json",
  "wasm-bindgen",
  "web-sys",
 ]

@@ -3,6 +3,7 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import Gallery from '$lib/Gallery.svelte';
+	import { engage } from '$lib/engage.js';
 	import { bySlug, docsUrl, documented, sourceUrl } from '$lib/catalog.js';
 
 	let { children } = $props();
@@ -73,7 +74,7 @@
 				<!-- The component itself, not the whole browser: one shared wasm app,
 				     told which section to render. `loading="lazy"` keeps 17MB off the
 				     page until the reader scrolls to it. -->
-				<div class="embed">
+				<div class="embed" use:engage={() => (expanded = true)}>
 					<iframe
 						bind:this={frame}
 						class:tall={section.fullBleed}
@@ -81,8 +82,7 @@
 						{src}
 						loading="lazy"
 					></iframe>
-					<button class="cover" onclick={() => (expanded = true)} aria-label="Expand {section.title}"
-					></button>
+					<button class="cover" aria-label="Use {section.title}"></button>
 				</div>
 
 				<p class="actions">

@@ -1,0 +1,9 @@
+name = "Sentry"
+
+[dark.seed]
+surface = "#2d2935"
+ink = "#e6dff9"
+accent = "#7055f6"
+added = "#8ee6d7"
+removed = "#fa423e"
+highlight = "#7055f6"

@@ -1,0 +1,17 @@
+name = "Vercel"
+
+[dark.seed]
+surface = "#000000"
+ink = "#ededed"
+accent = "#006efe"
+added = "#00ad3a"
+removed = "#f13342"
+highlight = "#9540d5"
+
+[light.seed]
+surface = "#ffffff"
+ink = "#171717"
+accent = "#006aff"
+added = "#28a948"
+removed = "#eb001d"
+highlight = "#a100f8"

@@ -1,0 +1,9 @@
+name = "Proof"
+
+[light.seed]
+surface = "#f5f3ed"
+ink = "#2f312d"
+accent = "#3d755d"
+added = "#3d755d"
+removed = "#ba2623"
+highlight = "#5f6ac2"

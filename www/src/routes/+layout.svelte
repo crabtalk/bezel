@@ -4,25 +4,11 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import Brand from '$lib/Brand.svelte';
-	import { discord, docsHome, documented, repo, repoApi } from '$lib/catalog.js';
+	import { discord, docsHome, documented, repo } from '$lib/catalog.js';
 
 	const author = 'https://x.com/tianyi_gc';
 
-	let { children, data } = $props();
-
-	// The build-time count goes stale between deploys, so refresh it once on
-	// hydration. Unauthenticated, but it is one request per visitor against a
-	// 60/hour per-IP limit, and the baked value stands when it fails.
-	let stars = $state(data.stars);
-
-	$effect(() => {
-		fetch(repoApi)
-			.then((response) => (response.ok ? response.json() : null))
-			.then((json) => {
-				if (typeof json?.stargazers_count === 'number') stars = json.stargazers_count;
-			})
-			.catch(() => {});
-	});
+	let { children } = $props();
 
 	// One header for the whole site: there is no marketing/docs split here to
 	// signal, so docs get the same chrome with the catalog's tabs added to it.
@@ -99,10 +85,8 @@
 			<a class="mark" href={discord} target="_blank" rel="noreferrer" aria-label="bezel on Discord">
 				<Brand icon={siDiscord} size={15} />
 			</a>
-			<a class="action" href={repo}>
-				Star
-				<Brand icon={siGithub} size={14} />
-				{#if stars !== null}<span class="count">{stars}</span>{/if}
+			<a class="mark" href={repo} aria-label="bezel on GitHub">
+				<Brand icon={siGithub} size={15} />
 			</a>
 		</nav>
 	</div>
@@ -136,15 +120,18 @@
 </div>
 
 <style>
-	/* A band across the window, with the page's own column inside it. */
+	/* A band of glass across the window, with the page's own column inside it. */
 	header {
 		position: sticky;
 		top: 0;
 		z-index: 20;
 		height: var(--header);
 		border-bottom: 1px solid var(--line);
-		background: color-mix(in srgb, var(--bg) 88%, transparent);
-		backdrop-filter: blur(12px);
+		background: color-mix(in srgb, var(--bg) 60%, transparent);
+		backdrop-filter: blur(20px) saturate(1.8);
+		-webkit-backdrop-filter: blur(20px) saturate(1.8);
+		/* The lit edge glass has along its rim. */
+		box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.04);
 	}
 
 	.bar {
@@ -255,32 +242,6 @@
 		padding: 4px;
 	}
 
-
-	/* The label names the verb, the mark names the destination — so spelling the
-	   destination out as well would say it twice. */
-	.action {
-		display: inline-flex;
-		align-items: center;
-		gap: 7px;
-		height: 32px;
-		padding: 0 11px;
-		margin-left: 4px;
-		border: 1px solid var(--line-strong);
-		border-radius: var(--radius-control);
-		color: var(--text);
-	}
-
-	.action:hover {
-		border-color: var(--text);
-		text-decoration: none;
-	}
-
-	.count {
-		font-variant-numeric: tabular-nums;
-		color: var(--muted);
-		border-left: 1px solid var(--line-strong);
-		padding-left: 8px;
-	}
 
 	header a:hover {
 		color: var(--text);

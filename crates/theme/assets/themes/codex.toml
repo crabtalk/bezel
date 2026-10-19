@@ -1,0 +1,17 @@
+name = "Codex"
+
+[dark.seed]
+surface = "#111111"
+ink = "#fcfcfc"
+accent = "#0169cc"
+added = "#00a240"
+removed = "#e02e2a"
+highlight = "#b06dff"
+
+[light.seed]
+surface = "#ffffff"
+ink = "#0d0d0d"
+accent = "#0169cc"
+added = "#00a240"
+removed = "#e02e2a"
+highlight = "#751ed9"
