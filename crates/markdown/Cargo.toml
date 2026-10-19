@@ -43,6 +43,10 @@ memchr = { workspace = true, optional = true }
 usvg = { workspace = true, optional = true }
 rustybuzz = { workspace = true, optional = true }
 
+# The clock and the local zone are the page's, through `Date`.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+chrono = { workspace = true, optional = true, features = ["wasmbind"] }
+
 [dev-dependencies]
 serde_json.workspace = true
 # The parser gpui paints SVG with.
@@ -53,6 +57,11 @@ gpui = { workspace = true, features = ["test-support"] }
 
 [[test]]
 name = "mermaid"
+required-features = ["mermaid"]
+
+[[bench]]
+name = "mermaid"
+harness = false
 required-features = ["mermaid"]
 
 [[test]]

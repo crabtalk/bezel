@@ -1,0 +1,39 @@
+[package]
+name = "bezel-markdown-wasm"
+description = "bezel-markdown's Mermaid engine for the web, with Pele's API"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "markdown_wasm"
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+markdown = { package = "bezel-markdown", path = "../markdown", default-features = false, features = ["mermaid"] }
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[package.metadata.wasm-pack.profile.release]
+# The features rustc enables for `wasm32-unknown-unknown`.
+wasm-opt = [
+    "-Oz",
+    "--enable-bulk-memory",
+    "--enable-multivalue",
+    "--enable-mutable-globals",
+    "--enable-nontrapping-float-to-int",
+    "--enable-reference-types",
+    "--enable-sign-ext",
+]
