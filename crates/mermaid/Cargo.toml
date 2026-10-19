@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
+exclude = ["tests/"]
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true

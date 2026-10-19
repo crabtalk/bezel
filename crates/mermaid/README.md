@@ -40,7 +40,7 @@ The SVG matches Pele's, with class names, CSS variables and ids prefixed `bezel`
 cargo nextest run -p bezel-mermaid
 ```
 
-`tests/mermaid/compat/` holds Pele's `parse` output for each type, and `tests/mermaid/corpus/` Mermaid's documentation examples. `MERMAID_PELE_SVG=<dir>` compares every drawing against Pele's SVG, written by `node tests/mermaid/pele/render.mjs svg <dir>`.
+`tests/mermaid/compat/` holds Pele's `parse` output for each type, written by `build.rs` with Node in a checkout, and `tests/mermaid/corpus/` Mermaid's documentation examples. `MERMAID_PELE_SVG=<dir>` compares every drawing against Pele's SVG, written by `node tests/mermaid/pele/render.mjs svg <dir>`.
 
 ## Benchmark against Pele
 

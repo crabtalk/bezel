@@ -1,5 +1,5 @@
 //! Every `compat/<kind>.json` holds sources and what Pele's `parse` made of
-//! them: a model, or an error. Written by `pele/render.mjs model`.
+//! them: a model, or an error. Written by `build.rs`.
 
 use std::{fs, path::Path};
 
