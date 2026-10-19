@@ -131,3 +131,8 @@ fn er() {
 fn requirement() {
     draws("requirement-docs.json");
 }
+
+#[test]
+fn sequence() {
+    draws("sequence-docs.json");
+}

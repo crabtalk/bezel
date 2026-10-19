@@ -157,3 +157,8 @@ fn er() {
 fn requirement() {
     check("requirement");
 }
+
+#[test]
+fn sequence() {
+    check("sequence");
+}

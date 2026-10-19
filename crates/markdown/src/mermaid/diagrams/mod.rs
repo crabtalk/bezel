@@ -22,6 +22,7 @@ pub mod radar;
 pub mod railroad;
 pub mod requirement;
 pub mod sankey;
+pub mod sequence;
 pub mod state;
 pub mod timeline;
 pub mod treemap;
@@ -85,6 +86,7 @@ pub enum Model {
     State(Box<state::StateModel>),
     Er(Box<er::ErModel>),
     Requirement(Box<requirement::RequirementModel>),
+    Sequence(Box<sequence::SequenceModel>),
 }
 
 /// The type `kind`, when this build has it.
@@ -113,6 +115,7 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::State => &state::State,
         Kind::Er => &er::Er,
         Kind::Requirement => &requirement::Requirement,
+        Kind::Sequence => &sequence::Sequence,
         _ => return None,
     })
 }

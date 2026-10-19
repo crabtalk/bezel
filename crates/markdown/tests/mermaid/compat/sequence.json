@@ -1,0 +1,8865 @@
+[
+ {
+  "source": "sequenceDiagram\n    participant A\n    participant Link as Channel\n    A->>Link: message",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Link"
+    },
+    "Link": {
+     "name": "Link",
+     "description": "Channel",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "Link",
+     "message": "message",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Link",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    participant Link as Channel\n    Link->>A: message",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Link"
+    },
+    "Link": {
+     "name": "Link",
+     "description": "Channel",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Link",
+     "to": "A",
+     "message": "message",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Link",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    participant Link as Channel\n    Link  -->>A: message",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Link"
+    },
+    "Link": {
+     "name": "Link",
+     "description": "Channel",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Link",
+     "to": "A",
+     "message": "message",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Link",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    participant Link as Channel\n    A->>Link : message",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Link"
+    },
+    "Link": {
+     "name": "Link",
+     "description": "Channel",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "Link",
+     "message": "message",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Link",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    participant LINK as Channel\n    A->>LINK: message",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "LINK"
+    },
+    "LINK": {
+     "name": "LINK",
+     "description": "Channel",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "LINK",
+     "message": "message",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "LINK",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    participant B\n    A->>B: see the link page",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "B"
+    },
+    "B": {
+     "name": "B",
+     "description": "B",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "B",
+     "message": "see the link page",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "B",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    link A: Help @ https://example.com",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {
+      "Help": "https://example.com"
+     },
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "A",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    link A : Help @ https://example.com",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {
+      "Help": "https://example.com"
+     },
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "A",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    links A: {\"help\": \"https://example.com\"}",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {
+      "help": "https://example.com"
+     },
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "A",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    properties A: {\"color\": \"red\"}",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {
+      "color": "red"
+     },
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "A",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n    participant A\n    details A: details-1",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "details": "details-1"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "A",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram",
+  "model": {
+   "type": "sequence",
+   "actors": {},
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        Alice->Bob:Hello Bob, how are you?\n        Bob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        Alice->John:Hello John, how are you?\n        John-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "John"
+    },
+    "John": {
+     "name": "John",
+     "description": "John",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "John",
+     "message": "Hello John, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "John",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "John",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ()->>() Bob: Hello Bob, how are you?\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 0,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ()-->>() Bob: Hello Bob, how are you?\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 1,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ->>() Bob: Hello Bob, how are you?\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 0,
+     "activate": true,
+     "centralConnection": 59
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ()-->> Bob: Hello Bob, how are you?\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 60
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ()->> Bob: Hello Bob, how are you?\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 60
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ()<<-->>() Bob: Hello Bob, how are you?\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 34,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ()<<->>() Bob: Hello Bob, how are you?\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 33,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        participant Charlie\n        Alice ()->>() Bob: Message 1\n        Bob ()-->> Charlie: Message 2\n        Charlie ()<<-->>() Alice: Message 3\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Charlie"
+    },
+    "Charlie": {
+     "name": "Charlie",
+     "description": "Charlie",
+     "wrap": false,
+     "prevActor": "Bob",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Message 1",
+     "wrap": false,
+     "type": 0,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Charlie",
+     "message": "Message 2",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 60
+    },
+    {
+     "id": "4",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Charlie",
+     "to": "Alice",
+     "message": "Message 3",
+     "wrap": false,
+     "type": 34,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "6",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "7",
+     "from": "Charlie",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Charlie",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ()-x() Bob: Cross message\n        Alice ()--x() Bob: Dotted cross message\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Cross message",
+     "wrap": false,
+     "type": 3,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Dotted cross message",
+     "wrap": false,
+     "type": 4,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "4",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant Alice\n        participant Bob\n        Alice ->> Bob: Normal message\n        Bob -->> Alice: Normal dotted message\n        Alice -x Bob: Normal cross message\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Normal message",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Normal dotted message",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Normal cross message",
+     "wrap": false,
+     "type": 3,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob:Hello Bob, how are you?\nNote right of Bob: Bob thinks\nBob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nautonumber\nAlice->Bob:Hello Bob, how are you?\nNote right of Bob: Bob thinks\nBob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "message": {
+      "visible": true
+     },
+     "wrap": false,
+     "type": 26
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        autonumber 10.1 .01\n        Alice->Bob:Hello Bob, how are you?\n        Note right of Bob: Bob thinks\n        Bob-->Alice: I am good thanks!\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "message": {
+      "start": 10.1,
+      "step": 0.01,
+      "visible": true
+     },
+     "wrap": false,
+     "type": 26
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      autonumber 10.001\n      Alice->Bob:Hello Bob, how are you?\n      Note right of Bob: Bob thinks\n      Bob-->Alice: I am good thanks!\n    ",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n      autonumber 10.001\n-----------------^\nExpecting 'NEWLINE', 'NUM', 'off', got 'ACTOR'"
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\ntitle: Diagram Title\nAlice->Bob:Hello Bob, how are you?\nNote right of Bob: Bob thinks\nBob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "title": "Diagram Title",
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\ntitle Diagram Title\nAlice->Bob:Hello Bob, how are you?\nNote right of Bob: Bob thinks\nBob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "title": "Diagram Title",
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\ntitle: Diagram Title\naccTitle: This is the title\naccDescr: Accessibility Description\nAlice->Bob:Hello Bob, how are you?\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "title": "Diagram Title",
+   "accTitle": "This is the title",
+   "accDescr": "Accessibility Description",
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\naccTitle: This is the title\naccDescr {\nAccessibility\nDescription\n}\nAlice->Bob:Hello Bob, how are you?\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "accTitle": "This is the title",
+   "accDescr": "Accessibility\nDescription",
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob:Hello Bob, how are - you?\nBob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are - you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice-in-Wonderland->Bob:Hello Bob, how are - you?\nBob-->Alice-in-Wonderland:I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice-in-Wonderland": {
+     "name": "Alice-in-Wonderland",
+     "description": "Alice-in-Wonderland",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice-in-Wonderland",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice-in-Wonderland",
+     "to": "Bob",
+     "message": "Hello Bob, how are - you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice-in-Wonderland",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant Alice-in-Wonderland\nparticipant Bob\nAlice-in-Wonderland->Bob:Hello Bob, how are - you?\nBob-->Alice-in-Wonderland:I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice-in-Wonderland": {
+     "name": "Alice-in-Wonderland",
+     "description": "Alice-in-Wonderland",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice-in-Wonderland",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice-in-Wonderland",
+     "to": "Bob",
+     "message": "Hello Bob, how are - you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice-in-Wonderland",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant Alice=Wonderland\nparticipant Bob\nAlice=Wonderland->Bob:Hello Bob, how are - you?\nBob-->Alice=Wonderland:I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice=Wonderland": {
+     "name": "Alice=Wonderland",
+     "description": "Alice=Wonderland",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice=Wonderland",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice=Wonderland",
+     "to": "Bob",
+     "message": "Hello Bob, how are - you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice=Wonderland",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant A as Alice\nparticipant B as Bob\nA->B:Hello Bob, how are you?\nB-->A: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "B"
+    },
+    "B": {
+     "name": "B",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "B",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "B",
+     "to": "A",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "B",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\n  actor Alice as Alice2\n  actor Bob\n  participant John as John2\n  participant Mandy\n  Alice->>Bob: Hi Bob\n  Bob->>Alice: Hi Alice\n  Alice->>John: Hi John\n  John->>Mandy: Hi Mandy\n  Mandy ->>Joan: Hi Joan",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice2",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "actor",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "actor",
+     "nextActor": "John"
+    },
+    "John": {
+     "name": "John",
+     "description": "John2",
+     "wrap": false,
+     "prevActor": "Bob",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Mandy"
+    },
+    "Mandy": {
+     "name": "Mandy",
+     "description": "Mandy",
+     "wrap": false,
+     "prevActor": "John",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Joan"
+    },
+    "Joan": {
+     "name": "Joan",
+     "description": "Joan",
+     "wrap": false,
+     "prevActor": "Mandy",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hi Bob",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hi Alice",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "to": "John",
+     "message": "Hi John",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "John",
+     "to": "Mandy",
+     "message": "Hi Mandy",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "Mandy",
+     "to": "Joan",
+     "message": "Hi Joan",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Joan",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nactor A as Alice\nactor B as Bob\nA->B:Hello Bob, how are you?\nB-->A: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "actor",
+     "nextActor": "B"
+    },
+    "B": {
+     "name": "B",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "actor"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "B",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "B",
+     "to": "A",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "B",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice-xBob:Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 3,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice--xBob:Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 4,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice-)Bob:Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 24,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice--)Bob:Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 25,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->>Bob:Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "sequenceDiagram\n",
+  "model": {
+   "type": "sequence",
+   "actors": {},
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice<<->>Bob:Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 33,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n    Alice<<-->>Bob:Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 34,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice-->>Bob:Hello Bob, how are you?\nactivate Bob\nBob-->>Alice:Hello Alice, I'm fine and  you?\ndeactivate Bob",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 17,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, I'm fine and  you?",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 18,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {
+    "Bob": 0
+   }
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n    Alice-->>+Bob:Hello Bob, how are you?\n    Bob-->>- Alice:Hello Alice, I'm fine and  you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 1,
+     "activate": true,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 17,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, I'm fine and  you?",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 18,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {
+    "Bob": 0
+   }
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      Alice-->>+Bob:Hello Bob, how are you?\n      Bob-->>+Carol:Carol, let me introduce Alice?\n      Bob-->>- Alice:Hello Alice, please meet Carol?\n      Carol->>- Bob:Oh Bob, I'm so happy to be here!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Carol"
+    },
+    "Carol": {
+     "name": "Carol",
+     "description": "Carol",
+     "wrap": false,
+     "prevActor": "Bob",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 1,
+     "activate": true,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 17,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Carol",
+     "message": "Carol, let me introduce Alice?",
+     "wrap": false,
+     "type": 1,
+     "activate": true,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Carol",
+     "message": "",
+     "wrap": false,
+     "type": 17,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, please meet Carol?",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 18,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "6",
+     "from": "Carol",
+     "to": "Bob",
+     "message": "Oh Bob, I'm so happy to be here!",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "7",
+     "from": "Carol",
+     "message": "",
+     "wrap": false,
+     "type": 18,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Carol",
+   "sequenceWrap": false,
+   "active": {
+    "Bob": 0,
+    "Carol": 0
+   }
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant user as End User\n      participant Server as Server\n      participant System as System\n      participant System2 as System2\n\n      user->>+Server: Test\n      user->>+Server: Test2\n      user->>System: Test\n      Server->>-user: Test\n      Server->>-user: Test2\n\n      %% The following deactivation of Server will fail\n      Server->>-user: Test3",
+  "error": {
+   "code": "semantic",
+   "message": "Trying to inactivate an inactive participant (Server)"
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      Alice->Bob: Hello Bob, how are you?\n      %% Comment\n      Note right of Bob: Bob thinks\n      Bob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      Alice->Bob: Hello Bob, how are you?\n\n      %% Comment\n      Note right of Bob: Bob thinks\n      Bob-->Alice: I am good thanks!\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram;Alice->Bob: Hello Bob, how are you?;Note right of Bob: Bob thinks;Bob-->Alice: I am good thanks!;",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\n Alice->Bob: Hello Bob, how are you?\n\n%% Comment\nNote right of Bob: Bob thinks\nBob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\n   Alice->Bob: Hello Bob, how are you?\n\n%% Comment\nNote right of Bob: Bob thinks\nBob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant Alice\nparticipant Bob\nAlice->John: Hello John, how are you?\n    loop Healthcheck\nJohn->John: Fight against hypochondria\n end\nNote right of John: Rational thoughts<br/>prevail...\n    John-->Alice: Great!\n    John->Bob: How about you?\nBob-->John: Jolly good!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "John"
+    },
+    "John": {
+     "name": "John",
+     "description": "John",
+     "wrap": false,
+     "prevActor": "Bob",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "John",
+     "message": "Hello John, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "Healthcheck",
+     "wrap": false,
+     "type": 10,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "John",
+     "to": "John",
+     "message": "Fight against hypochondria",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 11,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "John",
+     "to": "John",
+     "message": "Rational thoughts<br/>prevail...",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "5",
+     "from": "John",
+     "to": "Alice",
+     "message": "Great!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "6",
+     "from": "John",
+     "to": "Bob",
+     "message": "How about you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "7",
+     "from": "Bob",
+     "to": "John",
+     "message": "Jolly good!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "John",
+     "placement": 1,
+     "message": "Rational thoughts<br/>prevail...",
+     "wrap": false
+    }
+   ],
+   "prevActor": "John",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant 1 as multiline<br>text\nparticipant 2 as multiline<br/>text\nparticipant 3 as multiline<br />text\nparticipant 4 as multiline<br \t/>text\n1->>2: multiline<br>text\nnote right of 2: multiline<br>text\n2->>3: multiline<br/>text\nnote right of 3: multiline<br/>text\n3->>4: multiline<br />text\nnote right of 4: multiline<br />text\n4->>1: multiline<br \t/>text\nnote right of 1: multiline<br \t/>text\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "1": {
+     "name": "1",
+     "description": "multiline<br>text",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "2"
+    },
+    "2": {
+     "name": "2",
+     "description": "multiline<br/>text",
+     "wrap": false,
+     "prevActor": "1",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "3"
+    },
+    "3": {
+     "name": "3",
+     "description": "multiline<br />text",
+     "wrap": false,
+     "prevActor": "2",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "4"
+    },
+    "4": {
+     "name": "4",
+     "description": "multiline<br \t/>text",
+     "wrap": false,
+     "prevActor": "3",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "1",
+     "to": "2",
+     "message": "multiline<br>text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "2",
+     "to": "2",
+     "message": "multiline<br>text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "2",
+     "to": "3",
+     "message": "multiline<br/>text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "3",
+     "to": "3",
+     "message": "multiline<br/>text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "4",
+     "from": "3",
+     "to": "4",
+     "message": "multiline<br />text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "4",
+     "to": "4",
+     "message": "multiline<br />text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "6",
+     "from": "4",
+     "to": "1",
+     "message": "multiline<br \t/>text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "7",
+     "from": "1",
+     "to": "1",
+     "message": "multiline<br \t/>text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    }
+   ],
+   "notes": [
+    {
+     "actor": "2",
+     "placement": 1,
+     "message": "multiline<br>text",
+     "wrap": false
+    },
+    {
+     "actor": "3",
+     "placement": 1,
+     "message": "multiline<br/>text",
+     "wrap": false
+    },
+    {
+     "actor": "4",
+     "placement": 1,
+     "message": "multiline<br />text",
+     "wrap": false
+    },
+    {
+     "actor": "1",
+     "placement": 1,
+     "message": "multiline<br \t/>text",
+     "wrap": false
+    }
+   ],
+   "prevActor": "4",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant 1\nparticipant 2\nparticipant 3\nparticipant 4\n1->>2: single-line text\nnote right of 2: single-line text\n2->>3:nowrap: single-line text\nnote right of 3:nowrap: single-line text\n3->>4: multiline<br/>text\nnote right of 4: multiline<br/>text\n4->>1:nowrap: multiline<br/>text\nnote right of 1:nowrap: multiline<br/>text\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "1": {
+     "name": "1",
+     "description": "1",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "2"
+    },
+    "2": {
+     "name": "2",
+     "description": "2",
+     "wrap": false,
+     "prevActor": "1",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "3"
+    },
+    "3": {
+     "name": "3",
+     "description": "3",
+     "wrap": false,
+     "prevActor": "2",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "4"
+    },
+    "4": {
+     "name": "4",
+     "description": "4",
+     "wrap": false,
+     "prevActor": "3",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "1",
+     "to": "2",
+     "message": "single-line text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "2",
+     "to": "2",
+     "message": "single-line text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "2",
+     "to": "3",
+     "message": "single-line text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "3",
+     "to": "3",
+     "message": "single-line text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "4",
+     "from": "3",
+     "to": "4",
+     "message": "multiline<br/>text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "4",
+     "to": "4",
+     "message": "multiline<br/>text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "6",
+     "from": "4",
+     "to": "1",
+     "message": "multiline<br/>text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "7",
+     "from": "1",
+     "to": "1",
+     "message": "multiline<br/>text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    }
+   ],
+   "notes": [
+    {
+     "actor": "2",
+     "placement": 1,
+     "message": "single-line text",
+     "wrap": false
+    },
+    {
+     "actor": "3",
+     "placement": 1,
+     "message": "single-line text",
+     "wrap": false
+    },
+    {
+     "actor": "4",
+     "placement": 1,
+     "message": "multiline<br/>text",
+     "wrap": false
+    },
+    {
+     "actor": "1",
+     "placement": 1,
+     "message": "multiline<br/>text",
+     "wrap": false
+    }
+   ],
+   "prevActor": "4",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant 1\nparticipant 2\nparticipant 3\nparticipant 4\n1->>2:wrap: single-line text\nnote right of 2:wrap: single-line text\n2->>3:wrap: multiline<br/>text\nnote right of 3:wrap: multiline<br/>text\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "1": {
+     "name": "1",
+     "description": "1",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "2"
+    },
+    "2": {
+     "name": "2",
+     "description": "2",
+     "wrap": false,
+     "prevActor": "1",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "3"
+    },
+    "3": {
+     "name": "3",
+     "description": "3",
+     "wrap": false,
+     "prevActor": "2",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "4"
+    },
+    "4": {
+     "name": "4",
+     "description": "4",
+     "wrap": false,
+     "prevActor": "3",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "1",
+     "to": "2",
+     "message": "single-line text",
+     "wrap": true,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "2",
+     "to": "2",
+     "message": "single-line text",
+     "wrap": true,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "2",
+     "to": "3",
+     "message": "multiline<br/>text",
+     "wrap": true,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "3",
+     "to": "3",
+     "message": "multiline<br/>text",
+     "wrap": true,
+     "type": 2,
+     "placement": 1
+    }
+   ],
+   "notes": [
+    {
+     "actor": "2",
+     "placement": 1,
+     "message": "single-line text",
+     "wrap": true
+    },
+    {
+     "actor": "3",
+     "placement": 1,
+     "message": "multiline<br/>text",
+     "wrap": true
+    }
+   ],
+   "prevActor": "4",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant 1\nparticipant 2\n1->>2: single-line text\nnote right of 2: single-line text\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "1": {
+     "name": "1",
+     "description": "1",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "2"
+    },
+    "2": {
+     "name": "2",
+     "description": "2",
+     "wrap": false,
+     "prevActor": "1",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "1",
+     "to": "2",
+     "message": "single-line text",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "2",
+     "to": "2",
+     "message": "single-line text",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    }
+   ],
+   "notes": [
+    {
+     "actor": "2",
+     "placement": 1,
+     "message": "single-line text",
+     "wrap": false
+    }
+   ],
+   "prevActor": "2",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nNote over Bob: Bob thinks\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 2
+    }
+   ],
+   "notes": [
+    {
+     "actor": [
+      "Bob",
+      "Bob"
+     ],
+     "placement": 2,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nNote over Alice,Bob: confusion\nNote over Bob,Alice: resolution\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "confusion",
+     "wrap": false,
+     "type": 2,
+     "placement": 2
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "resolution",
+     "wrap": false,
+     "type": 2,
+     "placement": 2
+    }
+   ],
+   "notes": [
+    {
+     "actor": [
+      "Alice",
+      "Bob"
+     ],
+     "placement": 2,
+     "message": "confusion",
+     "wrap": false
+    },
+    {
+     "actor": [
+      "Bob",
+      "Alice"
+     ],
+     "placement": 2,
+     "message": "resolution",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\n\n%% Comment\nNote right of Bob: Bob thinks\nloop Multiple happy responses\n\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "message": "Multiple happy responses",
+     "wrap": false,
+     "type": 10,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "message": "",
+     "wrap": false,
+     "type": 11,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n        Alice->Bob: Hello Bob, how are you?\n        %% Comment\n        rect rgb(200, 255, 200)\n        Note right of Bob: Bob thinks\n        Bob-->Alice: I am good thanks\n        end\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "rgb(200, 255, 200)",
+     "wrap": false,
+     "type": 22,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "message": "",
+     "wrap": false,
+     "type": 23,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n        Alice->Bob: Hello Bob, how are you?\n        %% Comment\n        rect rgb(200, 255, 200)\n        rect rgb(0, 0, 0)\n        Note right of Bob: Bob thinks\n        end\n        Bob-->Alice: I am good thanks\n        end\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "rgb(200, 255, 200)",
+     "wrap": false,
+     "type": 22,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "message": "rgb(0, 0, 0)",
+     "wrap": false,
+     "type": 22,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "4",
+     "message": "",
+     "wrap": false,
+     "type": 23,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "6",
+     "message": "",
+     "wrap": false,
+     "type": 23,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\n\n%% Comment\nNote right of Bob: Bob thinks\nopt Perhaps a happy response\n\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "message": "Perhaps a happy response",
+     "wrap": false,
+     "type": 15,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "message": "",
+     "wrap": false,
+     "type": 16,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\n\n%% Comment\nNote right of Bob: Bob thinks\nalt isWell\n\nBob-->Alice: I am good thanks!\nelse isSick\nBob-->Alice: Feel sick...\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "message": "isWell",
+     "wrap": false,
+     "type": 12,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "message": "isSick",
+     "wrap": false,
+     "type": 13,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Feel sick...",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "6",
+     "message": "",
+     "wrap": false,
+     "type": 14,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\n\n%% Comment\nNote right of Bob: Bob thinks\nalt isWell\n\nBob-->Alice: I am good thanks!\nelse isSick\nBob-->Alice: Feel sick...\nelse default\nBob-->Alice: :-)\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "message": "isWell",
+     "wrap": false,
+     "type": 12,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "message": "isSick",
+     "wrap": false,
+     "type": 13,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Feel sick...",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "6",
+     "message": "default",
+     "wrap": false,
+     "type": 13,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "7",
+     "from": "Bob",
+     "to": "Alice",
+     "message": ":-)",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "8",
+     "message": "",
+     "wrap": false,
+     "type": 14,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\n    critical Establish a connection to the DB\n        Service-->DB: connect\n    end",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Service": {
+     "name": "Service",
+     "description": "Service",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "DB"
+    },
+    "DB": {
+     "name": "DB",
+     "description": "DB",
+     "wrap": false,
+     "prevActor": "Service",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "message": "Establish a connection to the DB",
+     "wrap": false,
+     "type": 27,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Service",
+     "to": "DB",
+     "message": "connect",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "message": "",
+     "wrap": false,
+     "type": 29,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "DB",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\n    critical Establish a connection to the DB\n        Service-->DB: connect\n    option Network timeout\n        Service-->Service: Log error\n    option Credentials rejected\n        Service-->Service: Log different error\n    end",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Service": {
+     "name": "Service",
+     "description": "Service",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "DB"
+    },
+    "DB": {
+     "name": "DB",
+     "description": "DB",
+     "wrap": false,
+     "prevActor": "Service",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "message": "Establish a connection to the DB",
+     "wrap": false,
+     "type": 27,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Service",
+     "to": "DB",
+     "message": "connect",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "message": "Network timeout",
+     "wrap": false,
+     "type": 28,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Service",
+     "to": "Service",
+     "message": "Log error",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "message": "Credentials rejected",
+     "wrap": false,
+     "type": 28,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Service",
+     "to": "Service",
+     "message": "Log different error",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "6",
+     "message": "",
+     "wrap": false,
+     "type": 29,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "DB",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\n    Consumer-->API: Book something\n    API-->BookingService: Start booking process\n    break when the booking process fails\n        API-->Consumer: show failure\n    end\n    API-->BillingService: Start billing process",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Consumer": {
+     "name": "Consumer",
+     "description": "Consumer",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "API"
+    },
+    "API": {
+     "name": "API",
+     "description": "API",
+     "wrap": false,
+     "prevActor": "Consumer",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "BookingService"
+    },
+    "BookingService": {
+     "name": "BookingService",
+     "description": "BookingService",
+     "wrap": false,
+     "prevActor": "API",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "BillingService"
+    },
+    "BillingService": {
+     "name": "BillingService",
+     "description": "BillingService",
+     "wrap": false,
+     "prevActor": "BookingService",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Consumer",
+     "to": "API",
+     "message": "Book something",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "API",
+     "to": "BookingService",
+     "message": "Start booking process",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "message": "when the booking process fails",
+     "wrap": false,
+     "type": 30,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "API",
+     "to": "Consumer",
+     "message": "show failure",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "message": "",
+     "wrap": false,
+     "type": 31,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "API",
+     "to": "BillingService",
+     "message": "Start billing process",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "BillingService",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\npar Parallel one\nAlice->>Bob: Hello Bob, how are you?\nBob-->>Alice: I am good thanks!\nand Parallel two\nAlice->>Bob: Are you OK?\nBob-->>Alice: Fine!\nand Parallel three\nAlice->>Bob: What do you think about it?\nBob-->>Alice: It's good!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "message": "Parallel one",
+     "wrap": false,
+     "type": 19,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "Parallel two",
+     "wrap": false,
+     "type": 20,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Are you OK?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "6",
+     "message": "Parallel three",
+     "wrap": false,
+     "type": 20,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "7",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "What do you think about it?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "8",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "It's good!",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "9",
+     "message": "",
+     "wrap": false,
+     "type": 21,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\npar_over Parallel overlap\nAlice ->> Bob: Message\nNote left of Alice: Alice note\nNote right of Bob: Bob note\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "message": "Parallel overlap",
+     "wrap": false,
+     "type": 32,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Message",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Alice note",
+     "wrap": false,
+     "type": 2,
+     "placement": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob note",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "4",
+     "message": "",
+     "wrap": false,
+     "type": 21,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Alice",
+     "placement": 0,
+     "message": "Alice note",
+     "wrap": false
+    },
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob note",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nNote right of Bob: -:<>,;# comment",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "-:<>,",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "-:<>,",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nloop -:<>,;# comment\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "-:<>,",
+     "wrap": false,
+     "type": 10,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 11,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nopt -:<>,;# comment\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "-:<>,",
+     "wrap": false,
+     "type": 15,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 16,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nalt -:<>,;# comment\nBob-->Alice: I am good thanks!\nelse ,<>:-#; comment\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "-:<>,",
+     "wrap": false,
+     "type": 12,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": ",<>:-",
+     "wrap": false,
+     "type": 13,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "message": "",
+     "wrap": false,
+     "type": 14,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\npar -:<>,;# comment\nBob-->Alice: I am good thanks!\nand ,<>:-#; comment\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "-:<>,",
+     "wrap": false,
+     "type": 19,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": ",<>:-",
+     "wrap": false,
+     "type": 20,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "message": "",
+     "wrap": false,
+     "type": 21,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nloop\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "",
+     "wrap": false,
+     "type": 10,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 11,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nopt # comment\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "",
+     "wrap": false,
+     "type": 15,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 16,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nalt;Bob-->Alice: I am good thanks!\nelse # comment\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "",
+     "wrap": false,
+     "type": 12,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 13,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "message": "",
+     "wrap": false,
+     "type": 14,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\npar;Bob-->Alice: I am good thanks!\nand # comment\nBob-->Alice: I am good thanks!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "",
+     "wrap": false,
+     "type": 19,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 20,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "message": "",
+     "wrap": false,
+     "type": 21,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant a as Alice\nparticipant b as Bob\nparticipant c as Charlie\nlinks a: { \"Repo\": \"https://repo.contoso.com/\", \"Dashboard\": \"https://dashboard.contoso.com/\" }\nlinks b: { \"Dashboard\": \"https://dashboard.contoso.com/\" }\nlinks a: { \"On-Call\": \"https://oncall.contoso.com/?svc=alice\" }\nlink a: Endpoint @ https://alice.contoso.com\nlink a: Swagger @ https://swagger.contoso.com\nlink a: Tests @ https://tests.contoso.com/?svc=alice@contoso.com\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "a": {
+     "name": "a",
+     "description": "Alice",
+     "wrap": false,
+     "links": {
+      "Repo": "https://repo.contoso.com/",
+      "Dashboard": "https://dashboard.contoso.com/",
+      "On-Call": "https://oncall.contoso.com/?svc=alice",
+      "Endpoint": "https://alice.contoso.com",
+      "Swagger": "https://swagger.contoso.com",
+      "Tests": "https://tests.contoso.com/?svc=alice@contoso.com"
+     },
+     "properties": {},
+     "type": "participant",
+     "nextActor": "b"
+    },
+    "b": {
+     "name": "b",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "a",
+     "links": {
+      "Dashboard": "https://dashboard.contoso.com/"
+     },
+     "properties": {},
+     "type": "participant",
+     "nextActor": "c"
+    },
+    "c": {
+     "name": "c",
+     "description": "Charlie",
+     "wrap": false,
+     "prevActor": "b",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "c",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant a as Alice\nparticipant b as Bob\nparticipant c as Charlie\nproperties a: {\"class\": \"internal-service-actor\", \"icon\": \"@clock\"}\nproperties b: {\"class\": \"external-service-actor\", \"icon\": \"@computer\"}\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "a": {
+     "name": "a",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {
+      "class": "internal-service-actor",
+      "icon": "@clock"
+     },
+     "type": "participant",
+     "nextActor": "b"
+    },
+    "b": {
+     "name": "b",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "a",
+     "links": {},
+     "properties": {
+      "class": "external-service-actor",
+      "icon": "@computer"
+     },
+     "type": "participant",
+     "nextActor": "c"
+    },
+    "c": {
+     "name": "c",
+     "description": "Charlie",
+     "wrap": false,
+     "prevActor": "b",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "c",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nbox green Group 1\nparticipant a as Alice\nparticipant b as Bob\nend\nparticipant c as Charlie\nlinks a: { \"Repo\": \"https://repo.contoso.com/\", \"Dashboard\": \"https://dashboard.contoso.com/\" }\nlinks b: { \"Dashboard\": \"https://dashboard.contoso.com/\" }\nlinks a: { \"On-Call\": \"https://oncall.contoso.com/?svc=alice\" }\nlink a: Endpoint @ https://alice.contoso.com\nlink a: Swagger @ https://swagger.contoso.com\nlink a: Tests @ https://tests.contoso.com/?svc=alice@contoso.com\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "a": {
+     "box": {
+      "name": "Group 1",
+      "wrap": false,
+      "fill": "green",
+      "actorKeys": [
+       "a",
+       "b"
+      ]
+     },
+     "name": "a",
+     "description": "Alice",
+     "wrap": false,
+     "links": {
+      "Repo": "https://repo.contoso.com/",
+      "Dashboard": "https://dashboard.contoso.com/",
+      "On-Call": "https://oncall.contoso.com/?svc=alice",
+      "Endpoint": "https://alice.contoso.com",
+      "Swagger": "https://swagger.contoso.com",
+      "Tests": "https://tests.contoso.com/?svc=alice@contoso.com"
+     },
+     "properties": {},
+     "type": "participant",
+     "nextActor": "b"
+    },
+    "b": {
+     "box": {
+      "name": "Group 1",
+      "wrap": false,
+      "fill": "green",
+      "actorKeys": [
+       "a",
+       "b"
+      ]
+     },
+     "name": "b",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "a",
+     "links": {
+      "Dashboard": "https://dashboard.contoso.com/"
+     },
+     "properties": {},
+     "type": "participant",
+     "nextActor": "c"
+    },
+    "c": {
+     "name": "c",
+     "description": "Charlie",
+     "wrap": false,
+     "prevActor": "b",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [
+    {
+     "name": "Group 1",
+     "wrap": false,
+     "fill": "green",
+     "actorKeys": [
+      "a",
+      "b"
+     ]
+    }
+   ],
+   "messages": [],
+   "notes": [],
+   "prevActor": "c",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n  sequenceDiagram\n  box Group 1\n  participant a as Alice\n  participant b as Bob\n  end\n  participant c as Charlie\n  links a: { \"Repo\": \"https://repo.contoso.com/\", \"Dashboard\": \"https://dashboard.contoso.com/\" }\n  links b: { \"Dashboard\": \"https://dashboard.contoso.com/\" }\n  links a: { \"On-Call\": \"https://oncall.contoso.com/?svc=alice\" }\n  link a: Endpoint @ https://alice.contoso.com\n  link a: Swagger @ https://swagger.contoso.com\n  link a: Tests @ https://tests.contoso.com/?svc=alice@contoso.com\n  ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "a": {
+     "box": {
+      "name": "Group 1",
+      "wrap": false,
+      "fill": "transparent",
+      "actorKeys": [
+       "a",
+       "b"
+      ]
+     },
+     "name": "a",
+     "description": "Alice",
+     "wrap": false,
+     "links": {
+      "Repo": "https://repo.contoso.com/",
+      "Dashboard": "https://dashboard.contoso.com/",
+      "On-Call": "https://oncall.contoso.com/?svc=alice",
+      "Endpoint": "https://alice.contoso.com",
+      "Swagger": "https://swagger.contoso.com",
+      "Tests": "https://tests.contoso.com/?svc=alice@contoso.com"
+     },
+     "properties": {},
+     "type": "participant",
+     "nextActor": "b"
+    },
+    "b": {
+     "box": {
+      "name": "Group 1",
+      "wrap": false,
+      "fill": "transparent",
+      "actorKeys": [
+       "a",
+       "b"
+      ]
+     },
+     "name": "b",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "a",
+     "links": {
+      "Dashboard": "https://dashboard.contoso.com/"
+     },
+     "properties": {},
+     "type": "participant",
+     "nextActor": "c"
+    },
+    "c": {
+     "name": "c",
+     "description": "Charlie",
+     "wrap": false,
+     "prevActor": "b",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [
+    {
+     "name": "Group 1",
+     "wrap": false,
+     "fill": "transparent",
+     "actorKeys": [
+      "a",
+      "b"
+     ]
+    }
+   ],
+   "messages": [],
+   "notes": [],
+   "prevActor": "c",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n  sequenceDiagram\n  box aqua\n  participant a as Alice\n  participant b as Bob\n  end\n  participant c as Charlie\n  links a: { \"Repo\": \"https://repo.contoso.com/\", \"Dashboard\": \"https://dashboard.contoso.com/\" }\n  links b: { \"Dashboard\": \"https://dashboard.contoso.com/\" }\n  links a: { \"On-Call\": \"https://oncall.contoso.com/?svc=alice\" }\n  link a: Endpoint @ https://alice.contoso.com\n  link a: Swagger @ https://swagger.contoso.com\n  link a: Tests @ https://tests.contoso.com/?svc=alice@contoso.com\n  ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "a": {
+     "box": {
+      "wrap": false,
+      "fill": "aqua",
+      "actorKeys": [
+       "a",
+       "b"
+      ]
+     },
+     "name": "a",
+     "description": "Alice",
+     "wrap": false,
+     "links": {
+      "Repo": "https://repo.contoso.com/",
+      "Dashboard": "https://dashboard.contoso.com/",
+      "On-Call": "https://oncall.contoso.com/?svc=alice",
+      "Endpoint": "https://alice.contoso.com",
+      "Swagger": "https://swagger.contoso.com",
+      "Tests": "https://tests.contoso.com/?svc=alice@contoso.com"
+     },
+     "properties": {},
+     "type": "participant",
+     "nextActor": "b"
+    },
+    "b": {
+     "box": {
+      "wrap": false,
+      "fill": "aqua",
+      "actorKeys": [
+       "a",
+       "b"
+      ]
+     },
+     "name": "b",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "a",
+     "links": {
+      "Dashboard": "https://dashboard.contoso.com/"
+     },
+     "properties": {},
+     "type": "participant",
+     "nextActor": "c"
+    },
+    "c": {
+     "name": "c",
+     "description": "Charlie",
+     "wrap": false,
+     "prevActor": "b",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [
+    {
+     "wrap": false,
+     "fill": "aqua",
+     "actorKeys": [
+      "a",
+      "b"
+     ]
+    }
+   ],
+   "messages": [],
+   "notes": [],
+   "prevActor": "c",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n  sequenceDiagram\n  participant a as Alice\n  a ->>b: Hello Bob?\n  create participant c\n  b-->>c: Hello c!\n  c ->> b: Hello b?\n  create actor d as Donald\n  a ->> d: Hello Donald?\n  ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "a": {
+     "name": "a",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "b"
+    },
+    "b": {
+     "name": "b",
+     "description": "b",
+     "wrap": false,
+     "prevActor": "a",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "c"
+    },
+    "c": {
+     "name": "c",
+     "description": "c",
+     "wrap": false,
+     "prevActor": "b",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "d"
+    },
+    "d": {
+     "name": "d",
+     "description": "Donald",
+     "wrap": false,
+     "prevActor": "c",
+     "links": {},
+     "properties": {},
+     "type": "actor"
+    }
+   },
+   "createdActors": {
+    "c": 1,
+    "d": 3
+   },
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "a",
+     "to": "b",
+     "message": "Hello Bob?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "b",
+     "to": "c",
+     "message": "Hello c!",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "c",
+     "to": "b",
+     "message": "Hello b?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "a",
+     "to": "d",
+     "message": "Hello Donald?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "d",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n  sequenceDiagram\n  participant a as Alice\n  a ->>b: Hello Bob?\n  destroy a\n  b-->>a: Hello Alice!\n  b ->> c: Where is Alice?\n  destroy c\n  b ->> c: Where are you?\n  ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "a": {
+     "name": "a",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "b"
+    },
+    "b": {
+     "name": "b",
+     "description": "b",
+     "wrap": false,
+     "prevActor": "a",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "c"
+    },
+    "c": {
+     "name": "c",
+     "description": "c",
+     "wrap": false,
+     "prevActor": "b",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {
+    "a": 1,
+    "c": 3
+   },
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "a",
+     "to": "b",
+     "message": "Hello Bob?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "b",
+     "to": "a",
+     "message": "Hello Alice!",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "b",
+     "to": "c",
+     "message": "Where is Alice?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "b",
+     "to": "c",
+     "message": "Where are you?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "c",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n  sequenceDiagram\n  a ->>b: Hello Bob?\n  create participant c\n  b ->>c: Hello c!\n  c ->> b: Hello b?\n  destroy c\n  b ->> c : Bye c !\n  ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "a": {
+     "name": "a",
+     "description": "a",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "b"
+    },
+    "b": {
+     "name": "b",
+     "description": "b",
+     "wrap": false,
+     "prevActor": "a",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "c"
+    },
+    "c": {
+     "name": "c",
+     "description": "c",
+     "wrap": false,
+     "prevActor": "b",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {
+    "c": 1
+   },
+   "destroyedActors": {
+    "c": 3
+   },
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "a",
+     "to": "b",
+     "message": "Hello Bob?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "b",
+     "to": "c",
+     "message": "Hello c!",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "c",
+     "to": "b",
+     "message": "Hello b?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "b",
+     "to": "c",
+     "message": "Bye c !",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "c",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      Alice->Bob:Hello Bob, how are you?\n      Bob-->Alice: I am good thanks!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant Alice",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "Alice",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant Alice\nparticipant Alice\nparticipant Alice\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "Alice",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant Alice\nNote over Alice: Alice thinks\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Alice thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 2
+    }
+   ],
+   "notes": [
+    {
+     "actor": [
+      "Alice",
+      "Alice"
+     ],
+     "placement": 2,
+     "message": "Alice thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Alice",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant Alice\nNote left of Alice: Alice thinks",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Alice thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Alice",
+     "placement": 0,
+     "message": "Alice thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Alice",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nparticipant Alice\nNote right of Alice: Alice thinks",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Alice thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Alice",
+     "placement": 1,
+     "message": "Alice thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Alice",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nbox rgb(34, 56, 0) Group1\nparticipant Alice\nparticipant Bob\nend\nAlice->Bob: Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "box": {
+      "name": "Group1",
+      "wrap": false,
+      "fill": "rgb(34, 56, 0)",
+      "actorKeys": [
+       "Alice",
+       "Bob"
+      ]
+     },
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "box": {
+      "name": "Group1",
+      "wrap": false,
+      "fill": "rgb(34, 56, 0)",
+      "actorKeys": [
+       "Alice",
+       "Bob"
+      ]
+     },
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [
+    {
+     "name": "Group1",
+     "wrap": false,
+     "fill": "rgb(34, 56, 0)",
+     "actorKeys": [
+      "Alice",
+      "Bob"
+     ]
+    }
+   ],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n%%{init: {'logLevel': 0}}%%\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n%%{init: { 'logLevel': 0}}%%\nsequenceDiagram\n%%{wrap}%%\nAlice->Bob: Hello Bob, how are you?",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": true,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": true,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": true,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "wrapEnabled": true,
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nNote over Alice,Bob: Looks\nNote over Bob,Alice: Looks back\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Looks",
+     "wrap": false,
+     "type": 2,
+     "placement": 2
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Looks back",
+     "wrap": false,
+     "type": 2,
+     "placement": 2
+    }
+   ],
+   "notes": [
+    {
+     "actor": [
+      "Alice",
+      "Bob"
+     ],
+     "placement": 2,
+     "message": "Looks",
+     "wrap": false
+    },
+    {
+     "actor": [
+      "Bob",
+      "Alice"
+     ],
+     "placement": 2,
+     "message": "Looks back",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nBob->Alice: Fine!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nNote right of Bob: Bob thinks\nBob->Alice: Fine!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Bob",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 1
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Bob",
+     "placement": 1,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nNote left of Alice: Bob thinks\nBob->Alice: Fine!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Alice",
+     "placement": 0,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->>Bob:wrap: Hello Bob, how are you? If you are not available right now, I can leave you a message. Please get back to me as soon as you can!\nNote left of Alice: Bob thinks\nBob->>Alice: Fine!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you? If you are not available right now, I can leave you a message. Please get back to me as soon as you can!",
+     "wrap": true,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Alice",
+     "placement": 0,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n%%{init: { 'theme': 'dark' } }%%\nsequenceDiagram\n%%{wrap}%%\nAlice->>Bob: Hello Bob, how are you? If you are not available right now, I can leave you a message. Please get back to me as soon as you can!\nNote left of Alice: Bob thinks\nBob->>Alice: Fine!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": true,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": true,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you? If you are not available right now, I can leave you a message. Please get back to me as soon as you can!",
+     "wrap": true,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Bob thinks",
+     "wrap": true,
+     "type": 2,
+     "placement": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": true,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Alice",
+     "placement": 0,
+     "message": "Bob thinks",
+     "wrap": true
+    }
+   ],
+   "prevActor": "Bob",
+   "wrapEnabled": true,
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n%%{init:{'theme':'dark'}}%%\nsequenceDiagram\n%%{wrap}%%\nAlice->>Bob: Hello Bob, how are you? If you are not available right now, I can leave you a message. Please get back to me as soon as you can!\nNote left of Alice: Bob thinks\nBob->>Alice: Fine!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": true,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": true,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you? If you are not available right now, I can leave you a message. Please get back to me as soon as you can!",
+     "wrap": true,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Bob thinks",
+     "wrap": true,
+     "type": 2,
+     "placement": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": true,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Alice",
+     "placement": 0,
+     "message": "Bob thinks",
+     "wrap": true
+    }
+   ],
+   "prevActor": "Bob",
+   "wrapEnabled": true,
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n    %%{init: { \"theme\": \"dark\", 'config': { \"fontFamily\": \"Menlo\", \"fontSize\": 18, \"messageFontWeight\": 400, \"wrap\": true }}}%%\nsequenceDiagram\nAlice->>Bob: Hello Bob, how are you? If you are not available right now, I can leave you a message. Please get back to me as soon as you can!\nNote left of Alice: Bob thinks\nBob->>Alice: Fine!",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you? If you are not available right now, I can leave you a message. Please get back to me as soon as you can!",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Alice",
+     "message": "Bob thinks",
+     "wrap": false,
+     "type": 2,
+     "placement": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [
+    {
+     "actor": "Alice",
+     "placement": 0,
+     "message": "Bob thinks",
+     "wrap": false
+    }
+   ],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->Bob: Hello Bob, how are you?\nloop Cheers\nBob->Alice: Fine!\nend",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "Cheers",
+     "wrap": false,
+     "type": 10,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Fine!",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 11,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n        Alice->Bob: Hello Bob, are you alright?\n        rect rgb(0, 0, 0)\n          Bob->Alice: I feel surrounded by darkness\n        end\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, are you alright?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "message": "rgb(0, 0, 0)",
+     "wrap": false,
+     "type": 22,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I feel surrounded by darkness",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "message": "",
+     "wrap": false,
+     "type": 23,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      autonumber 10.01 .01\n      Alice->Bob:Hello Bob, how are you?\n      Bob-->Alice: I am good thanks!\n      Alice-->Bob: Have a good day!\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "message": {
+      "start": 10.01,
+      "step": 0.01,
+      "visible": true
+     },
+     "wrap": false,
+     "type": 26
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Have a good day!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      autonumber 10.1 .1\n      Alice->Bob:Hello Bob, how are you?\n      Bob-->Alice: I am good thanks!\n      Alice-->Bob: Have a good day!\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "message": {
+      "start": 10.1,
+      "step": 0.1,
+      "visible": true
+     },
+     "wrap": false,
+     "type": 26
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "I am good thanks!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Have a good day!",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\nsequenceDiagram\nAlice->>Bob:\nBob->>Alice:Got it!\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Got it!",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n    actor Bob\n    actor Alice\n        Bob -|\\ Alice: Hello Alice, how are you?\n        Bob -|/ Alice: Hello Alice, how are you?\n        Bob -// Alice: Hello Alice, how are you?\n        Bob -\\\\ Alice: Hello Alice, how are you?\n        \n        Bob \\|- Alice: Hello Alice, how are you?\n        Bob /|- Alice: Hello Alice, how are you?\n        Bob //- Alice: Hello Alice, how are you?\n        Bob \\\\- Alice: Hello Alice, how are you?        \n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "actor",
+     "nextActor": "Alice"
+    },
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "prevActor": "Bob",
+     "links": {},
+     "properties": {},
+     "type": "actor"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, how are you?",
+     "wrap": false,
+     "type": 41,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, how are you?",
+     "wrap": false,
+     "type": 42,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, how are you?",
+     "wrap": false,
+     "type": 44,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, how are you?",
+     "wrap": false,
+     "type": 43,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, how are you?",
+     "wrap": false,
+     "type": 46,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "5",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, how are you?",
+     "wrap": false,
+     "type": 45,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "6",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, how are you?",
+     "wrap": false,
+     "type": 47,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "7",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hello Alice, how are you?",
+     "wrap": false,
+     "type": 48,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Alice",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n    actor Bob\n    actor Alice\n      Alice ()<<->>() Bob: hey?\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "actor",
+     "nextActor": "Alice"
+    },
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "prevActor": "Bob",
+     "links": {},
+     "properties": {},
+     "type": "actor"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "hey?",
+     "wrap": false,
+     "type": 33,
+     "activate": true,
+     "centralConnection": 61
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 59,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 60,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Alice",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n  sequenceDiagram\n      participant Alice@{ \"type\" : \"database\" }\n      participant Bob@{ \"type\" : \"database\" }\n      participant Carl@{ type: \"database\" }\n      participant David@{ \"type\" : 'database' }\n      participant Eve@{ type: 'database' }\n      participant Favela@{ \"type\" : \"database\"    }\n      Bob->>+Alice: Hi Alice\n      Alice->>+Bob: Hi Bob\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "database",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "database",
+     "nextActor": "Carl"
+    },
+    "Carl": {
+     "name": "Carl",
+     "description": "Carl",
+     "wrap": false,
+     "prevActor": "Bob",
+     "links": {},
+     "properties": {},
+     "type": "database",
+     "nextActor": "David"
+    },
+    "David": {
+     "name": "David",
+     "description": "David",
+     "wrap": false,
+     "prevActor": "Carl",
+     "links": {},
+     "properties": {},
+     "type": "database",
+     "nextActor": "Eve"
+    },
+    "Eve": {
+     "name": "Eve",
+     "description": "Eve",
+     "wrap": false,
+     "prevActor": "David",
+     "links": {},
+     "properties": {},
+     "type": "database",
+     "nextActor": "Favela"
+    },
+    "Favela": {
+     "name": "Favela",
+     "description": "Favela",
+     "wrap": false,
+     "prevActor": "Eve",
+     "links": {},
+     "properties": {},
+     "type": "database"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Hi Alice",
+     "wrap": false,
+     "type": 0,
+     "activate": true,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Alice",
+     "message": "",
+     "wrap": false,
+     "type": 17,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hi Bob",
+     "wrap": false,
+     "type": 0,
+     "activate": true,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Bob",
+     "message": "",
+     "wrap": false,
+     "type": 17,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Favela",
+   "sequenceWrap": false,
+   "active": {
+    "Alice": 1,
+    "Bob": 1
+   }
+  }
+ },
+ {
+  "source": "\n  sequenceDiagram\n      participant Gina@{ \"type\" : \"database\" }\n      participant Harry @{ \"type\" : \"database\" }\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Gina": {
+     "name": "Gina",
+     "description": "Gina",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "database",
+     "nextActor": "Harry"
+    },
+    "Harry": {
+     "name": "Harry",
+     "description": "Harry",
+     "wrap": false,
+     "prevActor": "Gina",
+     "links": {},
+     "properties": {},
+     "type": "database"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "Harry",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n        participant lead\n        participant dsa@{ \"type\" : \"queue\" }\n        API->>+Database: getUserb\n        Database-->>-API: userb\n        dsa --> Database: hello\n",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "lead": {
+     "name": "lead",
+     "description": "lead",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "dsa"
+    },
+    "dsa": {
+     "name": "dsa",
+     "description": "dsa",
+     "wrap": false,
+     "prevActor": "lead",
+     "links": {},
+     "properties": {},
+     "type": "queue",
+     "nextActor": "API"
+    },
+    "API": {
+     "name": "API",
+     "description": "API",
+     "wrap": false,
+     "prevActor": "dsa",
+     "links": {},
+     "properties": {},
+     "type": "participant",
+     "nextActor": "Database"
+    },
+    "Database": {
+     "name": "Database",
+     "description": "Database",
+     "wrap": false,
+     "prevActor": "API",
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "API",
+     "to": "Database",
+     "message": "getUserb",
+     "wrap": false,
+     "type": 0,
+     "activate": true,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Database",
+     "message": "",
+     "wrap": false,
+     "type": 17,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "2",
+     "from": "Database",
+     "to": "API",
+     "message": "userb",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "3",
+     "from": "Database",
+     "message": "",
+     "wrap": false,
+     "type": 18,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "4",
+     "from": "dsa",
+     "to": "Database",
+     "message": "hello",
+     "wrap": false,
+     "type": 6,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Database",
+   "sequenceWrap": false,
+   "active": {
+    "Database": 0
+   }
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n        actor lead-actor@{ \"type\" : \"database\" }\n        participant order-svc@{ \"type\" : \"queue\" }\n        actor kebab-case@{ \"type\" : \"control\" } as Kebab-Cased\n        participant web-ui@{ \"type\" : \"entity\" } as Web UI\n    ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "lead-actor": {
+     "name": "lead-actor",
+     "description": "lead-actor",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "database",
+     "nextActor": "order-svc"
+    },
+    "order-svc": {
+     "name": "order-svc",
+     "description": "order-svc",
+     "wrap": false,
+     "prevActor": "lead-actor",
+     "links": {},
+     "properties": {},
+     "type": "queue",
+     "nextActor": "kebab-case"
+    },
+    "kebab-case": {
+     "name": "kebab-case",
+     "description": "Kebab-Cased",
+     "wrap": false,
+     "prevActor": "order-svc",
+     "links": {},
+     "properties": {},
+     "type": "control",
+     "nextActor": "web-ui"
+    },
+    "web-ui": {
+     "name": "web-ui",
+     "description": "Web UI",
+     "wrap": false,
+     "prevActor": "kebab-case",
+     "links": {},
+     "properties": {},
+     "type": "entity"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [],
+   "notes": [],
+   "prevActor": "web-ui",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n      participant D@{ \"type: \"entity\" }\n      participant E@{ \"type\": \"dat\n      abase }\n  ",
+  "error": {
+   "code": "syntax",
+   "message": "Config of participant \"D\" is not valid YAML. YAML: missed comma between flow collection entries"
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n      participant C@{ \"type\" \"control\" }\n      C ->> C: action\n  ",
+  "error": {
+   "code": "syntax",
+   "message": "Config of participant \"C\" is not valid YAML. YAML: missed comma between flow collection entries"
+  }
+ },
+ {
+  "source": "\n    sequenceDiagram\n      participant E@{ \"type\": \"entity\"\n      E ->> E: process\n  ",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 5:\n\n^\nExpecting 'CONFIG_END', got '$end'"
+  }
+ },
+ {
+  "source": "\n          sequenceDiagram\n          participant boundary@{ \"type\" : \"boundary\" }\n          boundary->boundary: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "boundary": {
+     "name": "boundary",
+     "description": "boundary",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "boundary"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "boundary",
+     "to": "boundary",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "boundary",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n         participant C@{ \"type\" : \"control\" }\n        C->C: test\n        ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "C": {
+     "name": "C",
+     "description": "C",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "control"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "C",
+     "to": "C",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "C",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant E@{ \"type\" : \"entity\" }\n      E->E: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "E": {
+     "name": "E",
+     "description": "E",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "entity"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "E",
+     "to": "E",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "E",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant D@{ \"type\" : \"database\" }\n      D->D: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "D": {
+     "name": "D",
+     "description": "D",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "database"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "D",
+     "to": "D",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "D",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant L@{ \"type\" : \"collections\" }\n      L->L: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "L": {
+     "name": "L",
+     "description": "L",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "collections"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "L",
+     "to": "L",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "L",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant Q@{ \"type\" : \"queue\" }\n      Q->Q: test \n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Q": {
+     "name": "Q",
+     "description": "Q",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "queue"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Q",
+     "to": "Q",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Q",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant A@{ \"type\" : \"queue\" }\n      A->A: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "queue"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "A",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "A",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant P@{ \"type\" : \"database\" }\n      P->P: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "P": {
+     "name": "P",
+     "description": "P",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "database"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "P",
+     "to": "P",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "P",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n        participant Alice@{ \"type\" : \"collections\" }\n        participant Bob@{ \"type\" : \"control\" }\n        Alice->>Bob: Hello Bob, how are you?\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Alice",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "collections",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Bob",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "control"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Hello Bob, how are you?",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant C@{ \"type\" : \"control\" }\n      C->C: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "C": {
+     "name": "C",
+     "description": "C",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "control"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "C",
+     "to": "C",
+     "message": "test",
+     "wrap": false,
+     "type": 5,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "C",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n        sequenceDiagram\n        participant SAS MyServiceWithMoreThan20Chars <br> service decription\n       ",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n        participant SAS MyServiceWithMoreThan20Chars <br> service decription\n--------------------^\nExpecting 'ACTOR', got 'INVALID'"
+  }
+ },
+ {
+  "source": "\n          sequenceDiagram\n          participant X_AutoPublishable asAAAAAAAAAAAAA:AAAAAAAAAAAAA\n        ",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n          participant X_AutoPublishable asAAAAAAAAAAAAA:AAAAAAAAAAAAA\n----------------------^\nExpecting 'ACTOR', got 'INVALID'"
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant Alice@{ \"type\" : \"boundary\" } as Public API\n      participant Bob@{ \"type\" : \"control\" } as Controller\n      Alice->>Bob: Request\n      Bob-->>Alice: Response\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "Alice": {
+     "name": "Alice",
+     "description": "Public API",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "boundary",
+     "nextActor": "Bob"
+    },
+    "Bob": {
+     "name": "Bob",
+     "description": "Controller",
+     "wrap": false,
+     "prevActor": "Alice",
+     "links": {},
+     "properties": {},
+     "type": "control"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "Alice",
+     "to": "Bob",
+     "message": "Request",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Bob",
+     "to": "Alice",
+     "message": "Response",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Bob",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      actor A@{ \"type\" : \"database\" } AS Database Server\n      actor B@{ \"type\" : \"queue\" } as Message Queue\n      A->>B: Send message\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "Database Server",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "database",
+     "nextActor": "B"
+    },
+    "B": {
+     "name": "B",
+     "description": "Message Queue",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "queue"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "B",
+     "message": "Send message",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "B",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant API@{ \"type\" : \"boundary\" } AS Public API\n      API->>API: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "API": {
+     "name": "API",
+     "description": "Public API",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "boundary"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "API",
+     "to": "API",
+     "message": "test",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "API",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant API@{ \"type\" : \"boundary\", \"alias\": \"Public API\" }\n      participant Auth@{ \"type\" : \"control\", \"alias\": \"Auth Controller\" }\n      API->>Auth: Request\n      Auth-->>API: Response\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "API": {
+     "name": "API",
+     "description": "Public API",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "boundary",
+     "nextActor": "Auth"
+    },
+    "Auth": {
+     "name": "Auth",
+     "description": "Auth Controller",
+     "wrap": false,
+     "prevActor": "API",
+     "links": {},
+     "properties": {},
+     "type": "control"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "API",
+     "to": "Auth",
+     "message": "Request",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "Auth",
+     "to": "API",
+     "message": "Response",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "Auth",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      actor U@{ \"type\" : \"actor\", \"alias\": \"End User\" }\n      actor DB@{ \"type\" : \"database\", \"alias\": \"User Database\" }\n      U->>DB: Query\n      DB-->>U: Result\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "U": {
+     "name": "U",
+     "description": "End User",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "actor",
+     "nextActor": "DB"
+    },
+    "DB": {
+     "name": "DB",
+     "description": "User Database",
+     "wrap": false,
+     "prevActor": "U",
+     "links": {},
+     "properties": {},
+     "type": "database"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "U",
+     "to": "DB",
+     "message": "Query",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "DB",
+     "to": "U",
+     "message": "Result",
+     "wrap": false,
+     "type": 1,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "DB",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant API@{ \"type\" : \"boundary\", \"alias\": \"Internal Name\" } as External Name\n      API->>API: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "API": {
+     "name": "API",
+     "description": "External Name",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "boundary"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "API",
+     "to": "API",
+     "message": "test",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "API",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant API@{ \"alias\": \"Public API\" }\n      API->>API: test\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "API": {
+     "name": "API",
+     "description": "Public API",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "participant"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "API",
+     "to": "API",
+     "message": "test",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "API",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ },
+ {
+  "source": "\n      sequenceDiagram\n      participant A@{ \"type\" : \"boundary\", \"alias\": \"Service A\" }\n      participant B@{ \"type\" : \"control\" } as Service B\n      participant C@{ \"type\" : \"database\" }\n      A->>B: Request\n      B->>C: Query\n      ",
+  "model": {
+   "type": "sequence",
+   "actors": {
+    "A": {
+     "name": "A",
+     "description": "Service A",
+     "wrap": false,
+     "links": {},
+     "properties": {},
+     "type": "boundary",
+     "nextActor": "B"
+    },
+    "B": {
+     "name": "B",
+     "description": "Service B",
+     "wrap": false,
+     "prevActor": "A",
+     "links": {},
+     "properties": {},
+     "type": "control",
+     "nextActor": "C"
+    },
+    "C": {
+     "name": "C",
+     "description": "C",
+     "wrap": false,
+     "prevActor": "B",
+     "links": {},
+     "properties": {},
+     "type": "database"
+    }
+   },
+   "createdActors": {},
+   "destroyedActors": {},
+   "boxes": [],
+   "messages": [
+    {
+     "id": "0",
+     "from": "A",
+     "to": "B",
+     "message": "Request",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    },
+    {
+     "id": "1",
+     "from": "B",
+     "to": "C",
+     "message": "Query",
+     "wrap": false,
+     "type": 0,
+     "activate": false,
+     "centralConnection": 0
+    }
+   ],
+   "notes": [],
+   "prevActor": "C",
+   "sequenceWrap": false,
+   "active": {}
+  }
+ }
+]
