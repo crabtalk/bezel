@@ -19,6 +19,7 @@ use crate::mermaid::{
     },
     text::{Label, Measure, Style, layout_label},
 };
+use std::fmt::Write as _;
 
 /// How far a bone moves toward the tail for each unit it rises from the
 /// spine.
@@ -289,7 +290,8 @@ fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
             for bone in &category.bones {
                 let y = sign * bone.rise;
                 if bone.depth.is_multiple_of(2) {
-                    d += &format!(
+                    let _ = write!(
+                        d,
                         "M{},{}H{}",
                         num(px(bone.at, bone.rise)),
                         num(y),
@@ -299,7 +301,8 @@ fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
                     let from = bone
                         .parent
                         .map_or(0.0, |parent| category.bones[parent].rise);
-                    d += &format!(
+                    let _ = write!(
+                        d,
                         "M{},{}L{},{}",
                         num(px(bone.at, from)),
                         num(sign * from),
@@ -325,7 +328,8 @@ fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
             max_x = max_x.max(end_x + category.box_w / 2.0);
             min_y = min_y.min(box_y - category.box_h / 2.0);
             max_y = max_y.max(box_y + category.box_h / 2.0);
-            groups += &format!(
+            let _ = write!(
+                groups,
                 "<g class=\"{p}-ishikawa-category\" data-id=\"{}\"><path class=\"{p}-ishikawa-bones\" d=\"{d}\" fill=\"none\" stroke=\"var(--_l)\"/>",
                 esc_text(&nodes.get(category.node).text)
             );
@@ -337,7 +341,8 @@ fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
                 -sign / length,
                 "var(--_l)",
             );
-            groups += &format!(
+            let _ = write!(
+                groups,
                 "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>",
                 num(end_x - category.box_w / 2.0),
                 num(box_y - category.box_h / 2.0),
@@ -351,7 +356,8 @@ fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
                 &format!(" class=\"{p}-label\""),
             );
             if !texts.is_empty() {
-                groups += &format!(
+                let _ = write!(
+                    groups,
                     "<g class=\"{p}-ishikawa-causes\" font-size=\"{}\">{texts}</g>",
                     js::num_str(small)
                 );
@@ -367,7 +373,8 @@ fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
         );
         body += &marker("arrow_point", 0.0, 0.0, 1.0, 0.0, "var(--_l)");
         body += &groups;
-        body += &format!(
+        let _ = write!(
+            body,
             "<g class=\"{p}-ishikawa-head\" data-id=\"{}\"><path d=\"M0,{}H{}A{},{} 0 0 1 {},{}H0Z\" fill=\"var(--_s)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"/>",
             esc_text(&root.text),
             num(-r),
@@ -398,7 +405,8 @@ fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
     if !body.is_empty() {
-        content += &format!(
+        let _ = write!(
+            content,
             "<g transform=\"translate({},{})\">{body}</g>",
             num(ox),
             num(oy)
@@ -509,12 +517,14 @@ fn vertical_causes(model: &IshikawaDb, options: &Options) -> Rendered {
             1 => format!("{p}-ishikawa-category"),
             _ => format!("{p}-ishikawa-cause"),
         };
-        shapes += &format!(
+        let _ = write!(
+            shapes,
             "<g class=\"{p}-node {class}\" data-id=\"{}\">",
             esc_text(text)
         );
         if framed {
-            shapes += &format!(
+            let _ = write!(
+                shapes,
                 "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>",
                 num(x),
                 num(top),
@@ -541,7 +551,8 @@ fn vertical_causes(model: &IshikawaDb, options: &Options) -> Rendered {
         if let Some(parent) = entry.parent {
             let parent = &order[parent];
             let gx = parent.x + indent / 2.0;
-            edges += &format!(
+            let _ = write!(
+                edges,
                 "<path class=\"{p}-edge\" d=\"M{},{}V{}H{}\" fill=\"none\" stroke=\"var(--_b)\"/>",
                 num(gx),
                 num(parent.y + parent.h),

@@ -1,6 +1,6 @@
 //! Pele's `diagrams/sankey/render.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
     db::SankeyModel,
@@ -143,7 +143,8 @@ fn draw(
     for (i, node) in nodes.iter().enumerate() {
         let id = &model.nodes[i].id;
         let height = node.height.max(1.0);
-        nodes_out.push_str(&format!(
+        let _ = write!(
+            nodes_out,
             "<rect class=\"{p}-sankey-node\" data-id=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" fill=\"{}\"{}/>",
             esc_text(id),
             num(node.x),
@@ -153,7 +154,7 @@ fn draw(
             num(2f64.min(height / 2.0)),
             series_color(i as i64),
             node_style(i)
-        ));
+        );
 
         let value = if show_values {
             format!("{prefix}{}{suffix}", js::num_str(rounded(node.value)))
@@ -199,12 +200,14 @@ fn draw(
                     esc(&value)
                 )
             };
-        labels_out.push_str(&format!(
+        let _ = write!(
+            labels_out,
             "<g class=\"{p}-label\" data-id=\"{}\">",
             esc_text(id)
-        ));
+        );
         if outlined {
-            labels_out.push_str(&format!(
+            let _ = write!(
+                labels_out,
                 "<text{position} fill=\"none\" stroke=\"var(--_bg)\" stroke-width=\"3\" stroke-linejoin=\"round\">{}{}</text>",
                 esc(id),
                 if value.is_empty() {
@@ -212,9 +215,9 @@ fn draw(
                 } else {
                     format!(" {}", esc(&value))
                 }
-            ));
+            );
         }
-        labels_out.push_str(&format!("<text{position}>{text}</text></g>"));
+        let _ = write!(labels_out, "<text{position}>{text}</text></g>");
     }
 
     let fixed = if matches!(link_color, "gradient" | "source" | "target") {
@@ -237,7 +240,8 @@ fn draw(
         let mid = num((x0 + x1) / 2.0);
         let from = esc_text(&model.nodes[link.source].id);
         let to = esc_text(&model.nodes[link.target].id);
-        links_out.push_str(&format!(
+        let _ = write!(
+            links_out,
             "<path class=\"{p}-sankey-link\" data-id=\"{from}-&gt;{to}\" d=\"M{},{}C{mid},{} {mid},{} {},{}L{},{}C{mid},{} {mid},{} {},{}Z\" fill=\"{}\"{}><title>{from} → {to}: {}{}{}</title></path>",
             num(x0),
             num(link.source_y - half),
@@ -260,7 +264,7 @@ fn draw(
             esc_text(&prefix),
             js::num_str(rounded(link.value)),
             esc_text(&suffix)
-        ));
+        );
     }
 
     let title = layout_label(

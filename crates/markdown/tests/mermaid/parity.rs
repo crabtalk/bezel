@@ -59,8 +59,18 @@ fn matches_pele() {
         {
             continue;
         }
-        let sources: Vec<String> =
+        // A corpus entry is a source, or a reference entry with its `src`.
+        let entries: Vec<serde_json::Value> =
             serde_json::from_str(&fs::read_to_string(&path).expect("read")).expect("JSON");
+        let sources: Vec<&str> = entries
+            .iter()
+            .map(|entry| {
+                entry
+                    .as_str()
+                    .or_else(|| entry["src"].as_str())
+                    .expect("a source")
+            })
+            .collect();
         for (i, source) in sources.iter().enumerate() {
             let dir = Path::new(&root).join(&stem);
             let ours = render(source, &Options::default());

@@ -13,6 +13,7 @@ use crate::mermaid::{
     },
     text::{Label, Style, layout_label},
 };
+use std::fmt::Write as _;
 
 const GAP: f64 = 4.0;
 const CAREFUL: usize = 300;
@@ -177,7 +178,8 @@ pub fn render_quadrant(model: &QuadrantModel, config: &Config, options: &Options
             cx + text.width / 2.0,
             cy + text.height / 2.0,
         ]);
-        quadrants.push_str(&format!(
+        let _ = write!(
+            quadrants,
             "<g class=\"{p}-quadrant\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"/>{}</g>",
             k + 1,
             num(x),
@@ -190,7 +192,7 @@ pub fn render_quadrant(model: &QuadrantModel, config: &Config, options: &Options
                 cy,
                 &format!(" class=\"{p}-label\" fill=\"var(--_fg)\" stroke=\"none\"")
             )
-        ));
+        );
     }
 
     let mut axes = String::new();
@@ -391,22 +393,25 @@ pub fn render_quadrant(model: &QuadrantModel, config: &Config, options: &Options
         title_pad / 2.0 + title.height / 2.0,
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
-    content.push_str(&format!(
+    let _ = write!(
+        content,
         "<g class=\"{p}-quadrants\" fill=\"var(--_s)\" stroke=\"var(--_b)\">{quadrants}</g>"
-    ));
+    );
     if !axes.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-axis-labels\" font-size=\"{}\" fill=\"var(--_m)\">{axes}</g>",
             js::num_str(axis_size)
-        ));
+        );
     }
     if !dots.is_empty() {
         circles.reverse();
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-points\" fill=\"{fill}\">{}</g><g class=\"{p}-point-labels\" font-size=\"{}\">{labels}</g>",
             circles.concat(),
             js::num_str(point_size)
-        ));
+        );
     }
 
     Rendered {

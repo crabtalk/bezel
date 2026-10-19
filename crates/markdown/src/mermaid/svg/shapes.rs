@@ -1,9 +1,15 @@
 //! Node shapes by Mermaid's names: how big each is around its label, how it
 //! is drawn, and where edges meet its outline. Pele's `svg/shapes.ts`.
 
-use std::f64::consts::{FRAC_1_SQRT_2, PI};
+use std::{
+    f64::consts::{FRAC_1_SQRT_2, PI},
+    fmt::Write as _,
+};
 
-use super::{builder::num, theme::RADIUS};
+use super::{
+    builder::{num, push_num},
+    theme::RADIUS,
+};
 use crate::mermaid::layout::compound::CNode;
 
 pub const PAD_X: f64 = 18.0;
@@ -139,9 +145,9 @@ fn poly(points: &[f64], a: &str) -> String {
         if i > 0 {
             d.push(' ');
         }
-        d.push_str(&num(pair[0]));
+        push_num(&mut d, pair[0]);
         d.push(',');
-        d.push_str(&num(pair[1]));
+        push_num(&mut d, pair[1]);
     }
     format!("<polygon points=\"{d}\"{a}/>")
 }
@@ -797,14 +803,14 @@ fn lookup(name: &str) -> Option<ShapeDef> {
                 for i in 0..3 {
                     let x = -w / 2.0 + f64::from(2 - i) * 4.0;
                     let y = -h / 2.0 + f64::from(i) * 4.0;
-                    out.push_str(&format!(
+                    let _ = write!(out,
                         "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{}{a}/>",
                         num(x),
                         num(y),
                         num(bw),
                         num(bh),
                         rounded()
-                    ));
+                    );
                 }
                 out
             },
@@ -957,11 +963,11 @@ fn lookup(name: &str) -> Option<ShapeDef> {
             |w, h, a, line| {
                 let mut dots = String::new();
                 for i in 0..3 {
-                    dots.push_str(&format!(
+                    let _ = write!(dots,
                         "<circle cx=\"{}\" cy=\"{}\" r=\"1.5\" fill=\"none\"{line}/>",
                         num(-w / 2.0 + 8.0 + f64::from(i) * 7.0),
                         num(-h / 2.0 + 6.0)
-                    ));
+                    );
                 }
                 rect(w, h, a, &rounded())
                     + &format!(
@@ -1184,12 +1190,12 @@ fn lookup(name: &str) -> Option<ShapeDef> {
             |w, h, a, _| {
                 let mut out = String::new();
                 for i in 0..3 {
-                    out.push_str(&format!(
+                    let _ = write!(out,
                         "<g transform=\"translate({},{})\">{}</g>",
                         (1 - i) * 4,
                         (i - 1) * 4,
                         wave(w - 8.0, h - 8.0, a)
-                    ));
+                    );
                 }
                 out
             },

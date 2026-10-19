@@ -1,6 +1,6 @@
 //! Pele's `diagrams/radar/render.ts`.
 
-use std::f64::consts::PI;
+use std::{f64::consts::PI, fmt::Write as _};
 
 use super::model::RadarModel;
 use crate::mermaid::{
@@ -8,7 +8,7 @@ use crate::mermaid::{
     diagrams::common::fit_width::{fit_width, title_room},
     js,
     svg::{
-        builder::{esc_text, label_svg, num},
+        builder::{esc_text, label_svg, num, push_num},
         root::{Accessible, svg_document},
         theme::series_color,
     },
@@ -45,7 +45,8 @@ pub fn closed_round_curve(points: &[Point], tension: f64) -> String {
         let p1 = points[i];
         let p2 = points[(i + 1) % n];
         let p3 = points[(i + 2) % n];
-        d.push_str(&format!(
+        let _ = write!(
+            d,
             " C{},{} {},{} {},{}",
             num(p1.x + (p2.x - p0.x) * tension),
             num(p1.y + (p2.y - p0.y) * tension),
@@ -53,7 +54,7 @@ pub fn closed_round_curve(points: &[Point], tension: f64) -> String {
             num(p2.y - (p3.y - p1.y) * tension),
             num(p2.x),
             num(p2.y)
-        ));
+        );
     }
     d + " Z"
 }
@@ -64,9 +65,9 @@ fn polygon(points: &[Point]) -> String {
         if !out.is_empty() {
             out.push(' ');
         }
-        out.push_str(&num(p.x));
+        push_num(&mut out, p.x);
         out.push(',');
-        out.push_str(&num(p.y));
+        push_num(&mut out, p.y);
     }
     out
 }
@@ -149,7 +150,7 @@ fn draw(
     while i < ticks {
         let r = radius.min((radius * (i + 1.0)) / ticks);
         if graticule == "circle" {
-            grid.push_str(&format!("<circle r=\"{}\"/>", num(r)));
+            let _ = write!(grid, "<circle r=\"{}\"/>", num(r));
         } else {
             let points: Vec<Point> = unit
                 .iter()
@@ -158,7 +159,7 @@ fn draw(
                     y: u.y * r,
                 })
                 .collect();
-            grid.push_str(&format!("<polygon points=\"{}\"/>", polygon(&points)));
+            let _ = write!(grid, "<polygon points=\"{}\"/>", polygon(&points));
         }
         i += 1.0;
     }
@@ -167,7 +168,7 @@ fn draw(
     let mut labels = String::new();
     for (i, u) in unit.iter().enumerate() {
         let reach = radius * axis_scale;
-        spokes.push_str(&format!("M0,0L{},{}", num(u.x * reach), num(u.y * reach)));
+        let _ = write!(spokes, "M0,0L{},{}", num(u.x * reach), num(u.y * reach));
         let label = layout_label(Some(&axes[i].label), false, &*measure, small, 4000.0, 0);
         let at = radius * label_factor + 6.0;
         // Each label hangs off its axis on the side away from the center.
@@ -187,11 +188,12 @@ fn draw(
             } else {
                 0.0
             };
-        labels.push_str(&format!(
+        let _ = write!(
+            labels,
             "<g class=\"{p}-axis-label\" data-id=\"{}\">{}</g>",
             esc_text(&axes[i].name),
             label_svg(&label, cx, cy, "")
-        ));
+        );
         x0 = x0.min(cx - label.width / 2.0);
         x1 = x1.max(cx + label.width / 2.0);
         y0 = y0.min(cy - label.height / 2.0);
@@ -224,15 +226,13 @@ fn draw(
             esc_text(&curve.name)
         );
         if graticule == "circle" {
-            shapes.push_str(&format!(
+            let _ = write!(
+                shapes,
                 "<path{attrs} d=\"{}\"/>",
                 closed_round_curve(&points, tension)
-            ));
+            );
         } else {
-            shapes.push_str(&format!(
-                "<polygon{attrs} points=\"{}\"/>",
-                polygon(&points)
-            ));
+            let _ = write!(shapes, "<polygon{attrs} points=\"{}\"/>", polygon(&points));
         }
     }
 
@@ -272,7 +272,8 @@ fn draw(
     for (index, label) in legend.iter().enumerate() {
         let y = legend_top + index as f64 * ROW + ROW / 2.0;
         let color = series_color(index as i64);
-        legend_out.push_str(&format!(
+        let _ = write!(
+            legend_out,
             "<g class=\"{p}-legend-item\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{color}\" fill-opacity=\"0.4\" stroke=\"{color}\"/>{}</g>",
             esc_text(&curves[index].name),
             num(legend_x),
@@ -280,7 +281,7 @@ fn draw(
             js::num_str(SWATCH),
             js::num_str(SWATCH),
             label_svg(label, legend_x + SWATCH + 8.0 + label.width / 2.0, y, "")
-        ));
+        );
     }
 
     let title = layout_label(
@@ -312,31 +313,36 @@ fn draw(
         pad + title.height / 2.0,
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
-    content.push_str(&format!("<g transform=\"{origin}\">"));
+    let _ = write!(content, "<g transform=\"{origin}\">");
     if !grid.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-graticule\" fill=\"none\" stroke=\"var(--_a)\">{grid}</g>"
-        ));
+        );
     }
     if !spokes.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<path class=\"{p}-axes\" d=\"{spokes}\" fill=\"none\" stroke=\"var(--_b)\"/>"
-        ));
+        );
     }
     if !shapes.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-curves\" fill-opacity=\"0.2\" stroke-width=\"1.5\" stroke-linejoin=\"round\">{shapes}</g>"
-        ));
+        );
     }
     if !labels.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-axis-labels\" font-size=\"{small}\">{labels}</g>"
-        ));
+        );
     }
     if !legend_out.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-legend\" font-size=\"{small}\">{legend_out}</g>"
-        ));
+        );
     }
     content.push_str("</g>");
 

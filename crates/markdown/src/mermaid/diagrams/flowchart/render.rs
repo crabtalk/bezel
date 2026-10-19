@@ -1,6 +1,6 @@
 //! Pele's `diagrams/flowchart/render.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
     db::FlowDb,
@@ -449,7 +449,8 @@ fn draw(
                     i,
                 ));
             }
-            clusters.push_str(&format!(
+            let _ = write!(
+                clusters,
                 "<g class=\"{p}-cluster{classes}\" data-id=\"{id}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"{}/>{}</g>",
                 num(x - c.w / 2.0),
                 num(y - c.h / 2.0),
@@ -461,7 +462,7 @@ fn draw(
                 } else {
                     label_svg(&view.label, title_x, title_y, &title_attrs)
                 }
-            ));
+            );
             continue;
         }
 
@@ -588,12 +589,13 @@ fn draw(
             };
             body = linked(&body, link, &node.id, &mut links, options, &target);
         }
-        nodes_out.push_str(&format!(
+        let _ = write!(
+            nodes_out,
             "<g class=\"{p}-node {p}-shape-{}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">{body}</g>",
             view.shape,
             num(x),
             num(y)
-        ));
+        );
     }
 
     let mut reach = SideReach::new();
@@ -692,14 +694,15 @@ fn draw(
                 attrs = " stroke-dasharray=\"3 4\"";
             }
             let classes = class_names(&RE_EDGE_CLASSES.replace(&edge.classes, |_| String::new()));
-            edges_out.push_str(&format!(
+            let _ = write!(
+                edges_out,
                 "<g class=\"{p}-edge{classes}\" data-id=\"{}\"{}><path d=\"{}\"{attrs}/>{}{}</g>",
                 esc_text(&edge.id),
                 style.as_ref().map_or("", |s| s.line.as_str()),
                 path.d,
                 marker(start_type, path.sx, path.sy, path.sdx, path.sdy, &color),
                 marker(end_type, path.ex, path.ey, path.edx, path.edy, &color),
-            ));
+            );
         }
         let label = &edge_labels[i];
         if label.width > 0.0 {
@@ -720,25 +723,28 @@ fn draw(
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
     if !clusters.is_empty() {
-        content.push_str(&format!("<g class=\"{p}-clusters\">{clusters}</g>"));
+        let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
     }
     if !edges_out.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-edges\" fill=\"none\" stroke=\"var(--_l)\" stroke-linecap=\"round\">{edges_out}</g>"
-        ));
+        );
     }
     if !struck_titles.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-cluster-titles\">{struck_titles}</g>"
-        ));
+        );
     }
     if !labels_out.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
             js::num_str(edge_size)
-        ));
+        );
     }
-    content.push_str(&format!("<g class=\"{p}-nodes\">{nodes_out}</g>"));
+    let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");
 
     let svg = svg_document(
         variant.map_or("flowchart", |variant| variant.kind()),

@@ -16,6 +16,9 @@ use std::{
     sync::OnceLock,
 };
 
+/// Group positions kept on the stack, for up to seven groups.
+const STACK_CAPS: usize = 16;
+
 /// A pattern compiled on first use, for a `static`.
 pub(crate) struct Lazy {
     pattern: &'static str,
@@ -47,6 +50,95 @@ pub(crate) struct Regex {
     alt: Alt,
     groups: usize,
     flags: Flags,
+    /// The characters a match can start with, when that is known; at 0 it
+    /// also starts any `^` alternative.
+    first: Option<Set>,
+    /// Some alternative opens with `^` and the pattern is not multiline.
+    at_zero: bool,
+    /// What each such alternative needs at 0, when that is known for all.
+    leads: Option<Vec<Lead>>,
+    /// The whole pattern is one character, class or `.` repeated greedily
+    /// without bound, at least this many times.
+    run: Option<(Node, usize)>,
+    /// Every alternative opens with `^` and the pattern is not multiline, so
+    /// a match can only start at 0.
+    anchored: bool,
+}
+
+/// An alternative opening `^X*Y`, where `X` is a class `Y` cannot start
+/// with: the ASCII characters `X*` steps over, and the set `Y` starts with.
+#[derive(Clone, Copy, Debug)]
+struct Lead {
+    skip: [u64; 2],
+    first: Set,
+}
+
+impl Lead {
+    fn of(seq: &[Node], ignore_case: bool) -> Option<Self> {
+        if let Some(Node::Repeat {
+            node,
+            min: 0,
+            max: usize::MAX,
+            ..
+        }) = seq.first()
+            && let Node::Class(class) = &**node
+        {
+            let first = first_of_seq(&seq[1..], ignore_case)?;
+            let disjoint = (0..2).all(|i| first.ascii[i] & class.ascii[i] == 0);
+            return disjoint.then_some(Self {
+                skip: class.ascii,
+                first,
+            });
+        }
+        Some(Self {
+            skip: [0; 2],
+            first: first_of_seq(seq, ignore_case)?,
+        })
+    }
+
+    /// Whether a match can start at the start of `text`. A character outside
+    /// ASCII in the run `X*` steps over passes.
+    fn may_start(&self, text: &[u8]) -> bool {
+        let mut at = 0;
+        while let Some(&b) = text.get(at) {
+            if b >= 128 {
+                return true;
+            }
+            if self.skip[usize::from(b >> 6)] & (1 << (b & 63)) == 0 {
+                return self.first.ascii[usize::from(b >> 6)] & (1 << (b & 63)) != 0;
+            }
+            at += 1;
+        }
+        false
+    }
+}
+
+/// A set of characters: ASCII in a bitmap, anything else as one flag.
+#[derive(Clone, Copy, Debug, Default)]
+struct Set {
+    ascii: [u64; 2],
+    other: bool,
+}
+
+impl Set {
+    fn insert(&mut self, c: u8) {
+        self.ascii[usize::from(c >> 6)] |= 1 << (c & 63);
+    }
+
+    fn has(&self, c: char) -> bool {
+        if c.is_ascii() {
+            let b = c as u8;
+            self.ascii[usize::from(b >> 6)] & (1 << (b & 63)) != 0
+        } else {
+            self.other
+        }
+    }
+
+    fn union(&mut self, other: Set) {
+        self.ascii[0] |= other.ascii[0];
+        self.ascii[1] |= other.ascii[1];
+        self.other |= other.other;
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -70,7 +162,9 @@ enum Node {
     End,
     Boundary(bool),
     Group(Box<Alt>, Option<usize>),
-    Look(Box<Alt>, bool),
+    /// The lookahead, whether it is negative, and whether it holds a
+    /// capturing group.
+    Look(Box<Alt>, bool, bool),
     Repeat {
         node: Box<Node>,
         min: usize,
@@ -83,6 +177,8 @@ enum Node {
 struct Class {
     negated: bool,
     items: Vec<Item>,
+    /// Which ASCII characters match, case and negation applied.
+    ascii: [u64; 2],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -158,10 +254,56 @@ impl Regex {
             "regex /{pattern}/ does not parse at {}",
             parser.at
         );
+        let mut alt = alt;
+        prepare(&mut alt, parsed.ignore_case);
+        let anchored = !parsed.multiline
+            && alt
+                .iter()
+                .all(|seq| matches!(seq.first(), Some(Node::Start)));
+        let opens_at_zero = |seq: &Vec<Node>| matches!(seq.first(), Some(Node::Start));
+        let at_zero = !parsed.multiline && alt.iter().any(opens_at_zero);
+        let rest: Alt = if at_zero {
+            alt.iter()
+                .filter(|seq| !opens_at_zero(seq))
+                .cloned()
+                .collect()
+        } else {
+            alt.clone()
+        };
+        let first = first_of_alt(&rest, parsed.ignore_case);
+        let leads = at_zero
+            .then(|| {
+                alt.iter()
+                    .filter(|seq| opens_at_zero(seq))
+                    .map(|seq| Lead::of(&seq[1..], parsed.ignore_case))
+                    .collect()
+            })
+            .flatten();
+        let run = match alt.as_slice() {
+            [seq] => match seq.as_slice() {
+                [
+                    Node::Repeat {
+                        node,
+                        min,
+                        max: usize::MAX,
+                        greedy: true,
+                    },
+                ] if matches!(**node, Node::Char(_) | Node::Any | Node::Class(_)) => {
+                    Some(((**node).clone(), *min))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
         Self {
             alt,
             groups: parser.groups,
             flags: parsed,
+            first,
+            at_zero,
+            leads,
+            run,
+            anchored,
         }
     }
 
@@ -180,10 +322,51 @@ impl Regex {
         if self.flags.sticky {
             return self.match_here(text, from);
         }
+        if self.anchored {
+            return if from == 0 {
+                self.match_here(text, 0)
+            } else {
+                None
+            };
+        }
+        let mut stack = [None; STACK_CAPS];
+        let mut heap = Vec::new();
+        let caps = self.caps_buffer(&mut stack, &mut heap);
+        let bytes = text.as_bytes();
         let mut at = from;
         loop {
-            if let Some(found) = self.match_here(text, at) {
-                return Some(found);
+            if at == 0 && self.at_zero {
+                if self.may_start(text, 0)
+                    && let Some(end) = self.try_at(text, 0, caps)
+                {
+                    return Some(self.captures(text, 0, end, caps));
+                }
+                if text.is_empty() {
+                    return None;
+                }
+                at = char_len(text, 0);
+                continue;
+            }
+            if let Some(first) = &self.first {
+                // Only a character the set holds can start a match: step
+                // over the rest a byte at a time, never stopping inside one.
+                while let Some(&b) = bytes.get(at) {
+                    let start = if b < 128 {
+                        first.ascii[usize::from(b >> 6)] & (1 << (b & 63)) != 0
+                    } else {
+                        b >= 0xc0 && first.other
+                    };
+                    if start {
+                        break;
+                    }
+                    at += 1;
+                }
+                if at >= bytes.len() {
+                    return None;
+                }
+            }
+            if let Some(end) = self.try_at(text, at, caps) {
+                return Some(self.captures(text, at, end, caps));
             }
             if at >= text.len() {
                 return None;
@@ -199,32 +382,94 @@ impl Regex {
 
     /// Where a match starting exactly at `at` ends.
     pub(crate) fn match_end(&self, text: &str, at: usize) -> Option<usize> {
-        self.match_here(text, at).map(|found| found.end())
+        if !self.may_start(text, at) {
+            return None;
+        }
+        let mut stack = [None; STACK_CAPS];
+        let mut heap = Vec::new();
+        let caps = self.caps_buffer(&mut stack, &mut heap);
+        self.try_at(text, at, caps)
+    }
+
+    /// Whether a match can start at `at`, by the characters it can start
+    /// with.
+    fn may_start(&self, text: &str, at: usize) -> bool {
+        let next = || text[at..].chars().next();
+        let unanchored = self
+            .first
+            .is_none_or(|first| next().is_some_and(|c| first.has(c)));
+        if at != 0 || !self.at_zero {
+            return unanchored;
+        }
+        unanchored
+            || self
+                .leads
+                .as_ref()
+                .is_none_or(|leads| leads.iter().any(|lead| lead.may_start(text.as_bytes())))
+    }
+
+    /// Room for the group positions: on the stack when they fit.
+    fn caps_buffer<'b>(
+        &self,
+        stack: &'b mut [Option<usize>; STACK_CAPS],
+        heap: &'b mut Vec<Option<usize>>,
+    ) -> &'b mut Caps {
+        let len = (self.groups + 1) * 2;
+        if len <= STACK_CAPS {
+            &mut stack[..len]
+        } else {
+            *heap = vec![None; len];
+            heap
+        }
     }
 
     /// The match starting exactly at `at`.
     pub(crate) fn match_here<'t>(&self, text: &'t str, at: usize) -> Option<Captures<'t>> {
-        let mut caps = vec![None; (self.groups + 1) * 2];
+        if !self.may_start(text, at) {
+            return None;
+        }
+        let mut stack = [None; STACK_CAPS];
+        let mut heap = Vec::new();
+        let caps = self.caps_buffer(&mut stack, &mut heap);
+        let end = self.try_at(text, at, caps)?;
+        Some(self.captures(text, at, end, caps))
+    }
+
+    /// Where a match starting exactly at `at` ends, its groups left in
+    /// `caps`, cleared first.
+    fn try_at(&self, text: &str, at: usize, caps: &mut Caps) -> Option<usize> {
+        caps.fill(None);
         let matcher = Matcher {
             text,
             flags: self.flags,
         };
-        let mut end = None;
-        if matcher.alt(&self.alt, at, &mut caps, &mut |pos, _| {
-            end = Some(pos);
-            true
-        }) {
-            let mut spans = vec![Some(at..end.unwrap_or(at))];
-            for group in 1..=self.groups {
-                spans.push(match (caps[group * 2], caps[group * 2 + 1]) {
-                    (Some(start), Some(end)) => Some(start..end),
-                    _ => None,
-                });
+        if let Some((node, min)) = &self.run {
+            let (mut end, mut count) = (at, 0);
+            while let Some(next) = matcher.single(node, end) {
+                end = next;
+                count += 1;
             }
-            Some(Captures { text, spans })
-        } else {
-            None
+            return (count >= *min).then_some(end);
         }
+        let mut end = None;
+        matcher
+            .alt(&self.alt, at, caps, &mut |pos, _| {
+                end = Some(pos);
+                true
+            })
+            .then(|| end.unwrap_or(at))
+    }
+
+    fn captures<'t>(&self, text: &'t str, at: usize, end: usize, caps: &Caps) -> Captures<'t> {
+        let mut spans = Vec::with_capacity(self.groups + 1);
+        spans.push(Some(at..end));
+        for group in 1..=self.groups {
+            spans.push(match (caps[group * 2], caps[group * 2 + 1]) {
+                (Some(start), Some(end)) => Some(start..end),
+                _ => None,
+            });
+        }
+        Captures { text, spans }
     }
 
     /// Every match from the start, as a global pattern's `exec` loop finds
@@ -402,7 +647,8 @@ impl Parser {
                     };
                     let alt = self.alt();
                     assert!(self.eat(')'), "unclosed lookahead");
-                    return Node::Look(Box::new(alt), negative);
+                    let groups = captures(&alt);
+                    return Node::Look(Box::new(alt), negative, groups);
                 }
                 self.groups += 1;
                 let index = self.groups;
@@ -485,6 +731,7 @@ impl Parser {
         let mut class = Class {
             negated: self.eat('^'),
             items: Vec::new(),
+            ascii: [0; 2],
         };
         loop {
             let c = self.peek().expect("unclosed class");
@@ -603,6 +850,7 @@ impl Escape {
             Self::Item(item) => Node::Class(Box::new(Class {
                 negated: false,
                 items: vec![item],
+                ascii: [0; 2],
             })),
             Self::Boundary(at) => Node::Boundary(at),
         }
@@ -690,7 +938,7 @@ struct Matcher<'t> {
     flags: Flags,
 }
 
-type Caps = Vec<Option<usize>>;
+type Caps = [Option<usize>];
 type Next<'k> = &'k mut dyn FnMut(usize, &mut Caps) -> bool;
 
 impl Matcher<'_> {
@@ -704,6 +952,19 @@ impl Matcher<'_> {
 
     /// Where `node`, matching one character, ends when it matches at `at`.
     fn single(&self, node: &Node, at: usize) -> Option<usize> {
+        let byte = *self.text.as_bytes().get(at)?;
+        if byte < 128 {
+            let c = byte as char;
+            let hit = match node {
+                Node::Char(want) => {
+                    c == *want || (self.flags.ignore_case && c.eq_ignore_ascii_case(want))
+                }
+                Node::Any => self.flags.dot_all || !is_line_end(c),
+                Node::Class(class) => class.ascii[usize::from(byte >> 6)] & (1 << (byte & 63)) != 0,
+                _ => unreachable!(),
+            };
+            return hit.then_some(at + 1);
+        }
         let c = self.char_at(at)?;
         let hit = match node {
             Node::Char(want) => c == *want || (self.flags.ignore_case && fold(c) == fold(*want)),
@@ -770,18 +1031,23 @@ impl Matcher<'_> {
                 }
                 found
             }
-            Node::Look(alt, negative) => {
-                let mut inner = caps.clone();
+            Node::Look(alt, negative, false) => {
+                let found = self.alt(alt, at, caps, &mut |_, _| true);
+                found != *negative && self.seq(seq, i + 1, at, caps, next)
+            }
+            Node::Look(alt, negative, true) => {
+                let mut inner = caps.to_vec();
                 let found = self.alt(alt, at, &mut inner, &mut |_, _| true);
                 if found == *negative {
                     return false;
                 }
                 if found {
-                    let saved = std::mem::replace(caps, inner);
+                    let saved = caps.to_vec();
+                    caps.copy_from_slice(&inner);
                     if self.seq(seq, i + 1, at, caps, next) {
                         return true;
                     }
-                    *caps = saved;
+                    caps.copy_from_slice(&saved);
                     false
                 } else {
                     self.seq(seq, i + 1, at, caps, next)
@@ -794,35 +1060,50 @@ impl Matcher<'_> {
                 greedy,
             } => {
                 if matches!(**inner, Node::Char(_) | Node::Any | Node::Class(_)) {
-                    let mut ends = vec![at];
+                    if !*greedy {
+                        let mut pos = at;
+                        let mut count = 0;
+                        loop {
+                            if count >= *min && self.seq(seq, i + 1, pos, caps, next) {
+                                return true;
+                            }
+                            if count >= *max {
+                                return false;
+                            }
+                            match self.single(inner, pos) {
+                                Some(end) => {
+                                    pos = end;
+                                    count += 1;
+                                }
+                                None => return false,
+                            }
+                        }
+                    }
                     let mut pos = at;
-                    while ends.len() <= *max {
+                    let mut count = 0;
+                    while count < *max {
                         match self.single(inner, pos) {
                             Some(end) => {
                                 pos = end;
-                                ends.push(end);
+                                count += 1;
                             }
                             None => break,
                         }
                     }
-                    let count = ends.len() - 1;
                     if count < *min {
                         return false;
                     }
-                    if *greedy {
-                        for n in (*min..=count).rev() {
-                            if self.seq(seq, i + 1, ends[n], caps, next) {
-                                return true;
-                            }
+                    loop {
+                        if self.seq(seq, i + 1, pos, caps, next) {
+                            return true;
                         }
-                    } else {
-                        for &end in &ends[*min..=count] {
-                            if self.seq(seq, i + 1, end, caps, next) {
-                                return true;
-                            }
+                        if count == *min {
+                            return false;
                         }
+                        // Each step back undoes one character the run took.
+                        pos -= self.char_before(pos).map_or(1, char::len_utf8);
+                        count -= 1;
                     }
-                    return false;
                 }
                 self.repeat(inner, *min, *max, *greedy, 0, at, caps, &mut |end, caps| {
                     self.seq(seq, i + 1, end, caps, next)
@@ -864,5 +1145,88 @@ impl Matcher<'_> {
         } else {
             next(at, caps) || more(caps, next)
         }
+    }
+}
+
+/// Whether `alt` holds a capturing group.
+fn captures(alt: &Alt) -> bool {
+    alt.iter().flatten().any(captures_node)
+}
+
+fn captures_node(node: &Node) -> bool {
+    match node {
+        Node::Group(_, Some(_)) => true,
+        Node::Group(inner, None) | Node::Look(inner, _, _) => captures(inner),
+        Node::Repeat { node, .. } => captures_node(node),
+        _ => false,
+    }
+}
+
+/// Fills each class's ASCII bitmap.
+fn prepare(alt: &mut Alt, ignore_case: bool) {
+    for node in alt.iter_mut().flatten() {
+        prepare_node(node, ignore_case);
+    }
+}
+
+fn prepare_node(node: &mut Node, ignore_case: bool) {
+    match node {
+        Node::Class(class) => {
+            let mut ascii = [0u64; 2];
+            for b in 0..128u8 {
+                if class.matches(b as char, ignore_case) {
+                    ascii[usize::from(b >> 6)] |= 1 << (b & 63);
+                }
+            }
+            class.ascii = ascii;
+        }
+        Node::Group(alt, _) | Node::Look(alt, _, _) => prepare(alt, ignore_case),
+        Node::Repeat { node, .. } => prepare_node(node, ignore_case),
+        _ => {}
+    }
+}
+
+/// The characters any match of `alt` starts with, or `None` when it can
+/// start with anything or with nothing.
+fn first_of_alt(alt: &Alt, ignore_case: bool) -> Option<Set> {
+    let mut set = Set::default();
+    for seq in alt {
+        set.union(first_of_seq(seq, ignore_case)?);
+    }
+    Some(set)
+}
+
+fn first_of_seq(seq: &[Node], ignore_case: bool) -> Option<Set> {
+    let node = seq.first()?;
+    match node {
+        Node::Char(c) => {
+            let mut set = Set::default();
+            if c.is_ascii() {
+                set.insert(*c as u8);
+                if ignore_case {
+                    set.insert(c.to_ascii_lowercase() as u8);
+                    set.insert(c.to_ascii_uppercase() as u8);
+                }
+            } else {
+                set.other = true;
+                if ignore_case {
+                    for other in [fold(*c), upper(*c)] {
+                        if other.is_ascii() {
+                            set.insert(other as u8);
+                        }
+                    }
+                }
+            }
+            Some(set)
+        }
+        Node::Class(class) => Some(Set {
+            ascii: class.ascii,
+            other: true,
+        }),
+        Node::Group(alt, _) => first_of_alt(alt, ignore_case),
+        Node::Repeat { node, min, .. } if *min >= 1 => {
+            first_of_seq(std::slice::from_ref(&**node), ignore_case)
+        }
+        _ => None,
     }
 }

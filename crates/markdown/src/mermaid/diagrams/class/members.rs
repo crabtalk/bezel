@@ -1,6 +1,7 @@
 //! Pele's `diagrams/class/members.ts`.
 
 use serde::Serialize;
+use std::fmt::Write as _;
 
 use crate::mermaid::{
     diagrams::common::generics::parse_generic_types,
@@ -144,7 +145,11 @@ impl ClassMember {
     pub fn display_details(&self) -> DisplayDetails {
         let mut display_text = self.visibility.clone() + &parse_generic_types(&self.id);
         if self.member_type == MemberType::Method {
-            display_text += &format!("({})", parse_generic_types(js::trim(&self.parameters)));
+            let _ = write!(
+                display_text,
+                "({})",
+                parse_generic_types(js::trim(&self.parameters))
+            );
             if !self.return_type.is_empty() {
                 display_text += " : ";
                 display_text += &parse_generic_types(&self.return_type);

@@ -1,6 +1,7 @@
 //! Pele's `diagrams/venn/render.ts`.
 
 use indexmap::{IndexMap, IndexSet};
+use std::fmt::Write as _;
 
 use super::{
     db::{VennDb, normalize_text},
@@ -8,7 +9,9 @@ use super::{
     types::VennSubset,
 };
 use crate::mermaid::{
-    Config, Options, Rendered, js,
+    Config, Options, Rendered,
+    config::Value,
+    js,
     svg::{
         builder::{esc_text, label_svg, num},
         root::{Accessible, svg_document},
@@ -38,40 +41,13 @@ struct Region {
     style: ResolvedStyle,
 }
 
-/// `JSON.stringify` of a list of strings.
-fn json_strings(ids: &[String]) -> String {
-    let mut out = String::from("[");
-    for (i, id) in ids.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push('"');
-        for c in id.chars() {
-            match c {
-                '"' => out.push_str("\\\""),
-                '\\' => out.push_str("\\\\"),
-                '\u{8}' => out.push_str("\\b"),
-                '\u{c}' => out.push_str("\\f"),
-                '\n' => out.push_str("\\n"),
-                '\r' => out.push_str("\\r"),
-                '\t' => out.push_str("\\t"),
-                c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-                c => out.push(c),
-            }
-        }
-        out.push('"');
-    }
-    out.push(']');
-    out
-}
-
 /// One key for a list of set ids. Ids may hold any character, so they are not
 /// simply joined.
 fn key_of(ids: &[String]) -> String {
     if ids.len() == 1 {
         ids[0].clone()
     } else {
-        json_strings(ids)
+        Value::List(ids.iter().cloned().map(Value::String).collect()).to_json()
     }
 }
 
@@ -297,7 +273,8 @@ pub fn render_venn(model: &VennDb, _config: &Config, options: &Options) -> Rende
         let shape = regions
             .get(&c.id)
             .map_or("", |region| region.style.shape.as_str());
-        sets += &format!(
+        let _ = write!(
+            sets,
             "<circle class=\"{p}-venn-set\" data-id=\"{}\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{color}\" fill-opacity=\"0.2\" stroke=\"{color}\"{shape}/>",
             esc_text(&c.id),
             num(c.x),
@@ -314,9 +291,10 @@ pub fn render_venn(model: &VennDb, _config: &Config, options: &Options) -> Rende
         // otherwise the circles show it.
         if region.sets.len() > 1 && !region.style.shape.is_empty() {
             let outline: Vec<Circle> = region.inside.iter().map(|&i| placed[i].clone()).collect();
-            let d = region_path(&outline, num);
+            let d = region_path(&outline, |x| num(x).to_string());
             if !d.is_empty() {
-                overlaps += &format!(
+                let _ = write!(
+                    overlaps,
                     "<path class=\"{p}-venn-overlap\" data-id=\"{id}\" d=\"{d}\" fill=\"none\"{}/>",
                     region.style.shape
                 );
@@ -352,7 +330,10 @@ pub fn render_venn(model: &VennDb, _config: &Config, options: &Options) -> Rende
             content += &label_svg(&line.label, x, y + line.label.height / 2.0, &attrs);
             y += line.label.height;
         }
-        labels += &format!("<g class=\"{p}-venn-region\" data-id=\"{id}\">{content}</g>");
+        let _ = write!(
+            labels,
+            "<g class=\"{p}-venn-region\" data-id=\"{id}\">{content}</g>"
+        );
     }
 
     let mut body = label_svg(
@@ -361,12 +342,12 @@ pub fn render_venn(model: &VennDb, _config: &Config, options: &Options) -> Rende
         pad + title.height / 2.0,
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
-    body += &format!("<g class=\"{p}-venn-sets\">{sets}</g>");
+    let _ = write!(body, "<g class=\"{p}-venn-sets\">{sets}</g>");
     if !overlaps.is_empty() {
-        body += &format!("<g class=\"{p}-venn-overlaps\">{overlaps}</g>");
+        let _ = write!(body, "<g class=\"{p}-venn-overlaps\">{overlaps}</g>");
     }
     if !labels.is_empty() {
-        body += &format!("<g class=\"{p}-venn-labels\">{labels}</g>");
+        let _ = write!(body, "<g class=\"{p}-venn-labels\">{labels}</g>");
     }
     let svg = svg_document(
         "venn",

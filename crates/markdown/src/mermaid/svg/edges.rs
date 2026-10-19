@@ -2,7 +2,7 @@
 //! `svg/edges.ts`. Marker types are Mermaid's: `arrow_point`,
 //! `arrow_circle`, `arrow_cross`; anything else draws nothing.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use super::builder::{esc_text, label_svg, num};
 use crate::mermaid::{
@@ -241,7 +241,7 @@ pub fn route_path(
         if near(x, y, *at_x, *at_y) {
             return;
         }
-        d.push_str(&format!("L{},{}", num(x), num(y)));
+        let _ = write!(d, "L{},{}", num(x), num(y));
         *at_x = x;
         *at_y = y;
     };
@@ -254,7 +254,8 @@ pub fn route_path(
             let k = along.abs() * ease(if down { x - at_x } else { y - at_y }, along);
             let ux = if down { 0.0 } else { js::sign(along) * k };
             let uy = if down { js::sign(along) * k } else { 0.0 };
-            d.push_str(&format!(
+            let _ = write!(
+                d,
                 "C{},{} {},{} {},{}",
                 num(at_x + ux),
                 num(at_y + uy),
@@ -262,7 +263,7 @@ pub fn route_path(
                 num(y - uy),
                 num(x),
                 num(y)
-            ));
+            );
             at_x = x;
             at_y = y;
             continue;
@@ -310,15 +311,10 @@ pub fn route_path(
         at_x = x + vx * after;
         at_y = y + vy * after;
         if stepped {
-            d.push_str(&format!(
-                "Q{},{} {},{}",
-                num(x),
-                num(y),
-                num(at_x),
-                num(at_y)
-            ));
+            let _ = write!(d, "Q{},{} {},{}", num(x), num(y), num(at_x), num(at_y));
         } else {
-            d.push_str(&format!(
+            let _ = write!(
+                d,
                 "C{},{} {},{} {},{}",
                 num(x - ux * before * (1.0 - HANDLE)),
                 num(y - uy * before * (1.0 - HANDLE)),
@@ -326,7 +322,7 @@ pub fn route_path(
                 num(y + vy * after * (1.0 - HANDLE)),
                 num(at_x),
                 num(at_y)
-            ));
+            );
         }
     }
     EdgePath {

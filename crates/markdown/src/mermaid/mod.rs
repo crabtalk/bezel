@@ -18,7 +18,7 @@ pub mod config;
 pub mod detect;
 pub mod diagrams;
 pub mod error;
-pub(crate) mod js;
+pub mod js;
 pub mod layout;
 pub mod preprocess;
 pub mod svg;
@@ -34,6 +34,7 @@ pub use detect::Kind;
 pub use error::{Code, Error};
 #[cfg(feature = "gpui")]
 pub use fence::{DIAGRAM_SELECTOR, LANGUAGE, Zoom};
+pub use svg::theme::{Colors, Rgba};
 pub use text::{IconResolver, Measure, Metrics};
 
 /// What class names, CSS variables and element ids start with.
@@ -88,6 +89,10 @@ pub struct Options {
     pub config: Option<Config>,
     /// The time gantt charts treat as now, in ms since the epoch.
     pub now: Option<f64>,
+    /// Colours for a renderer without CSS custom properties: the SVG names
+    /// them, and every other variable's value, in place of each `var(…)`,
+    /// and keeps rectangles' radii in `rx`.
+    pub colors: Option<Colors>,
 }
 
 impl Options {
@@ -152,8 +157,9 @@ pub fn supports(source: &str) -> bool {
 /// Parses `source`, reading [`Options::limit`], [`Options::max_edges`] and
 /// [`Options::config`].
 pub fn parse(source: &str, options: &Options) -> Result<Parsed, Error> {
+    js::date::forget_zone();
     let limit = options.limit.unwrap_or(DEFAULT_LIMIT);
-    if js::len(source) > limit {
+    if js::len_over(source, limit) {
         return Err(Error::limit(format!(
             "Diagram source is longer than the limit of {limit} characters."
         )));
@@ -212,6 +218,7 @@ pub fn render(source: &str, options: &Options) -> Result<Drawing, Error> {
 
 /// A parsed source drawn as SVG.
 pub fn render_parsed(parsed: &Parsed, options: &Options) -> Result<Drawing, Error> {
+    js::date::forget_zone();
     let kind = parsed.kind;
     let Some(diagram) = diagrams::diagram(kind) else {
         return Err(Error::new(
@@ -237,7 +244,7 @@ pub fn render_parsed(parsed: &Parsed, options: &Options) -> Result<Drawing, Erro
         diagram.render(&parsed.model, &parsed.config, &options)
     })?;
     let output_limit = options.output_limit.unwrap_or(DEFAULT_OUTPUT_LIMIT);
-    if js::len(&rendered.svg) > output_limit {
+    if js::len_over(&rendered.svg, output_limit) {
         return Err(Error::limit(format!(
             "Diagram output is longer than the limit of {output_limit} characters."
         ))

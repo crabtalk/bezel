@@ -1,6 +1,6 @@
 //! Pele's `diagrams/journey/render.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use super::db::{JourneyModel, journey_actors};
 use crate::mermaid::{
@@ -239,14 +239,16 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
         let mut scale = String::new();
         for score in (1..=5).rev() {
             let y = chart_top + (5 - score) as f64 * LEVEL;
-            grid += &format!("M{},{}H{}", num(left - 6.0), num(y), num(right));
-            scale += &format!(
+            let _ = write!(grid, "M{},{}H{}", num(left - 6.0), num(y), num(right));
+            let _ = write!(
+                scale,
                 "<text x=\"{}\" y=\"{}\">{score}</text>",
                 num(left - 12.0),
                 num(y + tiny * 0.35)
             );
         }
-        body += &format!(
+        let _ = write!(
+            body,
             "<path class=\"{p}-grid\" d=\"{grid}\" fill=\"none\" stroke=\"var(--_a)\"/><g class=\"{p}-scale\" font-size=\"{}\" text-anchor=\"end\" fill=\"var(--_m)\">{scale}</g>",
             js::num_str(tiny)
         );
@@ -265,8 +267,20 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
                 score.clamp(1.0, 5.0)
             };
             let y = chart_top + (5.0 - level) * LEVEL;
-            line += &format!("{}{},{}", if i == 0 { "M" } else { "L" }, num(cx), num(y));
-            stems += &format!("M{},{}V{}", num(cx), num(cards_y + card_h), num(y - FACE));
+            let _ = write!(
+                line,
+                "{}{},{}",
+                if i == 0 { "M" } else { "L" },
+                num(cx),
+                num(y)
+            );
+            let _ = write!(
+                stems,
+                "M{},{}V{}",
+                num(cx),
+                num(cards_y + card_h),
+                num(y - FACE)
+            );
             faces += &face(cx, y, mood(score));
 
             let mut dots = String::new();
@@ -274,7 +288,8 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
             let count = people.len() as f64;
             let step = DOT_STEP.min((card_w - 2.0 * PAD_X - 2.0 * DOT) / (count - 1.0).max(1.0));
             for (k, name) in people.iter().enumerate() {
-                dots += &format!(
+                let _ = write!(
+                    dots,
                     "<circle class=\"{p}-actor\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"var(--_s)\"><title>{}</title></circle>",
                     num(cx + (k as f64 - (count - 1.0) / 2.0) * step),
                     num(cards_y + card_h - PAD_Y - DOT),
@@ -298,11 +313,13 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
                 ),
             ));
         }
-        body += &format!(
+        let _ = write!(
+            body,
             "<path class=\"{p}-stems\" d=\"{stems}\" fill=\"none\" stroke=\"var(--_b)\" stroke-dasharray=\"2 3\"/>"
         );
         if n > 1 {
-            body += &format!(
+            let _ = write!(
+                body,
                 "<path class=\"{p}-edge\" d=\"{line}\" fill=\"none\" stroke=\"var(--_l)\" stroke-linejoin=\"round\"/>"
             );
         }
@@ -316,7 +333,8 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
             };
             let x = left + run.start as f64 * pitch;
             let w = run.count as f64 * pitch - GAP;
-            body += &format!(
+            let _ = write!(
+                body,
                 "<g class=\"{p}-cluster {p}-section\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\"/>{}{members}</g>",
                 esc_text(js::trim(&tasks[run.start].section)),
                 num(x),
@@ -342,7 +360,8 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
             let mut items = String::new();
             for item in &legend {
                 let cy = y0 + item.y + item.h / 2.0;
-                items += &format!(
+                let _ = write!(
+                    items,
                     "<g class=\"{p}-legend-item\" data-id=\"{}\"><circle cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\"/>{}</g>",
                     esc_text(&item.name),
                     num(x0 + item.x + DOT),
@@ -357,7 +376,8 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
                     ),
                 );
             }
-            body += &format!(
+            let _ = write!(
+                body,
                 "<g class=\"{p}-legend\" font-size=\"{}\">{items}</g>",
                 js::num_str(small)
             );
@@ -450,7 +470,8 @@ fn vertical_journey(model: &JourneyModel, options: &Options) -> Rendered {
             h += 16f64.max(person.height) + 4.0;
         }
         let w = room.max(label.width + 72.0);
-        body += &format!(
+        let _ = write!(
+            body,
             "<g class=\"{p}-node {p}-journey-step\" data-id=\"{index}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>",
             num(pad),
             num(y),
@@ -466,7 +487,8 @@ fn vertical_journey(model: &JourneyModel, options: &Options) -> Rendered {
         let cx = pad + w - 28.0;
         body += &face(cx, y + PAD_Y + FACE, mood(task.score));
         if !task.score.is_nan() {
-            body += &format!(
+            let _ = write!(
+                body,
                 "<text class=\"{p}-journey-score\" x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"middle\">{}</text>",
                 num(cx),
                 num(y + PAD_Y + 2.0 * FACE + small),
@@ -477,7 +499,8 @@ fn vertical_journey(model: &JourneyModel, options: &Options) -> Rendered {
         let mut py = y + PAD_Y + text_h + 4.0;
         for (name, person) in &people {
             let ph = 16f64.max(person.height);
-            body += &format!(
+            let _ = write!(
+                body,
                 "<circle class=\"{p}-actor\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\"/>",
                 num(pad + 16.0),
                 num(py + ph / 2.0),
@@ -498,7 +521,8 @@ fn vertical_journey(model: &JourneyModel, options: &Options) -> Rendered {
         body += "</g>";
         y += h;
         if index + 1 < count {
-            body += &format!(
+            let _ = write!(
+                body,
                 "<path class=\"{p}-edge\" d=\"M{},{}v16\" fill=\"none\" stroke=\"var(--_l)\"/>",
                 num(pad + w / 2.0),
                 num(y)

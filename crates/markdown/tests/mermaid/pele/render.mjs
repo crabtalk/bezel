@@ -37,7 +37,8 @@ if (mode === 'svg') {
     const file = basename(name);
     const dir = join(out, file.replace(/\.json$/, ''));
     mkdirSync(dir, { recursive: true });
-    const sources = JSON.parse(readFileSync(join(corpus, file), 'utf8'));
+    // A corpus entry is a source, or a reference entry with its `src`.
+    const sources = JSON.parse(readFileSync(join(corpus, file), 'utf8')).map((c) => (typeof c === 'string' ? c : c.src));
     sources.forEach((source, i) => {
       try {
         writeFileSync(join(dir, `${i}.svg`), render(source, options).svg);

@@ -14,6 +14,7 @@ use crate::mermaid::{
     text::{Label, Measure, Span, Style, icon_markup, layout_label},
     util::url::{link_url, rel_attr, safe_url},
 };
+use std::fmt::Write as _;
 
 const COLUMN_GAP: f64 = 12.0;
 const COLUMN_PAD: f64 = 8.0;
@@ -125,7 +126,8 @@ fn text_block(label: &Label, x: f64, y: f64, attrs: &str, end: bool) -> String {
     for (i, line) in label.lines.iter().enumerate() {
         let cy = y + (i as f64 + 0.5) * label.line_height;
         if line.len() == 1 && line[0].icon.is_none() {
-            out += &format!(
+            let _ = write!(
+                out,
                 "<text{} x=\"{}\" y=\"{}\"{}>{}</text>",
                 text_style(attrs, line[0].style),
                 num(x),
@@ -342,7 +344,8 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
             &format!(" class=\"{p}-cluster-label\" font-weight=\"var(--_hw)\""),
             false,
         );
-        body += &format!(
+        let _ = write!(
+            body,
             "<text class=\"{p}-count\" x=\"{}\" y=\"{}\" text-anchor=\"end\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
             js::num_str(edge),
             num(COLUMN_PAD + line / 2.0 + small * 0.35),
@@ -369,7 +372,8 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
                 num(card.height)
             );
             if let Some(color) = &color {
-                inner += &format!(
+                let _ = write!(
+                    inner,
                     "<path class=\"{p}-priority\" d=\"M2.5,5V{}\" fill=\"none\" {color} stroke-width=\"3\" stroke-linecap=\"round\"/>",
                     num(card.height - 5.0)
                 );
@@ -411,7 +415,8 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
                         );
                     }
                     Some(href) => {
-                        inner += &format!(
+                        let _ = write!(
+                            inner,
                             "<a href=\"{}\" target=\"_blank\"{}>{}</a>",
                             esc(&href),
                             rel_attr(options),
@@ -444,7 +449,8 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
                     true,
                 );
             }
-            body += &format!(
+            let _ = write!(
+                body,
                 "<g class=\"{p}-node {p}-card{}{}\" data-id=\"{}\" transform=\"translate({},{})\" font-size=\"{}\">{inner}</g>",
                 if color.is_none() {
                     String::new()
@@ -460,7 +466,8 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
             y += card.height + CARD_GAP;
         }
 
-        out += &format!(
+        let _ = write!(
+            out,
             "<g class=\"{p}-cluster {p}-column{}\" data-id=\"{}\" transform=\"translate({},{})\">{body}</g>",
             class_names(section.node.css_classes.as_deref().unwrap_or("")),
             esc_text(&section.node.id),

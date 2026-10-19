@@ -36,9 +36,7 @@ static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 pub fn clock(now: Option<f64>) -> f64 {
     match now {
         Some(given) if given.is_finite() => given,
-        _ => std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0.0, |elapsed| elapsed.as_millis() as f64),
+        _ => chrono::Utc::now().timestamp_millis() as f64,
     }
 }
 

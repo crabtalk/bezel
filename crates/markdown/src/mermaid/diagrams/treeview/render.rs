@@ -1,6 +1,6 @@
 //! Pele's `diagrams/treeview/render.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
     icons::{BUILTIN_PACK, get_node_icon, glyph, icon_config},
@@ -265,26 +265,22 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
             num(last - r)
         );
         if r > 0.0 {
-            d.push_str(&format!(
+            let _ = write!(
+                d,
                 "Q{},{} {},{}H{}",
                 num(gx),
                 num(last),
                 num(gx + r),
                 num(last),
                 num(tick)
-            ));
+            );
         }
         if tick > gx {
             for child in &children[..children.len() - 1] {
-                d.push_str(&format!(
-                    "M{},{}H{}",
-                    num(gx),
-                    num(top + cy_of(child)),
-                    num(tick)
-                ));
+                let _ = write!(d, "M{},{}H{}", num(gx), num(top + cy_of(child)), num(tick));
             }
         }
-        guides.push_str(&format!("<path d=\"{d}\"/>"));
+        let _ = write!(guides, "<path d=\"{d}\"/>");
     }
 
     let baseline = size * 0.35;
@@ -301,13 +297,14 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
         let mut inner = String::new();
         if row.highlighted {
             let x = inset + row.x - HIGHLIGHT_OVERHANG;
-            inner.push_str(&format!(
+            let _ = write!(
+                inner,
                 "<rect class=\"{p}-tree-highlight\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_c)\" fill-opacity=\"0.14\"/>",
                 num(x),
                 num(top + row.top + 1.0),
                 num(total_width - inset + HIGHLIGHT_OVERHANG - x),
                 num(row.height - 2.0)
-            ));
+            );
         }
         if let Some(icon) = &row.icon {
             let name = icon
@@ -324,14 +321,15 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
                 .unwrap_or_else(|| {
                     format!("<path d=\"{glyph}\" stroke=\"var(--_m)\" stroke-width=\"1.5\"/>")
                 });
-            inner.push_str(&format!(
+            let _ = write!(
+                inner,
                 "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{drawn}</svg>",
                 esc_text(icon),
                 num(inset + row.x),
                 num(cy - icon_size / 2.0),
                 num(icon_size),
                 num(icon_size)
-            ));
+            );
         }
         if let Some(label) = &row.label {
             inner.push_str(&left_label_svg(
@@ -341,12 +339,13 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
                 &format!(" class=\"{p}-label\"{weight}"),
             ));
         } else if !row.text.is_empty() {
-            inner.push_str(&format!(
+            let _ = write!(
+                inner,
                 "<text class=\"{p}-label\" x=\"{}\" y=\"{}\"{weight} xml:space=\"preserve\">{}</text>",
                 num(inset + row.label_x),
                 num(cy + baseline),
                 esc(&row.text)
-            ));
+            );
         }
         if let Some(description) = &row.description {
             inner.push_str(&left_label_svg(
@@ -358,19 +357,21 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
                 ),
             ));
         } else if let Some(description) = node.description.as_deref().filter(|d| !d.is_empty()) {
-            inner.push_str(&format!(
+            let _ = write!(
+                inner,
                 "<text class=\"{p}-tree-description\" x=\"{}\" y=\"{}\" font-style=\"italic\" fill=\"var(--_m)\" xml:space=\"preserve\">{}</text>",
                 num(inset + desc_x),
                 num(cy + baseline),
                 esc(&decode_entities(description))
-            ));
+            );
         }
-        body.push_str(&format!(
+        let _ = write!(
+            body,
             "<g class=\"{p}-node {p}-tree-{}{}\" data-id=\"{}\">{inner}</g>",
             if directory { "dir" } else { "file" },
             class_names(node.css_class.as_deref().unwrap_or("")),
             esc_text(&node.name)
-        ));
+        );
     }
 
     let mut content = label_svg(
@@ -380,10 +381,11 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
     if !guides.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-tree-guides\" fill=\"none\" stroke=\"var(--_b)\" stroke-width=\"{}\">{guides}</g>",
             num(line_thickness)
-        ));
+        );
     }
     content.push_str(&body);
 

@@ -13,7 +13,7 @@ pub(crate) fn round(x: f64) -> f64 {
 }
 
 /// `String(x)` for a number.
-pub(crate) fn num_str(x: f64) -> String {
+pub fn num_str(x: f64) -> String {
     if x.is_nan() {
         return "NaN".into();
     }
@@ -22,6 +22,15 @@ pub(crate) fn num_str(x: f64) -> String {
     }
     if x == 0.0 {
         return "0".into();
+    }
+    let abs = x.abs();
+    if abs < 9_007_199_254_740_992.0 && x.fract() == 0.0 {
+        return (x as i64).to_string();
+    }
+    // In this range JavaScript writes the shortest digits without an
+    // exponent, as Rust's `Display` does.
+    if (1e-6..1e21).contains(&abs) {
+        return x.to_string();
     }
     let sign = if x < 0.0 { "-" } else { "" };
     // Rust's `{:e}` writes the shortest digits that read back as `x`, which
@@ -72,7 +81,16 @@ pub(crate) fn trim_end(text: &str) -> &str {
 
 /// `text.length`: UTF-16 units.
 pub(crate) fn len(text: &str) -> usize {
-    text.chars().map(char::len_utf16).sum()
+    // One unit per character, two for the four-byte ones.
+    text.bytes()
+        .map(|b| usize::from(b & 0xc0 != 0x80) + usize::from(b >= 0xf0))
+        .sum()
+}
+
+/// Whether [`len`] of `text` is over `limit`, counted only when its bytes
+/// are: no character has fewer UTF-8 bytes than UTF-16 units.
+pub(crate) fn len_over(text: &str, limit: usize) -> bool {
+    text.len() > limit && len(text) > limit
 }
 
 /// The length of the longest decimal literal at the start of `text`:
@@ -289,8 +307,30 @@ fn round_digits(digits: &[u8], keep: usize) -> (Vec<u8>, bool) {
     (head, false)
 }
 
+/// Whether `x * 10^k` lies exactly halfway between two integers, where
+/// JavaScript rounds up and Rust's formatting to even.
+fn halfway(x: f64, k: i64) -> bool {
+    let bits = x.abs().to_bits();
+    let exponent = ((bits >> 52) & 0x7ff) as i64;
+    let fraction = bits & ((1 << 52) - 1);
+    let (m, e) = if exponent == 0 {
+        (fraction, -1074)
+    } else {
+        (fraction | (1 << 52), exponent - 1075)
+    };
+    // x * 10^k = m * 5^k * 2^(e + k), and 5^k is odd: the fraction is
+    // one half exactly when m's lowest set bit is the one that halves.
+    let shift = -(e + k);
+    m != 0 && shift >= 1 && i64::from(m.trailing_zeros()) == shift - 1
+}
+
 /// `x.toFixed(digits)`.
 pub(crate) fn to_fixed(x: f64, digits: usize) -> String {
+    if x.is_finite() && x.abs() < 1e21 && !halfway(x, digits as i64) {
+        // Away from a tie, Rust's exact formatting rounds as JavaScript does.
+        let body = format!("{:.*}", digits, x.abs());
+        return if x < 0.0 { format!("-{body}") } else { body };
+    }
     if !x.is_finite() || x.abs() >= 1e21 {
         return num_str(x);
     }
@@ -328,6 +368,29 @@ fn significant(x: f64) -> (Vec<u8>, i64) {
     }
 }
 
+/// The first `keep` significant digits of `x.abs()`, not zero, rounded,
+/// and the decimal exponent of the first. JavaScript rounds a tie up.
+fn rounded_significant(x: f64, keep: usize) -> (Vec<u8>, i64) {
+    if keep > 0 {
+        let text = format!("{:.*e}", keep - 1, x.abs());
+        if let Some((mantissa, exponent)) = text.split_once('e')
+            && let Ok(exponent) = exponent.parse::<i64>()
+        {
+            // Rust rounds a tie to even. A tie sits at the digit kept last
+            // under this exponent, or under the one before a carry.
+            let k = keep as i64 - 1 - exponent;
+            if !halfway(x, k) && !halfway(x, k + 1) {
+                let digits = mantissa.bytes().filter(|&b| b != b'.').collect();
+                return (digits, exponent);
+            }
+        }
+    }
+    let (all, exponent) = significant(x);
+    let (mut rounded, carried) = round_digits(&all, keep);
+    rounded.truncate(keep);
+    (rounded, exponent + i64::from(carried))
+}
+
 /// `x.toExponential(digits)`.
 pub(crate) fn to_exponential(x: f64, digits: usize) -> String {
     if !x.is_finite() {
@@ -336,10 +399,7 @@ pub(crate) fn to_exponential(x: f64, digits: usize) -> String {
     let (mantissa, exponent) = if x == 0.0 {
         (vec![b'0'; digits + 1], 0)
     } else {
-        let (all, exponent) = significant(x);
-        let (mut rounded, carried) = round_digits(&all, digits + 1);
-        rounded.truncate(digits + 1);
-        (rounded, exponent + i64::from(carried))
+        rounded_significant(x, digits + 1)
     };
     let mantissa = String::from_utf8(mantissa).unwrap_or_default();
     let body = if digits == 0 {
@@ -362,8 +422,7 @@ pub(crate) fn to_precision_number(x: f64, precision: usize) -> f64 {
     if !x.is_finite() || x == 0.0 {
         return x;
     }
-    let (digits, exponent) = significant(x);
-    let (rounded, _) = round_digits(&digits, precision);
+    let (rounded, exponent) = rounded_significant(x, precision);
     let text = format!(
         "{}{}e{}",
         if x < 0.0 { "-" } else { "" },

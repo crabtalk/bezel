@@ -20,6 +20,7 @@ use crate::mermaid::{
     },
     text::{Style, decode_entities, layout_label},
 };
+use std::fmt::Write as _;
 
 const HEADER: f64 = 28.0;
 const SIDE: f64 = 6.0;
@@ -138,23 +139,25 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) 
                 );
                 let baseline = y + HEADER / 2.0 + 1.0;
                 if let Some(label) = label {
-                    text.push_str(&format!(
+                    let _ = write!(
+                        text,
                         "<text x=\"{}\" y=\"{}\" font-weight=\"var(--_hw)\"{}>{}</text>",
                         num(x + SIDE + 2.0),
                         num(baseline + small * 0.35),
                         style.text,
                         esc(&label.text)
-                    ));
+                    );
                 }
                 if with_value {
-                    text.push_str(&format!(
+                    let _ = write!(
+                        text,
                         "<text class=\"{p}-value\" x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"end\" fill=\"var(--_m)\"{}>{}</text>",
                         num(x + b.w - SIDE - 2.0),
                         num(baseline + tiny * 0.35),
                         js::num_str(tiny),
                         style.text,
                         esc(&value)
-                    ));
+                    );
                 }
             }
             // A section is a tint of its color, unless a class gives it a
@@ -164,10 +167,11 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) 
             } else {
                 " fill-opacity=\"0.12\""
             };
-            sections.push_str(&format!(
+            let _ = write!(
+                sections,
                 "<g class=\"{p}-node {p}-section{classes}\" {group}{rect}{tint} stroke=\"{color}\"{}/>{text}</g>",
                 style.shape
-            ));
+            );
             continue;
         }
 
@@ -211,10 +215,11 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) 
                 );
             }
         }
-        leaves.push_str(&format!(
+        let _ = write!(
+            leaves,
             "<g class=\"{p}-node {p}-leaf{classes}\" {group}{rect}{}/>{text}</g>",
             style.shape
-        ));
+        );
     }
 
     let total_width = (width.max(title.width) + 2.0 * pad).ceil();
@@ -226,15 +231,17 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) 
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
     if !sections.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-sections\" font-size=\"{}\">{sections}</g>",
             js::num_str(small)
-        ));
+        );
     }
     if !leaves.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-leaves\" text-anchor=\"middle\" fill=\"var(--_bg)\">{leaves}</g>"
-        ));
+        );
     }
 
     Rendered {

@@ -1,6 +1,6 @@
 //! Pele's `diagrams/packet/render.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use super::model::{PacketBlock, PacketModel, packet_option};
 use crate::mermaid::{
@@ -201,7 +201,8 @@ fn draw(model: &PacketModel, config: &Config, options: &Options, down: bool) -> 
                     first
                 } * bit_width;
             let w = count * bit_width - gap;
-            fields.push_str(&format!(
+            let _ = write!(
+                fields,
                 "<g class=\"{p}-node\" data-id=\"{}-{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>",
                 js::num_str(block.start),
                 js::num_str(block.end),
@@ -209,7 +210,7 @@ fn draw(model: &PacketModel, config: &Config, options: &Options, down: bool) -> 
                 num(y),
                 num(w),
                 num(row_height)
-            ));
+            );
             if down {
                 fields.push_str(&label_svg(
                     &labels[index][at],
@@ -225,12 +226,13 @@ fn draw(model: &PacketModel, config: &Config, options: &Options, down: bool) -> 
                 } else {
                     format!(" font-size=\"{}\"", num(text_size))
                 };
-                fields.push_str(&format!(
+                let _ = write!(
+                    fields,
                     "<text x=\"{}\" y=\"{}\"{font}>{}</text>",
                     num(x + w / 2.0),
                     num(y + row_height / 2.0 + text_size * 0.35),
                     esc(&text)
-                ));
+                );
             }
             fields.push_str("</g>");
             if !show_bits {
@@ -239,14 +241,16 @@ fn draw(model: &PacketModel, config: &Config, options: &Options, down: bool) -> 
             let leading = if descending { block.end } else { block.start };
             let trailing = if descending { block.start } else { block.end };
             if count == 1.0 {
-                bits.push_str(&format!(
+                let _ = write!(
+                    bits,
                     "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\">{}</text>",
                     num(x + w / 2.0),
                     num(y - 4.0),
                     js::num_str(leading)
-                ));
+                );
             } else {
-                bits.push_str(&format!(
+                let _ = write!(
+                    bits,
                     "<text x=\"{}\" y=\"{}\">{}</text><text x=\"{}\" y=\"{}\" text-anchor=\"end\">{}</text>",
                     num(x),
                     num(y - 4.0),
@@ -254,7 +258,7 @@ fn draw(model: &PacketModel, config: &Config, options: &Options, down: bool) -> 
                     num(x + w),
                     num(y - 4.0),
                     js::num_str(trailing)
-                ));
+                );
             }
         }
     }
@@ -263,16 +267,18 @@ fn draw(model: &PacketModel, config: &Config, options: &Options, down: bool) -> 
     let total_height = (rows_height + title_height + 2.0 * pad).ceil();
     let mut content = String::new();
     if !fields.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-packet-fields\" font-size=\"{}\" text-anchor=\"middle\">{fields}</g>",
             js::num_str(label_size)
-        ));
+        );
     }
     if !bits.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-packet-bits\" font-size=\"{}\" fill=\"var(--_m)\">{bits}</g>",
             js::num_str(bit_size)
-        ));
+        );
     }
     // Mermaid puts a packet's title under it.
     content.push_str(&label_svg(

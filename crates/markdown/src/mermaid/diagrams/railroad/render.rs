@@ -1,6 +1,6 @@
 //! Pele's `diagrams/railroad/render.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
     common::fold,
@@ -377,7 +377,7 @@ struct Drawn<'a> {
 impl Drawn<'_> {
     fn line(&mut self, x1: f64, y: f64, x2: f64) {
         if x2 > x1 {
-            self.track += &format!("M{},{}H{}", num(x1), num(y), num(x2));
+            let _ = write!(self.track, "M{},{}H{}", num(x1), num(y), num(x2));
         }
     }
 
@@ -422,7 +422,8 @@ impl Drawn<'_> {
                             let next = &boxes[kids[i + 1]];
                             let next_offset = offset + kid.down + m.sep.max(2.0 * arc) + next.up;
                             let mid = y + offset + kid.down + m.sep.max(2.0 * arc) / 2.0;
-                            self.track += &format!(
+                            let _ = write!(
+                                self.track,
                                 "M{},{}H{}V{}H{}V{}H{}",
                                 num(start + kid.width),
                                 num(ky),
@@ -432,7 +433,8 @@ impl Drawn<'_> {
                                 num(y + next_offset),
                                 num(start)
                             );
-                            self.arrows += &format!(
+                            let _ = write!(
+                                self.arrows,
                                 "M{},{}l{},{}l{},{}z",
                                 num(start - ARROW),
                                 num(y + next_offset - ARROW / 2.0),
@@ -443,7 +445,8 @@ impl Drawn<'_> {
                             );
                             offset = next_offset;
                         } else {
-                            self.track += &format!(
+                            let _ = write!(
+                                self.track,
                                 "M{},{}H{}V{}H{}",
                                 num(start + kid.width),
                                 num(ky),
@@ -487,15 +490,15 @@ impl Drawn<'_> {
                             };
                             d += &self.south_to_east;
                             if kx > rail_in + arc {
-                                d += &format!("H{}", num(kx));
+                                let _ = write!(d, "H{}", num(kx));
                             }
-                            d += &format!("M{},{}", num(kx + kid.width), num(ky));
+                            let _ = write!(d, "M{},{}", num(kx + kid.width), num(ky));
                             if kx > rail_in + arc {
-                                d += &format!("H{}", num(rail_out - arc));
+                                let _ = write!(d, "H{}", num(rail_out - arc));
                             }
                             d += &self.east_to_north;
                             if last {
-                                d += &format!("V{}{}", num(y + arc), self.north_to_east);
+                                let _ = write!(d, "V{}{}", num(y + arc), self.north_to_east);
                             }
                             self.track += &d;
                         }
@@ -513,7 +516,8 @@ impl Drawn<'_> {
                     let kx = x + 2.0 * arc;
                     self.line(x, y, kx);
                     self.line(kx + kid.width, y, right);
-                    self.track += &format!(
+                    let _ = write!(
+                        self.track,
                         "M{},{}{}V{}{}H{}{}V{}{}",
                         num(x),
                         num(y),
@@ -536,7 +540,8 @@ impl Drawn<'_> {
                     let middle = x + laid.width / 2.0;
                     self.line(x, y, kx);
                     self.line(kx + kid.width, y, right);
-                    self.track += &format!(
+                    let _ = write!(
+                        self.track,
                         "M{},{}{}V{}{}H{}{}V{}{}",
                         num(x + arc),
                         num(y),
@@ -548,7 +553,8 @@ impl Drawn<'_> {
                         num(y + arc),
                         self.loop_up
                     );
-                    self.arrows += &format!(
+                    let _ = write!(
+                        self.arrows,
                         "M{},{}l{},{}v{}z",
                         num(middle - ARROW / 2.0),
                         num(loop_y),
@@ -557,7 +563,8 @@ impl Drawn<'_> {
                         js::num_str(ARROW)
                     );
                     if !laid.text.is_empty() {
-                        self.nodes += &format!(
+                        let _ = write!(
+                            self.nodes,
                             "<text class=\"{p}-edge-label {p}-count\" x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
                             num(middle),
                             num(loop_y + COUNT_SIZE + 3.0),
@@ -733,7 +740,8 @@ fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> 
         } else {
             String::new()
         };
-        rules += &format!(
+        let _ = write!(
+            rules,
             "<g class=\"{p}-rule\" data-id=\"{}\"><text class=\"{p}-rule-name\" x=\"{}\" y=\"{}\" font-size=\"{}\" font-weight=\"var(--_hw)\" text-anchor=\"start\">{}</text><path class=\"{p}-edge {p}-track\" d=\"{}\" fill=\"none\" stroke=\"var(--_l)\"{stroke}/>",
             esc_text(&rule.name),
             num(pad),
@@ -743,7 +751,8 @@ fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> 
             drawn.track
         );
         if !drawn.arrows.is_empty() {
-            rules += &format!(
+            let _ = write!(
+                rules,
                 "<path class=\"{p}-marker\" d=\"{}\" fill=\"var(--_l)\"/>",
                 drawn.arrows
             );
@@ -768,7 +777,8 @@ fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> 
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
     if !rules.is_empty() {
-        content += &format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-rules\" transform=\"translate(0.5,0.5)\" font-size=\"{}\" text-anchor=\"middle\">{rules}</g>",
             num(size)
         );

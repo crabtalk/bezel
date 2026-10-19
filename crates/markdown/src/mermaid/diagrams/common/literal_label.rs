@@ -6,6 +6,7 @@ use crate::mermaid::{
     svg::builder::{esc, label_svg, num, shared_style, span_style, text_style},
     text::{Label, Measure, Span},
 };
+use std::fmt::Write as _;
 
 fn is_space(c: char) -> bool {
     js::is_space(c)
@@ -208,15 +209,16 @@ pub fn left_label_svg(label: &Label, x: f64, top: f64, attrs: &str) -> String {
             if own.is_empty() {
                 text.push_str(&esc(&span.text));
             } else {
-                text.push_str(&format!("<tspan{own}>{}</tspan>", esc(&span.text)));
+                let _ = write!(text, "<tspan{own}>{}</tspan>", esc(&span.text));
             }
         }
         if !text.is_empty() {
-            body.push_str(&format!(
+            let _ = write!(
+                body,
                 "{open} x=\"{}\" y=\"{}\" text-anchor=\"start\" xml:space=\"preserve\">{text}</text>",
                 num(x),
                 num(cy + label.size * 0.35)
-            ));
+            );
         }
     }
     body

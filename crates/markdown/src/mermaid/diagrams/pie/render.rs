@@ -1,6 +1,6 @@
 //! Pele's `diagrams/pie/render.ts`.
 
-use std::f64::consts::PI;
+use std::{f64::consts::PI, fmt::Write as _};
 
 use super::model::PieModel;
 use crate::mermaid::{
@@ -240,12 +240,13 @@ fn draw(
             continue;
         }
         let end = angle + share * PI * 2.0;
-        slices.push_str(&format!(
+        let _ = write!(
+            slices,
             "<path class=\"{p}-slice\" data-id=\"{}\" d=\"{}\" fill=\"{}\"/>",
             esc_text(label),
             slice(angle, end, radius, inner),
             series_color(index as i64)
-        ));
+        );
         let mid = (angle + end) / 2.0;
         let text = js::to_fixed(share * 100.0, 0) + "%";
         if narrow[index] {
@@ -264,18 +265,20 @@ fn draw(
             let x = at.sin() * rim;
             let y = -at.cos() * rim;
             placed_outside.push((x, y, width));
-            outside.push_str(&format!(
+            let _ = write!(
+                outside,
                 "<text x=\"{}\" y=\"{}\">{text}</text>",
                 num(x),
                 num(y + small * 0.35)
-            ));
+            );
         } else {
             let r = radius * text_position;
-            labels.push_str(&format!(
+            let _ = write!(
+                labels,
                 "<text x=\"{}\" y=\"{}\">{text}</text>",
                 num(mid.sin() * r),
                 num(-mid.cos() * r + small * 0.35)
-            ));
+            );
         }
         angle = end;
     }
@@ -308,7 +311,8 @@ fn draw(
     };
     for (index, label) in legend.iter().enumerate() {
         let y = ly + index as f64 * ROW + ROW / 2.0;
-        legend_out.push_str(&format!(
+        let _ = write!(
+            legend_out,
             "<g class=\"{p}-legend-item\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{}\"/>{}</g>",
             esc_text(entries[index].0),
             num(lx),
@@ -317,7 +321,7 @@ fn draw(
             js::num_str(SWATCH),
             series_color(index as i64),
             label_svg(label, lx + SWATCH + 8.0 + label.width / 2.0, y, "")
-        ));
+        );
     }
 
     let total_width = (width + 2.0 * pad).ceil();
@@ -329,29 +333,33 @@ fn draw(
         pad + title.height / 2.0,
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
-    content.push_str(&format!(
+    let _ = write!(
+        content,
         "<g class=\"{p}-slices\" transform=\"translate({},{})\" stroke=\"var(--_bg)\" stroke-width=\"1\" stroke-linejoin=\"round\">{slices}</g>",
         num(cx),
         num(cy)
-    ));
+    );
     if !labels.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-slice-labels\" transform=\"translate({},{})\" font-size=\"{small_str}\" text-anchor=\"middle\" fill=\"var(--_bg)\">{labels}</g>",
             num(cx),
             num(cy)
-        ));
+        );
     }
     if !outside.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-slice-labels\" transform=\"translate({},{})\" font-size=\"{small_str}\" text-anchor=\"middle\">{outside}</g>",
             num(cx),
             num(cy)
-        ));
+        );
     }
     if !legend_out.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-legend\" font-size=\"{small_str}\">{legend_out}</g>"
-        ));
+        );
     }
 
     Rendered {

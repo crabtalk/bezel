@@ -106,17 +106,29 @@ pub fn runs_across(direction: Option<&str>) -> bool {
 /// Draws a diagram with room to spare, and tightly instead when that does not
 /// fit the host's width and tight is narrower.
 pub fn tighten(options: &Options, mut draw: impl FnMut(bool) -> Rendered) -> Rendered {
-    let loose = draw(false);
+    match try_tighten(options, |tight| Ok::<_, Infallible>(draw(tight))) {
+        Ok(result) => result,
+        Err(never) => match never {},
+    }
+}
+
+/// [`tighten`] for a diagram whose drawing can fail: the first failure is
+/// the answer.
+pub fn try_tighten<E>(
+    options: &Options,
+    mut draw: impl FnMut(bool) -> Result<Rendered, E>,
+) -> Result<Rendered, E> {
+    let loose = draw(false)?;
     let Some(available) = available(options) else {
-        return loose;
+        return Ok(loose);
     };
     if loose.width <= available {
-        return loose;
+        return Ok(loose);
     }
-    let tight = draw(true);
-    if tight.width < loose.width {
+    let tight = draw(true)?;
+    Ok(if tight.width < loose.width {
         tight
     } else {
         loose
-    }
+    })
 }

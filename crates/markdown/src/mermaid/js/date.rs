@@ -2,9 +2,16 @@
 //! for an invalid date, and its calendar fields in the host's time zone, as
 //! `chrono::Local` reports it. `Date.parse` follows V8's parser.
 //!
-//! On `wasm32-unknown-unknown` chrono knows no zone, and local time is UTC.
+//! On `wasm32-unknown-unknown` the zone is the page's, through `Date`.
+//!
+//! Offsets are cached per thread, as V8's `DateCache` caches them: two
+//! instants at most [`SPAN`] apart with the same offset are taken to have no
+//! transition between them. [`forget_zone`] empties the cache; a change to
+//! the host's zone shows from the next parse or render.
 
-use chrono::{DateTime, LocalResult, Offset, TimeDelta, TimeZone};
+use std::cell::Cell;
+
+use chrono::{DateTime, Offset, TimeZone};
 
 use crate::mermaid::util::chars::is_space;
 
@@ -13,6 +20,18 @@ const MS_PER_DAY: f64 = 86_400_000.0;
 const MAX_TIME: f64 = 8.64e15;
 /// V8's `kNone` for a parsed field that is absent.
 const NONE: i64 = i32::MAX as i64;
+/// V8's `kDefaultDSTDeltaInSec`.
+const SPAN: f64 = 19.0 * MS_PER_DAY;
+
+thread_local! {
+    /// Instants `lo..=hi`, in milliseconds, and the offset all of them have.
+    static ZONE: Cell<Option<(f64, f64, f64)>> = const { Cell::new(None) };
+}
+
+/// Empties the cache of the host zone's offsets.
+pub(crate) fn forget_zone() {
+    ZONE.set(None);
+}
 
 /// `ToIntegerOrInfinity`.
 fn integer(x: f64) -> f64 {
@@ -105,14 +124,33 @@ fn within_day(tv: f64) -> f64 {
     tv.rem_euclid(MS_PER_DAY)
 }
 
-/// The host zone's offset from UTC at the instant `t`, in milliseconds: the
-/// `LocalTZA(t, true)` of `LocalTime(t)`. `0` outside chrono's range.
-fn offset_at(t: f64) -> f64 {
+/// The host zone's offset from UTC at the instant `t`, in milliseconds, as
+/// chrono reads it. `0` outside chrono's range.
+fn zone_offset(t: f64) -> f64 {
     let Some(utc) = DateTime::from_timestamp_millis(t as i64) else {
         return 0.0;
     };
     let offset = chrono::Local.offset_from_utc_datetime(&utc.naive_utc());
     f64::from(offset.fix().local_minus_utc()) * 1000.0
+}
+
+/// [`zone_offset`] through the cache: the `LocalTZA(t, true)` of
+/// `LocalTime(t)`.
+fn offset_at(t: f64) -> f64 {
+    let cached = ZONE.get();
+    if let Some((lo, hi, offset)) = cached
+        && (lo..=hi).contains(&t)
+    {
+        return offset;
+    }
+    let offset = zone_offset(t);
+    let span = match cached {
+        Some((lo, hi, known)) if known == offset && t > hi && t - hi <= SPAN => (lo, t, offset),
+        Some((lo, hi, known)) if known == offset && t < lo && lo - t <= SPAN => (t, hi, offset),
+        _ => (t, t, offset),
+    };
+    ZONE.set(Some(span));
+    offset
 }
 
 /// `LocalTime(t)`.
@@ -127,19 +165,20 @@ fn utc(t: f64) -> f64 {
     if !t.is_finite() {
         return f64::NAN;
     }
-    let Some(wall) = DateTime::from_timestamp_millis(t as i64).map(|d| d.naive_utc()) else {
+    if DateTime::from_timestamp_millis(t as i64).is_none() {
         return t;
+    }
+    // The offsets a day either side; a wall time is an instant under each
+    // of them that holds at that instant.
+    let before = offset_at(t - MS_PER_DAY);
+    let after = offset_at(t + MS_PER_DAY);
+    let holds = |offset: f64| offset_at(t - offset) == offset;
+    let offset = match (holds(before), holds(after)) {
+        (true, true) => before.max(after),
+        (false, true) => after,
+        _ => before,
     };
-    let seconds = |offset: chrono::FixedOffset| f64::from(offset.local_minus_utc());
-    let offset = match chrono::Local.offset_from_local_datetime(&wall) {
-        LocalResult::Single(offset) => seconds(offset.fix()),
-        LocalResult::Ambiguous(a, b) => seconds(a.fix()).max(seconds(b.fix())),
-        LocalResult::None => {
-            let before = wall - TimeDelta::days(1);
-            seconds(chrono::Local.offset_from_utc_datetime(&before).fix())
-        }
-    };
-    t - offset * 1000.0
+    t - offset
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

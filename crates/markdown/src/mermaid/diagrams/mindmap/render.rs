@@ -16,6 +16,7 @@ use crate::mermaid::{
     },
     text::{Label, Style, icon_markup, layout_label},
 };
+use std::fmt::Write as _;
 
 /// Indexed by Mermaid's node type. A node without delimiters is text on a
 /// line, except the root.
@@ -310,10 +311,11 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
         if body.is_empty() {
             return;
         }
-        out.push_str(&format!(
+        let _ = write!(
+            out,
             "<g class=\"{p}-branch {p}-section-{}\"><g class=\"{p}-edges\" fill=\"none\" stroke=\"{color}\" stroke-width=\"1.5\">{edges}</g>{body}</g>",
             section.unwrap_or(0)
-        ));
+        );
         edges.clear();
         body.clear();
     };
@@ -373,7 +375,8 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
             // The next link carries on from where this one leaves the trunk,
             // so the trunk has no gap.
             trunk[p] = y2 - bend;
-            edges.push_str(&format!(
+            let _ = write!(
+                edges,
                 "<path class=\"{}-edge\" d=\"M{},{}V{}Q{},{} {},{}H{}\"/>",
                 crate::mermaid::PREFIX,
                 num(x1),
@@ -384,7 +387,7 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
                 num(x1 + bend),
                 num(y2),
                 num(x2)
-            ));
+            );
         } else if i > 0 {
             if parent[i] == 0 {
                 color = series_color(node.section.unwrap_or(0) as i64);
@@ -410,7 +413,8 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
                 };
             let y2 = top + anchor[i];
             let mid = num((x1 + x2) / 2.0);
-            edges.push_str(&format!(
+            let _ = write!(
+                edges,
                 "<path class=\"{}-edge\" d=\"M{},{}C{mid},{} {mid},{} {},{}\"/>",
                 crate::mermaid::PREFIX,
                 num(x1),
@@ -419,7 +423,7 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
                 num(y2),
                 num(x2),
                 num(y2)
-            ));
+            );
         }
 
         let pill = shape.is_empty() && !node.children.is_empty();
@@ -473,7 +477,9 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
         } else {
             "text"
         };
-        let group = format!(
+        let group = if i > 0 { &mut body } else { &mut out };
+        let _ = write!(
+            group,
             "<g class=\"{p}-node {p}-shape-{kind}{}{}\" data-id=\"{}\" transform=\"translate({},{})\">{inner}{}</g>",
             if i > 0 {
                 String::new()
@@ -490,11 +496,6 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
                 label_svg(label, shift, dy[i], &format!(" class=\"{p}-label\""))
             }
         );
-        if i > 0 {
-            body.push_str(&group);
-        } else {
-            out.push_str(&group);
-        }
     }
 
     let title = layout_label(

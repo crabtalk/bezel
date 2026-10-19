@@ -1,6 +1,6 @@
 //! Pele's `diagrams/class/render.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use indexmap::IndexMap;
 
@@ -923,7 +923,8 @@ fn draw(
                     i,
                 );
             }
-            clusters += &format!(
+            let _ = write!(
+                clusters,
                 "<g class=\"{p}-cluster {p}-namespace\" data-id=\"{id}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"/>{}</g>",
                 num(x - w / 2.0),
                 num(y - h / 2.0),
@@ -943,7 +944,8 @@ fn draw(
         } else if node.shape == NodeShape::Note {
             let r = w / 2.0;
             let t = -h / 2.0;
-            nodes_out += &format!(
+            let _ = write!(
+                nodes_out,
                 "<g class=\"{p}-node {p}-note\" data-id=\"{id}\"{at}><path d=\"M{},{}H{}L{},{}V{}H{}Z\" fill=\"var(--_a)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"/><path d=\"M{},{}V{}H{}\" fill=\"none\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"/>{}</g>",
                 num(-r),
                 num(t),
@@ -964,7 +966,8 @@ fn draw(
                 )
             );
         } else {
-            nodes_out += &format!(
+            let _ = write!(
+                nodes_out,
                 "<g class=\"{p}-node {p}-interface\" data-id=\"{id}\"{at}>{}</g>",
                 label_svg(
                     &view.label,
@@ -1030,7 +1033,8 @@ fn draw(
             Pattern::Dotted => " stroke-dasharray=\"2 4\"",
             Pattern::Solid => "",
         };
-        edges_out += &format!(
+        let _ = write!(
+            edges_out,
             "<g class=\"{p}-edge{}\" data-id=\"{}\"><path d=\"{}\"{attrs}/>{}{}</g>",
             if edge.pattern == Pattern::Dotted {
                 format!(" {p}-note-edge")
@@ -1049,7 +1053,8 @@ fn draw(
 
     let mut cards_out = String::new();
     for item in &cards {
-        cards_out += &format!(
+        let _ = write!(
+            cards_out,
             "<text class=\"{p}-cardinality\" x=\"{}\" y=\"{}\" text-anchor=\"middle\">{}</text>",
             num(item.x + ox),
             num(item.y + oy + tiny * 0.35),
@@ -1059,29 +1064,35 @@ fn draw(
 
     let mut content = String::new();
     if !clusters.is_empty() {
-        content += &format!("<g class=\"{p}-clusters\">{clusters}</g>");
+        let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
     }
     if !edges_out.is_empty() {
-        content += &format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-edges\" fill=\"none\" stroke=\"{LINE}\" stroke-linecap=\"round\">{edges_out}</g>"
         );
     }
     if !struck_titles.is_empty() {
-        content += &format!("<g class=\"{p}-cluster-titles\">{struck_titles}</g>");
+        let _ = write!(
+            content,
+            "<g class=\"{p}-cluster-titles\">{struck_titles}</g>"
+        );
     }
     if !labels_out.is_empty() {
-        content += &format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
             js::num_str(small)
         );
     }
     if !cards_out.is_empty() {
-        content += &format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-cardinalities\" font-size=\"{}\" fill=\"var(--_m)\">{cards_out}</g>",
             js::num_str(tiny)
         );
     }
-    content += &format!("<g class=\"{p}-nodes\">{nodes_out}</g>");
+    let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");
     let titled = with_title(
         model.title.as_deref(),
         measure,
@@ -1145,7 +1156,8 @@ fn class_svg(
             Some(stroke) if !stroke.is_empty() => format!(" style=\"stroke:{}\"", esc(stroke)),
             _ => String::new(),
         };
-        body += &format!(
+        let _ = write!(
+            body,
             "<path class=\"{p}-divider\" d=\"M{},{}H{}M{},{}H{}\" fill=\"none\" stroke=\"var(--_b)\"{stroke}/>",
             num(left),
             num(first),
@@ -1157,7 +1169,8 @@ fn class_svg(
     }
     let mut y = top + TITLE_PAD;
     for annotation in &view.annotations {
-        body += &format!(
+        let _ = write!(
+            body,
             "<text class=\"{p}-annotation\" x=\"0\" y=\"{}\" text-anchor=\"middle\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
             num(y + tiny_height / 2.0 + tiny * 0.35),
             js::num_str(tiny),
@@ -1198,7 +1211,8 @@ fn class_svg(
                 "*" => format!(" {p}-abstract\" font-style=\"italic\"{}", style.text),
                 _ => format!("\"{}", style.text),
             };
-            out += &format!(
+            let _ = write!(
+                out,
                 "<text class=\"{p}-member {p}-{kind}{mark} x=\"{}\" y=\"{}\">{}</text>",
                 num(left + PAD_X),
                 num(baseline),
@@ -1209,7 +1223,8 @@ fn class_svg(
         out
     };
     if !view.attributes.is_empty() || !view.methods.is_empty() {
-        body += &format!(
+        let _ = write!(
+            body,
             "<g class=\"{p}-members\" font-size=\"{}\">{}{}</g>",
             js::num_str(member_size),
             lines(&view.attributes, "attribute", first),

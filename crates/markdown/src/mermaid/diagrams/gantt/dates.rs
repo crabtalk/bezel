@@ -5,6 +5,8 @@
 //! is accepted only when formatting the parsed result gives back the input.
 //! Pele's `diagrams/gantt/dates.ts`.
 
+use std::{cell::RefCell, rc::Rc};
+
 use crate::mermaid::js::{self, Lazy, date::Date};
 
 pub const MONTHS: [&str; 12] = [
@@ -58,6 +60,14 @@ static MATCH_SIGNED: Lazy = Lazy::new(r"[+-]?\d+", "");
 static MATCH_OFFSET: Lazy = Lazy::new(r"[+-]\d\d:?(\d\d)?|Z", "");
 static MATCH_WORD: Lazy = Lazy::new(r"\d*[^-_:/,()\s\d]+", "");
 static RE_OFFSET_PARTS: Lazy = Lazy::new(r"([+-]|\d\d)", "g");
+/// How many formats [`compiled`] keeps.
+const COMPILED_KEPT: usize = 4;
+
+thread_local! {
+    /// The formats compiled last, newest at the end.
+    static COMPILED: RefCell<Vec<(String, Compiled)>> =
+        const { RefCell::new(Vec::new()) };
+}
 static RE_DIGITS: Lazy = Lazy::new(r"\d+", "");
 
 /// A unit `add` takes.
@@ -343,6 +353,9 @@ enum Step {
     Read(&'static Lazy, Read),
 }
 
+/// A format's steps, `None` for one dayjs fails on.
+type Compiled = Rc<Option<Vec<Step>>>;
+
 fn reader(token: &str) -> Option<(&'static Lazy, Read)> {
     Some(match token {
         "A" => (&MATCH_WORD, Read::Afternoon("PM")),
@@ -438,6 +451,22 @@ fn read(f: &mut Fields, how: Read, input: &str) -> bool {
     true
 }
 
+/// [`compile`], kept for the formats used last.
+fn compiled(template: &str) -> Compiled {
+    COMPILED.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        if let Some((_, steps)) = kept.iter().find(|(text, _)| text == template) {
+            return steps.clone();
+        }
+        let steps = Rc::new(compile(template));
+        if kept.len() == COMPILED_KEPT {
+            kept.remove(0);
+        }
+        kept.push((template.to_string(), steps.clone()));
+        steps
+    })
+}
+
 fn compile(template: &str) -> Option<Vec<Step>> {
     // dayjs expands localized tokens through a locale table the English
     // locale does not have, and fails.
@@ -476,11 +505,12 @@ fn loose(input: &str, template: &str, now: Date) -> Option<Date> {
         let scale = if template == "X" { 1000.0 } else { 1.0 };
         return Some(Date::new(scale * js::number(input)));
     }
-    let steps = compile(template)?;
+    let steps = compiled(template);
+    let steps = steps.as_ref().as_ref()?;
     let mut f = Fields::default();
     let mut rest = input.to_string();
     let mut start = 0;
-    for step in &steps {
+    for step in steps {
         let (re, how) = match step {
             Step::Literal(text) => {
                 start += js::len(text);

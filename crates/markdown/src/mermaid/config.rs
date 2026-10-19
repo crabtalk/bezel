@@ -169,6 +169,45 @@ impl Value {
         }
     }
 
+    /// `JSON.stringify(value)`.
+    pub fn to_json(&self) -> String {
+        let mut out = String::new();
+        self.write_json(&mut out);
+        out
+    }
+
+    fn write_json(&self, out: &mut String) {
+        match self {
+            Self::Null => out.push_str("null"),
+            Self::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+            Self::Number(n) if n.is_finite() => out.push_str(&js::num_str(*n)),
+            Self::Number(_) => out.push_str("null"),
+            Self::String(text) => write_json_string(text, out),
+            Self::List(items) => {
+                out.push('[');
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    item.write_json(out);
+                }
+                out.push(']');
+            }
+            Self::Map(map) => {
+                out.push('{');
+                for (i, (key, value)) in map.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    write_json_string(key, out);
+                    out.push(':');
+                    value.write_json(out);
+                }
+                out.push('}');
+            }
+        }
+    }
+
     /// `Number(value)`.
     pub fn to_number(&self) -> f64 {
         match self {
@@ -213,6 +252,25 @@ impl Serialize for Map {
         }
         out.end()
     }
+}
+
+/// A string as `JSON.stringify` quotes it.
+fn write_json_string(text: &str, out: &mut String) {
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
 }
 
 /// `JSON.parse(text)`, or `None` where it would throw.

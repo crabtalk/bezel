@@ -13,15 +13,15 @@ use markdown::mermaid::{
 
 #[test]
 fn numbers_print_to_two_decimals() {
-    assert_eq!(num(0.0), "0");
-    assert_eq!(num(1.005), "1");
-    assert_eq!(num(1.5), "1.5");
-    assert_eq!(num(12.345), "12.35");
-    assert_eq!(num(-12.345), "-12.34");
-    assert_eq!(num(-0.004), "0");
-    assert_eq!(num(0.1), "0.1");
-    assert_eq!(num(0.05), "0.05");
-    assert_eq!(num(1e12), "1000000000000");
+    assert_eq!(num(0.0).to_string(), "0");
+    assert_eq!(num(1.005).to_string(), "1");
+    assert_eq!(num(1.5).to_string(), "1.5");
+    assert_eq!(num(12.345).to_string(), "12.35");
+    assert_eq!(num(-12.345).to_string(), "-12.34");
+    assert_eq!(num(-0.004).to_string(), "0");
+    assert_eq!(num(0.1).to_string(), "0.1");
+    assert_eq!(num(0.05).to_string(), "0.05");
+    assert_eq!(num(1e12).to_string(), "1000000000000");
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Pele's `diagrams/git/render.ts`.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Write as _};
 
 use super::db::{GitCommit, GitModel, commit_type};
 use crate::mermaid::{
@@ -356,21 +356,23 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
                 px(end + TAIL, c),
                 py(end + TAIL, c),
             );
-            branches.push_str(&format!(
+            let _ = write!(
+                branches,
                 "<g class=\"{p}-branch\" data-id=\"{}\"><path class=\"{p}-lane\" d=\"M{}L{}\" stroke=\"{color}\" stroke-dasharray=\"2 4\"/>",
                 esc_text(&model.lanes[i]),
                 point(-LABEL_GAP, c),
                 point(end + TAIL, c)
-            ));
+            );
             if !name.lines.is_empty() {
                 bounds.grow(cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0);
-                branches.push_str(&format!(
+                let _ = write!(
+                    branches,
                     "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"{color}\"/>",
                     num(cx - w / 2.0),
                     num(cy - h / 2.0),
                     num(w),
                     num(h)
-                ));
+                );
                 branches.push_str(&label_svg(
                     name,
                     cx,
@@ -429,12 +431,13 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
             let c1 = cross[parent.lane];
             let m1 = parent.m;
             if parent.lane == view.lane {
-                lines.push_str(&format!(
+                let _ = write!(
+                    lines,
                     "<path class=\"{p}-edge\" d=\"M{}L{}\" stroke=\"{}\"/>",
                     point(m1, c1),
                     point(m2, c2),
                     series_color(view.lane as i64)
-                ));
+                );
                 continue;
             }
             let merged = j > 0 && commit.kind == commit_type::MERGE;
@@ -442,22 +445,24 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
             let mut d = format!("M{}", point(m1, c1));
             if m2 <= m1 {
                 let mid = (m1 + m2) / 2.0;
-                d.push_str(&format!(
+                let _ = write!(
+                    d,
                     "C{} {} {}",
                     point(mid, c1),
                     point(mid, c2),
                     point(m2, c2)
-                ));
+                );
             } else if !merged && !busy(view.lane, m1, m2) {
                 // Leaves the parent at once and runs along the child's lane.
                 let s = CURVE.min(m2 - m1);
-                d.push_str(&format!(
+                let _ = write!(
+                    d,
                     "C{} {} {}L{}",
                     point(m1 + s / 2.0, c1),
                     point(m1 + s / 2.0, c2),
                     point(m1 + s, c2),
                     point(m2, c2)
-                ));
+                );
             } else {
                 // Turns in just before the child, or before its tags when it
                 // comes from their side.
@@ -478,22 +483,24 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
                         c2 - lo[view.lane] - GAP / 2.0
                     };
                     s = CURVE.min((to - m1) / 2.0);
-                    d.push_str(&format!(
+                    let _ = write!(
+                        d,
                         "C{} {} {}",
                         point(m1 + s / 2.0, c1),
                         point(m1 + s / 2.0, along),
                         point(m1 + s, along)
-                    ));
+                    );
                 }
-                d.push_str(&format!(
+                let _ = write!(
+                    d,
                     "L{}C{} {} {}",
                     point(to - s, along),
                     point(to - s / 2.0, along),
                     point(to - s / 2.0, c2),
                     point(to, c2)
-                ));
+                );
                 if to < m2 {
-                    d.push_str(&format!("L{}", point(m2, c2)));
+                    let _ = write!(d, "L{}", point(m2, c2));
                 }
             }
             let class = if merged {
@@ -503,7 +510,8 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
             } else {
                 String::new()
             };
-            curves.push_str(&format!(
+            let _ = write!(
+                curves,
                 "<path class=\"{p}-edge{class}\" d=\"{d}\" stroke=\"{}\"{}/>",
                 series_color(if merged { parent.lane } else { view.lane } as i64),
                 if picked {
@@ -511,7 +519,7 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
                 } else {
                     ""
                 }
-            ));
+            );
         }
     }
 
@@ -559,23 +567,25 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
                     ax + k,
                     if flip { ay + k } else { ay + reach },
                 );
-                body.push_str(&format!(
+                let _ = write!(
+                    body,
                     "<g class=\"{p}-commit-label\" transform=\"rotate({} {} {})\">{}{}</g>",
                     if flip { 45 } else { -45 },
                     num(ax),
                     num(ay),
                     back(ax - w / 2.0, ay),
                     label_svg(label, ax - w / 2.0, ay, "")
-                ));
+                );
             } else {
                 let cx = if vertical { x - DOT - 6.0 - w / 2.0 } else { x };
                 let cy = if vertical { y } else { y + DOT + 6.0 + h / 2.0 };
                 bounds.grow(cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0);
-                body.push_str(&format!(
+                let _ = write!(
+                    body,
                     "<g class=\"{p}-commit-label\">{}{}</g>",
                     back(cx, cy),
                     label_svg(label, cx, cy, "")
-                ));
+                );
             }
         }
 
@@ -595,7 +605,8 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
             let cy = if vertical { y } else { y - offset - h / 2.0 };
             offset += if vertical { w + 4.0 } else { h + 3.0 };
             bounds.grow(left, cy - h / 2.0, left + w, cy + h / 2.0);
-            body.push_str(&format!(
+            let _ = write!(
+                body,
                 "<g class=\"{p}-tag\"><path d=\"M{},{}L{},{}H{}V{}H{}Z\" fill=\"var(--_s)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"/><circle cx=\"{}\" cy=\"{}\" r=\"1.5\" fill=\"var(--_b)\"/>{}</g>",
                 num(left),
                 num(cy),
@@ -612,7 +623,7 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
                     cy,
                     " fill=\"var(--_fg)\""
                 )
-            ));
+            );
         }
 
         let merge = if commit.kind == commit_type::MERGE && kind != commit_type::MERGE {
@@ -620,11 +631,12 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
         } else {
             String::new()
         };
-        commits.push_str(&format!(
+        let _ = write!(
+            commits,
             "<g class=\"{p}-commit {p}-commit-{}{merge}\" data-id=\"{}\">{body}</g>",
             CLASSES.get(kind as usize).unwrap_or(&CLASSES[0]),
             esc_text(&commit.id)
-        ));
+        );
     }
 
     if bounds.min_x > bounds.max_x {
@@ -661,27 +673,31 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
         pad + title.height / 2.0,
         &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
     );
-    content.push_str(&format!(
+    let _ = write!(
+        content,
         "<g transform=\"translate({},{})\">",
         num(dx),
         num(dy)
-    ));
+    );
     if !branches.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-branches\" fill=\"none\" font-size=\"{}\">{branches}</g>",
             js::num_str(medium)
-        ));
+        );
     }
     if !curves.is_empty() || !lines.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-edges\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\">{curves}{lines}</g>"
-        ));
+        );
     }
     if !commits.is_empty() {
-        content.push_str(&format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-commits\" font-size=\"{}\" fill=\"var(--_m)\">{commits}</g>",
             js::num_str(small)
-        ));
+        );
     }
     content.push_str("</g>");
 

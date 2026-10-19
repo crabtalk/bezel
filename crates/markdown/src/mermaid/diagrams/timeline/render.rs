@@ -17,6 +17,7 @@ use crate::mermaid::{
     },
     text::{Label, Style},
 };
+use std::fmt::Write as _;
 
 const PAD_X: f64 = 12.0;
 const PAD_Y: f64 = 8.0;
@@ -310,12 +311,13 @@ fn draw(model: &TimelineModel, config: &Config, options: &Options, vertical: boo
                 for label in &event_labels[i] {
                     let eh = event_height(label);
                     last = ey + eh / 2.0;
-                    d += &format!("M{},{}H{}", num(spine_x), num(last), num(events_x));
+                    let _ = write!(d, "M{},{}H{}", num(spine_x), num(last), num(events_x));
                     cards += &event(label, &color, events_x, ey, eh);
                     ey += eh + EVENT_GAP;
                 }
                 if !cards.is_empty() {
-                    d += &format!(
+                    let _ = write!(
+                        d,
                         "M{},{}H{}V{}",
                         num(axis_x),
                         num(cy),
@@ -325,7 +327,7 @@ fn draw(model: &TimelineModel, config: &Config, options: &Options, vertical: boo
                 }
                 body += &open_period(i);
                 body += &period(i, &color, left, y, h);
-                body += &format!("<path class=\"{p}-edge\" d=\"{d}\"{LINE}/>");
+                let _ = write!(body, "<path class=\"{p}-edge\" d=\"{d}\"{LINE}/>");
                 body += &dot(axis_x, cy, &color);
                 body += &cards;
                 body += "</g>";
@@ -406,7 +408,7 @@ fn draw(model: &TimelineModel, config: &Config, options: &Options, vertical: boo
                 for event_label in &event_labels[i] {
                     let eh = event_height(event_label);
                     if ey > events_y {
-                        d += &format!("M{},{}V{}", num(cx), num(ey - EVENT_GAP), num(ey));
+                        let _ = write!(d, "M{},{}V{}", num(cx), num(ey - EVENT_GAP), num(ey));
                     }
                     cards += &event(event_label, &color, x, ey, eh);
                     ey += eh + EVENT_GAP;
@@ -414,7 +416,7 @@ fn draw(model: &TimelineModel, config: &Config, options: &Options, vertical: boo
                 bottom = bottom.max(ey - EVENT_GAP);
                 body += &open_period(i);
                 body += &period(i, &color, x, periods_y, chip_h);
-                body += &format!("<path class=\"{p}-edge\" d=\"{d}\"{LINE}/>");
+                let _ = write!(body, "<path class=\"{p}-edge\" d=\"{d}\"{LINE}/>");
                 body += &dot(cx, axis_y, &color);
                 body += &cards;
                 body += "</g>";

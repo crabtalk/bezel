@@ -12,16 +12,37 @@ const BOLD: &str = " font-weight=\"var(--_w)\"";
 const ITALIC: &str = " font-style=\"italic\"";
 
 fn needs_escape(c: char) -> bool {
-    matches!(c, '&' | '<' | '>' | '"' | '\u{0}'..='\u{8}' | '\u{b}' | '\u{c}' | '\u{e}'..='\u{1f}' | '\u{7f}')
+    c.is_ascii() && needs_escape_byte(c as u8)
+}
+
+fn needs_escape_byte(b: u8) -> bool {
+    (b < 0x20 && b != b'\t' && b != b'\n' && b != b'\r')
+        | (b == b'&')
+        | (b == b'<')
+        | (b == b'>')
+        | (b == b'"')
+        | (b == 0x7f)
 }
 
 /// Escapes text for XML and drops the control characters XML does not
 /// allow.
 pub fn esc(text: &str) -> String {
-    if !text.chars().any(needs_escape) {
-        return text.to_string();
+    let mut out = String::with_capacity(text.len());
+    push_esc(&mut out, text);
+    out
+}
+
+/// [`esc`] appended to `out`.
+pub fn push_esc(out: &mut String, text: &str) {
+    // Without an early exit, so the check runs over many bytes at a time.
+    if !text
+        .bytes()
+        .fold(false, |found, b| found | needs_escape_byte(b))
+    {
+        out.push_str(text);
+        return;
     }
-    let mut out = String::with_capacity(text.len() + 8);
+    out.reserve(text.len() + 8);
     for c in text.chars() {
         match c {
             '&' => out.push_str("&amp;"),
@@ -32,7 +53,6 @@ pub fn esc(text: &str) -> String {
             c => out.push(c),
         }
     }
-    out
 }
 
 /// Escapes text that is only ever read as text — a tooltip, an accessible
@@ -44,39 +64,62 @@ pub fn esc_text(text: &str) -> String {
 }
 
 /// A coordinate to two decimals, without trailing zeros.
-pub fn num(value: f64) -> String {
-    let mut out = String::new();
-    push_num(&mut out, value);
-    out
+pub fn num(value: f64) -> Num {
+    Num(value)
 }
 
 /// [`num`] appended to `out`.
 pub fn push_num(out: &mut String, value: f64) {
-    let n = js::round(value * 100.0);
-    if n == 0.0 {
-        out.push('0');
-        return;
-    }
-    let (negative, m) = if n > 0.0 { (false, n) } else { (true, -n) };
-    if m < 1e11 {
-        let q = (m / 100.0).floor();
-        let r = (m - q * 100.0) as u32;
-        if negative {
-            out.push('-');
+    let _ = write!(out, "{}", Num(value));
+}
+
+/// A coordinate as [`num`] writes it.
+#[derive(Clone, Copy, Debug)]
+pub struct Num(f64);
+
+impl std::fmt::Display for Num {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = js::round(self.0 * 100.0);
+        if n == 0.0 {
+            return f.write_str("0");
         }
-        let _ = write!(out, "{}", q as u64);
+        let (negative, m) = if n > 0.0 { (false, n) } else { (true, -n) };
+        if m >= 1e11 {
+            return f.write_str(&js::num_str(n / 100.0));
+        }
+        // Integer digits, then up to two decimals, written from the right.
+        let mut buf = [0u8; 16];
+        let mut at = buf.len();
+        let mut q = (m / 100.0).floor() as u64;
+        let mut r = (m as u64 - q * 100) as u8;
         if r != 0 {
             if r.is_multiple_of(10) {
-                let _ = write!(out, ".{}", r / 10);
-            } else if r < 10 {
-                let _ = write!(out, ".0{r}");
+                r /= 10;
             } else {
-                let _ = write!(out, ".{r}");
+                at -= 1;
+                buf[at] = b'0' + r % 10;
+                r /= 10;
+            }
+            at -= 1;
+            buf[at] = b'0' + r;
+            at -= 1;
+            buf[at] = b'.';
+        }
+        loop {
+            at -= 1;
+            buf[at] = b'0' + (q % 10) as u8;
+            q /= 10;
+            if q == 0 {
+                break;
             }
         }
-        return;
+        if negative {
+            at -= 1;
+            buf[at] = b'-';
+        }
+        // Only ASCII digits, a point and a sign were written.
+        f.write_str(std::str::from_utf8(&buf[at..]).unwrap_or_default())
     }
-    out.push_str(&js::num_str(n / 100.0));
 }
 
 /// A measured label as SVG text centred on (`cx`, `cy`). `attrs` go on the

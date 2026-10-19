@@ -1,6 +1,7 @@
 //! Pele's `diagrams/gantt/render.ts`.
 
 use indexmap::IndexMap;
+use std::fmt::Write as _;
 
 use super::{
     axis::{auto_ticks, interval_ticks, time_format},
@@ -400,7 +401,8 @@ pub fn render_gantt(
     let top_y = plot_top - grid_lead - tick_height / 2.0 - 2.0;
     for &t in &ticks {
         let tx = x(t);
-        grid += &format!(
+        let _ = write!(
+            grid,
             "M{},{}V{}",
             num(tx),
             num(plot_top - grid_lead),
@@ -417,13 +419,15 @@ pub fn render_gantt(
         extent = extent.max(last_right);
         let body = format!("text-anchor=\"middle\">{}</text>", esc(&label));
         last_label = label;
-        axis_bottom += &format!(
+        let _ = write!(
+            axis_bottom,
             "<text x=\"{}\" y=\"{}\" {body}",
             num(tx),
             num(bottom_y + tick_size * 0.35)
         );
         if top_axis {
-            axis_top += &format!(
+            let _ = write!(
+                axis_top,
                 "<text x=\"{}\" y=\"{}\" {body}",
                 num(tx),
                 num(top_y + tick_size * 0.35)
@@ -459,7 +463,8 @@ pub fn render_gantt(
             vert_ends[line] = cx + label.width / 2.0;
         }
         extent = extent.max(vert_ends[line]);
-        vert_lines += &format!(
+        let _ = write!(
+            vert_lines,
             "<path class=\"{p}-vert\" data-id=\"{}\" d=\"M{},{}V{}\"/>",
             esc_text(&task.id),
             num(vx),
@@ -503,7 +508,8 @@ pub fn render_gantt(
         let y = plot_top + row as f64 * row_height;
         let h = (end - row) as f64 * row_height;
         if categories.len() > 1 || !section.is_empty() {
-            bands += &format!(
+            let _ = write!(
+                bands,
                 "<rect class=\"{p}-section {p}-section-{}\" x=\"0\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>",
                 js::num_str(index),
                 num(y),
@@ -547,7 +553,8 @@ pub fn render_gantt(
                 let ex0 = left.max(x(day_start.time()));
                 let ex1 = right.min(x(day_end.time()));
                 if ex1 > ex0 {
-                    excluded += &format!(
+                    let _ = write!(
+                        excluded,
                         "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>",
                         num(ex0),
                         num(plot_top),
@@ -588,22 +595,22 @@ pub fn render_gantt(
         };
         let mut classes = format!("{p}-task");
         if !state.is_empty() {
-            classes += &format!(" {p}-{state}");
+            let _ = write!(classes, " {p}-{state}");
         }
         if task.crit {
-            classes += &format!(" {p}-crit");
+            let _ = write!(classes, " {p}-crit");
         }
         if task.milestone {
-            classes += &format!(" {p}-milestone");
+            let _ = write!(classes, " {p}-milestone");
         }
         if task.classes.iter().any(|class| class == "clickable") {
-            classes += &format!(" {p}-clickable");
+            let _ = write!(classes, " {p}-clickable");
         }
 
         let mut shape = String::new();
         let mut text_fill = "";
         if bar.x0.is_nan() {
-            classes += &format!(" {p}-unscheduled");
+            let _ = write!(classes, " {p}-unscheduled");
             text_fill = " fill=\"var(--_m)\"";
         } else {
             // A critical task takes the critical color in place of the
@@ -667,7 +674,8 @@ pub fn render_gantt(
         if let Some(url) = model.links.get(&task.id) {
             body = linked(&body, url, &task.id, &mut links, options, "");
         }
-        tasks_out += &format!(
+        let _ = write!(
+            tasks_out,
             "<g class=\"{classes}\" data-id=\"{}\">{body}</g>",
             esc_text(&task.id)
         );
@@ -690,7 +698,8 @@ pub fn render_gantt(
             num(plot_bottom)
         );
         if style.is_empty() {
-            today += &format!(
+            let _ = write!(
+                today,
                 "<path d=\"M{},{}H{}L{},{}Z\" fill=\"var(--_c)\"/>",
                 num(tx - 4.0),
                 num(top - 5.0),
@@ -704,7 +713,8 @@ pub fn render_gantt(
 
     let mut axis_line = format!("M{},{}H{}", num(left), num(plot_bottom), num(right));
     if top_axis {
-        axis_line += &format!(
+        let _ = write!(
+            axis_line,
             "M{},{}H{}",
             num(left),
             num(plot_top - grid_lead),
@@ -713,34 +723,43 @@ pub fn render_gantt(
     }
     let mut content = label_svg(&title, width / 2.0, pad + title.height / 2.0, &title_attrs);
     if !bands.is_empty() {
-        content += &format!("<g class=\"{p}-sections\">{bands}</g>");
+        let _ = write!(content, "<g class=\"{p}-sections\">{bands}</g>");
     }
     if !excluded.is_empty() {
-        content += &format!("<g class=\"{p}-excluded\" fill=\"var(--_a)\">{excluded}</g>");
+        let _ = write!(
+            content,
+            "<g class=\"{p}-excluded\" fill=\"var(--_a)\">{excluded}</g>"
+        );
     }
-    content += &format!(
+    let _ = write!(
+        content,
         "<g class=\"{p}-grid\" fill=\"none\"><path d=\"{grid}\" stroke=\"var(--_b)\" stroke-dasharray=\"1 3\"/><path d=\"{axis_line}\" stroke=\"var(--_b)\"/></g>"
     );
     if !vert_lines.is_empty() {
-        content += &format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-verts\" fill=\"none\" stroke=\"var(--_l)\" stroke-width=\"1.5\" stroke-dasharray=\"4 3\">{vert_lines}</g>"
         );
     }
     content += &today;
-    content += &format!(
+    let _ = write!(
+        content,
         "<g class=\"{p}-tasks\" font-size=\"{}\">{tasks_out}</g>",
         num(label_size)
     );
-    content += &format!(
+    let _ = write!(
+        content,
         "<g class=\"{p}-section-labels\" font-size=\"{}\">{section_out}</g>",
         num(section_size)
     );
-    content += &format!(
+    let _ = write!(
+        content,
         "<g class=\"{p}-axis\" font-size=\"{}\" fill=\"var(--_m)\">{axis_bottom}{axis_top}</g>",
         js::num_str(tick_size)
     );
     if !vert_labels.is_empty() {
-        content += &format!(
+        let _ = write!(
+            content,
             "<g class=\"{p}-vert-labels\" font-size=\"{}\">{vert_labels}</g>",
             num(label_size)
         );

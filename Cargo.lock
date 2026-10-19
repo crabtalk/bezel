@@ -919,9 +919,11 @@ dependencies = [
  "bezel-ui",
  "chrono",
  "indexmap",
+ "memchr",
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "usvg",
 ]
 
 [[package]]

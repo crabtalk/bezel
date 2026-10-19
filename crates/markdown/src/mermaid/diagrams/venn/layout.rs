@@ -4,6 +4,7 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     f64::consts::PI,
+    fmt::Write as _,
 };
 
 use indexmap::IndexMap;
@@ -525,7 +526,8 @@ pub fn region_path(circles: &[Circle], format: impl Fn(f64) -> String) -> String
             None => d += &format!("L{},{}", format(to.x), format(to.y)),
             Some(k) => {
                 let r = circles[k].r;
-                d += &format!(
+                let _ = write!(
+                    d,
                     "A{},{} 0 {large} 1 {},{}",
                     format(r),
                     format(r),
