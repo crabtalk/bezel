@@ -18,7 +18,6 @@ members = [
     "crates/chart",
     "crates/browser",
     "crates/mermaid",
-    "crates/mermaid-wasm",
     "apps/gallery",
     "apps/web",
     "apps/hello",
@@ -118,11 +117,6 @@ debug = false
 
 # Timed for speed, where release is built for size.
 [profile.bench]
-opt-level = 3
-
-# `wasm-pack build --profile wasm`: release, timed for speed.
-[profile.wasm]
-inherits = "release"
 opt-level = 3
 
 [profile.release]

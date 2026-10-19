@@ -1,5 +1,4 @@
-// Medians side by side, from what bench.mjs and the engine's bench wrote, and
-// the size of each bundle that recorded one.
+// Medians side by side, from what bench.mjs and the engine's bench wrote.
 //
 //   node compare.mjs pele.json ours.json [more.json…]
 import { readFileSync } from 'node:fs';
@@ -42,8 +41,3 @@ const ratios = runs.slice(1).map((run) => {
   return { engine: run.engine, [`${base.engine} ÷ engine, geometric mean`]: Math.exp(mean).toFixed(2) + '×' };
 });
 console.table(ratios);
-const kb = (n) => (n / 1024).toFixed(0) + ' KB';
-const sized = runs.filter((run) => run.bytes);
-if (sized.length) {
-  console.table(sized.map((run) => ({ engine: run.engine, raw: kb(run.bytes.raw), gzip: kb(run.bytes.gzip) })));
-}

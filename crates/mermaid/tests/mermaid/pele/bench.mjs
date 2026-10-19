@@ -1,54 +1,20 @@
 // Times Pele on the cases `cargo bench -p bezel-mermaid --bench mermaid`
-// times the engine on, with the same timing loop, and writes JSON. Given the
-// directory `wasm-pack build crates/mermaid-wasm --target web --profile wasm` wrote, it
-// times that package instead, measuring with Arial's metrics as Pele does in
-// Node. Each run records its bundle's size, raw and gzipped.
+// times the engine on, with the same timing loop, and writes JSON.
 //
 //   node bench.mjs > pele.json
-//   node bench.mjs ../../../../mermaid-wasm/pkg > wasm.json
 //
 // The cases are Pele's own `scripts/bench.mjs` cases — the flowchart
 // documentation examples and generated trees and meshes — and then every
 // corpus file, one case each.
 import { readFileSync, readdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { gzipSync } from 'node:zlib';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { render } from 'pele';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpus = join(here, '..', 'corpus');
-const pkg = process.argv[2] && resolve(process.argv[2]);
-
-// The engine, its name, the options it renders with, and the files it ships.
-let render, engine, options, files;
-if (pkg) {
-  const glue = join(pkg, 'mermaid_wasm.js');
-  const wasm = join(pkg, 'mermaid_wasm_bg.wasm');
-  const module = await import(pathToFileURL(glue));
-  module.initSync({ module: readFileSync(wasm) });
-  const { version } = JSON.parse(readFileSync(join(pkg, 'package.json'), 'utf8'));
-  render = module.render;
-  engine = `bezel-mermaid-wasm ${version}`;
-  options = { idPrefix: 'bezel', measure: 'metrics' };
-  files = [wasm, glue, ...snippets(join(pkg, 'snippets'))];
-} else {
-  const pele = await import('pele');
-  render = pele.render;
-  engine = 'pele 1.6.0';
-  options = { idPrefix: 'bezel' };
-  files = [createRequire(import.meta.url).resolve('pele')];
-}
-
-function snippets(dir) {
-  try {
-    return readdirSync(dir, { recursive: true })
-      .map((name) => join(dir, name))
-      .filter((path) => path.endsWith('.js'));
-  } catch {
-    return [];
-  }
-}
+const engine = 'pele 1.6.0';
+const options = { idPrefix: 'bezel' };
 const read = (file) => JSON.parse(readFileSync(join(corpus, file), 'utf8'));
 
 function chain(n, fan) {
@@ -109,9 +75,4 @@ function time(inputs) {
 }
 
 const rows = cases.map(([name, inputs]) => ({ case: name, diagrams: inputs.length, ...time(inputs) }));
-const contents = files.map((file) => readFileSync(file));
-const bytes = {
-  raw: contents.reduce((sum, data) => sum + data.length, 0),
-  gzip: contents.reduce((sum, data) => sum + gzipSync(data, { level: 9 }).length, 0),
-};
-console.log(JSON.stringify({ engine, bytes, rows }, null, 1));
+console.log(JSON.stringify({ engine, rows }, null, 1));
