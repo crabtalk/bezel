@@ -151,3 +151,18 @@ fn architecture() {
 fn c4() {
     draws("c4-docs.json");
 }
+
+#[test]
+fn cynefin() {
+    draws("cynefin-docs.json");
+}
+
+#[test]
+fn wardley() {
+    draws("wardley-docs.json");
+}
+
+#[test]
+fn eventmodeling() {
+    draws("eventmodeling-docs.json");
+}

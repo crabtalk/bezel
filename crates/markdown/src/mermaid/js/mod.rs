@@ -229,6 +229,14 @@ pub(crate) fn truthy(x: f64) -> bool {
     x != 0.0 && !x.is_nan()
 }
 
+/// `x | 0`: ECMAScript's `ToInt32`, `0` for `NaN` and the infinities.
+pub(crate) fn to_int32(x: f64) -> i32 {
+    if !x.is_finite() {
+        return 0;
+    }
+    x.trunc().rem_euclid(4294967296.0) as u32 as i32
+}
+
 /// `Math.sign`: `0` for `0`, `NaN` for `NaN`.
 pub(crate) fn sign(x: f64) -> f64 {
     if x > 0.0 {

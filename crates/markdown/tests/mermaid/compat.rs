@@ -177,3 +177,18 @@ fn architecture() {
 fn c4() {
     check("c4");
 }
+
+#[test]
+fn cynefin() {
+    check("cynefin");
+}
+
+#[test]
+fn wardley() {
+    check("wardley");
+}
+
+#[test]
+fn eventmodeling() {
+    check("eventmodeling");
+}

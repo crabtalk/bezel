@@ -9,7 +9,9 @@ pub mod block;
 pub mod c4;
 pub mod class;
 pub mod common;
+pub mod cynefin;
 pub mod er;
+pub mod eventmodeling;
 pub mod flowchart;
 pub mod gantt;
 pub mod git;
@@ -31,6 +33,7 @@ pub mod timeline;
 pub mod treemap;
 pub mod treeview;
 pub mod venn;
+pub mod wardley;
 pub mod xychart;
 
 /// What a diagram type provides. `source` has been through preprocessing and
@@ -90,6 +93,9 @@ pub enum Model {
     Er(Box<er::ErModel>),
     Requirement(Box<requirement::RequirementModel>),
     Sequence(Box<sequence::SequenceModel>),
+    Cynefin(cynefin::CynefinModel),
+    Wardley(Box<wardley::WardleyModel>),
+    EventModeling(Box<eventmodeling::EventModelingModel>),
     Architecture(Box<architecture::ArchitectureModel>),
     Block(Box<block::BlockModel>),
     C4(c4::C4Model),
@@ -122,6 +128,9 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Er => &er::Er,
         Kind::Requirement => &requirement::Requirement,
         Kind::Sequence => &sequence::Sequence,
+        Kind::Cynefin => &cynefin::Cynefin,
+        Kind::Wardley => &wardley::Wardley,
+        Kind::Eventmodeling => &eventmodeling::EventModeling,
         Kind::Architecture => &architecture::Architecture,
         Kind::Block => &block::Block,
         Kind::C4 => &c4::C4,
