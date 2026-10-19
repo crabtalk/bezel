@@ -136,3 +136,18 @@ fn requirement() {
 fn sequence() {
     draws("sequence-docs.json");
 }
+
+#[test]
+fn block() {
+    draws("block-docs.json");
+}
+
+#[test]
+fn architecture() {
+    draws("architecture-docs.json");
+}
+
+#[test]
+fn c4() {
+    draws("c4-docs.json");
+}

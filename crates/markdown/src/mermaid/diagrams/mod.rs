@@ -4,6 +4,9 @@ use serde::Serialize;
 
 use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 
+pub mod architecture;
+pub mod block;
+pub mod c4;
 pub mod class;
 pub mod common;
 pub mod er;
@@ -87,6 +90,9 @@ pub enum Model {
     Er(Box<er::ErModel>),
     Requirement(Box<requirement::RequirementModel>),
     Sequence(Box<sequence::SequenceModel>),
+    Architecture(Box<architecture::ArchitectureModel>),
+    Block(Box<block::BlockModel>),
+    C4(c4::C4Model),
 }
 
 /// The type `kind`, when this build has it.
@@ -116,6 +122,9 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Er => &er::Er,
         Kind::Requirement => &requirement::Requirement,
         Kind::Sequence => &sequence::Sequence,
+        Kind::Architecture => &architecture::Architecture,
+        Kind::Block => &block::Block,
+        Kind::C4 => &c4::C4,
         _ => return None,
     })
 }

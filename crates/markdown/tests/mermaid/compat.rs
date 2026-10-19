@@ -162,3 +162,18 @@ fn requirement() {
 fn sequence() {
     check("sequence");
 }
+
+#[test]
+fn block() {
+    check("block");
+}
+
+#[test]
+fn architecture() {
+    check("architecture");
+}
+
+#[test]
+fn c4() {
+    check("c4");
+}

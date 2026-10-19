@@ -1,0 +1,920 @@
+[
+ {
+  "source": "architecture diagrams",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 1:\narchitecture diagrams\n^\nExpecting token of type 'architecture-beta' but found `architecture`."
+  }
+ },
+ {
+  "source": "architecture diagram definitions",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 1:\narchitecture diagram definitions\n^\nExpecting token of type 'architecture-beta' but found `architecture`."
+  }
+ },
+ {
+  "source": "architecture-beta",
+  "model": {
+   "type": "architecture",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            service db\n            ",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "db": {
+     "id": "db",
+     "type": "service"
+    }
+   },
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {
+    "db": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta title Simple Architecture Diagram",
+  "model": {
+   "type": "architecture",
+   "title": "Simple Architecture Diagram",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            title Simple Architecture Diagram\n            ",
+  "model": {
+   "type": "architecture",
+   "title": "Simple Architecture Diagram",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            accTitle: Accessibility Title\n            accDescr: Accessibility Description\n            ",
+  "model": {
+   "type": "architecture",
+   "accTitle": "Accessibility Title",
+   "accDescr": "Accessibility Description",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            accDescr {\n                Accessibility Description\n            }\n            ",
+  "model": {
+   "type": "architecture",
+   "accDescr": "Accessibility Description",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n    group sub1(cloud)[Subscription A]\n    group vnet1(cloud)[VNet A] in sub1\n    service vm1(server)[VM] in vnet1\n\n    group sub2(cloud)[Subscription B]\n    group shared(cloud)[Shared] in sub2\n    service reg(database)[Registry] in shared\n\n    group env(cloud)[Environment] in sub2\n    group vnet(cloud)[VNet] in env\n    group snet1(cloud)[App Subnet] in vnet\n    service nsg(server)[NSG] in snet1\n    service asp(server)[App Plan] in snet1\n    service web(server)[Web App] in snet1\n\n    group snet2(cloud)[PE Subnet] in vnet\n    service pe1(server)[PE Blob] in snet2\n    service pe2(server)[PE Bus] in snet2\n\n    service storage(disk)[Storage] in env\n    service container(disk)[Container] in env\n    service bus(server)[Service Bus] in env\n    service dns(server)[DNS Zone] in env\n\n    service client(internet)[Client]\n\n    reg:B --> T:web\n    nsg:R --> L:asp\n    asp:R --> L:web\n    web:R --> L:pe1\n    pe1:R --> L:storage\n    storage:B --> T:container\n    web:B --> T:pe2\n    pe2:R --> L:bus\n    vm1:R --> L:pe2",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "vm1": {
+     "id": "vm1",
+     "type": "service",
+     "icon": "server",
+     "title": "VM",
+     "in": "vnet1"
+    },
+    "reg": {
+     "id": "reg",
+     "type": "service",
+     "icon": "database",
+     "title": "Registry",
+     "in": "shared"
+    },
+    "nsg": {
+     "id": "nsg",
+     "type": "service",
+     "icon": "server",
+     "title": "NSG",
+     "in": "snet1"
+    },
+    "asp": {
+     "id": "asp",
+     "type": "service",
+     "icon": "server",
+     "title": "App Plan",
+     "in": "snet1"
+    },
+    "web": {
+     "id": "web",
+     "type": "service",
+     "icon": "server",
+     "title": "Web App",
+     "in": "snet1"
+    },
+    "pe1": {
+     "id": "pe1",
+     "type": "service",
+     "icon": "server",
+     "title": "PE Blob",
+     "in": "snet2"
+    },
+    "pe2": {
+     "id": "pe2",
+     "type": "service",
+     "icon": "server",
+     "title": "PE Bus",
+     "in": "snet2"
+    },
+    "storage": {
+     "id": "storage",
+     "type": "service",
+     "icon": "disk",
+     "title": "Storage",
+     "in": "env"
+    },
+    "container": {
+     "id": "container",
+     "type": "service",
+     "icon": "disk",
+     "title": "Container",
+     "in": "env"
+    },
+    "bus": {
+     "id": "bus",
+     "type": "service",
+     "icon": "server",
+     "title": "Service Bus",
+     "in": "env"
+    },
+    "dns": {
+     "id": "dns",
+     "type": "service",
+     "icon": "server",
+     "title": "DNS Zone",
+     "in": "env"
+    },
+    "client": {
+     "id": "client",
+     "type": "service",
+     "icon": "internet",
+     "title": "Client"
+    }
+   },
+   "groups": {
+    "sub1": {
+     "id": "sub1",
+     "icon": "cloud",
+     "title": "Subscription A"
+    },
+    "vnet1": {
+     "id": "vnet1",
+     "icon": "cloud",
+     "title": "VNet A",
+     "in": "sub1"
+    },
+    "sub2": {
+     "id": "sub2",
+     "icon": "cloud",
+     "title": "Subscription B"
+    },
+    "shared": {
+     "id": "shared",
+     "icon": "cloud",
+     "title": "Shared",
+     "in": "sub2"
+    },
+    "env": {
+     "id": "env",
+     "icon": "cloud",
+     "title": "Environment",
+     "in": "sub2"
+    },
+    "vnet": {
+     "id": "vnet",
+     "icon": "cloud",
+     "title": "VNet",
+     "in": "env"
+    },
+    "snet1": {
+     "id": "snet1",
+     "icon": "cloud",
+     "title": "App Subnet",
+     "in": "vnet"
+    },
+    "snet2": {
+     "id": "snet2",
+     "icon": "cloud",
+     "title": "PE Subnet",
+     "in": "vnet"
+    }
+   },
+   "edges": [
+    {
+     "lhsId": "reg",
+     "lhsDir": "B",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "web",
+     "rhsDir": "T",
+     "rhsInto": true,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "nsg",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "asp",
+     "rhsDir": "L",
+     "rhsInto": true,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "asp",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "web",
+     "rhsDir": "L",
+     "rhsInto": true,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "web",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "pe1",
+     "rhsDir": "L",
+     "rhsInto": true,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "pe1",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "storage",
+     "rhsDir": "L",
+     "rhsInto": true,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "storage",
+     "lhsDir": "B",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "container",
+     "rhsDir": "T",
+     "rhsInto": true,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "web",
+     "lhsDir": "B",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "pe2",
+     "rhsDir": "T",
+     "rhsInto": true,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "pe2",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "bus",
+     "rhsDir": "L",
+     "rhsInto": true,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "vm1",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "pe2",
+     "rhsDir": "L",
+     "rhsInto": true,
+     "rhsGroup": false
+    }
+   ],
+   "layoutHints": [],
+   "registered": {
+    "sub1": "group",
+    "vnet1": "group",
+    "sub2": "group",
+    "shared": "group",
+    "env": "group",
+    "vnet": "group",
+    "snet1": "group",
+    "snet2": "group",
+    "vm1": "node",
+    "reg": "node",
+    "nsg": "node",
+    "asp": "node",
+    "web": "node",
+    "pe1": "node",
+    "pe2": "node",
+    "storage": "node",
+    "container": "node",
+    "bus": "node",
+    "dns": "node",
+    "client": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta\n      group mermaidPrototypePollutionMarker(cloud)[Marker]\n      service a(server)[A] in __proto__\n      service b(server)[B] in mermaidPrototypePollutionMarker\n      a:R -- L:b",
+  "error": {
+   "code": "semantic",
+   "message": "The service [a]'s parent does not exist. Please make sure the parent is created before this service"
+  }
+ },
+ {
+  "source": "architecture-beta\n      group __proto__(cloud)[Marker]\n      service a(server)[A] in __proto__\n      service b(server)[B] in __proto__\n      a:R -- L:b",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "a": {
+     "id": "a",
+     "type": "service",
+     "icon": "server",
+     "title": "A",
+     "in": "__proto__"
+    },
+    "b": {
+     "id": "b",
+     "type": "service",
+     "icon": "server",
+     "title": "B",
+     "in": "__proto__"
+    }
+   },
+   "groups": {
+    "__proto__": {
+     "id": "__proto__",
+     "icon": "cloud",
+     "title": "Marker"
+    }
+   },
+   "edges": [
+    {
+     "lhsId": "a",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "b",
+     "rhsDir": "L",
+     "rhsInto": false,
+     "rhsGroup": false
+    }
+   ],
+   "layoutHints": [],
+   "registered": {
+    "__proto__": "group",
+    "a": "node",
+    "b": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta\n      group __proto__(cloud)[P]\n      group myPrototypePollutionKey(cloud)[Real]\n      service a(server)[A] in __proto__\n      service b(server)[B] in myPrototypePollutionKey\n      a:R -- L:b",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "a": {
+     "id": "a",
+     "type": "service",
+     "icon": "server",
+     "title": "A",
+     "in": "__proto__"
+    },
+    "b": {
+     "id": "b",
+     "type": "service",
+     "icon": "server",
+     "title": "B",
+     "in": "myPrototypePollutionKey"
+    }
+   },
+   "groups": {
+    "__proto__": {
+     "id": "__proto__",
+     "icon": "cloud",
+     "title": "P"
+    },
+    "myPrototypePollutionKey": {
+     "id": "myPrototypePollutionKey",
+     "icon": "cloud",
+     "title": "Real"
+    }
+   },
+   "edges": [
+    {
+     "lhsId": "a",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "b",
+     "rhsDir": "L",
+     "rhsInto": false,
+     "rhsGroup": false
+    }
+   ],
+   "layoutHints": [],
+   "registered": {
+    "__proto__": "group",
+    "myPrototypePollutionKey": "group",
+    "a": "node",
+    "b": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta\n      service a(server)[A]\n      service 20(server)[B]\n      service 10(server)[C]",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "10": {
+     "id": "10",
+     "type": "service",
+     "icon": "server",
+     "title": "C"
+    },
+    "20": {
+     "id": "20",
+     "type": "service",
+     "icon": "server",
+     "title": "B"
+    },
+    "a": {
+     "id": "a",
+     "type": "service",
+     "icon": "server",
+     "title": "A"
+    }
+   },
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {
+    "10": "node",
+    "20": "node",
+    "a": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta\n  group api(cloud)[API]\n  service db1(database)[DB1] in api\n  service db2(database)[DB2] in api\n  service db3(database)[DB3] in api\n  align row db1 db2 db3",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "db1": {
+     "id": "db1",
+     "type": "service",
+     "icon": "database",
+     "title": "DB1",
+     "in": "api"
+    },
+    "db2": {
+     "id": "db2",
+     "type": "service",
+     "icon": "database",
+     "title": "DB2",
+     "in": "api"
+    },
+    "db3": {
+     "id": "db3",
+     "type": "service",
+     "icon": "database",
+     "title": "DB3",
+     "in": "api"
+    }
+   },
+   "groups": {
+    "api": {
+     "id": "api",
+     "icon": "cloud",
+     "title": "API"
+    }
+   },
+   "edges": [],
+   "layoutHints": [
+    {
+     "direction": "row",
+     "members": [
+      "db1",
+      "db2",
+      "db3"
+     ]
+    }
+   ],
+   "registered": {
+    "api": "group",
+    "db1": "node",
+    "db2": "node",
+    "db3": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta\n  service a(server)[A]\n  service b(server)[B]\n  align column a b",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "a": {
+     "id": "a",
+     "type": "service",
+     "icon": "server",
+     "title": "A"
+    },
+    "b": {
+     "id": "b",
+     "type": "service",
+     "icon": "server",
+     "title": "B"
+    }
+   },
+   "groups": {},
+   "edges": [],
+   "layoutHints": [
+    {
+     "direction": "column",
+     "members": [
+      "a",
+      "b"
+     ]
+    }
+   ],
+   "registered": {
+    "a": "node",
+    "b": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta\n  service a(server)[A]\n  service b(server)[B]\n  align row a b ghost",
+  "error": {
+   "code": "semantic",
+   "message": "align row references [ghost], which is not a service or junction"
+  }
+ },
+ {
+  "source": "architecture-beta\n  service a(server)[A]\n  align row a a",
+  "error": {
+   "code": "semantic",
+   "message": "align row lists [a] more than once"
+  }
+ },
+ {
+  "source": "architecture-beta\n  service rowspan(server)[Rowspan]\n  service columnar(server)[Columnar]\n  align row rowspan columnar",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "rowspan": {
+     "id": "rowspan",
+     "type": "service",
+     "icon": "server",
+     "title": "Rowspan"
+    },
+    "columnar": {
+     "id": "columnar",
+     "type": "service",
+     "icon": "server",
+     "title": "Columnar"
+    }
+   },
+   "groups": {},
+   "edges": [],
+   "layoutHints": [
+    {
+     "direction": "row",
+     "members": [
+      "rowspan",
+      "columnar"
+     ]
+    }
+   ],
+   "registered": {
+    "rowspan": "node",
+    "columnar": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta\n  group app_env(cloud)[App Env]\n  service app(server)[Web App] in app_env\n  service db(database)[DB] in app_env\n  service api(server)[API] in app_env\n  junction mid in app_env\n  app:B -- T:mid\n  mid:R -- L:db\n  mid:B -- T:api",
+  "model": {
+   "type": "architecture",
+   "nodes": {
+    "app": {
+     "id": "app",
+     "type": "service",
+     "icon": "server",
+     "title": "Web App",
+     "in": "app_env"
+    },
+    "db": {
+     "id": "db",
+     "type": "service",
+     "icon": "database",
+     "title": "DB",
+     "in": "app_env"
+    },
+    "api": {
+     "id": "api",
+     "type": "service",
+     "icon": "server",
+     "title": "API",
+     "in": "app_env"
+    },
+    "mid": {
+     "id": "mid",
+     "type": "junction",
+     "in": "app_env"
+    }
+   },
+   "groups": {
+    "app_env": {
+     "id": "app_env",
+     "icon": "cloud",
+     "title": "App Env"
+    }
+   },
+   "edges": [
+    {
+     "lhsId": "app",
+     "lhsDir": "B",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "mid",
+     "rhsDir": "T",
+     "rhsInto": false,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "mid",
+     "lhsDir": "R",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "db",
+     "rhsDir": "L",
+     "rhsInto": false,
+     "rhsGroup": false
+    },
+    {
+     "lhsId": "mid",
+     "lhsDir": "B",
+     "lhsInto": false,
+     "lhsGroup": false,
+     "rhsId": "api",
+     "rhsDir": "T",
+     "rhsInto": false,
+     "rhsGroup": false
+    }
+   ],
+   "layoutHints": [],
+   "registered": {
+    "app_env": "group",
+    "app": "node",
+    "db": "node",
+    "api": "node",
+    "mid": "node"
+   }
+  }
+ },
+ {
+  "source": "architecture",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 1:\narchitecture\n^\nExpecting token of type 'architecture-beta' but found `architecture`."
+  }
+ },
+ {
+  "source": "  architecture-beta  ",
+  "model": {
+   "type": "architecture",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "\tarchitecture-beta\t",
+  "model": {
+   "type": "architecture",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "\n        \tarchitecture-beta\n        ",
+  "model": {
+   "type": "architecture",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta title sample title",
+  "model": {
+   "type": "architecture",
+   "title": "sample title",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "  architecture-beta  title sample title  ",
+  "model": {
+   "type": "architecture",
+   "title": "sample title",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "\tarchitecture-beta\ttitle sample title\t",
+  "model": {
+   "type": "architecture",
+   "title": "sample title",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            \ttitle sample title\n            ",
+  "model": {
+   "type": "architecture",
+   "title": "sample title",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            title sample title",
+  "model": {
+   "type": "architecture",
+   "title": "sample title",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            title sample title\n            ",
+  "model": {
+   "type": "architecture",
+   "title": "sample title",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            title sample title\n            accTitle: sample accTitle\n            accDescr: sample accDescr\n            ",
+  "model": {
+   "type": "architecture",
+   "title": "sample title",
+   "accTitle": "sample accTitle",
+   "accDescr": "sample accDescr",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            title sample title\n            accTitle: sample accTitle\n            accDescr {\n                sample accDescr\n            }\n            ",
+  "model": {
+   "type": "architecture",
+   "title": "sample title",
+   "accTitle": "sample accTitle",
+   "accDescr": "sample accDescr",
+   "nodes": {},
+   "groups": {},
+   "edges": [],
+   "layoutHints": [],
+   "registered": {}
+  }
+ },
+ {
+  "source": "architecture-beta\n            service db(database)[\"Database\"] in api\n            ",
+  "error": {
+   "code": "semantic",
+   "message": "The service [db]'s parent does not exist. Please make sure the parent is created before this service"
+  }
+ },
+ {
+  "source": "architecture-beta\n            service db(database)['Database'] in api\n            ",
+  "error": {
+   "code": "semantic",
+   "message": "The service [db]'s parent does not exist. Please make sure the parent is created before this service"
+  }
+ },
+ {
+  "source": "architecture-beta\n            service db(database)[Database] in api\n            ",
+  "error": {
+   "code": "semantic",
+   "message": "The service [db]'s parent does not exist. Please make sure the parent is created before this service"
+  }
+ },
+ {
+  "source": "architecture-beta\n            group api(cloud)[\"API\"]\n            ",
+  "model": {
+   "type": "architecture",
+   "nodes": {},
+   "groups": {
+    "api": {
+     "id": "api",
+     "icon": "cloud",
+     "title": "API"
+    }
+   },
+   "edges": [],
+   "layoutHints": [],
+   "registered": {
+    "api": "group"
+   }
+  }
+ },
+ {
+  "source": "architecture-beta\n            service db(database)[\"John's Database\"] in api\n            ",
+  "error": {
+   "code": "semantic",
+   "message": "The service [db]'s parent does not exist. Please make sure the parent is created before this service"
+  }
+ },
+ {
+  "source": "architecture-beta\n            service api(server)[\"The \\\"Main\\\" API\"] in cloud\n            ",
+  "error": {
+   "code": "semantic",
+   "message": "The service [api]'s parent does not exist. Please make sure the parent is created before this service"
+  }
+ },
+ {
+  "source": "architecture-beta\n            group g1(server)[你好世界]\n            ",
+  "model": {
+   "type": "architecture",
+   "nodes": {},
+   "groups": {
+    "g1": {
+     "id": "g1",
+     "icon": "server",
+     "title": "你好世界"
+    }
+   },
+   "edges": [],
+   "layoutHints": [],
+   "registered": {
+    "g1": "group"
+   }
+  }
+ }
+]
