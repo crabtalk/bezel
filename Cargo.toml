@@ -14,7 +14,6 @@ members = [
     "crates/editor",
     "crates/terminal",
     "crates/canvas",
-    "crates/canvas-core",
     "crates/chart",
     "crates/browser",
     "crates/mermaid",
@@ -54,7 +53,6 @@ syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.2.18" 
 syntax-std = { package = "bezel-syntax-std", path = "crates/syntax-std", version = "0.2.18" }
 terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.2.18" }
 canvas = { package = "bezel-canvas", path = "crates/canvas", version = "0.2.18" }
-canvas-core = { package = "bezel-canvas-core", path = "crates/canvas-core", version = "0.2.18" }
 chart = { package = "bezel-chart", path = "crates/chart", version = "0.2.18" }
 browser = { package = "bezel-browser", path = "crates/browser", version = "0.2.18" }
 # An app rather than a library: `apps/web` renders the same catalog, and

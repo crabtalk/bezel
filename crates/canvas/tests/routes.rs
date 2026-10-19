@@ -1,4 +1,4 @@
-use canvas_core::{
+use canvas::{
     Canvas, Change, change,
     model::{End, Shape},
     path::{self, Ends, Rect},

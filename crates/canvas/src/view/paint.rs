@@ -404,7 +404,7 @@ impl CanvasView {
                     grid(&frame, step, window, cx);
                 }
                 for (path, stroke, paint, weight) in strokes {
-                    canvas_core::paint::edge(
+                    crate::paint::edge(
                         window,
                         &path,
                         screen,

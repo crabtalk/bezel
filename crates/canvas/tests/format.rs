@@ -1,4 +1,4 @@
-use canvas_core::{
+use canvas::{
     Canvas, json_canvas,
     model::{End, Shape, Stroke, VERSION},
 };

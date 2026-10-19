@@ -460,7 +460,7 @@ pub fn chrome(dress: Chrome, node: &Node, zoom: f32, cx: &App) -> Div {
         let outline = gpui::canvas(
             |_, _, _| (),
             move |bounds, _, window, _| {
-                canvas_core::paint::shape(window, shape, bounds, RADIUS * zoom, fill, border)
+                crate::paint::shape(window, shape, bounds, RADIUS * zoom, fill, border)
             },
         )
         .absolute()
@@ -495,7 +495,7 @@ pub fn chrome(dress: Chrome, node: &Node, zoom: f32, cx: &App) -> Div {
     }
 }
 
-pub use canvas_core::paint::color;
+pub use crate::paint::color;
 
 /// Our own node field: the height a growing node was pulled to. Its content
 /// may still run taller.
