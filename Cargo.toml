@@ -8,7 +8,6 @@ members = [
     "crates/ui",
     "crates/icons",
     "crates/syntax",
-    "crates/syntax-std",
     "crates/markdown",
     "crates/blocks",
     "crates/editor",
@@ -50,7 +49,6 @@ mermaid = { package = "bezel-mermaid", path = "crates/mermaid", version = "0.2.1
 blocks = { package = "bezel-blocks", path = "crates/blocks", version = "0.2.18" }
 editor = { package = "bezel-editor", path = "crates/editor", version = "0.2.18" }
 syntax = { package = "bezel-syntax", path = "crates/syntax", version = "0.2.18" }
-syntax-std = { package = "bezel-syntax-std", path = "crates/syntax-std", version = "0.2.18" }
 terminal = { package = "bezel-terminal", path = "crates/terminal", version = "0.2.18" }
 canvas = { package = "bezel-canvas", path = "crates/canvas", version = "0.2.18" }
 chart = { package = "bezel-chart", path = "crates/chart", version = "0.2.18" }

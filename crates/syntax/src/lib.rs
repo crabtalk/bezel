@@ -4,9 +4,10 @@
 //! unhighlighted text. No color and no rendering here — kinds map to colors
 //! through [`SyntaxPalette::color`](theme::SyntaxPalette::color).
 //!
-//! [`lang::LANGS`] is one row per cargo feature, fixed at build time; it seeds
-//! [`registry`], which also holds the languages this build can name and not
-//! paint, and which [`registry::register`] adds to at runtime.
+//! [`grammars::LANGS`] is one row per cargo feature, fixed at build time;
+//! [`grammars::install`] puts it into [`registry`], which also holds the
+//! languages this build can name and not paint, and which
+//! [`registry::register`] adds to at runtime.
 //!
 //! A language may carry an injections query marking regions written in another
 //! language — `<script>` and `<style>` in html. The injected name is resolved
@@ -23,6 +24,7 @@ use std::ops::Range;
 use theme::HighlightKind;
 
 pub mod document;
+pub mod grammars;
 pub mod lang;
 pub mod registry;
 pub mod session;

@@ -941,21 +941,13 @@ version = "0.2.18"
 dependencies = [
  "bezel-theme",
  "tree-sitter",
+ "tree-sitter-bash",
  "tree-sitter-css",
+ "tree-sitter-go",
  "tree-sitter-highlight",
  "tree-sitter-html",
- "tree-sitter-language",
- "tree-sitter-rust",
-]
-
-[[package]]
-name = "bezel-syntax-std"
-version = "0.2.18"
-dependencies = [
- "bezel-syntax",
- "tree-sitter-bash",
- "tree-sitter-go",
  "tree-sitter-json",
+ "tree-sitter-language",
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-toml-ng",
@@ -2721,7 +2713,6 @@ dependencies = [
  "bezel-markdown",
  "bezel-motion",
  "bezel-syntax",
- "bezel-syntax-std",
  "bezel-terminal",
  "bezel-theme",
  "bezel-ui",

@@ -1,11 +1,11 @@
-//! The grammars bezel links in, as one provider for `syntax::registry`.
+//! The grammars this crate links in, each behind the feature of its name.
 //!
 //! [`install`] puts every row this build carries into the registry. Nothing
 //! registers itself — an app calls `install` once, and may register more from
 //! anywhere else before or after.
 
-use syntax::{
-    lang::{Grammar, Lang},
+use crate::{
+    lang::Lang,
     registry::{self, Entry},
 };
 
@@ -48,21 +48,21 @@ const FILES: &[(&str, &[&str])] = &[
 static RUST: Lang = Lang::new(
     "rust",
     &["rust", "rs"],
-    Grammar::Native(tree_sitter_rust::LANGUAGE),
+    crate::lang::Grammar::Native(tree_sitter_rust::LANGUAGE),
     include_str!("../queries/rust.scm"),
 );
 #[cfg(feature = "python")]
 static PYTHON: Lang = Lang::new(
     "python",
     &["python", "py"],
-    Grammar::Native(tree_sitter_python::LANGUAGE),
+    crate::lang::Grammar::Native(tree_sitter_python::LANGUAGE),
     include_str!("../queries/python.scm"),
 );
 #[cfg(feature = "typescript")]
 static TYPESCRIPT: Lang = Lang::new(
     "typescript",
     &["typescript", "ts"],
-    Grammar::Native(tree_sitter_typescript::LANGUAGE_TYPESCRIPT),
+    crate::lang::Grammar::Native(tree_sitter_typescript::LANGUAGE_TYPESCRIPT),
     include_str!("../queries/typescript.scm"),
 );
 /// JavaScript rides the TSX grammar: TSX parses JS, and a separate grammar plus
@@ -72,35 +72,35 @@ static TYPESCRIPT: Lang = Lang::new(
 static TSX: Lang = Lang::new(
     "tsx",
     &["tsx", "jsx", "javascript", "js"],
-    Grammar::Native(tree_sitter_typescript::LANGUAGE_TSX),
+    crate::lang::Grammar::Native(tree_sitter_typescript::LANGUAGE_TSX),
     include_str!("../queries/tsx.scm"),
 );
 #[cfg(feature = "json")]
 static JSON: Lang = Lang::new(
     "json",
     &["json", "jsonc"],
-    Grammar::Native(tree_sitter_json::LANGUAGE),
+    crate::lang::Grammar::Native(tree_sitter_json::LANGUAGE),
     include_str!("../queries/json.scm"),
 );
 #[cfg(feature = "go")]
 static GO: Lang = Lang::new(
     "go",
     &["go", "golang"],
-    Grammar::Native(tree_sitter_go::LANGUAGE),
+    crate::lang::Grammar::Native(tree_sitter_go::LANGUAGE),
     include_str!("../queries/go.scm"),
 );
 #[cfg(feature = "bash")]
 static BASH: Lang = Lang::new(
     "bash",
     &["bash", "sh", "shell", "zsh", "console"],
-    Grammar::Native(tree_sitter_bash::LANGUAGE),
+    crate::lang::Grammar::Native(tree_sitter_bash::LANGUAGE),
     include_str!("../queries/bash.scm"),
 );
 #[cfg(feature = "toml")]
 static TOML: Lang = Lang::new(
     "toml",
     &["toml"],
-    Grammar::Native(tree_sitter_toml_ng::LANGUAGE),
+    crate::lang::Grammar::Native(tree_sitter_toml_ng::LANGUAGE),
     include_str!("../queries/toml.scm"),
 );
 

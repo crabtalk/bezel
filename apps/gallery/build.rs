@@ -15,7 +15,7 @@ use theme::HighlightKind;
 include!("src/patterns/samples.rs");
 
 fn main() {
-    syntax_std::install();
+    syntax::grammars::install();
     println!("cargo:rerun-if-changed=src/patterns/samples.rs");
 
     let mut out = String::from(
