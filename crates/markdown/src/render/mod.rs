@@ -1130,7 +1130,7 @@ fn block_element(
                 })
                 .flatten();
             let painted = match fence {
-                Some(fence) => fence::render(&fence, window, cx),
+                Some(fence) => fence::render(&fence, overlay.block, window, cx),
                 None => fence::Painted::Code(None),
             };
             match painted {

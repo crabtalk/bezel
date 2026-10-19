@@ -70,3 +70,21 @@ fn a_pie_paints_as_a_diagram(cx: &mut TestAppContext) {
         .expect("the fence paints a diagram");
     assert!(bounds.size.height > px(0.0));
 }
+
+#[gpui::test]
+fn a_fence_stands_empty_until_its_diagram_is_drawn(cx: &mut TestAppContext) {
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let source = "```mermaid\nflowchart LR\n  A[Start] --> B[End]\n```\n";
+    let window = cx.add_window(|_, _| Page(source));
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.update(|window, _| window.refresh());
+    assert!(
+        cx.debug_bounds(markdown::fence::mermaid::LANGUAGE)
+            .is_none()
+    );
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds(markdown::fence::mermaid::LANGUAGE)
+            .is_some()
+    );
+}

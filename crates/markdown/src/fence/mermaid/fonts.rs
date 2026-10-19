@@ -6,7 +6,11 @@
 //! Loading the system's fonts reads every font file's names, a quarter of a
 //! second on a Mac, once per process.
 
-use std::{cell::RefCell, collections::HashMap, sync::LazyLock};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{LazyLock, Mutex, PoisonError},
+};
 
 use usvg::fontdb::{Database, Family, ID, Query, Style as FaceStyle, Weight};
 
@@ -49,11 +53,15 @@ static SYSTEM: LazyLock<Database> = LazyLock::new(|| {
 thread_local! {
     /// [`Families::resolve`] by the theme's sans and mono.
     static RESOLVED: RefCell<HashMap<(String, String), Families>> = RefCell::new(HashMap::new());
-    /// The face each character a base face lacks is taken from.
-    static FALLBACKS: RefCell<HashMap<(ID, char), Option<ID>>> = RefCell::new(HashMap::new());
-    /// Widths in em by family, style and text.
-    static WIDTHS: RefCell<HashMap<(Families, u8, String), f64>> = RefCell::new(HashMap::new());
 }
+
+/// The face each character a base face lacks is taken from.
+static FALLBACKS: Shared<(ID, char), Option<ID>> = LazyLock::new(Mutex::default);
+/// Widths in em by family, style and text.
+static WIDTHS: Shared<(Families, u8, String), f64> = LazyLock::new(Mutex::default);
+
+/// A map every thread that draws reads and fills.
+type Shared<K, V> = LazyLock<Mutex<HashMap<K, V>>>;
 
 /// The families a diagram is measured and drawn in.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -125,17 +133,16 @@ impl Shaper {
 impl Host for Shaper {
     fn width(&self, text: &str, size: f64, style: u8) -> f64 {
         let key = (self.0.clone(), style, text.to_string());
-        if let Some(em) = WIDTHS.with(|widths| widths.borrow().get(&key).copied()) {
+        let widths = || WIDTHS.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(em) = widths().get(&key).copied() {
             return em * size;
         }
         let em = self.face(style).map_or(0.0, |base| em_width(text, base));
-        WIDTHS.with(|widths| {
-            let mut widths = widths.borrow_mut();
-            if widths.len() >= KEPT {
-                widths.clear();
-            }
-            widths.insert(key, em);
-        });
+        let mut widths = widths();
+        if widths.len() >= KEPT {
+            widths.clear();
+        }
+        widths.insert(key, em);
         em * size
     }
 }
@@ -169,7 +176,8 @@ fn em_width(text: &str, base: ID) -> f64 {
 /// usvg's default fallback: the first other face that has `c`, unless it
 /// differs from `base` in style, weight and stretch all three.
 fn fallback(c: char, base: ID) -> Option<ID> {
-    if let Some(found) = FALLBACKS.with(|kept| kept.borrow().get(&(base, c)).copied()) {
+    let kept = || FALLBACKS.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(found) = kept().get(&(base, c)).copied() {
         return found;
     }
     let base_face = SYSTEM.face(base)?;
@@ -183,7 +191,7 @@ fn fallback(c: char, base: ID) -> Option<ID> {
         })
         .find(|face| has_char(face.id, c))
         .map(|face| face.id);
-    FALLBACKS.with(|kept| kept.borrow_mut().insert((base, c), found));
+    kept().insert((base, c), found);
     found
 }
 

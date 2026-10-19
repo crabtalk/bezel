@@ -3,9 +3,11 @@
 //!
 //! Drawing and parsing the SVG cost milliseconds and paint runs every frame,
 //! so each source is drawn once per text size, theme and font and kept, and
-//! rasterized again only when its scale on screen changes. The SVG names the
-//! theme's colours, and its labels are measured in the faces gpui's SVG
-//! renderer draws them in ([`fonts`]).
+//! rasterized again only when its scale on screen changes. Drawing and
+//! parsing run on gpui's background executor, each fence's on its own; until
+//! they finish the fence stands empty at its stated height, or at the height
+//! its last drawing had. The SVG names the theme's colours, and its labels are
+//! measured in the faces gpui's SVG renderer draws them in ([`fonts`]).
 //!
 //! A press on the diagram pans it and does not reach the editor; the band
 //! above it does, which is how the source is reached for editing.
@@ -21,9 +23,9 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, App, ElementId, Entity, Global, Hsla, ImageSource, MouseButton, MouseDownEvent,
-    MouseMoveEvent, ParsedSvg, Pixels, Point, RenderImage, Rgba as GpuiRgba, SharedString, Size,
-    Window, div, img, prelude::*, px,
+    AnyElement, App, AsyncApp, ElementId, Entity, Global, Hsla, ImageSource, MouseButton,
+    MouseDownEvent, MouseMoveEvent, ParsedSvg, Pixels, Point, RenderImage, Rgba as GpuiRgba,
+    SharedString, Size, Window, div, img, prelude::*, px,
 };
 use theme::{TextStyle, Theme};
 use ui::{
@@ -115,10 +117,13 @@ pub(crate) fn set_zoom(cx: &mut App, zoom: Zoom) {
 /// the fence states is the whole box's, band included, taken as it is.
 const MAX_HEIGHT: f32 = 480.0;
 
-/// Drawn diagrams by key. An error's text for source that did not draw, so a
+/// A drawn diagram, or the error's text for source that did not draw, so a
 /// fence being typed is not parsed again every frame.
+type Drawing = Result<Rc<Diagram>, SharedString>;
+
+/// Diagrams by key: drawn, or `None` while being drawn.
 #[derive(Default)]
-struct Cache(HashMap<u64, Result<Rc<Diagram>, SharedString>>);
+struct Cache(HashMap<u64, Option<Drawing>>);
 
 impl Global for Cache {}
 
@@ -179,14 +184,15 @@ fn colors(theme: &Theme) -> Colors {
     }
 }
 
-/// `code` drawn at text size `size` in the theme's colours and fonts, kept.
+/// `code` drawn at text size `size` in the theme's colours and fonts, kept;
+/// `None` while it is being drawn, the windows refreshed when it is.
 fn drawn(
     code: &str,
     size: f32,
     theme: &Theme,
     window: &mut Window,
     cx: &mut App,
-) -> (u64, Result<Rc<Diagram>, SharedString>) {
+) -> (u64, Option<Drawing>) {
     let families = Families::resolve(&theme.font_sans, &theme.font_mono);
     let colors = colors(theme);
     let mut hasher = DefaultHasher::new();
@@ -197,7 +203,7 @@ fn drawn(
     }
     let cache = std::mem::take(&mut cx.default_global::<Cache>().0);
     let cache = if cache.len() >= CACHED {
-        for diagram in cache.into_values().flatten() {
+        for diagram in cache.into_values().flatten().flatten() {
             if let Some((_, image)) = diagram.raster.take() {
                 cx.drop_image(image, Some(window));
             }
@@ -215,21 +221,32 @@ fn drawn(
         colors: Some(colors),
         ..Options::default()
     };
-    let result = ::mermaid::render(code, &options, &shaper)
-        .map_err(|error| note(&error))
-        .and_then(|drawing| {
-            let svg = cx
-                .svg_renderer()
-                .parse_svg(drawing.svg.as_bytes())
-                .map_err(|error| SharedString::from(error.to_string()))?;
-            Ok(Rc::new(Diagram {
-                svg,
-                natural: (drawing.width as f32, drawing.height as f32),
-                raster: RefCell::new(None),
-            }))
+    let renderer = cx.svg_renderer();
+    let code = code.to_string();
+    let job = cx.background_executor().spawn(async move {
+        let drawing = ::mermaid::render(&code, &options, &shaper).map_err(|error| note(&error))?;
+        let svg = renderer
+            .parse_svg(drawing.svg.as_bytes())
+            .map_err(|error| SharedString::from(error.to_string()))?;
+        Ok((svg, (drawing.width as f32, drawing.height as f32)))
+    });
+    cx.spawn(async move |cx: &mut AsyncApp| {
+        let result: Result<(ParsedSvg, (f32, f32)), SharedString> = job.await;
+        cx.update(|cx| {
+            let drawing = result.map(|(svg, natural)| {
+                Rc::new(Diagram {
+                    svg,
+                    natural,
+                    raster: RefCell::new(None),
+                })
+            });
+            cx.default_global::<Cache>().0.insert(key, Some(drawing));
+            cx.refresh_windows();
         });
-    cx.default_global::<Cache>().0.insert(key, result.clone());
-    (key, result)
+    })
+    .detach();
+    cx.default_global::<Cache>().0.insert(key, None);
+    (key, None)
 }
 
 /// What a fence shows under source that did not draw: the error's message,
@@ -243,20 +260,45 @@ fn note(error: &::mermaid::Error) -> SharedString {
     text.into()
 }
 
-/// The diagram `code` describes, or the note its source is shown with.
+/// The diagram `code` describes, or the note its source is shown with. `block`
+/// is the fence's place in its document.
 pub(crate) fn render(
     code: &str,
     height: Option<u32>,
+    block: usize,
     window: &mut Window,
     cx: &mut App,
 ) -> Result<AnyElement, SharedString> {
     let size = TextStyle::Callout.painted();
     let theme = Theme::of(cx).clone();
     let (key, diagram) = drawn(code, size, &theme, window, cx);
+    // The height of the diagram this fence last showed, for the box to keep
+    // while the next is drawn.
+    let last = window.use_keyed_state(
+        ElementId::from(SharedString::from(format!("mermaid-last-{block}"))),
+        cx,
+        |_, _| None::<f32>,
+    );
+    let Some(diagram) = diagram else {
+        let stands = last.read(cx).filter(|_| height.is_none());
+        return Ok(fence_panel(&theme)
+            .when_some(height, |el, height| el.h(px(height as f32)))
+            .child(
+                fence_band(&theme)
+                    .flex_none()
+                    .text_color(theme.text_muted)
+                    .child(LANGUAGE),
+            )
+            .when_some(stands, |el, stands| el.child(div().h(px(stands))))
+            .into_any_element());
+    };
     let diagram = diagram?;
     // The box keeps the unzoomed diagram's height, so zooming moves what is in
     // it rather than the page under it.
     let natural = diagram.natural;
+    if height.is_none() && *last.read(cx) != Some(natural.1.min(MAX_HEIGHT)) {
+        last.update(cx, |last, _| *last = Some(natural.1.min(MAX_HEIGHT)));
+    }
     // The view outlives a change of theme or font; the drawing does not.
     let mut hasher = DefaultHasher::new();
     (code, size.to_bits()).hash(&mut hasher);

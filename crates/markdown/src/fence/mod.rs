@@ -67,7 +67,13 @@ pub(crate) enum Painted {
     Code(Option<SharedString>),
 }
 
-pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Painted {
+/// `block` is the fence's place in its document.
+pub(crate) fn render(
+    fence: &Fence<'_>,
+    #[cfg_attr(not(feature = "mermaid"), allow(unused_variables))] block: usize,
+    window: &mut Window,
+    cx: &mut App,
+) -> Painted {
     // Copied out before the call: the renderer reads the theme and its own
     // globals off the same `cx` this borrows.
     if let Some(renderer) = cx.try_global::<Installed>().map(|installed| installed.0)
@@ -77,7 +83,7 @@ pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Pa
     }
     #[cfg(feature = "mermaid")]
     if fence.language == self::mermaid::LANGUAGE {
-        return match self::mermaid::render(fence.code, fence.height, window, cx) {
+        return match self::mermaid::render(fence.code, fence.height, block, window, cx) {
             Ok(painted) => Painted::Block(painted),
             Err(note) => Painted::Code(Some(note)),
         };
