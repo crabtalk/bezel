@@ -116,3 +116,18 @@ fn class() {
 fn flowchart() {
     draws("flowchart-docs.json");
 }
+
+#[test]
+fn state() {
+    draws("state-docs.json");
+}
+
+#[test]
+fn er() {
+    draws("er-docs.json");
+}
+
+#[test]
+fn requirement() {
+    draws("requirement-docs.json");
+}

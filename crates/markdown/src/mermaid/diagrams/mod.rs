@@ -6,6 +6,7 @@ use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 
 pub mod class;
 pub mod common;
+pub mod er;
 pub mod flowchart;
 pub mod gantt;
 pub mod git;
@@ -19,7 +20,9 @@ pub mod pie;
 pub mod quadrant;
 pub mod radar;
 pub mod railroad;
+pub mod requirement;
 pub mod sankey;
+pub mod state;
 pub mod timeline;
 pub mod treemap;
 pub mod treeview;
@@ -79,6 +82,9 @@ pub enum Model {
     Kanban(kanban::KanbanModel),
     Timeline(timeline::TimelineModel),
     Class(Box<class::ClassModel>),
+    State(Box<state::StateModel>),
+    Er(Box<er::ErModel>),
+    Requirement(Box<requirement::RequirementModel>),
 }
 
 /// The type `kind`, when this build has it.
@@ -104,6 +110,9 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Kanban => &kanban::Kanban,
         Kind::Timeline => &timeline::Timeline,
         Kind::Class => &class::Class,
+        Kind::State => &state::State,
+        Kind::Er => &er::Er,
+        Kind::Requirement => &requirement::Requirement,
         _ => return None,
     })
 }

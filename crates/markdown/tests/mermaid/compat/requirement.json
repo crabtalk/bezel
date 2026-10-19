@@ -1,0 +1,34 @@
+[
+ {
+  "source": "requirementDb",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 1:\nrequirementDb\n^\nExpecting 'RD', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', got 'unqString'"
+  }
+ },
+ {
+  "source": "requirement",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 1:\nrequirement\n^\nExpecting 'RD', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', got 'REQUIREMENT'"
+  }
+ },
+ {
+  "source": "requirementDiagram",
+  "model": {
+   "type": "requirement",
+   "direction": "TB",
+   "requirements": {},
+   "elements": {},
+   "relations": [],
+   "classes": {},
+   "newId": "",
+   "newText": "",
+   "newRisk": "",
+   "newVerifyMethod": "",
+   "newElementType": "",
+   "newDocRef": "",
+   "styleCopies": 0
+  }
+ }
+]

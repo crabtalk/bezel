@@ -1,0 +1,3192 @@
+[
+ {
+  "source": "erDiagram\n \"Blo%rf\"\n",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n \"Blo%rf\"\n-^\nExpecting 'EOF', 'NEWLINE', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'SUBGRAPH', 'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'CLASSDEF', 'CLASS', 'STYLE', 'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE', got 'WORD'"
+  }
+ },
+ {
+  "source": "erDiagram\n \"Blo\\rf\"\n",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\n \"Blo\\rf\"\n-^\nExpecting 'EOF', 'NEWLINE', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'SUBGRAPH', 'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'CLASSDEF', 'CLASS', 'STYLE', 'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE', got 'WORD'"
+  }
+ },
+ {
+  "source": "erDiagram\nCAR ||--o{ DRIVER : \"insured for\"",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CAR": {
+     "id": "entity-CAR-0",
+     "label": "CAR",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DRIVER": {
+     "id": "entity-DRIVER-1",
+     "label": "DRIVER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CAR-0",
+     "roleA": "insured for",
+     "entityB": "entity-DRIVER-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nNODE ||--o{ NODE : \"leads to\"",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "NODE": {
+     "id": "entity-NODE-0",
+     "label": "NODE",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-NODE-0",
+     "roleA": "leads to",
+     "entityB": "entity-NODE-0",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA ||--|{ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA ||..o{ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA |o..o{ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ZERO_OR_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA |o--|{ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA }|--|| B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA }o--|| B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA }o..o| B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_ONE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA }|..o| B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_ONE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA |o..|| B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ZERO_OR_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA ||..|| B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA ||--o| B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA |o..o| B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_ONE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ZERO_OR_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA }o--o{ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA }|..|{ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA }o--|{ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA }|..o{ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA one or zero to many B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA one or many optionally to zero or one B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_ONE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA zero or more to zero or many B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA many(0) to many(1) B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA many optionally to one B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA only one optionally to 1+ B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA 0+ optionally to 1 B : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "has",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER 1--one or more DELIVERY-ADDRESS : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER 1..one or more DELIVERY-ADDRESS : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER 1.-one or more DELIVERY-ADDRESS : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER 1-.one or more DELIVERY-ADDRESS : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\na many to 1 1: label",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1": {
+     "id": "entity-1-1",
+     "label": "1",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "a": {
+     "id": "entity-a-0",
+     "label": "a",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-a-0",
+     "roleA": "label",
+     "entityB": "entity-1-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\na many to 1 12: label",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "12": {
+     "id": "entity-12-1",
+     "label": "12",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "a": {
+     "id": "entity-a-0",
+     "label": "a",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-a-0",
+     "roleA": "label",
+     "entityB": "entity-12-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nHOUSE ||--|{ ROOM : contains",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "HOUSE": {
+     "id": "entity-HOUSE-0",
+     "label": "HOUSE",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ROOM": {
+     "id": "entity-ROOM-1",
+     "label": "ROOM",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-HOUSE-0",
+     "roleA": "contains",
+     "entityB": "entity-ROOM-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nHOUSE one to one ROOM : contains",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "HOUSE": {
+     "id": "entity-HOUSE-0",
+     "label": "HOUSE",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ROOM": {
+     "id": "entity-ROOM-1",
+     "label": "ROOM",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-HOUSE-0",
+     "roleA": "contains",
+     "entityB": "entity-ROOM-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n PERSON ||..o{ POSSESSION : owns",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "PERSON": {
+     "id": "entity-PERSON-0",
+     "label": "PERSON",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "POSSESSION": {
+     "id": "entity-POSSESSION-1",
+     "label": "POSSESSION",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-PERSON-0",
+     "roleA": "owns",
+     "entityB": "entity-POSSESSION-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n PERSON many optionally to many POSSESSION : owns",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "PERSON": {
+     "id": "entity-PERSON-0",
+     "label": "PERSON",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "POSSESSION": {
+     "id": "entity-POSSESSION-1",
+     "label": "POSSESSION",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-PERSON-0",
+     "roleA": "owns",
+     "entityB": "entity-POSSESSION-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ZERO_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nA xxx B : has",
+  "error": {
+   "code": "syntax",
+   "message": "Parse error on line 2:\nA xxx B : has\n--------^\nExpecting 'EOF', 'NEWLINE', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'SUBGRAPH', 'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'CLASSDEF', 'CLASS', 'STYLE', 'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE', got 'COLON'"
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER ||--|{ ORDER : \"\"",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ORDER": {
+     "id": "entity-ORDER-1",
+     "label": "ORDER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "",
+     "entityB": "entity-ORDER-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER ||--|{ ORDER : \"places\"",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ORDER": {
+     "id": "entity-ORDER-1",
+     "label": "ORDER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "places",
+     "entityB": "entity-ORDER-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER ||--|{ ORDER : places",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ORDER": {
+     "id": "entity-ORDER-1",
+     "label": "ORDER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "places",
+     "entityB": "entity-ORDER-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nPROJECT u--o{ TEAM_MEMBER : \"parent\"",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "PROJECT": {
+     "id": "entity-PROJECT-0",
+     "label": "PROJECT",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "TEAM_MEMBER": {
+     "id": "entity-TEAM_MEMBER-1",
+     "label": "TEAM_MEMBER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-PROJECT-0",
+     "roleA": "parent",
+     "entityB": "entity-TEAM_MEMBER-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "MD_PARENT"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER }|..|{ DELIVERY-ADDRESS : has\n1",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1": {
+     "id": "entity-1-2",
+     "label": "1",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER }|..|{ DELIVERY-ADDRESS : has\nu",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "u": {
+     "id": "entity-u-2",
+     "label": "u",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER }|..|{ DELIVERY-ADDRESS : has\n2.5",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "2.5": {
+     "id": "entity-2.5-2",
+     "label": "2.5",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER }|..|{ DELIVERY-ADDRESS : has\n1.5",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "1.5": {
+     "id": "entity-1.5-2",
+     "label": "1.5",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER }|..|{ DELIVERY-ADDRESS : has\n0.1",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "0.1": {
+     "id": "entity-0.1-2",
+     "label": "0.1",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER }|..|{ DELIVERY-ADDRESS : has\n99.99",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "DELIVERY-ADDRESS": {
+     "id": "entity-DELIVERY-ADDRESS-1",
+     "label": "DELIVERY-ADDRESS",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "99.99": {
+     "id": "entity-99.99-2",
+     "label": "99.99",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-DELIVERY-ADDRESS-1",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "NON_IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nu {\nstring name\nint id\n}",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "u": {
+     "id": "entity-u-0",
+     "label": "u",
+     "alias": "",
+     "attributes": [
+      {
+       "type": "string",
+       "name": "name",
+       "keys": [],
+       "comment": ""
+      },
+      {
+       "type": "int",
+       "name": "id",
+       "keys": [],
+       "comment": ""
+      }
+     ],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n1 {\nstring name\nint id\n}",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1": {
+     "id": "entity-1-0",
+     "label": "1",
+     "alias": "",
+     "attributes": [
+      {
+       "type": "string",
+       "name": "name",
+       "keys": [],
+       "comment": ""
+      },
+      {
+       "type": "int",
+       "name": "id",
+       "keys": [],
+       "comment": ""
+      }
+     ],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n2.5 {\nstring name\nint id\n}",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "2.5": {
+     "id": "entity-2.5-0",
+     "label": "2.5",
+     "alias": "",
+     "attributes": [
+      {
+       "type": "string",
+       "name": "name",
+       "keys": [],
+       "comment": ""
+      },
+      {
+       "type": "int",
+       "name": "id",
+       "keys": [],
+       "comment": ""
+      }
+     ],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n1.5 {\nstring value\n}",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1.5": {
+     "id": "entity-1.5-0",
+     "label": "1.5",
+     "alias": "",
+     "attributes": [
+      {
+       "type": "string",
+       "name": "value",
+       "keys": [],
+       "comment": ""
+      }
+     ],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER ||--|| u : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "u": {
+     "id": "entity-u-1",
+     "label": "u",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-u-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nu ||--|| ORDER : places",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "u": {
+     "id": "entity-u-0",
+     "label": "u",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ORDER": {
+     "id": "entity-ORDER-1",
+     "label": "ORDER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-u-0",
+     "roleA": "places",
+     "entityB": "entity-ORDER-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nu ||--|| v : connects",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "u": {
+     "id": "entity-u-0",
+     "label": "u",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "v": {
+     "id": "entity-v-1",
+     "label": "v",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-u-0",
+     "roleA": "connects",
+     "entityB": "entity-v-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER ||--|| 1 : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1": {
+     "id": "entity-1-1",
+     "label": "1",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-1-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n1 ||--|| ORDER : places",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1": {
+     "id": "entity-1-0",
+     "label": "1",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ORDER": {
+     "id": "entity-ORDER-1",
+     "label": "ORDER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-1-0",
+     "roleA": "places",
+     "entityB": "entity-ORDER-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n1 ||--|| 2 : connects",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1": {
+     "id": "entity-1-0",
+     "label": "1",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "2": {
+     "id": "entity-2-1",
+     "label": "2",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-1-0",
+     "roleA": "connects",
+     "entityB": "entity-2-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nCUSTOMER ||--|| 2.5 : has",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "2.5": {
+     "id": "entity-2.5-1",
+     "label": "2.5",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "has",
+     "entityB": "entity-2.5-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n1.5 ||--|| ORDER : places",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1.5": {
+     "id": "entity-1.5-0",
+     "label": "1.5",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ORDER": {
+     "id": "entity-ORDER-1",
+     "label": "ORDER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-1.5-0",
+     "roleA": "places",
+     "entityB": "entity-ORDER-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n2.5 ||--|| 5.5 : connects",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "2.5": {
+     "id": "entity-2.5-0",
+     "label": "2.5",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "5.5": {
+     "id": "entity-5.5-1",
+     "label": "5.5",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-2.5-0",
+     "roleA": "connects",
+     "entityB": "entity-5.5-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n              CUSTOMER ||--o{ 1 : places\n              1 ||--|{ u : contains\n              u {\n                string name\n                int quantity\n              }\n              \"2.5\" ||--|| ORDER : processes\n              ORDER {\n                int id\n                date created\n              }\n        ",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "1": {
+     "id": "entity-1-1",
+     "label": "1",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "CUSTOMER": {
+     "id": "entity-CUSTOMER-0",
+     "label": "CUSTOMER",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "u": {
+     "id": "entity-u-2",
+     "label": "u",
+     "alias": "",
+     "attributes": [
+      {
+       "type": "string",
+       "name": "name",
+       "keys": [],
+       "comment": ""
+      },
+      {
+       "type": "int",
+       "name": "quantity",
+       "keys": [],
+       "comment": ""
+      }
+     ],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "2.5": {
+     "id": "entity-2.5-3",
+     "label": "2.5",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "ORDER": {
+     "id": "entity-ORDER-4",
+     "label": "ORDER",
+     "alias": "",
+     "attributes": [
+      {
+       "type": "int",
+       "name": "id",
+       "keys": [],
+       "comment": ""
+      },
+      {
+       "type": "date",
+       "name": "created",
+       "keys": [],
+       "comment": ""
+      }
+     ],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-CUSTOMER-0",
+     "roleA": "places",
+     "entityB": "entity-1-1",
+     "relSpec": {
+      "cardA": "ZERO_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    },
+    {
+     "entityA": "entity-1-1",
+     "roleA": "contains",
+     "entityB": "entity-u-2",
+     "relSpec": {
+      "cardA": "ONE_OR_MORE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    },
+    {
+     "entityA": "entity-2.5-3",
+     "roleA": "processes",
+     "entityB": "entity-ORDER-4",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONLY_ONE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\n              ENTITY {\n                string name1\n                int value2\n                float point3_5\n              }\n        ",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "ENTITY": {
+     "id": "entity-ENTITY-0",
+     "label": "ENTITY",
+     "alias": "",
+     "attributes": [
+      {
+       "type": "string",
+       "name": "name1",
+       "keys": [],
+       "comment": ""
+      },
+      {
+       "type": "int",
+       "name": "value2",
+       "keys": [],
+       "comment": ""
+      },
+      {
+       "type": "float",
+       "name": "point3_5",
+       "keys": [],
+       "comment": ""
+      }
+     ],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph Group\nA\nB\nend",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "Group",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "Group": {
+     "id": "Group",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A",
+    "B"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph \"Some Title\"\nA\nB\nend",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "Some Title",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Some Title",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "Some Title": {
+     "id": "Some Title",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Some Title",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A",
+    "B"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph id [Title]\nA\nB\nend",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "id",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Title",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "id": {
+     "id": "id",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Title",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A",
+    "B"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph \"Group 1.5\"\nA\nend",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "Group 1.5",
+     "nodes": [
+      "A"
+     ],
+     "title": "Group 1.5",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "Group 1.5": {
+     "id": "Group 1.5",
+     "nodes": [
+      "A"
+     ],
+     "title": "Group 1.5",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph Group\n\nA\n\nB\n\nend",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "Group",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "Group": {
+     "id": "Group",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A",
+    "B"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph Group\nA\nend   \n",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "Group",
+     "nodes": [
+      "A"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "Group": {
+     "id": "Group",
+     "nodes": [
+      "A"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph empty\nend",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {},
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "empty",
+     "nodes": [],
+     "title": "empty",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "empty": {
+     "id": "empty",
+     "nodes": [],
+     "title": "empty",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram subgraph WithRL\ndirection RL\nA\nB\nend",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "WithRL",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "WithRL",
+     "classes": [],
+     "cssStyles": [],
+     "dir": "RL",
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "WithRL": {
+     "id": "WithRL",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "WithRL",
+     "classes": [],
+     "cssStyles": [],
+     "dir": "RL",
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A",
+    "B"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph Group\nA }|--|| B : \"relates to\"\nend",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "relates to",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "Group",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "Group": {
+     "id": "Group",
+     "nodes": [
+      "A",
+      "B"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A",
+    "B"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph Group\nA\nend\nA }|--|| B : \"relates to\"\n",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-1",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "entity-A-0",
+     "roleA": "relates to",
+     "entityB": "entity-B-1",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "Group",
+     "nodes": [
+      "A"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "Group": {
+     "id": "Group",
+     "nodes": [
+      "A"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A"
+   ]
+  }
+ },
+ {
+  "source": "erDiagram\n",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {},
+   "relationships": [],
+   "classes": {},
+   "subgraphs": [],
+   "subgraphLookup": {},
+   "claimed": []
+  }
+ },
+ {
+  "source": "erDiagram\nsubgraph Group\nA\nend\nGroup }|--|| B : \"relates to\"\n",
+  "model": {
+   "type": "er",
+   "direction": "TB",
+   "entities": {
+    "A": {
+     "id": "entity-A-0",
+     "label": "A",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "Group": {
+     "id": "entity-Group-1",
+     "label": "Group",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    },
+    "B": {
+     "id": "entity-B-2",
+     "label": "B",
+     "alias": "",
+     "attributes": [],
+     "cssClasses": "default",
+     "cssStyles": []
+    }
+   },
+   "relationships": [
+    {
+     "entityA": "Group",
+     "roleA": "relates to",
+     "entityB": "entity-B-2",
+     "relSpec": {
+      "cardA": "ONLY_ONE",
+      "relType": "IDENTIFYING",
+      "cardB": "ONE_OR_MORE"
+     }
+    }
+   ],
+   "classes": {},
+   "subgraphs": [
+    {
+     "id": "Group",
+     "nodes": [
+      "A"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   ],
+   "subgraphLookup": {
+    "Group": {
+     "id": "Group",
+     "nodes": [
+      "A"
+     ],
+     "title": "Group",
+     "classes": [],
+     "cssStyles": [],
+     "labelType": "markdown"
+    }
+   },
+   "claimed": [
+    "A"
+   ]
+  }
+ }
+]

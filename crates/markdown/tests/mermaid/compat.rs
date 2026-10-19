@@ -142,3 +142,18 @@ fn class() {
 fn flowchart() {
     check("flowchart");
 }
+
+#[test]
+fn state() {
+    check("state");
+}
+
+#[test]
+fn er() {
+    check("er");
+}
+
+#[test]
+fn requirement() {
+    check("requirement");
+}
