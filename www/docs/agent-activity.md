@@ -12,4 +12,4 @@ Two library pieces carry the screen: [`scroll::follow`](/docs/follow) pins the r
 
 Both are general — a terminal wants follow-scroll, a build log wants a section that unfolds while it runs.
 
-The source is at `apps/gallery/src/patterns/agent.rs`. Copy the file.
+The source is at `apps/gallery/src/pages/agent/activity.rs`. Copy the file.

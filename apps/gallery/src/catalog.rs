@@ -90,13 +90,13 @@ pub struct Tab {
     /// The page the tab opens on.
     pub home: &'static str,
     /// Whether its pages get the whole pane instead of the fixed column every
-    /// component demo is designed for. A pattern is a screen: it fills the
+    /// component demo is designed for. Such a page is a screen: it fills the
     /// pane, scrolls its own parts, and floats its own chrome over them.
     pub full_bleed: bool,
 }
 
-/// The top nav. The axis is the *kind* of thing you are looking at: a token, a
-/// component, or a screen built out of both.
+/// The top nav: tokens, components, then a tab per domain whose pages are
+/// screens.
 pub const TABS: &[Tab] = &[
     Tab {
         title: "Foundations",
@@ -111,50 +111,57 @@ pub const TABS: &[Tab] = &[
         full_bleed: false,
     },
     Tab {
-        title: "Patterns",
-        groups: PATTERNS,
-        home: "agent-avatar",
+        title: "Editor",
+        groups: EDITOR,
+        home: "editor",
         full_bleed: true,
     },
     Tab {
-        title: "Mermaid",
-        groups: MERMAID,
-        home: "mermaid",
+        title: "Diagrams",
+        groups: DIAGRAMS,
+        home: "canvas",
+        full_bleed: true,
+    },
+    Tab {
+        title: "Agent",
+        groups: AGENT,
+        home: "agent-avatar",
         full_bleed: true,
     },
 ];
 
-/// Composed screens. The source path points at the gallery rather than into
-/// `crates/`, and that is the point — a pattern is not a component you call, it
-/// is a file you copy.
-pub const PATTERNS: &[Group] = &[
-    // A group per kind of app, and this one is the driver: bezel is a UI
-    // library for agent apps. A page appears here when the parts under it are
-    // real — nothing is a row until it can be pressed.
+/// Agent screens. A page appears here when the parts under it are real —
+/// nothing is a row until it can be pressed.
+pub const AGENT: &[Group] = &[
     Group {
-        title: "Agent",
+        title: "Conversation",
         sections: &[
             section(
                 "agent-activity",
                 "Activity",
-                "apps/gallery/src/patterns/agent.rs",
+                "apps/gallery/src/pages/agent/activity.rs",
             ),
             section(
                 "agent-tools",
                 "Tool calls",
-                "apps/gallery/src/patterns/agent.rs",
+                "apps/gallery/src/pages/agent/activity.rs",
             ),
             section(
                 "agent-composer",
                 "Composer",
-                "apps/gallery/src/patterns/agent.rs",
+                "apps/gallery/src/pages/agent/activity.rs",
             ),
             section(
                 "agent-transcript",
                 "Transcript",
-                "apps/gallery/src/patterns/transcript.rs",
+                "apps/gallery/src/pages/agent/transcript.rs",
             ),
-            section("agent-diff", "Diff", "apps/gallery/src/patterns/diff.rs"),
+        ],
+    },
+    Group {
+        title: "Tools",
+        sections: &[
+            section("agent-diff", "Diff", "apps/gallery/src/pages/agent/diff.rs"),
             // Native-only: the terminal crate sits off the wasm build
             // (alacritty_terminal pulls `home`, which does not compile for
             // wasm32) — see the gallery manifest.
@@ -162,54 +169,98 @@ pub const PATTERNS: &[Group] = &[
             section(
                 "agent-terminal",
                 "Terminal",
-                "apps/gallery/src/patterns/terminal.rs",
+                "apps/gallery/src/pages/agent/terminal.rs",
             ),
+            section(
+                "browser",
+                "Browser",
+                "apps/gallery/src/pages/agent/browser.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Presence",
+        sections: &[
             section(
                 "agent-orbs",
                 "Thinking orbs",
-                "apps/gallery/src/patterns/orbs.rs",
+                "apps/gallery/src/pages/agent/orbs.rs",
             ),
             section(
                 "agent-avatar",
                 "Blob avatars",
-                "apps/gallery/src/patterns/avatar.rs",
+                "apps/gallery/src/pages/agent/avatar.rs",
             ),
-        ],
-    },
-    Group {
-        title: "Media",
-        sections: &[
-            section(
-                "document",
-                "Document",
-                "apps/gallery/src/patterns/document.rs",
-            ),
-            section(
-                "selectable-text",
-                "Selectable text",
-                "apps/gallery/src/patterns/selectable.rs",
-            ),
-            section("editor", "Editor", "apps/gallery/src/patterns/editor.rs"),
-            section("canvas", "Canvas", "apps/gallery/src/patterns/canvas.rs"),
-            section("charts", "Charts", "apps/gallery/src/patterns/charts.rs"),
-            section("browser", "Browser", "apps/gallery/src/patterns/browser.rs"),
-            section("ribbon", "Ribbon", "apps/gallery/src/patterns/ribbon.rs"),
-            section(
-                "markdown",
-                "Markdown",
-                "apps/gallery/src/patterns/dialect.rs",
-            ),
-            section("syntax", "Syntax", "apps/gallery/src/patterns/syntax.rs"),
         ],
     },
 ];
 
-/// One page per diagram type `bezel-mermaid` draws, each pointing at the
-/// module that parses and draws it. A row here needs a sample in
-/// [`crate::mermaid::SAMPLES`].
-pub const MERMAID: &[Group] = &[
+/// Document screens: the markdown model, read, selected and edited.
+pub const EDITOR: &[Group] = &[
     Group {
-        title: "Overview",
+        title: "Documents",
+        sections: &[
+            section(
+                "editor",
+                "Editor",
+                "apps/gallery/src/pages/editor/editing.rs",
+            ),
+            section(
+                "document",
+                "Document",
+                "apps/gallery/src/pages/editor/document.rs",
+            ),
+            section(
+                "selectable-text",
+                "Selectable text",
+                "apps/gallery/src/pages/editor/selectable.rs",
+            ),
+            section(
+                "ribbon",
+                "Ribbon",
+                "apps/gallery/src/pages/editor/ribbon.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Text",
+        sections: &[
+            section(
+                "markdown",
+                "Markdown",
+                "apps/gallery/src/pages/editor/dialect.rs",
+            ),
+            section(
+                "syntax",
+                "Syntax",
+                "apps/gallery/src/pages/editor/syntax.rs",
+            ),
+        ],
+    },
+];
+
+/// A canvas and charts drawn live, then one page per diagram type
+/// `bezel-mermaid` draws, each pointing at the module that parses and draws
+/// it. A `mermaid-` row needs a sample in
+/// [`crate::pages::diagrams::mermaid::SAMPLES`].
+pub const DIAGRAMS: &[Group] = &[
+    Group {
+        title: "Live",
+        sections: &[
+            section(
+                "canvas",
+                "Canvas",
+                "apps/gallery/src/pages/diagrams/mindmap.rs",
+            ),
+            section(
+                "charts",
+                "Charts",
+                "apps/gallery/src/pages/diagrams/charts.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Mermaid",
         sections: &[section(
             "mermaid",
             "Overview",

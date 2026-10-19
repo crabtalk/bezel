@@ -25,10 +25,10 @@ popover::menu_at(
 )
 ```
 
-The only thing this pattern had to invent — and it is `popover::Filter`, the combobox's own state, mounted at a caret instead of under a trigger.
+The only thing this page had to invent — and it is `popover::Filter`, the combobox's own state, mounted at a caret instead of under a trigger.
 
 Its trigger is a *read* of the text rather than a key handler: the `#` nearest behind the caret, if nothing since it has been whitespace. Typing, pasting, arrowing back into a word and deleting the `#` then all agree without being special-cased.
 
 `offset_bounds` is the same measurement the IME candidate panel anchors to, so the menu follows the caret down as the box grows. What `#` offers is a `Vec<SharedString>` — the app searches its own store.
 
-The source is at `apps/gallery/src/patterns/agent.rs`.
+The source is at `apps/gallery/src/pages/agent/activity.rs`.

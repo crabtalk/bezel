@@ -91,4 +91,4 @@ pub trait AppExt {
 
 `syntax` is a peer crate, not part of the `bezel` facade, so an app that highlights nothing never compiles a grammar. A browser cannot run any of it — tree-sitter is C and `wasm32-unknown-unknown` has no libc — so the gallery highlights its samples in a build script and the wasm build looks the answer up.
 
-The source is at `apps/gallery/src/patterns/syntax.rs`, and the highlighter it installs at `apps/gallery/src/highlight.rs`. Copy the file.
+The source is at `apps/gallery/src/pages/editor/syntax.rs`, and the highlighter it installs at `apps/gallery/src/highlight.rs`. Copy the file.

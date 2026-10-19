@@ -75,4 +75,4 @@ Motion parks rather than idles: the entity redraws at 30fps and drops its timer 
 
 Motion parks rather than idles: the entity redraws at 30fps and drops its timer when paused, invisible, in an inactive window or under reduced motion. Geometry is recomputed only on a tick or a semantic change, and the whole thing paints inside one `paint_layer`, which keeps hundreds of overlapping discs off the scene's bounds tree.
 
-Ported from gpui-thinking-orbs (MIT), itself a port of Jakub Antalik's thinking-orbs. The source is at `apps/gallery/src/patterns/orbs.rs`.
+Ported from gpui-thinking-orbs (MIT), itself a port of Jakub Antalik's thinking-orbs. The source is at `apps/gallery/src/pages/agent/orbs.rs`.

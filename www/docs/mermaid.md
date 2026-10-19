@@ -43,4 +43,4 @@ pub fn detect_type(source: &str) -> Option<Kind>;
 pub fn supports(source: &str) -> bool;
 ```
 
-Errors carry Pele's message, a `Code`, and the line, column and snippet. Each page in this tab is one diagram type and the source that draws it.
+Errors carry Pele's message, a `Code`, and the line, column and snippet. Each page under it in the rail is one diagram type and the source that draws it.

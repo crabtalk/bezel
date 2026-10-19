@@ -78,4 +78,4 @@ A registered mark cannot reach across a line break, mean anything inside a fence
 
 A registered mark cannot reach across a line break, mean anything inside a fence, code span or link destination, or sit in a picture's caption. Its delimiters are lifted out before CommonMark sees the source, which is the only place `==` and `\=\=` still differ.
 
-The source is at `apps/gallery/src/patterns/document.rs`. Copy the file.
+The source is at `apps/gallery/src/pages/editor/document.rs`. Copy the file.

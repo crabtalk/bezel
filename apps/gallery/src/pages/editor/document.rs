@@ -1,10 +1,10 @@
-//! The document pattern — a reader, and the screen `markdown` exists for.
+//! The document screen — a reader, and the screen `markdown` exists for.
 //!
 //! Nothing here is library code. The reader is an outline, a scroll area and a
 //! toggle; the only calls into the library are [`markdown::render_with`] and
 //! [`markdown::serialize`]. Copy this file.
 //!
-//! Editing is the `editor` pattern next door, which is a different screen with
+//! Editing is the `editor` page next door, which is a different screen with
 //! a different crate behind it.
 //!
 //! Two things it is built to show.
@@ -27,7 +27,7 @@
 //! edit/save cycle safe, and is the one property worth seeing rather than
 //! reading about in a test.
 //!
-//! Like the other patterns it is an entity: a screen owns a screen's worth of
+//! Like the other pages it is an entity: a screen owns a screen's worth of
 //! state, and its host holds one field.
 
 use std::rc::Rc;

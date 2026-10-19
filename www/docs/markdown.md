@@ -83,4 +83,4 @@ placeholders and source view have no overlay.
 
 Tables are GFM's, alignment row included — `:---`, `:---:`, `---:`. Every cell is one line and holds a caret.
 
-The source is at `apps/gallery/src/patterns/dialect.rs`. Copy the file.
+The source is at `apps/gallery/src/pages/editor/dialect.rs`. Copy the file.

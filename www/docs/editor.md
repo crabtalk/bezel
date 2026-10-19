@@ -200,4 +200,4 @@ Moving, duplicating and deleting a block ship as actions with no chord — `edit
 
 The slash menu, gutter handle, drag-to-reorder, language picker, link menu, undo and the clipboard need no wiring. `Mark::Code` over more than one line makes a fence instead of an inline span, and the same call takes it back out.
 
-The source is at `apps/gallery/src/patterns/editor.rs`. Copy the file.
+The source is at `apps/gallery/src/pages/editor/editing.rs`. Copy the file.

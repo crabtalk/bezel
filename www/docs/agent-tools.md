@@ -15,4 +15,4 @@ A lone call is a bordered card and a grouped one is a bare row, with the group's
 
 `step_row` takes strings, so bezel never learns what a tool call *is*: the icon, verb, detail and duration are the app's vocabulary.
 
-The source is at `apps/gallery/src/patterns/agent.rs`.
+The source is at `apps/gallery/src/pages/agent/activity.rs`.

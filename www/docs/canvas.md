@@ -304,4 +304,4 @@ pub fn apply_all(canvas: &mut Canvas, changes: &[Change]) -> Vec<Change>;
 pub fn added(changes: &[Change]) -> Option<&str>;
 ```
 
-The source is at `apps/gallery/src/patterns/canvas.rs`. Copy the file.
+The source is at `apps/gallery/src/pages/diagrams/mindmap.rs`. Copy the file.

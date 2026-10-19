@@ -1,4 +1,4 @@
-//! The selectable-text pattern — prose a reader can drag over and copy.
+//! The selectable-text screen — prose a reader can drag over and copy.
 //!
 //! Nothing here is library code. The only call into it is
 //! [`markdown::render::selectable::render`], which paints a document and reports what

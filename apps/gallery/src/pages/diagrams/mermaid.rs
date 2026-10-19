@@ -1,4 +1,4 @@
-//! The Mermaid tab — one page per diagram type `bezel-mermaid` draws.
+//! One page per diagram type `bezel-mermaid` draws, and an overview.
 //!
 //! Each page is a one-fence document handed to [`markdown::render`], the
 //! diagram first and its source under it as plain text.
@@ -33,9 +33,9 @@ flowchart LR
   fence -- no --> code[Code block]
 ```
 
-Every page in this tab is one diagram type and the source that draws it."#;
+Every page under it is one diagram type and the source that draws it."#;
 
-/// One row per diagram page in [`crate::MERMAID`], in rail order.
+/// One row per `mermaid-` page in [`crate::DIAGRAMS`], in rail order.
 pub const SAMPLES: &[Sample] = &[
     sample(
         "mermaid-flowchart",
@@ -542,7 +542,7 @@ struct Page {
     bar: TransientState,
 }
 
-/// What this tab's pages hold between frames.
+/// What the Mermaid pages hold between frames.
 pub(crate) struct State {
     pages: Vec<Page>,
 }
@@ -579,7 +579,12 @@ impl Gallery {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let theme = Theme::of(cx).clone();
-        let page = self.mermaid.pages.iter().find(|page| page.key == key)?;
+        let page = self
+            .diagrams
+            .mermaid
+            .pages
+            .iter()
+            .find(|page| page.key == key)?;
         let column = stack()
             .max_w(px(860.0))
             .when_some(page.hint, |column, copy| column.child(hint(&theme, copy)))

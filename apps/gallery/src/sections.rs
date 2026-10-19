@@ -9,7 +9,6 @@ pub(crate) mod foundations;
 pub(crate) mod material;
 pub(crate) mod navigation;
 pub(crate) mod overlays;
-mod patterns;
 
 /// The gallery's own rhythm, looser than the system gap the library defaults to.
 pub(crate) const GALLERY_RHYTHM: f32 = 12.0;
@@ -419,8 +418,9 @@ impl Gallery {
             .or_else(|| self.overlays(key, window, cx))
             .or_else(|| self.material(key, window, cx))
             .or_else(|| self.data(key, window, cx))
-            .or_else(|| self.patterns(key, window, cx))
-            .or_else(|| self.mermaid(key, window, cx))
+            .or_else(|| self.agent(key))
+            .or_else(|| self.editor(key, cx))
+            .or_else(|| self.diagrams(key, window, cx))
             .unwrap_or_else(|| div().into_any_element())
     }
 }

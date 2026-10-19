@@ -91,7 +91,7 @@ pub fn init(cx: &mut App) {
             .with("highlight", "==")
             .with("underline", "++"),
     );
-    cx.set_mark_paint(patterns::ribbon::paint);
+    cx.set_mark_paint(pages::editor::ribbon::paint);
     cx.set_image_store(store::of());
     input::init(cx);
     editor::init(cx);
@@ -104,9 +104,9 @@ pub fn init(cx: &mut App) {
     focus::init(cx);
     menubar::init(cx);
     tree::init(cx);
-    // A pattern is an app: the composer page binds its own keys.
-    patterns::agent::init(cx);
-    patterns::browser::init(cx);
+    // A page is an app: the composer and the browser bind their own keys.
+    pages::agent::activity::init(cx);
+    pages::agent::browser::init(cx);
     cx.bind_keys([
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-k", OpenPalette, None),
@@ -124,10 +124,10 @@ pub fn init(cx: &mut App) {
 pub mod highlight;
 
 pub mod brand;
-pub mod mermaid;
-pub mod patterns;
+pub mod pages;
 pub mod preview;
 mod rail;
+pub mod samples;
 pub mod store;
 
 mod catalog;
@@ -159,7 +159,7 @@ const COLUMN_WIDTH: f32 = 420.0;
 /// moving either width moves the breakpoint with it.
 const COMPACT_BELOW: f32 = RAIL_WIDTH + PANE_PAD * 2.0 + COLUMN_WIDTH;
 
-/// The floor under a pattern's canvas once it is being panned rather than
+/// The floor under a full-bleed page's canvas once it is being panned rather than
 /// fitted: the narrowest pane the two-column layout ever hands one.
 const CANVAS_MIN: f32 = COMPACT_BELOW - RAIL_WIDTH;
 
@@ -270,14 +270,19 @@ pub struct Gallery {
     overlays: overlays::State,
     material: material::State,
     foundations: foundations::State,
-    patterns: patterns::State,
-    mermaid: mermaid::State,
+    agent: pages::agent::State,
+    editor: pages::editor::State,
+    diagrams: pages::diagrams::State,
 }
 
 impl Gallery {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        // Opened on the same page the fields below start at.
-        let rail = cx.new(|cx| Rail::new(2, TABS[2].home, cx));
+        // Opened on the Agent tab, the same page the fields below start at.
+        let opening = TABS
+            .iter()
+            .position(|tab| tab.title == "Agent")
+            .unwrap_or(0);
+        let rail = cx.new(|cx| Rail::new(opening, TABS[opening].home, cx));
         cx.subscribe(&rail, |view, _, selected: &Selected, cx| {
             view.open(view.tab, selected.0, cx);
             // A drawer that stays up over the page it just opened is a drawer
@@ -341,7 +346,7 @@ impl Gallery {
             pane_scroll: gpui::ScrollHandle::new(),
             pane_bar: TransientState::new(Painter::of(cx)),
             last_pressed: None,
-            tab: 2,
+            tab: opening,
             selected: TABS.iter().map(|tab| tab.home).collect(),
             dialog: popover::Popup::default(),
             stats: cx.new(Stats::new),
@@ -355,8 +360,9 @@ impl Gallery {
             overlays: overlays::State::new(cx),
             material: material::State::new(cx),
             foundations: foundations::State::new(cx),
-            patterns: patterns::State::new(cx),
-            mermaid: mermaid::State::new(cx),
+            agent: pages::agent::State::new(cx),
+            editor: pages::editor::State::new(cx),
+            diagrams: pages::diagrams::State::new(cx),
         }
     }
 
@@ -404,16 +410,20 @@ impl Gallery {
         gallery
     }
 
-    /// Point the embed at another example of the section it is already on —
-    /// what a doc page sends as the reader scrolls from snippet to snippet.
-    /// `None` widens it back to the whole page.
-    pub fn show_example(&mut self, example: Option<&str>, cx: &mut Context<Self>) {
+    /// Point the embed at a section, and at one of its examples or, with
+    /// `None`, the whole page — what a doc page sends as the reader moves
+    /// between pages and snippets. A key not in the catalog changes nothing.
+    pub fn show(&mut self, key: &str, example: Option<&str>, cx: &mut Context<Self>) {
+        let Some(tab) = tab_of(key) else {
+            return;
+        };
+        let key = section_at(key).expect("tab_of matched").key;
         let example = example.map(SharedString::from);
-        if self.example == example {
+        if self.tab == tab && self.selected[tab] == key && self.example == example {
             return;
         }
         self.example = example;
-        cx.notify();
+        self.open(tab, key, cx);
     }
 
     /// The gallery's own focus handle — what the window focuses on launch.

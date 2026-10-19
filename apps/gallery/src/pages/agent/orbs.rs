@@ -1,7 +1,7 @@
 //! The thinking screen — what an agent surface shows while the model works.
 //!
 //! The orbs themselves are `agent::orbs`, a component; this page is the
-//! pattern: the twelve-state catalog, painted by [`orb_element`] on this page's
+//! screen: the twelve-state catalog, painted by [`orb_element`] on this page's
 //! own clock. One timer drives every cell — the shape to copy when your host
 //! already ticks.
 //!

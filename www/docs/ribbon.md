@@ -44,4 +44,4 @@ cx.set_mark_paint(paint);
 
 The bar is **docked**, so it reflows the document under it — which is why it is a plain row with a hairline rather than [`control_bar`](/docs/control-bar), the floating kind that must never move what it sits over. The other answer to the same question is the bubble toolbar on the [Editor](/docs/editor) page; an app picks one.
 
-The source is at `apps/gallery/src/patterns/ribbon.rs`. Copy the file.
+The source is at `apps/gallery/src/pages/editor/ribbon.rs`. Copy the file.

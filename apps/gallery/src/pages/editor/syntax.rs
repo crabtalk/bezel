@@ -15,7 +15,7 @@ use ui::{
     widgets::Controls,
 };
 
-use crate::{hint, patterns::samples::SAMPLES, stack};
+use crate::{hint, samples::SAMPLES, stack};
 
 pub struct Syntax {
     /// One parsed document per sample, built once — parsing on every render

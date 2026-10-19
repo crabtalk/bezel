@@ -9,8 +9,8 @@ export const sections = catalog.flatMap((tab) =>
 			...section,
 			tab: tab.title,
 			group: group.title,
-			// A pattern is a screen, not a control: it wants the whole pane in the
-			// gallery, and it wants a taller frame on the page that documents it.
+			// A full-bleed page is a screen, not a control: it wants the whole pane
+			// in the gallery, and a taller frame on the page that documents it.
 			fullBleed: tab.fullBleed
 		}))
 	)
@@ -88,7 +88,7 @@ export const sourceUrl = (section) => `${repo}/blob/main/${section.source}`;
  * Rustdoc for the crate a section is written in — the full surface, where the
  * page carries only the part worth reading first. `crates/<lib>` publishes as
  * `bezel-<lib>` and keeps `<lib>` as its lib name, which is the path docs.rs
- * builds. A pattern lives under `apps/`, so it has no crate and gets no link.
+ * builds. A screen lives under `apps/`, so it has no crate and gets no link.
  */
 export const docsUrl = (section) => {
 	const crate = section.source?.match(/^crates\/([^/]+)\//)?.[1];

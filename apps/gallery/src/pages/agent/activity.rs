@@ -1,4 +1,4 @@
-//! The agent activity pattern — a model working in public, which is the one
+//! The agent activity screen — a model working in public, which is the one
 //! screen an agent app cannot borrow from anything else.
 //!
 //! It is `../desktop`'s `LiveActivity.svelte` and `Thought.svelte` composed, and
@@ -626,7 +626,7 @@ gpui::actions!(
 const COMPOSER_CONTEXT: &str = "GalleryComposer";
 
 /// Bind the composer's keys. Called once at startup beside `input::init`,
-/// because a pattern is an app: the bindings belong to whoever mounts the page,
+/// because a page is an app: the bindings belong to whoever mounts the page,
 /// not to `ui`.
 pub fn init(cx: &mut gpui::App) {
     let ctx = Some(COMPOSER_CONTEXT);
@@ -669,7 +669,7 @@ pub struct Composer {
     mention: Option<usize>,
     filter: popover::Filter,
     /// What has been sent, newest last — the page needs somewhere for a message
-    /// to go, and a transcript is the next pattern rather than this one.
+    /// to go, and a transcript is the next page rather than this one.
     sent: Vec<SharedString>,
     focus_handle: gpui::FocusHandle,
 }

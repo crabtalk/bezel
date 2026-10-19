@@ -447,7 +447,7 @@ impl State {
     pub(crate) fn new(cx: &mut Context<Gallery>) -> Self {
         Self {
             icons_cargo: {
-                let (tag, code) = patterns::samples::ICONS_CARGO;
+                let (tag, code) = samples::ICONS_CARGO;
                 markdown::parse(&format!("```{tag}\n{code}\n```"))
             },
             type_probe: cx.focus_handle(),

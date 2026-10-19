@@ -31,7 +31,9 @@ Slugs by group — fetch the one you need:
 - **Data** scroll-area, follow, table, tree, virtual-list
 - **Content** badge, tag, avatar, breadcrumb, pagination, empty-state, skeleton
 - **Status** progress, status-dot, alerts, step-row, loaders, stats
-- **Patterns** agent-activity, agent-tools, agent-composer, agent-transcript, agent-diff, agent-terminal, agent-orbs, agent-avatar, document, editor, syntax
+- **Editor** editor, document, selectable-text, ribbon, markdown, syntax
+- **Diagrams** canvas, charts, mermaid, and a `mermaid-<type>` page per diagram type
+- **Agent** agent-activity, agent-tools, agent-composer, agent-transcript, agent-diff, agent-terminal, browser, agent-orbs, agent-avatar
 
 With the sources checked out, `crates/ui/src/` is the truth and
 `cargo run -p gallery` shows every component live.

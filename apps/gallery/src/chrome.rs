@@ -301,12 +301,12 @@ impl Render for Gallery {
         let body = self.body(section, window, cx);
         let pane = div().relative().flex_1().min_h_0().map(|pane| {
             if TABS[self.tab].full_bleed {
-                // A pattern is a screen: it takes the pane whole and
+                // A full-bleed page is a screen: it takes the pane whole and
                 // scrolls its own parts, so neither the fixed column nor
                 // the pane's own scrollbar applies to it.
                 //
                 // Narrower than a screen it stays one anyway, and you pan
-                // across it — a pattern is a file you copy into a desktop app,
+                // across it — a page is a file you copy into a desktop app,
                 // and thirteen phone layouts of one document nothing.
                 pane.child(
                     div()

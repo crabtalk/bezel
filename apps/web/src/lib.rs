@@ -51,30 +51,45 @@ fn requested(param: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// Follow the doc page's `postMessage` from one example to the next, so a
-/// reader scrolling past six snippets moves one embed rather than loading six.
+/// Follow the doc page's `postMessage`, `s=<key>&e=<example>` as the query
+/// string spells it, so moving between pages and snippets moves one running
+/// embed rather than loading another. Once listening, tell the page with a
+/// `ready` message, so a page it moved to while this loaded is sent again.
+///
+/// Only messages from this document's own origin are followed.
 ///
 /// The app is reached through [`APPLICATION`] rather than captured: the handle
 /// is the app's one owner and is not copyable, and by the time a message can
 /// arrive it is already stored. The listener is leaked rather than held — it
 /// lives as long as the document, which is as long as the app it updates.
-fn follow_examples(gallery: Entity<Gallery>) {
+fn follow_page(gallery: Entity<Gallery>) {
     let Some(window) = web_sys::window() else {
         return;
     };
+    let Ok(origin) = window.location().origin() else {
+        return;
+    };
+    let own = origin.clone();
     let listener =
         Closure::<dyn FnMut(web_sys::MessageEvent)>::new(move |event: web_sys::MessageEvent| {
-            let Some(example) = event.data().as_string() else {
+            if event.origin() != own {
+                return;
+            }
+            let Some(data) = event.data().as_string() else {
                 return;
             };
-            // An empty string is the page saying "no snippet is in view" — the
-            // embed widens back to the whole section rather than going blank.
-            let example = (!example.is_empty()).then_some(example);
+            let Ok(params) = web_sys::UrlSearchParams::new_with_str(&data) else {
+                return;
+            };
+            let Some(key) = params.get("s") else {
+                return;
+            };
+            let example = params.get("e").filter(|example| !example.is_empty());
             APPLICATION.with(|application| {
                 if let Some(handle) = application.borrow().as_ref() {
                     handle.update(|cx| {
                         gallery.update(cx, |gallery, cx| {
-                            gallery.show_example(example.as_deref(), cx);
+                            gallery.show(&key, example.as_deref(), cx);
                         });
                     });
                 }
@@ -85,6 +100,9 @@ fn follow_examples(gallery: Entity<Gallery>) {
         .is_ok()
     {
         listener.forget();
+    }
+    if let Ok(Some(parent)) = window.parent() {
+        let _ = parent.post_message(&"ready".into(), &origin);
     }
 }
 
@@ -136,6 +154,6 @@ pub fn start() {
         });
     APPLICATION.with(|application| *application.borrow_mut() = Some(handle));
     if let Some(gallery) = embedded.borrow().clone() {
-        follow_examples(gallery);
+        follow_page(gallery);
     }
 }

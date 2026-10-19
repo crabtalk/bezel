@@ -1,6 +1,6 @@
 ---
 title: Diff
-description: A file review — and the pattern whose finding is that it produced no library code at all.
+description: A file review — and the page whose finding is that it produced no library code at all.
 ---
 
 A diff row is two numbers, a sign and a line of text: three `div`s and a colour, with no reducer, no state and nothing to measure. Next to [`tree`](/docs/tree) or [`table`](/docs/table) it would be a paint helper wearing a component's badge, so it lives in the file you would copy.
@@ -9,4 +9,4 @@ What is actually hard about a diff view — folding hunks, word-level marks insi
 
 The rows arrive already decided: bezel never computes a diff. The header is `widgets` chrome, and the tones are the palette's `diff_add`, `diff_del` and `diff_hunk_bg`.
 
-The source is at `apps/gallery/src/patterns/diff.rs`.
+The source is at `apps/gallery/src/pages/agent/diff.rs`.

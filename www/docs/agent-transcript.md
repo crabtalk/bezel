@@ -15,4 +15,4 @@ The screen it was ported from is 943 lines and produced no library code. Its thr
 
 What is left of the 943 lines is IPC, project lookups, sticky-scroll measurement and error parsing. The beat type is page-local and deliberately not a library type.
 
-The source is at `apps/gallery/src/patterns/transcript.rs`. Copy the file.
+The source is at `apps/gallery/src/pages/agent/transcript.rs`. Copy the file.
