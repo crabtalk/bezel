@@ -40,7 +40,7 @@ pub(crate) struct State {
     pub(crate) dialect: Entity<dialect::Dialect>,
     pub(crate) ribbon: Entity<ribbon::RibbonDemo>,
     /// Prose a reader can drag over, which owns the selection the way any host
-    /// of `markdown::selectable` has to.
+    /// of `markdown::render::selectable` has to.
     pub(crate) selectable: Entity<selectable::Selectable>,
     pub(crate) editor: Entity<editor::EditorDemo>,
     pub(crate) canvas: Entity<canvas::CanvasDemo>,

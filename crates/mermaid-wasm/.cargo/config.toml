@@ -1,0 +1,4 @@
+# Read by cargo run from this directory, as `wasm-pack` runs it, and not by a
+# build from the workspace root.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

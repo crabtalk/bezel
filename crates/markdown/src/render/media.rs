@@ -198,7 +198,7 @@ pub(super) fn bookmark(
     theme: &Theme,
     cx: &App,
 ) -> AnyElement {
-    let preview = crate::link::preview(crate::Link::new(url, base), cx).unwrap_or_default();
+    let preview = crate::app::link::preview(crate::Link::new(url, base), cx).unwrap_or_default();
     let host = SharedString::from(preview::host(url).to_string());
     let label = preview.label.clone().unwrap_or_else(|| host.clone());
     let title = preview
@@ -284,7 +284,7 @@ pub(super) fn bookmark(
         .cursor(CursorStyle::PointingHand)
         .hover(|el| el.bg(theme::over(theme.element_hover, theme.surface_card)))
         .on_click(move |_, window, cx| {
-            crate::link::open(crate::Link::new(&open, base.as_deref()), window, cx)
+            crate::app::link::open(crate::Link::new(&open, base.as_deref()), window, cx)
         });
 
     if matches!(form, Form::Embed(_)) {
@@ -370,6 +370,6 @@ impl HoverCard {
 impl Render for HoverCard {
     fn render(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let link = crate::Link::new(&self.url, self.base.as_deref());
-        div().children(crate::link::hover(link, window, cx))
+        div().children(crate::app::link::hover(link, window, cx))
     }
 }

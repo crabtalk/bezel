@@ -1,0 +1,74 @@
+//! Pele's `diagrams/sankey/db.ts`.
+
+use indexmap::IndexMap;
+use serde::Serialize;
+
+use crate::js;
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SankeyNode {
+    pub id: String,
+    pub index: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SankeyLink {
+    pub source: SankeyNode,
+    pub target: SankeyNode,
+    #[serde(serialize_with = "js::json_number")]
+    pub value: f64,
+}
+
+/// Pele's `SankeyDb`, serialized with its lookup as Pele's is.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SankeyModel {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub nodes: Vec<SankeyNode>,
+    pub links: Vec<SankeyLink>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acc_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acc_descr: Option<String>,
+    lookup: IndexMap<String, SankeyNode>,
+}
+
+impl Default for SankeyModel {
+    fn default() -> Self {
+        Self {
+            kind: "sankey",
+            nodes: Vec::new(),
+            links: Vec::new(),
+            title: None,
+            acc_title: None,
+            acc_descr: None,
+            lookup: IndexMap::new(),
+        }
+    }
+}
+
+impl SankeyModel {
+    pub fn find_or_create_node(&mut self, id: &str) -> SankeyNode {
+        if let Some(node) = self.lookup.get(id) {
+            return node.clone();
+        }
+        let node = SankeyNode {
+            id: id.to_string(),
+            index: self.nodes.len(),
+        };
+        self.lookup.insert(id.to_string(), node.clone());
+        self.nodes.push(node.clone());
+        node
+    }
+
+    pub fn add_link(&mut self, source: SankeyNode, target: SankeyNode, value: f64) {
+        self.links.push(SankeyLink {
+            source,
+            target,
+            value,
+        });
+    }
+}

@@ -1,7 +1,7 @@
 //! The selectable-text pattern — prose a reader can drag over and copy.
 //!
 //! Nothing here is library code. The only call into it is
-//! [`markdown::selectable::render`], which paints a document and reports what
+//! [`markdown::render::selectable::render`], which paints a document and reports what
 //! the pointer did; the selection, and what copying means, are this screen's.
 //!
 //! What it is built to show: **the selection is the caller's**. The library
@@ -10,7 +10,7 @@
 //! transcript's messages do. Here there is one document, so the state is one
 //! `Option<Selection>`.
 //!
-//! Copy is [`markdown::selectable::copied`], which is plain text: the words a
+//! Copy is [`markdown::render::selectable::copied`], which is plain text: the words a
 //! reader dragged over, not the markup under them. The editor's own copy is a
 //! different act — `slice` then `serialize` — because what it puts back is
 //! blocks.
@@ -18,7 +18,7 @@
 use gpui::{ClipboardItem, Context, Render, SharedString, Window, div, prelude::*, px};
 use markdown::{
     BlockLayouts, Cursor, Doc, Selection,
-    selectable::{self, Pointer},
+    render::selectable::{self, Pointer},
 };
 use std::ops::Range;
 use theme::{TextStyle, Theme, Typeset};

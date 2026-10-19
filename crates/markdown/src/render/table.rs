@@ -52,8 +52,8 @@ pub(super) fn table(
                 cell,
                 weight,
                 theme,
-                |name| crate::marks::paint_of(cx, name, theme),
-                |url| crate::link::preview(crate::Link::new(url, overlay.base), cx),
+                |name| crate::paint::marks::paint_of(cx, name, theme),
+                |url| crate::app::link::preview(crate::Link::new(url, overlay.base), cx),
             );
             if !flat.text.is_empty() {
                 let width = f32::from(

@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prebench": "npm install --no-audit --no-fund",
+    "bench": "node bench.mjs > pele.json && cargo bench -q -p bezel-mermaid --bench mermaid > opt3.json && cargo bench -q -p bezel-mermaid --bench mermaid --profile release > release.json && node compare.mjs pele.json opt3.json release.json"
+  },
+  "dependencies": {
+    "pele": "1.6.0"
+  }
+}

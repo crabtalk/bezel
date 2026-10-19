@@ -910,23 +910,31 @@ version = "0.2.18"
 dependencies = [
  "bezel-gpui",
  "bezel-gpui-shared-string",
+ "bezel-mermaid",
  "bezel-theme",
  "bezel-ui",
+ "pulldown-cmark",
+ "rustybuzz",
+ "usvg",
+]
+
+[[package]]
+name = "bezel-mermaid"
+version = "0.2.18"
+dependencies = [
  "chrono",
  "indexmap",
  "memchr",
- "pulldown-cmark",
- "rustybuzz",
  "serde",
  "serde_json",
  "usvg",
 ]
 
 [[package]]
-name = "bezel-markdown-wasm"
+name = "bezel-mermaid-wasm"
 version = "0.2.18"
 dependencies = [
- "bezel-markdown",
+ "bezel-mermaid",
  "js-sys",
  "serde_json",
  "wasm-bindgen",

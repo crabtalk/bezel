@@ -18,7 +18,7 @@ fn diagram(source: &'static str, cx: &mut TestAppContext) -> Option<gpui::Bounds
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(320.0), px(600.0)));
     cx.run_until_parked();
-    cx.debug_bounds(markdown::mermaid::LANGUAGE)
+    cx.debug_bounds(markdown::fence::mermaid::LANGUAGE)
 }
 
 #[gpui::test]
@@ -37,7 +37,7 @@ fn a_diagram_wider_than_its_box_opens_fitted_to_it(cx: &mut TestAppContext) {
         .into_iter()
         .find_map(|window| {
             VisualTestContext::from_window(window, cx)
-                .debug_bounds(markdown::mermaid::DIAGRAM_SELECTOR)
+                .debug_bounds(markdown::fence::mermaid::DIAGRAM_SELECTOR)
         })
         .expect("the diagram is drawn");
     assert!(
@@ -54,7 +54,7 @@ fn note(source: &'static str, cx: &mut TestAppContext) -> Option<gpui::Bounds<gp
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(320.0), px(600.0)));
     cx.run_until_parked();
-    cx.debug_bounds(markdown::render::NOTE_SELECTOR)
+    cx.debug_bounds(markdown::fence::NOTE_SELECTOR)
 }
 
 #[gpui::test]

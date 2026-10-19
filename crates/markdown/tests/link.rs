@@ -167,22 +167,22 @@ fn a_fragment_link_with_no_jump_opens_nothing(cx: &mut TestAppContext) {
 
 #[test]
 fn a_heading_slug_follows_github() {
-    assert_eq!(markdown::link::slug("Set Up: the `cli`!"), "set-up-the-cli");
+    assert_eq!(markdown::app::link::slug("Set Up: the `cli`!"), "set-up-the-cli");
     assert_eq!(
-        markdown::link::slug("snake_case and-dash"),
+        markdown::app::link::slug("snake_case and-dash"),
         "snake_case-and-dash"
     );
-    assert_eq!(markdown::link::slug("Café über"), "café-über");
+    assert_eq!(markdown::app::link::slug("Café über"), "café-über");
 }
 
 #[test]
 fn a_repeated_heading_takes_the_next_free_suffix() {
     let doc = parse("# Notes\n\n# Notes\n\n# Notes 1\n\n# Notes");
-    assert_eq!(markdown::link::heading(&doc, "notes"), Some(0));
-    assert_eq!(markdown::link::heading(&doc, "notes-1"), Some(1));
-    assert_eq!(markdown::link::heading(&doc, "notes-1-1"), Some(2));
-    assert_eq!(markdown::link::heading(&doc, "notes-2"), Some(3));
-    assert_eq!(markdown::link::heading(&doc, "Notes"), None);
+    assert_eq!(markdown::app::link::heading(&doc, "notes"), Some(0));
+    assert_eq!(markdown::app::link::heading(&doc, "notes-1"), Some(1));
+    assert_eq!(markdown::app::link::heading(&doc, "notes-1-1"), Some(2));
+    assert_eq!(markdown::app::link::heading(&doc, "notes-2"), Some(3));
+    assert_eq!(markdown::app::link::heading(&doc, "Notes"), None);
 }
 
 #[test]

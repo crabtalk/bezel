@@ -26,14 +26,6 @@
 
 use gpui_shared_string::SharedString;
 
-#[cfg(feature = "gpui")]
-mod paint;
-#[cfg(feature = "gpui")]
-pub use paint::*;
-#[cfg(feature = "gpui")]
-pub(crate) use paint::{
-    highlight_paint_of, paint_of, set_highlight_paint, set_mark_paint, set_marks,
-};
 
 /// The custom marks a document is read and written with.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

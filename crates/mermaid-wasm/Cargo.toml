@@ -1,0 +1,41 @@
+[package]
+name = "bezel-mermaid-wasm"
+description = "bezel-mermaid for the web, with Pele's API"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "mermaid_wasm"
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+mermaid.workspace = true
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+# `--profile wasm`. The features rustc enables for `wasm32-unknown-unknown`,
+# `simd128` from `.cargo/config.toml`.
+[package.metadata.wasm-pack.profile.custom]
+wasm-opt = [
+    "-O3",
+    "--enable-simd",
+    "--enable-bulk-memory",
+    "--enable-multivalue",
+    "--enable-mutable-globals",
+    "--enable-nontrapping-float-to-int",
+    "--enable-reference-types",
+    "--enable-sign-ext",
+]
