@@ -726,9 +726,11 @@ impl RowPaint {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn code_block(
     language: Option<&str>,
     code: &str,
+    note: Option<SharedString>,
     overlay: Overlay,
     typography: &Typography,
     theme: &Theme,
@@ -777,6 +779,7 @@ pub(super) fn code_block(
                 ),
         )
         .child(body)
+        .children(note.map(|note| fence_note(note, theme)))
         .children(
             (overlay.copy == CopyButton::Shown).then(|| copy_button(code, ix, theme, window, cx)),
         )
@@ -792,6 +795,31 @@ pub fn fence_panel(theme: &Theme) -> gpui::Div {
         .border_color(theme.border)
         .overflow_hidden()
         .relative()
+}
+
+/// The debug selector on a [`fence_note`].
+pub const NOTE_SELECTOR: &str = "fence-note";
+
+/// A note across the bottom of a [`fence_panel`] under its code — why the
+/// code was not painted — its lines kept as written.
+pub fn fence_note(note: SharedString, theme: &Theme) -> AnyElement {
+    div()
+        .debug_selector(|| NOTE_SELECTOR.into())
+        .flex()
+        .flex_col()
+        .px(px(CODE_PADDING_X))
+        .py(px(CODE_PADDING_Y))
+        .border_t_1()
+        .border_color(theme.border)
+        .text_color(theme.danger)
+        .font_family(theme.font_mono.clone())
+        .text_style(TextStyle::Subheadline)
+        .children(
+            note.lines()
+                .map(|line| SharedString::from(line.to_string()))
+                .collect::<Vec<_>>(),
+        )
+        .into_any_element()
 }
 
 /// The band across the top of a [`fence_panel`], where its label and copy

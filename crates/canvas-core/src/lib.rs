@@ -11,8 +11,6 @@ pub mod drag;
 pub mod handle;
 pub mod json_canvas;
 pub mod layout;
-#[cfg(feature = "mermaid")]
-pub mod mermaid;
 pub mod mindmap;
 pub mod model;
 pub mod paint;

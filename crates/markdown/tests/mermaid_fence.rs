@@ -48,23 +48,25 @@ fn a_diagram_wider_than_its_box_opens_fitted_to_it(cx: &mut TestAppContext) {
     );
 }
 
-#[gpui::test]
-fn a_fence_it_cannot_read_keeps_its_source(cx: &mut TestAppContext) {
-    assert!(diagram("```mermaid\nflowchart LR\n  A -->\n```\n", cx).is_none());
-}
-
-fn chart(source: &'static str, cx: &mut TestAppContext) -> Option<gpui::Bounds<gpui::Pixels>> {
+fn note(source: &'static str, cx: &mut TestAppContext) -> Option<gpui::Bounds<gpui::Pixels>> {
     cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
     let window = cx.add_window(|_, _| Page(source));
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(320.0), px(600.0)));
     cx.run_until_parked();
-    cx.debug_bounds(markdown::charts::SELECTOR)
+    cx.debug_bounds(markdown::render::NOTE_SELECTOR)
 }
 
 #[gpui::test]
-fn a_mermaid_pie_paints_as_a_chart(cx: &mut TestAppContext) {
-    let bounds = chart("```mermaid\npie\n  \"a\" : 1\n  \"b\" : 2\n```\n", cx)
-        .expect("the fence paints a chart");
+fn a_fence_it_cannot_read_keeps_its_source_with_the_error_under_it(cx: &mut TestAppContext) {
+    let source = "```mermaid\nflowchart LR\n  A -->\n```\n";
+    assert!(note(source, cx).is_some());
+    assert!(diagram(source, cx).is_none());
+}
+
+#[gpui::test]
+fn a_pie_paints_as_a_diagram(cx: &mut TestAppContext) {
+    let bounds = diagram("```mermaid\npie\n  \"a\" : 1\n  \"b\" : 2\n```\n", cx)
+        .expect("the fence paints a diagram");
     assert!(bounds.size.height > px(0.0));
 }

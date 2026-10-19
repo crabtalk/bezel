@@ -1111,11 +1111,11 @@ fn block_element(
             // The caret in the fence gives the source back. A painted block is
             // still an editable one, and typing into it otherwise edits what
             // the reader cannot see.
-            let painted = overlay
+            let fence = overlay
                 .caret()
                 .is_none()
                 .then(|| {
-                    let fence = block::Fence {
+                    Some(block::Fence {
                         language: language.as_deref()?,
                         code: &code.text,
                         height,
@@ -1125,14 +1125,17 @@ fn block_element(
                                 rewrite(ix, code, window, cx)
                             }) as block::Rewrite
                         }),
-                    };
-                    block::render(&fence, window, cx)
+                    })
                 })
                 .flatten();
+            let painted = match fence {
+                Some(fence) => block::render(&fence, window, cx),
+                None => block::Painted::Code(None),
+            };
             match painted {
                 // Painted, there is no text under the selection to carry it —
                 // the wash an opaque block gets at the container comes here.
-                Some(element) => div()
+                block::Painted::Block(element) => div()
                     .key_context(PAINTED_CONTEXT)
                     .relative()
                     .when_some(overlay.fence, |el, host| {
@@ -1146,9 +1149,10 @@ fn block_element(
                     .child(element)
                     .children(resizable(&overlay, theme))
                     .into_any_element(),
-                None => code_block(
+                block::Painted::Code(note) => code_block(
                     language.as_deref(),
                     &code.text,
+                    note,
                     overlay,
                     typography,
                     theme,

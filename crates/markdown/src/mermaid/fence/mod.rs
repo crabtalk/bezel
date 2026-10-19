@@ -1,23 +1,29 @@
-//! ` ```mermaid ` — the diagram, drawn as a read-only canvas in a fence's box,
-//! or as a chart for the kinds [`chart::mermaid`] reads.
+//! ` ```mermaid ` — the diagram [`crate::mermaid`] draws, painted from its SVG
+//! in a fence's box.
 //!
-//! Parsing and layout cost milliseconds and paint runs every frame, so each
-//! source is laid out once per text size and kept. Zoom scales the drawing of
-//! that one layout.
+//! Drawing and parsing the SVG cost milliseconds and paint runs every frame,
+//! so each source is drawn once per text size, theme and font and kept, and
+//! rasterized again only when its scale on screen changes. The SVG names the
+//! theme's colours, and its labels are measured in the faces gpui's SVG
+//! renderer draws them in ([`fonts`]).
 //!
 //! A press on the diagram pans it and does not reach the editor; the band
 //! above it does, which is how the source is reached for editing.
 
+mod fonts;
+
 use std::{
+    cell::RefCell,
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     rc::Rc,
+    sync::Arc,
 };
 
-use canvas_core::Canvas;
 use gpui::{
-    AnyElement, App, ElementId, Entity, Global, MouseButton, MouseDownEvent, MouseMoveEvent,
-    Pixels, Point, SharedString, Size, Window, div, prelude::*, px,
+    AnyElement, App, ElementId, Entity, Global, Hsla, ImageSource, MouseButton, MouseDownEvent,
+    MouseMoveEvent, ParsedSvg, Pixels, Point, RenderImage, Rgba as GpuiRgba, SharedString, Size,
+    Window, div, img, prelude::*, px,
 };
 use theme::{TextStyle, Theme};
 use ui::{
@@ -26,7 +32,11 @@ use ui::{
     widgets::{ButtonStyle, Buttons as _},
 };
 
-use crate::render::{copy_button, fence_band, fence_panel};
+use self::fonts::{Families, Shaper};
+use crate::{
+    mermaid::{Colors, Options, Rgba},
+    render::{copy_button, fence_band, fence_panel},
+};
 
 pub const LANGUAGE: &str = "mermaid";
 
@@ -106,12 +116,37 @@ pub(crate) fn set_zoom(cx: &mut App, zoom: Zoom) {
 /// the fence states is the whole box's, band included, taken as it is.
 const MAX_HEIGHT: f32 = 480.0;
 
-/// Laid-out diagrams by source and text size. `None` for source that did not
-/// lay out, so a fence being typed is not parsed again every frame.
+/// Drawn diagrams by key. An error's text for source that did not draw, so a
+/// fence being typed is not parsed again every frame.
 #[derive(Default)]
-struct Cache(HashMap<u64, Option<Rc<Canvas>>>);
+struct Cache(HashMap<u64, Result<Rc<Diagram>, SharedString>>);
 
 impl Global for Cache {}
+
+/// A drawn diagram: its SVG parsed, its size, and its last raster with the
+/// device scale that was made at.
+struct Diagram {
+    svg: ParsedSvg,
+    natural: (f32, f32),
+    raster: RefCell<Option<(f32, Arc<RenderImage>)>>,
+}
+
+impl Diagram {
+    /// The diagram at `scale` device pixels to its own, made again only when
+    /// the scale moves.
+    fn raster(&self, scale: f32, window: &mut Window, cx: &mut App) -> Option<Arc<RenderImage>> {
+        if let Some((at, image)) = &*self.raster.borrow()
+            && *at == scale
+        {
+            return Some(image.clone());
+        }
+        let image = cx.svg_renderer().render_parsed(&self.svg, scale).ok()?;
+        if let Some((_, old)) = self.raster.replace(Some((scale, image.clone()))) {
+            cx.drop_image(old, Some(window));
+        }
+        Some(image)
+    }
+}
 
 /// One diagram's view: its scale, `None` until a zoom button is pressed; how
 /// far it is panned; the press a pan is following — where the pointer and the
@@ -124,42 +159,109 @@ struct View {
     frame: Option<Size<Pixels>>,
 }
 
-fn hash(code: &str, size: f32) -> u64 {
+fn rgba(color: Hsla) -> Rgba {
+    let GpuiRgba { r, g, b, a } = color.into();
+    [r, g, b, a].map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8)
+}
+
+/// The theme's colours for the `--bezel-*` tokens.
+fn colors(theme: &Theme) -> Colors {
+    Colors {
+        bg: rgba(theme.bg),
+        fg: rgba(theme.text),
+        muted: rgba(theme.text_muted),
+        line: rgba(theme.text),
+        surface: rgba(theme.surface),
+        surface_alt: rgba(theme.element_active),
+        border: rgba(theme.border_strong),
+        accent: rgba(theme.accent),
+        critical: rgba(theme.danger),
+        series: std::array::from_fn(|index| rgba(theme.categorical(index))),
+    }
+}
+
+/// `code` drawn at text size `size` in the theme's colours and fonts, kept.
+fn drawn(
+    code: &str,
+    size: f32,
+    theme: &Theme,
+    window: &mut Window,
+    cx: &mut App,
+) -> (u64, Result<Rc<Diagram>, SharedString>) {
+    let families = Families::resolve(&theme.font_sans, &theme.font_mono);
+    let colors = colors(theme);
     let mut hasher = DefaultHasher::new();
-    (code, size.to_bits()).hash(&mut hasher);
-    hasher.finish()
+    (code, size.to_bits(), &colors, &families).hash(&mut hasher);
+    let key = hasher.finish();
+    if let Some(found) = cx.default_global::<Cache>().0.get(&key) {
+        return (key, found.clone());
+    }
+    let cache = std::mem::take(&mut cx.default_global::<Cache>().0);
+    let cache = if cache.len() >= CACHED {
+        for diagram in cache.into_values().flatten() {
+            if let Some((_, image)) = diagram.raster.take() {
+                cx.drop_image(image, Some(window));
+            }
+        }
+        HashMap::new()
+    } else {
+        cache
+    };
+    cx.default_global::<Cache>().0 = cache;
+    let options = Options {
+        measure: Some(Rc::new(Shaper(families.clone()))),
+        font_family: Some(families.sans),
+        font_family_mono: Some(families.mono),
+        font_size: Some(f64::from(size)),
+        colors: Some(colors),
+        ..Options::default()
+    };
+    let result = crate::mermaid::render(code, &options)
+        .map_err(|error| note(&error))
+        .and_then(|drawing| {
+            let svg = cx
+                .svg_renderer()
+                .parse_svg(drawing.svg.as_bytes())
+                .map_err(|error| SharedString::from(error.to_string()))?;
+            Ok(Rc::new(Diagram {
+                svg,
+                natural: (drawing.width as f32, drawing.height as f32),
+                raster: RefCell::new(None),
+            }))
+        });
+    cx.default_global::<Cache>().0.insert(key, result.clone());
+    (key, result)
 }
 
-fn laid_out(code: &str, size: f32, cx: &mut App) -> Option<Rc<Canvas>> {
-    let key = hash(code, size);
-    let cache = &mut cx.default_global::<Cache>().0;
-    if let Some(canvas) = cache.get(&key) {
-        return canvas.clone();
+/// What a fence shows under source that did not draw: the error's message,
+/// and the line it points at where the message does not show it.
+fn note(error: &crate::mermaid::Error) -> SharedString {
+    let mut text = error.message.clone();
+    if !error.snippet.is_empty() && !text.contains(&error.snippet) {
+        text.push('\n');
+        text.push_str(&error.snippet);
     }
-    if cache.len() >= CACHED {
-        cache.clear();
-    }
-    let canvas = canvas_core::mermaid::import(code, size).map(Rc::new);
-    cache.insert(key, canvas.clone());
-    canvas
+    text.into()
 }
 
-/// The diagram `code` describes, or `None` to leave the fence to its source.
+/// The diagram `code` describes, or the note its source is shown with.
 pub fn render(
     code: &str,
     height: Option<u32>,
     window: &mut Window,
     cx: &mut App,
-) -> Option<AnyElement> {
+) -> Result<AnyElement, SharedString> {
     let size = TextStyle::Callout.painted();
+    let theme = Theme::of(cx).clone();
+    let (key, diagram) = drawn(code, size, &theme, window, cx);
+    let diagram = diagram?;
     // The box keeps the unzoomed diagram's height, so zooming moves what is in
     // it rather than the page under it.
-    let Some(canvas) = laid_out(code, size, cx) else {
-        return crate::charts::render(LANGUAGE, code, chart::mermaid::import, height, window, cx);
-    };
-    let natural = canvas_core::diagram::size_of(&canvas)?;
-    let key = hash(code, size);
-    let id = format!("mermaid-{key:x}");
+    let natural = diagram.natural;
+    // The view outlives a change of theme or font; the drawing does not.
+    let mut hasher = DefaultHasher::new();
+    (code, size.to_bits()).hash(&mut hasher);
+    let id = format!("mermaid-{:x}", hasher.finish());
     let state = window.use_keyed_state(
         ElementId::from(SharedString::from(id.clone())),
         cx,
@@ -171,7 +273,9 @@ pub fn render(
     let floor = zoom.min.min(fit);
     // Until a press, a diagram larger than its box opens fitted to it.
     let scale = view.zoom.unwrap_or(fit).clamp(floor, zoom.max);
-    let theme = Theme::of(cx).clone();
+    let image = diagram
+        .raster(scale * window.scale_factor(), window, cx)
+        .ok_or_else(|| SharedString::from("The diagram could not be drawn."))?;
 
     let (press, follow, release, release_out, measure) = (
         state.clone(),
@@ -238,25 +342,27 @@ pub fn render(
                 .absolute()
                 .left(view.pan.x)
                 .top(view.pan.y)
-                .child(canvas_core::diagram(&canvas, scale, cx)),
+                .child(
+                    img(ImageSource::Render(image))
+                        .w(px(natural.0 * scale))
+                        .h(px(natural.1 * scale)),
+                ),
         )
         .child(controls(&id, &state, view, scale, floor, zoom, &theme));
 
-    Some(
-        fence_panel(&theme)
-            .when_some(height, |el, height| {
-                el.h(px(height as f32)).flex().flex_col()
-            })
-            .child(
-                fence_band(&theme)
-                    .flex_none()
-                    .text_color(theme.text_muted)
-                    .child(LANGUAGE),
-            )
-            .child(viewport)
-            .child(copy_button(code, key as usize, &theme, window, cx))
-            .into_any_element(),
-    )
+    Ok(fence_panel(&theme)
+        .when_some(height, |el, height| {
+            el.h(px(height as f32)).flex().flex_col()
+        })
+        .child(
+            fence_band(&theme)
+                .flex_none()
+                .text_color(theme.text_muted)
+                .child(LANGUAGE),
+        )
+        .child(viewport)
+        .child(copy_button(code, key as usize, &theme, window, cx))
+        .into_any_element())
 }
 
 fn end_pan(state: &Entity<View>, cx: &mut App) {

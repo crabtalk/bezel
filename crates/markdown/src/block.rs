@@ -8,13 +8,13 @@
 //! paints the source it always did.
 //!
 //! The `mermaid` feature paints a ` ```mermaid ` fence the installed renderer
-//! leaves, as a diagram or a chart.
+//! leaves, as a diagram.
 //!
 //! Installed once at boot like the highlighter, and read at paint.
 
 use std::rc::Rc;
 
-use gpui::{AnyElement, App, Global, Window};
+use gpui::{AnyElement, App, Global, SharedString, Window};
 
 /// Replaces the painted fence's code — see [`Fence::rewrite`].
 pub type Rewrite = Rc<dyn Fn(String, &mut Window, &mut App)>;
@@ -52,17 +52,27 @@ pub(crate) fn set_block_renderer(cx: &mut App, renderer: BlockRenderer) {
     cx.set_global(Installed(renderer));
 }
 
-pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+/// What a fence is painted as: a block in its place, or its code with a note
+/// under it.
+pub(crate) enum Painted {
+    Block(AnyElement),
+    Code(Option<SharedString>),
+}
+
+pub(crate) fn render(fence: &Fence<'_>, window: &mut Window, cx: &mut App) -> Painted {
     // Copied out before the call: the renderer reads the theme and its own
     // globals off the same `cx` this borrows.
     if let Some(renderer) = cx.try_global::<Installed>().map(|installed| installed.0)
         && let Some(painted) = renderer(fence, window, cx)
     {
-        return Some(painted);
+        return Painted::Block(painted);
     }
     #[cfg(feature = "mermaid")]
     if fence.language == crate::mermaid::LANGUAGE {
-        return crate::mermaid::fence::render(fence.code, fence.height, window, cx);
+        return match crate::mermaid::fence::render(fence.code, fence.height, window, cx) {
+            Ok(painted) => Painted::Block(painted),
+            Err(note) => Painted::Code(Some(note)),
+        };
     }
-    None
+    Painted::Code(None)
 }
