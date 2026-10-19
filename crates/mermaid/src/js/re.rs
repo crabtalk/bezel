@@ -1,12 +1,12 @@
 //! Regular expressions with JavaScript's syntax and matching rules, for the
 //! patterns ported from Pele.
 //!
-//! A backtracking matcher over the pattern's tree. It reads what Pele's
-//! patterns use: classes, `\d \w \s \b`, `\p{L}` and `\p{N}` under `u`,
-//! groups, alternation, greedy and lazy quantifiers, lookahead, and the flags
-//! `g i m s u y`. `{` that does not open a quantifier, and `]` and `}` outside
-//! a class, are literal, as in JavaScript without `u`. No backreferences and no
-//! lookbehind.
+//! A backtracking matcher: the pattern compiled to a program, run as a loop
+//! with an explicit stack. It reads what Pele's patterns use: classes,
+//! `\d \w \s \b`, `\p{L}` and `\p{N}` under `u`, groups, alternation,
+//! greedy and lazy quantifiers, lookahead, and the flags `g i m s u y`. `{`
+//! that does not open a quantifier, and `]` and `}` outside a class, are
+//! literal, as in JavaScript without `u`. No backreferences and no lookbehind.
 //!
 //! Positions are byte offsets into UTF-8, and `.` takes a code point where
 //! JavaScript takes a UTF-16 unit.
@@ -48,7 +48,9 @@ impl Deref for Lazy {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Regex {
-    alt: Alt,
+    prog: Vec<Inst>,
+    /// How many unbounded-node repeats the program counts.
+    repeats: usize,
     groups: usize,
     flags: Flags,
     /// The characters a match can start with, when that is known; at 0 it
@@ -296,8 +298,13 @@ impl Regex {
             },
             _ => None,
         };
+        let mut prog = Vec::new();
+        let mut repeats = 0;
+        compile_alt(&alt, &mut prog, &mut repeats);
+        prog.push(Inst::Match);
         Self {
-            alt,
+            prog,
+            repeats,
             groups: parser.groups,
             flags: parsed,
             first,
@@ -452,13 +459,16 @@ impl Regex {
             }
             return (count >= *min).then_some(end);
         }
-        let mut end = None;
-        matcher
-            .alt(&self.alt, at, caps, &mut |pos, _| {
-                end = Some(pos);
-                true
-            })
-            .then(|| end.unwrap_or(at))
+        STATE.with(|cell| {
+            let mut state = cell.take();
+            state.regs.clear();
+            state.regs.resize(self.repeats, (0, 0));
+            let end = matcher.run(&self.prog, 0, at, caps, &mut state);
+            state.stack.clear();
+            state.saved.clear();
+            cell.set(state);
+            end
+        })
     }
 
     fn captures<'t>(&self, text: &'t str, at: usize, end: usize, caps: &Caps) -> Captures<'t> {
@@ -940,7 +950,6 @@ struct Matcher<'t> {
 }
 
 type Caps = [Option<usize>];
-type Next<'k> = &'k mut dyn FnMut(usize, &mut Caps) -> bool;
 
 impl Matcher<'_> {
     fn char_at(&self, at: usize) -> Option<char> {
@@ -976,175 +985,456 @@ impl Matcher<'_> {
         hit.then(|| at + c.len_utf8())
     }
 
-    fn alt(&self, alt: &Alt, at: usize, caps: &mut Caps, next: Next) -> bool {
-        for seq in alt {
-            if self.seq(seq, 0, at, caps, next) {
-                return true;
-            }
-        }
-        false
-    }
-
-    fn seq(&self, seq: &[Node], i: usize, at: usize, caps: &mut Caps, next: Next) -> bool {
-        let Some(node) = seq.get(i) else {
-            return next(at, caps);
-        };
-        match node {
-            Node::Char(_) | Node::Any | Node::Class(_) => match self.single(node, at) {
-                Some(end) => self.seq(seq, i + 1, end, caps, next),
-                None => false,
-            },
-            Node::Start => {
-                let ok = at == 0
-                    || (self.flags.multiline && self.char_before(at).is_some_and(is_line_end));
-                ok && self.seq(seq, i + 1, at, caps, next)
-            }
-            Node::End => {
-                let ok = at == self.text.len()
-                    || (self.flags.multiline && self.char_at(at).is_some_and(is_line_end));
-                ok && self.seq(seq, i + 1, at, caps, next)
-            }
-            Node::Boundary(want) => {
-                let before = self.char_before(at).is_some_and(is_word);
-                let after = self.char_at(at).is_some_and(is_word);
-                ((before != after) == *want) && self.seq(seq, i + 1, at, caps, next)
-            }
-            Node::Group(alt, index) => {
-                let saved = index.map(|index| (caps[index * 2], caps[index * 2 + 1]));
-                let found = self.alt(alt, at, caps, &mut |end, caps| {
-                    let before = index.map(|index| (caps[index * 2], caps[index * 2 + 1]));
-                    if let Some(index) = index {
-                        caps[index * 2] = Some(at);
-                        caps[index * 2 + 1] = Some(end);
+    /// Runs `prog` from `pc` at `at`: where the match ends, or `None`. What
+    /// it pushes on `state` past the height it started at is gone after.
+    fn run(
+        &self,
+        prog: &[Inst],
+        mut pc: usize,
+        mut at: usize,
+        caps: &mut Caps,
+        state: &mut State,
+    ) -> Option<usize> {
+        let base = state.stack.len();
+        loop {
+            let ok = match &prog[pc] {
+                Inst::One(node) => match self.single(node, at) {
+                    Some(end) => {
+                        at = end;
+                        pc += 1;
+                        true
                     }
-                    if self.seq(seq, i + 1, end, caps, next) {
-                        return true;
-                    }
-                    if let (Some(index), Some((start, stop))) = (index, before) {
-                        caps[*index * 2] = start;
-                        caps[*index * 2 + 1] = stop;
-                    }
-                    false
-                });
-                if !found && let (Some(index), Some((start, stop))) = (index, saved) {
-                    caps[*index * 2] = start;
-                    caps[*index * 2 + 1] = stop;
+                    None => false,
+                },
+                Inst::Start => {
+                    pc += 1;
+                    at == 0
+                        || (self.flags.multiline && self.char_before(at).is_some_and(is_line_end))
                 }
-                found
-            }
-            Node::Look(alt, negative, false) => {
-                let found = self.alt(alt, at, caps, &mut |_, _| true);
-                found != *negative && self.seq(seq, i + 1, at, caps, next)
-            }
-            Node::Look(alt, negative, true) => {
-                let mut inner = caps.to_vec();
-                let found = self.alt(alt, at, &mut inner, &mut |_, _| true);
-                if found == *negative {
-                    return false;
+                Inst::End => {
+                    pc += 1;
+                    at == self.text.len()
+                        || (self.flags.multiline && self.char_at(at).is_some_and(is_line_end))
                 }
-                if found {
-                    let saved = caps.to_vec();
-                    caps.copy_from_slice(&inner);
-                    if self.seq(seq, i + 1, at, caps, next) {
-                        return true;
-                    }
-                    caps.copy_from_slice(&saved);
-                    false
-                } else {
-                    self.seq(seq, i + 1, at, caps, next)
+                Inst::Boundary(want) => {
+                    pc += 1;
+                    let before = self.char_before(at).is_some_and(is_word);
+                    let after = self.char_at(at).is_some_and(is_word);
+                    (before != after) == *want
                 }
-            }
-            Node::Repeat {
-                node: inner,
-                min,
-                max,
-                greedy,
-            } => {
-                if matches!(**inner, Node::Char(_) | Node::Any | Node::Class(_)) {
-                    if !*greedy {
-                        let mut pos = at;
-                        let mut count = 0;
-                        loop {
-                            if count >= *min && self.seq(seq, i + 1, pos, caps, next) {
-                                return true;
-                            }
-                            if count >= *max {
-                                return false;
-                            }
-                            match self.single(inner, pos) {
-                                Some(end) => {
-                                    pos = end;
-                                    count += 1;
-                                }
-                                None => return false,
-                            }
-                        }
+                Inst::Split(first, then) => {
+                    state.stack.push(Frame::Branch { pc: *then, at });
+                    pc = *first;
+                    true
+                }
+                Inst::Jump(to) => {
+                    pc = *to;
+                    true
+                }
+                Inst::Save(slot) => {
+                    state.stack.push(Frame::Cap {
+                        slot: *slot,
+                        old: caps[*slot],
+                    });
+                    caps[*slot] = Some(at);
+                    pc += 1;
+                    true
+                }
+                Inst::Look {
+                    next,
+                    negative,
+                    captures: false,
+                } => {
+                    let found = self.run(prog, pc + 1, at, caps, state).is_some();
+                    pc = *next;
+                    found != *negative
+                }
+                Inst::Look {
+                    next,
+                    negative,
+                    captures: true,
+                } => {
+                    let mut inner = caps.to_vec();
+                    let found = self.run(prog, pc + 1, at, &mut inner, state).is_some();
+                    pc = *next;
+                    if found && !*negative {
+                        state.stack.push(Frame::Caps {
+                            from: state.saved.len(),
+                        });
+                        state.saved.extend_from_slice(caps);
+                        caps.copy_from_slice(&inner);
                     }
-                    let mut pos = at;
+                    found != *negative
+                }
+                Inst::RepeatInit(id) => {
+                    set_reg(state, *id, (0, at));
+                    pc += 1;
+                    true
+                }
+                Inst::Repeat {
+                    id,
+                    exit,
+                    min,
+                    max,
+                    greedy,
+                } => {
+                    let (count, _) = state.regs[*id];
+                    if count < *min {
+                        set_reg(state, *id, (count, at));
+                        pc += 1;
+                        true
+                    } else if count >= *max {
+                        pc = *exit;
+                        true
+                    } else if *greedy {
+                        state.stack.push(Frame::Branch { pc: *exit, at });
+                        set_reg(state, *id, (count, at));
+                        pc += 1;
+                        true
+                    } else {
+                        state.stack.push(Frame::Enter {
+                            pc: pc + 1,
+                            at,
+                            id: *id,
+                        });
+                        pc = *exit;
+                        true
+                    }
+                }
+                Inst::RepeatNext { id, min, back } => {
+                    let (count, start) = state.regs[*id];
+                    // An iteration that takes nothing past the minimum ends
+                    // the loop.
+                    if at == start && count >= *min {
+                        false
+                    } else {
+                        set_reg(state, *id, (count + 1, start));
+                        pc = *back;
+                        true
+                    }
+                }
+                Inst::Run {
+                    node,
+                    min,
+                    max,
+                    greedy: true,
+                } => {
                     let mut count = 0;
                     while count < *max {
-                        match self.single(inner, pos) {
+                        match self.single(node, at) {
                             Some(end) => {
-                                pos = end;
+                                at = end;
                                 count += 1;
                             }
                             None => break,
                         }
                     }
-                    if count < *min {
-                        return false;
+                    if count > *min {
+                        state.stack.push(Frame::Shorter { pc, at, count });
                     }
-                    loop {
-                        if self.seq(seq, i + 1, pos, caps, next) {
-                            return true;
+                    pc += 1;
+                    count >= *min
+                }
+                Inst::Run {
+                    node,
+                    min,
+                    max,
+                    greedy: false,
+                } => {
+                    let mut count = 0;
+                    let mut ok = true;
+                    while count < *min {
+                        match self.single(node, at) {
+                            Some(end) => {
+                                at = end;
+                                count += 1;
+                            }
+                            None => {
+                                ok = false;
+                                break;
+                            }
                         }
-                        if count == *min {
-                            return false;
-                        }
+                    }
+                    if ok && count < *max {
+                        state.stack.push(Frame::Longer { pc, at, count });
+                    }
+                    pc += 1;
+                    ok
+                }
+                Inst::Match => {
+                    state.stack.truncate(base);
+                    return Some(at);
+                }
+            };
+            if ok {
+                continue;
+            }
+            // Back to the last choice still open.
+            loop {
+                if state.stack.len() == base {
+                    return None;
+                }
+                match state.stack.pop().expect("a frame") {
+                    Frame::Branch { pc: to, at: from } => {
+                        pc = to;
+                        at = from;
+                        break;
+                    }
+                    Frame::Cap { slot, old } => caps[slot] = old,
+                    Frame::Reg { id, old } => state.regs[id] = old,
+                    Frame::Caps { from } => {
+                        caps.copy_from_slice(&state.saved[from..from + caps.len()]);
+                        state.saved.truncate(from);
+                    }
+                    Frame::Enter {
+                        pc: to,
+                        at: from,
+                        id,
+                    } => {
+                        let (count, _) = state.regs[id];
+                        set_reg(state, id, (count, from));
+                        pc = to;
+                        at = from;
+                        break;
+                    }
+                    Frame::Shorter {
+                        pc: run,
+                        at: end,
+                        count,
+                    } => {
+                        let Inst::Run { min, .. } = prog[run] else {
+                            unreachable!()
+                        };
                         // Each step back undoes one character the run took.
-                        pos -= self.char_before(pos).map_or(1, char::len_utf8);
-                        count -= 1;
+                        let end = end - self.char_before(end).map_or(1, char::len_utf8);
+                        if count - 1 > min {
+                            state.stack.push(Frame::Shorter {
+                                pc: run,
+                                at: end,
+                                count: count - 1,
+                            });
+                        }
+                        pc = run + 1;
+                        at = end;
+                        break;
+                    }
+                    Frame::Longer {
+                        pc: run,
+                        at: end,
+                        count,
+                    } => {
+                        let Inst::Run { node, max, .. } = &prog[run] else {
+                            unreachable!()
+                        };
+                        let Some(next) = self.single(node, end) else {
+                            continue;
+                        };
+                        if count + 1 < *max {
+                            state.stack.push(Frame::Longer {
+                                pc: run,
+                                at: next,
+                                count: count + 1,
+                            });
+                        }
+                        pc = run + 1;
+                        at = next;
+                        break;
                     }
                 }
-                self.repeat(inner, *min, *max, *greedy, 0, at, caps, &mut |end, caps| {
-                    self.seq(seq, i + 1, end, caps, next)
-                })
             }
         }
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn repeat(
-        &self,
-        node: &Node,
+/// Sets repeat `id`'s count and where its iteration started, to be undone
+/// on the way back.
+fn set_reg(state: &mut State, id: usize, value: (usize, usize)) {
+    state.stack.push(Frame::Reg {
+        id,
+        old: state.regs[id],
+    });
+    state.regs[id] = value;
+}
+
+/// One step of a compiled pattern.
+#[derive(Clone, Debug)]
+enum Inst {
+    /// One character, class or `.`.
+    One(Node),
+    Start,
+    End,
+    Boundary(bool),
+    /// Go on at the first, and at the second on the way back.
+    Split(usize, usize),
+    Jump(usize),
+    /// Where a group starts or ends.
+    Save(usize),
+    /// A lookahead whose program follows, ending in [`Inst::Match`]; `next`
+    /// is the step after that.
+    Look {
+        next: usize,
+        negative: bool,
+        captures: bool,
+    },
+    /// The count of repeat `id` back to 0.
+    RepeatInit(usize),
+    /// Another iteration of the node that follows, or on to `exit`.
+    Repeat {
+        id: usize,
+        exit: usize,
         min: usize,
         max: usize,
         greedy: bool,
-        count: usize,
+    },
+    /// The end of an iteration of repeat `id`, whose [`Inst::Repeat`] is at
+    /// `back`.
+    RepeatNext {
+        id: usize,
+        min: usize,
+        back: usize,
+    },
+    /// One character, class or `.` repeated.
+    Run {
+        node: Node,
+        min: usize,
+        max: usize,
+        greedy: bool,
+    },
+    Match,
+}
+
+/// A way back: a choice still open, or what to undo on the way.
+#[derive(Clone, Copy, Debug)]
+enum Frame {
+    Branch {
+        pc: usize,
         at: usize,
-        caps: &mut Caps,
-        next: Next,
-    ) -> bool {
-        let more = |caps: &mut Caps, next: Next| -> bool {
-            if count >= max {
-                return false;
-            }
-            let one = std::slice::from_ref(node);
-            self.seq(one, 0, at, caps, &mut |end, caps| {
-                // An iteration that takes nothing past the minimum ends the loop.
-                if end == at && count >= min {
-                    return false;
-                }
-                self.repeat(node, min, max, greedy, count + 1, end, caps, next)
-            })
-        };
-        if count < min {
-            return more(caps, next);
+    },
+    Cap {
+        slot: usize,
+        old: Option<usize>,
+    },
+    Reg {
+        id: usize,
+        old: (usize, usize),
+    },
+    /// The group positions before a lookahead set them, in
+    /// [`State::saved`] from `from`.
+    Caps {
+        from: usize,
+    },
+    /// A lazy repeat's next iteration, started at `at`.
+    Enter {
+        pc: usize,
+        at: usize,
+        id: usize,
+    },
+    /// A greedy [`Inst::Run`] at `pc` that took `count` to `at`, to give one
+    /// back.
+    Shorter {
+        pc: usize,
+        at: usize,
+        count: usize,
+    },
+    /// A lazy [`Inst::Run`] at `pc` that took `count` to `at`, to take one
+    /// more.
+    Longer {
+        pc: usize,
+        at: usize,
+        count: usize,
+    },
+}
+
+/// What a match keeps between steps, kept per thread to be reused.
+#[derive(Default)]
+struct State {
+    stack: Vec<Frame>,
+    /// Each repeat's count and where its iteration started.
+    regs: Vec<(usize, usize)>,
+    saved: Vec<Option<usize>>,
+}
+
+thread_local! {
+    static STATE: std::cell::Cell<State> = std::cell::Cell::new(State::default());
+}
+
+fn compile_alt(alt: &Alt, prog: &mut Vec<Inst>, repeats: &mut usize) {
+    let mut jumps = Vec::new();
+    for (k, seq) in alt.iter().enumerate() {
+        let split = (k + 1 < alt.len()).then(|| {
+            prog.push(Inst::Split(prog.len() + 1, 0));
+            prog.len() - 1
+        });
+        for node in seq {
+            compile_node(node, prog, repeats);
         }
-        if greedy {
-            more(caps, &mut *next) || next(at, caps)
-        } else {
-            next(at, caps) || more(caps, next)
+        if let Some(split) = split {
+            jumps.push(prog.len());
+            prog.push(Inst::Jump(0));
+            prog[split] = Inst::Split(split + 1, prog.len());
+        }
+    }
+    for jump in jumps {
+        prog[jump] = Inst::Jump(prog.len());
+    }
+}
+
+fn compile_node(node: &Node, prog: &mut Vec<Inst>, repeats: &mut usize) {
+    match node {
+        Node::Char(_) | Node::Any | Node::Class(_) => prog.push(Inst::One(node.clone())),
+        Node::Start => prog.push(Inst::Start),
+        Node::End => prog.push(Inst::End),
+        Node::Boundary(want) => prog.push(Inst::Boundary(*want)),
+        Node::Group(alt, None) => compile_alt(alt, prog, repeats),
+        Node::Group(alt, Some(index)) => {
+            prog.push(Inst::Save(index * 2));
+            compile_alt(alt, prog, repeats);
+            prog.push(Inst::Save(index * 2 + 1));
+        }
+        Node::Look(alt, negative, captures) => {
+            let look = prog.len();
+            prog.push(Inst::Match);
+            compile_alt(alt, prog, repeats);
+            prog.push(Inst::Match);
+            prog[look] = Inst::Look {
+                next: prog.len(),
+                negative: *negative,
+                captures: *captures,
+            };
+        }
+        Node::Repeat {
+            node: inner,
+            min,
+            max,
+            greedy,
+        } => {
+            if matches!(**inner, Node::Char(_) | Node::Any | Node::Class(_)) {
+                prog.push(Inst::Run {
+                    node: (**inner).clone(),
+                    min: *min,
+                    max: *max,
+                    greedy: *greedy,
+                });
+                return;
+            }
+            let id = *repeats;
+            *repeats += 1;
+            prog.push(Inst::RepeatInit(id));
+            let back = prog.len();
+            prog.push(Inst::Match);
+            compile_node(inner, prog, repeats);
+            prog.push(Inst::RepeatNext {
+                id,
+                min: *min,
+                back,
+            });
+            prog[back] = Inst::Repeat {
+                id,
+                exit: prog.len(),
+                min: *min,
+                max: *max,
+                greedy: *greedy,
+            };
         }
     }
 }
@@ -1229,5 +1519,143 @@ fn first_of_seq(seq: &[Node], ignore_case: bool) -> Option<Set> {
             first_of_seq(std::slice::from_ref(&**node), ignore_case)
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Regex;
+
+    fn groups(pattern: &str, flags: &str, text: &str) -> Option<Vec<Option<String>>> {
+        let caps = Regex::new(pattern, flags).exec(text)?;
+        Some(
+            (0..caps.len())
+                .map(|i| caps.get(i).map(str::to_string))
+                .collect(),
+        )
+    }
+
+    fn found(pattern: &str, flags: &str, text: &str) -> Vec<Option<&'static str>> {
+        groups(pattern, flags, text)
+            .expect("a match")
+            .into_iter()
+            .map(|g| g.map(|g| &*g.leak()))
+            .collect()
+    }
+
+    #[test]
+    fn alternatives_are_tried_in_order() {
+        assert_eq!(found("a|ab", "", "abc"), [Some("a")]);
+        assert_eq!(
+            found("(a|ab)(c|bcd)", "", "abcd"),
+            [Some("abcd"), Some("a"), Some("bcd")]
+        );
+    }
+
+    #[test]
+    fn greedy_and_lazy_quantifiers() {
+        assert_eq!(found("a+", "", "caaat"), [Some("aaa")]);
+        assert_eq!(found("a+?", "", "caaat"), [Some("a")]);
+        assert_eq!(found("<.*>", "", "<a><b>"), [Some("<a><b>")]);
+        assert_eq!(found("<.*?>", "", "<a><b>"), [Some("<a>")]);
+        assert_eq!(found("a{2,3}", "", "aaaa"), [Some("aaa")]);
+        assert_eq!(found("a{2,3}?", "", "aaaa"), [Some("aa")]);
+        assert_eq!(found("x{2}", "", "xxx"), [Some("xx")]);
+        assert_eq!(found("(?:ab){2,}", "", "abababa"), [Some("ababab")]);
+        assert_eq!(found("(?:ab)+?b", "", "ababb"), [Some("ababb")]);
+        assert_eq!(found("a{,2}", "", "a{,2}"), [Some("a{,2}")]);
+    }
+
+    #[test]
+    fn a_group_keeps_its_last_iteration() {
+        assert_eq!(found("(a|b)+", "", "abab"), [Some("abab"), Some("b")]);
+        assert_eq!(found("(?:(a)|b)+", "", "ab"), [Some("ab"), Some("a")]);
+        assert_eq!(
+            found("(\\w+)\\s(\\w+)", "", "hello big world"),
+            [Some("hello big"), Some("hello"), Some("big")]
+        );
+    }
+
+    #[test]
+    fn a_group_that_backtracks_out_takes_no_part() {
+        assert_eq!(found("(a)?b", "", "b"), [Some("b"), None]);
+        assert_eq!(found("(?:(x)y|xz)", "", "xz"), [Some("xz"), None]);
+    }
+
+    #[test]
+    fn an_empty_iteration_ends_a_loop() {
+        assert_eq!(found("(a*)*", "", "b"), [Some(""), None]);
+        assert_eq!(found("(a*)+", "", "b"), [Some(""), Some("")]);
+        assert_eq!(found("(?:a?)*?b", "", "aab"), [Some("aab")]);
+        assert_eq!(found("(a|)*b", "", "aab"), [Some("aab"), Some("a")]);
+    }
+
+    #[test]
+    fn lookahead_is_atomic() {
+        assert_eq!(found("a(?=b)", "", "acab"), [Some("a")]);
+        assert_eq!(Regex::new("a(?=b)", "").exec("acab").unwrap().start(), 2);
+        assert_eq!(found("a(?!b)", "", "abac"), [Some("a")]);
+        assert_eq!(Regex::new("a(?!b)", "").exec("abac").unwrap().start(), 2);
+        assert_eq!(
+            found("(?=(a+))a*b", "", "aaab"),
+            [Some("aaab"), Some("aaa")]
+        );
+        assert_eq!(found("(?!(a))b", "", "b"), [Some("b"), None]);
+    }
+
+    #[test]
+    fn anchors_and_boundaries() {
+        assert!(Regex::new("^b", "").exec("a\nb").is_none());
+        assert_eq!(found("^b$", "m", "a\nb\nc"), [Some("b")]);
+        assert_eq!(found("\\bis\\b", "", "this is"), [Some("is")]);
+        assert_eq!(Regex::new("\\Bis", "").exec("this is").unwrap().start(), 2);
+        assert_eq!(found(".+", "", "a\nb"), [Some("a")]);
+        assert_eq!(found(".+", "s", "a\nb"), [Some("a\nb")]);
+    }
+
+    #[test]
+    fn classes_and_case() {
+        assert_eq!(found("[^a-c]+", "", "abcdefa"), [Some("def")]);
+        assert_eq!(found("[a-c]+", "i", "xABCx"), [Some("ABC")]);
+        assert_eq!(found("\\d+\\s*\\w", "", "x 12  z"), [Some("12  z")]);
+        assert_eq!(found("\\p{L}+", "u", "1 héllo"), [Some("héllo")]);
+        assert_eq!(found("ß|é", "i", "É"), [Some("É")]);
+    }
+
+    #[test]
+    fn sticky_matches_only_at_the_start() {
+        let re = Regex::new("b", "y");
+        assert!(re.exec_at("ab", 0).is_none());
+        assert_eq!(re.exec_at("ab", 1).unwrap().get(0), Some("b"));
+    }
+
+    #[test]
+    fn split_replace_and_find_all() {
+        let re = Regex::new("(,)\\s*", "");
+        assert_eq!(
+            re.split("a, b,c"),
+            [Some("a"), Some(","), Some("b"), Some(","), Some("c")]
+        );
+        let re = Regex::new("o", "g");
+        assert_eq!(re.replace("foo boo", |_| "0".into()), "f00 b00");
+        assert_eq!(re.find_all("foo"), ["o", "o"]);
+        let re = Regex::new("x*", "g");
+        assert_eq!(re.replace("abc", |_| "-".into()), "-a-b-c-");
+    }
+
+    #[test]
+    fn a_long_input_does_not_exhaust_the_stack() {
+        let text = "ab".repeat(100_000);
+        assert_eq!(
+            Regex::new("(?:a|b)*$", "").exec(&text).unwrap().end(),
+            text.len()
+        );
+        assert_eq!(
+            Regex::new("(?:ab)+c|(?:ab)+", "")
+                .exec(&text)
+                .unwrap()
+                .end(),
+            text.len()
+        );
     }
 }
