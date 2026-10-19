@@ -10,7 +10,7 @@ use super::{
     markers::{MARKER_LENGTH, er_marker},
 };
 use crate::{
-    Config, Link, Options, Rendered,
+    Config, Link, Rendered,
     diagrams::common::{
         fit_width::{runs_across, turn_to_fit},
         generics::parse_generic_types,
@@ -27,9 +27,10 @@ use crate::{
         root::{Accessible, svg_document},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Label, Style, decode_entities, icon_markup, layout_label},
+    text::{Label, Style, decode_entities, layout_label},
     util::url::{link_url, rel_attr, sanitize_url},
 };
+use crate::{Ctx, Host};
 
 const NODE_SEP: f64 = 48.0;
 const EDGE_SEP: f64 = 20.0;
@@ -119,12 +120,12 @@ fn text_left(label: &Label, x: f64, mut y: f64, attrs: &str) -> String {
                 let _ = write!(
                     extra,
                     "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{}</svg>",
-                    esc_text(icon),
+                    esc_text(&icon.name),
                     num(sx),
                     num(y - label.size * 0.35 - side / 2.0),
                     num(side),
                     num(side),
-                    icon_markup(icon)
+                    icon.markup
                 );
             } else if !span.text.is_empty() {
                 let pos = if has_icon || !placed {
@@ -161,22 +162,21 @@ fn cell_text(raw: &str) -> String {
     }
 }
 
-pub fn render_er(db: &ErModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_er(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     if !runs_across(Some(&db.direction)) {
-        return draw(db, config, options, false);
+        return draw(db, config, ctx, false);
     }
-    turn_to_fit(options, |down| draw(db, config, options, down))
+    turn_to_fit(ctx, |down| draw(db, config, ctx, down))
 }
 
 /// `turned` draws a diagram that runs across as one that runs down.
-fn draw(db: &ErModel, config: &Config, options: &Options, turned: bool) -> Rendered {
+fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -> Rendered {
     let p = crate::PREFIX;
     let graph = build_er_graph(db);
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small_size = js::round(size * 0.875);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     let mut index: HashMap<&str, usize> = HashMap::new();
     let mut views: Vec<NodeView> = Vec::new();
@@ -563,16 +563,13 @@ fn draw(db: &ErModel, config: &Config, options: &Options, turned: bool) -> Rende
         } else {
             node.alias
         });
-        if RE_INTERNAL_LINK.test(&format!("{classes} "))
-            && !name.is_empty()
-            && options.links != Some(false)
-        {
+        if RE_INTERNAL_LINK.test(&format!("{classes} ")) && !name.is_empty() && ctx.options.links {
             // The name ends up in an href, so it gets the same check as a
             // URL.
-            let safe = link_url(&sanitize_url(&display), options).is_some();
+            let safe = link_url(&sanitize_url(&display), ctx).is_some();
             let target = esc(&display);
             let href = if safe {
-                format!(" href=\"{target}\"{}", rel_attr(options))
+                format!(" href=\"{target}\"{}", rel_attr(ctx))
             } else {
                 String::new()
             };
@@ -838,7 +835,7 @@ fn draw(db: &ErModel, config: &Config, options: &Options, turned: bool) -> Rende
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: db.acc_title.as_deref(),
             acc_descr: db.acc_descr.as_deref(),

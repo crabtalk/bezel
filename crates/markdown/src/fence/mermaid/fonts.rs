@@ -10,7 +10,7 @@ use std::{cell::RefCell, collections::HashMap, sync::LazyLock};
 
 use usvg::fontdb::{Database, Family, ID, Query, Style as FaceStyle, Weight};
 
-use ::mermaid::{Measure, text::Style};
+use ::mermaid::{Host, text::Style};
 
 /// Families tried after the theme's sans, in order: the first the system has
 /// a regular and a bold face of is drawn in.
@@ -122,7 +122,7 @@ impl Shaper {
     }
 }
 
-impl Measure for Shaper {
+impl Host for Shaper {
     fn width(&self, text: &str, size: f64, style: u8) -> f64 {
         let key = (self.0.clone(), style, text.to_string());
         if let Some(em) = WIDTHS.with(|widths| widths.borrow().get(&key).copied()) {

@@ -9,7 +9,8 @@ mod render;
 pub use model::{NodeType, TreeNode, TreeViewModel};
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct TreeView;
 
@@ -27,11 +28,11 @@ impl Diagram for TreeView {
             title,
         )))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::TreeView(model) = model else {
-            unreachable!("treeView renders a treeView model")
-        };
-        Ok(render::render_tree_view(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::TreeView(model) = model else {
+        unreachable!("treeView renders a treeView model")
+    };
+    Ok(render::render_tree_view(model, config, ctx))
 }

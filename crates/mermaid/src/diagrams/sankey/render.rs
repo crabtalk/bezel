@@ -7,7 +7,7 @@ use super::{
     layout::{Alignment, LayoutOptions, layout_sankey},
 };
 use crate::{
-    Config, Error, Options, Rendered,
+    Config, Error, Rendered,
     config::{Map, Value},
     diagrams::common::fit_width::{title_room, try_fit_width},
     js,
@@ -18,6 +18,7 @@ use crate::{
     },
     text::{Style, layout_label},
 };
+use crate::{Ctx, Host};
 
 const LABEL_GAP: f64 = 6.0;
 const VALUE_GAP: f64 = 15.0;
@@ -52,29 +53,29 @@ fn fill_style(color: Option<&Value>) -> String {
 pub fn render_sankey(
     model: &SankeyModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> Result<Rendered, Error> {
     let empty = Map::new();
     let conf = config.section("sankey").unwrap_or(&empty);
     try_fit_width(
-        options,
+        ctx,
         conf.number_in("width", 600.0, 1.0, 10000.0),
         160.0,
-        |chart_width, _| draw(model, conf, options, chart_width),
+        |chart_width, _| draw(model, conf, ctx, chart_width),
     )
 }
 
 fn draw(
     model: &SankeyModel,
     conf: &Map,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     chart_width: f64,
 ) -> Result<Rendered, Error> {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     let chart_height = conf.number_in("height", 400.0, 1.0, 10000.0);
     let node_width = conf
@@ -270,9 +271,9 @@ fn draw(
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
-        title_room(options),
+        title_room(ctx),
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -302,7 +303,7 @@ fn draw(
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: model.acc_title.as_deref(),
             acc_descr: model.acc_descr.as_deref(),

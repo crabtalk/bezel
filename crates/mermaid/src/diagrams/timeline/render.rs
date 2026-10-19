@@ -2,7 +2,7 @@
 
 use super::db::TimelineModel;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::Value,
     diagrams::common::{
         fit::{fit_label, plain_label},
@@ -17,6 +17,7 @@ use crate::{
     },
     text::{Label, Style},
 };
+use crate::{Ctx, Host};
 use std::fmt::Write as _;
 
 const PAD_X: f64 = 12.0;
@@ -49,19 +50,27 @@ fn rect(x: f64, y: f64, w: f64, h: f64, attrs: &str) -> String {
     )
 }
 
-pub fn render_timeline(model: &TimelineModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_timeline(
+    model: &TimelineModel,
+    config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     if model.direction == "TD" {
-        return draw(model, config, options, true);
+        return draw(model, config, ctx, true);
     }
-    turn_to_fit(options, |down| draw(model, config, options, down))
+    turn_to_fit(ctx, |down| draw(model, config, ctx, down))
 }
 
-fn draw(model: &TimelineModel, config: &Config, options: &Options, vertical: bool) -> Rendered {
-    let size = options.font_size.unwrap_or(16.0);
+fn draw(
+    model: &TimelineModel,
+    config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+    vertical: bool,
+) -> Rendered {
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let p = crate::PREFIX;
     let multicolor = !matches!(
         config
@@ -100,7 +109,7 @@ fn draw(model: &TimelineModel, config: &Config, options: &Options, vertical: boo
     // Columns widen, up to a point, for a word that would not fit; past that
     // the word is cut. Running down, the two columns share the width the
     // host has.
-    let room = match options.max_width {
+    let room = match ctx.options.max_width {
         Some(max) if vertical && max > 0.0 => max - 2.0 * pad,
         _ => f64::INFINITY,
     };
@@ -453,7 +462,7 @@ fn draw(model: &TimelineModel, config: &Config, options: &Options, vertical: boo
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

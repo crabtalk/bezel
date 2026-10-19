@@ -6,11 +6,9 @@
 //! variables named `bezel-*` for `pele-*`.
 //!
 //! ```
-//! let drawing = mermaid::render("info", &Default::default()).unwrap();
+//! let drawing = mermaid::render("info", &Default::default(), &mermaid::Metrics).unwrap();
 //! assert!(drawing.svg.starts_with("<svg"));
 //! ```
-
-use std::rc::Rc;
 
 use serde::Serialize;
 
@@ -30,59 +28,55 @@ pub use config::{Config, Value};
 pub use detect::Kind;
 pub use error::{Code, Error};
 pub use svg::theme::{Colors, Rgba};
-pub use text::{IconResolver, Measure, Metrics};
+pub use text::{Host, Metrics};
 
 /// What class names, CSS variables and element ids start with.
 pub const PREFIX: &str = "bezel";
 
-/// Mermaid's default `maxTextSize`.
-const DEFAULT_LIMIT: usize = 50_000;
-/// Mermaid has no limit on its output. A source within the limit can still
-/// describe a drawing of many megabytes, which stalls what it is put into.
-const DEFAULT_OUTPUT_LIMIT: usize = 4_000_000;
-/// Mermaid stops at 500. `A & B --> C & D` multiplies: without a limit, a
-/// few kilobytes of source ask for millions of edges.
-const DEFAULT_MAX_EDGES: usize = 5_000;
-
-/// How a diagram is drawn. Every field is optional, as Pele's
-/// `RenderOptions` are; `Default` draws as Pele does with no options.
-#[derive(Clone, Default)]
+/// How a diagram is drawn: Pele's `RenderOptions`. `Default` draws as Pele
+/// does with no options.
+#[derive(Clone)]
 pub struct Options {
-    /// What labels are measured with. [`Metrics`] when unset.
-    pub measure: Option<Rc<dyn Measure>>,
     /// The fonts labels are measured in, and drawn in where the page sets no
     /// `--bezel-font` or `--bezel-font-mono`.
     pub font_family: Option<String>,
     pub font_family_mono: Option<String>,
-    pub font_size: Option<f64>,
-    pub id_prefix: Option<String>,
+    pub font_size: f64,
+    pub id_prefix: String,
+    /// Whether the drawing scales down to its container. Unset, the
+    /// diagram's `useMaxWidth` decides.
     pub responsive: Option<bool>,
     /// The width the host has, in px. A type that can draw itself narrower
     /// does, so its text is not shrunk with it.
     pub max_width: Option<f64>,
     /// Whether a diagram that runs across may be drawn running down when it
-    /// does not fit `max_width`, and the width under which that is done. On,
-    /// under 640 px, by default.
-    pub auto_direction: Option<bool>,
-    pub direction_breakpoint: Option<f64>,
+    /// does not fit `max_width`, and the width under which that is done.
+    pub auto_direction: bool,
+    pub direction_breakpoint: f64,
+    /// Space around the drawing. Unset, each type's own.
     pub padding: Option<f64>,
-    /// The longest source, in UTF-16 units.
-    pub limit: Option<usize>,
-    /// The longest SVG, in UTF-16 units.
-    pub output_limit: Option<usize>,
-    /// The most edges a flowchart may have.
-    pub max_edges: Option<usize>,
+    /// The longest source, in UTF-16 units. Mermaid's `maxTextSize` by
+    /// default.
+    pub limit: usize,
+    /// The longest SVG, in UTF-16 units. Mermaid has no limit on its output.
+    /// A source within the limit can still describe a drawing of many
+    /// megabytes, which stalls what it is put into.
+    pub output_limit: usize,
+    /// The most edges a flowchart may have. Mermaid stops at 500.
+    /// `A & B --> C & D` multiplies: without a limit, a few kilobytes of
+    /// source ask for millions of edges.
+    pub max_edges: usize,
     /// Schemes a link or an image may use besides a relative address.
-    pub link_schemes: Option<Vec<String>>,
-    pub image_schemes: Option<Vec<String>>,
-    pub links: Option<bool>,
-    pub images: Option<bool>,
-    /// A link's `rel`. `noopener` when unset; empty leaves it out.
-    pub link_rel: Option<String>,
-    pub icons: Option<IconResolver>,
+    pub link_schemes: Vec<String>,
+    pub image_schemes: Vec<String>,
+    pub links: bool,
+    pub images: bool,
+    /// A link's `rel`. Empty leaves it out.
+    pub link_rel: String,
     /// Configuration under the source's own, as Mermaid's site config.
-    pub config: Option<Config>,
-    /// The time gantt charts treat as now, in ms since the epoch.
+    pub config: Config,
+    /// The time gantt charts treat as now, in ms since the epoch. The
+    /// clock's when unset.
     pub now: Option<f64>,
     /// Colours for a renderer without CSS custom properties: the SVG names
     /// them, and every other variable's value, in place of each `var(…)`,
@@ -90,11 +84,39 @@ pub struct Options {
     pub colors: Option<Colors>,
 }
 
-impl Options {
-    /// What labels are measured with.
-    pub fn measurer(&self) -> Rc<dyn Measure> {
-        self.measure.clone().unwrap_or_else(|| Rc::new(Metrics))
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            font_family: None,
+            font_family_mono: None,
+            font_size: 16.0,
+            id_prefix: PREFIX.to_string(),
+            responsive: None,
+            max_width: None,
+            auto_direction: true,
+            direction_breakpoint: 640.0,
+            padding: None,
+            limit: 50_000,
+            output_limit: 4_000_000,
+            max_edges: 5_000,
+            link_schemes: util::url::LINK_SCHEMES.map(String::from).to_vec(),
+            image_schemes: util::url::IMAGE_SCHEMES.map(String::from).to_vec(),
+            links: true,
+            images: true,
+            link_rel: "noopener".to_string(),
+            config: Config::default(),
+            now: None,
+            colors: None,
+        }
     }
+}
+
+/// One render: the options it is drawn with and the host it is drawn for.
+pub struct Ctx<'a, H> {
+    pub options: &'a Options,
+    pub host: &'a H,
+    /// [`Options::responsive`], or the diagram's `useMaxWidth` where unset.
+    pub responsive: bool,
 }
 
 /// Limits set by the host. A diagram's own configuration cannot change them.
@@ -152,8 +174,7 @@ pub fn supports(source: &str) -> bool {
 /// Parses `source`, reading [`Options::limit`], [`Options::max_edges`] and
 /// [`Options::config`].
 pub fn parse(source: &str, options: &Options) -> Result<Parsed, Error> {
-    js::date::forget_zone();
-    let limit = options.limit.unwrap_or(DEFAULT_LIMIT);
+    let limit = options.limit;
     if js::len_over(source, limit) {
         return Err(Error::limit(format!(
             "Diagram source is longer than the limit of {limit} characters."
@@ -173,16 +194,10 @@ pub fn parse(source: &str, options: &Options) -> Result<Parsed, Error> {
         )
         .of(kind));
     };
-    let config = match &options.config {
-        Some(extra) => {
-            let mut config = extra.clone();
-            for (key, value) in pre.config.iter() {
-                config.insert(key, value.clone());
-            }
-            config
-        }
-        None => pre.config.clone(),
-    };
+    let mut config = options.config.clone();
+    for (key, value) in pre.config.iter() {
+        config.insert(key, value.clone());
+    }
     let text = if diagram.keep_comments() {
         &pre.with_comments
     } else {
@@ -190,7 +205,7 @@ pub fn parse(source: &str, options: &Options) -> Result<Parsed, Error> {
     };
     let encoded = preprocess::encode_entities(text) + "\n";
     let limits = ParseLimits {
-        max_edges: options.max_edges.unwrap_or(DEFAULT_MAX_EDGES),
+        max_edges: options.max_edges,
     };
     let model = diagram.parse(
         &encoded,
@@ -206,14 +221,17 @@ pub fn parse(source: &str, options: &Options) -> Result<Parsed, Error> {
     })
 }
 
-/// `source` drawn as SVG.
-pub fn render(source: &str, options: &Options) -> Result<Drawing, Error> {
-    render_parsed(&parse(source, options)?, options)
+/// `source` drawn as SVG for `host`.
+pub fn render(source: &str, options: &Options, host: &impl Host) -> Result<Drawing, Error> {
+    render_parsed(&parse(source, options)?, options, host)
 }
 
-/// A parsed source drawn as SVG.
-pub fn render_parsed(parsed: &Parsed, options: &Options) -> Result<Drawing, Error> {
-    js::date::forget_zone();
+/// A parsed source drawn as SVG for `host`.
+pub fn render_parsed(
+    parsed: &Parsed,
+    options: &Options,
+    host: &impl Host,
+) -> Result<Drawing, Error> {
     let kind = parsed.kind;
     let Some(diagram) = diagrams::diagram(kind) else {
         return Err(Error::new(
@@ -227,18 +245,13 @@ pub fn render_parsed(parsed: &Parsed, options: &Options) -> Result<Drawing, Erro
         .and_then(Value::as_map)
         .and_then(|section| section.get("useMaxWidth"))
         == Some(&Value::Bool(false));
-    let mut options = options.clone();
-    options.responsive = Some(options.responsive.unwrap_or(!fixed));
-    // The host's resolver and the ids in `links` see names as the author
-    // meant them, entity codes turned into their characters.
-    let icons = options.icons.clone().map(|resolve| -> IconResolver {
-        Rc::new(move |name: &str| resolve(&text::decode_entities(name)))
-    });
-    options.icons = icons.clone();
-    let rendered = text::with_icons(icons, || {
-        diagram.render(&parsed.model, &parsed.config, &options)
-    })?;
-    let output_limit = options.output_limit.unwrap_or(DEFAULT_OUTPUT_LIMIT);
+    let ctx = Ctx {
+        options,
+        host,
+        responsive: options.responsive.unwrap_or(!fixed),
+    };
+    let rendered = diagrams::render(kind, &parsed.model, &parsed.config, &ctx)?;
+    let output_limit = options.output_limit;
     if js::len_over(&rendered.svg, output_limit) {
         return Err(Error::limit(format!(
             "Diagram output is longer than the limit of {output_limit} characters."

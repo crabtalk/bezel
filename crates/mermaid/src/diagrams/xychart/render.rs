@@ -5,7 +5,7 @@ use super::{
     ticks::{tick_index, tick_step, tick_value, ticks_between},
 };
 use crate::{
-    Config, Error, Options, Rendered,
+    Config, Error, Rendered,
     config::{Map, Value},
     detect::Kind,
     diagrams::common::fit_width::cap_width,
@@ -17,6 +17,7 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
+use crate::{Ctx, Host};
 use std::fmt::Write as _;
 
 const TICK: f64 = 4.0;
@@ -102,7 +103,7 @@ fn aligned(label: &Label, x: f64, y: f64, anchor: Anchor) -> String {
 pub fn render_xy_chart(
     model: &XyChartModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> Result<Rendered, Error> {
     if model.plots.is_empty() {
         return Err(
@@ -113,13 +114,13 @@ pub fn render_xy_chart(
     let p = crate::PREFIX;
     let empty = Map::new();
     let chart = config.section("xyChart").unwrap_or(&empty);
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.75);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let natural = dimension(chart.get("width"), 700.0);
-    let width = cap_width(options, natural, 240.0, 0.0);
+    let width = cap_width(ctx, natural, 240.0, 0.0);
     // A narrower chart is not as much shorter, so that the plot keeps room
     // for its marks.
     let height = js::round(dimension(chart.get("height"), 500.0) * 0.6f64.max(width / natural));
@@ -147,7 +148,7 @@ pub fn render_xy_chart(
             None
         },
         false,
-        &*measure,
+        measure,
         size,
         width - 2.0 * pad,
         Style::BOLD,
@@ -914,7 +915,7 @@ pub fn render_xy_chart(
             width,
             height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

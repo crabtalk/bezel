@@ -9,7 +9,8 @@ pub mod render;
 pub use db::{TimelineModel, TimelinePeriod};
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Timeline;
 
@@ -27,11 +28,11 @@ impl Diagram for Timeline {
         parser::parse_timeline(source, &mut db)?;
         Ok(Model::Timeline(db))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Timeline(model) = model else {
-            unreachable!("timeline renders a timeline model")
-        };
-        Ok(render::render_timeline(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Timeline(model) = model else {
+        unreachable!("timeline renders a timeline model")
+    };
+    Ok(render::render_timeline(model, config, ctx))
 }

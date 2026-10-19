@@ -13,7 +13,8 @@ pub mod types;
 pub use db::C4Model;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct C4;
 
@@ -33,11 +34,11 @@ impl Diagram for C4 {
         parser::parse_c4(source, &mut db)?;
         Ok(Model::C4(db))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::C4(model) = model else {
-            unreachable!("c4 renders a c4 model")
-        };
-        render::render_c4(model, config, options)
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::C4(model) = model else {
+        unreachable!("c4 renders a c4 model")
+    };
+    render::render_c4(model, config, ctx)
 }

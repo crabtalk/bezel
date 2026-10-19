@@ -4,7 +4,7 @@
 
 use std::{fs, path::Path};
 
-use mermaid::{Options, render};
+use mermaid::{Metrics, Options, render};
 
 /// Corpus files whose drawing names the renderer, so cannot match.
 const SKIPPED: [&str; 1] = ["info-docs"];
@@ -73,7 +73,7 @@ fn matches_pele() {
             .collect();
         for (i, source) in sources.iter().enumerate() {
             let dir = Path::new(&root).join(&stem);
-            let ours = render(source, &Options::default());
+            let ours = render(source, &Options::default(), &Metrics);
             match (fs::read_to_string(dir.join(format!("{i}.svg"))), ours) {
                 (Ok(theirs), Ok(ours)) => {
                     let theirs = theirs.replace("pele", mermaid::PREFIX);

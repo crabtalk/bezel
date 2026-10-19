@@ -71,15 +71,9 @@ fn compiled(db: &AgentflowDb, class_names: &[String]) -> Vec<String> {
     for name in class_names {
         if let Some(def) = db.classes.get(name) {
             out.extend(def.styles.iter().cloned());
-            out = out
-                .iter()
-                .map(|s| crate::js::trim(s).to_string())
-                .collect();
+            out = out.iter().map(|s| crate::js::trim(s).to_string()).collect();
             out.extend(def.text_styles.iter().cloned());
-            out = out
-                .iter()
-                .map(|s| crate::js::trim(s).to_string())
-                .collect();
+            out = out.iter().map(|s| crate::js::trim(s).to_string()).collect();
         }
     }
     out

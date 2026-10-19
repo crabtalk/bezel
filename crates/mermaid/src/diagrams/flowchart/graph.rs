@@ -144,15 +144,9 @@ pub fn build_flow_graph(model: &FlowDb, default_curve: Option<&str>) -> FlowGrap
         for name in class_names {
             if let Some(def) = model.classes.get(name) {
                 out.extend(def.styles.iter().cloned());
-                out = out
-                    .iter()
-                    .map(|s| crate::js::trim(s).to_string())
-                    .collect();
+                out = out.iter().map(|s| crate::js::trim(s).to_string()).collect();
                 out.extend(def.text_styles.iter().cloned());
-                out = out
-                    .iter()
-                    .map(|s| crate::js::trim(s).to_string())
-                    .collect();
+                out = out.iter().map(|s| crate::js::trim(s).to_string()).collect();
             }
         }
         out

@@ -4,7 +4,7 @@
 use crate::{
     js,
     svg::builder::{esc, label_svg, num, shared_style, span_style, text_style},
-    text::{Label, Measure, Span},
+    text::{Host, Label, Span},
 };
 use std::fmt::Write as _;
 
@@ -15,7 +15,7 @@ fn is_space(c: char) -> bool {
 /// Literal labels, filenames and protocol fields among them, keep every
 /// character but the spaces a line breaks at. A long word breaks between
 /// code points.
-pub fn literal_label(text: &str, measure: &dyn Measure, size: f64, room: f64, style: u8) -> Label {
+pub fn literal_label(text: &str, measure: &impl Host, size: f64, room: f64, style: u8) -> Label {
     let mut lines: Vec<String> = Vec::new();
     for raw in text.split('\n') {
         let chars: Vec<char> = raw.chars().collect();
@@ -102,7 +102,7 @@ pub fn literal_label(text: &str, measure: &dyn Measure, size: f64, room: f64, st
 }
 
 /// `label` with every line wider than `room` broken between characters.
-pub fn break_label(label: &Label, measure: &dyn Measure, room: f64) -> Label {
+pub fn break_label(label: &Label, measure: &impl Host, room: f64) -> Label {
     if label.width <= room {
         return label.clone();
     }

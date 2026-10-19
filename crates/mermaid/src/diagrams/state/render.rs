@@ -6,8 +6,9 @@ use super::{
     graph::{StateEdge, StateNode},
     types::StateModel,
 };
+use crate::Ctx;
 use crate::{
-    Config, Link, Options, Rendered,
+    Config, Link, Rendered,
     diagrams::common::fit_width::{runs_across, turn_to_fit},
     js::{self, Lazy},
     layout::{
@@ -22,7 +23,7 @@ use crate::{
         theme::{ResolvedStyle, class_names, resolve_style},
         title::with_title,
     },
-    text::{Label, Measure, Style, decode_entities, layout_label},
+    text::{Host, Label, Style, decode_entities, layout_label},
     util::url::{linked, safe_url},
 };
 
@@ -137,11 +138,11 @@ fn group(dir: Dir, pad_x: f64, pad_top: f64, pad_bottom: f64) -> CNode {
     c
 }
 
-pub fn render_state(db: &StateModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_state(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     if !runs_across(Some(db.direction())) {
-        return draw(db, config, options, false);
+        return draw(db, config, ctx, false);
     }
-    turn_to_fit(options, |down| draw(db, config, options, down))
+    turn_to_fit(ctx, |down| draw(db, config, ctx, down))
 }
 
 /// Draws the dashed lines between the regions among a composite's members.
@@ -248,16 +249,16 @@ fn attach(route: &mut [f64], at: usize, i: usize, cnodes: &[CNode], views: &[Vie
 }
 
 /// `turned` draws a diagram that runs across as one that runs down.
-fn draw(db: &StateModel, config: &Config, options: &Options, turned: bool) -> Rendered {
+fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -> Rendered {
     let p = crate::PREFIX;
     let graph = &db.graph;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let small_str = js::num_str(small);
-    let measure_rc = options.measurer();
-    let measure: &dyn Measure = &*measure_rc;
+    let measure_rc = ctx.host;
+    let measure = measure_rc;
     let wrap_width = config.number_option("wrappingWidth", 200.0);
-    let pad = options.padding.unwrap_or(8.0);
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let root_dir = if turned {
         Dir::TB
     } else {
@@ -929,7 +930,7 @@ fn draw(db: &StateModel, config: &Config, options: &Options, turned: bool) -> Re
                 &safe_url(unquote(&link.url)),
                 &node.id,
                 &mut links,
-                options,
+                ctx,
                 " target=\"_blank\"",
             );
         }
@@ -1152,7 +1153,7 @@ fn draw(db: &StateModel, config: &Config, options: &Options, turned: bool) -> Re
         titled.width,
         titled.height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: db.acc_title.as_deref(),
             acc_descr: db.acc_descr.as_deref(),

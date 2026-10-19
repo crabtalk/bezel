@@ -149,7 +149,7 @@ pub(crate) fn add_days(date: Date, days: f64) -> Date {
 }
 
 fn days_in_month(date: Date) -> f64 {
-    let mut last = Date::local(
+    let mut last = date.zone().local(
         date.full_year(),
         date.month() + 1.0,
         0.0,
@@ -178,10 +178,10 @@ pub(crate) fn add(date: Date, amount: f64, unit: Unit) -> Date {
         Unit::Y => set_calendar(date, |d| d.set_full_year(date.full_year() + amount)),
         Unit::D => add_days(date, js::round(amount)),
         Unit::W => add_days(date, js::round(7.0 * amount)),
-        Unit::H => Date::new(date.time() + amount * 3_600_000.0),
-        Unit::M => Date::new(date.time() + amount * 60_000.0),
-        Unit::S => Date::new(date.time() + amount * 1000.0),
-        Unit::Ms => Date::new(date.time() + amount),
+        Unit::H => date.at(date.time() + amount * 3_600_000.0),
+        Unit::M => date.at(date.time() + amount * 60_000.0),
+        Unit::S => date.at(date.time() + amount * 1000.0),
+        Unit::Ms => date.at(date.time() + amount),
     }
 }
 
@@ -191,7 +191,9 @@ fn week_thursday(date: Date) -> Date {
 
 fn iso_week(date: Date) -> f64 {
     let thursday = week_thursday(date);
-    let jan1 = Date::local(thursday.full_year(), 0.0, 1.0, 0.0, 0.0, 0.0, 0.0);
+    let jan1 = thursday
+        .zone()
+        .local(thursday.full_year(), 0.0, 1.0, 0.0, 0.0, 0.0, 0.0);
     let weekday = iso_weekday(jan1);
     let first = add_days(jan1, 4.0 - weekday + if weekday > 4.0 { 7.0 } else { 0.0 });
     let zone_delta = (utc_offset(first) - utc_offset(thursday)) * 60_000.0;
@@ -500,10 +502,10 @@ fn slice_units(text: &str, start: usize) -> &str {
     ""
 }
 
-fn loose(input: &str, template: &str, now: Date) -> Option<Date> {
+fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
     if template == "x" || template == "X" {
         let scale = if template == "X" { 1000.0 } else { 1.0 };
-        return Some(Date::new(scale * js::number(input)));
+        return Some(now.at(scale * js::number(input)));
     }
     let steps = compiled(template);
     let steps = steps.as_ref().as_ref()?;
@@ -561,7 +563,7 @@ fn loose(input: &str, template: &str, now: Date) -> Option<Date> {
     let seconds = or_zero(f.seconds);
     let ms = or_zero(f.milliseconds);
     if let Some(offset) = f.offset {
-        return Some(Date::new(Date::utc(
+        return Some(now.at(Date::utc(
             year,
             month,
             day,
@@ -575,12 +577,15 @@ fn loose(input: &str, template: &str, now: Date) -> Option<Date> {
     if truthy(f.week) {
         return None;
     }
-    Some(Date::local(year, month, day, hours, minutes, seconds, ms))
+    Some(
+        now.zone()
+            .local(year, month, day, hours, minutes, seconds, ms),
+    )
 }
 
 /// Parses the way `dayjs(input, format, true)` does. `now` supplies the
 /// fields the format leaves out.
-pub(crate) fn parse_strict(input: &str, template: &str, now: Date) -> Option<Date> {
+pub(crate) fn parse_strict<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
     let date = loose(input, template, now)?;
     (is_valid(date) && format(date, template).as_deref() == Some(input)).then_some(date)
 }

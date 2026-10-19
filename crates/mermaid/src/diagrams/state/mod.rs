@@ -12,7 +12,8 @@ pub mod types;
 pub use types::StateModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct State;
 
@@ -32,11 +33,11 @@ impl Diagram for State {
         parser::parse_state(source, &mut db)?;
         Ok(Model::State(Box::new(db)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::State(model) = model else {
-            unreachable!("state renders a state model")
-        };
-        Ok(render::render_state(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::State(model) = model else {
+        unreachable!("state renders a state model")
+    };
+    Ok(render::render_state(model, config, ctx))
 }

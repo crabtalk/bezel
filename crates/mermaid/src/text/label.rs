@@ -4,7 +4,7 @@
 use super::{
     entities::decode_entities,
     icons::icon_markup,
-    measure::{Measure, Style},
+    measure::{Host, Style},
 };
 use crate::js::{self, Lazy};
 
@@ -34,8 +34,15 @@ static RE_PIECE: std::sync::LazyLock<crate::js::Regex> = std::sync::LazyLock::ne
 pub struct Span {
     pub text: String,
     pub style: u8,
-    pub icon: Option<String>,
+    pub icon: Option<Icon>,
     pub width: f64,
+}
+
+/// An icon in a label: its name as written, and the host's markup for it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Icon {
+    pub name: String,
+    pub markup: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -97,7 +104,7 @@ fn push_text(line: &mut Vec<Span>, text: &str, style: u8) {
     });
 }
 
-fn push_icons(line: &mut Vec<Span>, text: &str, style: u8) {
+fn push_icons(line: &mut Vec<Span>, text: &str, style: u8, host: &impl Host) {
     if !text.contains(":fa-") {
         push_text(line, text, style);
         return;
@@ -107,11 +114,12 @@ fn push_icons(line: &mut Vec<Span>, text: &str, style: u8) {
         let icon = format!("{}:fa-{}", caps.str(1), caps.str(2));
         push_text(line, &text[last..caps.start()], style);
         last = caps.end();
-        if !icon_markup(&icon).is_empty() {
+        let markup = icon_markup(host, &icon);
+        if !markup.is_empty() {
             line.push(Span {
                 text: String::new(),
                 style,
-                icon: Some(icon),
+                icon: Some(Icon { name: icon, markup }),
                 width: 0.0,
             });
         } else if text[last..].starts_with(' ') {
@@ -138,7 +146,7 @@ fn is_word(c: Option<char>) -> bool {
 
 /// Splits inline HTML and, for markdown labels, emphasis markers into styled
 /// spans.
-fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8) {
+fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8, host: &impl Host) {
     let mut style = base;
     let mut marked = 0u8;
     let mut text = String::new();
@@ -157,7 +165,7 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8) {
                     _ => 0,
                 };
                 if bit != 0 {
-                    push_icons(line, &text, style);
+                    push_icons(line, &text, style, host);
                     text.clear();
                     style = if closing {
                         (style & !bit) | (base & bit)
@@ -192,7 +200,7 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8) {
             let can_close = !open && !is_blank(prev);
             let wordy = ch == '_' && is_word(prev) && is_word(next);
             if (can_open || can_close) && !wordy {
-                push_icons(line, &text, style);
+                push_icons(line, &text, style, host);
                 text.clear();
                 marked = if can_open {
                     marked | bit
@@ -211,10 +219,10 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8) {
         text.push(ch);
         i += ch.len_utf8();
     }
-    push_icons(line, &text, style);
+    push_icons(line, &text, style, host);
 }
 
-fn measure_spans(line: &mut [Span], measure: &dyn Measure, size: f64) -> f64 {
+fn measure_spans(line: &mut [Span], measure: &impl Host, size: f64) -> f64 {
     let mut total = 0.0;
     for span in line {
         span.width = if span.icon.is_some() {
@@ -229,7 +237,7 @@ fn measure_spans(line: &mut [Span], measure: &dyn Measure, size: f64) -> f64 {
 
 fn wrap(
     line: &[Span],
-    measure: &dyn Measure,
+    measure: &impl Host,
     size: f64,
     max: f64,
     out: &mut Vec<Vec<Span>>,
@@ -305,7 +313,7 @@ fn wrap(
 pub fn layout_label(
     raw: Option<&str>,
     markdown: bool,
-    measure: &dyn Measure,
+    measure: &impl Host,
     size: f64,
     max_width: f64,
     base: u8,
@@ -369,7 +377,7 @@ pub fn layout_label(
     let mut widths = Vec::new();
     for part in RE_BREAK.split_str(&source) {
         let mut line = Vec::new();
-        inline(&mut line, js::trim(part), markdown, base);
+        inline(&mut line, js::trim(part), markdown, base, measure);
         let w = measure_spans(&mut line, measure, size);
         if w > max_width {
             wrap(&line, measure, size, max_width, &mut lines, &mut widths);

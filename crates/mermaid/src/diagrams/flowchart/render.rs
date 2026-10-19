@@ -9,7 +9,7 @@ use super::{
     types::LabelType,
 };
 use crate::{
-    Config, Link, Options, Rendered,
+    Config, Link, Rendered,
     config::{Map, Value},
     diagrams::common::fit_width::{runs_across, tighten, title_room, turn_to_fit},
     js::{self, Lazy},
@@ -32,6 +32,7 @@ use crate::{
     text::{Label, Style, decode_entities, icon_markup, layout_label},
     util::url::{image_url, link_url, linked, rel_attr, safe_url, sanitize_url},
 };
+use crate::{Ctx, Host};
 
 const NODE_SEP: f64 = 40.0;
 const EDGE_SEP: f64 = 16.0;
@@ -104,16 +105,12 @@ struct NodeView<'g> {
 pub fn render_flowchart(
     db: &FlowDb,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     variant: Option<&dyn FlowVariant>,
 ) -> Rendered {
-    let fitted = |down: bool| {
-        tighten(options, |tight| {
-            draw(db, config, options, variant, down, tight)
-        })
-    };
+    let fitted = |down: bool| tighten(ctx, |tight| draw(db, config, ctx, variant, down, tight));
     if runs_across(db.direction.as_deref()) {
-        turn_to_fit(options, fitted)
+        turn_to_fit(ctx, fitted)
     } else {
         fitted(false)
     }
@@ -137,7 +134,7 @@ fn flows_sideways(cnodes: &[CNode], i: usize, root_dir: Dir) -> bool {
 fn draw(
     db: &FlowDb,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     variant: Option<&dyn FlowVariant>,
     turned: bool,
     tight: bool,
@@ -154,9 +151,9 @@ fn draw(
     if let Some(variant) = variant {
         variant.prepare(&mut graph);
     }
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let edge_size = js::round(size * 0.875);
-    let measure = options.measurer();
+    let measure = ctx.host;
     let wrap_width =
         flow.number_option("wrappingWidth", 200.0)
             .min(if variant.is_some() && tight {
@@ -164,7 +161,7 @@ fn draw(
             } else {
                 f64::INFINITY
             });
-    let pad = options.padding.unwrap_or(8.0);
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     let mut index: HashMap<&str, usize> = HashMap::new();
     let mut views: Vec<NodeView> = Vec::new();
@@ -191,10 +188,10 @@ fn draw(
             let label = layout_label(
                 node.label.as_deref(),
                 markdown,
-                &*measure,
+                measure,
                 font_size,
                 if variant.is_some() && tight {
-                    80f64.max(title_room(options) / 2.0)
+                    80f64.max(title_room(ctx) / 2.0)
                 } else {
                     4000.0
                 },
@@ -232,7 +229,7 @@ fn draw(
             } else {
                 None
             };
-            let label = layout_label(text, markdown, &*measure, font_size, wrap_width, text_style);
+            let label = layout_label(text, markdown, measure, font_size, wrap_width, text_style);
             let w: f64;
             let h: f64;
             let mut dy: f64;
@@ -313,7 +310,7 @@ fn draw(
         let label = layout_label(
             Some(&edge.label),
             edge.label_type == LabelType::Markdown,
-            &*measure,
+            measure,
             edge_size,
             wrap_width,
             0,
@@ -380,9 +377,9 @@ fn draw(
     let title = layout_label(
         db.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
-        if tight { title_room(options) } else { 4000.0 },
+        if tight { title_room(ctx) } else { 4000.0 },
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -481,7 +478,7 @@ fn draw(
             } else {
                 -ah / 2.0
             };
-            inner = match image_url(&safe_url(img), options) {
+            inner = match image_url(&safe_url(img), ctx) {
                 None => String::new(),
                 Some(src) => format!(
                     "<image href=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"{}\"/>",
@@ -536,7 +533,7 @@ fn draw(
                 num(top + (bx - glyph) / 2.0),
                 num(glyph),
                 num(glyph),
-                icon_markup(icon)
+                icon_markup(ctx.host, icon)
             );
         } else {
             inner = draw_shape(
@@ -557,17 +554,17 @@ fn draw(
         let internal = RE_INTERNAL.test(&format!("{classes} "));
         if internal
             && let Some(label) = node.label.as_deref().filter(|label| !label.is_empty())
-            && options.links != Some(false)
+            && ctx.options.links
         {
             // The label is a note name, but it still ends up in an href, so
             // it gets the same check as a URL.
             let name = decode_entities(label);
-            let safe = link_url(&sanitize_url(&name), options).is_some();
+            let safe = link_url(&sanitize_url(&name), ctx).is_some();
             let target = esc(&name);
             text = format!(
                 "<a class=\"internal-link\"{} data-href=\"{target}\">{text}</a>",
                 if safe {
-                    format!(" href=\"{target}\"{}", rel_attr(options))
+                    format!(" href=\"{target}\"{}", rel_attr(ctx))
                 } else {
                     String::new()
                 }
@@ -587,7 +584,7 @@ fn draw(
                 Some(target) => format!(" target=\"{}\"", esc(target)),
                 None => String::new(),
             };
-            body = linked(&body, link, &node.id, &mut links, options, &target);
+            body = linked(&body, link, &node.id, &mut links, ctx, &target);
         }
         let _ = write!(
             nodes_out,
@@ -751,7 +748,7 @@ fn draw(
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: db.acc_title.as_deref(),
             acc_descr: db.acc_descr.as_deref(),

@@ -9,7 +9,7 @@ use std::{
 };
 
 use js_sys::{Function, Reflect};
-use mermaid::{Measure, js, text::Style};
+use mermaid::{Host, js, text::Style};
 use wasm_bindgen::prelude::*;
 
 /// Widths kept per font. Past this the font's widths start over.
@@ -86,7 +86,7 @@ impl Canvas {
     }
 }
 
-impl Measure for Canvas {
+impl Host for Canvas {
     fn width(&self, text: &str, size: f64, style: u8) -> f64 {
         let faces = font_faces();
         if FACES.get() != faces {
@@ -148,7 +148,7 @@ impl Custom {
     }
 }
 
-impl Measure for Custom {
+impl Host for Custom {
     fn width(&self, text: &str, size: f64, style: u8) -> f64 {
         self.width
             .call3(&self.target, &text.into(), &size.into(), &style.into())

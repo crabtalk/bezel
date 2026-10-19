@@ -9,7 +9,7 @@ use super::{
     types::VennSubset,
 };
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::Value,
     js,
     svg::{
@@ -19,6 +19,7 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
+use crate::{Ctx, Host};
 
 const RADIUS: f64 = 100.0;
 const MAX_GROWTH: f64 = 1.6;
@@ -51,13 +52,13 @@ fn key_of(ids: &[String]) -> String {
     }
 }
 
-pub fn render_venn(model: &VennDb, _config: &Config, options: &Options) -> Rendered {
-    let size = options.font_size.unwrap_or(16.0);
+pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.8125);
-    let measurer = options.measurer();
-    let measure = &*measurer;
-    let pad = options.padding.unwrap_or(8.0);
+    let measurer = ctx.host;
+    let measure = measurer;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let p = crate::PREFIX;
 
     let circles = layout_circles(&model.subsets);
@@ -354,7 +355,7 @@ pub fn render_venn(model: &VennDb, _config: &Config, options: &Options) -> Rende
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible::default(),
         &body,
     );

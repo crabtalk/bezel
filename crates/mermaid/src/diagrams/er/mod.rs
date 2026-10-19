@@ -13,7 +13,8 @@ pub mod types;
 pub use db::ErModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Er;
 
@@ -33,11 +34,11 @@ impl Diagram for Er {
         parser::parse_er(source, &mut db)?;
         Ok(Model::Er(Box::new(db)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Er(model) = model else {
-            unreachable!("er renders an er model")
-        };
-        Ok(render::render_er(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Er(model) = model else {
+        unreachable!("er renders an er model")
+    };
+    Ok(render::render_er(model, config, ctx))
 }

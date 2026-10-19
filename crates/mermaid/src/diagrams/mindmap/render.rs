@@ -2,7 +2,7 @@
 
 use super::db::{MindmapModel, MindmapNode};
 use crate::{
-    Config, Options, Rendered, Value,
+    Config, Rendered, Value,
     diagrams::common::{
         fit_width::{title_room, turn_to_fit},
         icon::icon_svg,
@@ -16,6 +16,7 @@ use crate::{
     },
     text::{Label, Style, icon_markup, layout_label},
 };
+use crate::{Ctx, Host};
 use std::fmt::Write as _;
 
 /// Indexed by Mermaid's node type. A node without delimiters is text on a
@@ -70,8 +71,8 @@ fn left_label(label: &Label, left: f64, cy: f64) -> String {
     out
 }
 
-pub fn render_mindmap(model: &MindmapModel, config: &Config, options: &Options) -> Rendered {
-    turn_to_fit(options, |down| draw(model, config, options, down))
+pub fn render_mindmap(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    turn_to_fit(ctx, |down| draw(model, config, ctx, down))
 }
 
 /// Where each subtree sits among its siblings: `rel` is a subtree's offset,
@@ -117,11 +118,11 @@ impl Bands {
 /// `down` draws the map as an outline: the root at the top, and each level
 /// set in under its parent. It is far narrower than branches spreading to
 /// both sides, and as tall as it needs to be.
-fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) -> Rendered {
+fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let size = ctx.options.font_size;
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let wrap = match config
         .section("mindmap")
         .and_then(|mindmap| mindmap.get("maxNodeWidth"))
@@ -143,7 +144,7 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
     }
     // An outline has the width the host gives it, less what its level is set
     // in.
-    let room = match options.max_width {
+    let room = match ctx.options.max_width {
         Some(max) if down && max > 0.0 => max - 2.0 * pad,
         _ => f64::INFINITY,
     };
@@ -163,13 +164,13 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
         drawn[i] = node
             .icon
             .as_deref()
-            .is_some_and(|icon| !icon_markup(icon).is_empty());
+            .is_some_and(|icon| !icon_markup(ctx.host, icon).is_empty());
         let fit = wrap.min(72f64.max(
             room - f64::from(depth[i]) * INDENT
                 - 2.0 * TEXT_PAD
                 - if drawn[i] { glyph + ICON_GAP } else { 0.0 },
         ));
-        let label = layout_label(Some(&node.descr), true, &*measure, size, fit, 0);
+        let label = layout_label(Some(&node.descr), true, measure, size, fit, 0);
         let tw = label.width
             + if drawn[i] {
                 glyph + if label.width > 0.0 { ICON_GAP } else { 0.0 }
@@ -464,6 +465,7 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
         {
             shift = (glyph + if label.width > 0.0 { ICON_GAP } else { 0.0 }) / 2.0;
             inner.push_str(&icon_svg(
+                ctx.host,
                 icon,
                 -shift - label.width / 2.0,
                 dy[i] - glyph / 2.0,
@@ -501,9 +503,9 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
-        title_room(options),
+        title_room(ctx),
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -531,7 +533,7 @@ fn draw(model: &MindmapModel, config: &Config, options: &Options, down: bool) ->
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible::default(),
             &content,
         ),

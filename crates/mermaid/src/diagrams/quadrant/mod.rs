@@ -10,7 +10,8 @@ pub mod tokens;
 pub use db::QuadrantModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Quadrant;
 
@@ -30,11 +31,11 @@ impl Diagram for Quadrant {
         parser::parse_quadrant(source, &mut db)?;
         Ok(Model::Quadrant(db))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Quadrant(model) = model else {
-            unreachable!("quadrantChart renders a quadrant model")
-        };
-        Ok(render::render_quadrant(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Quadrant(model) = model else {
+        unreachable!("quadrantChart renders a quadrant model")
+    };
+    Ok(render::render_quadrant(model, config, ctx))
 }

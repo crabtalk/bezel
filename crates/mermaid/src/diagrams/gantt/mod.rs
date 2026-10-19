@@ -13,7 +13,8 @@ pub use db::GanttDb;
 pub use types::{GanttTask, RawTask};
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered, config::Value};
+use crate::{Config, Error, ParseLimits, Rendered, config::Value};
+use crate::{Ctx, Host};
 
 pub struct Gantt;
 
@@ -39,11 +40,11 @@ impl Diagram for Gantt {
         parser::parse_gantt(source, &mut db)?;
         Ok(Model::Gantt(Box::new(db)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Gantt(model) = model else {
-            unreachable!("gantt renders a gantt model")
-        };
-        render::render_gantt(model, config, options)
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Gantt(model) = model else {
+        unreachable!("gantt renders a gantt model")
+    };
+    render::render_gantt(model, config, ctx)
 }

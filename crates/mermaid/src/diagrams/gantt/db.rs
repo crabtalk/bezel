@@ -10,7 +10,10 @@ use super::{
 use crate::{
     Error,
     detect::Kind,
-    js::{self, Lazy, date::Date},
+    js::{
+        self, Lazy,
+        date::{Date, LocalZone},
+    },
     util::url::safe_url,
 };
 
@@ -391,7 +394,11 @@ impl GanttDb {
     /// Resolves every task's start and end, from scratch on each call. A task
     /// may refer to tasks defined after it, so, like Mermaid, this makes up
     /// to eleven passes, each of which schedules every task again.
-    pub fn get_tasks(&mut self, now: Option<f64>) -> Result<&[GanttTask], Error> {
+    pub(crate) fn get_tasks(
+        &mut self,
+        zone: &LocalZone,
+        now: Option<f64>,
+    ) -> Result<&[GanttTask], Error> {
         self.now = clock(now);
         self.work = 0.0;
         self.include_set = self.includes.iter().cloned().collect();
@@ -430,10 +437,10 @@ impl GanttDb {
             task.manual_end_time = false;
         }
 
-        let mut all_processed = self.compile_tasks()?;
+        let mut all_processed = self.compile_tasks(zone)?;
         let mut i = 0;
         while !all_processed && i < 10 {
-            all_processed = self.compile_tasks()?;
+            all_processed = self.compile_tasks(zone)?;
             i += 1;
         }
         Ok(&self.tasks)
@@ -442,8 +449,8 @@ impl GanttDb {
     /// Whether a day is excluded. A day matches a token by its weekday name,
     /// by its date as YYYY-MM-DD, or by its date written in the chart's own
     /// format.
-    pub fn is_invalid_date(&mut self, date: f64) -> Result<bool, Error> {
-        let date = Date::new(date);
+    pub(crate) fn is_invalid_date(&mut self, zone: &LocalZone, date: f64) -> Result<bool, Error> {
+        let date = zone.date(date);
         let day = date.day();
         let weekday = !day.is_nan() && self.excluded_days.get(day as usize) == Some(&true);
         if !self.dated_tokens {
@@ -474,27 +481,32 @@ impl GanttDb {
         Ok(())
     }
 
-    fn parse(&mut self, text: &str, template: &str) -> Result<Option<Date>, Error> {
+    fn parse<'z>(
+        &mut self,
+        zone: &'z LocalZone,
+        text: &str,
+        template: &str,
+    ) -> Result<Option<Date<'z>>, Error> {
         self.spend((js::len(template) as f64 + 1.0) * (js::len(text) as f64 + 1.0))?;
-        Ok(parse_strict(text, template, Date::new(self.now)))
+        Ok(parse_strict(text, template, zone.date(self.now)))
     }
 
-    fn today(&self) -> f64 {
-        let mut today = Date::new(self.now);
+    fn today(&self, zone: &LocalZone) -> f64 {
+        let mut today = zone.date(self.now);
         today.set_hours(0.0, 0.0, 0.0, 0.0);
         today.time()
     }
 
-    fn compile_tasks(&mut self) -> Result<bool, Error> {
+    fn compile_tasks(&mut self, zone: &LocalZone) -> Result<bool, Error> {
         let mut all_processed = true;
         for index in 0..self.tasks.len() {
-            self.compile_task(index)?;
+            self.compile_task(zone, index)?;
             all_processed = all_processed && self.tasks[index].processed;
         }
         Ok(all_processed)
     }
 
-    fn compile_task(&mut self, index: usize) -> Result<(), Error> {
+    fn compile_task(&mut self, zone: &LocalZone, index: usize) -> Result<(), Error> {
         let start = self.tasks[index].raw.start.clone();
         match start {
             None => {
@@ -507,11 +519,11 @@ impl GanttDb {
                     .copied();
                 self.tasks[index].start_time = match previous {
                     Some(previous) => self.tasks[previous].end_time,
-                    None => Some(self.today()),
+                    None => Some(self.today(zone)),
                 };
             }
             Some(start) => {
-                if let Some(start_time) = self.get_start_date(&start)? {
+                if let Some(start_time) = self.get_start_date(zone, &start)? {
                     self.tasks[index].start_time = Some(start_time);
                 }
             }
@@ -520,13 +532,13 @@ impl GanttDb {
             return Ok(());
         };
         let end = self.tasks[index].raw.end.clone();
-        self.tasks[index].end_time = self.get_end_date(start_time, &end)?;
+        self.tasks[index].end_time = self.get_end_date(zone, start_time, &end)?;
         if self.tasks[index].end_time.is_none() {
             return Ok(());
         }
         self.tasks[index].processed = true;
-        self.tasks[index].manual_end_time = self.parse(&end, "YYYY-MM-DD")?.is_some();
-        self.check_task_dates(index)
+        self.tasks[index].manual_end_time = self.parse(zone, &end, "YYYY-MM-DD")?.is_some();
+        self.check_task_dates(zone, index)
     }
 
     fn references(&self, list: &str) -> Vec<usize> {
@@ -538,12 +550,12 @@ impl GanttDb {
 
     /// The start a task's `raw.start` gives, `None` where it is a task that
     /// has no end yet.
-    fn get_start_date(&mut self, raw: &str) -> Result<Option<f64>, Error> {
+    fn get_start_date(&mut self, zone: &LocalZone, raw: &str) -> Result<Option<f64>, Error> {
         let text = js::trim(raw);
         let template = js::trim(&self.date_format).to_string();
 
         if (template == "x" || template == "X") && RE_DIGITS.test(text) {
-            let date = Date::new(js::number(text));
+            let date = zone.date(js::number(text));
             if !is_valid(date) {
                 return Err(invalid_date(text));
             }
@@ -561,24 +573,29 @@ impl GanttDb {
             }
             return Ok(match latest {
                 Some(latest) => self.tasks[latest].end_time,
-                None => Some(self.today()),
+                None => Some(self.today(zone)),
             });
         }
 
-        if let Some(parsed) = self.parse(text, &template)? {
+        if let Some(parsed) = self.parse(zone, text, &template)? {
             return Ok(Some(parsed.time()));
         }
 
         // What does not fit the format gets a second chance with the
         // JavaScript date parser, as in Mermaid.
-        let date = Date::parse(text);
+        let date = zone.parse(text);
         if !is_valid(date) || date.full_year() < -10000.0 || date.full_year() > 10000.0 {
             return Err(invalid_date(text));
         }
         Ok(Some(date.time()))
     }
 
-    fn get_end_date(&mut self, start_time: f64, raw: &str) -> Result<Option<f64>, Error> {
+    fn get_end_date(
+        &mut self,
+        zone: &LocalZone,
+        start_time: f64,
+        raw: &str,
+    ) -> Result<Option<f64>, Error> {
         let text = js::trim(raw);
 
         if let Some(until) = RE_UNTIL.exec(text) {
@@ -592,12 +609,12 @@ impl GanttDb {
             }
             return Ok(match earliest {
                 Some(earliest) => self.tasks[earliest].start_time,
-                None => Some(self.today()),
+                None => Some(self.today(zone)),
             });
         }
 
         let template = js::trim(&self.date_format).to_string();
-        if let Some(parsed) = self.parse(text, &template)? {
+        if let Some(parsed) = self.parse(zone, text, &template)? {
             return Ok(Some(if self.inclusive_end_dates {
                 add_days(parsed, 1.0).time()
             } else {
@@ -607,25 +624,25 @@ impl GanttDb {
 
         let (value, unit) = parse_duration(text);
         if value.is_nan() {
-            return Ok(Some(Date::new(start_time).time()));
+            return Ok(Some(zone.date(start_time).time()));
         }
-        let end = add(Date::new(start_time), value, unit);
+        let end = add(zone.date(start_time), value, unit);
         Ok(Some(if is_valid(end) {
             end.time()
         } else {
-            Date::new(start_time).time()
+            zone.date(start_time).time()
         }))
     }
 
     /// Pushes the end of a task out by one day for every excluded day it
     /// covers.
-    fn check_task_dates(&mut self, index: usize) -> Result<(), Error> {
+    fn check_task_dates(&mut self, zone: &LocalZone, index: usize) -> Result<(), Error> {
         let task = &self.tasks[index];
         if self.excludes.is_empty() || task.manual_end_time {
             return Ok(());
         }
-        let mut cursor = add_days(Date::new(time(task.start_time)), 1.0);
-        let mut end_time = Date::new(time(task.end_time));
+        let mut cursor = add_days(zone.date(time(task.start_time)), 1.0);
+        let mut end_time = zone.date(time(task.end_time));
         let max_end_time = add_days(end_time, 10000.0).time();
         let mut invalid = false;
         let mut render_end_time: Option<f64> = None;
@@ -634,7 +651,7 @@ impl GanttDb {
             if !invalid {
                 render_end_time = Some(end_time.time());
             }
-            invalid = self.is_invalid_date(cursor.time())?;
+            invalid = self.is_invalid_date(zone, cursor.time())?;
             if invalid {
                 end_time.set_date(end_time.date() + 1.0);
                 if end_time.time() > max_end_time {

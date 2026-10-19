@@ -8,7 +8,8 @@ mod render;
 pub use model::{PacketBlock, PacketModel};
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Packet;
 
@@ -23,11 +24,11 @@ impl Diagram for Packet {
     ) -> Result<Model, Error> {
         model::build_packet(parser::parse_packet(source)?, config, title).map(Model::Packet)
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Packet(model) = model else {
-            unreachable!("packet renders a packet model")
-        };
-        Ok(render::render_packet(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Packet(model) = model else {
+        unreachable!("packet renders a packet model")
+    };
+    Ok(render::render_packet(model, config, ctx))
 }

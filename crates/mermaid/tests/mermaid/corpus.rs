@@ -3,7 +3,7 @@
 use std::{fs, path::Path};
 
 use mermaid::{
-    Options,
+    Metrics, Options,
     diagrams::{Model, agentflow::graph::build_agent_graph},
     parse, render,
 };
@@ -15,7 +15,7 @@ fn draws(file: &str) {
         serde_json::from_str(&fs::read_to_string(&path).expect("corpus file"))
             .expect("corpus JSON");
     for (i, source) in sources.iter().enumerate() {
-        let drawing = render(source, &Options::default())
+        let drawing = render(source, &Options::default(), &Metrics)
             .unwrap_or_else(|error| panic!("{file} #{i}: {error}"));
         assert!(drawing.svg.starts_with("<svg"), "{file} #{i}");
         assert!(drawing.width > 0.0 && drawing.height > 0.0, "{file} #{i}");
@@ -442,7 +442,7 @@ fn agentflow_reference() {
                             comparable(model),
                             comparable(ours)
                         ));
-                    } else if let Err(error) = render(source, &Options::default()) {
+                    } else if let Err(error) = render(source, &Options::default(), &Metrics) {
                         failures.push(format!("{source:?}: does not draw: {error}"));
                     }
                 }

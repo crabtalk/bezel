@@ -4,10 +4,9 @@
 //!
 //! On `wasm32-unknown-unknown` the zone is the page's, through `Date`.
 //!
-//! Offsets are cached per thread, as V8's `DateCache` caches them: two
-//! instants at most [`SPAN`] apart with the same offset are taken to have no
-//! transition between them. [`forget_zone`] empties the cache; a change to
-//! the host's zone shows from the next parse or render.
+//! A [`LocalZone`] caches the host zone's offsets as V8's `DateCache` caches
+//! them: two instants at most [`SPAN`] apart with the same offset are taken
+//! to have no transition between them.
 
 use std::cell::Cell;
 
@@ -23,14 +22,23 @@ const NONE: i64 = i32::MAX as i64;
 /// V8's `kDefaultDSTDeltaInSec`.
 const SPAN: f64 = 19.0 * MS_PER_DAY;
 
-thread_local! {
-    /// Instants `lo..=hi`, in milliseconds, and the offset all of them have.
-    static ZONE: Cell<Option<(f64, f64, f64)>> = const { Cell::new(None) };
+/// The host's time zone, its offsets cached: instants `lo..=hi`, in
+/// milliseconds, and the offset all of them have.
+#[derive(Debug, Default)]
+pub(crate) struct LocalZone(Cell<Option<(f64, f64, f64)>>);
+
+/// A copy starts with an empty cache.
+impl Clone for LocalZone {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
-/// Empties the cache of the host zone's offsets.
-pub(crate) fn forget_zone() {
-    ZONE.set(None);
+/// Every zone is the host's.
+impl PartialEq for LocalZone {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// `ToIntegerOrInfinity`.
@@ -134,78 +142,110 @@ fn zone_offset(t: f64) -> f64 {
     f64::from(offset.fix().local_minus_utc()) * 1000.0
 }
 
-/// [`zone_offset`] through the cache: the `LocalTZA(t, true)` of
-/// `LocalTime(t)`.
-fn offset_at(t: f64) -> f64 {
-    let cached = ZONE.get();
-    if let Some((lo, hi, offset)) = cached
-        && (lo..=hi).contains(&t)
-    {
-        return offset;
+impl LocalZone {
+    /// [`zone_offset`] through the cache: the `LocalTZA(t, true)` of
+    /// `LocalTime(t)`.
+    fn offset_at(&self, t: f64) -> f64 {
+        let cached = self.0.get();
+        if let Some((lo, hi, offset)) = cached
+            && (lo..=hi).contains(&t)
+        {
+            return offset;
+        }
+        let offset = zone_offset(t);
+        let span = match cached {
+            Some((lo, hi, known)) if known == offset && t > hi && t - hi <= SPAN => (lo, t, offset),
+            Some((lo, hi, known)) if known == offset && t < lo && lo - t <= SPAN => (t, hi, offset),
+            _ => (t, t, offset),
+        };
+        self.0.set(Some(span));
+        offset
     }
-    let offset = zone_offset(t);
-    let span = match cached {
-        Some((lo, hi, known)) if known == offset && t > hi && t - hi <= SPAN => (lo, t, offset),
-        Some((lo, hi, known)) if known == offset && t < lo && lo - t <= SPAN => (t, hi, offset),
-        _ => (t, t, offset),
-    };
-    ZONE.set(Some(span));
-    offset
-}
 
-/// `LocalTime(t)`.
-fn local_time(t: f64) -> f64 {
-    t + offset_at(t)
-}
-
-/// `UTC(t)`: the instant a local time value names. A wall time that occurs
-/// twice is the earlier instant, and one a transition skips takes the offset
-/// in force before the transition.
-fn utc(t: f64) -> f64 {
-    if !t.is_finite() {
-        return f64::NAN;
+    /// `LocalTime(t)`.
+    fn local_time(&self, t: f64) -> f64 {
+        t + self.offset_at(t)
     }
-    if DateTime::from_timestamp_millis(t as i64).is_none() {
-        return t;
+
+    /// `UTC(t)`: the instant a local time value names. A wall time that occurs
+    /// twice is the earlier instant, and one a transition skips takes the offset
+    /// in force before the transition.
+    fn utc(&self, t: f64) -> f64 {
+        if !t.is_finite() {
+            return f64::NAN;
+        }
+        if DateTime::from_timestamp_millis(t as i64).is_none() {
+            return t;
+        }
+        // The offsets a day either side; a wall time is an instant under each
+        // of them that holds at that instant.
+        let before = self.offset_at(t - MS_PER_DAY);
+        let after = self.offset_at(t + MS_PER_DAY);
+        let holds = |offset: f64| self.offset_at(t - offset) == offset;
+        let offset = match (holds(before), holds(after)) {
+            (true, true) => before.max(after),
+            (false, true) => after,
+            _ => before,
+        };
+        t - offset
     }
-    // The offsets a day either side; a wall time is an instant under each
-    // of them that holds at that instant.
-    let before = offset_at(t - MS_PER_DAY);
-    let after = offset_at(t + MS_PER_DAY);
-    let holds = |offset: f64| offset_at(t - offset) == offset;
-    let offset = match (holds(before), holds(after)) {
-        (true, true) => before.max(after),
-        (false, true) => after,
-        _ => before,
-    };
-    t - offset
-}
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Date(f64);
-
-impl Date {
     /// `new Date(time)`.
-    pub(crate) fn new(time: f64) -> Self {
-        Self(time_clip(time))
+    pub(crate) fn date(&self, time: f64) -> Date<'_> {
+        Date(time_clip(time), self)
     }
 
     /// `new Date(year, month, day, hours, minutes, seconds, ms)`, in local
     /// time.
-    pub(crate) fn local(year: f64, month: f64, day: f64, h: f64, m: f64, s: f64, ms: f64) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn local(
+        &self,
+        year: f64,
+        month: f64,
+        day: f64,
+        h: f64,
+        m: f64,
+        s: f64,
+        ms: f64,
+    ) -> Date<'_> {
         let day = make_day(full_year(year), month, day);
-        Self(time_clip(utc(make_date(day, make_time(h, m, s, ms)))))
+        Date(
+            time_clip(self.utc(make_date(day, make_time(h, m, s, ms)))),
+            self,
+        )
+    }
+
+    /// `new Date(text)`.
+    pub(crate) fn parse(&self, text: &str) -> Date<'_> {
+        Date(parse::parse(text, self), self)
+    }
+}
+
+/// A JavaScript `Date`: a time value and the zone its local fields are read
+/// in.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Date<'z>(f64, &'z LocalZone);
+
+impl PartialEq for Date<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<'z> Date<'z> {
+    /// `new Date(time)` in this date's zone.
+    pub(crate) fn at(self, time: f64) -> Self {
+        Self(time_clip(time), self.1)
+    }
+
+    pub(crate) fn zone(self) -> &'z LocalZone {
+        self.1
     }
 
     /// `Date.UTC(year, month, day, hours, minutes, seconds, ms)`.
     pub(crate) fn utc(year: f64, month: f64, day: f64, h: f64, m: f64, s: f64, ms: f64) -> f64 {
         let day = make_day(full_year(year), month, day);
         time_clip(make_date(day, make_time(h, m, s, ms)))
-    }
-
-    /// `new Date(text)`.
-    pub(crate) fn parse(text: &str) -> Self {
-        Self(parse::parse(text))
     }
 
     /// `getTime()`, `+date`.
@@ -220,7 +260,7 @@ impl Date {
     /// The local time value, `NaN` for an invalid date.
     fn local_value(self) -> f64 {
         if self.is_valid() {
-            local_time(self.0)
+            self.1.local_time(self.0)
         } else {
             f64::NAN
         }
@@ -283,7 +323,7 @@ impl Date {
 
     /// Sets the local date to `day` and the local time of day to `time`.
     fn set_local(&mut self, day: f64, time: f64) {
-        self.0 = time_clip(utc(make_date(day, time)));
+        self.0 = time_clip(self.1.utc(make_date(day, time)));
     }
 
     /// `setDate(date)`.
@@ -360,7 +400,7 @@ impl Date {
 /// A time value as `JSON.stringify` writes the `Date` it is, for
 /// `serialize_with`: its ISO string, `null` when invalid.
 pub(crate) fn json<S: serde::Serializer>(time: &f64, s: S) -> Result<S::Ok, S::Error> {
-    match Date(*time).iso_string() {
+    match LocalZone::default().date(*time).iso_string() {
         Some(text) => s.serialize_str(&text),
         None => s.serialize_unit(),
     }
@@ -377,7 +417,7 @@ pub(crate) fn json_opt<S: serde::Serializer>(time: &Option<f64>, s: S) -> Result
 /// V8's `DateParser`: an ES5 ISO date string, or what its legacy parser
 /// makes of anything else.
 mod parse {
-    use super::{MAX_TIME, NONE, is_space, make_date, make_day, make_time, time_clip, utc};
+    use super::{LocalZone, MAX_TIME, NONE, is_space, make_date, make_day, make_time, time_clip};
 
     const MAX_SIGNIFICANT_DIGITS: usize = 9;
     const MONTH_NAME: u8 = 1;
@@ -1010,7 +1050,7 @@ mod parse {
         Some((day.into(), time, offset))
     }
 
-    pub(super) fn parse(text: &str) -> f64 {
+    pub(super) fn parse(text: &str, local: &LocalZone) -> f64 {
         let Some(([year, month, day], [h, m, s, ms], offset)) = fields(text) else {
             return f64::NAN;
         };
@@ -1023,7 +1063,7 @@ mod parse {
                 if date.abs() > MAX_TIME + 864_000_000.0 {
                     return f64::NAN;
                 }
-                time_clip(utc(date))
+                time_clip(local.utc(date))
             }
             Some(offset) => {
                 let date = date - offset as f64 * 1000.0;

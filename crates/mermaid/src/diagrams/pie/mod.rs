@@ -7,7 +7,8 @@ pub mod render;
 pub use model::PieModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Pie;
 
@@ -25,11 +26,11 @@ impl Diagram for Pie {
             title,
         )?))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Pie(model) = model else {
-            unreachable!("pie renders a pie model")
-        };
-        Ok(render::render_pie(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Pie(model) = model else {
+        unreachable!("pie renders a pie model")
+    };
+    Ok(render::render_pie(model, config, ctx))
 }

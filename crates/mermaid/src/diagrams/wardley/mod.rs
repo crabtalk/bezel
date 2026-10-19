@@ -9,7 +9,8 @@ pub mod render;
 pub use model::WardleyModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Wardley;
 
@@ -31,11 +32,11 @@ impl Diagram for Wardley {
             title,
         )?)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Wardley(model) = model else {
-            unreachable!("wardley renders a wardley model")
-        };
-        Ok(render::render_wardley(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Wardley(model) = model else {
+        unreachable!("wardley renders a wardley model")
+    };
+    Ok(render::render_wardley(model, config, ctx))
 }

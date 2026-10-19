@@ -11,8 +11,9 @@ use super::{
     members::ClassMember,
     types::{ClassNode, StyleClass},
 };
+use crate::Ctx;
 use crate::{
-    Config, Link, Options, Rendered,
+    Config, Link, Rendered,
     config::{Map, Value},
     diagrams::common::{
         fit_width::{runs_across, tighten, turn_to_fit},
@@ -32,7 +33,7 @@ use crate::{
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
         title::with_title,
     },
-    text::{Label, Measure, Style, decode_entities, layout_label},
+    text::{Host, Label, Style, decode_entities, layout_label},
     util::url::linked,
 };
 
@@ -91,8 +92,8 @@ struct Card {
 }
 
 /// What every part of one drawing is measured with.
-struct Sizes<'a> {
-    measure: &'a dyn Measure,
+struct Sizes<'a, H> {
+    measure: &'a H,
     size: f64,
     tiny: f64,
     tiny_height: f64,
@@ -168,7 +169,7 @@ impl Styler<'_> {
     }
 }
 
-fn member_line(member: &ClassMember, measure: &dyn Measure, size: f64) -> Line {
+fn member_line(member: &ClassMember, measure: &impl Host, size: f64) -> Line {
     let text = js::trim(&decode_entities(&member.display_details().display_text)).to_string();
     let width = measure.width(
         &text,
@@ -186,10 +187,10 @@ fn member_line(member: &ClassMember, measure: &dyn Measure, size: f64) -> Line {
     }
 }
 
-pub fn render_class(model: &ClassModel, config: &Config, options: &Options) -> Rendered {
-    let fitted = |down: bool| tighten(options, |tight| draw(model, config, options, down, tight));
+pub fn render_class(model: &ClassModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    let fitted = |down: bool| tighten(ctx, |tight| draw(model, config, ctx, down, tight));
     if runs_across(Some(&model.direction)) {
-        turn_to_fit(options, fitted)
+        turn_to_fit(ctx, fitted)
     } else {
         fitted(false)
     }
@@ -210,7 +211,7 @@ fn base(label: Label, w: f64, h: f64, font_size: f64) -> View {
     }
 }
 
-fn class_view(sizes: &Sizes, styler: &mut Styler, cls: &ClassNode) -> View {
+fn class_view(sizes: &Sizes<'_, impl Host>, styler: &mut Styler, cls: &ClassNode) -> View {
     let measure = sizes.measure;
     let style = styler.class_style(cls);
     let font_size = style.font_size.unwrap_or(sizes.size);
@@ -428,7 +429,7 @@ fn card(
 fn draw(
     model: &ClassModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     turned: bool,
     tight: bool,
 ) -> Rendered {
@@ -440,13 +441,13 @@ fn draw(
         conf.get("hierarchicalNamespaces") != Some(&Value::Bool(false)),
     );
     let hide_empty = conf.get("hideEmptyMembersBox") == Some(&Value::Bool(true));
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.8);
     let tiny_height = js::round(tiny * 1.4);
-    let measurer = options.measurer();
-    let measure: &dyn Measure = &*measurer;
-    let pad = options.padding.unwrap_or(8.0);
+    let measurer = ctx.host;
+    let measure = measurer;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let root_dir = if turned {
         Dir::TB
     } else {
@@ -940,7 +941,7 @@ fn draw(
         }
         let at = format!(" transform=\"translate({},{})\"", num(x), num(y));
         if let Some(cls) = node.class_node {
-            nodes_out += &class_svg(view, cls, &id, &at, &sizes, &mut links, options);
+            nodes_out += &class_svg(view, cls, &id, &at, &sizes, &mut links, ctx);
         } else if node.shape == NodeShape::Note {
             let r = w / 2.0;
             let t = -h / 2.0;
@@ -1107,7 +1108,7 @@ fn draw(
         titled.width,
         titled.height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: model.acc_title.as_deref(),
             acc_descr: model.acc_descr.as_deref(),
@@ -1129,9 +1130,9 @@ fn class_svg(
     cls: &ClassNode,
     id: &str,
     at: &str,
-    sizes: &Sizes,
+    sizes: &Sizes<'_, impl Host>,
     links: &mut Vec<Link>,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> String {
     let p = crate::PREFIX;
     let (w, h, style) = (view.w, view.h, &view.style);
@@ -1239,7 +1240,7 @@ fn class_svg(
             Some(target) if TARGETS.contains(&target) => format!(" target=\"{target}\""),
             _ => String::new(),
         };
-        body = linked(&body, link, &cls.id, links, options, &target);
+        body = linked(&body, link, &cls.id, links, ctx, &target);
     }
     format!(
         "<g class=\"{p}-node {p}-class{}\" data-id=\"{id}\"{at}>{body}</g>",

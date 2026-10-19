@@ -1,7 +1,7 @@
 //! One line of text fitted into a width. Pele's
 //! `diagrams/common/fit-text.ts`.
 
-use crate::{js, text::Measure};
+use crate::{js, text::Host};
 
 pub struct Fitted {
     pub text: String,
@@ -17,7 +17,7 @@ pub fn fit_text(
     max: f64,
     size: f64,
     min: f64,
-    measure: &dyn Measure,
+    measure: &impl Host,
     style: u8,
 ) -> Option<Fitted> {
     if text.is_empty() || max <= 0.0 {

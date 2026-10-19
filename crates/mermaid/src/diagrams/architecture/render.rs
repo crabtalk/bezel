@@ -7,8 +7,9 @@ use super::{
     icons::builtin_icon,
     layout::{place_on_grid, side_index},
 };
+use crate::Ctx;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::Value,
     diagrams::common::fit_width::{tighten, title_room},
     js,
@@ -18,7 +19,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::RADIUS,
     },
-    text::{Label, Measure, Span, Style, layout_label},
+    text::{Host, Label, Span, Style, layout_label},
 };
 
 const STUB: f64 = 12.0;
@@ -50,12 +51,8 @@ fn rank(mut values: Vec<i64>) -> HashMap<i64, usize> {
     out
 }
 
-fn icon_slot(name: &str, x: f64, y: f64, side: f64, options: &Options) -> String {
-    let markup = options
-        .icons
-        .as_ref()
-        .and_then(|icons| icons(name))
-        .unwrap_or_else(|| builtin_icon(name));
+fn icon_slot(name: &str, x: f64, y: f64, side: f64, ctx: &Ctx<'_, impl Host>) -> String {
+    let markup = crate::text::icon(ctx.host, name).unwrap_or_else(|| builtin_icon(name));
     format!(
         "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{markup}</svg>",
         esc_text(name),
@@ -81,7 +78,7 @@ fn utf16_head(text: &str, units: usize) -> &str {
 }
 
 /// Cuts a label down to a box, ending what is left with an ellipsis.
-fn fit(label: &Label, max_width: f64, max_lines: f64, measure: &dyn Measure) -> Label {
+fn fit(label: &Label, max_width: f64, max_lines: f64, measure: &impl Host) -> Label {
     let cut = label.lines.len() as f64 > max_lines;
     if !cut && label.width <= max_width {
         return label.clone();
@@ -329,27 +326,25 @@ fn path_data(p: &[f64], start_trim: f64, end_trim: f64) -> String {
 pub fn render_architecture(
     model: &ArchitectureModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> Rendered {
-    tighten(options, |tight| draw(model, config, options, tight))
+    tighten(ctx, |tight| draw(model, config, ctx, tight))
 }
 
-fn draw(model: &ArchitectureModel, config: &Config, options: &Options, tight: bool) -> Rendered {
+fn draw(
+    model: &ArchitectureModel,
+    config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+    tight: bool,
+) -> Rendered {
     let p = crate::PREFIX;
     let icon_size = setting(config, "iconSize", 48.0, 8.0, 512.0);
-    let size = setting(
-        config,
-        "fontSize",
-        options.font_size.unwrap_or(16.0),
-        4.0,
-        128.0,
-    );
+    let size = setting(config, "fontSize", ctx.options.font_size, 4.0, 128.0);
     let group_pad =
         setting(config, "padding", 20.0, 0.0, 256.0).min(if tight { 12.0 } else { f64::INFINITY });
     let small = js::round(size * 0.875);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let half = icon_size / 2.0;
 
     let nodes: Vec<_> = model.nodes.values().collect();
@@ -489,7 +484,7 @@ fn draw(model: &ArchitectureModel, config: &Config, options: &Options, tight: bo
     let mut row_b = vec![0.0; r_count];
     let badge = js::round(size * 1.25);
     let group_wrap = if tight {
-        80f64.max(title_room(options) / 2.0)
+        80f64.max(title_room(ctx) / 2.0)
     } else {
         320.0
     };
@@ -816,7 +811,7 @@ fn draw(model: &ArchitectureModel, config: &Config, options: &Options, tight: bo
             let cy = y + 6.0 + head_h[g] / 2.0;
             let mut text_x = start;
             if let Some(icon) = group.icon.as_deref().filter(|icon| has_icon(Some(icon))) {
-                head += &icon_slot(icon, start, cy - badge / 2.0, badge, options);
+                head += &icon_slot(icon, start, cy - badge / 2.0, badge, ctx);
                 text_x += badge + 6.0;
             }
             head += &label_svg(
@@ -858,13 +853,7 @@ fn draw(model: &ArchitectureModel, config: &Config, options: &Options, tight: bo
         }
         let mut inner = String::new();
         if let Some(icon) = node.icon.as_deref().filter(|icon| has_icon(Some(icon))) {
-            inner = icon_slot(
-                icon,
-                -glyph / 2.0,
-                (icon_size - glyph) / 2.0,
-                glyph,
-                options,
-            );
+            inner = icon_slot(icon, -glyph / 2.0, (icon_size - glyph) / 2.0, glyph, ctx);
         } else if let Some(text) = node.icon_text.as_deref().filter(|text| !text.is_empty()) {
             let text = layout_label(Some(text), false, measure, text_size, icon_size - 8.0, 0);
             let line_height = if js::truthy(text.line_height) {
@@ -903,7 +892,7 @@ fn draw(model: &ArchitectureModel, config: &Config, options: &Options, tight: bo
         false,
         measure,
         size,
-        if tight { title_room(options) } else { 4000.0 },
+        if tight { title_room(ctx) } else { 4000.0 },
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -954,7 +943,7 @@ fn draw(model: &ArchitectureModel, config: &Config, options: &Options, tight: bo
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: model.acc_title.as_deref(),
             acc_descr: model.acc_descr.as_deref(),

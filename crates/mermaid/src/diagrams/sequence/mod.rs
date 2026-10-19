@@ -13,7 +13,8 @@ pub mod types;
 pub use db::SequenceModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered, config::Value};
+use crate::{Config, Error, ParseLimits, Rendered, config::Value};
+use crate::{Ctx, Host};
 
 pub struct Sequence;
 
@@ -41,11 +42,11 @@ impl Diagram for Sequence {
         parser::parse_sequence(source, &mut db)?;
         Ok(Model::Sequence(Box::new(db)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Sequence(model) = model else {
-            unreachable!("sequenceDiagram renders a sequence model")
-        };
-        Ok(render::render_sequence(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Sequence(model) = model else {
+        unreachable!("sequenceDiagram renders a sequence model")
+    };
+    Ok(render::render_sequence(model, config, ctx))
 }

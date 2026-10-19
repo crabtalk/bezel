@@ -7,8 +7,9 @@ use super::{
     db::RailroadDb,
     types::{NodeId, Nodes, RailroadNode},
 };
+use crate::Ctx;
 use crate::{
-    Config, Options, Rendered, Value,
+    Config, Rendered, Value,
     diagrams::common::fit_width::{tighten, title_room},
     js,
     svg::{
@@ -16,7 +17,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::{FONT_MONO, RADIUS},
     },
-    text::{Measure, Style, decode_entities, layout_label},
+    text::{Host, Style, decode_entities, layout_label},
 };
 
 const LEAD: f64 = 12.0;
@@ -69,8 +70,8 @@ impl Laid {
     }
 }
 
-struct Metrics<'a> {
-    measure: &'a dyn Measure,
+struct Metrics<'a, H> {
+    measure: &'a H,
     size: f64,
     padding: f64,
     height: f64,
@@ -124,7 +125,7 @@ fn even(value: f64) -> f64 {
     (value / 2.0).ceil() * 2.0
 }
 
-fn leaf(kind: Kind, text: String, id: String, style: u8, m: &Metrics) -> Laid {
+fn leaf(kind: Kind, text: String, id: String, style: u8, m: &Metrics<'_, impl Host>) -> Laid {
     let half = m.height / 2.0;
     let width = even(m.measure.width(&text, m.size, style) + 2.0 * m.padding).max(m.height);
     Laid {
@@ -165,11 +166,11 @@ fn count(min: f64, max: f64) -> String {
 
 /// Where the next branch of a choice sits below the baseline, given the one
 /// above it.
-fn below(offset: f64, above: &Laid, branch: &Laid, m: &Metrics) -> f64 {
+fn below(offset: f64, above: &Laid, branch: &Laid, m: &Metrics<'_, impl Host>) -> f64 {
     (offset + above.down + m.sep + branch.up).max(2.0 * m.arc)
 }
 
-fn bypass(kid: usize, boxes: &[Laid], m: &Metrics) -> Laid {
+fn bypass(kid: usize, boxes: &[Laid], m: &Metrics<'_, impl Host>) -> Laid {
     let k = &boxes[kid];
     let reach = (k.up + m.sep).max(2.0 * m.arc);
     Laid {
@@ -189,7 +190,13 @@ fn add(boxes: &mut Vec<Laid>, laid: Laid) -> usize {
     boxes.len() - 1
 }
 
-fn measure(root: NodeId, nodes: &Nodes, m: &Metrics, room: f64, boxes: &mut Vec<Laid>) -> usize {
+fn measure(
+    root: NodeId,
+    nodes: &Nodes,
+    m: &Metrics<'_, impl Host>,
+    room: f64,
+    boxes: &mut Vec<Laid>,
+) -> usize {
     let mut budgets: HashMap<NodeId, f64> = HashMap::new();
     let mut pending: Vec<(NodeId, f64)> = vec![(root, room)];
     let mut i = 0;
@@ -353,13 +360,13 @@ fn measure(root: NodeId, nodes: &Nodes, m: &Metrics, room: f64, boxes: &mut Vec<
     )
 }
 
-pub fn render_railroad(model: &RailroadDb, config: &Config, options: &Options) -> Rendered {
-    tighten(options, |tight| draw(model, config, options, tight))
+pub fn render_railroad(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    tighten(ctx, |tight| draw(model, config, ctx, tight))
 }
 
 /// What one rule's drawing is gathered into.
-struct Drawn<'a> {
-    m: &'a Metrics<'a>,
+struct Drawn<'a, H> {
+    m: &'a Metrics<'a, H>,
     track: String,
     arrows: String,
     nodes: String,
@@ -374,7 +381,7 @@ struct Drawn<'a> {
     stroke: String,
 }
 
-impl Drawn<'_> {
+impl<H: Host> Drawn<'_, H> {
     fn line(&mut self, x1: f64, y: f64, x2: f64) {
         if x2 > x1 {
             let _ = write!(self.track, "M{},{}H{}", num(x1), num(y), num(x2));
@@ -620,8 +627,8 @@ impl Drawn<'_> {
     }
 }
 
-fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> Rendered {
-    let base = options.font_size.unwrap_or(16.0);
+fn draw(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bool) -> Rendered {
+    let base = ctx.options.font_size;
     let font_size = option(config, "fontSize", 0.0, 200.0);
     let size = if js::truthy(font_size) {
         font_size
@@ -635,9 +642,9 @@ fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> 
     };
     let padding = option(config, "padding", -1.0, 200.0);
     let line_height = js::round(size * 1.5);
-    let measurer = options.measurer();
+    let measurer = ctx.host;
     let m = Metrics {
-        measure: &*measurer,
+        measure: measurer,
         size,
         padding: if padding < 0.0 { 12.0 } else { padding },
         height: even(line_height + if padding < 0.0 { 9.0 } else { 2.0 * padding }),
@@ -663,7 +670,7 @@ fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> 
     } else {
         String::new()
     };
-    let pad = options.padding.unwrap_or(8.0);
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let arc = m.arc;
 
     let a = num(arc);
@@ -674,7 +681,7 @@ fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> 
         false,
         m.measure,
         base,
-        if tight { title_room(options) } else { 4000.0 },
+        if tight { title_room(ctx) } else { 4000.0 },
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -709,7 +716,11 @@ fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> 
         let mut boxes = Vec::new();
         let room = if tight {
             80f64.max(
-                options.max_width.unwrap_or(320.0) - 2.0 * pad - 4.0 * radius - 2.0 * LEAD - 1.0,
+                ctx.options.max_width.unwrap_or(320.0)
+                    - 2.0 * pad
+                    - 4.0 * radius
+                    - 2.0 * LEAD
+                    - 1.0,
             )
         } else {
             f64::INFINITY
@@ -790,7 +801,7 @@ fn draw(model: &RailroadDb, config: &Config, options: &Options, tight: bool) -> 
             total_width,
             total_height,
             base,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

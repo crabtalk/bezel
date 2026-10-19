@@ -207,15 +207,15 @@ fn drawn(
         cache
     };
     cx.default_global::<Cache>().0 = cache;
+    let shaper = Shaper(families.clone());
     let options = Options {
-        measure: Some(Rc::new(Shaper(families.clone()))),
         font_family: Some(families.sans),
         font_family_mono: Some(families.mono),
-        font_size: Some(f64::from(size)),
+        font_size: f64::from(size),
         colors: Some(colors),
         ..Options::default()
     };
-    let result = ::mermaid::render(code, &options)
+    let result = ::mermaid::render(code, &options, &shaper)
         .map_err(|error| note(&error))
         .and_then(|drawing| {
             let svg = cx

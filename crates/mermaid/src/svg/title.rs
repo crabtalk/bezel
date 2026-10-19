@@ -2,7 +2,7 @@
 //! `svg/title.ts`.
 
 use super::builder::{label_svg, num};
-use crate::text::{Measure, Style, layout_label};
+use crate::text::{Host, Style, layout_label};
 
 pub struct Titled {
     pub width: f64,
@@ -12,7 +12,7 @@ pub struct Titled {
 
 pub fn with_title(
     title: Option<&str>,
-    measure: &dyn Measure,
+    measure: &impl Host,
     size: f64,
     pad: f64,
     width: f64,

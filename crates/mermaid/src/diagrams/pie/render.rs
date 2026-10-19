@@ -4,7 +4,7 @@ use std::{f64::consts::PI, fmt::Write as _};
 
 use super::model::PieModel;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::Value,
     diagrams::common::fit_width::{fit_width, title_room},
     js,
@@ -15,6 +15,7 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
+use crate::{Ctx, Host};
 
 const RADIUS: f64 = 120.0;
 const SWATCH: f64 = 12.0;
@@ -78,9 +79,9 @@ fn slice(start: f64, end: f64, outer: f64, inner: f64) -> String {
     )
 }
 
-pub fn render_pie(model: &PieModel, config: &Config, options: &Options) -> Rendered {
-    fit_width(options, RADIUS * 2.0, 140.0, |diameter, tight| {
-        draw(model, config, options, diameter / 2.0, tight)
+pub fn render_pie(model: &PieModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    fit_width(ctx, RADIUS * 2.0, 140.0, |diameter, tight| {
+        draw(model, config, ctx, diameter / 2.0, tight)
     })
 }
 
@@ -89,15 +90,15 @@ pub fn render_pie(model: &PieModel, config: &Config, options: &Options) -> Rende
 fn draw(
     model: &PieModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     radius: f64,
     tight: bool,
 ) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     let text_position = match option(config, "textPosition") {
         Some(Value::Number(n)) if *n >= 0.0 && *n <= 1.0 => *n,
@@ -148,9 +149,9 @@ fn draw(
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
-        title_room(options),
+        title_room(ctx),
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -368,7 +369,7 @@ fn draw(
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

@@ -10,7 +10,7 @@ use super::{
     model::CynefinModel,
 };
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::Value,
     js,
     svg::{
@@ -21,6 +21,7 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
+use crate::{Ctx, Host};
 
 /// [domain, column, row, series color]
 const QUADRANTS: [(&str, f64, f64, i64); 4] = [
@@ -81,14 +82,13 @@ fn setting(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64
     }
 }
 
-pub fn render_cynefin(model: &CynefinModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.8125);
     let item_size = js::round(size * 0.875);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let show_descriptions = config
         .section("cynefin")
         .and_then(|section| section.get("showDomainDescriptions"))
@@ -96,10 +96,7 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, options: &Options) 
     let amplitude = setting(config, "boundaryAmplitude", 8.0, 0.0, 50.0);
     let seed = resolve_seed(
         setting(config, "seed", 0.0, -1e15, 1e15),
-        options
-            .id_prefix
-            .as_deref()
-            .unwrap_or(crate::PREFIX),
+        ctx.options.id_prefix.as_str(),
     );
     let item_line = js::round(item_size * 1.5);
 
@@ -581,7 +578,7 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, options: &Options) 
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

@@ -3,12 +3,13 @@
 
 use std::convert::Infallible;
 
-use crate::{Options, Rendered};
+use crate::Rendered;
+use crate::{Ctx, Host};
 
 const BREAKPOINT: f64 = 640.0;
 
-fn available(options: &Options) -> Option<f64> {
-    options.max_width.filter(|&w| w > 0.0)
+fn available(ctx: &Ctx<'_, impl Host>) -> Option<f64> {
+    ctx.options.max_width.filter(|&w| w > 0.0)
 }
 
 /// Draws a chart whose plot can be any width so the whole diagram fits the
@@ -16,12 +17,12 @@ fn available(options: &Options) -> Option<f64> {
 /// the plot gives up the overflow and is drawn again. `narrow` tells the
 /// chart it did not fit at its own width.
 pub fn fit_width(
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     natural: f64,
     least: f64,
     mut draw: impl FnMut(f64, bool) -> Rendered,
 ) -> Rendered {
-    match try_fit_width(options, natural, least, |plot, narrow| {
+    match try_fit_width(ctx, natural, least, |plot, narrow| {
         Ok::<_, Infallible>(draw(plot, narrow))
     }) {
         Ok(result) => result,
@@ -32,13 +33,13 @@ pub fn fit_width(
 /// [`fit_width`] for a chart whose drawing can fail: the first failure is
 /// the answer.
 pub fn try_fit_width<E>(
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     natural: f64,
     least: f64,
     mut draw: impl FnMut(f64, bool) -> Result<Rendered, E>,
 ) -> Result<Rendered, E> {
     let mut result = draw(natural, false)?;
-    let Some(available) = available(options) else {
+    let Some(available) = available(ctx) else {
         return Ok(result);
     };
     if result.width <= available {
@@ -57,17 +58,17 @@ pub fn try_fit_width<E>(
 }
 
 /// The width a title may take before it wraps.
-pub fn title_room(options: &Options) -> f64 {
-    match available(options) {
-        Some(available) => 80f64.max(available - 2.0 * options.padding.unwrap_or(8.0)),
+pub fn title_room(ctx: &Ctx<'_, impl Host>) -> f64 {
+    match available(ctx) {
+        Some(available) => 80f64.max(available - 2.0 * ctx.options.padding.unwrap_or(8.0)),
         None => 4000.0,
     }
 }
 
 /// For a chart drawn to a set width: its own, or the host's when smaller.
 /// `around` is what the chart adds outside that width.
-pub fn cap_width(options: &Options, natural: f64, least: f64, around: f64) -> f64 {
-    match available(options) {
+pub fn cap_width(ctx: &Ctx<'_, impl Host>, natural: f64, least: f64, around: f64) -> f64 {
+    match available(ctx) {
         None => natural,
         Some(available) => least.min(natural).max(natural.min(available - around)),
     }
@@ -76,16 +77,15 @@ pub fn cap_width(options: &Options, natural: f64, least: f64, around: f64) -> f6
 /// For a diagram that can run across or down: drawn across, and down instead
 /// when the host allows it, its width is under the breakpoint, across does
 /// not fit, and down is narrower.
-pub fn turn_to_fit(options: &Options, mut draw: impl FnMut(bool) -> Rendered) -> Rendered {
+pub fn turn_to_fit(ctx: &Ctx<'_, impl Host>, mut draw: impl FnMut(bool) -> Rendered) -> Rendered {
     let across = draw(false);
-    let Some(available) = available(options) else {
+    let Some(available) = available(ctx) else {
         return across;
     };
-    if options.auto_direction == Some(false) || across.width <= available {
+    if !ctx.options.auto_direction || across.width <= available {
         return across;
     }
-    let breakpoint = options
-        .direction_breakpoint
+    let breakpoint = Some(ctx.options.direction_breakpoint)
         .filter(|&b| b > 0.0)
         .unwrap_or(BREAKPOINT);
     if available >= breakpoint {
@@ -105,8 +105,8 @@ pub fn runs_across(direction: Option<&str>) -> bool {
 
 /// Draws a diagram with room to spare, and tightly instead when that does not
 /// fit the host's width and tight is narrower.
-pub fn tighten(options: &Options, mut draw: impl FnMut(bool) -> Rendered) -> Rendered {
-    match try_tighten(options, |tight| Ok::<_, Infallible>(draw(tight))) {
+pub fn tighten(ctx: &Ctx<'_, impl Host>, mut draw: impl FnMut(bool) -> Rendered) -> Rendered {
+    match try_tighten(ctx, |tight| Ok::<_, Infallible>(draw(tight))) {
         Ok(result) => result,
         Err(never) => match never {},
     }
@@ -115,11 +115,11 @@ pub fn tighten(options: &Options, mut draw: impl FnMut(bool) -> Rendered) -> Ren
 /// [`tighten`] for a diagram whose drawing can fail: the first failure is
 /// the answer.
 pub fn try_tighten<E>(
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     mut draw: impl FnMut(bool) -> Result<Rendered, E>,
 ) -> Result<Rendered, E> {
     let loose = draw(false)?;
-    let Some(available) = available(options) else {
+    let Some(available) = available(ctx) else {
         return Ok(loose);
     };
     if loose.width <= available {

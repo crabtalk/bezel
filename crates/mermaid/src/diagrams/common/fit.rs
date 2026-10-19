@@ -3,7 +3,7 @@
 
 use crate::{
     js::{self, Lazy},
-    text::{Label, Measure, layout_label},
+    text::{Host, Label, layout_label},
 };
 
 static RE_TAG_START: Lazy = Lazy::new(r"<(?!br\s*\/?>)", "gi");
@@ -14,13 +14,7 @@ static RE_UNIT: Lazy = Lazy::new(r"<br\s*\/?>|ﬂ°°?\w+¶ß|&#?\w+;|[\s\S]", "
 
 /// Text laid out as Mermaid's journey and timeline draw it: plain text in
 /// which only `<br>` is markup.
-pub fn plain_label(
-    raw: Option<&str>,
-    measure: &dyn Measure,
-    size: f64,
-    max: f64,
-    base: u8,
-) -> Label {
+pub fn plain_label(raw: Option<&str>, measure: &impl Host, size: f64, max: f64, base: u8) -> Label {
     let text = raw.map(|text| {
         let mut text = text.to_string();
         if text.contains('<') {
@@ -36,7 +30,7 @@ pub fn plain_label(
 
 /// [`layout_label`] wraps at spaces only. For a box of fixed width, this
 /// also cuts any word too long to fit.
-pub fn fit_label(raw: Option<&str>, measure: &dyn Measure, size: f64, max: f64, base: u8) -> Label {
+pub fn fit_label(raw: Option<&str>, measure: &impl Host, size: f64, max: f64, base: u8) -> Label {
     let label = plain_label(raw, measure, size, max, base);
     let Some(raw) = raw else {
         return label;

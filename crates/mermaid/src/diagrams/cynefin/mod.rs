@@ -9,7 +9,8 @@ pub mod render;
 pub use model::CynefinModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Cynefin;
 
@@ -27,11 +28,11 @@ impl Diagram for Cynefin {
             title,
         )))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Cynefin(model) = model else {
-            unreachable!("cynefin renders a cynefin model")
-        };
-        Ok(render::render_cynefin(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Cynefin(model) = model else {
+        unreachable!("cynefin renders a cynefin model")
+    };
+    Ok(render::render_cynefin(model, config, ctx))
 }

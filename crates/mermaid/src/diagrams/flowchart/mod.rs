@@ -11,7 +11,8 @@ pub mod tokens;
 pub mod types;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered, config::Value};
+use crate::{Config, Error, ParseLimits, Rendered, config::Value};
+use crate::{Ctx, Host};
 
 pub use db::{FlowDb, FlowDbOptions};
 
@@ -40,11 +41,11 @@ impl Diagram for Flowchart {
         parser::parse_flowchart(source, &mut db)?;
         Ok(Model::Flowchart(Box::new(db)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Flowchart(db) = model else {
-            unreachable!("flowchart renders a flowchart model")
-        };
-        Ok(render::render_flowchart(db, config, options, None))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Flowchart(db) = model else {
+        unreachable!("flowchart renders a flowchart model")
+    };
+    Ok(render::render_flowchart(db, config, ctx, None))
 }

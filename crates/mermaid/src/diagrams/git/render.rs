@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt::Write as _};
 
 use super::db::{GitCommit, GitModel, commit_type};
 use crate::{
-    Config, Options, Rendered, Value,
+    Config, Rendered, Value,
     diagrams::common::{fit::plain_label, fit_width::turn_to_fit},
     js,
     svg::{
@@ -14,6 +14,7 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
+use crate::{Ctx, Host};
 
 const DOT: f64 = 7.0;
 const STEP: f64 = 44.0;
@@ -96,12 +97,12 @@ fn symbol(kind: u8, x: f64, y: f64, color: &str) -> String {
     dot
 }
 
-pub fn render_git(model: &GitModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_git(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     if model.direction != "LR" {
-        return draw(model, config, options, model.direction);
+        return draw(model, config, ctx, model.direction);
     }
-    turn_to_fit(options, |down| {
-        draw(model, config, options, if down { "TB" } else { "LR" })
+    turn_to_fit(ctx, |down| {
+        draw(model, config, ctx, if down { "TB" } else { "LR" })
     })
 }
 
@@ -130,12 +131,12 @@ impl Bounds {
     }
 }
 
-fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -> Rendered {
+fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: &str) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.75);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     let show_branches = flag(config, "showBranches", true);
     let show_commit_label = flag(config, "showCommitLabel", true);
@@ -176,7 +177,7 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
             && (commit.kind != commit_type::MERGE || commit.custom_id == Some(true));
         let mut tags = Vec::new();
         for tag in &commit.tags {
-            let label = plain_label(Some(tag), &*measure, small, 4000.0, 0);
+            let label = plain_label(Some(tag), measure, small, 4000.0, 0);
             if !label.lines.is_empty() {
                 tags.push(label);
             }
@@ -651,7 +652,7 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
         4000.0,
         Style::BOLD,
@@ -707,7 +708,7 @@ fn draw(model: &GitModel, config: &Config, options: &Options, direction: &str) -
             width,
             height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

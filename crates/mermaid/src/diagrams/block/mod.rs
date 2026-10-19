@@ -13,7 +13,8 @@ pub mod types;
 pub use types::BlockModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Block;
 
@@ -30,11 +31,11 @@ impl Diagram for Block {
         parser::parse_block(source, &mut db)?;
         Ok(Model::Block(Box::new(db)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Block(model) = model else {
-            unreachable!("block renders a block model")
-        };
-        render::render_block(model, config, options)
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Block(model) = model else {
+        unreachable!("block renders a block model")
+    };
+    render::render_block(model, config, ctx)
 }

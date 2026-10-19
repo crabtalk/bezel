@@ -673,15 +673,13 @@ impl Parser<'_> {
             }
             T::ACC_TITLE => {
                 self.i += 1;
-                let value =
-                    crate::js::trim(&self.expect(T::ACC_TITLE_VALUE, "")?).to_string();
+                let value = crate::js::trim(&self.expect(T::ACC_TITLE_VALUE, "")?).to_string();
                 self.db.set_acc_title(&value);
                 Ok(DocItem::Str(value))
             }
             T::ACC_DESCR => {
                 self.i += 1;
-                let value =
-                    crate::js::trim(&self.expect(T::ACC_DESCR_VALUE, "")?).to_string();
+                let value = crate::js::trim(&self.expect(T::ACC_DESCR_VALUE, "")?).to_string();
                 self.db.set_acc_description(&value);
                 Ok(DocItem::Str(value))
             }

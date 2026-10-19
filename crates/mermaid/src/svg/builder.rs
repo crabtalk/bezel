@@ -157,11 +157,11 @@ pub fn label_svg(label: &Label, cx: f64, cy: f64, attrs: &str) -> String {
             for span in line {
                 if let Some(icon) = &span.icon {
                     let side = label.size * 1.1;
-                    let inner = crate::text::icon_markup(icon);
+                    let inner = &icon.markup;
                     let _ = write!(
                         extra,
                         "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{inner}</svg>",
-                        esc_text(icon),
+                        esc_text(&icon.name),
                         num(x),
                         num(y - shift - side / 2.0),
                         num(side),

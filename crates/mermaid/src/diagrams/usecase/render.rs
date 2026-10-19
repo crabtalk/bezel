@@ -8,8 +8,9 @@ use super::{
     graph::{UsecaseGraphEdge, UsecaseGraphNode},
     types::{ActorType, BoundaryType, LabelType, UsecaseModel},
 };
+use crate::Ctx;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     diagrams::common::fit_width::{runs_across, turn_to_fit},
     js::{self, Lazy},
     layout::{
@@ -23,7 +24,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Label, Measure, Style, icon_markup, layout_label},
+    text::{Host, Label, Style, icon_markup, layout_label},
 };
 
 const NODE_SEP: f64 = 32.0;
@@ -89,7 +90,7 @@ fn literal(text: &str) -> String {
 fn text(
     raw: Option<&str>,
     markdown: bool,
-    measure: &dyn Measure,
+    measure: &impl Host,
     size: f64,
     wrap: f64,
     base: u8,
@@ -243,7 +244,7 @@ fn mark(kind: &str, x: f64, y: f64, dx: f64, dy: f64, color: &str) -> String {
     }
 }
 
-fn figure(view: &View) -> String {
+fn figure(view: &View, host: &impl Host) -> String {
     let p = crate::PREFIX;
     let node = view.node;
     let shape = &view.style.shape;
@@ -267,7 +268,7 @@ fn figure(view: &View) -> String {
             format!(
                 "<rect x=\"-22\" y=\"-26\" width=\"44\" height=\"44\" rx=\"{RADIUS}\"{SHAPE_ATTRS}{shape}/><svg class=\"{p}-icon\" data-icon=\"{}\" x=\"-14\" y=\"-18\" width=\"28\" height=\"28\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{}</svg>",
                 esc_text(icon),
-                icon_markup(icon)
+                icon_markup(host, icon)
             )
         }
         _ => format!(
@@ -289,11 +290,11 @@ fn figure(view: &View) -> String {
     out
 }
 
-pub fn render_usecase(model: &UsecaseModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_usecase(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     if !runs_across(Some(model.direction.name())) {
-        return draw(model, config, options, false);
+        return draw(model, config, ctx, false);
     }
-    turn_to_fit(options, |down| draw(model, config, options, down))
+    turn_to_fit(ctx, |down| draw(model, config, ctx, down))
 }
 
 /// A boundary's title sits in the middle of its top edge. Where edges enter
@@ -357,14 +358,14 @@ fn left_label(label: &Label, x: f64, cy: f64, attrs: &str) -> String {
 }
 
 /// `turned` draws a diagram that runs across as one that runs down.
-fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) -> Rendered {
+fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -> Rendered {
     let p = crate::PREFIX;
     let graph = model.graph();
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.8125);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let root_dir = if turned {
         Dir::TB
     } else {
@@ -397,7 +398,7 @@ fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) 
                 .map(|s| format!("«{s}»"))
                 .as_deref(),
             false,
-            &*measure,
+            measure,
             tiny,
             200.0,
             base,
@@ -421,7 +422,7 @@ fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) 
             view.label = text(
                 Some(&node.label),
                 markdown,
-                &*measure,
+                measure,
                 font_size,
                 4000.0,
                 base,
@@ -445,15 +446,15 @@ fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) 
                 view.label = text(
                     Some(&node.label),
                     false,
-                    &*measure,
+                    measure,
                     font_size,
                     4000.0,
                     base | Style::BOLD,
                 );
                 let mut value_w: f64 = 0.0;
                 for row in rows {
-                    let key = text(Some(&row.key), false, &*measure, small, 4000.0, base);
-                    let value = text(Some(&row.value), false, &*measure, small, 260.0, base);
+                    let key = text(Some(&row.key), false, measure, small, 4000.0, base);
+                    let value = text(Some(&row.value), false, measure, small, 260.0, base);
                     view.key_w = view.key_w.max(key.width);
                     value_w = value_w.max(value.width);
                     view.h += value.height.max(js::round(small * 1.5)) + ROW_PAD;
@@ -475,21 +476,14 @@ fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) 
                 view.h += view.head_h;
             } else if node.actor_type.is_some() {
                 view.kind = ViewKind::Actor;
-                view.label = text(
-                    Some(&node.label),
-                    markdown,
-                    &*measure,
-                    font_size,
-                    140.0,
-                    base,
-                );
+                view.label = text(Some(&node.label), markdown, measure, font_size, 140.0, base);
                 view.w = FIGURE_W.max(view.label.width).max(view.stereotype.width);
                 view.h = FIGURE_H + FIGURE_GAP + view.stereotype.height + view.label.height;
             } else {
                 view.label = text(
                     Some(&node.label),
                     markdown,
-                    &*measure,
+                    measure,
                     if node.shape == "note" {
                         small
                     } else {
@@ -550,7 +544,7 @@ fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) 
         let label = text(
             raw.as_deref(),
             edge.label_type == Some(LabelType::Markdown),
-            &*measure,
+            measure,
             small,
             200.0,
             0,
@@ -616,7 +610,7 @@ fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) 
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
         4000.0,
         Style::BOLD,
@@ -706,7 +700,7 @@ fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) 
             format!(
                 "<g class=\"{p}-actor-figure\" transform=\"translate(0,{})\">{}</g>{}{}",
                 num(top + FIGURE_H / 2.0),
-                figure(view),
+                figure(view, ctx.host),
                 label_svg(
                     &view.stereotype,
                     0.0,
@@ -1022,7 +1016,7 @@ fn draw(model: &UsecaseModel, config: &Config, options: &Options, turned: bool) 
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: Some(&model.acc_title),
             acc_descr: Some(&model.acc_descr),

@@ -4,8 +4,9 @@ use super::{
     db::IshikawaDb,
     types::{NodeId, Nodes},
 };
+use crate::Ctx;
 use crate::{
-    Options, Rendered,
+    Rendered,
     diagrams::common::{
         fit_width::{title_room, turn_to_fit},
         literal_label::break_label,
@@ -17,7 +18,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::RADIUS,
     },
-    text::{Label, Measure, Style, layout_label},
+    text::{Host, Label, Style, layout_label},
 };
 use std::fmt::Write as _;
 
@@ -90,7 +91,7 @@ fn arrange(
     nodes: &Nodes,
     node: NodeId,
     up: bool,
-    measure: &dyn Measure,
+    measure: &impl Host,
     size: f64,
     small: f64,
 ) -> Category {
@@ -184,18 +185,18 @@ fn arrange(
     }
 }
 
-pub fn render_ishikawa(model: &IshikawaDb, options: &Options) -> Rendered {
-    turn_to_fit(options, |down| draw(model, options, down))
+pub fn render_ishikawa(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    turn_to_fit(ctx, |down| draw(model, ctx, down))
 }
 
-fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
-    let size = options.font_size.unwrap_or(16.0);
+fn draw(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let measurer = options.measurer();
-    let measure = &*measurer;
-    let pad = options.padding.unwrap_or(8.0);
+    let measurer = ctx.host;
+    let measure = measurer;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     if down {
-        return vertical_causes(model, options);
+        return vertical_causes(model, ctx);
     }
     let p = crate::PREFIX;
     let nodes = &model.nodes;
@@ -417,7 +418,7 @@ fn draw(model: &IshikawaDb, options: &Options, down: bool) -> Rendered {
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible::default(),
         &content,
     );
@@ -439,21 +440,21 @@ struct Entry {
     h: f64,
 }
 
-fn vertical_causes(model: &IshikawaDb, options: &Options) -> Rendered {
-    let size = options.font_size.unwrap_or(16.0);
+fn vertical_causes(model: &IshikawaDb, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let measurer = options.measurer();
-    let measure = &*measurer;
-    let pad = options.padding.unwrap_or(8.0);
+    let measurer = ctx.host;
+    let measure = measurer;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let p = crate::PREFIX;
     let nodes = &model.nodes;
-    let room = 140f64.max(options.max_width.unwrap_or(320.0) - 2.0 * pad);
+    let room = 140f64.max(ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad);
     let title = layout_label(
         model.title.as_deref(),
         false,
         measure,
         size,
-        title_room(options),
+        title_room(ctx),
         Style::BOLD,
     );
     let mut order: Vec<Entry> = Vec::new();
@@ -581,7 +582,7 @@ fn vertical_causes(model: &IshikawaDb, options: &Options) -> Rendered {
             total_width,
             height,
             size,
-            options,
+            ctx,
             Accessible::default(),
             &content,
         ),

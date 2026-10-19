@@ -7,7 +7,7 @@ use super::{
     model::{NodeType, TreeNode, TreeViewModel},
 };
 use crate::{
-    Config, Options, Rendered, Value,
+    Config, Rendered, Value,
     diagrams::common::{
         fit_width::{tighten, title_room},
         literal_label::{left_label_svg, literal_label},
@@ -20,6 +20,7 @@ use crate::{
     },
     text::{Label, Style, decode_entities, layout_label},
 };
+use crate::{Ctx, Host};
 
 const ICON_GAP: f64 = 6.0;
 const DESC_GAP: f64 = 16.0;
@@ -34,7 +35,7 @@ fn setting(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64
     }
 }
 
-/// Mermaid's layout options, with Pele's defaults.
+/// Mermaid's layout ctx, with Pele's defaults.
 pub struct TreeSettings {
     pub padding_x: f64,
     pub padding_y: f64,
@@ -65,8 +66,12 @@ struct Row<'m> {
     height: f64,
 }
 
-pub fn render_tree_view(model: &TreeViewModel, config: &Config, options: &Options) -> Rendered {
-    tighten(options, |tight| draw(model, config, options, tight))
+pub fn render_tree_view(
+    model: &TreeViewModel,
+    config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
+    tighten(ctx, |tight| draw(model, config, ctx, tight))
 }
 
 fn label_style(node: &TreeNode) -> u8 {
@@ -77,13 +82,13 @@ fn label_style(node: &TreeNode) -> u8 {
     }
 }
 
-fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) -> Rendered {
+fn draw(model: &TreeViewModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bool) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let size = ctx.options.font_size;
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let icons = icon_config(config);
-    let max_width = options.max_width.unwrap_or(320.0);
+    let max_width = ctx.options.max_width.unwrap_or(320.0);
 
     let TreeSettings {
         padding_x,
@@ -114,9 +119,9 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
-        if tight { title_room(options) } else { 4000.0 },
+        if tight { title_room(ctx) } else { 4000.0 },
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -162,7 +167,7 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
         let description = match &node.description {
             Some(description) if tight && !description.is_empty() => Some(literal_label(
                 &decode_entities(description),
-                &*measure,
+                measure,
                 size,
                 room,
                 Style::ITALIC,
@@ -314,13 +319,9 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
             let glyph = glyph(name)
                 .or_else(|| glyph(if directory { "folder" } else { "file" }))
                 .expect("a built-in glyph");
-            let drawn = options
-                .icons
-                .as_ref()
-                .and_then(|resolve| resolve(icon))
-                .unwrap_or_else(|| {
-                    format!("<path d=\"{glyph}\" stroke=\"var(--_m)\" stroke-width=\"1.5\"/>")
-                });
+            let drawn = crate::text::icon(ctx.host, icon).unwrap_or_else(|| {
+                format!("<path d=\"{glyph}\" stroke=\"var(--_m)\" stroke-width=\"1.5\"/>")
+            });
             let _ = write!(
                 inner,
                 "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{drawn}</svg>",
@@ -395,7 +396,7 @@ fn draw(model: &TreeViewModel, config: &Config, options: &Options, tight: bool) 
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

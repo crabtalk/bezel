@@ -9,8 +9,9 @@ use super::{
     db::SequenceModel,
     types::{SeqActor, SeqMessageText, line, placement},
 };
+use crate::Ctx;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::{Map, Value},
     diagrams::common::{
         fit_width::{tighten, title_room},
@@ -23,7 +24,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names, resolve_style},
     },
-    text::{Label, Measure, Style, layout_label},
+    text::{Host, Label, Style, layout_label},
 };
 
 const MSG_PAD: f64 = 12.0;
@@ -269,8 +270,8 @@ fn trim(kind: Head) -> f64 {
     }
 }
 
-pub fn render_sequence(db: &SequenceModel, config: &Config, options: &Options) -> Rendered {
-    tighten(options, |tight| draw(db, config, options, tight))
+pub fn render_sequence(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    tighten(ctx, |tight| draw(db, config, ctx, tight))
 }
 
 /// The drawing's horizontal extent and what it has drawn so far.
@@ -376,16 +377,15 @@ fn right_edge(col: &Column, extra: usize) -> f64 {
     }
 }
 
-fn draw(db: &SequenceModel, config: &Config, options: &Options, tight: bool) -> Rendered {
+fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bool) -> Rendered {
     let p = crate::PREFIX;
     let empty = Map::new();
     let conf = config.section("sequence").unwrap_or(&empty);
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.75);
-    let measurer = options.measurer();
-    let measurer: &dyn Measure = &*measurer;
-    let pad = options.padding.unwrap_or(8.0);
+    let measurer = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let flag = |key: &str| conf.get(key).and_then(Value::as_bool);
     let mirror = flag("mirrorActors") != Some(false);
     let right_angles = flag("rightAngles") == Some(true);
@@ -395,7 +395,7 @@ fn draw(db: &SequenceModel, config: &Config, options: &Options, tight: bool) -> 
     let min_h = option(conf, "height", js::round(size * 1.5) + 20.0);
     let wrap_w = option(conf, "width", 160.0).min(if tight {
         32f64.max(
-            (options.max_width.unwrap_or(320.0) - 2.0 * pad) / 1f64.max(db.actors.len() as f64)
+            (ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad) / 1f64.max(db.actors.len() as f64)
                 - actor_margin
                 - 24.0,
         )
@@ -1409,7 +1409,7 @@ fn draw(db: &SequenceModel, config: &Config, options: &Options, tight: bool) -> 
         db.title.as_deref(),
         size,
         false,
-        if tight { title_room(options) } else { wrap_w },
+        if tight { title_room(ctx) } else { wrap_w },
         Style::BOLD,
     );
     if out.min_x > out.max_x {
@@ -1507,7 +1507,7 @@ fn draw(db: &SequenceModel, config: &Config, options: &Options, tight: bool) -> 
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: db.acc_title.as_deref(),
             acc_descr: db.acc_descr.as_deref(),

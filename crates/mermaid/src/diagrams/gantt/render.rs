@@ -9,17 +9,21 @@ use super::{
     db::{GanttDb, clock},
     types::GanttTask,
 };
+use crate::Ctx;
 use crate::{
-    Config, Error, Link, Options, Rendered,
+    Config, Error, Link, Rendered,
     config::Value,
     diagrams::common::fit_width::cap_width,
-    js::{self, Lazy, date::Date},
+    js::{
+        self, Lazy,
+        date::{Date, LocalZone},
+    },
     svg::{
         builder::{esc, esc_text, label_svg, num},
         root::{Accessible, svg_document},
         theme::{CRITICAL, RADIUS, resolve_style},
     },
-    text::{Label, Measure, Style, layout_label},
+    text::{Host, Label, Style, layout_label},
     util::url::linked,
 };
 
@@ -52,7 +56,7 @@ fn flag(config: &Config, key: &str) -> bool {
 }
 
 /// A task label sits on one row, so only its first line is kept.
-fn one_line(raw: &str, measure: &dyn Measure, size: f64) -> Label {
+fn one_line(raw: &str, measure: &impl Host, size: f64) -> Label {
     let label = layout_label(
         Some(&RE_BREAK.replace(raw, |_| " ".into())),
         false,
@@ -151,13 +155,12 @@ fn accessible(model: &GanttDb) -> Accessible<'_> {
 pub fn render_gantt(
     model: &GanttDb,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> Result<Rendered, Error> {
-    let size = options.font_size.unwrap_or(16.0);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
-    let now = clock(options.now);
+    let size = ctx.options.font_size;
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
+    let now = clock(ctx.options.now);
     let p = crate::PREFIX;
 
     let label_size =
@@ -175,7 +178,8 @@ pub fn render_gantt(
     let top_axis = model.top_axis || flag(config, "topAxis");
 
     let mut db = model.clone();
-    db.get_tasks(Some(now))?;
+    let zone = LocalZone::default();
+    db.get_tasks(&zone, Some(now))?;
     let tasks = db.tasks.clone();
     let row_tasks: Vec<usize> = (0..tasks.len()).filter(|&i| !tasks[i].vert).collect();
     let verts: Vec<usize> = (0..tasks.len())
@@ -245,7 +249,7 @@ pub fn render_gantt(
                 width,
                 height,
                 size,
-                options,
+                ctx,
                 accessible(model),
                 &content,
             ),
@@ -270,7 +274,7 @@ pub fn render_gantt(
     } else {
         text(config, "axisFormat").unwrap_or("%Y-%m-%d").to_string()
     };
-    let tick_label = |t: f64| time_format(&axis_format, Date::new(t));
+    let tick_label = |t: f64| time_format(&axis_format, zone.date(t));
     let sample_width = measure
         .width(&tick_label(start), tick_size, 0)
         .max(measure.width(&tick_label(stop), tick_size, 0));
@@ -287,7 +291,7 @@ pub fn render_gantt(
     let right_padding = setting(config, "rightPadding", 0.0, 2000.0)
         .unwrap_or_else(|| 16f64.max(sample_width / 2.0));
     let target = cap_width(
-        options,
+        ctx,
         setting(config, "useWidth", 100.0, 20000.0).unwrap_or(WIDTH),
         280.0,
         0.0,
@@ -389,8 +393,15 @@ pub fn render_gantt(
         .or_else(|| text(config, "weekday"))
         .unwrap_or("sunday");
     let count = 2f64.max(10f64.min((plot_width / (sample_width + 24.0)).floor()));
-    let ticks = interval_ticks(interval, weekday, start, stop, (plot_width / 3.0).ceil())
-        .unwrap_or_else(|| auto_ticks(start, stop, count));
+    let ticks = interval_ticks(
+        interval,
+        weekday,
+        start,
+        stop,
+        (plot_width / 3.0).ceil(),
+        &zone,
+    )
+    .unwrap_or_else(|| auto_ticks(start, stop, count, &zone));
 
     let mut grid = String::new();
     let mut axis_bottom = String::new();
@@ -540,7 +551,7 @@ pub fn render_gantt(
     // years.
     let mut excluded = String::new();
     if (!model.excludes.is_empty() || !model.includes.is_empty())
-        && add(Date::new(start), 6.0, Unit::Y).time() > stop
+        && add(zone.date(start), 6.0, Unit::Y).time() > stop
     {
         let mut from: Option<Date> = None;
         let mut to: Option<Date> = None;
@@ -566,9 +577,9 @@ pub fn render_gantt(
             *from = None;
             *to = None;
         };
-        let mut day = Date::new(start);
+        let mut day = zone.date(start);
         while day.time() <= stop {
-            if db.is_invalid_date(day.time())? {
+            if db.is_invalid_date(&zone, day.time())? {
                 if from.is_none() {
                     from = Some(day);
                 }
@@ -672,7 +683,7 @@ pub fn render_gantt(
                 &format!(" class=\"{p}-label\"{text_fill}"),
             );
         if let Some(url) = model.links.get(&task.id) {
-            body = linked(&body, url, &task.id, &mut links, options, "");
+            body = linked(&body, url, &task.id, &mut links, ctx, "");
         }
         let _ = write!(
             tasks_out,
@@ -771,7 +782,7 @@ pub fn render_gantt(
             width,
             height,
             size,
-            options,
+            ctx,
             accessible(model),
             &content,
         ),

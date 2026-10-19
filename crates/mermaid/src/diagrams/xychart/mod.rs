@@ -10,7 +10,8 @@ pub mod tokens;
 pub use db::XyChartModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct XyChart;
 
@@ -34,11 +35,11 @@ impl Diagram for XyChart {
         parser::parse_xy_chart(source, &mut db)?;
         Ok(Model::XyChart(db))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::XyChart(model) = model else {
-            unreachable!("xychart renders an xychart model")
-        };
-        render::render_xy_chart(model, config, options)
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::XyChart(model) = model else {
+        unreachable!("xychart renders an xychart model")
+    };
+    render::render_xy_chart(model, config, ctx)
 }

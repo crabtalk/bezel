@@ -8,7 +8,7 @@
 
 use std::{fs, path::Path, time::Instant};
 
-use mermaid::{Options, render};
+use mermaid::{Metrics, Options, render};
 
 fn corpus(file: &str) -> Vec<String> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -53,7 +53,7 @@ fn time(inputs: &[String], options: &Options) -> (f64, usize) {
     let run = || {
         inputs
             .iter()
-            .filter(|source| render(source, options).is_ok())
+            .filter(|source| render(source, options, &Metrics).is_ok())
             .count()
     };
     let done = run();
@@ -103,7 +103,7 @@ fn main() {
     }
 
     let options = Options {
-        id_prefix: Some("bezel".into()),
+        id_prefix: "bezel".into(),
         ..Options::default()
     };
     let rows: Vec<serde_json::Value> = cases

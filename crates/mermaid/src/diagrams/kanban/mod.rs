@@ -7,7 +7,8 @@ pub mod render;
 pub use db::{KanbanModel, KanbanNode, KanbanSection};
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Kanban;
 
@@ -25,11 +26,11 @@ impl Diagram for Kanban {
         parser::parse_kanban(source, &mut db)?;
         Ok(Model::Kanban(db))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Kanban(model) = model else {
-            unreachable!("kanban renders a kanban model")
-        };
-        Ok(render::render_kanban(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Kanban(model) = model else {
+        unreachable!("kanban renders a kanban model")
+    };
+    Ok(render::render_kanban(model, config, ctx))
 }

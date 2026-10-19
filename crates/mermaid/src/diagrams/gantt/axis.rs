@@ -4,7 +4,10 @@
 //! Pele's `diagrams/gantt/axis.ts`.
 
 use super::dates::{MONTHS, WEEKDAYS};
-use crate::js::{self, Lazy, date::Date};
+use crate::js::{
+    self, Lazy,
+    date::{Date, LocalZone},
+};
 
 const SECOND: f64 = 1000.0;
 const MINUTE: f64 = 60.0 * SECOND;
@@ -193,7 +196,7 @@ impl Calendar {
             }
             TickUnit::Week => {
                 self.base_floor(d);
-                let back = -modulo(span(Date::new(self.epoch), *d, WEEK), step);
+                let back = -modulo(span(d.at(self.epoch), *d, WEEK), step);
                 self.base_offset(d, back);
             }
             _ => {
@@ -246,14 +249,14 @@ fn modulo(a: f64, b: f64) -> f64 {
 }
 
 /// The interval d3's `unit.every(step)` gives.
-fn every(unit: TickUnit, step: f64, week_start: f64) -> Calendar {
+fn every(unit: TickUnit, step: f64, week_start: f64, zone: &LocalZone) -> Calendar {
     let base = Calendar::base(unit, week_start);
     if step <= 1.0 {
         return base;
     }
     let mut calendar = Calendar { step, ..base };
     if unit == TickUnit::Week {
-        let mut epoch = Date::new(0.0);
+        let mut epoch = zone.date(0.0);
         base.base_floor(&mut epoch);
         calendar.epoch = epoch.time();
     }
@@ -262,8 +265,14 @@ fn every(unit: TickUnit, step: f64, week_start: f64) -> Calendar {
 
 /// Ticks from start to stop inclusive, or `None` when there would be more
 /// than `limit`.
-fn range(calendar: &Calendar, start: f64, stop: f64, limit: f64) -> Option<Vec<f64>> {
-    let mut d = Date::new(start - 1.0);
+fn range(
+    calendar: &Calendar,
+    start: f64,
+    stop: f64,
+    limit: f64,
+    zone: &LocalZone,
+) -> Option<Vec<f64>> {
+    let mut d = zone.date(start - 1.0);
     calendar.floor(&mut d);
     calendar.offset(&mut d, 1.0);
     calendar.floor(&mut d);
@@ -299,7 +308,7 @@ fn tick_step(start: f64, stop: f64, count: f64) -> f64 {
 
 /// About `count` ticks at round times, chosen the way d3's time scale
 /// chooses them.
-pub fn auto_ticks(start: f64, stop: f64, count: f64) -> Vec<f64> {
+pub(crate) fn auto_ticks(start: f64, stop: f64, count: f64, zone: &LocalZone) -> Vec<f64> {
     let target = (stop - start) / count;
     let mut i = 0;
     while i < AUTO.len() && AUTO[i].2 <= target {
@@ -310,12 +319,14 @@ pub fn auto_ticks(start: f64, stop: f64, count: f64) -> Vec<f64> {
             TickUnit::Year,
             1f64.max(tick_step(start / YEAR, stop / YEAR, count)),
             0.0,
+            zone,
         )
     } else if i == 0 {
         every(
             TickUnit::Millisecond,
             tick_step(start, stop, count).max(1.0),
             0.0,
+            zone,
         )
     } else {
         let (unit, step, _) = AUTO[if target / AUTO[i - 1].2 < AUTO[i].2 / target {
@@ -323,19 +334,20 @@ pub fn auto_ticks(start: f64, stop: f64, count: f64) -> Vec<f64> {
         } else {
             i
         }];
-        every(unit, step, 0.0)
+        every(unit, step, 0.0, zone)
     };
-    range(&calendar, start, stop, 4.0 * count + 8.0).unwrap_or_default()
+    range(&calendar, start, stop, 4.0 * count + 8.0, zone).unwrap_or_default()
 }
 
 /// Ticks for a `tickInterval` such as `1week`, or `None` when it is not one
 /// or asks for more than `limit`.
-pub fn interval_ticks(
+pub(crate) fn interval_ticks(
     interval: &str,
     weekday: &str,
     start: f64,
     stop: f64,
     limit: f64,
+    zone: &LocalZone,
 ) -> Option<Vec<f64>> {
     let m = RE_INTERVAL.exec(interval)?;
     let step = js::parse_int(m.str(1), 10);
@@ -344,11 +356,11 @@ pub fn interval_ticks(
         .iter()
         .position(|day| *day == weekday)
         .map_or(0.0, |i| i as f64);
-    let calendar = every(unit, step, week_start);
+    let calendar = every(unit, step, week_start, zone);
     if (stop - start) / (step.min(calendar.cycle()) * calendar.ms()) > limit {
         return None;
     }
-    range(&calendar, start, stop, limit)
+    range(&calendar, start, stop, limit, zone)
 }
 
 fn pad(value: f64, fill: &str, width: usize) -> String {
@@ -363,8 +375,8 @@ fn pad(value: f64, fill: &str, width: usize) -> String {
     }
 }
 
-fn floored(date: Date, calendar: &Calendar) -> Date {
-    let mut d = Date::new(date.time());
+fn floored<'z>(date: Date<'z>, calendar: &Calendar) -> Date<'z> {
+    let mut d = date.at(date.time());
     calendar.floor(&mut d);
     d
 }
@@ -383,7 +395,7 @@ fn week_of_year(date: Date, week_start: f64) -> f64 {
     let week = week_calendar(week_start);
     let year_start = floored(date, &year_calendar());
     span(
-        floored(Date::new(year_start.time() - 1.0), &week),
+        floored(year_start.at(year_start.time() - 1.0), &week),
         floored(date, &week),
         WEEK,
     )
@@ -398,7 +410,7 @@ fn iso_thursday(date: Date) -> Date {
         if late {
             date
         } else {
-            Date::new(date.time() - 1.0)
+            date.at(date.time() - 1.0)
         },
         &thursday,
     );

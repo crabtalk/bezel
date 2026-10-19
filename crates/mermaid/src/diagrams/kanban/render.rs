@@ -1,8 +1,9 @@
 //! Pele's `diagrams/kanban/render.ts`.
 
 use super::db::{KanbanModel, KanbanNode};
+use crate::Ctx;
 use crate::{
-    Config, Link, Options, Rendered,
+    Config, Link, Rendered,
     config::Value,
     diagrams::common::{fit_width::title_room, icon::icon_svg},
     js,
@@ -11,7 +12,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::{CRITICAL, RADIUS, class_names},
     },
-    text::{Label, Measure, Span, Style, icon_markup, layout_label},
+    text::{Host, Label, Span, Style, icon_markup, layout_label},
     util::url::{link_url, rel_attr, safe_url},
 };
 use std::fmt::Write as _;
@@ -42,7 +43,7 @@ fn priority_color(priority: &str) -> Option<String> {
 fn fit_label(
     raw: Option<&str>,
     markdown: bool,
-    measure: &dyn Measure,
+    measure: &impl Host,
     size: f64,
     max: f64,
     base: u8,
@@ -166,18 +167,17 @@ struct Card<'a> {
     height: f64,
 }
 
-fn has(name: Option<&str>) -> bool {
-    name.is_some_and(|name| !name.is_empty() && !icon_markup(name).is_empty())
+fn has(name: Option<&str>, host: &impl Host) -> bool {
+    name.is_some_and(|name| !name.is_empty() && !icon_markup(host, name).is_empty())
 }
 
-pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) -> Rendered {
-    let size = options.font_size.unwrap_or(16.0);
+pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let line = js::round(size * 1.5);
     let small_line = js::round(small * 1.5);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let p = crate::PREFIX;
     let conf = config.section("kanban");
     let own_width = match conf.and_then(|conf| conf.get("sectionWidth")) {
@@ -186,7 +186,7 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
     };
     // A board wider than the width the host has is folded into rows of
     // columns, which then share the row between them.
-    let room = match options.max_width {
+    let room = match ctx.options.max_width {
         Some(max) if max > 0.0 => max - 2.0 * pad,
         _ => f64::INFINITY,
     };
@@ -223,7 +223,7 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
         let count_width = measure.width(&section.items.len().to_string(), small, 0);
         let reserved = count_width
             + 12.0
-            + if has(section.node.icon.as_deref()) {
+            + if has(section.node.icon.as_deref(), ctx.host) {
                 glyph + ICON_GAP
             } else {
                 0.0
@@ -249,7 +249,7 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
                 measure,
                 small,
                 text_width
-                    - if has(item.icon.as_deref()) {
+                    - if has(item.icon.as_deref(), ctx.host) {
                         glyph + ICON_GAP
                     } else {
                         0.0
@@ -315,7 +315,7 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
         false,
         measure,
         size,
-        title_room(options),
+        title_room(ctx),
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -352,8 +352,14 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
             js::num_str(small),
             section.items.len()
         );
-        if let Some(icon) = section.node.icon.as_deref().filter(|icon| has(Some(icon))) {
+        if let Some(icon) = section
+            .node
+            .icon
+            .as_deref()
+            .filter(|icon| has(Some(icon), ctx.host))
+        {
             body += &icon_svg(
+                ctx.host,
                 icon,
                 edge - count_widths[index] - ICON_GAP - glyph,
                 COLUMN_PAD + (line - glyph) / 2.0,
@@ -385,8 +391,13 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
                 &format!(" class=\"{p}-label\""),
                 false,
             );
-            if let Some(icon) = item.icon.as_deref().filter(|icon| has(Some(icon))) {
+            if let Some(icon) = item
+                .icon
+                .as_deref()
+                .filter(|icon| has(Some(icon), ctx.host))
+            {
                 inner += &icon_svg(
+                    ctx.host,
                     icon,
                     card_width - CARD_PAD - glyph,
                     CARD_PAD + (small_line - glyph) / 2.0,
@@ -399,10 +410,7 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
                 let href = if base_url.is_empty() {
                     None
                 } else {
-                    link_url(
-                        &safe_url(&base_url.replacen("#TICKET#", ticket, 1)),
-                        options,
-                    )
+                    link_url(&safe_url(&base_url.replacen("#TICKET#", ticket, 1)), ctx)
                 };
                 match href {
                     None => {
@@ -419,7 +427,7 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
                             inner,
                             "<a href=\"{}\" target=\"_blank\"{}>{}</a>",
                             esc(&href),
-                            rel_attr(options),
+                            rel_attr(ctx),
                             text_block(
                                 &card.ticket,
                                 CARD_PAD,
@@ -491,7 +499,7 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, options: &Options) ->
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible::default(),
             &content,
         ),

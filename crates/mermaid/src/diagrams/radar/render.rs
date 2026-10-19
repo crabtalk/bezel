@@ -4,7 +4,7 @@ use std::{f64::consts::PI, fmt::Write as _};
 
 use super::model::RadarModel;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     diagrams::common::fit_width::{fit_width, title_room},
     js,
     svg::{
@@ -14,6 +14,7 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
+use crate::{Ctx, Host};
 
 const SWATCH: f64 = 12.0;
 const ROW: f64 = 26.0;
@@ -72,13 +73,13 @@ fn polygon(points: &[Point]) -> String {
     out
 }
 
-pub fn render_radar(model: &RadarModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_radar(model: &RadarModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     let natural = option(config, "width", 320.0, 1.0, 4000.0);
-    fit_width(options, natural, 160.0, |width, tight| {
+    fit_width(ctx, natural, 160.0, |width, tight| {
         draw(
             model,
             config,
-            options,
+            ctx,
             width,
             (option(config, "height", 320.0, 1.0, 4000.0) * width) / natural,
             tight,
@@ -91,16 +92,16 @@ pub fn render_radar(model: &RadarModel, config: &Config, options: &Options) -> R
 fn draw(
     model: &RadarModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     width: f64,
     height: f64,
     tight: bool,
 ) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     let axis_scale = option(config, "axisScaleFactor", 1.0, 0.0, 10.0);
     let label_factor = option(config, "axisLabelFactor", 1.05, 0.0, 10.0);
@@ -169,7 +170,7 @@ fn draw(
     for (i, u) in unit.iter().enumerate() {
         let reach = radius * axis_scale;
         let _ = write!(spokes, "M0,0L{},{}", num(u.x * reach), num(u.y * reach));
-        let label = layout_label(Some(&axes[i].label), false, &*measure, small, 4000.0, 0);
+        let label = layout_label(Some(&axes[i].label), false, measure, small, 4000.0, 0);
         let at = radius * label_factor + 6.0;
         // Each label hangs off its axis on the side away from the center.
         let cx = u.x * at
@@ -287,9 +288,9 @@ fn draw(
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
-        title_room(options),
+        title_room(ctx),
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -352,7 +353,7 @@ fn draw(
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

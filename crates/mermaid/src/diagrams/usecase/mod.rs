@@ -11,7 +11,8 @@ pub mod tokens;
 pub mod types;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub use types::UsecaseModel;
 
@@ -30,11 +31,11 @@ impl Diagram for Usecase {
             source, title,
         )?)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Usecase(model) = model else {
-            unreachable!("usecase renders a usecase model")
-        };
-        Ok(render::render_usecase(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Usecase(model) = model else {
+        unreachable!("usecase renders a usecase model")
+    };
+    Ok(render::render_usecase(model, config, ctx))
 }

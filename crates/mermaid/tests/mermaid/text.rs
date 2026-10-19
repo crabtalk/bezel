@@ -7,7 +7,7 @@ use mermaid::{
     detect::{Kind, detect},
     preprocess::{cleanup_comments, encode_entities, preprocess},
     svg::builder::{esc, label_svg, num},
-    text::{Measure, Metrics, Style, decode_entities, layout_label},
+    text::{Host, Metrics, Style, decode_entities, layout_label},
     yaml::parse_yaml,
 };
 

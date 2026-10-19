@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use super::{Diagram, Model};
 use crate::{
-    Config, Error, Options, ParseLimits, Rendered,
+    Config, Error, ParseLimits, Rendered,
     js::Lazy,
     svg::{
         builder::label_svg,
@@ -14,6 +14,7 @@ use crate::{
     },
     text::{Style, layout_label},
 };
+use crate::{Ctx, Host};
 
 static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
 static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
@@ -59,68 +60,67 @@ impl Diagram for Info {
                 .map(|text| RE_INDENT.replace(&text, |_| "\n".into())),
         }))
     }
+}
 
-    fn render(
-        &self,
-        model: &Model,
-        _config: &Config,
-        options: &Options,
-    ) -> Result<Rendered, Error> {
-        let model = match model {
-            Model::Info(model) => model,
-            #[allow(unreachable_patterns)]
-            _ => unreachable!("info renders an info model"),
-        };
-        let size = options.font_size.unwrap_or(16.0);
-        let measure = options.measurer();
-        let pad = options.padding.unwrap_or(8.0);
+pub fn render(
+    model: &Model,
+    _config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+) -> Result<Rendered, Error> {
+    let model = match model {
+        Model::Info(model) => model,
+        #[allow(unreachable_patterns)]
+        _ => unreachable!("info renders an info model"),
+    };
+    let size = ctx.options.font_size;
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
-        let title = layout_label(
-            model.title.as_deref(),
-            false,
-            &*measure,
-            size,
-            4000.0,
-            Style::BOLD,
-        );
-        let title_height = if title.height > 0.0 {
-            title.height + 8.0
-        } else {
-            0.0
-        };
-        let version = format!("Bezel v{}", env!("CARGO_PKG_VERSION"));
-        let text = layout_label(Some(&version), false, &*measure, size, 4000.0, 0);
+    let title = layout_label(
+        model.title.as_deref(),
+        false,
+        measure,
+        size,
+        4000.0,
+        Style::BOLD,
+    );
+    let title_height = if title.height > 0.0 {
+        title.height + 8.0
+    } else {
+        0.0
+    };
+    let version = format!("Bezel v{}", env!("CARGO_PKG_VERSION"));
+    let text = layout_label(Some(&version), false, measure, size, 4000.0, 0);
 
-        let width = (title.width.max(text.width) + 2.0 * pad).ceil();
-        let height = (title_height + text.height + 2.0 * pad).ceil();
-        let p = crate::PREFIX;
-        let content = label_svg(
-            &title,
-            width / 2.0,
-            pad + title.height / 2.0,
-            &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
-        ) + &label_svg(
-            &text,
-            width / 2.0,
-            pad + title_height + text.height / 2.0,
-            &format!(" class=\"{p}-version\" fill=\"var(--_m)\""),
-        );
-        Ok(Rendered {
-            svg: svg_document(
-                "info",
-                width,
-                height,
-                size,
-                options,
-                Accessible {
-                    acc_title: model.acc_title.as_deref(),
-                    acc_descr: model.acc_descr.as_deref(),
-                },
-                &content,
-            ),
+    let width = (title.width.max(text.width) + 2.0 * pad).ceil();
+    let height = (title_height + text.height + 2.0 * pad).ceil();
+    let p = crate::PREFIX;
+    let content = label_svg(
+        &title,
+        width / 2.0,
+        pad + title.height / 2.0,
+        &format!(" class=\"{p}-title\" font-weight=\"var(--_tw)\""),
+    ) + &label_svg(
+        &text,
+        width / 2.0,
+        pad + title_height + text.height / 2.0,
+        &format!(" class=\"{p}-version\" fill=\"var(--_m)\""),
+    );
+    Ok(Rendered {
+        svg: svg_document(
+            "info",
             width,
             height,
-            links: Vec::new(),
-        })
-    }
+            size,
+            ctx,
+            Accessible {
+                acc_title: model.acc_title.as_deref(),
+                acc_descr: model.acc_descr.as_deref(),
+            },
+            &content,
+        ),
+        width,
+        height,
+        links: Vec::new(),
+    })
 }

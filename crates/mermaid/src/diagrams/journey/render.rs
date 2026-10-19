@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt::Write as _};
 
 use super::db::{JourneyModel, journey_actors};
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     diagrams::common::{
         fit::{fit_label, plain_label},
         fit_width::turn_to_fit,
@@ -17,6 +17,7 @@ use crate::{
     },
     text::{Label, Style},
 };
+use crate::{Ctx, Host};
 
 const PAD_X: f64 = 10.0;
 const PAD_Y: f64 = 8.0;
@@ -69,8 +70,8 @@ fn accessible(model: &JourneyModel) -> Accessible<'_> {
     }
 }
 
-pub fn render_journey(model: &JourneyModel, config: &Config, options: &Options) -> Rendered {
-    turn_to_fit(options, |down| draw(model, config, options, down))
+pub fn render_journey(model: &JourneyModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    turn_to_fit(ctx, |down| draw(model, config, ctx, down))
 }
 
 struct LegendItem {
@@ -87,15 +88,14 @@ struct Run {
     label: Option<Label>,
 }
 
-fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -> Rendered {
-    let size = options.font_size.unwrap_or(16.0);
+fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.75);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     if down {
-        return vertical_journey(model, options);
+        return vertical_journey(model, ctx);
     }
     let p = crate::PREFIX;
     let tasks = &model.tasks;
@@ -399,7 +399,7 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             accessible(model),
             &content,
         ),
@@ -409,14 +409,13 @@ fn draw(model: &JourneyModel, _config: &Config, options: &Options, down: bool) -
     }
 }
 
-fn vertical_journey(model: &JourneyModel, options: &Options) -> Rendered {
-    let size = options.font_size.unwrap_or(16.0);
+fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered {
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let p = crate::PREFIX;
-    let room = 140f64.max(options.max_width.unwrap_or(320.0) - 2.0 * pad);
+    let room = 140f64.max(ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad);
     let title = fit_label(model.title.as_deref(), measure, size, room, Style::BOLD);
     let names: Vec<String> = journey_actors(&model.tasks)
         .into_iter()
@@ -545,7 +544,7 @@ fn vertical_journey(model: &JourneyModel, options: &Options) -> Rendered {
             total_width,
             height,
             size,
-            options,
+            ctx,
             accessible(model),
             &content,
         ),

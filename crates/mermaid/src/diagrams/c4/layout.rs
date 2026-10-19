@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     js::{max, min},
-    text::{Label, Measure, Style, layout_label},
+    text::{Host, Label, Style, layout_label},
 };
 
 const SHAPE_W: f64 = 216.0;
@@ -104,7 +104,7 @@ fn form_of(shape: &C4Element) -> &'static str {
 fn measure(
     shape: &C4Element,
     at: usize,
-    measurer: &dyn Measure,
+    measurer: &impl Host,
     size: f64,
     small: f64,
     width: f64,
@@ -201,7 +201,7 @@ fn rows(
 /// own content.
 pub fn layout_c4(
     db: &C4Model,
-    measurer: &dyn Measure,
+    measurer: &impl Host,
     size: f64,
     small: f64,
     room: Option<f64>,

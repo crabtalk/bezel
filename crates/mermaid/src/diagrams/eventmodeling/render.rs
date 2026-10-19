@@ -6,8 +6,9 @@ use std::{
 };
 
 use super::model::{EmBox, EventModelingModel};
+use crate::Ctx;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     diagrams::common::{
         fit_width::turn_to_fit,
         literal_label::{break_label, left_label_svg, literal_label},
@@ -19,7 +20,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::{FONT_MONO, RADIUS, series_color},
     },
-    text::{Label, Measure, Style, decode_entities, layout_label},
+    text::{Host, Label, Style, decode_entities, layout_label},
 };
 
 const BOX_PAD_X: f64 = 12.0;
@@ -105,7 +106,7 @@ fn lines(rows: &[String], x: f64, y: f64, step: f64, attrs: &str) -> String {
     }
 }
 
-fn widest(measure: &dyn Measure, rows: &[String], font_size: f64, style: u8) -> f64 {
+fn widest(measure: &impl Host, rows: &[String], font_size: f64, style: u8) -> f64 {
     let mut width = 0f64;
     for row in rows {
         width = width.max(measure.width(row, font_size, style));
@@ -116,25 +117,29 @@ fn widest(measure: &dyn Measure, rows: &[String], font_size: f64, style: u8) -> 
 pub fn render_event_model(
     model: &EventModelingModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> Rendered {
-    turn_to_fit(options, |down| draw(model, config, options, down))
+    turn_to_fit(ctx, |down| draw(model, config, ctx, down))
 }
 
-fn draw(model: &EventModelingModel, _config: &Config, options: &Options, down: bool) -> Rendered {
+fn draw(
+    model: &EventModelingModel,
+    _config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+    down: bool,
+) -> Rendered {
     if down {
-        return vertical_event_model(model, options);
+        return vertical_event_model(model, ctx);
     }
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let name_size = js::round(size * 0.875);
     let small = js::round(size * 0.8125);
     let mono = js::round(size * 0.75);
     let mono_step = js::round(mono * 1.4);
     let small_step = js::round(small * 1.5);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     // Bands by lane key, in the model's lane order.
     let mut bands: Vec<Band> = Vec::new();
@@ -470,7 +475,7 @@ fn draw(model: &EventModelingModel, _config: &Config, options: &Options, down: b
         + &nodes
         + &cards;
 
-    document(model, options, size, total_width, total_height, &content)
+    document(model, ctx, size, total_width, total_height, &content)
 }
 
 fn edge(source: &EmBox, target: &EmBox, d: &str, head: &str) -> String {
@@ -509,7 +514,7 @@ fn specification_rows(spec: &super::model::EmSpecification) -> Vec<String> {
 
 fn document(
     model: &EventModelingModel,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     size: f64,
     width: f64,
     height: f64,
@@ -521,7 +526,7 @@ fn document(
             width,
             height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),
@@ -542,15 +547,14 @@ struct Card {
     lane: f64,
 }
 
-fn vertical_event_model(model: &EventModelingModel, options: &Options) -> Rendered {
+fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let mono = js::round(size * 0.75);
-    let pad = options.padding.unwrap_or(8.0);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let room = 160f64.max(options.max_width.unwrap_or(320.0) - 2.0 * pad);
+    let pad = ctx.options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let room = 160f64.max(ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad);
     // A relation that skips a card runs down a rail beside the cards.
     // Relations into one card share a rail; others whose runs overlap take
     // the next rail out, so that no two follow the same line.
@@ -860,5 +864,5 @@ fn vertical_event_model(model: &EventModelingModel, options: &Options) -> Render
     ) + &edges
         + &nodes
         + &cards;
-    document(model, options, size, total_width, height, &content)
+    document(model, ctx, size, total_width, height, &content)
 }

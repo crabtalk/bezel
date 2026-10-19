@@ -6,7 +6,7 @@ use super::{
     model::TreemapModel,
 };
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::Value,
     diagrams::common::{
         fit_text::fit_text,
@@ -20,6 +20,7 @@ use crate::{
     },
     text::{Style, decode_entities, layout_label},
 };
+use crate::{Ctx, Host};
 use std::fmt::Write as _;
 
 const HEADER: f64 = 28.0;
@@ -34,22 +35,23 @@ fn option(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 
     })
 }
 
-pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_treemap(model: &TreemapModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.75);
     let least = js::round(size * 0.5625);
-    let measure = options.measurer();
+    let measure = ctx.host;
     let treemap = config.section("treemap");
-    let pad = options
+    let pad = ctx
+        .options
         .padding
         .unwrap_or_else(|| option(config, "diagramPadding", 8.0, 0.0, 2000.0));
 
     // Mermaid sizes the diagram as ten times `nodeWidth` by ten times
     // `nodeHeight`.
     let width = js::round(cap_width(
-        options,
+        ctx,
         option(config, "nodeWidth", 64.0, 1.0, 400.0) * 10.0,
         200.0,
         2.0 * pad,
@@ -76,9 +78,9 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) 
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
-        title_room(options),
+        title_room(ctx),
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -134,7 +136,7 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) 
                     },
                     small,
                     small,
-                    &*measure,
+                    measure,
                     Style::BOLD,
                 );
                 let baseline = y + HEADER / 2.0 + 1.0;
@@ -179,7 +181,7 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) 
         let room = b.w - 8.0;
         let tallest = size.min(((b.h - 4.0) / LINE).floor());
         let label = if tallest >= least {
-            fit_text(name, room, tallest, least, &*measure, 0)
+            fit_text(name, room, tallest, least, measure, 0)
         } else {
             None
         };
@@ -250,7 +252,7 @@ pub fn render_treemap(model: &TreemapModel, config: &Config, options: &Options) 
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

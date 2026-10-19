@@ -10,10 +10,10 @@
 
 mod canvas;
 
-use std::rc::Rc;
+use std::{cell::RefCell, collections::HashMap};
 
 use js_sys::{Array, Function, JSON, Object, Reflect};
-use mermaid::{Error, IconResolver, Measure, Metrics, Options, config};
+use mermaid::{Error, Host, Metrics, Options, config};
 use wasm_bindgen::prelude::*;
 
 use crate::canvas::{Canvas, Custom};
@@ -21,8 +21,10 @@ use crate::canvas::{Canvas, Custom};
 /// Draws `source`, as Pele's `render`: `{ svg, width, height, type, links }`.
 #[wasm_bindgen]
 pub fn render(source: &str, options: JsValue) -> Result<JsValue, JsValue> {
-    let options = read_options(&options, true)?;
-    let drawing = mermaid::render(source, &options).map_err(thrown)?;
+    let fields = Fields::of(&options);
+    let options = read_options(&fields, true)?;
+    let page = Page::of(&fields, options.font_family.as_deref());
+    let drawing = mermaid::render(source, &options, &page).map_err(thrown)?;
     let out = Object::new();
     set(&out, "svg", &drawing.svg.into());
     set(&out, "width", &drawing.width.into());
@@ -44,7 +46,7 @@ pub fn render(source: &str, options: JsValue) -> Result<JsValue, JsValue> {
 /// `maxEdges` and `config`.
 #[wasm_bindgen]
 pub fn parse(source: &str, options: JsValue) -> Result<JsValue, JsValue> {
-    let options = read_options(&options, false)?;
+    let options = read_options(&Fields::of(&options), false)?;
     let parsed = mermaid::parse(source, &options).map_err(thrown)?;
     let text = serde_json::to_string(&parsed.model).map_err(|error| error.to_string())?;
     JSON::parse(&text)
@@ -133,8 +135,7 @@ impl Fields {
 }
 
 /// Pele's `RenderOptions`, or for `parse` only what parsing reads.
-fn read_options(options: &JsValue, drawing: bool) -> Result<Options, JsValue> {
-    let options = Fields::of(options);
+fn read_options(options: &Fields, drawing: bool) -> Result<Options, JsValue> {
     let config = match options.get("config") {
         Some(value) => {
             let text = JSON::stringify(&value)?.as_string().unwrap_or_default();
@@ -145,57 +146,116 @@ fn read_options(options: &JsValue, drawing: bool) -> Result<Options, JsValue> {
         }
         None => None,
     };
-    let mut out = Options {
-        limit: options.count("limit"),
-        max_edges: options.count("maxEdges"),
-        config,
-        ..Options::default()
-    };
+    let mut out = Options::default();
+    if let Some(config) = config {
+        out.config = config;
+    }
+    if let Some(limit) = options.count("limit") {
+        out.limit = limit;
+    }
+    if let Some(max_edges) = options.count("maxEdges") {
+        out.max_edges = max_edges;
+    }
     if !drawing {
         return Ok(out);
     }
     out.font_family = options.string("fontFamily");
     out.font_family_mono = options.string("fontFamilyMono");
-    out.font_size = options.number("fontSize");
-    out.id_prefix = options.string("idPrefix");
+    if let Some(size) = options.number("fontSize") {
+        out.font_size = size;
+    }
+    if let Some(prefix) = options.string("idPrefix") {
+        out.id_prefix = prefix;
+    }
     out.responsive = options.flag("responsive");
     out.max_width = options.number("maxWidth");
-    out.auto_direction = options.flag("autoDirection");
-    out.direction_breakpoint = options.number("directionBreakpoint");
+    if let Some(auto) = options.flag("autoDirection") {
+        out.auto_direction = auto;
+    }
+    if let Some(breakpoint) = options.number("directionBreakpoint") {
+        out.direction_breakpoint = breakpoint;
+    }
     out.padding = options.number("padding");
-    out.output_limit = options.count("outputLimit");
-    out.link_schemes = options.strings("linkSchemes");
-    out.image_schemes = options.strings("imageSchemes");
-    out.links = options.flag("links");
-    out.images = options.flag("images");
-    out.link_rel = options.string("linkRel");
+    if let Some(limit) = options.count("outputLimit") {
+        out.output_limit = limit;
+    }
+    if let Some(schemes) = options.strings("linkSchemes") {
+        out.link_schemes = schemes;
+    }
+    if let Some(schemes) = options.strings("imageSchemes") {
+        out.image_schemes = schemes;
+    }
+    if let Some(links) = options.flag("links") {
+        out.links = links;
+    }
+    if let Some(images) = options.flag("images") {
+        out.images = images;
+    }
+    if let Some(rel) = options.string("linkRel") {
+        out.link_rel = rel;
+    }
     out.now = options.number("now");
-    out.icons = options.get("icons")
-        .and_then(|value| value.dyn_into::<Function>().ok())
-        .map(|resolve| -> IconResolver {
-            Rc::new(move |name: &str| {
-                resolve
-                    .call1(&JsValue::NULL, &name.into())
-                    .ok()
-                    .and_then(|markup| markup.as_string())
-            })
-        });
-    out.measure = Some(measurer(&options, out.font_family.as_deref()));
     Ok(out)
 }
 
-/// `measurer` when the page passes one, else the canvas unless `measure` is
-/// `"metrics"` or there is none.
-fn measurer(options: &Fields, family: Option<&str>) -> Rc<dyn Measure> {
-    if let Some(custom) = options.get("measurer").and_then(Custom::of) {
-        return Rc::new(custom);
+/// What labels are measured with: `measurer` when the page passes one, else
+/// the canvas unless `measure` is `"metrics"` or there is none.
+enum Measurer {
+    Custom(Custom),
+    Canvas(Canvas),
+    Metrics,
+}
+
+/// The page a drawing is made for: its measurer, and its `icons` resolver,
+/// each answer kept for the render.
+struct Page {
+    measurer: Measurer,
+    icons: Option<Function>,
+    found: RefCell<HashMap<String, Option<String>>>,
+}
+
+impl Page {
+    fn of(options: &Fields, family: Option<&str>) -> Self {
+        let measurer = if let Some(custom) = options.get("measurer").and_then(Custom::of) {
+            Measurer::Custom(custom)
+        } else if options.string("measure").as_deref() == Some("metrics") {
+            Measurer::Metrics
+        } else {
+            Canvas::new(family.unwrap_or("sans-serif"), "monospace")
+                .map_or(Measurer::Metrics, Measurer::Canvas)
+        };
+        Self {
+            measurer,
+            icons: options
+                .get("icons")
+                .and_then(|value| value.dyn_into::<Function>().ok()),
+            found: RefCell::default(),
+        }
     }
-    if options.string("measure").as_deref() == Some("metrics") {
-        return Rc::new(Metrics);
+}
+
+impl Host for Page {
+    fn width(&self, text: &str, size: f64, style: u8) -> f64 {
+        match &self.measurer {
+            Measurer::Custom(custom) => custom.width(text, size, style),
+            Measurer::Canvas(canvas) => canvas.width(text, size, style),
+            Measurer::Metrics => Metrics.width(text, size, style),
+        }
     }
-    match Canvas::new(family.unwrap_or("sans-serif"), "monospace") {
-        Some(canvas) => Rc::new(canvas),
-        None => Rc::new(Metrics),
+
+    fn icon(&self, name: &str) -> Option<String> {
+        let resolve = self.icons.as_ref()?;
+        if let Some(found) = self.found.borrow().get(name) {
+            return found.clone();
+        }
+        let markup = resolve
+            .call1(&JsValue::NULL, &name.into())
+            .ok()
+            .and_then(|markup| markup.as_string());
+        self.found
+            .borrow_mut()
+            .insert(name.to_string(), markup.clone());
+        markup
     }
 }
 

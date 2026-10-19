@@ -7,7 +7,8 @@ mod render;
 pub use db::{GitCommit, GitModel};
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct GitGraph;
 
@@ -22,11 +23,11 @@ impl Diagram for GitGraph {
     ) -> Result<Model, Error> {
         db::build_git(parser::parse_git(source)?, config, title).map(Model::GitGraph)
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::GitGraph(model) = model else {
-            unreachable!("gitGraph renders a gitGraph model")
-        };
-        Ok(render::render_git(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::GitGraph(model) = model else {
+        unreachable!("gitGraph renders a gitGraph model")
+    };
+    Ok(render::render_git(model, config, ctx))
 }

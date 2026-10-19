@@ -13,7 +13,8 @@ pub mod tokens;
 pub mod types;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered, config::Value};
+use crate::{Config, Error, ParseLimits, Rendered, config::Value};
+use crate::{Ctx, Host};
 
 pub use db::{AgentflowDb, AgentflowDbOptions};
 
@@ -54,11 +55,11 @@ impl Diagram for Agentflow {
         db.graph = render::agent_graph(&mut db, config);
         Ok(Model::Agentflow(Box::new(db)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Agentflow(db) = model else {
-            unreachable!("agentflow renders an agentflow model")
-        };
-        Ok(render::render_agentflow(db, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Agentflow(db) = model else {
+        unreachable!("agentflow renders an agentflow model")
+    };
+    Ok(render::render_agentflow(db, config, ctx))
 }

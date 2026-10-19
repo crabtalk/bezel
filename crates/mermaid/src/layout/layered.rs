@@ -627,7 +627,6 @@ pub fn layered(nodes: &mut [LNode], edges: &mut [LEdge], opt: &LayeredOptions) -
     if !opt.tracks {
         past_labels(&g, &mut xs, &first_dummy, &span, opt.edge_sep, &mut on_line);
     }
-    let g = g;
     let Graph {
         kind,
         ef,

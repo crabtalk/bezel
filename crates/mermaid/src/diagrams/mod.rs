@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
+use super::{Config, Ctx, Error, Host, Kind, ParseLimits, Rendered};
 
 pub mod agentflow;
 pub mod architecture;
@@ -63,8 +63,6 @@ pub trait Diagram: Sync {
         line_offset: usize,
         limits: &ParseLimits,
     ) -> Result<Model, Error>;
-
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error>;
 }
 
 /// A parsed diagram, of whichever type, as Pele's `parse` answers it.
@@ -143,4 +141,48 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Agentflow => &agentflow::Agentflow,
         Kind::Usecase => &usecase::Usecase,
     })
+}
+
+/// `model`, of type `kind`, drawn.
+pub fn render(
+    kind: Kind,
+    model: &Model,
+    config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+) -> Result<Rendered, Error> {
+    match kind {
+        Kind::GitGraph => git::render(model, config, ctx),
+        Kind::Gantt => gantt::render(model, config, ctx),
+        Kind::Info => info::render(model, config, ctx),
+        Kind::Flowchart => flowchart::render(model, config, ctx),
+        Kind::XyChart => xychart::render(model, config, ctx),
+        Kind::QuadrantChart => quadrant::render(model, config, ctx),
+        Kind::Sankey => sankey::render(model, config, ctx),
+        Kind::Treemap => treemap::render(model, config, ctx),
+        Kind::Radar => radar::render(model, config, ctx),
+        Kind::Pie => pie::render(model, config, ctx),
+        Kind::Mindmap => mindmap::render(model, config, ctx),
+        Kind::Packet => packet::render(model, config, ctx),
+        Kind::TreeView => treeview::render(model, config, ctx),
+        Kind::Ishikawa => ishikawa::render(model, config, ctx),
+        Kind::Railroad => railroad::render(model, config, ctx),
+        Kind::Venn => venn::render(model, config, ctx),
+        Kind::Journey => journey::render(model, config, ctx),
+        Kind::Kanban => kanban::render(model, config, ctx),
+        Kind::Timeline => timeline::render(model, config, ctx),
+        Kind::Class => class::render(model, config, ctx),
+        Kind::State => state::render(model, config, ctx),
+        Kind::Er => er::render(model, config, ctx),
+        Kind::Requirement => requirement::render(model, config, ctx),
+        Kind::Sequence => sequence::render(model, config, ctx),
+        Kind::Cynefin => cynefin::render(model, config, ctx),
+        Kind::Wardley => wardley::render(model, config, ctx),
+        Kind::Eventmodeling => eventmodeling::render(model, config, ctx),
+        Kind::Architecture => architecture::render(model, config, ctx),
+        Kind::Block => block::render(model, config, ctx),
+        Kind::C4 => c4::render(model, config, ctx),
+        Kind::Swimlane => swimlane::render(model, config, ctx),
+        Kind::Agentflow => agentflow::render(model, config, ctx),
+        Kind::Usecase => usecase::render(model, config, ctx),
+    }
 }

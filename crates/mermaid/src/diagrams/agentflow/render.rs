@@ -9,7 +9,7 @@ use super::{
     types::LabelType,
 };
 use crate::{
-    Config, Link, Options, Rendered,
+    Config, Link, Rendered,
     config::Value,
     diagrams::{
         common::fit_width::{runs_across, turn_to_fit},
@@ -31,6 +31,7 @@ use crate::{
     text::{Label, Style, decode_entities, layout_label},
     util::url::{link_url, linked, rel_attr, sanitize_url},
 };
+use crate::{Ctx, Host};
 
 /// The number of series tokens, which is the palette Mermaid's slot rules
 /// are applied to.
@@ -126,23 +127,23 @@ struct Held<'g> {
     dst: usize,
 }
 
-pub fn render_agentflow(db: &AgentflowDb, config: &Config, options: &Options) -> Rendered {
+pub fn render_agentflow(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     if !runs_across(db.direction.as_deref()) {
-        return draw(db, config, options, false);
+        return draw(db, config, ctx, false);
     }
-    turn_to_fit(options, |down| draw(db, config, options, down))
+    turn_to_fit(ctx, |down| draw(db, config, ctx, down))
 }
 
 /// `turned` draws a diagram that runs across as one that runs down.
-fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> Rendered {
+fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -> Rendered {
     let p = crate::PREFIX;
     let graph = &db.graph;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let edge_size = js::round(size * 0.875);
-    let measure = options.measurer();
+    let measure = ctx.host;
     let wrap_width = number_option(config, "wrappingWidth", 120.0);
     let min_width = number_option(config, "minNodeWidth", 120.0);
-    let pad = options.padding.unwrap_or(8.0);
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     let mut index: HashMap<&str, usize> = HashMap::new();
     let mut views: Vec<NodeView> = Vec::new();
@@ -169,7 +170,7 @@ fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> R
             let label = layout_label(
                 node.label.as_deref(),
                 markdown,
-                &*measure,
+                measure,
                 font_size,
                 4000.0,
                 text_style,
@@ -203,7 +204,7 @@ fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> R
             let label = layout_label(
                 node.label.as_deref(),
                 markdown,
-                &*measure,
+                measure,
                 font_size,
                 wrap_width,
                 text_style,
@@ -226,7 +227,7 @@ fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> R
             let label = layout_label(
                 node.label.as_deref(),
                 markdown,
-                &*measure,
+                measure,
                 font_size,
                 wrap_width,
                 text_style,
@@ -329,7 +330,7 @@ fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> R
         let label = layout_label(
             Some(&edge.label),
             edge.label_type == LabelType::Markdown,
-            &*measure,
+            measure,
             edge_size,
             wrap_width,
             0,
@@ -403,7 +404,7 @@ fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> R
     let title = layout_label(
         db.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
         4000.0,
         Style::BOLD,
@@ -602,17 +603,17 @@ fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> R
         let internal = RE_INTERNAL.test(&format!("{classes} "));
         if internal
             && let Some(label) = node.label.as_deref().filter(|label| !label.is_empty())
-            && options.links != Some(false)
+            && ctx.options.links
         {
             // The label is a note name, but it still ends up in an href, so
             // it gets the same check as a URL.
             let name = decode_entities(label);
-            let safe = link_url(&sanitize_url(&name), options).is_some();
+            let safe = link_url(&sanitize_url(&name), ctx).is_some();
             let target = esc(&name);
             text = format!(
                 "<a class=\"internal-link\"{} data-href=\"{target}\">{text}</a>",
                 if safe {
-                    format!(" href=\"{target}\"{}", rel_attr(options))
+                    format!(" href=\"{target}\"{}", rel_attr(ctx))
                 } else {
                     String::new()
                 }
@@ -632,7 +633,7 @@ fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> R
                 Some(target) => format!(" target=\"{}\"", esc(target)),
                 None => String::new(),
             };
-            body = linked(&body, link, &node.id, &mut links, options, &target);
+            body = linked(&body, link, &node.id, &mut links, ctx, &target);
         }
         let _ = write!(
             nodes_out,
@@ -772,7 +773,7 @@ fn draw(db: &AgentflowDb, config: &Config, options: &Options, turned: bool) -> R
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: db.acc_title.as_deref(),
             acc_descr: db.acc_descr.as_deref(),

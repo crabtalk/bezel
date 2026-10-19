@@ -8,7 +8,8 @@ use super::{
     builder::{esc, esc_text},
     theme::{RADIUS, ROOT_STYLE, push_font_style, resolve},
 };
-use crate::{Options, js};
+use crate::js;
+use crate::{Ctx, Host};
 
 /// A rectangle's corner radius comes from a variable. Browsers only lately
 /// take one in `rx`, and all take one in a style, so that is where it goes,
@@ -111,7 +112,7 @@ pub fn svg_document(
     width: f64,
     height: f64,
     font_size: f64,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     acc: Accessible,
     content: &str,
 ) -> String {
@@ -120,10 +121,7 @@ pub fn svg_document(
     let title = acc.acc_title.filter(|title| !title.is_empty());
     let descr = acc.acc_descr.filter(|descr| !descr.is_empty());
     if title.is_some() || descr.is_some() {
-        let prefix = esc(options
-            .id_prefix
-            .as_deref()
-            .unwrap_or(crate::PREFIX));
+        let prefix = esc(ctx.options.id_prefix.as_str());
         if let Some(title) = title {
             let _ = write!(
                 head,
@@ -141,7 +139,7 @@ pub fn svg_document(
             let _ = write!(aria, " aria-describedby=\"{prefix}-desc\"");
         }
     }
-    let fit = if options.responsive == Some(false) {
+    let fit = if !ctx.responsive {
         ""
     } else {
         "max-width:100%;height:auto;"
@@ -184,8 +182,8 @@ pub fn svg_document(
     push_font_style(
         &mut out,
         font_size,
-        options.font_family.as_deref(),
-        options.font_family_mono.as_deref(),
+        ctx.options.font_family.as_deref(),
+        ctx.options.font_family_mono.as_deref(),
     );
     let style = style..out.len();
     for piece in [
@@ -198,12 +196,12 @@ pub fn svg_document(
     ] {
         out.push_str(piece);
     }
-    match &options.colors {
+    match &ctx.options.colors {
         Some(_) => out.push_str(content),
         None => push_rounded(&mut out, content),
     }
     out.push_str("</svg>");
-    if let Some(colors) = &options.colors {
+    if let Some(colors) = &ctx.options.colors {
         return resolve(&out, &out[style], colors);
     }
     out

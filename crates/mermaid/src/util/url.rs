@@ -1,16 +1,17 @@
 //! The URLs a diagram links to and shows images from. Pele's `util/url.ts`,
 //! after `@braintree/sanitize-url`, which Mermaid applies to click targets.
 
+use crate::{Ctx, Host};
 use crate::{
-    Link, Options,
+    Link,
     js::{self, Lazy},
     svg::builder::esc,
     text::decode_entities,
 };
 
 const BLANK: &str = "about:blank";
-const LINK_SCHEMES: [&str; 4] = ["http", "https", "mailto", "tel"];
-const IMAGE_SCHEMES: [&str; 2] = ["http", "https"];
+pub(crate) const LINK_SCHEMES: [&str; 4] = ["http", "https", "mailto", "tel"];
+pub(crate) const IMAGE_SCHEMES: [&str; 2] = ["http", "https"];
 
 static RE_INVALID_PROTOCOL: Lazy = Lazy::new(r"^([^\w]*)(javascript|data|vbscript)", "im");
 static RE_HTML_ENTITIES: Lazy = Lazy::new(r"&#(\w+)(^\w|;)?", "g");
@@ -154,34 +155,18 @@ fn allow(url: &str, schemes: &[String]) -> Option<String> {
 
 /// A URL [`sanitize_url`] passed, kept only when it is relative or its scheme
 /// is one the host allows.
-pub fn link_url(url: &str, options: &Options) -> Option<String> {
-    if options.links == Some(false) {
+pub fn link_url(url: &str, ctx: &Ctx<'_, impl Host>) -> Option<String> {
+    if !ctx.options.links {
         return None;
     }
-    let defaults: Vec<String>;
-    let schemes = match &options.link_schemes {
-        Some(schemes) => schemes,
-        None => {
-            defaults = LINK_SCHEMES.iter().map(|s| s.to_string()).collect();
-            &defaults
-        }
-    };
-    allow(url, schemes)
+    allow(url, &ctx.options.link_schemes)
 }
 
-pub fn image_url(url: &str, options: &Options) -> Option<String> {
-    if options.images == Some(false) {
+pub fn image_url(url: &str, ctx: &Ctx<'_, impl Host>) -> Option<String> {
+    if !ctx.options.images {
         return None;
     }
-    let defaults: Vec<String>;
-    let schemes = match &options.image_schemes {
-        Some(schemes) => schemes,
-        None => {
-            defaults = IMAGE_SCHEMES.iter().map(|s| s.to_string()).collect();
-            &defaults
-        }
-    };
-    allow(url, schemes)
+    allow(url, &ctx.options.image_schemes)
 }
 
 /// `body` inside a link to `url`, or `body` alone where the link is refused.
@@ -190,10 +175,10 @@ pub fn linked(
     url: &str,
     id: &str,
     links: &mut Vec<Link>,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     attrs: &str,
 ) -> String {
-    let Some(href) = link_url(url, options) else {
+    let Some(href) = link_url(url, ctx) else {
         return body.to_string();
     };
     links.push(Link {
@@ -204,12 +189,12 @@ pub fn linked(
     format!(
         "<a href=\"{}\"{attrs}{}>{body}</a>",
         esc(&href),
-        rel_attr(options)
+        rel_attr(ctx)
     )
 }
 
-pub fn rel_attr(options: &Options) -> String {
-    let rel = options.link_rel.as_deref().unwrap_or("noopener");
+pub fn rel_attr(ctx: &Ctx<'_, impl Host>) -> String {
+    let rel = ctx.options.link_rel.as_str();
     if rel.is_empty() {
         String::new()
     } else {

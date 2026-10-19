@@ -3,7 +3,7 @@
 Mermaid source drawn as SVG, a port of [Pele](https://github.com/obsidianmd/pele) 1.6.0. No browser, JavaScript engine or GUI toolkit.
 
 ```rust
-let drawing = mermaid::render("flowchart LR\n  A --> B", &Default::default())?;
+let drawing = mermaid::render("flowchart LR\n  A --> B", &Default::default(), &mermaid::Metrics)?;
 assert!(drawing.svg.starts_with("<svg"));
 ```
 
@@ -15,19 +15,14 @@ assert!(drawing.svg.starts_with("<svg"));
 
 | Item | What it does |
 | --- | --- |
-| `render(source, &Options)` | A `Drawing`: `svg`, `width`, `height`, `kind` and `links` |
-| `parse` | A `Parsed`, whose `model` serializes as Pele's `parse` does |
-| `render_parsed` | Draws a `Parsed` |
+| `render(source, &Options, &host)` | A `Drawing`: `svg`, `width`, `height`, `kind` and `links` |
+| `parse(source, &Options)` | A `Parsed`, whose `model` serializes as Pele's `parse` does |
+| `render_parsed(&parsed, &Options, &host)` | Draws a `Parsed` |
 | `detect_type`, `supports` | The type a source names, and whether this build draws it |
 
-`Options` takes Pele's render options. The host supplies:
+`Options` takes Pele's render options; `Default` is Pele's defaults. `colors` takes `Colors`, written in place of every CSS variable, for renderers without custom properties, and `now` the time gantt charts treat as now.
 
-| Field | What it is |
-| --- | --- |
-| `measure` | Text widths, as a `Measure`. `Metrics` (Arial's advances) when unset. |
-| `icons` | An `IconResolver` |
-| `colors` | `Colors`, written in place of every CSS variable, for renderers without custom properties |
-| `now` | The time gantt charts treat as now |
+The host is a `Host`: `width` answers how wide a run of text is in the fonts the drawing is shown in, and `icon` the SVG markup for an icon name (none by default). `Metrics` is a `Host` with Arial's advances and no icons.
 
 Errors carry Pele's messages, a `Code`, and the line, column and snippet.
 

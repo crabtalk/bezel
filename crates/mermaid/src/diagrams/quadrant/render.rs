@@ -2,7 +2,7 @@
 
 use super::db::{QuadrantModel, QuadrantText};
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::Value,
     diagrams::common::fit_width::cap_width,
     js,
@@ -13,6 +13,7 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
+use crate::{Ctx, Host};
 use std::fmt::Write as _;
 
 const GAP: f64 = 4.0;
@@ -44,20 +45,24 @@ fn hex(color: &str) -> String {
     }
 }
 
-pub fn render_quadrant(model: &QuadrantModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_quadrant(
+    model: &QuadrantModel,
+    config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let axis_size = js::round(size * 0.875);
     let point_size = js::round(size * 0.75);
-    let measure = options.measurer();
+    let measure = ctx.host;
     let natural = js::round(100f64.max(length(config, "chartWidth", 500.0, 4000.0)));
-    let width = js::round(cap_width(options, natural, 280.0, 0.0));
+    let width = js::round(cap_width(ctx, natural, 280.0, 0.0));
     let height =
         js::round((100f64.max(length(config, "chartHeight", 500.0, 4000.0)) * width) / natural);
     let outer = length(
         config,
         "quadrantPadding",
-        options.padding.unwrap_or(8.0),
+        ctx.options.padding.unwrap_or(8.0),
         200.0,
     );
     let x_pad = length(config, "xAxisLabelPadding", 5.0, 200.0);
@@ -78,7 +83,7 @@ pub fn render_quadrant(model: &QuadrantModel, config: &Config, options: &Options
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
         (width - 2.0 * outer).max(40.0),
         Style::BOLD,
@@ -420,7 +425,7 @@ pub fn render_quadrant(model: &QuadrantModel, config: &Config, options: &Options
             width,
             height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

@@ -11,8 +11,9 @@ use super::{
     layout::{Cell, layout},
     types::{Block, BlockModel},
 };
+use crate::Ctx;
 use crate::{
-    Config, Error, Options, Rendered,
+    Config, Error, Rendered,
     config::Value,
     diagrams::common::fit_width::{title_room, try_tighten},
     js,
@@ -23,7 +24,7 @@ use crate::{
         shapes::{draw_shape, shape_inset, shape_size},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Label, Measure, Style, layout_label},
+    text::{Host, Label, Style, layout_label},
 };
 
 const GAP: f64 = 12.0;
@@ -515,9 +516,9 @@ fn label_spot(
 pub fn render_block(
     model: &BlockModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> Result<Rendered, Error> {
-    try_tighten(options, |tight| draw(model, config, options, tight))
+    try_tighten(ctx, |tight| draw(model, config, ctx, tight))
 }
 
 /// The extent of the drawing, grown by each label and loop.
@@ -545,17 +546,16 @@ impl Bounds {
     }
 }
 
-struct Viewer<'a> {
+struct Viewer<'a, H> {
     model: &'a BlockModel,
-    measure: &'a dyn Measure,
-    options: &'a Options,
+    ctx: &'a Ctx<'a, H>,
     size: f64,
     gap: f64,
     wrap: f64,
     tight: bool,
 }
 
-impl Viewer<'_> {
+impl<H: Host> Viewer<'_, H> {
     fn style_of(&self, block: &Block) -> ResolvedStyle {
         let mut declarations: Vec<&str> = Vec::new();
         // A style list is split on commas only, so one entry can still hold
@@ -608,15 +608,15 @@ impl Viewer<'_> {
         let raw = block.label.as_deref();
         if kind_str == Some("space") {
             kind = ViewKind::Space;
-            label = layout_label(None, false, self.measure, font_size, self.wrap, 0);
+            label = layout_label(None, false, self.ctx.host, font_size, self.wrap, 0);
         } else if kind_str == Some("composite") {
             kind = ViewKind::Composite;
             let room = if self.tight {
-                title_room(self.options)
+                title_room(self.ctx)
             } else {
                 4000.0
             };
-            label = layout_label(raw, false, self.measure, font_size, room, text_style);
+            label = layout_label(raw, false, self.ctx.host, font_size, room, text_style);
             head = if label.height > 0.0 {
                 label.height + 4.0
             } else {
@@ -626,7 +626,7 @@ impl Viewer<'_> {
             nh = head + 2.0 * self.gap;
         } else if kind_str == Some("block_arrow") {
             kind = ViewKind::Arrow;
-            label = layout_label(raw, false, self.measure, font_size, self.wrap, text_style);
+            label = layout_label(raw, false, self.ctx.host, font_size, self.wrap, text_style);
             let blank = label
                 .lines
                 .iter()
@@ -648,7 +648,7 @@ impl Viewer<'_> {
                 .iter()
                 .find(|(name, _)| *name == kind_str)
                 .map_or("rect", |(_, shape)| shape);
-            label = layout_label(raw, false, self.measure, font_size, self.wrap, text_style);
+            label = layout_label(raw, false, self.ctx.host, font_size, self.wrap, text_style);
             let s = shape_size(shape, label.width, label.height);
             nw = s.w;
             // A cylinder's caps deepen as it widens, so it is sized for the
@@ -699,14 +699,14 @@ impl Viewer<'_> {
 fn draw(
     model: &BlockModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     tight: bool,
 ) -> Result<Rendered, Error> {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let edge_size = js::round(size * 0.875);
-    let measure = options.measurer();
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let configured = match config.section("block").and_then(|b| b.get("padding")) {
         Some(Value::Number(n)) if *n >= 0.0 => n.min(200.0),
         _ => GAP,
@@ -714,8 +714,7 @@ fn draw(
     let gap = configured.min(if tight { 6.0 } else { f64::INFINITY });
     let viewer = Viewer {
         model,
-        measure: &*measure,
-        options,
+        ctx,
         size,
         gap,
         wrap: if tight { 80.0 } else { WRAP },
@@ -821,7 +820,7 @@ fn draw(
         let label = layout_label(
             model.block(edge).label.as_deref(),
             false,
-            &*measure,
+            measure,
             edge_size,
             WRAP,
             0,
@@ -881,9 +880,9 @@ fn draw(
     let title = layout_label(
         model.title.as_deref(),
         false,
-        &*measure,
+        measure,
         size,
-        if tight { title_room(options) } else { 4000.0 },
+        if tight { title_room(ctx) } else { 4000.0 },
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -1059,7 +1058,7 @@ fn draw(
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible::default(),
         &content,
     );

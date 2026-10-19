@@ -14,7 +14,8 @@ pub mod types;
 pub use db::ClassModel;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Class;
 
@@ -34,11 +35,11 @@ impl Diagram for Class {
         parser::parse_class_diagram(source, &mut db)?;
         Ok(Model::Class(Box::new(db)))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Class(model) = model else {
-            unreachable!("class renders a class model")
-        };
-        Ok(render::render_class(model, config, options))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Class(model) = model else {
+        unreachable!("class renders a class model")
+    };
+    Ok(render::render_class(model, config, ctx))
 }

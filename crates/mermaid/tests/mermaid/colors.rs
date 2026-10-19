@@ -3,7 +3,7 @@
 
 use std::{fs, path::Path};
 
-use mermaid::{Colors, Options, render};
+use mermaid::{Colors, Metrics, Options, render};
 
 fn colors() -> Colors {
     Colors {
@@ -38,7 +38,7 @@ fn every_entry_draws_without_css_variables() {
                 .as_str()
                 .or_else(|| entry["src"].as_str())
                 .expect("a source");
-            let Ok(drawing) = render(source, &options) else {
+            let Ok(drawing) = render(source, &options, &Metrics) else {
                 continue;
             };
             let at = format!("{} #{i}", path.display());
@@ -60,7 +60,7 @@ fn a_token_is_its_colour_and_a_mix_is_computed() {
     };
     // A cluster title an edge crosses is half `surface_alt` over `bg`.
     let source = "flowchart TB\n  c1-->a2\n  subgraph one\n  a1-->a2\n  end\n  subgraph two\n  b1-->b2\n  end\n  subgraph three\n  c1-->c2\n  end\n  one --> two\n  three --> two\n  two --> c2";
-    let svg = render(source, &options).expect("a drawing").svg;
+    let svg = render(source, &options, &Metrics).expect("a drawing").svg;
     assert!(svg.contains("#f0f0f0"), "{svg}");
     assert!(svg.contains("#1b2b3bc0"), "{svg}");
 }

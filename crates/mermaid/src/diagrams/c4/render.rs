@@ -12,7 +12,7 @@ use super::{
     types::C4Ref,
 };
 use crate::{
-    Config, Error, Kind, Link, Options, Rendered,
+    Config, Error, Kind, Link, Rendered,
     diagrams::common::{
         fit_width::{title_room, try_tighten},
         literal_label::left_label_svg,
@@ -28,6 +28,7 @@ use crate::{
     text::{Style, layout_label},
     util::url::{linked, sanitize_url},
 };
+use crate::{Ctx, Host};
 
 static RE_HASH: Lazy = Lazy::new(r"\ufb02\u00b0\u00b0?", "g");
 static RE_SEMI: Lazy = Lazy::new(r"\u00b6\u00df", "g");
@@ -63,7 +64,7 @@ fn link(
     url: Option<&str>,
     id: &str,
     links: &mut Vec<Link>,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> String {
     let Some(url) = url.filter(|url| !url.is_empty()) else {
         return body.to_string();
@@ -75,18 +76,22 @@ fn link(
     } else {
         url.to_string()
     };
-    linked(body, &sanitize_url(&url), id, links, options, "")
+    linked(body, &sanitize_url(&url), id, links, ctx, "")
 }
 
-pub fn render_c4(db: &C4Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-    try_tighten(options, |tight| {
+pub fn render_c4(
+    db: &C4Model,
+    config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+) -> Result<Rendered, Error> {
+    try_tighten(ctx, |tight| {
         if !tight {
-            return Ok(draw(db, config, options, false, NARROW_GAP)?.0);
+            return Ok(draw(db, config, ctx, false, NARROW_GAP)?.0);
         }
-        let (mut best, mut squeezed) = draw(db, config, options, true, NARROW_GAP)?;
+        let (mut best, mut squeezed) = draw(db, config, ctx, true, NARROW_GAP)?;
         let mut gap = NARROW_GAP + WIDEN;
         while squeezed > 0 && gap <= NARROW_GAP + 3.0 * WIDEN {
-            let (wider, left) = draw(db, config, options, true, gap)?;
+            let (wider, left) = draw(db, config, ctx, true, gap)?;
             if left < squeezed {
                 best = wider;
                 squeezed = left;
@@ -139,18 +144,17 @@ fn offset(value: Option<f64>) -> f64 {
 fn draw(
     db: &C4Model,
     _config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     tight: bool,
     gap: f64,
 ) -> Result<(Rendered, usize), Error> {
     let p = crate::PREFIX;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.8125);
-    let measurer = options.measurer();
-    let measurer = &*measurer;
-    let pad = options.padding.unwrap_or(8.0);
+    let measurer = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
     let mut links: Vec<Link> = Vec::new();
-    let room = tight.then(|| max(80.0, options.max_width.unwrap_or(320.0) - 2.0 * pad));
+    let room = tight.then(|| max(80.0, ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad));
     let mut layout = layout_c4(db, measurer, size, small, room, gap);
     let root = layout.order[0];
 
@@ -415,7 +419,7 @@ fn draw(
                 top + label.height + techn.height / 2.0,
                 &format!(" class=\"{p}-c4-techn\" fill=\"var(--_m)\"{}", style.text),
             );
-        labels_out += &link(&body, rel.link.as_deref(), &id, &mut links, options);
+        labels_out += &link(&body, rel.link.as_deref(), &id, &mut links, ctx);
         labels_out += "</g>";
     }
 
@@ -488,7 +492,7 @@ fn draw(
                 boundary.link.as_deref(),
                 &boundary.alias,
                 &mut links,
-                options,
+                ctx,
             );
             clusters += "</g>";
         }
@@ -582,13 +586,7 @@ fn draw(
                 ),
                 &format!("{stroke}{}", style.line),
             ) + &text;
-            nodes_out += &link(
-                &body,
-                shape.link.as_deref(),
-                &shape.alias,
-                &mut links,
-                options,
-            );
+            nodes_out += &link(&body, shape.link.as_deref(), &shape.alias, &mut links, ctx);
             nodes_out += "</g>";
         }
     }
@@ -598,7 +596,7 @@ fn draw(
         false,
         measurer,
         size,
-        if tight { title_room(options) } else { 4000.0 },
+        if tight { title_room(ctx) } else { 4000.0 },
         Style::BOLD,
     );
     let title_height = if title.height > 0.0 {
@@ -652,7 +650,7 @@ fn draw(
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: db.acc_title.as_deref(),
             acc_descr: db.acc_descr.as_deref(),

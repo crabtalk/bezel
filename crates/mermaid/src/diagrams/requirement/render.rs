@@ -8,8 +8,9 @@ use super::{
     db::RequirementModel,
     graph::{GraphEdge, GraphNode, build_requirement_graph},
 };
+use crate::Ctx;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     diagrams::common::fit_width::{runs_across, turn_to_fit},
     js::{self, Lazy},
     layout::{
@@ -22,7 +23,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Label, Measure, Span, Style, layout_label},
+    text::{Host, Label, Span, Style, layout_label},
 };
 
 const NODE_SEP: f64 = 40.0;
@@ -64,7 +65,7 @@ struct NodeView<'g, 'a> {
 
 /// Adds bold or italic to a whole label after its markdown is read, since
 /// emphasis markers only toggle styles the label does not start with.
-fn restyle(label: Label, bits: u8, measure: &dyn Measure) -> Label {
+fn restyle(label: Label, bits: u8, measure: &impl Host) -> Label {
     if bits == 0 || label.lines.is_empty() {
         return label;
     }
@@ -249,23 +250,27 @@ fn spread_ends(cnodes: &[CNode], cedges: &mut [CEdge], views: &[NodeView]) {
 pub fn render_requirement(
     model: &RequirementModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
 ) -> Rendered {
     if !runs_across(Some(&model.direction)) {
-        return draw(model, config, options, false);
+        return draw(model, config, ctx, false);
     }
-    turn_to_fit(options, |down| draw(model, config, options, down))
+    turn_to_fit(ctx, |down| draw(model, config, ctx, down))
 }
 
 /// `turned` draws a diagram that runs across as one that runs down.
-fn draw(model: &RequirementModel, _config: &Config, options: &Options, turned: bool) -> Rendered {
+fn draw(
+    model: &RequirementModel,
+    _config: &Config,
+    ctx: &Ctx<'_, impl Host>,
+    turned: bool,
+) -> Rendered {
     let p = crate::PREFIX;
     let graph = build_requirement_graph(model);
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     let mut index: HashMap<&str, usize> = HashMap::new();
     let mut views: Vec<NodeView> = Vec::new();
@@ -645,7 +650,7 @@ fn draw(model: &RequirementModel, _config: &Config, options: &Options, turned: b
         width,
         height,
         size,
-        options,
+        ctx,
         Accessible {
             acc_title: model.acc_title.as_deref(),
             acc_descr: model.acc_descr.as_deref(),

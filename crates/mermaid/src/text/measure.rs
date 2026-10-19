@@ -13,11 +13,20 @@ impl Style {
     pub const MONO: u8 = 4;
 }
 
-/// The width a host's fonts give text. A diagram is laid out in the widths
-/// it answers, so it must answer as the fonts the drawing is shown in.
-pub trait Measure {
+/// What the page a drawing is shown in provides: its fonts' widths and its
+/// icons. A diagram is laid out in the widths it answers, so it must answer
+/// as the fonts the drawing is shown in.
+pub trait Host {
     /// `text`'s advance at `size` px, under the [`Style`] bits in `style`.
     fn width(&self, text: &str, size: f64, style: u8) -> f64;
+
+    /// The SVG markup icon `name` is drawn with, inside a 24×24 view box, or
+    /// `None` for a name the host has no icon for. Called during layout and
+    /// again during drawing for each use.
+    fn icon(&self, name: &str) -> Option<String> {
+        let _ = name;
+        None
+    }
 }
 
 /// Widths estimated from Arial's advances, where the host has no fonts to
@@ -54,7 +63,7 @@ fn is_zero_width(c: u16) -> bool {
         || c == 0xfeff
 }
 
-impl Measure for Metrics {
+impl Host for Metrics {
     fn width(&self, text: &str, size: f64, style: u8) -> f64 {
         let mono = style & Style::MONO != 0;
         let table = if style & Style::BOLD != 0 {

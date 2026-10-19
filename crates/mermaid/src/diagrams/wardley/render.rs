@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 
 use super::model::WardleyModel;
 use crate::{
-    Config, Options, Rendered,
+    Config, Rendered,
     config::Value,
     diagrams::common::fit_width::fit_width,
     js,
@@ -23,6 +23,7 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
+use crate::{Ctx, Host};
 
 const DEFAULT_STAGES: [&str; 4] = ["Genesis", "Custom Built", "Product", "Commodity"];
 /// Mermaid's canvas has this much room around the plot on every side.
@@ -109,15 +110,15 @@ fn dimension(config: &Config, given: Option<f64>, key: &str, fallback: f64) -> f
     clamp(value, 200.0, 10000.0) - 2.0 * CANVAS_MARGIN
 }
 
-pub fn render_wardley(model: &WardleyModel, config: &Config, options: &Options) -> Rendered {
+pub fn render_wardley(model: &WardleyModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
     let natural = dimension(
         config,
         model.built.size.map(|size| size.width),
         "width",
         900.0,
     );
-    fit_width(options, natural, 160.0, |plot_w, tight| {
-        draw(model, config, options, plot_w, natural, tight)
+    fit_width(ctx, natural, 160.0, |plot_w, tight| {
+        draw(model, config, ctx, plot_w, natural, tight)
     })
 }
 
@@ -148,19 +149,18 @@ impl Bounds {
 fn draw(
     model: &WardleyModel,
     config: &Config,
-    options: &Options,
+    ctx: &Ctx<'_, impl Host>,
     plot_w: f64,
     natural_w: f64,
     tight: bool,
 ) -> Rendered {
     let p = crate::PREFIX;
     let built = &model.built;
-    let size = options.font_size.unwrap_or(16.0);
+    let size = ctx.options.font_size;
     let small = js::round(size * 0.8125);
     let tiny = js::round(size * 0.6875);
-    let measure = options.measurer();
-    let measure = &*measure;
-    let pad = options.padding.unwrap_or(8.0);
+    let measure = ctx.host;
+    let pad = ctx.options.padding.unwrap_or(8.0);
 
     // A narrower map is not as much shorter, so that components keep some
     // room between them.
@@ -947,7 +947,7 @@ fn draw(
             total_width,
             total_height,
             size,
-            options,
+            ctx,
             Accessible {
                 acc_title: model.acc_title.as_deref(),
                 acc_descr: model.acc_descr.as_deref(),

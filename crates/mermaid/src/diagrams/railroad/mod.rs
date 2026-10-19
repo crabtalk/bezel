@@ -11,7 +11,8 @@ pub mod render;
 pub mod types;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, Options, ParseLimits, Rendered};
+use crate::{Config, Error, ParseLimits, Rendered};
+use crate::{Ctx, Host};
 
 pub struct Railroad;
 
@@ -26,11 +27,11 @@ impl Diagram for Railroad {
     ) -> Result<Model, Error> {
         Ok(Model::Railroad(db::parse_railroad(source, title)?))
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        match model {
-            Model::Railroad(model) => Ok(render::render_railroad(model, config, options)),
-            _ => unreachable!("railroad renders a railroad model"),
-        }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    match model {
+        Model::Railroad(model) => Ok(render::render_railroad(model, config, ctx)),
+        _ => unreachable!("railroad renders a railroad model"),
     }
 }

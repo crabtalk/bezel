@@ -11,7 +11,7 @@ use super::{
     },
 };
 use crate::{
-    Config, Error, Options, ParseLimits, Rendered,
+    Config, Error, ParseLimits, Rendered,
     layout::{
         compound::{CEdge, CNode, CompoundResult, Dir},
         lanes::lane_layout,
@@ -23,6 +23,7 @@ use crate::{
     },
     text::Label,
 };
+use crate::{Ctx, Host};
 
 const DEFAULT_LANE: &str = "__swimlane_default__";
 
@@ -165,11 +166,11 @@ impl Diagram for Swimlane {
     ) -> Result<Model, Error> {
         Flowchart.parse(source, config, title, line_offset, limits)
     }
+}
 
-    fn render(&self, model: &Model, config: &Config, options: &Options) -> Result<Rendered, Error> {
-        let Model::Flowchart(db) = model else {
-            unreachable!("swimlane renders a flowchart model")
-        };
-        Ok(render_flowchart(db, config, options, Some(&Lanes)))
-    }
+pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+    let Model::Flowchart(db) = model else {
+        unreachable!("swimlane renders a flowchart model")
+    };
+    Ok(render_flowchart(db, config, ctx, Some(&Lanes)))
 }
