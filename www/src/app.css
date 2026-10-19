@@ -17,7 +17,17 @@
 	--radius-control: 6px;
 	--radius-panel: 8px;
 	--radius-frame: 12px;
+	/* The gutter the header, every section and the footer share. */
+	--gutter: 28px;
+	/* The bar's height, and what anything sticky below it has to clear. */
+	--header: 56px;
 	color-scheme: dark;
+}
+
+@media (max-width: 720px) {
+	:root {
+		--gutter: 18px;
+	}
 }
 
 * {
@@ -27,6 +37,7 @@
 html,
 body {
 	margin: 0;
+	overscroll-behavior-y: none;
 	background: var(--bg);
 	color: var(--text);
 	font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;

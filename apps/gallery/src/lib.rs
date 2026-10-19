@@ -67,6 +67,11 @@ actions!(
 /// a browser tab has no window to quit.
 const APP_MENUBAR: bool = !cfg!(any(target_os = "macos", target_family = "wasm"));
 
+/// Whether the nav strip runs over the rail. It holds the traffic lights on
+/// macOS and the caption controls and menus elsewhere; a browser tab has
+/// neither, and its rail runs to the top.
+const NAV_OVER_RAIL: bool = !cfg!(target_family = "wasm");
+
 /// Every keymap this view needs, in one call.
 ///
 /// Two entry points open it — a native window and a browser tab — and a list

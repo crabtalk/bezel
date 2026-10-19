@@ -47,14 +47,14 @@
 	.shell {
 		display: flex;
 		align-items: flex-start;
-		min-height: calc(100vh - 56px);
+		min-height: calc(100vh - var(--header));
 	}
 
 	aside {
 		position: sticky;
-		top: 56px;
+		top: var(--header);
 		flex: 0 0 272px;
-		height: calc(100vh - 56px);
+		height: calc(100vh - var(--header));
 		overflow-y: auto;
 		scrollbar-width: thin;
 		scrollbar-color: transparent transparent;

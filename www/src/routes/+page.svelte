@@ -1,15 +1,11 @@
 <script>
-	import { siDiscord, siGithub, siX } from 'simple-icons';
 	import { Check, Copy } from 'lucide-static';
 	import { base } from '$app/paths';
 	import Ascii from '$lib/Ascii.svelte';
-	import Brand from '$lib/Brand.svelte';
 	import Gallery from '$lib/Gallery.svelte';
-	import { discord, docsHome, repo, tagline as description } from '$lib/catalog.js';
+	import { docsHome, repo, tagline as description } from '$lib/catalog.js';
 
 	let expanded = $state(false);
-
-	const author = 'https://x.com/tianyi_gc';
 
 	const jsonLd = {
 		'@context': 'https://schema.org',
@@ -98,32 +94,15 @@
 	</p>
 </section>
 
-<footer>
-	<nav class="left">
-		<a href="https://github.com/crabtalk">crabtalk</a>
-		{#if docsHome}<a href="{base}/docs/{docsHome}/">Docs</a>{/if}
-		<a href="{repo}/tree/main/skills">Skills</a>
-	</nav>
-	<nav class="right">
-		<a href={repo} aria-label="bezel on GitHub"><Brand icon={siGithub} size={15} /></a>
-		<a href={discord} target="_blank" rel="noreferrer" aria-label="bezel on Discord">
-			<Brand icon={siDiscord} size={15} />
-		</a>
-		<a href={author} target="_blank" rel="noreferrer" aria-label="The author on X">
-			<Brand icon={siX} size={14} />
-		</a>
-	</nav>
-</footer>
-
 <style>
 	.hero {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
 		align-items: center;
 		gap: 40px;
-		max-width: 1180px;
+		max-width: calc(1200px + 2 * var(--gutter));
 		margin: 0 auto;
-		padding: 112px 40px 56px;
+		padding: 112px var(--gutter) 56px;
 	}
 
 	/* The install line below is a scroll container, but a grid item still sizes to
@@ -231,9 +210,9 @@
 	}
 
 	.stage {
-		max-width: 1180px;
+		max-width: calc(1200px + 2 * var(--gutter));
 		margin: 0 auto;
-		padding: 0 40px 96px;
+		padding: 0 var(--gutter) 96px;
 	}
 
 	.window {
@@ -310,45 +289,11 @@
 		font-weight: 500;
 	}
 
-	footer {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 20px;
-		max-width: 1180px;
-		margin: 0 auto;
-		padding: 28px 40px 72px;
-		border-top: 1px solid var(--line);
-	}
-
-	footer nav {
-		display: flex;
-		align-items: center;
-		gap: 22px;
-	}
-
-	/* Drafting-label register: small, spaced and set in the mono face, so it
-	   reads as an annotation on the page rather than more prose. */
-	.left a {
-		font-family: var(--mono);
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.16em;
-	}
-
-	footer a {
-		color: var(--faint);
-	}
-
-	footer a:hover {
-		color: var(--text);
-	}
-
 	@media (max-width: 900px) {
 		.hero {
 			grid-template-columns: 1fr;
 			gap: 24px;
-			padding: 72px 24px 40px;
+			padding: 72px var(--gutter) 40px;
 		}
 
 		.act {
@@ -362,15 +307,8 @@
 	}
 
 	@media (max-width: 780px) {
-
 		.stage {
-			padding: 0 24px 64px;
-		}
-
-		footer {
-			flex-direction: column;
-			align-items: flex-start;
-			padding: 24px 24px 56px;
+			padding-bottom: 64px;
 		}
 	}
 </style>
