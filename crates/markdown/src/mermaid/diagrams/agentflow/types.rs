@@ -1,0 +1,303 @@
+//! What an agentflow is made of. Pele's `diagrams/agentflow/types.ts`.
+
+use indexmap::IndexMap;
+use serde::Serialize;
+
+use crate::mermaid::config::{Map, Value};
+
+pub use crate::mermaid::diagrams::flowchart::types::LabelType;
+
+/// A parsed agentflow: the database the parser fills.
+pub type AgentflowModel = super::db::AgentflowDb;
+
+/// Metadata an element's `@{ … }` blocks gave it.
+pub type Metadata = Map;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlowText {
+    pub text: String,
+    pub kind: LabelType,
+}
+
+/// A source span as Jison reports it: lines start at 1, columns at 0.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Loc {
+    pub first_line: usize,
+    pub first_column: usize,
+    pub last_line: usize,
+    pub last_column: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VertexKind {
+    Tool,
+    Action,
+    Input,
+    Refdoc,
+    Decision,
+    Connector,
+    Task,
+}
+
+impl VertexKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Tool => "tool",
+            Self::Action => "action",
+            Self::Input => "input",
+            Self::Refdoc => "refdoc",
+            Self::Decision => "decision",
+            Self::Connector => "connector",
+            Self::Task => "task",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EdgeSemantic {
+    Sequence,
+    Reference,
+    Failure,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentNode {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    pub label_type: LabelType,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    pub styles: Vec<String>,
+    pub classes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub props: Option<IndexMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_connector: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEdge {
+    pub start: String,
+    pub end: String,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    pub text: String,
+    pub label_type: LabelType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stroke: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edge_semantic: Option<EdgeSemantic>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<Vec<String>>,
+    pub classes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub is_user_defined_id: bool,
+    /// A curve name, or whatever value the edge's metadata gave `curve`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interpolate: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animate: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentClassDef {
+    pub id: String,
+    pub styles: Vec<String>,
+    pub text_styles: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSubgraph {
+    pub id: String,
+    pub nodes: Vec<String>,
+    pub title: String,
+    pub classes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+    pub label_type: LabelType,
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LinkInfo {
+    pub kind: String,
+    pub stroke: String,
+    pub length: Option<i32>,
+    pub edge_semantic: Option<EdgeSemantic>,
+    pub text: Option<FlowText>,
+    pub id: Option<String>,
+}
+
+/// What a statement adds to the block around it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DocItem {
+    Str(String),
+    List(Vec<String>),
+    Dir(String),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElementPosition {
+    pub start_line: usize,
+    pub start_column: usize,
+    pub end_line: usize,
+    pub end_column: usize,
+    pub start_index: usize,
+    pub end_index: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StatementType {
+    Vertex,
+    Edge,
+    Subgraph,
+    Connector,
+    Attachment,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ElementMapping {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: StatementType,
+    pub position: ElementPosition,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DiagnosticId {
+    ShapeUnsupported,
+    ShapeRemoved,
+    EdgeOperatorUnsupported,
+    ReferenceEdgeLabelRejected,
+    ConnectorRefUnresolved,
+    ConnectorRefNotAConnector,
+    MetadataKeyMisapplied,
+    DuplicateIdNode,
+    ReservedSyntheticId,
+    ContainmentViolation,
+    EdgeSemanticContradiction,
+    FlowNoInput,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    Warning,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Diagnostic {
+    pub id: DiagnosticId,
+    pub severity: Severity,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edge_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<ElementPosition>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticVertex {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vertex_kind: Option<VertexKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticEdge {
+    pub start: String,
+    pub end: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stroke: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edge_semantic: Option<EdgeSemantic>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub length: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticSubgraph {
+    pub id: String,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub nodes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticConnector {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Metadata>,
+}
+
+/// The diagram with presentation-only controls left out, for tools that
+/// read what it means.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticModel {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    pub vertices: Vec<SemanticVertex>,
+    pub edges: Vec<SemanticEdge>,
+    pub sub_graphs: Vec<SemanticSubgraph>,
+    pub connectors: Vec<SemanticConnector>,
+    pub diagnostics: Vec<Diagnostic>,
+}

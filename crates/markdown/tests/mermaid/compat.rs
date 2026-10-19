@@ -164,6 +164,21 @@ fn sequence() {
 }
 
 #[test]
+fn cynefin() {
+    check("cynefin");
+}
+
+#[test]
+fn wardley() {
+    check("wardley");
+}
+
+#[test]
+fn eventmodeling() {
+    check("eventmodeling");
+}
+
+#[test]
 fn block() {
     check("block");
 }
@@ -179,16 +194,11 @@ fn c4() {
 }
 
 #[test]
-fn cynefin() {
-    check("cynefin");
+fn agentflow() {
+    check("agentflow");
 }
 
 #[test]
-fn wardley() {
-    check("wardley");
-}
-
-#[test]
-fn eventmodeling() {
-    check("eventmodeling");
+fn usecase() {
+    check("usecase");
 }

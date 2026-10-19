@@ -4,6 +4,7 @@ use serde::Serialize;
 
 use super::{Config, Error, Kind, Options, ParseLimits, Rendered};
 
+pub mod agentflow;
 pub mod architecture;
 pub mod block;
 pub mod c4;
@@ -29,9 +30,11 @@ pub mod requirement;
 pub mod sankey;
 pub mod sequence;
 pub mod state;
+pub mod swimlane;
 pub mod timeline;
 pub mod treemap;
 pub mod treeview;
+pub mod usecase;
 pub mod venn;
 pub mod wardley;
 pub mod xychart;
@@ -99,6 +102,8 @@ pub enum Model {
     Architecture(Box<architecture::ArchitectureModel>),
     Block(Box<block::BlockModel>),
     C4(c4::C4Model),
+    Agentflow(Box<agentflow::AgentflowDb>),
+    Usecase(Box<usecase::UsecaseModel>),
 }
 
 /// The type `kind`, when this build has it.
@@ -134,6 +139,8 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
         Kind::Architecture => &architecture::Architecture,
         Kind::Block => &block::Block,
         Kind::C4 => &c4::C4,
-        _ => return None,
+        Kind::Swimlane => &swimlane::Swimlane,
+        Kind::Agentflow => &agentflow::Agentflow,
+        Kind::Usecase => &usecase::Usecase,
     })
 }
