@@ -1,13 +1,15 @@
 //! Pele's `diagrams/git/render.ts`.
 
+use super::GitGraphConfig;
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
 };
 
 use super::db::{GitCommit, GitModel, commit_type};
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered, Value,
+    Rendered,
     diagrams::common::{fit::plain_label, fit_width::turn_to_fit},
     js,
     svg::{
@@ -17,7 +19,6 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
-use crate::{Ctx, Host};
 
 const DOT: f64 = 7.0;
 const STEP: f64 = 44.0;
@@ -40,13 +41,6 @@ struct View<'m> {
     m: f64,
     label: Option<Label>,
     tags: Vec<Label>,
-}
-
-fn flag(config: &Config, key: &str, fallback: bool) -> bool {
-    match config.section("gitGraph").and_then(|git| git.get(key)) {
-        Some(Value::Bool(value)) => *value,
-        _ => fallback,
-    }
 }
 
 fn tag_width(tag: &Label) -> f64 {
@@ -102,7 +96,7 @@ fn symbol(kind: u8, x: f64, y: f64, color: impl fmt::Display) -> impl fmt::Displ
     })
 }
 
-pub fn render_git(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+pub fn render_git(model: &GitModel, config: &GitGraphConfig, ctx: &Ctx<'_, impl Host>) -> Rendered {
     if model.direction != "LR" {
         return draw(model, config, ctx, model.direction);
     }
@@ -136,17 +130,22 @@ impl Bounds {
     }
 }
 
-fn draw(model: &GitModel, config: &Config, ctx: &Ctx<'_, impl Host>, direction: &str) -> Rendered {
+fn draw(
+    model: &GitModel,
+    config: &GitGraphConfig,
+    ctx: &Ctx<'_, impl Host>,
+    direction: &str,
+) -> Rendered {
     let p = crate::PREFIX;
     let size = ctx.options.font_size;
     let small = js::round(size * 0.75);
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
 
-    let show_branches = flag(config, "showBranches", true);
-    let show_commit_label = flag(config, "showCommitLabel", true);
-    let rotate = flag(config, "rotateCommitLabel", true);
-    let parallel = flag(config, "parallelCommits", false);
+    let show_branches = config.show_branches.unwrap_or(true);
+    let show_commit_label = config.show_commit_label.unwrap_or(true);
+    let rotate = config.rotate_commit_label.unwrap_or(true);
+    let parallel = config.parallel_commits.unwrap_or(false);
     let vertical = direction != "LR";
     let flip = direction == "BT";
 

@@ -1,5 +1,8 @@
 //! Pele's `diagrams/wardley/render.ts`.
 
+use crate::config::within;
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
@@ -10,9 +13,9 @@ use std::{
 use indexmap::IndexMap;
 
 use super::model::WardleyModel;
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered,
-    config::Value,
+    Rendered,
     diagrams::common::fit_width::fit_width,
     js,
     svg::{
@@ -25,7 +28,6 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
-use crate::{Ctx, Host};
 
 const DEFAULT_STAGES: [&str; 4] = ["Genesis", "Custom Built", "Product", "Commodity"];
 /// Mermaid's canvas has this much room around the plot on every side.
@@ -45,16 +47,6 @@ struct Placed {
     y: f64,
     /// The node's index in the model.
     node: usize,
-}
-
-fn setting(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    match config
-        .section("wardley-beta")
-        .and_then(|section| section.get(key))
-    {
-        Some(Value::Number(value)) if *value >= min && *value <= max => *value,
-        _ => fallback,
-    }
 }
 
 fn clamp(value: f64, min: f64, max: f64) -> f64 {
@@ -109,21 +101,35 @@ impl fmt::Display for StartLabel<'_> {
     }
 }
 
-fn dimension(config: &Config, given: Option<f64>, key: &str, fallback: f64) -> f64 {
+fn dimension(given: Option<f64>, configured: Option<f64>, fallback: f64) -> f64 {
     let value = match given {
         Some(given) if given.is_finite() => given,
-        _ => setting(config, key, fallback, 1.0, 1e6),
+        _ => within(configured, fallback, 1.0, 1e6),
     };
     clamp(value, 200.0, 10000.0) - 2.0 * CANVAS_MARGIN
 }
 
-pub fn render_wardley(model: &WardleyModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
-    let natural = dimension(
-        config,
-        model.built.size.map(|size| size.width),
-        "width",
-        900.0,
-    );
+/// Mermaid's `wardley-beta` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WardleyConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub height: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_grid: Option<bool>,
+}
+
+pub fn render_wardley(
+    model: &WardleyModel,
+    config: &WardleyConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
+    let natural = dimension(model.built.size.map(|size| size.width), config.width, 900.0);
     fit_width(ctx, natural, 160.0, |plot_w, tight| {
         draw(model, config, ctx, plot_w, natural, tight)
     })
@@ -155,7 +161,7 @@ impl Bounds {
 
 fn draw(
     model: &WardleyModel,
-    config: &Config,
+    config: &WardleyConfig,
     ctx: &Ctx<'_, impl Host>,
     plot_w: f64,
     natural_w: f64,
@@ -171,12 +177,9 @@ fn draw(
 
     // A narrower map is not as much shorter, so that components keep some
     // room between them.
-    let plot_h = dimension(config, built.size.map(|size| size.height), "height", 600.0)
+    let plot_h = dimension(built.size.map(|size| size.height), config.height, 600.0)
         * 0.75f64.max(plot_w / natural_w);
-    let show_grid = config
-        .section("wardley-beta")
-        .and_then(|section| section.get("showGrid"))
-        == Some(&Value::Bool(true));
+    let show_grid = config.show_grid == Some(true);
 
     let bounds = Bounds {
         min_x: Cell::new(0.0),

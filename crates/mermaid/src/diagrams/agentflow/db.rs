@@ -1,5 +1,6 @@
 //! What the agentflow parser builds. Pele's `diagrams/agentflow/db.ts`.
 
+use crate::js::JsValue;
 use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
@@ -100,15 +101,15 @@ fn strip_prototype_keys(root: Value) -> Value {
     let mut done: Vec<Value> = Vec::new();
     while let Some(step) = steps.pop() {
         match step {
-            Step::Visit(Value::List(items)) => {
+            Step::Visit(Value::Array(items)) => {
                 steps.push(Step::CloseList(items.len()));
                 steps.extend(items.into_iter().rev().map(Step::Visit));
             }
-            Step::Visit(Value::Map(map)) => {
+            Step::Visit(Value::Object(map)) => {
                 let mut keys = Vec::new();
                 let mut values = Vec::new();
                 for (key, value) in map.iter() {
-                    if matches!(key, "__proto__" | "constructor" | "prototype") {
+                    if matches!(key.as_str(), "__proto__" | "constructor" | "prototype") {
                         continue;
                     }
                     keys.push(key.to_string());
@@ -120,7 +121,7 @@ fn strip_prototype_keys(root: Value) -> Value {
             Step::Visit(value) => done.push(value),
             Step::CloseList(n) => {
                 let items = done.split_off(done.len() - n);
-                done.push(Value::List(items));
+                done.push(Value::Array(items));
             }
             Step::CloseMap(keys) => {
                 let values = done.split_off(done.len() - keys.len());
@@ -128,7 +129,7 @@ fn strip_prototype_keys(root: Value) -> Value {
                 for (key, value) in keys.into_iter().zip(values) {
                     map.insert(key, value);
                 }
-                done.push(Value::Map(map));
+                done.push(Value::Object(map));
             }
         }
     }
@@ -141,12 +142,12 @@ fn strip_prototype_keys(root: Value) -> Value {
 fn merge(into: Option<Metadata>, doc: &Value) -> Metadata {
     let mut out = into.unwrap_or_default();
     match doc {
-        Value::Map(map) => {
+        Value::Object(map) => {
             for (key, value) in map.iter() {
-                out.insert(key, value.clone());
+                out.insert(key.clone(), value.clone());
             }
         }
-        Value::List(items) => {
+        Value::Array(items) => {
             for (i, item) in items.iter().enumerate() {
                 out.insert(i.to_string(), item.clone());
             }
@@ -267,10 +268,10 @@ fn semantic_metadata(metadata: Option<&Metadata>) -> Option<Metadata> {
     let metadata = metadata?;
     let mut out = Map::new();
     for (key, value) in metadata.iter() {
-        if PRESENTATION_KEYS.contains(&key) {
+        if PRESENTATION_KEYS.contains(&key.as_str()) {
             continue;
         }
-        out.insert(key, value.clone());
+        out.insert(key.clone(), value.clone());
     }
     (!out.is_empty()).then_some(out)
 }
@@ -403,7 +404,7 @@ impl AgentflowDb {
             }
         };
         let parsed = if parsed == Value::Null {
-            Value::Map(Map::new())
+            Value::Object(Map::new())
         } else {
             parsed
         };
@@ -439,7 +440,7 @@ impl AgentflowDb {
         let mut authored_shape: Option<String> = None;
         if let Some(metadata) = metadata {
             let mut parsed = self.metadata(id, metadata, metadata_loc)?;
-            if let Value::Map(fields) = &mut parsed
+            if let Value::Object(fields) = &mut parsed
                 && let Some(Value::String(shape)) = fields.get("shape")
             {
                 let shape = shape.clone();
@@ -447,7 +448,7 @@ impl AgentflowDb {
                     .unwrap_or_default()
                     .to_string();
                 authored_shape = Some(shape);
-                fields.insert("shape", Value::String(resolved));
+                fields.insert("shape".into(), Value::String(resolved));
             }
             doc = Some(parsed);
         }
@@ -476,7 +477,7 @@ impl AgentflowDb {
 
         if let Some(&at) = self.edge_by_id.get(id) {
             let edge = &mut self.edges[at];
-            if let Some(Value::Map(fields)) = &doc {
+            if let Some(Value::Object(fields)) = &doc {
                 if let Some(value) = fields.get("animate") {
                     edge.animate = Some(value.clone());
                 }
@@ -539,7 +540,7 @@ impl AgentflowDb {
             return Ok(());
         };
         vertex.metadata = Some(merge(vertex.metadata.take(), &doc));
-        let Value::Map(fields) = doc else {
+        let Value::Object(fields) = doc else {
             return Ok(());
         };
 

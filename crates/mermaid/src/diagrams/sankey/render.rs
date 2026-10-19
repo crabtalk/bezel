@@ -1,5 +1,9 @@
 //! Pele's `diagrams/sankey/render.ts`.
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
+use crate::config::capped;
 use crate::svg::builder::{Esc, EscText};
 use std::{collections::HashMap, fmt::Write as _};
 
@@ -7,8 +11,9 @@ use super::{
     db::SankeyModel,
     layout::{Alignment, LayoutOptions, layout_sankey},
 };
+use crate::{Ctx, Host};
 use crate::{
-    Config, Error, Rendered,
+    Error, Rendered,
     config::{Map, Value},
     diagrams::common::fit_width::{title_room, try_fit_width},
     js,
@@ -19,15 +24,14 @@ use crate::{
     },
     text::{Style, layout_label},
 };
-use crate::{Ctx, Host};
 
 const LABEL_GAP: f64 = 6.0;
 const VALUE_GAP: f64 = 15.0;
 
-fn text_option(conf: &Map, key: &str) -> String {
-    match conf.get(key) {
+fn text_option(value: Option<&Value>) -> String {
+    match value {
         Some(Value::String(text)) => text.clone(),
-        Some(Value::Number(value)) if value.is_finite() => js::num_str(*value),
+        Some(Value::Number(value)) => js::num_str(value.as_f64().unwrap_or(f64::NAN)),
         _ => String::new(),
     }
 }
@@ -44,23 +48,49 @@ fn rounded(value: f64) -> f64 {
 
 /// A colour from the configuration, as an inline style that overrides the
 /// series colour.
-fn fill_style(color: Option<&Value>) -> String {
-    match color {
-        Some(Value::String(color)) => resolve_style(&[format!("fill:{color}")]).shape,
-        _ => String::new(),
-    }
+fn fill_style(color: &str) -> String {
+    resolve_style(&[format!("fill:{color}")]).shape
+}
+
+/// Mermaid's `sankey` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SankeyConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub height: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_values: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub prefix: Option<Value>,
+    #[serde_as(as = "DefaultOnError")]
+    pub suffix: Option<Value>,
+    #[serde_as(as = "DefaultOnError")]
+    pub label_style: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_alignment: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub link_color: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_colors: Option<Map>,
 }
 
 pub fn render_sankey(
     model: &SankeyModel,
-    config: &Config,
+    conf: &SankeyConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Result<Rendered, Error> {
-    let empty = Map::new();
-    let conf = config.section("sankey").unwrap_or(&empty);
     try_fit_width(
         ctx,
-        conf.number_in("width", 600.0, 1.0, 10000.0),
+        capped(conf.width, 600.0, 1.0, 10000.0),
         160.0,
         |chart_width, _| draw(model, conf, ctx, chart_width),
     )
@@ -68,7 +98,7 @@ pub fn render_sankey(
 
 fn draw(
     model: &SankeyModel,
-    conf: &Map,
+    conf: &SankeyConfig,
     ctx: &Ctx<'_, impl Host>,
     chart_width: f64,
 ) -> Result<Rendered, Error> {
@@ -78,24 +108,19 @@ fn draw(
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
 
-    let chart_height = conf.number_in("height", 400.0, 1.0, 10000.0);
-    let node_width = conf
-        .number_in("nodeWidth", 10.0, 1.0, 200.0)
-        .min(chart_width);
-    let show_values = conf.get("showValues") != Some(&Value::Bool(false));
-    let prefix = text_option(conf, "prefix");
-    let suffix = text_option(conf, "suffix");
-    let outlined = conf.get("labelStyle").and_then(Value::as_str) == Some("outlined");
-    let alignment = match conf.get("nodeAlignment").and_then(Value::as_str) {
+    let chart_height = capped(conf.height, 400.0, 1.0, 10000.0);
+    let node_width = capped(conf.node_width, 10.0, 1.0, 200.0).min(chart_width);
+    let show_values = conf.show_values != Some(false);
+    let prefix = text_option(conf.prefix.as_ref());
+    let suffix = text_option(conf.suffix.as_ref());
+    let outlined = conf.label_style.as_deref() == Some("outlined");
+    let alignment = match conf.node_alignment.as_deref() {
         Some("left") => Alignment::Left,
         Some("right") => Alignment::Right,
         Some("center") => Alignment::Center,
         _ => Alignment::Justify,
     };
-    let link_color = conf
-        .get("linkColor")
-        .and_then(Value::as_str)
-        .unwrap_or("gradient");
+    let link_color = conf.link_color.as_deref().unwrap_or("gradient");
 
     let layout = layout_sankey(
         model,
@@ -103,7 +128,7 @@ fn draw(
             width: chart_width,
             height: chart_height,
             node_width,
-            node_padding: conf.number_in("nodePadding", 12.0, 0.0, 200.0)
+            node_padding: capped(conf.node_padding, 12.0, 0.0, 200.0)
                 + if show_values { VALUE_GAP } else { 0.0 },
             label_height: small * 1.15,
             alignment,
@@ -112,9 +137,12 @@ fn draw(
     let (nodes, links) = (&layout.nodes, &layout.links);
 
     let mut custom: HashMap<&str, String> = HashMap::new();
-    if let Some(colors) = conf.section("nodeColors") {
+    if let Some(colors) = &conf.node_colors {
         for (id, color) in colors.iter() {
-            let style = fill_style(Some(color));
+            let Some(color) = color.as_str() else {
+                continue;
+            };
+            let style = fill_style(color);
             if !style.is_empty() {
                 custom.insert(id, style);
             }
@@ -226,7 +254,9 @@ fn draw(
     let fixed = if matches!(link_color, "gradient" | "source" | "target") {
         String::new()
     } else {
-        fill_style(conf.get("linkColor"))
+        conf.link_color
+            .as_deref()
+            .map_or_else(String::new, fill_style)
     };
     let mut links_out = String::new();
     for link in links {

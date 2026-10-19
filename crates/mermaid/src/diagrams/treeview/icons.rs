@@ -1,7 +1,9 @@
 //! Pele's `diagrams/treeview/icons.ts`.
 
+use super::TreeViewConfig;
 use super::model::{NodeType, TreeNode};
-use crate::{Config, Value, config::Map};
+use crate::js::JsValue;
+use crate::{Value, config::Map};
 
 /// Mermaid's name for its built-in pack. Only `file` and `folder` are built
 /// in; every other icon name is offered to the host's icon resolver.
@@ -96,13 +98,11 @@ pub fn get_node_icon(node: &TreeNode, config: &IconConfig) -> Option<String> {
     ))
 }
 
-pub fn icon_config(config: &Config) -> IconConfig<'_> {
-    let c = config.section("treeView");
-    let get = |key: &str| c.and_then(|c| c.get(key));
+pub fn icon_config(config: &TreeViewConfig) -> IconConfig<'_> {
     IconConfig {
-        show_icons: get("showIcons").is_some_and(Value::truthy),
-        default_icon_pack: get("defaultIconPack").and_then(Value::as_str).unwrap_or(""),
-        filename_icons: get("filenameIcons").and_then(Value::as_map),
-        extension_icons: get("extensionIcons").and_then(Value::as_map),
+        show_icons: config.show_icons.as_ref().is_some_and(Value::truthy),
+        default_icon_pack: config.default_icon_pack.as_deref().unwrap_or(""),
+        filename_icons: config.filename_icons.as_ref(),
+        extension_icons: config.extension_icons.as_ref(),
     }
 }

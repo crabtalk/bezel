@@ -1,5 +1,6 @@
 //! Pele's `diagrams/sequence/db.ts`.
 
+use crate::js::JsValue;
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
@@ -11,9 +12,10 @@ use super::{
     },
 };
 use crate::{
-    config::{Value, parse_json},
+    config::Value,
     detect::Kind,
     error::Error,
+    js::parse_json,
     js::{self, Lazy},
     yaml::parse_yaml,
 };
@@ -79,12 +81,12 @@ fn entries(value: Value) -> Vec<(String, Value)> {
             .enumerate()
             .map(|(i, ch)| (i.to_string(), Value::String(ch.to_string())))
             .collect(),
-        Value::List(items) => items
+        Value::Array(items) => items
             .into_iter()
             .enumerate()
             .map(|(i, item)| (i.to_string(), item))
             .collect(),
-        Value::Map(map) => map
+        Value::Object(map) => map
             .iter()
             .map(|(key, value)| (key.to_string(), value.clone()))
             .collect(),
@@ -235,7 +237,7 @@ impl SequenceModel {
                 ))
                 .of(Kind::Sequence)
             })?;
-            if let Value::Map(map) = parsed {
+            if let Value::Object(map) = parsed {
                 doc = Some(map);
             }
         }

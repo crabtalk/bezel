@@ -2,7 +2,10 @@
 //! differs and a drawing would come out different.
 
 pub(crate) mod date;
+mod json;
 pub(crate) mod re;
+
+pub use json::{JsValue, number_value, parse_json};
 
 pub(crate) use re::{Lazy, Regex};
 

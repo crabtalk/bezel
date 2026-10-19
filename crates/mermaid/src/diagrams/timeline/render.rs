@@ -1,9 +1,9 @@
 //! Pele's `diagrams/timeline/render.ts`.
 
 use super::db::TimelineModel;
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered,
-    config::Value,
+    Rendered,
     diagrams::common::{
         fit::{fit_label, plain_label},
         fit_width::turn_to_fit,
@@ -17,7 +17,8 @@ use crate::{
     },
     text::{Label, Style},
 };
-use crate::{Ctx, Host};
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::fmt::{self, Write as _};
 
 const PAD_X: f64 = 12.0;
@@ -69,9 +70,20 @@ impl fmt::Display for Hue {
     }
 }
 
+/// Mermaid's `timeline` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TimelineConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub disable_multicolor: Option<bool>,
+}
+
 pub fn render_timeline(
     model: &TimelineModel,
-    config: &Config,
+    config: &TimelineConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Rendered {
     if model.direction == "TD" {
@@ -82,7 +94,7 @@ pub fn render_timeline(
 
 fn draw(
     model: &TimelineModel,
-    config: &Config,
+    config: &TimelineConfig,
     ctx: &Ctx<'_, impl Host>,
     vertical: bool,
 ) -> Rendered {
@@ -91,12 +103,7 @@ fn draw(
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
     let p = crate::PREFIX;
-    let multicolor = !matches!(
-        config
-            .section("timeline")
-            .and_then(|timeline| timeline.get("disableMulticolor")),
-        Some(Value::Bool(true))
-    );
+    let multicolor = config.disable_multicolor != Some(true);
     let periods = &model.periods;
     let has_sections = !model.sections.is_empty();
 

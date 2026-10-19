@@ -1,13 +1,16 @@
 //! Pele's `diagrams/xychart/render.ts`.
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
 use super::{
     db::{XAxis, XyChartModel},
     ticks::{tick_index, tick_step, tick_value, ticks_between},
 };
 use crate::svg::builder::{Esc, EscText, LabelSvg, TITLE, fragment};
+use crate::{Ctx, Host};
 use crate::{
-    Config, Error, Rendered,
-    config::{Map, Value},
+    Error, Rendered,
     detect::Kind,
     diagrams::common::fit_width::cap_width,
     js,
@@ -18,7 +21,6 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
-use crate::{Ctx, Host};
 use std::fmt::{self, Write as _};
 
 const TICK: f64 = 4.0;
@@ -49,16 +51,49 @@ impl Anchor {
     }
 }
 
-fn on(config: &Map, key: &str, fallback: bool) -> bool {
-    match config.get(key) {
-        Some(Value::Bool(value)) => *value,
-        _ => fallback,
-    }
+/// Mermaid's `xyChart` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct XyChartConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub height: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub chart_orientation: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_data_label: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_title: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_legend: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub x_axis: Option<AxisConfig>,
+    #[serde_as(as = "DefaultOnError")]
+    pub y_axis: Option<AxisConfig>,
 }
 
-fn dimension(value: Option<&Value>, fallback: f64) -> f64 {
+/// An axis of [`XyChartConfig`].
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AxisConfig {
+    #[serde_as(as = "DefaultOnError")]
+    pub show_title: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_tick: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_label: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_axis_line: Option<bool>,
+}
+
+fn dimension(value: Option<f64>, fallback: f64) -> f64 {
     match value {
-        Some(Value::Number(value)) if *value > 0.0 => js::round(value.clamp(100.0, 4000.0)),
+        Some(value) if value > 0.0 => js::round(value.clamp(100.0, 4000.0)),
         _ => fallback,
     }
 }
@@ -106,7 +141,7 @@ fn aligned(label: &Label, x: f64, y: f64, anchor: Anchor) -> impl fmt::Display {
 
 pub fn render_xy_chart(
     model: &XyChartModel,
-    config: &Config,
+    chart: &XyChartConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Result<Rendered, Error> {
     if model.plots.is_empty() {
@@ -116,27 +151,25 @@ pub fn render_xy_chart(
         );
     }
     let p = crate::PREFIX;
-    let empty = Map::new();
-    let chart = config.section("xyChart").unwrap_or(&empty);
     let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.75);
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
-    let natural = dimension(chart.get("width"), 700.0);
+    let natural = dimension(chart.width, 700.0);
     let width = cap_width(ctx, natural, 240.0, 0.0);
     // A narrower chart is not as much shorter, so that the plot keeps room
     // for its marks.
-    let height = js::round(dimension(chart.get("height"), 500.0) * 0.6f64.max(width / natural));
+    let height = js::round(dimension(chart.height, 500.0) * 0.6f64.max(width / natural));
     let orientation = match model.orientation {
         Some(orientation) => Some(orientation),
-        None => chart.get("chartOrientation").and_then(Value::as_str),
+        None => chart.chart_orientation.as_deref(),
     };
     let horizontal = orientation == Some("horizontal");
     // The value of a bar is always written past its end, which is what
     // showDataLabelOutsideBar asks for in Mermaid. Inside, whether it fits
     // changes from bar to bar and with the width of the chart.
-    let show_values = on(chart, "showDataLabel", false);
+    let show_values = chart.show_data_label.unwrap_or(false);
     let x = &model.x_axis;
     let plots = &model.plots;
     let text = |raw: Option<&str>, font_size: f64, max: f64| -> Label {
@@ -146,7 +179,7 @@ pub fn render_xy_chart(
     let tiny_height = text(Some("0"), tiny, 4000.0).height;
 
     let title = layout_label(
-        if on(chart, "showTitle", true) {
+        if chart.show_title.unwrap_or(true) {
             model.title.as_deref()
         } else {
             None
@@ -165,7 +198,7 @@ pub fn render_xy_chart(
 
     let mut legend: Vec<(usize, Label)> = Vec::new();
     let mut legend_width: f64 = 0.0;
-    if on(chart, "showLegend", true) {
+    if chart.show_legend.unwrap_or(true) {
         for (index, plot) in plots.iter().enumerate() {
             if plot.title.is_empty() {
                 continue;
@@ -278,8 +311,9 @@ pub fn render_xy_chart(
         }
     };
 
-    let category_conf = chart.section("xAxis").unwrap_or(&empty);
-    let value_conf = chart.section("yAxis").unwrap_or(&empty);
+    let unset = AxisConfig::default();
+    let category_conf = chart.x_axis.as_ref().unwrap_or(&unset);
+    let value_conf = chart.y_axis.as_ref().unwrap_or(&unset);
     let left_conf = if horizontal {
         category_conf
     } else {
@@ -291,7 +325,7 @@ pub fn render_xy_chart(
         category_conf
     };
     let left_title = text(
-        if on(left_conf, "showTitle", true) {
+        if left_conf.show_title.unwrap_or(true) {
             Some(if horizontal {
                 x.title()
             } else {
@@ -304,7 +338,7 @@ pub fn render_xy_chart(
         height * 0.8,
     );
     let bottom_title = text(
-        if on(bottom_conf, "showTitle", true) {
+        if bottom_conf.show_title.unwrap_or(true) {
             Some(if horizontal {
                 model.y_axis.title.as_str()
             } else {
@@ -316,18 +350,18 @@ pub fn render_xy_chart(
         small,
         width * 0.8,
     );
-    let left_tick = if on(left_conf, "showTick", true) {
+    let left_tick = if left_conf.show_tick.unwrap_or(true) {
         TICK
     } else {
         0.0
     };
-    let bottom_tick = if on(bottom_conf, "showTick", true) {
+    let bottom_tick = if bottom_conf.show_tick.unwrap_or(true) {
         TICK
     } else {
         0.0
     };
-    let left_labels = on(left_conf, "showLabel", true);
-    let bottom_labels = on(bottom_conf, "showLabel", true);
+    let left_labels = left_conf.show_label.unwrap_or(true);
+    let bottom_labels = bottom_conf.show_label.unwrap_or(true);
 
     let wrap_at = if horizontal {
         width * 0.3
@@ -335,7 +369,7 @@ pub fn render_xy_chart(
         48f64.max((width - 2.0 * pad - 64.0 - legend_space) * slot - 8.0)
     };
     let categories: Vec<Label> = match x {
-        XAxis::Band { categories, .. } if on(category_conf, "showLabel", true) => categories
+        XAxis::Band { categories, .. } if category_conf.show_label.unwrap_or(true) => categories
             .iter()
             .map(|category| text(Some(category), small, wrap_at))
             .collect(),
@@ -548,10 +582,10 @@ pub fn render_xy_chart(
 
     let mut axis = String::new();
     let mut labels = String::new();
-    if on(left_conf, "showAxisLine", true) {
+    if left_conf.show_axis_line.unwrap_or(true) {
         let _ = write!(axis, "M{},{}V{}", num(left), num(top), num(bottom));
     }
-    if on(bottom_conf, "showAxisLine", true) {
+    if bottom_conf.show_axis_line.unwrap_or(true) {
         let _ = write!(axis, "M{},{}H{}", num(left), num(bottom), num(right));
     }
     for mark in &left_marks {

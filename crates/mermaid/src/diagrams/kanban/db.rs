@@ -1,5 +1,6 @@
 //! Pele's `diagrams/kanban/db.ts`.
 
+use crate::js::JsValue;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use crate::{
@@ -164,7 +165,7 @@ impl OutlineDb for KanbanModel {
             })?;
             // Mermaid throws a TypeError on metadata that is empty or not a
             // mapping. Here it is ignored.
-            if let Value::Map(doc) = doc {
+            if let Value::Object(doc) = doc {
                 let shape = given(doc.get("shape")).unwrap_or_default();
                 if shape != shape.to_lowercase() || shape.contains('_') {
                     return Err(Error::semantic(format!(

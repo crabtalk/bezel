@@ -1,5 +1,10 @@
 //! Pele's `diagrams/agentflow/render.ts`.
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
+use crate::config::positive;
+use crate::diagrams::flowchart::FlowchartConfig;
 use crate::svg::builder::rewrite;
 use std::{
     borrow::Cow,
@@ -13,9 +18,9 @@ use super::{
     graph::{AgentGraph, GraphEdge, GraphNode, build_agent_graph},
     types::LabelType,
 };
+use crate::{Ctx, Host};
 use crate::{
-    Config, Link, Rendered,
-    config::Value,
+    Link, Rendered,
     diagrams::{
         common::fit_width::{runs_across, turn_to_fit},
         flowchart::shapes::canonical_shape,
@@ -36,7 +41,6 @@ use crate::{
     text::{Label, Style, decode_entities, layout_label},
     util::url::{NoteLink, linked},
 };
-use crate::{Ctx, Host};
 
 /// The number of series tokens, which is the palette Mermaid's slot rules
 /// are applied to.
@@ -69,18 +73,25 @@ fn flow_end(dir: Dir) -> usize {
 
 /// Builds the graph of a model. Building it also records the model's shape
 /// and containment diagnostics.
-pub fn agent_graph(db: &mut AgentflowDb, config: &Config) -> AgentGraph {
-    let curve = config
-        .section("flowchart")
-        .and_then(|flow| flow.get("curve"))
-        .and_then(Value::as_str);
-    build_agent_graph(db, PALETTE, curve)
+pub fn agent_graph(db: &mut AgentflowDb, flow: &FlowchartConfig) -> AgentGraph {
+    build_agent_graph(db, PALETTE, flow.curve.as_deref())
 }
 
-fn number_option(config: &Config, key: &str, fallback: f64) -> f64 {
-    config
-        .section("agentflow")
-        .map_or(fallback, |section| section.number_option(key, fallback))
+/// Mermaid's `agentflow` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AgentflowConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub wrapping_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub min_node_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_spacing: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub rank_spacing: Option<f64>,
 }
 
 /// A palette color as an outline with a light wash of the same color inside.
@@ -135,7 +146,11 @@ struct Held<'g> {
     dst: usize,
 }
 
-pub fn render_agentflow(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+pub fn render_agentflow(
+    db: &AgentflowDb,
+    config: &AgentflowConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     if !runs_across(db.direction.as_deref()) {
         return draw(db, config, ctx, false);
     }
@@ -143,14 +158,19 @@ pub fn render_agentflow(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Ho
 }
 
 /// `turned` draws a diagram that runs across as one that runs down.
-fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -> Rendered {
+fn draw(
+    db: &AgentflowDb,
+    config: &AgentflowConfig,
+    ctx: &Ctx<'_, impl Host>,
+    turned: bool,
+) -> Rendered {
     let p = crate::PREFIX;
     let graph = &db.graph;
     let size = ctx.options.font_size;
     let edge_size = js::round(size * 0.875);
     let measure = ctx.host;
-    let wrap_width = number_option(config, "wrappingWidth", 120.0);
-    let min_width = number_option(config, "minNodeWidth", 120.0);
+    let wrap_width = positive(config.wrapping_width, 120.0);
+    let min_width = positive(config.min_node_width, 120.0);
     let pad = ctx.options.padding.unwrap_or(8.0);
 
     let mut index: HashMap<&str, usize> = HashMap::new();
@@ -401,9 +421,9 @@ fn draw(db: &AgentflowDb, config: &Config, ctx: &Ctx<'_, impl Host>, turned: boo
         &mut cedges,
         root_dir,
         &LayeredOptions {
-            node_sep: number_option(config, "nodeSpacing", NODE_SEP),
+            node_sep: positive(config.node_spacing, NODE_SEP),
             edge_sep: EDGE_SEP,
-            rank_sep: number_option(config, "rankSpacing", RANK_SEP),
+            rank_sep: positive(config.rank_spacing, RANK_SEP),
             port_sep: 20.0,
             ..LayeredOptions::default()
         },

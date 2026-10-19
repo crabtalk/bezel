@@ -1,5 +1,7 @@
 //! Pele's `diagrams/flowchart/render.ts`.
 
+use super::FlowchartConfig;
+use crate::config::positive;
 use crate::svg::builder::rewrite;
 use crate::svg::builder::{Esc, EscText, LabelSvg, fragment};
 use std::{borrow::Cow, collections::HashMap, fmt::Write as _};
@@ -11,9 +13,9 @@ use super::{
     types::LabelType,
 };
 use crate::diagrams::common::icon::icon_svg;
+use crate::{Ctx, Host};
 use crate::{
-    Config, Link, Rendered,
-    config::{Map, Value},
+    Link, Rendered,
     diagrams::common::fit_width::{runs_across, tighten, title_room, turn_to_fit},
     js::{self, Lazy},
     layout::{
@@ -35,7 +37,6 @@ use crate::{
     text::{Label, Style, decode_entities, layout_label},
     util::url::{NoteLink, image_url, linked, safe_url},
 };
-use crate::{Ctx, Host};
 
 const NODE_SEP: f64 = 40.0;
 const EDGE_SEP: f64 = 16.0;
@@ -107,7 +108,7 @@ struct NodeView<'g> {
 
 pub fn render_flowchart(
     db: &FlowDb,
-    config: &Config,
+    config: &FlowchartConfig,
     ctx: &Ctx<'_, impl Host>,
     variant: Option<&dyn FlowVariant>,
 ) -> Rendered {
@@ -136,7 +137,7 @@ fn flows_sideways(cnodes: &[CNode], i: usize, root_dir: Dir) -> bool {
 /// `tight` sets nodes closer together.
 fn draw(
     db: &FlowDb,
-    config: &Config,
+    flow: &FlowchartConfig,
     ctx: &Ctx<'_, impl Host>,
     variant: Option<&dyn FlowVariant>,
     turned: bool,
@@ -144,12 +145,7 @@ fn draw(
 ) -> Rendered {
     let p = crate::PREFIX;
     let group_pad = if tight { 12.0 } else { GROUP_PAD };
-    let empty = Map::new();
-    let flow = variant
-        .and_then(|variant| config.section(variant.kind()))
-        .or_else(|| config.section("flowchart"))
-        .unwrap_or(&empty);
-    let curve_option = flow.get("curve").and_then(Value::as_str);
+    let curve_option = flow.curve.as_deref();
     let mut graph = build_flow_graph(db, curve_option);
     if let Some(variant) = variant {
         variant.prepare(&mut graph);
@@ -157,13 +153,11 @@ fn draw(
     let size = ctx.options.font_size;
     let edge_size = js::round(size * 0.875);
     let measure = ctx.host;
-    let wrap_width =
-        flow.number_option("wrappingWidth", 200.0)
-            .min(if variant.is_some() && tight {
-                100.0
-            } else {
-                f64::INFINITY
-            });
+    let wrap_width = positive(flow.wrapping_width, 200.0).min(if variant.is_some() && tight {
+        100.0
+    } else {
+        f64::INFINITY
+    });
     let pad = ctx.options.padding.unwrap_or(8.0);
 
     let mut index: HashMap<&str, usize> = HashMap::new();
@@ -363,9 +357,9 @@ fn draw(
     }
 
     let layout_options = LayeredOptions {
-        node_sep: flow.number_option("nodeSpacing", NODE_SEP) * if tight { 0.5 } else { 1.0 },
+        node_sep: positive(flow.node_spacing, NODE_SEP) * if tight { 0.5 } else { 1.0 },
         edge_sep: EDGE_SEP,
-        rank_sep: flow.number_option("rankSpacing", RANK_SEP) * if tight { 0.75 } else { 1.0 },
+        rank_sep: positive(flow.rank_spacing, RANK_SEP) * if tight { 0.75 } else { 1.0 },
         port_sep: 20.0,
         tracks: curve_option.is_some_and(|curve| curve.starts_with("step")),
         straight: curve_option == Some("linear"),

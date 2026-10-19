@@ -42,12 +42,6 @@ pub mod xychart;
 /// What a diagram type provides. `source` has been through preprocessing and
 /// entity encoding and ends with a newline, as Mermaid's parsers expect.
 pub trait Diagram: Sync {
-    /// The name of this type's section in Mermaid's config, when it is not
-    /// the type's own name.
-    fn section(&self) -> Option<&'static str> {
-        None
-    }
-
     /// A type that reports source positions is given the text with its `%%`
     /// comment lines kept. `line_offset` counts the front matter lines
     /// removed before it.

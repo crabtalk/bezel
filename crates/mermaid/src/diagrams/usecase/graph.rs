@@ -3,6 +3,7 @@
 //! every relationship and note connector as an edge with its markers. Ports
 //! getData from Mermaid's use case DB. Pele's `diagrams/usecase/graph.ts`.
 
+use crate::js::JsValue;
 use indexmap::IndexMap;
 
 use super::types::{
@@ -111,12 +112,12 @@ impl UsecaseJsonNode {
                 value,
             };
             match current {
-                Some(Value::List(items)) => {
+                Some(Value::Array(items)) => {
                     if items.is_empty() {
                         rows.push(row(&path, "[]".into()));
                     } else if items
                         .iter()
-                        .all(|item| !matches!(item, Value::List(_) | Value::Map(_)))
+                        .all(|item| !matches!(item, Value::Array(_) | Value::Object(_)))
                     {
                         for (i, item) in items.iter().enumerate() {
                             rows.push(row(if i == 0 { &path } else { "" }, scalar(item)));
@@ -131,7 +132,7 @@ impl UsecaseJsonNode {
                         }
                     }
                 }
-                Some(Value::Map(object)) => {
+                Some(Value::Object(object)) => {
                     let keys: Vec<String> = match self.property_order.get(&pointer) {
                         Some(keys) => keys.clone(),
                         None => object.iter().map(|(key, _)| key.to_string()).collect(),

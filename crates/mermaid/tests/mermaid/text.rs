@@ -3,8 +3,8 @@
 
 use mermaid::{
     Value,
-    config::parse_json,
     detect::{Kind, detect},
+    js::parse_json,
     preprocess::{cleanup_comments, encode_entities, preprocess},
     svg::builder::{LabelSvg, esc, num},
     text::{Host, Metrics, Style, decode_entities, layout_label},
@@ -39,7 +39,7 @@ fn front_matter_gives_title_and_config() {
     assert_eq!(pre.title.as_deref(), Some("Hello"));
     assert_eq!(pre.text, "graph TD\nA-->B");
     assert_eq!(pre.line_offset, 6);
-    let flowchart = pre.config.section("flowchart").unwrap();
+    let flowchart = pre.config["flowchart"].as_object().unwrap();
     assert_eq!(
         flowchart.get("curve"),
         Some(&Value::String("linear".into()))
@@ -122,22 +122,23 @@ fn yaml_reads_flow_block_and_scalars() {
         "a: 1\nb: [x, 'y z', \"q\\n\"]\nc:\n  - d: true\n  - .inf\ne: |\n  one\n  two\n",
     )
     .unwrap();
-    let Value::Map(map) = value else {
+    let Value::Object(map) = value else {
         panic!("a map")
     };
-    assert_eq!(map.get("a"), Some(&Value::Number(1.0)));
+    assert_eq!(map.get("a"), Some(&Value::from(1)));
     assert_eq!(
         map.get("b"),
-        Some(&Value::List(vec![
+        Some(&Value::Array(vec![
             Value::String("x".into()),
             Value::String("y z".into()),
             Value::String("q\n".into()),
         ]))
     );
-    let Some(Value::List(c)) = map.get("c") else {
+    let Some(Value::Array(c)) = map.get("c") else {
         panic!("a list")
     };
-    assert_eq!(c[1], Value::Number(f64::INFINITY));
+    // JSON holds no infinity.
+    assert_eq!(c[1], Value::Null);
     assert_eq!(map.get("e"), Some(&Value::String("one\ntwo\n".into())));
 }
 
@@ -145,8 +146,8 @@ fn yaml_reads_flow_block_and_scalars() {
 fn json_reads_as_json_parse() {
     assert_eq!(
         parse_json("[1, \"\\u00e9\", null]"),
-        Some(Value::List(vec![
-            Value::Number(1.0),
+        Some(Value::Array(vec![
+            Value::from(1),
             Value::String("é".into()),
             Value::Null,
         ]))

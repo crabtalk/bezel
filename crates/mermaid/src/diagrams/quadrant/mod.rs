@@ -12,6 +12,7 @@ pub use db::QuadrantModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::QuadrantConfig;
 
 pub struct Quadrant;
 
@@ -37,5 +38,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Quadrant(model) = model else {
         unreachable!("quadrantChart renders a quadrant model")
     };
-    Ok(render::render_quadrant(model, config, ctx))
+    Ok(render::render_quadrant(model, &config.quadrant_chart, ctx))
 }

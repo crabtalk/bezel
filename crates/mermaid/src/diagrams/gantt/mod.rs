@@ -12,8 +12,11 @@ pub mod types;
 pub use db::GanttDb;
 pub use types::{GanttTask, RawTask};
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
 use super::{Diagram, Model};
-use crate::{Config, Error, ParseLimits, Rendered, config::Value};
+use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
 pub struct Gantt;
@@ -31,10 +34,7 @@ impl Diagram for Gantt {
         if let Some(title) = title.filter(|title| !title.is_empty()) {
             db.title = Some(title.to_string());
         }
-        if let Some(Value::String(mode)) = config
-            .section("gantt")
-            .and_then(|gantt| gantt.get("displayMode"))
-        {
+        if let Some(mode) = &config.gantt.display_mode {
             db.display_mode = mode.clone();
         }
         parser::parse_gantt(source, &mut db)?;
@@ -42,9 +42,48 @@ impl Diagram for Gantt {
     }
 }
 
+/// Mermaid's `gantt` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GanttConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub font_size: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub section_font_size: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub bar_height: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub bar_gap: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub number_section_styles: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub left_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub right_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub use_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub top_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub grid_line_start_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub top_axis: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub axis_format: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub tick_interval: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub weekday: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub display_mode: Option<String>,
+}
+
 pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
     let Model::Gantt(model) = model else {
         unreachable!("gantt renders a gantt model")
     };
-    render::render_gantt(model, config, ctx)
+    render::render_gantt(model, &config.gantt, ctx)
 }

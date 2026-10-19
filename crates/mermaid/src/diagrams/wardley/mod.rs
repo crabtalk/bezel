@@ -11,14 +11,11 @@ pub use model::WardleyModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::WardleyConfig;
 
 pub struct Wardley;
 
 impl Diagram for Wardley {
-    fn section(&self) -> Option<&'static str> {
-        Some("wardley-beta")
-    }
-
     fn parse(
         &self,
         source: &str,
@@ -38,5 +35,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Wardley(model) = model else {
         unreachable!("wardley renders a wardley model")
     };
-    Ok(render::render_wardley(model, config, ctx))
+    Ok(render::render_wardley(model, &config.wardley, ctx))
 }

@@ -1,5 +1,7 @@
 //! Pele's `diagrams/sequence/render.ts`.
 
+use super::SequenceConfig;
+use crate::config::within;
 use std::{
     collections::HashSet,
     fmt::{self, Write as _},
@@ -14,8 +16,8 @@ use super::{
 };
 use crate::Ctx;
 use crate::{
-    Config, Rendered,
-    config::{Map, Value},
+    Rendered,
+    config::Value,
     diagrams::common::{
         fit_width::{tighten, title_room},
         literal_label::break_label,
@@ -216,11 +218,8 @@ struct BoxRun {
     grow: f64,
 }
 
-fn option(conf: &Map, key: &str, fallback: f64) -> f64 {
-    match conf.get(key) {
-        Some(Value::Number(value)) if *value >= 0.0 && *value <= 2000.0 => *value,
-        _ => fallback,
-    }
+fn option(value: Option<f64>, fallback: f64) -> f64 {
+    within(value, fallback, 0.0, 2000.0)
 }
 
 fn half(f: &mut fmt::Formatter<'_>, x: f64, y: f64, dir: f64, up: f64, stick: bool) -> fmt::Result {
@@ -273,7 +272,11 @@ fn trim(kind: Head) -> f64 {
     }
 }
 
-pub fn render_sequence(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+pub fn render_sequence(
+    db: &SequenceModel,
+    config: &SequenceConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     tighten(ctx, |tight| draw(db, config, ctx, tight))
 }
 
@@ -381,23 +384,24 @@ fn right_edge(col: &Column, extra: usize) -> f64 {
     }
 }
 
-fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bool) -> Rendered {
+fn draw(
+    db: &SequenceModel,
+    conf: &SequenceConfig,
+    ctx: &Ctx<'_, impl Host>,
+    tight: bool,
+) -> Rendered {
     let p = crate::PREFIX;
-    let empty = Map::new();
-    let conf = config.section("sequence").unwrap_or(&empty);
     let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.75);
     let measurer = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
-    let flag = |key: &str| conf.get(key).and_then(Value::as_bool);
-    let mirror = flag("mirrorActors") != Some(false);
-    let right_angles = flag("rightAngles") == Some(true);
-    let actor_margin =
-        option(conf, "actorMargin", 40.0).min(if tight { 8.0 } else { f64::INFINITY });
-    let min_w = option(conf, "width", 64.0).min(if tight { 48.0 } else { f64::INFINITY });
-    let min_h = option(conf, "height", js::round(size * 1.5) + 20.0);
-    let wrap_w = option(conf, "width", 160.0).min(if tight {
+    let mirror = conf.mirror_actors != Some(false);
+    let right_angles = conf.right_angles == Some(true);
+    let actor_margin = option(conf.actor_margin, 40.0).min(if tight { 8.0 } else { f64::INFINITY });
+    let min_w = option(conf.width, 64.0).min(if tight { 48.0 } else { f64::INFINITY });
+    let min_h = option(conf.height, js::round(size * 1.5) + 20.0);
+    let wrap_w = option(conf.width, 160.0).min(if tight {
         32f64.max(
             (ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad) / 1f64.max(db.actors.len() as f64)
                 - actor_margin
@@ -408,10 +412,10 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
     });
     // Mermaid's default of 35 corresponds to Pele's default gap. Other values
     // move it by the difference.
-    let msg_gap = 4f64.max(14.0 + option(conf, "messageMargin", 35.0) - 35.0);
-    let note_pad = option(conf, "noteMargin", 10.0).min(if tight { 6.0 } else { f64::INFINITY });
-    let box_pad = option(conf, "boxMargin", 10.0).min(if tight { 6.0 } else { f64::INFINITY });
-    let align = match conf.get("messageAlign").and_then(Value::as_str) {
+    let msg_gap = 4f64.max(14.0 + option(conf.message_margin, 35.0) - 35.0);
+    let note_pad = option(conf.note_margin, 10.0).min(if tight { 6.0 } else { f64::INFINITY });
+    let box_pad = option(conf.box_margin, 10.0).min(if tight { 6.0 } else { f64::INFINITY });
+    let align = match conf.message_align.as_deref() {
         Some("left") => -1,
         Some("right") => 1,
         _ => 0,
@@ -423,7 +427,7 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
     let frame_nest = if tight { 6.0 } else { FRAME_NEST };
     let messages = &db.messages;
     let count = messages.len();
-    let numbering = number_messages(messages, flag("showSequenceNumbers") == Some(true));
+    let numbering = number_messages(messages, conf.show_sequence_numbers == Some(true));
     let text = |raw: Option<&str>, font_size: f64, wrap: bool, width: f64, base: u8| -> Label {
         let label = layout_label(
             raw,
@@ -440,7 +444,7 @@ fn draw(db: &SequenceModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
         }
     };
 
-    let used: Option<HashSet<&str>> = (flag("hideUnusedParticipants") == Some(true)).then(|| {
+    let used: Option<HashSet<&str>> = (conf.hide_unused_participants == Some(true)).then(|| {
         messages
             .iter()
             .flat_map(|m| [m.from.as_deref(), m.to.as_deref()])

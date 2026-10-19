@@ -1,469 +1,234 @@
-//! A diagram's configuration as front matter and `%%{init}%%` directives give
-//! it: JSON-shaped values, keys in the order they were written.
+//! A diagram's configuration: Mermaid's config object as front matter,
+//! `%%{init}%%` directives and [`crate::Options::config`] give it, merged as
+//! JSON and read into [`Config`]. A value of the wrong type reads as unset.
 
-use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
+use serde::Deserialize;
+pub use serde_json::Value;
+use serde_with::{DefaultOnError, serde_as};
 
-use super::js;
+use crate::detect::Kind;
+use crate::diagrams::agentflow::AgentflowConfig;
+use crate::diagrams::architecture::ArchitectureConfig;
+use crate::diagrams::block::BlockConfig;
+use crate::diagrams::class::ClassConfig;
+use crate::diagrams::cynefin::CynefinConfig;
+use crate::diagrams::flowchart::FlowchartConfig;
+use crate::diagrams::gantt::GanttConfig;
+use crate::diagrams::git::GitGraphConfig;
+use crate::diagrams::kanban::KanbanConfig;
+use crate::diagrams::mindmap::MindmapConfig;
+use crate::diagrams::packet::PacketConfig;
+use crate::diagrams::pie::PieConfig;
+use crate::diagrams::quadrant::QuadrantConfig;
+use crate::diagrams::radar::RadarConfig;
+use crate::diagrams::railroad::RailroadConfig;
+use crate::diagrams::sankey::SankeyConfig;
+use crate::diagrams::sequence::SequenceConfig;
+use crate::diagrams::timeline::TimelineConfig;
+use crate::diagrams::treemap::TreemapConfig;
+use crate::diagrams::treeview::TreeViewConfig;
+use crate::diagrams::usecase::UsecaseConfig;
+use crate::diagrams::wardley::WardleyConfig;
+use crate::diagrams::xychart::XyChartConfig;
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub enum Value {
-    #[default]
-    Null,
-    Bool(bool),
-    Number(f64),
-    String(String),
-    List(Vec<Value>),
-    Map(Map),
-}
+/// A JSON object, keys in the order they were written.
+pub type Map = serde_json::Map<String, Value>;
 
-/// An object: keys in insertion order, a key written again keeping its place.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Map(Vec<(String, Value)>);
-
-/// A diagram's configuration.
-pub type Config = Map;
-
-impl Map {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn get(&self, key: &str) -> Option<&Value> {
-        self.0.iter().find(|(k, _)| k == key).map(|(_, v)| v)
-    }
-
-    pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
-        self.0.iter_mut().find(|(k, _)| k == key).map(|(_, v)| v)
-    }
-
-    pub fn insert(&mut self, key: impl Into<String>, value: Value) {
-        let key = key.into();
-        match self.get_mut(&key) {
-            Some(slot) => *slot = value,
-            None => self.0.push((key, value)),
+/// Mermaid's deep merge of `source` into `target`: objects merge, anything
+/// else replaces, and the keys that reach an object's prototype are dropped.
+pub fn merge(target: &mut Map, source: &Map) {
+    for (key, value) in source {
+        if matches!(key.as_str(), "__proto__" | "constructor" | "prototype") {
+            continue;
         }
-    }
-
-    pub fn contains(&self, key: &str) -> bool {
-        self.get(key).is_some()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
-        self.0.iter().map(|(k, v)| (k.as_str(), v))
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// The object under `key`, if that is what it holds.
-    pub fn section(&self, key: &str) -> Option<&Map> {
-        self.get(key).and_then(Value::as_map)
-    }
-
-    /// The object under `key`, made empty when it is missing or not an object.
-    pub fn section_mut(&mut self, key: &str) -> &mut Map {
-        if !matches!(self.get(key), Some(Value::Map(_))) {
-            self.insert(key, Value::Map(Map::new()));
-        }
-        match self.get_mut(key) {
-            Some(Value::Map(map)) => map,
-            _ => unreachable!(),
-        }
-    }
-
-    /// The positive number under `key`, at most 2000, or `fallback`.
-    pub fn number_option(&self, key: &str, fallback: f64) -> f64 {
-        match self.get(key) {
-            Some(Value::Number(value)) if *value > 0.0 => value.min(2000.0),
-            _ => fallback,
-        }
-    }
-
-    /// The number under `key` when it is at least `min`, capped at `max`, or
-    /// `fallback`.
-    pub fn number_in(&self, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-        match self.get(key) {
-            Some(Value::Number(value)) if *value >= min => value.min(max),
-            _ => fallback,
-        }
-    }
-
-    /// Mermaid's deep merge of `source` into `self`: objects merge, anything
-    /// else replaces, and the keys that reach an object's prototype are
-    /// dropped.
-    pub fn merge(&mut self, source: &Map) {
-        for (key, value) in source.iter() {
-            if matches!(key, "__proto__" | "constructor" | "prototype") {
-                continue;
+        match (value, target.get_mut(key)) {
+            (Value::Object(from), Some(Value::Object(current))) => merge(current, from),
+            (Value::Object(from), _) => {
+                let mut fresh = Map::new();
+                merge(&mut fresh, from);
+                target.insert(key.clone(), Value::Object(fresh));
             }
-            match (value, self.get_mut(key)) {
-                (Value::Map(from), Some(Value::Map(current))) => current.merge(from),
-                (Value::Map(from), _) => {
-                    let mut fresh = Map::new();
-                    fresh.merge(from);
-                    self.insert(key, Value::Map(fresh));
-                }
-                (other, _) => self.insert(key, other.clone()),
+            (other, _) => {
+                target.insert(key.clone(), other.clone());
             }
         }
     }
 }
 
-impl Value {
-    pub fn as_map(&self) -> Option<&Map> {
-        match self {
-            Self::Map(map) => Some(map),
-            _ => None,
+/// Mermaid's config: the keys diagrams read from the top level, and each
+/// diagram type's section.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Config {
+    #[serde_as(as = "DefaultOnError")]
+    pub wrap: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub direction: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub wrapping_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_spacing: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub rank_spacing: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub flowchart: FlowchartConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub swimlane: Option<FlowchartConfig>,
+    #[serde_as(as = "DefaultOnError")]
+    pub sequence: SequenceConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub class: ClassConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub state: BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub er: BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub pie: PieConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub gantt: GanttConfig,
+    #[serde(rename = "gitGraph")]
+    #[serde_as(as = "DefaultOnError")]
+    pub git_graph: GitGraphConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub mindmap: MindmapConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub timeline: TimelineConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub journey: BaseConfig,
+    #[serde(rename = "xyChart")]
+    #[serde_as(as = "DefaultOnError")]
+    pub xy_chart: XyChartConfig,
+    #[serde(rename = "quadrantChart")]
+    #[serde_as(as = "DefaultOnError")]
+    pub quadrant_chart: QuadrantConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub requirement: BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub c4: BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub sankey: SankeyConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub block: BlockConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub packet: PacketConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub kanban: KanbanConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub architecture: ArchitectureConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub radar: RadarConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub treemap: TreemapConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub info: BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub agentflow: AgentflowConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub usecase: UsecaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub railroad: RailroadConfig,
+    #[serde(rename = "treeView")]
+    #[serde_as(as = "DefaultOnError")]
+    pub tree_view: TreeViewConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub venn: BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub cynefin: CynefinConfig,
+    #[serde(rename = "wardley-beta")]
+    #[serde_as(as = "DefaultOnError")]
+    pub wardley: WardleyConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub ishikawa: BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub eventmodeling: BaseConfig,
+}
+
+impl Config {
+    /// `map` read as config.
+    pub fn new(map: Map) -> Self {
+        if map.is_empty() {
+            return Self::default();
         }
+        Self::deserialize(Value::Object(map)).unwrap_or_default()
     }
 
-    pub fn as_str(&self) -> Option<&str> {
-        match self {
-            Self::String(text) => Some(text),
-            _ => None,
-        }
-    }
-
-    pub fn as_number(&self) -> Option<f64> {
-        match self {
-            Self::Number(n) => Some(*n),
-            _ => None,
-        }
-    }
-
-    pub fn as_bool(&self) -> Option<bool> {
-        match self {
-            Self::Bool(b) => Some(*b),
-            _ => None,
-        }
-    }
-
-    /// JavaScript's truth of the value.
-    pub fn truthy(&self) -> bool {
-        match self {
-            Self::Null => false,
-            Self::Bool(b) => *b,
-            Self::Number(n) => js::truthy(*n),
-            Self::String(text) => !text.is_empty(),
-            Self::List(_) | Self::Map(_) => true,
-        }
-    }
-
-    /// `String(value)`.
-    pub fn to_js_string(&self) -> String {
-        match self {
-            Self::Null => "null".into(),
-            Self::Bool(b) => b.to_string(),
-            Self::Number(n) => js::num_str(*n),
-            Self::String(text) => text.clone(),
-            Self::List(items) => items
-                .iter()
-                .map(|item| match item {
-                    Self::Null => String::new(),
-                    other => other.to_js_string(),
-                })
-                .collect::<Vec<_>>()
-                .join(","),
-            Self::Map(_) => "[object Object]".into(),
-        }
-    }
-
-    /// `JSON.stringify(value)`.
-    pub fn to_json(&self) -> String {
-        let mut out = String::new();
-        self.write_json(&mut out);
-        out
-    }
-
-    fn write_json(&self, out: &mut String) {
-        match self {
-            Self::Null => out.push_str("null"),
-            Self::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-            Self::Number(n) if n.is_finite() => out.push_str(&js::num_str(*n)),
-            Self::Number(_) => out.push_str("null"),
-            Self::String(text) => write_json_string(text, out),
-            Self::List(items) => {
-                out.push('[');
-                for (i, item) in items.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    item.write_json(out);
-                }
-                out.push(']');
-            }
-            Self::Map(map) => {
-                out.push('{');
-                for (i, (key, value)) in map.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
-                    }
-                    write_json_string(key, out);
-                    out.push(':');
-                    value.write_json(out);
-                }
-                out.push('}');
-            }
-        }
-    }
-
-    /// `Number(value)`.
-    pub fn to_number(&self) -> f64 {
-        match self {
-            Self::Null => 0.0,
-            Self::Bool(b) => f64::from(u8::from(*b)),
-            Self::Number(n) => *n,
-            Self::String(text) => js::number(text),
-            Self::List(items) => match items.as_slice() {
-                [] => 0.0,
-                [one] => one.to_number(),
-                _ => f64::NAN,
-            },
-            Self::Map(_) => f64::NAN,
+    /// What every type's section holds, for type `kind`.
+    pub fn base(&self, kind: Kind) -> Option<&BaseConfig> {
+        match kind {
+            Kind::Flowchart => Some(&self.flowchart.base),
+            Kind::Swimlane => self.swimlane.as_ref().map(|s| &s.base),
+            Kind::Sequence => Some(&self.sequence.base),
+            Kind::Class => Some(&self.class.base),
+            Kind::State => Some(&self.state),
+            Kind::Er => Some(&self.er),
+            Kind::Pie => Some(&self.pie.base),
+            Kind::Gantt => Some(&self.gantt.base),
+            Kind::GitGraph => Some(&self.git_graph.base),
+            Kind::Mindmap => Some(&self.mindmap.base),
+            Kind::Timeline => Some(&self.timeline.base),
+            Kind::Journey => Some(&self.journey),
+            Kind::XyChart => Some(&self.xy_chart.base),
+            Kind::QuadrantChart => Some(&self.quadrant_chart.base),
+            Kind::Requirement => Some(&self.requirement),
+            Kind::C4 => Some(&self.c4),
+            Kind::Sankey => Some(&self.sankey.base),
+            Kind::Block => Some(&self.block.base),
+            Kind::Packet => Some(&self.packet.base),
+            Kind::Kanban => Some(&self.kanban.base),
+            Kind::Architecture => Some(&self.architecture.base),
+            Kind::Radar => Some(&self.radar.base),
+            Kind::Treemap => Some(&self.treemap.base),
+            Kind::Info => Some(&self.info),
+            Kind::Agentflow => Some(&self.agentflow.base),
+            Kind::Usecase => Some(&self.usecase.base),
+            Kind::Railroad => Some(&self.railroad.base),
+            Kind::TreeView => Some(&self.tree_view.base),
+            Kind::Venn => Some(&self.venn),
+            Kind::Cynefin => Some(&self.cynefin.base),
+            Kind::Wardley => Some(&self.wardley.base),
+            Kind::Ishikawa => Some(&self.ishikawa),
+            Kind::Eventmodeling => Some(&self.eventmodeling),
         }
     }
 }
 
-impl Serialize for Value {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Null => serializer.serialize_unit(),
-            Self::Bool(b) => serializer.serialize_bool(*b),
-            Self::Number(n) => js::json_number(n, serializer),
-            Self::String(text) => serializer.serialize_str(text),
-            Self::List(items) => {
-                let mut seq = serializer.serialize_seq(Some(items.len()))?;
-                for item in items {
-                    seq.serialize_element(item)?;
-                }
-                seq.end()
-            }
-            Self::Map(map) => map.serialize(serializer),
-        }
+/// What every diagram type's section may hold.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BaseConfig {
+    #[serde_as(as = "DefaultOnError")]
+    pub use_max_width: Option<bool>,
+}
+
+/// `value` when it is positive, at most 2000, or `fallback`.
+pub(crate) fn positive(value: Option<f64>, fallback: f64) -> f64 {
+    match value {
+        Some(value) if value > 0.0 => value.min(2000.0),
+        _ => fallback,
     }
 }
 
-impl Serialize for Map {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut out = serializer.serialize_map(Some(self.0.len()))?;
-        for (key, value) in &self.0 {
-            out.serialize_entry(key, value)?;
-        }
-        out.end()
+/// `value` when it is at least `min`, capped at `max`, or `fallback`.
+pub(crate) fn capped(value: Option<f64>, fallback: f64, min: f64, max: f64) -> f64 {
+    match value {
+        Some(value) if value >= min => value.min(max),
+        _ => fallback,
     }
 }
 
-/// A string as `JSON.stringify` quotes it.
-fn write_json_string(text: &str, out: &mut String) {
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\u{8}' => out.push_str("\\b"),
-            '\u{c}' => out.push_str("\\f"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
+/// `value` when it lies in `min..=max`, or `fallback`.
+pub(crate) fn within(value: Option<f64>, fallback: f64, min: f64, max: f64) -> f64 {
+    match value {
+        Some(value) if value >= min && value <= max => value,
+        _ => fallback,
     }
-    out.push('"');
 }
 
-/// `JSON.parse(text)`, or `None` where it would throw.
-pub fn parse_json(text: &str) -> Option<Value> {
-    let mut reader = Json {
-        bytes: text.as_bytes(),
-        text,
-        at: 0,
-    };
-    let value = reader.value(0)?;
-    reader.space();
-    (reader.at == text.len()).then_some(value)
-}
-
-struct Json<'t> {
-    bytes: &'t [u8],
-    text: &'t str,
-    at: usize,
-}
-
-impl Json<'_> {
-    fn space(&mut self) {
-        while matches!(self.bytes.get(self.at), Some(b' ' | b'\t' | b'\n' | b'\r')) {
-            self.at += 1;
-        }
-    }
-
-    fn value(&mut self, depth: usize) -> Option<Value> {
-        if depth > 512 {
-            return None;
-        }
-        self.space();
-        match *self.bytes.get(self.at)? {
-            b'{' => {
-                self.at += 1;
-                let mut map = Map::new();
-                self.space();
-                if self.bytes.get(self.at) == Some(&b'}') {
-                    self.at += 1;
-                    return Some(Value::Map(map));
-                }
-                loop {
-                    self.space();
-                    let key = self.string()?;
-                    self.space();
-                    if self.bytes.get(self.at) != Some(&b':') {
-                        return None;
-                    }
-                    self.at += 1;
-                    let value = self.value(depth + 1)?;
-                    map.insert(key, value);
-                    self.space();
-                    match self.bytes.get(self.at)? {
-                        b',' => self.at += 1,
-                        b'}' => {
-                            self.at += 1;
-                            return Some(Value::Map(map));
-                        }
-                        _ => return None,
-                    }
-                }
-            }
-            b'[' => {
-                self.at += 1;
-                let mut items = Vec::new();
-                self.space();
-                if self.bytes.get(self.at) == Some(&b']') {
-                    self.at += 1;
-                    return Some(Value::List(items));
-                }
-                loop {
-                    items.push(self.value(depth + 1)?);
-                    self.space();
-                    match self.bytes.get(self.at)? {
-                        b',' => self.at += 1,
-                        b']' => {
-                            self.at += 1;
-                            return Some(Value::List(items));
-                        }
-                        _ => return None,
-                    }
-                }
-            }
-            b'"' => self.string().map(Value::String),
-            b't' => self.word("true", Value::Bool(true)),
-            b'f' => self.word("false", Value::Bool(false)),
-            b'n' => self.word("null", Value::Null),
-            _ => self.number(),
-        }
-    }
-
-    fn word(&mut self, word: &str, value: Value) -> Option<Value> {
-        if self.text[self.at..].starts_with(word) {
-            self.at += word.len();
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    fn number(&mut self) -> Option<Value> {
-        let start = self.at;
-        if self.bytes.get(self.at) == Some(&b'-') {
-            self.at += 1;
-        }
-        match self.bytes.get(self.at)? {
-            b'0' => self.at += 1,
-            b'1'..=b'9' => {
-                while self.bytes.get(self.at).is_some_and(u8::is_ascii_digit) {
-                    self.at += 1;
-                }
-            }
-            _ => return None,
-        }
-        if self.bytes.get(self.at) == Some(&b'.') {
-            self.at += 1;
-            let from = self.at;
-            while self.bytes.get(self.at).is_some_and(u8::is_ascii_digit) {
-                self.at += 1;
-            }
-            if self.at == from {
-                return None;
-            }
-        }
-        if matches!(self.bytes.get(self.at), Some(b'e' | b'E')) {
-            self.at += 1;
-            if matches!(self.bytes.get(self.at), Some(b'+' | b'-')) {
-                self.at += 1;
-            }
-            let from = self.at;
-            while self.bytes.get(self.at).is_some_and(u8::is_ascii_digit) {
-                self.at += 1;
-            }
-            if self.at == from {
-                return None;
-            }
-        }
-        self.text[start..self.at].parse().ok().map(Value::Number)
-    }
-
-    fn string(&mut self) -> Option<String> {
-        if self.bytes.get(self.at) != Some(&b'"') {
-            return None;
-        }
-        self.at += 1;
-        let mut out = String::new();
-        loop {
-            let c = self.text[self.at..].chars().next()?;
-            self.at += c.len_utf8();
-            match c {
-                '"' => return Some(out),
-                '\\' => {
-                    let e = *self.bytes.get(self.at)?;
-                    self.at += 1;
-                    match e {
-                        b'"' => out.push('"'),
-                        b'\\' => out.push('\\'),
-                        b'/' => out.push('/'),
-                        b'b' => out.push('\u{8}'),
-                        b'f' => out.push('\u{c}'),
-                        b'n' => out.push('\n'),
-                        b'r' => out.push('\r'),
-                        b't' => out.push('\t'),
-                        b'u' => {
-                            let unit = self.hex4()?;
-                            if (0xd800..0xdc00).contains(&unit)
-                                && self.text[self.at..].starts_with("\\u")
-                            {
-                                let save = self.at;
-                                self.at += 2;
-                                let low = self.hex4()?;
-                                if (0xdc00..0xe000).contains(&low) {
-                                    let code = 0x10000 + ((unit - 0xd800) << 10) + (low - 0xdc00);
-                                    out.push(char::from_u32(code).unwrap_or('\u{fffd}'));
-                                    continue;
-                                }
-                                self.at = save;
-                            }
-                            out.push(char::from_u32(unit).unwrap_or('\u{fffd}'));
-                        }
-                        _ => return None,
-                    }
-                }
-                c if (c as u32) < 0x20 => return None,
-                c => out.push(c),
-            }
-        }
-    }
-
-    fn hex4(&mut self) -> Option<u32> {
-        let digits = self.text.get(self.at..self.at + 4)?;
-        let code = u32::from_str_radix(digits, 16).ok()?;
-        self.at += 4;
-        Some(code)
-    }
+/// `value` held to `min..=max` when it is a finite number.
+pub(crate) fn clamped(value: Option<f64>, min: f64, max: f64) -> Option<f64> {
+    value
+        .filter(|value| value.is_finite())
+        .map(|value| max.min(min.max(value)))
 }

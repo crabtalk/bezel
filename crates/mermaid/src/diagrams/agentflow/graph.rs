@@ -3,6 +3,7 @@
 //! class styles and palette slots. Shape and containment problems are
 //! reported on the model as diagnostics. Pele's `diagrams/agentflow/graph.ts`.
 
+use crate::js::JsValue;
 use indexmap::{IndexMap, IndexSet};
 
 use super::{
@@ -211,7 +212,7 @@ pub fn build_agent_graph(
         let collapsed = is_collapsed(sg.metadata.as_ref());
         let metadata = if collapsed {
             let mut metadata = sg.metadata.clone().unwrap_or_default();
-            metadata.insert("containerType", Value::String(sg.kind.to_string()));
+            metadata.insert("containerType".into(), Value::String(sg.kind.to_string()));
             Some(metadata)
         } else {
             sg.metadata.clone()

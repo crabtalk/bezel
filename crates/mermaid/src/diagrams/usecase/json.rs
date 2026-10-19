@@ -5,9 +5,10 @@
 use indexmap::IndexMap;
 
 use crate::{
-    config::{Value, parse_json},
+    config::Value,
     detect::Kind,
     error::Error,
+    js::parse_json,
     util::chars::{NONE, is_digit, is_hex},
 };
 
@@ -622,7 +623,7 @@ pub fn parse_ordered_json(
         ));
     }
     let value = parse_json(text).unwrap_or_default();
-    if !matches!(value, Value::Map(_)) {
+    if !matches!(value, Value::Object(_)) {
         let (line, column) = origin();
         return Err(json_error(
             "JSON value must have an object root".into(),

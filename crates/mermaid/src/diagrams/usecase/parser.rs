@@ -961,7 +961,7 @@ impl Parser<'_> {
             }
             let json = DraftJson {
                 id: self.src.slice(from, to),
-                value: crate::config::Value::Map(crate::config::Map::new()),
+                value: crate::config::Value::Object(crate::config::Map::new()),
                 property_order: indexmap::IndexMap::new(),
                 span: [from, to],
                 classes,

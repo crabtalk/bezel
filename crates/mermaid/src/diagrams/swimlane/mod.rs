@@ -173,5 +173,6 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Flowchart(db) = model else {
         unreachable!("swimlane renders a flowchart model")
     };
-    Ok(render_flowchart(db, config, ctx, Some(&Lanes)))
+    let section = config.swimlane.as_ref().unwrap_or(&config.flowchart);
+    Ok(render_flowchart(db, section, ctx, Some(&Lanes)))
 }

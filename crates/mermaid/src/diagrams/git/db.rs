@@ -1,10 +1,11 @@
 //! Pele's `diagrams/git/db.ts`.
 
+use super::GitGraphConfig;
 use indexmap::IndexMap;
 use serde::Serialize;
 
 use super::parser::{CommitTypeName, GitGraphAst, StatementAst};
-use crate::{Config, Error, Kind, Value, js::Lazy};
+use crate::{Error, Kind, js::Lazy};
 
 pub mod commit_type {
     pub const NORMAL: u8 = 0;
@@ -349,19 +350,15 @@ impl Db {
 
 pub fn build_git(
     ast: GitGraphAst,
-    config: &Config,
+    config: &GitGraphConfig,
     title: Option<&str>,
 ) -> Result<GitModel, Error> {
-    let git = config.section("gitGraph");
-    let main_name = git
-        .and_then(|git| git.get("mainBranchName"))
-        .and_then(Value::as_str)
+    let main_name = config
+        .main_branch_name
+        .as_deref()
         .unwrap_or("main")
         .to_string();
-    let main_order = match git.and_then(|git| git.get("mainBranchOrder")) {
-        Some(Value::Number(order)) => *order,
-        _ => 0.0,
-    };
+    let main_order = config.main_branch_order.unwrap_or(0.0);
 
     let mut db = Db {
         commits: IndexMap::new(),

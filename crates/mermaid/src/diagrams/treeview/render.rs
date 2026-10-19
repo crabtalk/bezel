@@ -1,5 +1,7 @@
 //! Pele's `diagrams/treeview/render.ts`.
 
+use super::TreeViewConfig;
+use crate::config::within;
 use crate::svg::builder::{Esc, EscText};
 use std::{collections::HashMap, fmt::Write as _};
 
@@ -7,8 +9,9 @@ use super::{
     icons::{BUILTIN_PACK, get_node_icon, glyph, icon_config},
     model::{NodeType, TreeNode, TreeViewModel},
 };
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered, Value,
+    Rendered,
     diagrams::common::{
         fit_width::{tighten, title_room},
         literal_label::{StartLines, literal_label},
@@ -21,20 +24,12 @@ use crate::{
     },
     text::{Label, Style, decode_entities, layout_label},
 };
-use crate::{Ctx, Host};
 
 const ICON_GAP: f64 = 6.0;
 const DESC_GAP: f64 = 16.0;
 const GUIDE_INSET: f64 = 7.0;
 const ELBOW: f64 = 4.0;
 const HIGHLIGHT_OVERHANG: f64 = 4.0;
-
-fn setting(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    match config.section("treeView").and_then(|tree| tree.get(key)) {
-        Some(Value::Number(value)) if *value >= min && *value <= max => *value,
-        _ => fallback,
-    }
-}
 
 /// Mermaid's layout ctx, with Pele's defaults.
 pub struct TreeSettings {
@@ -44,12 +39,12 @@ pub struct TreeSettings {
     pub line_thickness: f64,
 }
 
-pub fn tree_settings(config: &Config) -> TreeSettings {
+pub fn tree_settings(config: &TreeViewConfig) -> TreeSettings {
     TreeSettings {
-        padding_x: setting(config, "paddingX", 5.0, 0.0, 100.0),
-        padding_y: setting(config, "paddingY", 2.0, 0.0, 100.0),
-        row_indent: setting(config, "rowIndent", 15.0, 0.0, 400.0),
-        line_thickness: setting(config, "lineThickness", 1.0, 0.25, 12.0),
+        padding_x: within(config.padding_x, 5.0, 0.0, 100.0),
+        padding_y: within(config.padding_y, 2.0, 0.0, 100.0),
+        row_indent: within(config.row_indent, 15.0, 0.0, 400.0),
+        line_thickness: within(config.line_thickness, 1.0, 0.25, 12.0),
     }
 }
 
@@ -69,7 +64,7 @@ struct Row<'m> {
 
 pub fn render_tree_view(
     model: &TreeViewModel,
-    config: &Config,
+    config: &TreeViewConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Rendered {
     tighten(ctx, |tight| draw(model, config, ctx, tight))
@@ -83,7 +78,12 @@ fn label_style(node: &TreeNode) -> u8 {
     }
 }
 
-fn draw(model: &TreeViewModel, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bool) -> Rendered {
+fn draw(
+    model: &TreeViewModel,
+    config: &TreeViewConfig,
+    ctx: &Ctx<'_, impl Host>,
+    tight: bool,
+) -> Rendered {
     let p = crate::PREFIX;
     let size = ctx.options.font_size;
     let measure = ctx.host;

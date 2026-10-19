@@ -24,7 +24,7 @@ pub mod text;
 pub mod util;
 pub mod yaml;
 
-pub use config::{Config, Value};
+pub use config::{Config, Map, Value};
 pub use detect::Kind;
 pub use error::{Code, Error};
 pub use svg::theme::{Colors, Rgba};
@@ -90,7 +90,7 @@ pub struct Options {
     /// A link's `rel`. Empty leaves it out.
     pub link_rel: String,
     /// Configuration under the source's own, as Mermaid's site config.
-    pub config: Config,
+    pub config: Map,
     /// The time gantt charts treat as now, in ms since the epoch. The
     /// clock's when unset.
     pub now: Option<f64>,
@@ -120,7 +120,7 @@ impl Default for Options {
             links: true,
             images: true,
             link_rel: "noopener".to_string(),
-            config: Config::default(),
+            config: Map::new(),
             now: None,
             colors: None,
         }
@@ -211,9 +211,10 @@ pub fn parse(source: &str, options: &Options) -> Result<Parsed, Error> {
         .of(kind));
     };
     let mut config = options.config.clone();
-    for (key, value) in pre.config.iter() {
-        config.insert(key, value.clone());
+    for (key, value) in pre.config {
+        config.insert(key, value);
     }
+    let config = Config::new(config);
     let text = if diagram.keep_comments() {
         &pre.with_comments
     } else {
@@ -249,18 +250,14 @@ pub fn render_parsed(
     host: &impl Host,
 ) -> Result<Drawing, Error> {
     let kind = parsed.kind;
-    let Some(diagram) = diagrams::diagram(kind) else {
+    if diagrams::diagram(kind).is_none() {
         return Err(Error::new(
             format!("Diagram type \"{}\" is not supported yet.", kind.name()),
             Code::UnsupportedDiagram,
         )
         .of(kind));
-    };
-    let section = parsed.config.get(diagram.section().unwrap_or(kind.name()));
-    let fixed = section
-        .and_then(Value::as_map)
-        .and_then(|section| section.get("useMaxWidth"))
-        == Some(&Value::Bool(false));
+    }
+    let fixed = parsed.config.base(kind).and_then(|base| base.use_max_width) == Some(false);
     let ctx = Ctx {
         options,
         host,

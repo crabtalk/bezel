@@ -1,6 +1,9 @@
 //! Pele's `diagrams/block/render.ts`.
 
+use crate::config::capped;
 use crate::svg::builder::rewrite;
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::{
     collections::{HashMap, HashSet},
     f64::consts::{FRAC_1_SQRT_2, PI},
@@ -14,8 +17,7 @@ use super::{
 };
 use crate::Ctx;
 use crate::{
-    Config, Error, Rendered,
-    config::Value,
+    Error, Rendered,
     diagrams::common::fit_width::{title_room, try_tighten},
     js,
     svg::{
@@ -514,9 +516,20 @@ fn label_spot(
     0.5
 }
 
+/// Mermaid's `block` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BlockConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub padding: Option<f64>,
+}
+
 pub fn render_block(
     model: &BlockModel,
-    config: &Config,
+    config: &BlockConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Result<Rendered, Error> {
     try_tighten(ctx, |tight| draw(model, config, ctx, tight))
@@ -699,7 +712,7 @@ impl<H: Host> Viewer<'_, H> {
 
 fn draw(
     model: &BlockModel,
-    config: &Config,
+    config: &BlockConfig,
     ctx: &Ctx<'_, impl Host>,
     tight: bool,
 ) -> Result<Rendered, Error> {
@@ -708,10 +721,7 @@ fn draw(
     let edge_size = js::round(size * 0.875);
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
-    let configured = match config.section("block").and_then(|b| b.get("padding")) {
-        Some(Value::Number(n)) if *n >= 0.0 => n.min(200.0),
-        _ => GAP,
-    };
+    let configured = capped(config.padding, GAP, 0.0, 200.0);
     let gap = configured.min(if tight { 6.0 } else { f64::INFINITY });
     let viewer = Viewer {
         model,

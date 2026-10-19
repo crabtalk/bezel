@@ -16,6 +16,7 @@ pub use db::ClassModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::ClassConfig;
 
 pub struct Class;
 
@@ -41,5 +42,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Class(model) = model else {
         unreachable!("class renders a class model")
     };
-    Ok(render::render_class(model, config, ctx))
+    Ok(render::render_class(model, &config.class, ctx))
 }

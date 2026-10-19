@@ -2,9 +2,9 @@
 //! matter, `%%{init}%%` directives, `%%` comments, and entity codes.
 
 use super::{
-    config::{Config, Map, Value, parse_json},
+    config::{Map, Value, merge},
     error::Error,
-    js::{self, Lazy},
+    js::{self, JsValue, Lazy, parse_json},
     yaml::parse_yaml,
 };
 
@@ -21,7 +21,7 @@ static RE_INT: Lazy = Lazy::new(r"^\+?\d+$", "");
 pub struct Preprocessed {
     pub text: String,
     pub title: Option<String>,
-    pub config: Config,
+    pub config: Map,
     /// The text before its comment lines are removed.
     pub with_comments: String,
     /// The number of front matter lines removed before it.
@@ -153,14 +153,16 @@ fn directives(text: &str, config: &mut Map) -> String {
     for caps in RE_DIRECTIVE.captures_iter(&normalized) {
         let kind = caps.get(1).or_else(|| caps.get(2));
         match kind {
-            Some("wrap") => config.insert("wrap", Value::Bool(true)),
+            Some("wrap") => {
+                config.insert("wrap".into(), Value::Bool(true));
+            }
             Some("init" | "initialize") => {
                 if let Some(args) = caps.get(4).filter(|args| !args.is_empty())
-                    && let Some(Value::Map(args)) = parse_json(js::trim(args))
+                    && let Some(Value::Object(args)) = parse_json(js::trim(args))
                 {
                     // Mermaid ignores an init directive whose body is not
                     // valid JSON.
-                    config.merge(&args);
+                    merge(config, &args);
                 }
             }
             _ => {}
@@ -210,17 +212,20 @@ pub fn preprocess(source: &str) -> Result<Preprocessed, Error> {
         let parsed = parse_yaml(&body).map_err(|error| {
             Error::syntax(format!("Front matter is not valid YAML. {}", error.0))
         })?;
-        if let Value::Map(parsed) = parsed {
+        if let Value::Object(parsed) = parsed {
             if let Some(found) = parsed.get("title").filter(|value| value.truthy()) {
                 title = Some(found.to_js_string());
             }
-            if let Some(Value::Map(found)) = parsed.get("config") {
-                config.merge(found);
+            if let Some(Value::Object(found)) = parsed.get("config") {
+                merge(&mut config, found);
             }
             if let Some(mode) = parsed.get("displayMode").filter(|value| value.truthy()) {
-                config
-                    .section_mut("gantt")
-                    .insert("displayMode", Value::String(mode.to_js_string()));
+                if !config.get("gantt").is_some_and(Value::is_object) {
+                    config.insert("gantt".into(), Value::Object(Map::new()));
+                }
+                if let Some(Value::Object(gantt)) = config.get_mut("gantt") {
+                    gantt.insert("displayMode".into(), Value::String(mode.to_js_string()));
+                }
             }
         }
         line_offset = text[..front.length.min(text.len())].matches('\n').count();

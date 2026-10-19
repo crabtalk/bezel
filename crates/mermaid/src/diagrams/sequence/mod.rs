@@ -12,8 +12,11 @@ pub mod types;
 
 pub use db::SequenceModel;
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
 use super::{Diagram, Model};
-use crate::{Config, Error, ParseLimits, Rendered, config::Value};
+use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
 pub struct Sequence;
@@ -27,14 +30,9 @@ impl Diagram for Sequence {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        let wrap = match config.get("wrap") {
-            Some(Value::Bool(wrap)) => Some(*wrap),
-            _ => None,
-        };
-        let sequence_wrap = matches!(
-            config.section("sequence").and_then(|seq| seq.get("wrap")),
-            Some(Value::Bool(true))
-        );
+        let wrap = config.wrap;
+        let sequence = &config.sequence;
+        let sequence_wrap = sequence.wrap == Some(true);
         let mut db = SequenceModel::new(wrap, sequence_wrap);
         if let Some(title) = title.filter(|title| !title.is_empty()) {
             db.set_diagram_title(title);
@@ -44,9 +42,42 @@ impl Diagram for Sequence {
     }
 }
 
+/// Mermaid's `sequence` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SequenceConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub wrap: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub mirror_actors: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub right_angles: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_sequence_numbers: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub hide_unused_participants: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub actor_margin: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub height: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub message_margin: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub note_margin: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub box_margin: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub message_align: Option<String>,
+}
+
 pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
     let Model::Sequence(model) = model else {
         unreachable!("sequenceDiagram renders a sequence model")
     };
-    Ok(render::render_sequence(model, config, ctx))
+    Ok(render::render_sequence(model, &config.sequence, ctx))
 }

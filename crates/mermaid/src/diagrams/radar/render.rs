@@ -1,13 +1,17 @@
 //! Pele's `diagrams/radar/render.ts`.
 
+use crate::config::capped;
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::{
     f64::consts::PI,
     fmt::{self, Write as _},
 };
 
 use super::model::RadarModel;
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered,
+    Rendered,
     diagrams::common::fit_width::{fit_width, title_room},
     js,
     svg::{
@@ -17,7 +21,6 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
-use crate::{Ctx, Host};
 
 const SWATCH: f64 = 12.0;
 const ROW: f64 = 26.0;
@@ -27,12 +30,6 @@ const GAP: f64 = 24.0;
 pub struct Point {
     pub x: f64,
     pub y: f64,
-}
-
-fn option(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    config
-        .section("radar")
-        .map_or(fallback, |radar| radar.number_in(key, fallback, min, max))
 }
 
 pub fn relative_radius(value: f64, min: f64, max: f64, radius: f64) -> f64 {
@@ -77,15 +74,46 @@ fn polygon(points: impl Iterator<Item = Point> + Clone) -> impl fmt::Display {
     })
 }
 
-pub fn render_radar(model: &RadarModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
-    let natural = option(config, "width", 320.0, 1.0, 4000.0);
+/// Mermaid's `radar` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RadarConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub axis_label_factor: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub axis_scale_factor: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub curve_tension: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub height: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub margin_bottom: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub margin_left: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub margin_right: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub margin_top: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub width: Option<f64>,
+}
+
+pub fn render_radar(
+    model: &RadarModel,
+    config: &RadarConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
+    let natural = capped(config.width, 320.0, 1.0, 4000.0);
     fit_width(ctx, natural, 160.0, |width, tight| {
         draw(
             model,
             config,
             ctx,
             width,
-            (option(config, "height", 320.0, 1.0, 4000.0) * width) / natural,
+            (capped(config.height, 320.0, 1.0, 4000.0) * width) / natural,
             tight,
         )
     })
@@ -95,7 +123,7 @@ pub fn render_radar(model: &RadarModel, config: &Config, ctx: &Ctx<'_, impl Host
 /// legend beside it.
 fn draw(
     model: &RadarModel,
-    config: &Config,
+    config: &RadarConfig,
     ctx: &Ctx<'_, impl Host>,
     width: f64,
     height: f64,
@@ -107,9 +135,9 @@ fn draw(
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
 
-    let axis_scale = option(config, "axisScaleFactor", 1.0, 0.0, 10.0);
-    let label_factor = option(config, "axisLabelFactor", 1.05, 0.0, 10.0);
-    let tension = option(config, "curveTension", 0.17, 0.0, 1.0);
+    let axis_scale = capped(config.axis_scale_factor, 1.0, 0.0, 10.0);
+    let label_factor = capped(config.axis_label_factor, 1.05, 0.0, 10.0);
+    let tension = capped(config.curve_tension, 0.17, 0.0, 1.0);
     let radius = width.min(height) / 2.0;
 
     let axes = &model.axes;
@@ -145,10 +173,10 @@ fn draw(
 
     // The chart is drawn around the origin. Margins reserve space; labels and
     // the legend widen it.
-    let mut x0 = -width / 2.0 - option(config, "marginLeft", 16.0, 0.0, 2000.0);
-    let mut x1 = width / 2.0 + option(config, "marginRight", 16.0, 0.0, 2000.0);
-    let mut y0 = -height / 2.0 - option(config, "marginTop", 16.0, 0.0, 2000.0);
-    let mut y1 = height / 2.0 + option(config, "marginBottom", 16.0, 0.0, 2000.0);
+    let mut x0 = -width / 2.0 - capped(config.margin_left, 16.0, 0.0, 2000.0);
+    let mut x1 = width / 2.0 + capped(config.margin_right, 16.0, 0.0, 2000.0);
+    let mut y0 = -height / 2.0 - capped(config.margin_top, 16.0, 0.0, 2000.0);
+    let mut y1 = height / 2.0 + capped(config.margin_bottom, 16.0, 0.0, 2000.0);
 
     let reach = radius * axis_scale;
     let at = radius * label_factor + 6.0;

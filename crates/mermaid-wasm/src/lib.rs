@@ -13,7 +13,7 @@ mod canvas;
 use std::{cell::RefCell, collections::HashMap};
 
 use js_sys::{Array, Function, JSON, Object, Reflect};
-use mermaid::{Error, Host, Metrics, Options, config};
+use mermaid::{Error, Host, Metrics, Options};
 use wasm_bindgen::prelude::*;
 
 use crate::canvas::{Canvas, Custom};
@@ -139,8 +139,8 @@ fn read_options(options: &Fields, drawing: bool) -> Result<Options, JsValue> {
     let config = match options.get("config") {
         Some(value) => {
             let text = JSON::stringify(&value)?.as_string().unwrap_or_default();
-            match config::parse_json(&text) {
-                Some(mermaid::Value::Map(map)) => Some(map),
+            match mermaid::js::parse_json(&text) {
+                Some(mermaid::Value::Object(map)) => Some(map),
                 _ => None,
             }
         }

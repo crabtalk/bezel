@@ -1,9 +1,11 @@
 //! Pele's `diagrams/mindmap/render.ts`.
 
 use super::db::{MindmapModel, MindmapNode};
+use crate::config::positive;
 use crate::svg::builder::{EscText, LabelSvg, LeftLabel, fragment};
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered, Value,
+    Rendered,
     diagrams::common::{
         fit_width::{title_room, turn_to_fit},
         icon::icon_svg,
@@ -17,7 +19,8 @@ use crate::{
     },
     text::{Label, Style, icon_markup, layout_label},
 };
-use crate::{Ctx, Host};
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::fmt::Write as _;
 
 /// Indexed by Mermaid's node type. A node without delimiters is text on a
@@ -42,7 +45,22 @@ const STEM: f64 = 12.0;
 const BEND: f64 = 8.0;
 const ROW_GAP: f64 = 10.0;
 
-pub fn render_mindmap(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+/// Mermaid's `mindmap` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MindmapConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub max_node_width: Option<f64>,
+}
+
+pub fn render_mindmap(
+    model: &MindmapModel,
+    config: &MindmapConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     turn_to_fit(ctx, |down| draw(model, config, ctx, down))
 }
 
@@ -89,19 +107,18 @@ impl Bands {
 /// `down` draws the map as an outline: the root at the top, and each level
 /// set in under its parent. It is far narrower than branches spreading to
 /// both sides, and as tall as it needs to be.
-fn draw(model: &MindmapModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
+fn draw(
+    model: &MindmapModel,
+    config: &MindmapConfig,
+    ctx: &Ctx<'_, impl Host>,
+    down: bool,
+) -> Rendered {
     let p = crate::PREFIX;
     let label_attrs = crate::class!("label");
     let size = ctx.options.font_size;
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
-    let wrap = match config
-        .section("mindmap")
-        .and_then(|mindmap| mindmap.get("maxNodeWidth"))
-    {
-        Some(Value::Number(max)) if *max > 0.0 => max.min(2000.0),
-        _ => 200.0,
-    };
+    let wrap = positive(config.max_node_width, 200.0);
     let glyph = size * 1.25;
 
     let nodes = &model.nodes;

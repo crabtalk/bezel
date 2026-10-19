@@ -1,14 +1,18 @@
 //! Pele's `diagrams/pie/render.ts`.
 
+use crate::js::JsValue;
 use crate::svg::builder::{EscText, LabelSvg, Point, fragment};
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::{
     f64::consts::PI,
     fmt::{self, Write as _},
 };
 
 use super::model::PieModel;
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered,
+    Rendered,
     config::Value,
     diagrams::common::fit_width::{fit_width, title_room},
     js,
@@ -19,7 +23,6 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
-use crate::{Ctx, Host};
 
 const RADIUS: f64 = 120.0;
 const SWATCH: f64 = 12.0;
@@ -27,8 +30,19 @@ const ROW: f64 = 26.0;
 const GAP: f64 = 32.0;
 const OUTSIDE: f64 = 28.0;
 
-fn option<'c>(config: &'c Config, key: &str) -> Option<&'c Value> {
-    config.section("pie").and_then(|pie| pie.get(key))
+/// Mermaid's `pie` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PieConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub text_position: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub donut_hole: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub legend_position: Option<Value>,
 }
 
 fn point(angle: f64, radius: f64) -> Point {
@@ -83,7 +97,7 @@ fn slice(start: f64, end: f64, outer: f64, inner: f64) -> impl fmt::Display {
     })
 }
 
-pub fn render_pie(model: &PieModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+pub fn render_pie(model: &PieModel, config: &PieConfig, ctx: &Ctx<'_, impl Host>) -> Rendered {
     fit_width(ctx, RADIUS * 2.0, 140.0, |diameter, tight| {
         draw(model, config, ctx, diameter / 2.0, tight)
     })
@@ -93,7 +107,7 @@ pub fn render_pie(model: &PieModel, config: &Config, ctx: &Ctx<'_, impl Host>) -
 /// legend beside it.
 fn draw(
     model: &PieModel,
-    config: &Config,
+    config: &PieConfig,
     ctx: &Ctx<'_, impl Host>,
     radius: f64,
     tight: bool,
@@ -104,15 +118,15 @@ fn draw(
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
 
-    let text_position = match option(config, "textPosition") {
-        Some(Value::Number(n)) if *n >= 0.0 && *n <= 1.0 => *n,
+    let text_position = match config.text_position {
+        Some(n) if (0.0..=1.0).contains(&n) => n,
         _ => 0.75,
     };
-    let inner = match option(config, "donutHole") {
-        Some(Value::Number(n)) if *n > 0.0 && *n <= 0.9 => n * radius,
+    let inner = match config.donut_hole {
+        Some(n) if n > 0.0 && n <= 0.9 => n * radius,
         _ => 0.0,
     };
-    let placed = match option(config, "legendPosition") {
+    let placed = match &config.legend_position {
         None | Some(Value::Null) => "right".to_string(),
         Some(value) => value.to_js_string(),
     };

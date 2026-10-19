@@ -12,6 +12,7 @@ pub use model::TreemapModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::TreemapConfig;
 
 pub struct Treemap;
 
@@ -35,5 +36,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Treemap(model) = model else {
         unreachable!("treemap renders a treemap model")
     };
-    Ok(render::render_treemap(model, config, ctx))
+    Ok(render::render_treemap(model, &config.treemap, ctx))
 }

@@ -8,7 +8,11 @@ mod render;
 
 pub use model::{NodeType, TreeNode, TreeViewModel};
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
 use super::{Diagram, Model};
+use crate::config::{Map, Value};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -30,9 +34,34 @@ impl Diagram for TreeView {
     }
 }
 
+/// Mermaid's `treeView` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TreeViewConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub padding_x: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub padding_y: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub row_indent: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub line_thickness: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_icons: Option<Value>,
+    #[serde_as(as = "DefaultOnError")]
+    pub default_icon_pack: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub filename_icons: Option<Map>,
+    #[serde_as(as = "DefaultOnError")]
+    pub extension_icons: Option<Map>,
+}
+
 pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
     let Model::TreeView(model) = model else {
         unreachable!("treeView renders a treeView model")
     };
-    Ok(render::render_tree_view(model, config, ctx))
+    Ok(render::render_tree_view(model, &config.tree_view, ctx))
 }

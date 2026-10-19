@@ -15,6 +15,7 @@ pub use types::BlockModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::BlockConfig;
 
 pub struct Block;
 
@@ -37,5 +38,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Block(model) = model else {
         unreachable!("block renders a block model")
     };
-    render::render_block(model, config, ctx)
+    render::render_block(model, &config.block, ctx)
 }

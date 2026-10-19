@@ -1,14 +1,18 @@
 //! Pele's `diagrams/treemap/render.ts`.
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
 use super::{
     format::formatter,
     layout::{Insets, layout_treemap},
     model::TreemapModel,
 };
+use crate::config::capped;
 use crate::svg::builder::{Esc, EscText};
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered,
-    config::Value,
+    Rendered,
     diagrams::common::{
         fit_text::fit_text,
         fit_width::{cap_width, title_room},
@@ -21,7 +25,6 @@ use crate::{
     },
     text::{Style, decode_entities, layout_label},
 };
-use crate::{Ctx, Host};
 use std::fmt::Write as _;
 
 const HEADER: f64 = 28.0;
@@ -30,47 +33,60 @@ const LINE: f64 = 1.25;
 
 static RE_FILL: Lazy = Lazy::new(r#"[";]fill:"#, "");
 
-fn option(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    config.section("treemap").map_or(fallback, |treemap| {
-        treemap.number_in(key, fallback, min, max)
-    })
+/// Mermaid's `treemap` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TreemapConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub diagram_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_height: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_values: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub value_format: Option<String>,
 }
 
-pub fn render_treemap(model: &TreemapModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+pub fn render_treemap(
+    model: &TreemapModel,
+    config: &TreemapConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     let p = crate::PREFIX;
     let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.75);
     let least = js::round(size * 0.5625);
     let measure = ctx.host;
-    let treemap = config.section("treemap");
     let pad = ctx
         .options
         .padding
-        .unwrap_or_else(|| option(config, "diagramPadding", 8.0, 0.0, 2000.0));
+        .unwrap_or_else(|| capped(config.diagram_padding, 8.0, 0.0, 2000.0));
 
     // Mermaid sizes the diagram as ten times `nodeWidth` by ten times
     // `nodeHeight`.
     let width = js::round(cap_width(
         ctx,
-        option(config, "nodeWidth", 64.0, 1.0, 400.0) * 10.0,
+        capped(config.node_width, 64.0, 1.0, 400.0) * 10.0,
         200.0,
         2.0 * pad,
     ));
-    let height = js::round(option(config, "nodeHeight", 40.0, 1.0, 400.0) * 10.0);
-    let show_values = treemap.and_then(|t| t.get("showValues")) != Some(&Value::Bool(false));
-    let format = formatter(
-        treemap
-            .and_then(|t| t.get("valueFormat"))
-            .and_then(Value::as_str)
-            .unwrap_or(","),
-    );
+    let height = js::round(capped(config.node_height, 40.0, 1.0, 400.0) * 10.0);
+    let show_values = config.show_values != Some(false);
+    let format = formatter(config.value_format.as_deref().unwrap_or(","));
     let (all, placed) = layout_treemap(
         &model.roots,
         width,
         height,
         &Insets {
-            gap: option(config, "padding", 4.0, 0.0, 200.0),
+            gap: capped(config.padding, 4.0, 0.0, 200.0),
             header: HEADER,
             side: SIDE,
         },

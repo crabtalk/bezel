@@ -2,6 +2,7 @@
 
 use crate::svg::builder::styled;
 use crate::svg::builder::{Esc, EscText, LabelSvg, Point, fragment};
+use crate::{Config, config::positive};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -13,7 +14,7 @@ use super::{
 };
 use crate::Ctx;
 use crate::{
-    Config, Link, Rendered,
+    Link, Rendered,
     diagrams::common::fit_width::{runs_across, turn_to_fit},
     js::{self, Lazy},
     layout::{
@@ -304,7 +305,7 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
     let small = js::round(size * 0.875);
     let measure_rc = ctx.host;
     let measure = measure_rc;
-    let wrap_width = config.number_option("wrappingWidth", 200.0);
+    let wrap_width = positive(config.wrapping_width, 200.0);
     let pad = ctx.options.padding.unwrap_or(8.0);
     let root_dir = if turned {
         Dir::TB
@@ -755,9 +756,9 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
         &mut cedges,
         root_dir,
         &LayeredOptions {
-            node_sep: config.number_option("nodeSpacing", NODE_SEP),
+            node_sep: positive(config.node_spacing, NODE_SEP),
             edge_sep: EDGE_SEP,
-            rank_sep: config.number_option("rankSpacing", RANK_SEP),
+            rank_sep: positive(config.rank_spacing, RANK_SEP),
             port_sep: 20.0,
             head_room: Some(marker_trim("arrow_point")),
             ..LayeredOptions::default()

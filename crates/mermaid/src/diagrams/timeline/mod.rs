@@ -11,6 +11,7 @@ pub use db::{TimelineModel, TimelinePeriod};
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::TimelineConfig;
 
 pub struct Timeline;
 
@@ -34,5 +35,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Timeline(model) = model else {
         unreachable!("timeline renders a timeline model")
     };
-    Ok(render::render_timeline(model, config, ctx))
+    Ok(render::render_timeline(model, &config.timeline, ctx))
 }

@@ -2,6 +2,7 @@
 //! group membership, collapsed subgraphs, class styles and edge defaults.
 //! Pele's `diagrams/flowchart/graph.ts`.
 
+use crate::js::JsValue;
 use std::collections::{HashMap, HashSet};
 
 use super::{

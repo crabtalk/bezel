@@ -9,6 +9,7 @@ pub use model::PieModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::PieConfig;
 
 pub struct Pie;
 
@@ -32,5 +33,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Pie(model) = model else {
         unreachable!("pie renders a pie model")
     };
-    Ok(render::render_pie(model, config, ctx))
+    Ok(render::render_pie(model, &config.pie, ctx))
 }

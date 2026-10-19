@@ -9,6 +9,7 @@ pub use db::{KanbanModel, KanbanNode, KanbanSection};
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::KanbanConfig;
 
 pub struct Kanban;
 
@@ -32,5 +33,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Kanban(model) = model else {
         unreachable!("kanban renders a kanban model")
     };
-    Ok(render::render_kanban(model, config, ctx))
+    Ok(render::render_kanban(model, &config.kanban, ctx))
 }

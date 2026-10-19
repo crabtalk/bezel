@@ -1,5 +1,7 @@
 //! Pele's `diagrams/gantt/render.ts`.
 
+use super::GanttConfig;
+use crate::config::clamped;
 use crate::svg::builder::rewrite;
 use indexmap::IndexMap;
 use std::fmt::Write as _;
@@ -12,8 +14,7 @@ use super::{
 };
 use crate::Ctx;
 use crate::{
-    Config, Error, Link, Rendered,
-    config::Value,
+    Error, Link, Rendered,
     diagrams::common::fit_width::cap_width,
     js::{
         self, Lazy,
@@ -33,28 +34,6 @@ const MIN_PLOT: f64 = 240.0;
 const LABEL_GAP: f64 = 8.0;
 
 static RE_BREAK: Lazy = Lazy::new(r"<br\s*\/?>", "gi");
-
-fn gantt_value<'a>(config: &'a Config, key: &str) -> Option<&'a Value> {
-    config.section("gantt").and_then(|gantt| gantt.get(key))
-}
-
-fn setting(config: &Config, key: &str, min: f64, max: f64) -> Option<f64> {
-    match gantt_value(config, key) {
-        Some(Value::Number(value)) if value.is_finite() => Some(max.min(min.max(*value))),
-        _ => None,
-    }
-}
-
-fn text<'a>(config: &'a Config, key: &str) -> Option<&'a str> {
-    match gantt_value(config, key) {
-        Some(Value::String(value)) => Some(value),
-        _ => None,
-    }
-}
-
-fn flag(config: &Config, key: &str) -> bool {
-    matches!(gantt_value(config, key), Some(Value::Bool(true)))
-}
 
 /// A task label sits on one row, so only its first line is kept.
 fn one_line(raw: &str, measure: &impl Host, size: f64) -> Label {
@@ -155,7 +134,7 @@ fn accessible(model: &GanttDb) -> Accessible<'_> {
 
 pub fn render_gantt(
     model: &GanttDb,
-    config: &Config,
+    config: &GanttConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Result<Rendered, Error> {
     let size = ctx.options.font_size;
@@ -165,18 +144,18 @@ pub fn render_gantt(
     let p = crate::PREFIX;
 
     let label_size =
-        setting(config, "fontSize", 4.0, 72.0).unwrap_or_else(|| js::round(size * 0.8125));
-    let section_size = setting(config, "sectionFontSize", 4.0, 72.0).unwrap_or(label_size);
+        clamped(config.font_size, 4.0, 72.0).unwrap_or_else(|| js::round(size * 0.8125));
+    let section_size = clamped(config.section_font_size, 4.0, 72.0).unwrap_or(label_size);
     let tick_size = js::round(size * 0.75);
     let bar_height =
-        setting(config, "barHeight", 4.0, 400.0).unwrap_or_else(|| js::round(label_size * 1.85));
+        clamped(config.bar_height, 4.0, 400.0).unwrap_or_else(|| js::round(label_size * 1.85));
     let bar_gap =
-        setting(config, "barGap", 0.0, 400.0).unwrap_or_else(|| js::round(bar_height / 4.0));
+        clamped(config.bar_gap, 0.0, 400.0).unwrap_or_else(|| js::round(bar_height / 4.0));
     let row_height = bar_height + bar_gap;
     let section_styles =
-        js::round(setting(config, "numberSectionStyles", 1.0, 1000.0).unwrap_or(4.0));
+        js::round(clamped(config.number_section_styles, 1.0, 1000.0).unwrap_or(4.0));
     let compact = model.display_mode == "compact";
-    let top_axis = model.top_axis || flag(config, "topAxis");
+    let top_axis = model.top_axis || config.top_axis == Some(true);
 
     let mut db = model.clone();
     let zone = LocalZone::default();
@@ -278,7 +257,11 @@ pub fn render_gantt(
     } else if model.date_format == "D" {
         "%d".to_string()
     } else {
-        text(config, "axisFormat").unwrap_or("%Y-%m-%d").to_string()
+        config
+            .axis_format
+            .as_deref()
+            .unwrap_or("%Y-%m-%d")
+            .to_string()
     };
     let tick_label = |t: f64| time_format(&axis_format, zone.date(t));
     let sample_width = measure
@@ -286,7 +269,7 @@ pub fn render_gantt(
         .max(measure.width(&tick_label(stop), tick_size, 0));
 
     let left = pad
-        + setting(config, "leftPadding", 0.0, 2000.0).unwrap_or_else(|| {
+        + clamped(config.left_padding, 0.0, 2000.0).unwrap_or_else(|| {
             (if section_width > 0.0 {
                 section_width + 24.0
             } else {
@@ -294,11 +277,11 @@ pub fn render_gantt(
             })
             .max(sample_width / 2.0)
         });
-    let right_padding = setting(config, "rightPadding", 0.0, 2000.0)
-        .unwrap_or_else(|| 16f64.max(sample_width / 2.0));
+    let right_padding =
+        clamped(config.right_padding, 0.0, 2000.0).unwrap_or_else(|| 16f64.max(sample_width / 2.0));
     let target = cap_width(
         ctx,
-        setting(config, "useWidth", 100.0, 20000.0).unwrap_or(WIDTH),
+        clamped(config.use_width, 100.0, 20000.0).unwrap_or(WIDTH),
         280.0,
         0.0,
     );
@@ -318,8 +301,8 @@ pub fn render_gantt(
     };
 
     let tick_height = js::round(tick_size * 1.75);
-    let top_padding = setting(config, "topPadding", 0.0, 2000.0);
-    let grid_start = setting(config, "gridLineStartPadding", 0.0, 2000.0);
+    let top_padding = clamped(config.top_padding, 0.0, 2000.0);
+    let grid_start = clamped(config.grid_line_start_padding, 0.0, 2000.0);
     let head_height = pad + title_height + if top_axis { tick_height } else { 0.0 };
     let plot_top = head_height.max(top_padding.unwrap_or(0.0));
     // Mermaid starts its grid lines above the first row by the difference
@@ -391,12 +374,17 @@ pub fn render_gantt(
         .tick_interval
         .as_deref()
         .filter(|interval| !interval.is_empty())
-        .or_else(|| text(config, "tickInterval").filter(|interval| !interval.is_empty()))
+        .or_else(|| {
+            config
+                .tick_interval
+                .as_deref()
+                .filter(|interval| !interval.is_empty())
+        })
         .unwrap_or("");
     let weekday = model
         .weekday
         .as_deref()
-        .or_else(|| text(config, "weekday"))
+        .or(config.weekday.as_deref())
         .unwrap_or("sunday");
     let count = 2f64.max(10f64.min((plot_width / (sample_width + 24.0)).floor()));
     let ticks = interval_ticks(

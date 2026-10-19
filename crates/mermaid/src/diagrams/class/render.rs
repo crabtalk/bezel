@@ -1,5 +1,9 @@
 //! Pele's `diagrams/class/render.ts`.
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
+use crate::config::positive;
 use crate::svg::builder::rewrite;
 use std::{
     collections::HashMap,
@@ -17,8 +21,7 @@ use super::{
 };
 use crate::Ctx;
 use crate::{
-    Config, Link, Rendered,
-    config::{Map, Value},
+    Link, Rendered,
     diagrams::common::{
         fit_width::{runs_across, tighten, turn_to_fit},
         generics::parse_generic_types,
@@ -191,7 +194,28 @@ fn member_line(member: &ClassMember, measure: &impl Host, size: f64) -> Line {
     }
 }
 
-pub fn render_class(model: &ClassModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+/// Mermaid's `class` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ClassConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub hierarchical_namespaces: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub hide_empty_members_box: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_spacing: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub rank_spacing: Option<f64>,
+}
+
+pub fn render_class(
+    model: &ClassModel,
+    config: &ClassConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     let fitted = |down: bool| tighten(ctx, |tight| draw(model, config, ctx, down, tight));
     if runs_across(Some(&model.direction)) {
         turn_to_fit(ctx, fitted)
@@ -432,19 +456,15 @@ fn card(
 /// beside it.
 fn draw(
     model: &ClassModel,
-    config: &Config,
+    config: &ClassConfig,
     ctx: &Ctx<'_, impl Host>,
     turned: bool,
     tight: bool,
 ) -> Rendered {
     let p = crate::PREFIX;
-    let empty = Map::new();
-    let conf = config.section("class").unwrap_or(&empty);
-    let graph: ClassGraph = build_class_graph(
-        model,
-        conf.get("hierarchicalNamespaces") != Some(&Value::Bool(false)),
-    );
-    let hide_empty = conf.get("hideEmptyMembersBox") == Some(&Value::Bool(true));
+    let conf = config;
+    let graph: ClassGraph = build_class_graph(model, conf.hierarchical_namespaces != Some(false));
+    let hide_empty = conf.hide_empty_members_box == Some(true);
     let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let tiny = js::round(size * 0.8);
@@ -649,10 +669,10 @@ fn draw(
         &mut cedges,
         root_dir,
         &LayeredOptions {
-            node_sep: conf.number_option("nodeSpacing", NODE_SEP),
+            node_sep: positive(conf.node_spacing, NODE_SEP),
             edge_sep: EDGE_SEP,
-            rank_sep: conf.number_option(
-                "rankSpacing",
+            rank_sep: positive(
+                conf.rank_spacing,
                 if lettered { RANK_SEP + 16.0 } else { RANK_SEP },
             ),
             port_sep: 20.0,

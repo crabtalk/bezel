@@ -1,10 +1,14 @@
 //! Pele's `diagrams/quadrant/render.ts`.
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
 use super::db::{QuadrantModel, QuadrantText};
+use crate::config::capped;
 use crate::svg::builder::{EscText, LabelSvg};
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered,
-    config::Value,
+    Rendered,
     diagrams::common::fit_width::cap_width,
     js,
     svg::{
@@ -14,7 +18,6 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
-use crate::{Ctx, Host};
 use std::fmt::{self, Write as _};
 
 const GAP: f64 = 4.0;
@@ -27,17 +30,6 @@ struct Dot {
     text: Label,
 }
 
-fn setting<'c>(config: &'c Config, key: &str) -> Option<&'c Value> {
-    config.section("quadrantChart").and_then(|q| q.get(key))
-}
-
-fn length(config: &Config, key: &str, fallback: f64, max: f64) -> f64 {
-    match setting(config, key) {
-        Some(Value::Number(value)) if *value >= 0.0 => value.min(max),
-        _ => fallback,
-    }
-}
-
 fn hex(color: &str) -> impl fmt::Display + '_ {
     fragment(move |f| {
         if !color.starts_with('#') {
@@ -47,9 +39,40 @@ fn hex(color: &str) -> impl fmt::Display + '_ {
     })
 }
 
+/// Mermaid's `quadrantChart` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct QuadrantConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub chart_height: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub chart_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub point_radius: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub point_text_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub quadrant_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub quadrant_text_top_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub title_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub x_axis_label_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub y_axis_label_padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub x_axis_position: Option<String>,
+    #[serde_as(as = "DefaultOnError")]
+    pub y_axis_position: Option<String>,
+}
+
 pub fn render_quadrant(
     model: &QuadrantModel,
-    config: &Config,
+    config: &QuadrantConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Rendered {
     let p = crate::PREFIX;
@@ -57,18 +80,18 @@ pub fn render_quadrant(
     let axis_size = js::round(size * 0.875);
     let point_size = js::round(size * 0.75);
     let measure = ctx.host;
-    let natural = js::round(100f64.max(length(config, "chartWidth", 500.0, 4000.0)));
+    let natural = js::round(100f64.max(capped(config.chart_width, 500.0, 0.0, 4000.0)));
     let width = js::round(cap_width(ctx, natural, 280.0, 0.0));
     let height =
-        js::round((100f64.max(length(config, "chartHeight", 500.0, 4000.0)) * width) / natural);
-    let outer = length(
-        config,
-        "quadrantPadding",
+        js::round((100f64.max(capped(config.chart_height, 500.0, 0.0, 4000.0)) * width) / natural);
+    let outer = capped(
+        config.quadrant_padding,
         ctx.options.padding.unwrap_or(8.0),
+        0.0,
         200.0,
     );
-    let x_pad = length(config, "xAxisLabelPadding", 5.0, 200.0);
-    let y_pad = length(config, "yAxisLabelPadding", 5.0, 200.0);
+    let x_pad = capped(config.x_axis_label_padding, 5.0, 0.0, 200.0);
+    let y_pad = capped(config.y_axis_label_padding, 5.0, 0.0, 200.0);
     let has_points = !model.points.is_empty();
 
     let label = |text: Option<&QuadrantText>, font_size: f64, max: f64| -> Label {
@@ -90,7 +113,7 @@ pub fn render_quadrant(
         (width - 2.0 * outer).max(40.0),
         Style::BOLD,
     );
-    let title_pad = length(config, "titlePadding", 10.0, 200.0);
+    let title_pad = capped(config.title_padding, 10.0, 0.0, 200.0);
     let title_space = if title.height > 0.0 {
         title.height + title_pad
     } else {
@@ -102,9 +125,8 @@ pub fn render_quadrant(
     let has_y = filled(&model.y_axis_bottom) || filled(&model.y_axis_top);
     // Mermaid moves the x axis labels below the chart as soon as there are
     // points.
-    let x_below =
-        has_points || setting(config, "xAxisPosition").and_then(Value::as_str) == Some("bottom");
-    let y_right = setting(config, "yAxisPosition").and_then(Value::as_str) == Some("right");
+    let x_below = has_points || config.x_axis_position.as_deref() == Some("bottom");
+    let y_right = config.y_axis_position.as_deref() == Some("right");
 
     let side = width - 2.0 * outer;
     let x_left = label(
@@ -163,7 +185,7 @@ pub fn render_quadrant(
         true
     };
 
-    let text_top = length(config, "quadrantTextTopPadding", 5.0, 200.0);
+    let text_top = capped(config.quadrant_text_top_padding, 5.0, 0.0, 200.0);
     let mut quadrants = String::new();
     for k in 0..4 {
         let x = if k == 0 || k == 3 {
@@ -257,8 +279,8 @@ pub fn render_quadrant(
         turned(&y_top, top + h / 4.0);
     }
 
-    let radius = length(config, "pointRadius", 5.0, 200.0);
-    let text_pad = length(config, "pointTextPadding", 5.0, 200.0);
+    let radius = capped(config.point_radius, 5.0, 0.0, 200.0);
+    let text_pad = capped(config.point_text_padding, 5.0, 0.0, 200.0);
     let fill = series_color(0);
     let mut dots: Vec<Dot> = Vec::new();
     let mut circles = String::new();

@@ -13,6 +13,7 @@ pub mod types;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::UsecaseConfig;
 
 pub use types::UsecaseModel;
 
@@ -37,5 +38,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Usecase(model) = model else {
         unreachable!("usecase renders a usecase model")
     };
-    Ok(render::render_usecase(model, config, ctx))
+    Ok(render::render_usecase(model, &config.usecase, ctx))
 }

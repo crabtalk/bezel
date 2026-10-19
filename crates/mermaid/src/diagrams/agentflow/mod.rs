@@ -13,8 +13,9 @@ pub mod tokens;
 pub mod types;
 
 use super::{Diagram, Model};
-use crate::{Config, Error, ParseLimits, Rendered, config::Value};
+use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::AgentflowConfig;
 
 pub use db::{AgentflowDb, AgentflowDbOptions};
 
@@ -35,16 +36,11 @@ impl Diagram for Agentflow {
     ) -> Result<Model, Error> {
         // Mermaid reads this setting from the flowchart section for
         // agentflow too.
-        let inherit_dir = config
-            .section("flowchart")
-            .and_then(|flow| flow.get("inheritDir"))
-            == Some(&Value::Bool(true));
+        let flow = &config.flowchart;
+        let inherit_dir = flow.inherit_dir == Some(true);
         let mut db = AgentflowDb::new(AgentflowDbOptions {
             inherit_dir,
-            direction: config
-                .get("direction")
-                .and_then(Value::as_str)
-                .map(str::to_string),
+            direction: config.direction.clone(),
             line_offset,
             max_edges: Some(limits.max_edges),
         });
@@ -52,7 +48,7 @@ impl Diagram for Agentflow {
             db.title = Some(title.to_string());
         }
         parser::parse_agentflow(source, &mut db, false)?;
-        db.graph = render::agent_graph(&mut db, config);
+        db.graph = render::agent_graph(&mut db, flow);
         Ok(Model::Agentflow(Box::new(db)))
     }
 }
@@ -61,5 +57,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Agentflow(db) = model else {
         unreachable!("agentflow renders an agentflow model")
     };
-    Ok(render::render_agentflow(db, config, ctx))
+    Ok(render::render_agentflow(db, &config.agentflow, ctx))
 }

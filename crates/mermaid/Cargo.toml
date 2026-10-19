@@ -20,6 +20,9 @@ workspace = true
 
 [dependencies]
 serde.workspace = true
+# Mermaid's config and models are JSON objects in insertion order.
+serde_json = { workspace = true, features = ["preserve_order"] }
+serde_with.workspace = true
 indexmap = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 memchr.workspace = true
@@ -29,8 +32,6 @@ memchr.workspace = true
 chrono = { workspace = true, features = ["wasmbind"] }
 
 [dev-dependencies]
-# Mermaid's models are JSON objects in insertion order.
-serde_json = { workspace = true, features = ["preserve_order"] }
 # The parser gpui paints SVG with.
 usvg.workspace = true
 

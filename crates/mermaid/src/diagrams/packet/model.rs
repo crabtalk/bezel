@@ -1,10 +1,12 @@
 //! Pele's `diagrams/packet/model.ts`.
 
+use super::PacketConfig;
+use crate::config::capped;
 use serde::Serialize;
 
 use super::parser::PacketAst;
 use crate::{
-    Config, Error, Kind, Value,
+    Error, Kind,
     js::{self, Lazy},
 };
 
@@ -42,23 +44,16 @@ pub struct PacketModel {
     pub rows: Vec<Vec<PacketBlock>>,
 }
 
-pub fn packet_option(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    match config.section("packet").and_then(|packet| packet.get(key)) {
-        Some(Value::Number(value)) if *value >= min => value.min(max),
-        _ => fallback,
-    }
-}
-
 fn invalid(message: String) -> Error {
     Error::semantic(message).of(Kind::Packet)
 }
 
 pub fn build_packet(
     ast: PacketAst,
-    config: &Config,
+    config: &PacketConfig,
     title: Option<&str>,
 ) -> Result<PacketModel, Error> {
-    let bits_per_row = packet_option(config, "bitsPerRow", 32.0, 1.0, 4096.0).floor();
+    let bits_per_row = capped(config.bits_per_row, 32.0, 1.0, 4096.0).floor();
     let mut rows: Vec<Vec<PacketBlock>> = Vec::new();
     let mut last_bit = -1.0;
     let mut word: Vec<PacketBlock> = Vec::new();

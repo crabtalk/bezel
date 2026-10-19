@@ -11,6 +11,7 @@ pub use model::CynefinModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::CynefinConfig;
 
 pub struct Cynefin;
 
@@ -34,5 +35,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Cynefin(model) = model else {
         unreachable!("cynefin renders a cynefin model")
     };
-    Ok(render::render_cynefin(model, config, ctx))
+    Ok(render::render_cynefin(model, &config.cynefin, ctx))
 }

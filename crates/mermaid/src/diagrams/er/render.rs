@@ -2,6 +2,7 @@
 
 use crate::svg::builder::rewrite;
 use crate::svg::builder::{Esc, EscText, LabelSvg, Point, fragment, icon_element};
+use crate::{Config, config::positive};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -14,8 +15,9 @@ use super::{
     graph::{ErGraphEdge, ErGraphNode, build_er_graph},
     markers::{MARKER_LENGTH, er_marker},
 };
+use crate::{Ctx, Host};
 use crate::{
-    Config, Link, Rendered,
+    Link, Rendered,
     diagrams::common::{
         fit_width::{runs_across, turn_to_fit},
         generics::parse_generic_types,
@@ -35,7 +37,6 @@ use crate::{
     text::{Label, Style, decode_entities, layout_label},
     util::url::NoteLink,
 };
-use crate::{Ctx, Host};
 
 const NODE_SEP: f64 = 48.0;
 const EDGE_SEP: f64 = 20.0;
@@ -468,9 +469,9 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         &mut cedges,
         root_dir,
         &LayeredOptions {
-            node_sep: config.number_option("nodeSpacing", NODE_SEP),
+            node_sep: positive(config.node_spacing, NODE_SEP),
             edge_sep: EDGE_SEP,
-            rank_sep: config.number_option("rankSpacing", RANK_SEP),
+            rank_sep: positive(config.rank_spacing, RANK_SEP),
             port_sep: 24.0,
             ..LayeredOptions::default()
         },

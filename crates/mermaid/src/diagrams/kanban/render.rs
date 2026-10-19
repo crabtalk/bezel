@@ -1,11 +1,13 @@
 //! Pele's `diagrams/kanban/render.ts`.
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
 use super::db::{KanbanModel, KanbanNode};
 use crate::Ctx;
 use crate::svg::builder::{Esc, EscText};
 use crate::{
-    Config, Link, Rendered,
-    config::Value,
+    Link, Rendered,
     diagrams::common::{fit_width::title_room, icon::icon_svg},
     js,
     svg::{
@@ -175,7 +177,24 @@ fn has(name: Option<&str>, host: &impl Host) -> bool {
     name.is_some_and(|name| !name.is_empty() && !icon_markup(host, name).is_empty())
 }
 
-pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+/// Mermaid's `kanban` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct KanbanConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub section_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub ticket_base_url: Option<String>,
+}
+
+pub fn render_kanban(
+    model: &KanbanModel,
+    conf: &KanbanConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     let size = ctx.options.font_size;
     let small = js::round(size * 0.875);
     let line = js::round(size * 1.5);
@@ -183,9 +202,8 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Ho
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
     let p = crate::PREFIX;
-    let conf = config.section("kanban");
-    let own_width = match conf.and_then(|conf| conf.get("sectionWidth")) {
-        Some(Value::Number(width)) if *width > 0.0 => width.clamp(80.0, 2000.0),
+    let own_width = match conf.section_width {
+        Some(width) if width > 0.0 => width.clamp(80.0, 2000.0),
         _ => 200.0,
     };
     // A board wider than the width the host has is folded into rows of
@@ -208,10 +226,7 @@ pub fn render_kanban(model: &KanbanModel, config: &Config, ctx: &Ctx<'_, impl Ho
             .min(room)
             .max((((room + COLUMN_GAP) / per_row as f64).floor() - COLUMN_GAP).min(own_width * 2.0))
     };
-    let base_url = match conf.and_then(|conf| conf.get("ticketBaseUrl")) {
-        Some(Value::String(url)) => url.as_str(),
-        _ => "",
-    };
+    let base_url = conf.ticket_base_url.as_deref().unwrap_or("");
     let card_width = column_width - 2.0 * COLUMN_PAD;
     let text_width = card_width - 2.0 * CARD_PAD;
     let glyph = small * 1.25;

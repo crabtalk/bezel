@@ -1,6 +1,9 @@
 //! Pele's `diagrams/cynefin/render.ts`.
 
+use crate::config::within;
 use crate::svg::builder::{EscText, LabelSvg};
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -10,10 +13,9 @@ use super::{
     },
     model::CynefinModel,
 };
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered,
-    config::Value,
-    js,
+    Rendered, js,
     svg::{
         builder::{Point, TITLE, fragment, num},
         edges::{marker, marker_trim},
@@ -22,7 +24,6 @@ use crate::{
     },
     text::{Label, Style, layout_label},
 };
-use crate::{Ctx, Host};
 
 /// [domain, column, row, series color]
 const QUADRANTS: [(&str, f64, f64, i64); 4] = [
@@ -73,30 +74,40 @@ struct Block {
     cy: f64,
 }
 
-fn setting(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    match config
-        .section("cynefin")
-        .and_then(|section| section.get(key))
-    {
-        Some(Value::Number(value)) if *value >= min && *value <= max => *value,
-        _ => fallback,
-    }
+/// Mermaid's `cynefin` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CynefinConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_domain_descriptions: Option<bool>,
+    #[serde_as(as = "DefaultOnError")]
+    pub boundary_amplitude: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub seed: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub height: Option<f64>,
 }
 
-pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+pub fn render_cynefin(
+    model: &CynefinModel,
+    config: &CynefinConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     let p = crate::PREFIX;
     let size = ctx.options.font_size;
     let small = js::round(size * 0.8125);
     let item_size = js::round(size * 0.875);
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
-    let show_descriptions = config
-        .section("cynefin")
-        .and_then(|section| section.get("showDomainDescriptions"))
-        != Some(&Value::Bool(false));
-    let amplitude = setting(config, "boundaryAmplitude", 8.0, 0.0, 50.0);
+    let show_descriptions = config.show_domain_descriptions != Some(false);
+    let amplitude = within(config.boundary_amplitude, 8.0, 0.0, 50.0);
     let seed = resolve_seed(
-        setting(config, "seed", 0.0, -1e15, 1e15),
+        within(config.seed, 0.0, -1e15, 1e15),
         ctx.options.id_prefix.as_str(),
     );
     let item_line = js::round(item_size * 1.5);
@@ -177,8 +188,8 @@ pub fn render_cynefin(model: &CynefinModel, config: &Config, ctx: &Ctx<'_, impl 
     let rx = 88f64.max(blocks[CONFUSION].w * 0.71 + 8.0);
     let ry = 64f64.max(blocks[CONFUSION].h * 0.71 + 6.0);
 
-    let mut quad_w = setting(config, "width", 640.0, 100.0, 10000.0) / 2.0;
-    let mut quad_h = setting(config, "height", 440.0, 100.0, 10000.0) / 2.0;
+    let mut quad_w = within(config.width, 640.0, 100.0, 10000.0) / 2.0;
+    let mut quad_h = within(config.height, 440.0, 100.0, 10000.0) / 2.0;
     for b in &blocks[..CONFUSION] {
         quad_w = quad_w.max(b.w + 2.0 * MARGIN);
         quad_h = quad_h.max(b.h + 2.0 * MARGIN);

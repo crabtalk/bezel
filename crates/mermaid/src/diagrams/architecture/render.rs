@@ -1,6 +1,9 @@
 //! Pele's `diagrams/architecture/render.ts`.
 
+use crate::config::clamped;
 use crate::svg::builder::{EscText, LabelSvg, TITLE, fragment, icon_element};
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -13,8 +16,7 @@ use super::{
 };
 use crate::Ctx;
 use crate::{
-    Config, Rendered,
-    config::Value,
+    Rendered,
     diagrams::common::fit_width::{tighten, title_room},
     js,
     svg::{
@@ -32,16 +34,6 @@ const LABEL_GAP: f64 = 4.0;
 const DOT: f64 = 3.0;
 const DX: [f64; 4] = [-1.0, 1.0, 0.0, 0.0];
 const DY: [f64; 4] = [0.0, 0.0, -1.0, 1.0];
-
-fn setting(config: &Config, key: &str, fallback: f64, min: f64, max: f64) -> f64 {
-    match config
-        .section("architecture")
-        .and_then(|section| section.get(key))
-    {
-        Some(Value::Number(value)) if value.is_finite() => max.min(min.max(*value)),
-        _ => fallback,
-    }
-}
 
 /// Maps the grid lines in use to consecutive indexes, so empty rows and
 /// columns take no room.
@@ -329,9 +321,24 @@ fn path_data(out: &mut String, p: &[f64], start_trim: f64, end_trim: f64) {
     let _ = write!(d, "L{},{}", num(xs[n - 1]), num(ys[n - 1]));
 }
 
+/// Mermaid's `architecture` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ArchitectureConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub font_size: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub icon_size: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub padding: Option<f64>,
+}
+
 pub fn render_architecture(
     model: &ArchitectureModel,
-    config: &Config,
+    config: &ArchitectureConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Rendered {
     tighten(ctx, |tight| draw(model, config, ctx, tight))
@@ -339,15 +346,16 @@ pub fn render_architecture(
 
 fn draw(
     model: &ArchitectureModel,
-    config: &Config,
+    config: &ArchitectureConfig,
     ctx: &Ctx<'_, impl Host>,
     tight: bool,
 ) -> Rendered {
     let p = crate::PREFIX;
-    let icon_size = setting(config, "iconSize", 48.0, 8.0, 512.0);
-    let size = setting(config, "fontSize", ctx.options.font_size, 4.0, 128.0);
-    let group_pad =
-        setting(config, "padding", 20.0, 0.0, 256.0).min(if tight { 12.0 } else { f64::INFINITY });
+    let icon_size = clamped(config.icon_size, 8.0, 512.0).unwrap_or(48.0);
+    let size = clamped(config.font_size, 4.0, 128.0).unwrap_or(ctx.options.font_size);
+    let group_pad = clamped(config.padding, 0.0, 256.0)
+        .unwrap_or(20.0)
+        .min(if tight { 12.0 } else { f64::INFINITY });
     let small = js::round(size * 0.875);
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);

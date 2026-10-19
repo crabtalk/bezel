@@ -1,5 +1,6 @@
 //! Pele's `diagrams/venn/render.ts`.
 
+use crate::js::JsValue;
 use crate::svg::builder::EscText;
 use indexmap::{IndexMap, IndexSet};
 use std::fmt::Write as _;
@@ -49,7 +50,7 @@ fn key_of(ids: &[String]) -> String {
     if ids.len() == 1 {
         ids[0].clone()
     } else {
-        Value::List(ids.iter().cloned().map(Value::String).collect()).to_json()
+        Value::Array(ids.iter().cloned().map(Value::String).collect()).to_json()
     }
 }
 

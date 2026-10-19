@@ -9,6 +9,7 @@ pub use model::RadarModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::RadarConfig;
 
 pub struct Radar;
 
@@ -32,5 +33,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Radar(model) = model else {
         unreachable!("radar renders a radar model")
     };
-    Ok(render::render_radar(model, config, ctx))
+    Ok(render::render_radar(model, &config.radar, ctx))
 }

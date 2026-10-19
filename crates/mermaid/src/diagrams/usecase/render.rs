@@ -1,5 +1,9 @@
 //! Pele's `diagrams/usecase/render.ts`.
 
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
+
+use crate::config::positive;
 use crate::svg::builder::rewrite;
 use std::{
     borrow::Cow,
@@ -16,7 +20,7 @@ use super::{
 use crate::Ctx;
 use crate::diagrams::common::icon::icon_svg;
 use crate::{
-    Config, Rendered,
+    Rendered,
     diagrams::common::fit_width::{runs_across, turn_to_fit},
     js::{self, Lazy},
     layout::{
@@ -78,10 +82,17 @@ struct View<'g> {
     loops: usize,
 }
 
-fn number_option(config: &Config, key: &str, fallback: f64) -> f64 {
-    config
-        .section("usecase")
-        .map_or(fallback, |section| section.number_option(key, fallback))
+/// Mermaid's `usecase` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct UsecaseConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub node_spacing: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub rank_spacing: Option<f64>,
 }
 
 /// A plain label is shown as written: no tags, no markdown, no `\n` breaks.
@@ -311,7 +322,11 @@ fn figure(out: &mut String, view: &View, host: &impl Host) {
     }
 }
 
-pub fn render_usecase(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+pub fn render_usecase(
+    model: &UsecaseModel,
+    config: &UsecaseConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     if !runs_across(Some(model.direction.name())) {
         return draw(model, config, ctx, false);
     }
@@ -357,7 +372,12 @@ fn title_x(c: &CNode, width: f64, crossings: &Crossings) -> f64 {
 }
 
 /// `turned` draws a diagram that runs across as one that runs down.
-fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -> Rendered {
+fn draw(
+    model: &UsecaseModel,
+    config: &UsecaseConfig,
+    ctx: &Ctx<'_, impl Host>,
+    turned: bool,
+) -> Rendered {
     let p = crate::PREFIX;
     let graph = model.graph();
     let size = ctx.options.font_size;
@@ -598,9 +618,9 @@ fn draw(model: &UsecaseModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned:
         &mut cedges,
         root_dir,
         &LayeredOptions {
-            node_sep: number_option(config, "nodeSpacing", NODE_SEP),
+            node_sep: positive(config.node_spacing, NODE_SEP),
             edge_sep: EDGE_SEP,
-            rank_sep: number_option(config, "rankSpacing", RANK_SEP),
+            rank_sep: positive(config.rank_spacing, RANK_SEP),
             port_sep: 20.0,
             ..LayeredOptions::default()
         },

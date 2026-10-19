@@ -6,6 +6,7 @@ use super::{
     config::{Map, Value},
     js::{self, Lazy},
 };
+use crate::js::JsValue;
 
 const MAX_DEPTH: usize = 64;
 
@@ -163,7 +164,7 @@ fn scalar(raw: &str) -> Value {
         _ => {}
     }
     if RE_INT.test(s) || RE_FLOAT.test(s) {
-        return Value::Number(js::number(s));
+        return js::number_value(js::number(s));
     }
     if RE_HEX.test(s) || RE_OCT.test(s) || RE_BIN.test(s) {
         let neg = s.starts_with('-');
@@ -172,17 +173,17 @@ fn scalar(raw: &str) -> Value {
         } else {
             s
         });
-        return Value::Number(if neg { -v } else { v });
+        return js::number_value(if neg { -v } else { v });
     }
     if RE_INF.test(s) {
-        return Value::Number(if s.starts_with('-') {
+        return js::number_value(if s.starts_with('-') {
             f64::NEG_INFINITY
         } else {
             f64::INFINITY
         });
     }
     if RE_NAN.test(s) {
-        return Value::Number(f64::NAN);
+        return js::number_value(f64::NAN);
     }
     Value::String(s.to_string())
 }
@@ -347,7 +348,7 @@ fn flow(s: &str, pos: usize, stops: &str, depth: usize) -> Result<(Value, usize)
                 ));
             }
             if bytes[pos] == b'}' {
-                return Ok((Value::Map(out), pos + 1));
+                return Ok((Value::Object(out), pos + 1));
             }
             entry_start(bytes[pos], separated)?;
             let (key, after) = flow(s, pos, ":,}", depth + 1)?;
@@ -378,7 +379,7 @@ fn flow(s: &str, pos: usize, stops: &str, depth: usize) -> Result<(Value, usize)
                 ));
             }
             if bytes[pos] == b']' {
-                return Ok((Value::List(out), pos + 1));
+                return Ok((Value::Array(out), pos + 1));
             }
             entry_start(bytes[pos], separated)?;
             let (value, after) = flow(s, pos, ",]", depth + 1)?;
@@ -659,7 +660,7 @@ fn block(r: &mut Reader, min_indent: usize, depth: usize) -> Result<Value> {
                 out.push(inline_value(r, js::trim(rest), indent as isize)?);
             }
         }
-        return Ok(Value::List(out));
+        return Ok(Value::Array(out));
     }
 
     if split_key(&line).is_none() {
@@ -707,7 +708,7 @@ fn block(r: &mut Reader, min_indent: usize, depth: usize) -> Result<Value> {
             out.insert(key, value);
         }
     }
-    Ok(Value::Map(out))
+    Ok(Value::Object(out))
 }
 
 pub fn parse_yaml(src: &str) -> std::result::Result<Value, YamlError> {

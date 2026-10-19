@@ -1,5 +1,6 @@
 //! What the flowchart parser builds. Pele's `diagrams/flowchart/db.ts`.
 
+use crate::js::JsValue;
 use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
@@ -205,7 +206,7 @@ impl FlowDb {
                 ))
                 .of(Kind::Flowchart)
             })?;
-            if let Value::Map(map) = parsed {
+            if let Value::Object(map) = parsed {
                 doc = Some(map);
             }
         }
@@ -216,7 +217,7 @@ impl FlowDb {
             let subgraph = &mut self.subgraphs[at];
             let mut merged = subgraph.metadata.take().unwrap_or_default();
             for (key, value) in doc.iter() {
-                merged.insert(key, value.clone());
+                merged.insert(key.clone(), value.clone());
             }
             subgraph.metadata = Some(merged);
             return Ok(());

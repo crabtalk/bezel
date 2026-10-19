@@ -3,9 +3,14 @@
 use crate::svg::builder::Esc;
 use std::{collections::HashMap, fmt::Write as _};
 
-use super::model::{PacketBlock, PacketModel, packet_option};
+use super::{
+    PacketConfig,
+    model::{PacketBlock, PacketModel},
+};
+use crate::config::capped;
+use crate::{Ctx, Host};
 use crate::{
-    Config, Rendered, Value,
+    Rendered,
     diagrams::common::{
         fit_text::fit_text,
         fit_width::{title_room, turn_to_fit},
@@ -19,13 +24,21 @@ use crate::{
     },
     text::{Label, Style, decode_entities, layout_label},
 };
-use crate::{Ctx, Host};
 
-pub fn render_packet(model: &PacketModel, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+pub fn render_packet(
+    model: &PacketModel,
+    config: &PacketConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     turn_to_fit(ctx, |down| draw(model, config, ctx, down))
 }
 
-fn draw(model: &PacketModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
+fn draw(
+    model: &PacketModel,
+    config: &PacketConfig,
+    ctx: &Ctx<'_, impl Host>,
+    down: bool,
+) -> Rendered {
     let p = crate::PREFIX;
     let size = ctx.options.font_size;
     let label_size = js::round(size * 0.875);
@@ -33,16 +46,12 @@ fn draw(model: &PacketModel, config: &Config, ctx: &Ctx<'_, impl Host>, down: bo
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
 
-    let packet = config.section("packet");
-    let row_height = packet_option(config, "rowHeight", 32.0, 1.0, 400.0);
-    let mut bit_width = packet_option(config, "bitWidth", 32.0, 1.0, 400.0);
-    let padding_x = packet_option(config, "paddingX", 5.0, 0.0, 400.0);
-    let padding_y = packet_option(config, "paddingY", 5.0, 0.0, 400.0);
-    let show_bits = packet.and_then(|packet| packet.get("showBits")) != Some(&Value::Bool(false));
-    let descending = packet
-        .and_then(|packet| packet.get("bitOrder"))
-        .and_then(Value::as_str)
-        == Some("descending");
+    let row_height = capped(config.row_height, 32.0, 1.0, 400.0);
+    let mut bit_width = capped(config.bit_width, 32.0, 1.0, 400.0);
+    let padding_x = capped(config.padding_x, 5.0, 0.0, 400.0);
+    let padding_y = capped(config.padding_y, 5.0, 0.0, 400.0);
+    let show_bits = config.show_bits != Some(false);
+    let descending = config.bit_order.as_deref() == Some("descending");
     let mut bits_per_row = model.bits_per_row;
     let mut rows: Vec<Vec<PacketBlock>> = model.rows.clone();
     if down {

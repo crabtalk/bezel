@@ -10,6 +10,7 @@ pub use db::{MindmapModel, MindmapNode};
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::MindmapConfig;
 
 pub struct Mindmap;
 
@@ -32,5 +33,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::Mindmap(model) = model else {
         unreachable!("mindmap renders a mindmap model")
     };
-    Ok(render::render_mindmap(model, config, ctx))
+    Ok(render::render_mindmap(model, &config.mindmap, ctx))
 }

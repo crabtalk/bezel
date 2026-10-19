@@ -1,5 +1,8 @@
 //! Pele's `diagrams/railroad/render.ts`.
 
+use crate::config::capped;
+use serde::Deserialize;
+use serde_with::{DefaultOnError, serde_as};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -9,7 +12,7 @@ use super::{
 };
 use crate::Ctx;
 use crate::{
-    Config, Rendered, Value,
+    Rendered,
     diagrams::common::fit_width::{tighten, title_room},
     js,
     svg::{
@@ -79,16 +82,6 @@ struct Metrics<'a, H> {
     gap: f64,
     sep: f64,
     arc: f64,
-}
-
-fn option(config: &Config, key: &str, fallback: f64, max: f64) -> f64 {
-    match config
-        .section("railroad")
-        .and_then(|section| section.get(key))
-    {
-        Some(Value::Number(value)) if *value >= 0.0 => value.min(max),
-        _ => fallback,
-    }
 }
 
 /// Text is literal here: a terminal such as "<br>" or "*" is itself, not
@@ -360,7 +353,36 @@ fn measure(
     )
 }
 
-pub fn render_railroad(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>) -> Rendered {
+/// Mermaid's `railroad` config.
+#[serde_as]
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RailroadConfig {
+    #[serde(flatten)]
+    pub base: crate::config::BaseConfig,
+    #[serde_as(as = "DefaultOnError")]
+    pub arc_radius: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub font_size: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub horizontal_separation: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub marker_radius: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub padding: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub stroke_width: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub vertical_separation: Option<f64>,
+    #[serde_as(as = "DefaultOnError")]
+    pub show_markers: Option<bool>,
+}
+
+pub fn render_railroad(
+    model: &RailroadDb,
+    config: &RailroadConfig,
+    ctx: &Ctx<'_, impl Host>,
+) -> Rendered {
     tighten(ctx, |tight| draw(model, config, ctx, tight))
 }
 
@@ -636,9 +658,14 @@ impl<H: Host> Drawn<'_, H> {
     }
 }
 
-fn draw(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bool) -> Rendered {
+fn draw(
+    model: &RailroadDb,
+    config: &RailroadConfig,
+    ctx: &Ctx<'_, impl Host>,
+    tight: bool,
+) -> Rendered {
     let base = ctx.options.font_size;
-    let font_size = option(config, "fontSize", 0.0, 200.0);
+    let font_size = capped(config.font_size, 0.0, 0.0, 200.0);
     let size = if js::truthy(font_size) {
         font_size
     } else {
@@ -649,7 +676,7 @@ fn draw(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
     } else {
         base
     };
-    let padding = option(config, "padding", -1.0, 200.0);
+    let padding = capped(config.padding, -1.0, 0.0, 200.0);
     let line_height = js::round(size * 1.5);
     let measurer = ctx.host;
     let m = Metrics {
@@ -657,23 +684,24 @@ fn draw(model: &RailroadDb, config: &Config, ctx: &Ctx<'_, impl Host>, tight: bo
         size,
         padding: if padding < 0.0 { 12.0 } else { padding },
         height: even(line_height + if padding < 0.0 { 9.0 } else { 2.0 * padding }),
-        gap: option(config, "horizontalSeparation", 16.0, 500.0).min(if tight {
+        gap: capped(config.horizontal_separation, 16.0, 0.0, 500.0).min(if tight {
             12.0
         } else {
             f64::INFINITY
         }),
-        sep: option(config, "verticalSeparation", 10.0, 500.0),
-        arc: option(config, "arcRadius", 10.0, 200.0).min(if tight { 6.0 } else { f64::INFINITY }),
+        sep: capped(config.vertical_separation, 10.0, 0.0, 500.0),
+        arc: capped(config.arc_radius, 10.0, 0.0, 200.0).min(if tight {
+            6.0
+        } else {
+            f64::INFINITY
+        }),
     };
-    let show_markers = config
-        .section("railroad")
-        .and_then(|section| section.get("showMarkers"));
-    let radius = if show_markers == Some(&Value::Bool(false)) {
+    let radius = if config.show_markers == Some(false) {
         0.0
     } else {
-        option(config, "markerRadius", 4.0, 50.0)
+        capped(config.marker_radius, 4.0, 0.0, 50.0)
     };
-    let stroke_width = option(config, "strokeWidth", 0.0, 20.0);
+    let stroke_width = capped(config.stroke_width, 0.0, 0.0, 20.0);
     let stroke = if stroke_width > 0.0 {
         format!(" stroke-width=\"{}\"", num(stroke_width))
     } else {

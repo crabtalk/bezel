@@ -12,14 +12,11 @@ pub use db::XyChartModel;
 use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
+pub use render::XyChartConfig;
 
 pub struct XyChart;
 
 impl Diagram for XyChart {
-    fn section(&self) -> Option<&'static str> {
-        Some("xyChart")
-    }
-
     fn parse(
         &self,
         source: &str,
@@ -41,5 +38,5 @@ pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Resul
     let Model::XyChart(model) = model else {
         unreachable!("xychart renders an xychart model")
     };
-    render::render_xy_chart(model, config, ctx)
+    render::render_xy_chart(model, &config.xy_chart, ctx)
 }
