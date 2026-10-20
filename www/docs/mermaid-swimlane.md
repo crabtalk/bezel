@@ -1,6 +1,7 @@
 ---
 title: Swimlane
 description: A flowchart whose subgraphs are lanes, one per party.
+prompt: Draw our order process as a swimlane diagram with a lane each for customer, warehouse and finance.
 ---
 
 ```mermaid

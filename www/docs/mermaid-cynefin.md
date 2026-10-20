@@ -1,6 +1,7 @@
 ---
 title: Cynefin
 description: Items sorted into the Cynefin framework's domains.
+prompt: Sort our incident response actions into a Cynefin diagram by domain.
 ---
 
 ```mermaid

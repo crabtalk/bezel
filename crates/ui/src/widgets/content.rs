@@ -41,7 +41,8 @@ pub trait Content: ThemeExt {
     }
 
     /// Circular avatar holding one or two initials — the fallback every avatar
-    /// needs, and often the whole thing on a monochrome surface.
+    /// needs, and often the whole thing on a monochrome surface. Initials only:
+    /// there is no image variant.
     fn avatar(&self, initials: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         div()

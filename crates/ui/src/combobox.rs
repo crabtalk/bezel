@@ -67,6 +67,10 @@ pub enum ComboboxEvent {
     Selected(usize),
 }
 
+/// A select you can type into. Enter or an arrow opens a focused, closed box;
+/// escape closes it without changing the value and returns focus to the
+/// trigger. The menu shows twelve rows and scrolls past that, and a new query
+/// returns it to the top.
 pub struct Combobox {
     search: SearchList,
     menu: popover::Popup<()>,

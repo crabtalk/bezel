@@ -1,6 +1,7 @@
 ---
 title: Venn
 description: Sets and the unions where they overlap.
+prompt: Draw a Venn diagram of desirable, feasible and viable features and where they overlap.
 ---
 
 ```mermaid

@@ -1,28 +1,16 @@
 ---
 title: Toggle
 description: An 18×32 switch whose knob slides and whose track fills with the text tone when on — state stays with the row that owns it.
+prompt: Add a switch to the settings row that turns notifications on and off.
 ---
 
 ```rust
-use ui::widgets::Controls;
+use ui::{focus, widgets::Controls};
 
-theme.toggle(self.enabled)
-```
-
-Display-only, like the rest of `widgets`: the caller adds `.id(..)` and `.on_click(..)`, and holds the bool.
-
-## Keyboard
-
-```rust
 focus::focusable(&theme, &self.switch, theme.toggle(self.enabled))
+    .id("notifications")
+    .on_click(cx.listener(|view, _, _, cx| view.flip(cx)))
+    .on_action(cx.listener(|view, _: &focus::Activate, _, cx| view.flip(cx)))
 ```
 
-## API
-
-```rust
-pub trait Controls: ThemeExt {
-    fn toggle(&self, on: bool) -> Div;
-
-    // ...
-}
-```
+- Display-only: the caller holds the bool and wires the click and `focus::Activate`.

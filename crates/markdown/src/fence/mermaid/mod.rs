@@ -5,9 +5,10 @@
 //! so each source is drawn once per text size, theme and font and kept, and
 //! rasterized again only when its scale on screen changes. Drawing and
 //! parsing run on gpui's background executor, each fence's on its own; until
-//! they finish the fence stands empty at its stated height, or at the height
-//! its last drawing had. The SVG names the theme's colours, and its labels are
-//! measured and drawn in [`ui::fonts`] ([`fonts`]).
+//! they finish the fence shows the diagram it last drew, or stands empty at
+//! its stated height. The SVG names the theme's colours, and its labels are
+//! measured and drawn in [`ui::fonts`] ([`fonts`]). Source that does not draw
+//! shows as code, with the error under it.
 //!
 //! A press on the diagram pans it and does not reach the editor; the band
 //! above it does, which is how the source is reached for editing.
@@ -293,38 +294,48 @@ pub(crate) fn render(
 ) -> Result<AnyElement, SharedString> {
     let size = TextStyle::Callout.painted();
     let theme = Theme::of(cx).clone();
-    let (key, diagram) = drawn(code, size, &theme, window, cx);
-    // The height of the diagram this fence last showed, for the box to keep
-    // while the next is drawn.
+    let (key, drawing) = drawn(code, size, &theme, window, cx);
+    // The diagram this fence last showed and its view's id, shown while the
+    // next is drawn.
     let last = window.use_keyed_state(
         ElementId::from(SharedString::from(format!("mermaid-last-{block}"))),
         cx,
-        |_, _| None::<f32>,
+        |_, _| None::<(String, Rc<Diagram>)>,
     );
-    let Some(diagram) = diagram else {
-        let stands = last.read(cx).filter(|_| height.is_none());
-        return Ok(fence_panel(&theme)
-            .when_some(height, |el, height| el.h(px(height as f32)))
-            .child(
-                fence_band(&theme)
-                    .flex_none()
-                    .text_color(theme.text_muted)
-                    .child(LANGUAGE),
-            )
-            .when_some(stands, |el, stands| el.child(div().h(px(stands))))
-            .into_any_element());
+    let (id, diagram) = match drawing {
+        Some(drawing) => {
+            let diagram = drawing?;
+            // The view outlives a change of theme or font; the drawing does not.
+            let mut hasher = DefaultHasher::new();
+            (code, size.to_bits()).hash(&mut hasher);
+            let id = format!("mermaid-{:x}", hasher.finish());
+            if !last
+                .read(cx)
+                .as_ref()
+                .is_some_and(|(_, shown)| Rc::ptr_eq(shown, &diagram))
+            {
+                last.update(cx, |last, _| *last = Some((id.clone(), diagram.clone())));
+            }
+            (id, diagram)
+        }
+        None => match last.read(cx).clone() {
+            Some(shown) => shown,
+            None => {
+                return Ok(fence_panel(&theme)
+                    .when_some(height, |el, height| el.h(px(height as f32)))
+                    .child(
+                        fence_band(&theme)
+                            .flex_none()
+                            .text_color(theme.text_muted)
+                            .child(LANGUAGE),
+                    )
+                    .into_any_element());
+            }
+        },
     };
-    let diagram = diagram?;
     // The box keeps the unzoomed diagram's height, so zooming moves what is in
     // it rather than the page under it.
     let natural = diagram.natural;
-    if height.is_none() && *last.read(cx) != Some(natural.1.min(MAX_HEIGHT)) {
-        last.update(cx, |last, _| *last = Some(natural.1.min(MAX_HEIGHT)));
-    }
-    // The view outlives a change of theme or font; the drawing does not.
-    let mut hasher = DefaultHasher::new();
-    (code, size.to_bits()).hash(&mut hasher);
-    let id = format!("mermaid-{:x}", hasher.finish());
     let state = window.use_keyed_state(
         ElementId::from(SharedString::from(id.clone())),
         cx,

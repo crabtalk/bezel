@@ -169,10 +169,14 @@ impl Vibrancy {
 /// [`crate::AppExt::set_palette`](crate::AppExt::set_palette) rather than competing with it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Brand {
-    /// The hue every grey in the palette carries.
+    /// The hue every grey in the palette carries. Opaque grey tokens take it;
+    /// a token that carries a hue of its own keeps it, and translucent ink is
+    /// left as it is.
     pub tint: Tint,
     /// The emphasis hue. Left neutral, the accent follows [`Self::tint`] like
-    /// any other grey — which is what the shipped palette already is.
+    /// any other grey — which is what the shipped palette already is. Set, it
+    /// moves [`Theme::accent`] and [`Theme::accent_strong`], and
+    /// [`Theme::on_accent`] becomes whichever label holds on that plate.
     pub accent: Tint,
     /// The base corner radius; every other corner is a ratio of it. See
     /// [`Theme::BASE_RADIUS`].

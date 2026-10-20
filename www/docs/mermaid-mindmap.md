@@ -1,6 +1,7 @@
 ---
 title: Mindmap
 description: A tree of ideas around a root, its shape set by indentation.
+prompt: Draw a mindmap of the project's goals, with each goal's tasks under it.
 ---
 
 ```mermaid

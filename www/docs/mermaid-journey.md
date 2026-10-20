@@ -1,6 +1,7 @@
 ---
 title: User journey
 description: A user's journey through tasks in sections, each scored and attributed to actors.
+prompt: Draw a user journey of signing up and making a first purchase, with a satisfaction score per step.
 ---
 
 ```mermaid

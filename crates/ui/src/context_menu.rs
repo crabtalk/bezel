@@ -4,7 +4,8 @@
 //! It holds the keyboard while it is open: the arrows walk its rows and its
 //! submenus, `enter` runs the live row or opens its submenu, and `escape` backs
 //! out of a submenu and then closes it, under [`KEY_CONTEXT`], whose bindings
-//! are in [`crate::menu::bindings`]. Closing by key or by a chosen row
+//! are in [`crate::menu::bindings`] and installed by [`crate::menu::init`].
+//! Closing by key or by a chosen row
 //! hands the focus back to whatever held it before the menu opened. A press
 //! elsewhere closes it and leaves the focus to that press.
 //!

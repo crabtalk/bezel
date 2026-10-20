@@ -239,9 +239,9 @@ pub const EDITOR: &[Group] = &[
     },
 ];
 
-/// A canvas and charts drawn live, then one page per diagram type
-/// `bezel-mermaid` draws, each pointing at the module that parses and draws
-/// it. A `mermaid-` row needs a sample in
+/// A canvas, charts and a Mermaid playground drawn live, then one page per
+/// diagram type `bezel-mermaid` draws, each pointing at the module that parses
+/// and draws it. A `mermaid-` row needs a sample in
 /// [`crate::pages::diagrams::mermaid::SAMPLES`].
 pub const DIAGRAMS: &[Group] = &[
     Group {
@@ -256,6 +256,11 @@ pub const DIAGRAMS: &[Group] = &[
                 "charts",
                 "Charts",
                 "apps/gallery/src/pages/diagrams/charts.rs",
+            ),
+            section(
+                "playground",
+                "Playground",
+                "apps/gallery/src/pages/diagrams/playground.rs",
             ),
         ],
     },

@@ -1,6 +1,7 @@
 ---
 title: Ishikawa
 description: A fishbone: an effect, and its causes by category.
+prompt: Draw a fishbone diagram of why our photos come out blurry, with causes by category.
 ---
 
 ```mermaid

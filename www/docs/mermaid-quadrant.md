@@ -1,6 +1,7 @@
 ---
 title: Quadrant
 description: Points placed on two axes split into four named quadrants.
+prompt: Plot our feature ideas on a quadrant chart of effort against impact.
 ---
 
 ```mermaid

@@ -34,7 +34,8 @@ use crate::{
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum CanvasEvent {
-    /// A batch landed in the document.
+    /// A batch landed in the document, the view's own measured heights and
+    /// layout included.
     Changed(Vec<Change>),
     /// The selected nodes, the primary last.
     Selected(Vec<String>),
@@ -49,7 +50,8 @@ pub enum Item {
     Edge(String),
 }
 
-/// Decides each change before it lands: it, another, or `None` to refuse.
+/// Decides each change before it lands: it, another, or `None` to refuse. It
+/// sees the document and the change, nothing else.
 type Filter = Rc<dyn Fn(&Canvas, Change) -> Option<Change>>;
 
 /// One undoable edit: the changes that take it back, and the typing session it
@@ -269,8 +271,9 @@ impl CanvasEditor {
         self.landed(changes);
     }
 
-    /// What `cmd-z` does: take back the last edit, past the filter. `false`
-    /// when there is none.
+    /// What `cmd-z` does: take back the last edit, past the filter — one that
+    /// landed through [`Self::submit`] or [`Self::apply`]. `false` when there
+    /// is none.
     pub fn undo(&mut self) -> bool {
         let Some(step) = self.undo.pop() else {
             return false;
@@ -436,8 +439,8 @@ impl CanvasEditor {
             .collect()
     }
 
-    /// What `cmd-c` copies: the selection, with its branches under a tree, as
-    /// JSON Canvas.
+    /// What `cmd-c` copies: the selection, with its branches under a tree and
+    /// everything it holds, as JSON Canvas.
     pub fn copy(&self) -> Option<String> {
         if self.selection.iter().all(|i| matches!(i, Item::Edge(_))) {
             return None;
@@ -473,8 +476,8 @@ impl CanvasEditor {
         self.place(&fragment, at, under.as_deref());
     }
 
-    /// What `cmd-d` does: the selection copied beside itself, or under the same
-    /// parent in a tree.
+    /// What `cmd-d` does: the selection and everything it holds copied beside
+    /// itself, or under the same parent in a tree.
     pub fn duplicate(&mut self) {
         let Some(primary) = self.selected().map(str::to_owned) else {
             return;
@@ -544,6 +547,7 @@ impl CanvasEditor {
 
     /// What `backspace` does, through the filter: the selected edge, or the
     /// selection, each node with its branch under a layout that grows trees.
+    /// What a removed container held stays.
     pub fn remove_selected(&mut self) {
         if let Some(id) = self.selected_edge().map(str::to_owned) {
             if self.edge_can(&id, Capability::Deletable) {

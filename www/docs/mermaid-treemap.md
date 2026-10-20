@@ -1,6 +1,7 @@
 ---
 title: Treemap
 description: Nested rectangles, each sized by its value.
+prompt: Show the codebase's lines of code by area as a treemap.
 ---
 
 ```mermaid

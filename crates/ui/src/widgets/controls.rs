@@ -39,7 +39,8 @@ pub fn slider_fraction(
 
 pub trait Controls: ThemeExt {
     /// Display-only toggle switch (the reference branch-picker.tsx `Toggle`):
-    /// an 18×32 pill whose knob slides right and track flips white when on.
+    /// an 18×32 pill whose knob slides right and track fills with the text
+    /// tone when on.
     /// State is owned by the parent row — the caller adds `.id(..)` and
     /// `.on_click(..)`.
     fn toggle(&self, on: bool) -> Div {
@@ -320,6 +321,10 @@ pub trait Controls: ThemeExt {
     /// One segment. The selected segment carries the active wash over the
     /// track's own — the two alphas stack, which is what makes it read — and
     /// the rest are bare, so exactly one is pressed.
+    ///
+    /// An unselected segment carries its own `hover`, and gpui panics on a
+    /// second: chain a `group_hover`, never `.hover(..)`. The same holds for
+    /// [`Self::toggle_group_icon`].
     fn toggle_group_item(&self, label: impl Into<SharedString>, selected: bool) -> Div {
         segment(self.theme(), selected)
             .px(px(10.0))

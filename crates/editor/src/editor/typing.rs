@@ -262,6 +262,11 @@ impl Editor {
     /// Add `mark` over the selection, or take it away if the whole selection
     /// already carries it. Public because a toolbar reaches the same operation
     /// the key does.
+    ///
+    /// At a collapsed caret the mark is stored for the next character typed.
+    /// [`Mark::Code`] over a [`Formatting::fenceable`] selection makes a fence,
+    /// and with the caret in a fence takes the code back out. Does nothing in
+    /// [`Mode::Source`].
     pub fn toggle_mark(&mut self, mark: Mark, cx: &mut Context<Self>) {
         // Nothing in the source is a mark: the markup is already spelled out,
         // and cmd-B over `**bold**` would fence what it reads.

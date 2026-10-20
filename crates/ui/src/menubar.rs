@@ -81,8 +81,7 @@ actions!(
 /// focused-but-closed bar drops its first menu.
 pub const KEY_CONTEXT: &str = "Menubar";
 
-/// Install the bindings — [`bindings`], bound. Call once, alongside
-/// [`crate::input::init`].
+/// Install the bindings — [`bindings`], bound. Call once at startup.
 pub fn init(cx: &mut App) {
     cx.bind_keys(bindings());
 }

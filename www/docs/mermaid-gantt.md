@@ -1,6 +1,7 @@
 ---
 title: Gantt
 description: Tasks on a calendar, in sections, each after another or from a date.
+prompt: Draw a Gantt chart of the release plan — design for two weeks, then build after it, with QA as a milestone.
 ---
 
 ```mermaid

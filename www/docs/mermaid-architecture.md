@@ -1,6 +1,7 @@
 ---
 title: Architecture
 description: Services and groups with icons, joined at the side each edge leaves and enters.
+prompt: Draw an architecture diagram of our API — a server, a database and two storage disks inside an API group.
 ---
 
 ```mermaid

@@ -324,7 +324,7 @@ impl Case {
 
 /// What shape the field takes.
 ///
-/// Editing is identical across all three — every action works on the content
+/// Editing is identical across every shape — every action works on the content
 /// and a byte range, and none of them cares where the lines break. What this
 /// decides is the box: how tall it is, whether text wraps, and with that what
 /// `enter` and a pasted newline are allowed to mean.
@@ -339,6 +339,9 @@ pub enum Shape {
     /// Wraps and grows with the content between `min` and `max` rows, then
     /// scrolls — the composer shape.
     Grow { min: usize, max: usize },
+    /// As tall as its parent, wrapping, scrolling past that. The parent must
+    /// give it a definite height.
+    Fill,
 }
 
 impl Shape {
@@ -582,7 +585,8 @@ impl TextField {
         &self.spans
     }
 
-    /// Replace the content, putting the cursor at the end.
+    /// Replace the content, putting the cursor at the end. Clears the undo
+    /// history.
     pub fn set_content(&mut self, content: impl Into<SharedString>, cx: &mut Context<Self>) {
         let normalized = normalize(&content.into(), self.shape);
         let before = self.content.len();

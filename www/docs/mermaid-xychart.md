@@ -1,6 +1,7 @@
 ---
 title: XY chart
 description: Bars and lines over a category or numeric x axis.
+prompt: Chart monthly revenue for the year as bars with a line over them.
 ---
 
 ```mermaid

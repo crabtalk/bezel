@@ -1,6 +1,7 @@
 ---
 title: Sequence
 description: Messages between participants over time, with activations, notes and numbering.
+prompt: Draw a sequence diagram of placing an order — customer, web app, API gateway and bank.
 ---
 
 ```mermaid

@@ -1,6 +1,7 @@
 ---
 title: Class
 description: Classes with their members, and the relations between them.
+prompt: Draw a class diagram of the Animal hierarchy with Duck, Fish and Zebra and their fields and methods.
 ---
 
 ```mermaid

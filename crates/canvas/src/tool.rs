@@ -132,8 +132,8 @@ pub trait Tool {
     }
 }
 
-/// Pan, marquee, create, edge pick, select and drag, connect and resize — in
-/// the order a press is offered to them.
+/// Connect, resize, reconnect, edge pick, marquee, create, select and drag,
+/// and pan — in the order a press is offered to them.
 pub fn defaults() -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(Connect::default()),

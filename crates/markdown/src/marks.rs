@@ -48,6 +48,10 @@ impl Marks {
     /// An empty delimiter, or a second registration of a name or a delimiter
     /// already taken, is ignored: a registry that can hold two answers for one
     /// spelling has no reading of a document to offer.
+    ///
+    /// A registered mark opens and closes on one line, and is plain text
+    /// inside a fence, a code span, raw HTML, a link's destination or a
+    /// picture's caption.
     pub fn with(
         mut self,
         name: impl Into<SharedString>,

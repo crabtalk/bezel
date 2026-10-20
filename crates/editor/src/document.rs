@@ -161,10 +161,8 @@ impl Document {
         }
     }
 
-    /// How many undo steps to keep. App-wide configuration would be a gpui
-    /// global alongside [`crate::init`], not a `Theme` field — the theme is
-    /// rebuilt on every light/dark switch, which would quietly reset anything
-    /// behavioural parked in it.
+    /// How many undo steps to keep; [`crate::DEFAULT_UNDO_LIMIT`] until set. A
+    /// run of typing coalesces into one step.
     pub fn with_undo_limit(mut self, limit: usize) -> Self {
         self.history = History::with_limit(limit);
         self

@@ -1,6 +1,7 @@
 ---
 title: Sankey
 description: Flows between nodes, each as wide as its value. The source is CSV rows.
+prompt: Draw a Sankey diagram of where our energy comes from and where it goes.
 ---
 
 ```mermaid

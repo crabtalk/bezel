@@ -80,6 +80,7 @@ static FONT_GEIST_BOLD: &[u8] = include_bytes!("../assets/fonts/Geist-Bold.ttf")
 
 /// Register the bundled fonts through [`fonts::add`]. Failure is non-fatal:
 /// the theme's system fallbacks take over (same families the CSS stack names).
+/// With no `geist-*` feature on, it registers nothing and returns `Ok`.
 ///
 /// Your own fonts go through [`fonts::add`] too, and
 /// [`theme::Theme::font_sans`] / [`theme::Theme::font_mono`] name which

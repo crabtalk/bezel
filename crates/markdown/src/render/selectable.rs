@@ -23,6 +23,7 @@ pub enum Pointer {
 }
 
 /// Render `doc` with `selection` painted in it, reporting what the pointer does.
+/// No caret paints, a collapsed selection included.
 ///
 /// `dragging` is the caller's: a move only extends a selection that a press
 /// started, and which item that press landed in is not something one block of

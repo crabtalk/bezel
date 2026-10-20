@@ -310,6 +310,7 @@ pub struct Calendar {
 impl EventEmitter<CalendarEvent> for Calendar {}
 
 impl Calendar {
+    /// Bezel reads no clock; `today` is the only source of the current date.
     pub fn new(today: Date, cx: &mut Context<Self>) -> Self {
         Self {
             today,

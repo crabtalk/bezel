@@ -1,6 +1,7 @@
 ---
 title: Entity relationship
 description: Entities, their attributes, and the cardinality of each relationship.
+prompt: Draw an ER diagram of customers, orders and line items with their cardinalities and key attributes.
 ---
 
 ```mermaid

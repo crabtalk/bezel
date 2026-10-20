@@ -17,6 +17,10 @@
 //! and table cells flattened to one line, and ordered runs renumbered
 //! consecutively. Each of those is a place where writing the document back out
 //! and reading it again would otherwise land somewhere new.
+//!
+//! Raw HTML is read as the text it spells. Footnotes and reference-style link
+//! definitions are not carried. A setext heading is read as a heading and
+//! serialized with `#`.
 
 use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd,

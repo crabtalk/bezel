@@ -31,6 +31,9 @@ pub const DEFAULT_TARGET_FPS: f32 = 30.0;
 
 /// Animated thinking-orb status indicator for AI / agent UIs.
 ///
+/// No redraw timer runs while it is paused, not [`Self::visible`], under
+/// reduced motion, or in an inactive window with [`Self::pause_when_inactive`].
+///
 /// ```ignore
 /// cx.new(|_| Orb::new().state(OrbState::Searching).size(OrbSize::Avatar))
 /// ```

@@ -15,7 +15,8 @@ pub(crate) fn scrim_alpha(alpha_dark: f32) -> gpui::Hsla {
 }
 
 /// Full-window modal: dim scrim + centered card with the `dialog-in` entrance.
-/// The scrim swallows clicks; the caller wires its own dismiss/confirm.
+/// The scrim swallows clicks; the caller wires its own dismiss/confirm. Binds
+/// no keys, `escape` included.
 /// `viewport` is the window size (an `anchored` layer sizes to its children,
 /// so the scrim needs explicit dimensions). The frost radius matches
 /// [`dialog_card`]'s 16px rounding.

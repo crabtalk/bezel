@@ -1,6 +1,7 @@
 ---
 title: Block
 description: Blocks placed on a grid of columns, rather than by a layout.
+prompt: Draw a block diagram of the frontend, backend and database on a three-column grid, with arrows between them.
 ---
 
 ```mermaid

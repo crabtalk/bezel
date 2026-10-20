@@ -32,9 +32,8 @@
 //! `bezel-icons` directly with `default-features = false` and names the
 //! categories it paints.
 //!
-//! Font gates are wired: `geist-sans`, `geist-mono` and `geist-weights`, all on
-//! by default, forwarded to `ui` so an app shipping its own type stops paying
-//! for the families it does not paint.
+//! Font gates are wired: `geist-sans`, `geist-mono` and `geist-weights`, all off
+//! by default and forwarded to `ui`.
 //!
 //! Depending on a single layer directly (`theme` for tokens alone, which
 //! is useful to anyone writing their own gpui components) stays supported and

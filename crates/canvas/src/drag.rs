@@ -1,7 +1,7 @@
 //! What dragging a node does — the app's call, per view.
 //!
 //! ```ignore
-//! cx.new(|cx| CanvasView::new(doc, cx).with_drag(canvas::drag::reparent))
+//! cx.new(|cx| CanvasView::new(doc, layout::FREE, cx).with_drag(canvas::drag::reparent))
 //! ```
 //!
 //! A handler answers each move and the drop with [`Change`]s. On a move its

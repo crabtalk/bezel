@@ -19,6 +19,8 @@
 //!
 //! No locals support: that query is passed empty in
 //! [`Lang::compile`](lang::Lang).
+//!
+//! Does not build for `wasm32-unknown-unknown`.
 
 use std::ops::Range;
 use theme::HighlightKind;
@@ -62,7 +64,8 @@ pub(crate) fn engine() -> Option<&'static wasmtime::Engine> {
 }
 
 /// Highlight `source` as `language` (a fence tag — `rs`, `py`, `tsx`, …).
-/// `None` when the tag names no language.
+/// `None` when the tag names no language with a grammar in [`registry`], which
+/// holds none until [`grammars::install`] or [`registry::register`] adds one.
 pub fn highlight(source: &str, language: &str) -> Option<Vec<(Range<usize>, HighlightKind)>> {
     lang::resolve(language)?.highlight(source)
 }

@@ -11,13 +11,16 @@ parameters, and that is the thing to internalise before writing a call.
 
 ## Fetch the page before writing the call
 
-Every doc page is served as markdown. Signatures here are wrong to guess.
+Every doc page is served as markdown. A page gives the common call and the
+caveats a caller must uphold; it lists no signatures. Get those from the
+crate's docs.rs page, which every doc page links, or from the crate source.
+Signatures are wrong to guess.
 
 | want | fetch |
 | --- | --- |
 | the index of every page | `https://bezel.gallery/llms.txt` |
 | one component | `https://bezel.gallery/docs/<slug>.md` |
-| all of it, one file (~88KB) | `https://bezel.gallery/llms-full.txt` |
+| all of it, one file | `https://bezel.gallery/llms-full.txt` |
 
 Slugs by group — fetch the one you need:
 

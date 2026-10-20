@@ -21,7 +21,9 @@ pub enum Zone {
     Bottom,
 }
 
-/// Hit-test a pane in window coordinates. Corners choose the nearest normalized edge.
+/// Hit-test a pane in window coordinates. The bar, and anything further than a
+/// quarter of the pane from every edge, is [`Zone::Join`]. Corners choose the
+/// nearest normalized edge.
 pub fn zone(bounds: Bounds<Pixels>, bar_height: Pixels, pointer: Point<Pixels>) -> Option<Zone> {
     if bounds.size.width <= px(0.) || bounds.size.height <= px(0.) || !bounds.contains(&pointer) {
         return None;
@@ -190,6 +192,8 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Dock<P, I> 
     }
 
     /// Mount every target inside this surface, in the controller's owning view.
+    /// It takes any drag carrying a [`crate::drag::Carry<I>`] while
+    /// [`crate::drag::Carry::claimed`] is false.
     pub fn surface(&self, id: impl Into<ElementId>, child: impl IntoElement) -> Surface<P, I> {
         element::Surface {
             dock: self.clone(),

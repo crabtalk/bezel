@@ -144,7 +144,8 @@ pub fn ellipsis(theme: &Theme) -> gpui::Div {
 /// — the pair the calendar's month header already uses.
 ///
 /// A disabled step stays in place rather than disappearing at the ends, so the
-/// row does not shuffle sideways on the first and last pages.
+/// row does not shuffle sideways on the first and last pages. Paints only: the
+/// caller wires the click, and ignores it when not `enabled`.
 pub fn step(theme: &Theme, icon: impl Into<Icon>, enabled: bool) -> gpui::Div {
     let step = div()
         .size(px(BUTTON))

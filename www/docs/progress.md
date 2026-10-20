@@ -1,24 +1,13 @@
 ---
 title: Progress
 description: A determinate bar — a clamped fraction over a track that keeps its full width.
+prompt: Show a progress bar under the upload row that fills as the file uploads.
 ---
 
 ```rust
 use ui::widgets::Controls;
 
-theme.progress_bar(0.35)
+theme.progress_bar(self.sent as f32 / self.total as f32)
 ```
 
-No indeterminate mode — that is what the [loaders](/docs/loaders) are for.
-
-## API
-
-```rust
-pub trait Controls: ThemeExt {
-    /// Clamped to `0..=1`; the track keeps its width, so a row never reflows
-    /// as progress moves.
-    fn progress_bar(&self, fraction: f32) -> Div;
-
-    // ...
-}
-```
+- Determinate only. For work of unknown length, use a [loader](/docs/loaders).

@@ -1,6 +1,7 @@
 ---
 title: Flowchart
 description: Nodes and edges, laid out in layers. Subgraphs group nodes; the header names the direction.
+prompt: Draw a left-to-right flowchart of our client, services and storage, grouped into subgraphs.
 ---
 
 ```mermaid

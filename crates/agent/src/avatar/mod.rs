@@ -8,7 +8,7 @@
 //! since a rail and a chat header showing one name should show one being.
 //!
 //! ```ignore
-//! agent::avatar(Face::from("Sara").pose(t)).w(px(48.)).h(px(48.))
+//! div().w(px(48.)).h(px(48.)).child(agent::avatar(Face::from("Sara").pose(t)))
 //! ```
 
 mod eyes;
@@ -72,6 +72,7 @@ impl From<u64> for Face {
     }
 }
 
+/// The silhouette and eyes, both from [`seed`]`(name)`.
 impl From<&str> for Face {
     fn from(name: &str) -> Self {
         Self::from(seed(name))
@@ -81,6 +82,9 @@ impl From<&str> for Face {
 impl Face {
     /// The face at `t`, motion already spent — everything the painter needs and
     /// the only form two faces can meet in.
+    ///
+    /// `t` is the caller's clock, in seconds. `pose(0.)` is a face that never
+    /// moves.
     pub fn pose(&self, t: f32) -> Pose {
         let beat = self.motion.beat(t);
         let shape = self.motion.shape(self.shape, t);
@@ -149,7 +153,8 @@ impl Pose {
     }
 }
 
-/// The element, filling its layout bounds.
+/// The element, filling its layout bounds. The eyes are `theme.bg` or
+/// `theme.text`, whichever reads on the body.
 pub fn avatar(pose: Pose) -> AnyElement {
     canvas(
         move |_: Bounds<Pixels>, _, _| (),

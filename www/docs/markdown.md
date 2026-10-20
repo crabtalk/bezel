@@ -1,86 +1,50 @@
 ---
 title: Markdown
 description: The dialect bezel reads and writes — every block and mark, the prefixes that type them, and what a flat document does with nesting.
+prompt: Read todo.md, list its unchecked tasks, and write the file back after I tick one off, without reformatting the rest of it.
 ---
 
 ```rust
-let doc = markdown::parse(source);
-let source = markdown::serialize(&doc);
+use markdown::{AppExt as _, BlockKind, Synced};
+
+let mut file = Synced::new(source, &cx.marks());
+let open: Vec<usize> = file.doc().blocks.iter().enumerate()
+    .filter(|(_, b)| matches!(b.kind, BlockKind::Task { checked: false, .. }))
+    .map(|(ix, _)| ix)
+    .collect();
+
+let mut doc = (**file.doc()).clone();
+// …tick a task in `doc`…
+file.set_doc(doc.into());
+save(file.text());   // only the edited block's bytes changed
 ```
 
-The document model is Notion's — a flat list of blocks, each carrying an indent — and markdown is its wire form. `parse` and `serialize` are inverses up to a fixed point: parse, serialize, parse again, and nothing has moved.
+- `parse` and `serialize` reach a fixed point: parse, serialize and parse again lands on the same document. A whole-file `serialize` normalizes; `Synced` and `parse_ranges` keep untouched bytes.
+- Nesting is list nesting only, four spaces a level. A quote adds no level, and a quote inside a quote flattens to one.
+- Escapes are written only at the start of a line. Raw HTML is read as the text it spells. Footnotes and reference-style definitions are not carried, and a setext heading comes back as `#`.
 
-## Blocks
+## Blocks and marks
 
-| Spelling | Block |
+| spelling | block |
 | --- | --- |
-| `# ` … `###### ` | Heading, levels 1–6 |
-| plain text | Paragraph |
-| `- `, `* `, `+ ` | Bullet |
-| `1. ` | Ordered item, keeping the number it starts at |
-| `- [ ] `, `- [x] ` | Task |
-| `> ` | Quote |
-| ` ``` ` | Fence |
-| `---` | Rule |
-| `\| a \| b \|` | Table |
-| `![alt](url)` alone on a line | Picture |
-| a link alone on a line | Bookmark |
+| `# ` … `###### ` | heading |
+| `- `, `* `, `+ ` / `1. ` | bullet / ordered, keeping its first number |
+| `- [ ] `, `- [x] ` | task |
+| `> `, `> [!NOTE]` | quote, GFM alert |
+| ` ```rs ` | fence, highlighted by the tag's grammar |
+| `---` | rule |
+| `\| a \| b \|` | GFM table, alignment row included; one line per cell |
+| `![caption\|480](url)` alone on a line | picture; the caption is the alt text, `480` a width in pixels |
+| `<url>` or a link alone on a line | bookmark card; title `"chip"` or `"embed"` picks the form |
 
-A newline inside a block is a line break, here and in Notion both.
+Marks are `**bold**`, `_italic_`, `~~strike~~`, `` `code` `` and `[text](url)`, and their nesting order survives the round trip. A newline inside a block is a line break. An underscore inside a word is not emphasis.
 
-## Marks
+## Make it yours
 
-`**bold**`, `_italic_` or `*italic*`, `~~strikethrough~~`, `` `code` ``, and `[text](url)`. Nesting order survives a round trip — `**_x_**` and `_**x**_` are different documents, which is why marks are spans over the text rather than flags on a run.
-
-Typing `## ` makes a heading because pasting `## ` would have; inline marks close on the last delimiter. Emphasis will not open or close against a space, and an underscore inside a word is not emphasis, which is the only reason `snake_case_names` survive being typed.
-
-## Fences
-
-````
-```rs
-fn main() {}
-```
-````
-
-A tag names the grammar [`syntax`](/docs/syntax) highlights with. A tag nothing claims paints plain and never fails. `markdown::AppExt::set_block_renderer` hands a tag and its source to a function of yours, so ` ```chart ` paints as a chart and still holds a caret, still round trips byte for byte, and still degrades to its own source where the renderer is not installed.
-
-## Links and pictures
-
-```markdown
-<https://bezel.gallery>
-[https://bezel.gallery](https://bezel.gallery "chip")
-[https://bezel.gallery](https://bezel.gallery "embed")
-![A caption is the alt text|480](https://example.com/cover.png)
-```
-
-A link with a line to itself is a card; chip and embed have no shorthand, so they say their name in the title slot. What a card *shows* past its URL is the app's, through `markdown::Links::preview` — the crate fetches nothing. A picture's caption is its alt text, and a dragged width is written after it in whole pixels.
-
-A preview can supply `Editing::image_overlay` to build a control from a picture's
-block index and original URL:
-
-```rust
-image_overlay_corner: markdown::ImageOverlayCorner::TopRight,
-image_overlay: Some(Rc::new(|block, url, window, cx| {
-    Some(open_image_button(block, url, window, cx).into_any_element())
-})),
-```
-
-The control appears on hover with a 6px inset. `image_overlay_corner` accepts
-any `markdown::ImageOverlayCorner` corner and defaults to `BottomRight`.
-Its presses stay on the control. Return `None` to omit it for one picture;
-leaving the option unset adds no listeners or visual changes. Empty picture
-placeholders and source view have no overlay.
-
-## Limits
-
-| | |
+| call | what it decides |
 | --- | --- |
-| nesting | Four spaces per level, **list nesting only**. A blockquote marks the blocks inside it as quoted and adds no level. A quote inside a quote flattens to one. |
-| normalized on parse | Edge whitespace, blank lines at block edges, headings and table cells flattened to one line, ordered runs renumbered. `parse_ranges` gives the source range each block came from, for an app that would rather splice the blocks it did not edit than write the whole file back in canonical form. `Synced` holds the markdown and the blocks together and does that splice on every change, either way round. |
-| escaping | Only at the start of a line, where the character would mean something — escape `#` everywhere and `#123` becomes `\#123`, which no reader matches. |
-| HTML | Arrives as the text it spells and is written back escaped. |
-| not carried | Footnotes and reference-style definitions. A setext heading is read and written back as `#`. |
-
-Tables are GFM's, alignment row included — `:---`, `:---:`, `---:`. Every cell is one line and holds a caret.
-
-The source is at `apps/gallery/src/pages/editor/dialect.rs`. Copy the file.
+| `Marks`, `AppExt::set_marks` | marks of your own, such as `==highlight==` |
+| `AppExt::set_block_renderer`, `BlockRenderer` | painting a fence tag, such as ` ```chart `, as something other than code |
+| `AppExt::set_links`, `Links` | opening links, and what a card or chip shows past its URL |
+| `Editing::image_overlay`, `image_overlay_corner` | a control on hovered pictures; bottom-right unless set |
+| `AppExt::set_highlighter` | fence colours (see [Syntax](/docs/syntax)) |

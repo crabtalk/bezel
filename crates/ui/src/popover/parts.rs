@@ -317,7 +317,8 @@ pub fn dialog_field(theme: &Theme, input: AnyElement) -> gpui::Div {
 }
 
 /// Pulsing skeleton rows shown while a list loads (the reference:
-/// `h-7 animate-pulse rounded-md bg-white/[0.04]`).
+/// `h-7 animate-pulse rounded-md bg-white/[0.04]`). Each row enters the wave
+/// after the one above it.
 pub fn redacted_rows(
     _id: &'static str,
     _theme: &Theme,
@@ -343,8 +344,7 @@ pub fn redacted_rows(
         .into_any_element()
 }
 
-/// Inline error row + Retry affordance (the caller attaches the listener to the
-/// returned id).
+/// Inline error row. A retry control is the caller's child.
 pub fn error_row(theme: &Theme, message: impl Into<SharedString>) -> gpui::Div {
     div()
         .flex()

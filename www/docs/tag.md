@@ -1,28 +1,16 @@
 ---
 title: Tag
 description: A removable chip — a token in a filter bar or a recipient field, with the ✕ wired by the caller.
+prompt: Show each active filter as a removable tag above the results, and drop the filter when its ✕ is clicked.
 ---
 
 ```rust
 use ui::widgets::Content;
 
-theme.tag("rust")
+theme.tag(filter.name.clone())
+    .id(("filter", index))
+    .on_click(cx.listener(move |view, _, _, cx| view.remove_filter(index, cx)))
 ```
 
-The ✕ is painted, not wired: only the caller knows what removing a token means for the list behind it.
-
-## API
-
-```rust
-pub trait Content: ThemeExt {
-    /// The chip. Sets `self_start`, so a column does not stretch it.
-    fn tag(&self, label: impl Into<SharedString>) -> Div;
-
-    /// A name on a wash of `tint`, without the ✕ — a label on an entry, an
-    /// option of a multi-select. A long name ends in `…` once the caller caps
-    /// the width.
-    fn chip(&self, label: impl Into<SharedString>, tint: Hsla) -> Div;
-
-    // ...
-}
-```
+- The ✕ is painted, not wired. The caller adds the click handler.
+- `theme.chip(label, tint)` is the same name on a coloured wash, with no ✕; it truncates once the caller caps its width.

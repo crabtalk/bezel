@@ -1,27 +1,14 @@
 ---
 title: Badge
 description: A small right-anchored pill for a count or a state, in a quiet variant and an active one.
+prompt: Show a "3 unread" badge on the Inbox row and a green "Active" badge on connected accounts.
 ---
 
 ```rust
 use ui::widgets::Content;
 
-theme.badge("badge")
-theme.badge_active("active")
+theme.badge("3 unread")
+theme.badge_active("Active")
 ```
 
-Both return a `Div`, so a badge with an icon in it is a child you add.
-
-## API
-
-```rust
-pub trait Content: ThemeExt {
-    /// Hairline pill in the muted text tone.
-    fn badge(&self, label: impl Into<SharedString>) -> Div;
-
-    /// The emerald "connected / running / on" pill.
-    fn badge_active(&self, label: impl Into<SharedString>) -> Div;
-
-    // ...
-}
-```
+- Import the `Content` trait to get these on `Theme`.

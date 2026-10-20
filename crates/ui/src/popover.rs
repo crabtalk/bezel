@@ -382,11 +382,6 @@ pub fn trigger_press_matching<V: 'static, T: 'static, E: gpui::InteractiveElemen
 // Elements
 // ---------------------------------------------------------------------------
 
-/// The floating-menu surface: `rounded-xl border border-white/[0.1] p-1` over
-/// whichever look [`Theme::menu_style`] names — the hairline and the baked-in
-/// shadow are the card's, and the surface under it paints everything inside
-/// them. Opaque platforms keep the near-opaque tone the reference composites
-/// to on the dark panels (~#161616).
 /// The inner inset of a [`popover_card`], and so the amount [`menu_row`]'s
 /// corners come in by. Named because two things read it: the card's padding and
 /// its rows' radius. Change it and the rows follow.
@@ -410,6 +405,8 @@ pub(crate) fn menu_row_height() -> f32 {
     TextStyle::Body.painted_line_height() + 2.0 * MENU_ROW_PAD_Y
 }
 
+/// The floating-menu card. With `theme.glass` on it paints contents only, and
+/// the fill, hairline and shadow are the surface's it is mounted on.
 pub fn popover_card(theme: &Theme) -> gpui::Div {
     let card = div()
         .rounded(px(Theme::surface_radius()))

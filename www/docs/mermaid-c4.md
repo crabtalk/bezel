@@ -1,6 +1,7 @@
 ---
 title: C4
 description: The C4 model's people, systems and boundaries, and the relations between them.
+prompt: Draw a C4 system context diagram for our banking app — the customer, the banking system and the external mail system.
 ---
 
 ```mermaid

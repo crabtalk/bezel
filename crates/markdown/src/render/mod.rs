@@ -198,6 +198,8 @@ pub type OnImageMenu = Rc<dyn Fn(usize, Point<Pixels>, &mut Window, &mut App)>;
 pub type OnJump = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
 /// Builds a picture's hover control from its block index and original URL.
+/// `None` leaves that picture without one. An empty picture placeholder gets
+/// none.
 pub type ImageOverlay = Rc<dyn Fn(usize, &str, &mut Window, &mut App) -> Option<AnyElement>>;
 
 /// Handed a fence's block index and its new code — see [`FenceHost::rewrite`].

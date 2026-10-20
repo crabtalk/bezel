@@ -1,6 +1,7 @@
 ---
 title: Use case
 description: Actors and the use cases they take part in, inside a system boundary.
+prompt: Draw a use case diagram of the order system with the customer and clerk actors.
 ---
 
 ```mermaid

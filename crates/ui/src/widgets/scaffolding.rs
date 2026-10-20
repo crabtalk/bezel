@@ -184,7 +184,8 @@ pub trait Scaffolding: ThemeExt {
             .flex_col()
     }
 
-    /// One card row, split from the row above by a full-width hairline. Hover is
+    /// One card row, split from the row above by a full-width hairline; `first`
+    /// drops the hairline, for the opening row of a card. Hover is
     /// caller-owned — gpui panics on a second hover, so the wash to chain is
     /// [`Theme::element_hover`].
     fn card_row(&self, first: bool) -> Div {

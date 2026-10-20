@@ -1,6 +1,7 @@
 ---
 title: Railroad
 description: A grammar drawn as railroad tracks, from EBNF, PEG or combinator rules.
+prompt: Draw our arithmetic expression grammar as a railroad diagram from its EBNF.
 ---
 
 ```mermaid

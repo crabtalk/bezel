@@ -1,6 +1,7 @@
 ---
 title: State
 description: States and the transitions between them, with composite states and concurrent regions.
+prompt: Draw a state diagram of the fetch lifecycle — idle, loading, ready and failed, with retry.
 ---
 
 ```mermaid

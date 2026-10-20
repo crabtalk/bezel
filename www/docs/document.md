@@ -1,81 +1,36 @@
 ---
 title: Document
 description: A reader with an outline and a source view — the screen the `markdown` crate exists for, and the round trip you can see.
+prompt: Show a markdown file as a read-only document with an outline of its headings beside it, and let the reader tick its task boxes.
 ---
 
 ```rust
-doc.blocks
-    .iter()
+use markdown::BlockKind;
+
+let doc = markdown::parse(&source);
+let outline: Vec<_> = doc.blocks.iter()
     .filter_map(|block| match &block.kind {
         BlockKind::Heading { level, text } => Some((*level, text.text.clone())),
         _ => None,
     })
-    .collect()
+    .collect();
+
+markdown::render(&doc, markdown::Caption::Shown, window, cx)   // read-only
 ```
 
-The outline is a `filter`, not a walk: a `Doc` is a flat list of blocks carrying their own indent, so the table of contents is one pass. The Source segment shows `serialize(&doc)` rather than the string the file holds, and it matches byte for byte.
+- A `Doc` is a flat list of blocks, each carrying its own indent, so an outline is one pass.
+- `render` paints a task's box as a mark. `Editing::toggle` with `render_with` makes it a control and hands you the block index.
+- A custom mark opens and closes on one line, and is plain text inside a fence, a code span, a link destination or a picture's caption. A delimiter markdown already spells (`*`, `_`, `` ` ``, `~`, `[`) never fires.
+- `http` pictures need an http client on the app; `gpui_platform::application` installs one. Without it they paint their fallback and report nothing.
 
-## Marks of your own
+## Make it yours
 
-```rust
-let marks = markdown::Marks::new().with("highlight", "==").with("underline", "++");
-
-let doc = markdown::parse_with("a ==lit== word", &marks);
-assert_eq!(markdown::serialize_with(&doc, &marks), "a ==lit== word");
-```
-
-`Mark` is closed, because each of its variants is something CommonMark already spells. Underline, highlight and colour are not, so an app registers them.
-
-## API
-
-```rust
-// markdown — pure, so the registry is a parameter rather than a global.
-
-pub fn parse_with(source: &str, marks: &Marks) -> Doc;
-pub fn serialize_with(doc: &Doc, marks: &Marks) -> String;
-
-/// The pair a caret crosses on. Both put a sentinel where the caret is, so
-/// neither can drift from the serializer or parser it rides on.
-pub fn parse_at(source: &str, offset: usize, marks: &Marks) -> (Doc, Cursor);
-
-/// `parse`, keeping where each block came from. The ranges partition the
-/// source — first starts at 0, each ends where the next begins, last ends at
-/// `source.len()` — so re-serializing the blocks you edited and splicing
-/// `source[range]` for the rest gives the untouched bytes back exactly.
-pub fn parse_ranges(source: &str) -> ParsedDoc;  // { doc, block_ranges }
-pub fn serialize_at(doc: &Doc, at: Cursor, marks: &Marks) -> (String, usize);
-
-// The gpui-side half the editing surface reads. `set_mark_paint` is paint only
-// — colour, background, weight, italic, underline, strike. A name nothing
-// paints round trips and reads as the text it wraps.
-pub trait AppExt {
-    fn set_marks(&mut self, marks: Marks);
-    fn set_mark_paint(&mut self, paint: Painter);
-    /// Long fence lines wrap by default.
-    fn set_markdown_layout(&mut self, layout: Layout);
-}
-
-/// Classifies markdown *source* without a grammar, which is what gives a
-/// source view colour in a browser build.
-pub fn source_spans(source: &str) -> Vec<(Range<usize>, HighlightKind)>;
-
-/// `toggle` makes a task block's checkbox a control: `Toggle::Handled` has the
-/// box take the press, stop it, and hand you the block it belongs to, and
-/// `Toggle::HitTested` paints it as a control and leaves the press to you.
-/// `copy` is whether a fence paints the button that copies its text. `render`
-/// and `markdown` leave the toggle unset, and the box paints as a marker; a
-/// document with no toggle and `CopyButton::Hidden` holds no listener at all.
-pub struct Editing<'a> {
-    pub toggle: Option<Toggle>,
-    pub copy: CopyButton,
-    /* ... */
-}
-
-// ...
-```
-
-A registered mark cannot reach across a line break, mean anything inside a fence, code span or link destination, or sit in a picture's caption. Its delimiters are lifted out before CommonMark sees the source, which is the only place `==` and `\=\=` still differ.
-
-A registered mark cannot reach across a line break, mean anything inside a fence, code span or link destination, or sit in a picture's caption. Its delimiters are lifted out before CommonMark sees the source, which is the only place `==` and `\=\=` still differ.
-
-The source is at `apps/gallery/src/pages/editor/document.rs`. Copy the file.
+| call | what it decides |
+| --- | --- |
+| `Marks`, `parse_with`, `serialize_with` | marks of your own, such as `==highlight==` |
+| `AppExt::set_marks`, `set_mark_paint` | the dialect every reader and editor uses, and how custom marks paint |
+| `render_with`, `Editing` | task toggles, the fence copy button, picture clicks, menus and overlays |
+| `parse_ranges`, `Synced` | writing back edited blocks and leaving every other byte as it was |
+| `parse_at`, `serialize_at` | carrying a caret between the source and the blocks |
+| `source_spans`, `render_source` | a coloured source view, with no grammar |
+| `AppExt::set_markdown_layout`, `set_typography` | whether fences wrap, and the type metrics |

@@ -1,6 +1,7 @@
 ---
 title: Git graph
 description: Commits, branches and merges, drawn as a history.
+prompt: Draw a git graph showing a develop branch that gets two commits and merges back into main.
 ---
 
 ```mermaid

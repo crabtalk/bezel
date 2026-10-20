@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { marked } from 'marked';
 import { codeBlock } from '$lib/server/highlight.js';
-import { bySlug, documentedSections, prose } from '$lib/catalog.js';
+import { bySlug, documentedSections, prose, skillInstall } from '$lib/catalog.js';
 
 // A server load, so marked runs at build time and never ships to a reader.
 marked.use({
@@ -25,6 +25,9 @@ export function load({ params }) {
 	return {
 		section,
 		description: doc.meta.description ?? null,
+		ask: doc.meta.prompt
+			? { install: codeBlock(skillInstall, 'bash'), prompt: codeBlock(doc.meta.prompt, null) }
+			: null,
 		html: marked.parse(doc.body)
 	};
 }

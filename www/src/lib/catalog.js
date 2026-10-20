@@ -77,6 +77,9 @@ export const docsHome = documentedSections[0]?.key;
 
 export const repo = 'https://github.com/crabtalk/bezel';
 
+/** What a reader runs to give their agent the bezel skill. */
+export const skillInstall = 'npx skills add crabtalk/bezel --skill bezel';
+
 export const discord = 'https://discord.gg/yGZDYnwbx6';
 
 /** Where a section's implementation lives, for a reader who wants the real thing. */

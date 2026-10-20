@@ -3,7 +3,7 @@
 //! ```ignore
 //! canvas::init(cx);                                                // once, at startup
 //! let view = cx.new(|cx| {
-//!     CanvasView::new(Canvas::parse(json)?, cx)
+//!     CanvasView::new(Canvas::parse(json)?, canvas::layout::MINDMAP, cx)
 //!         .with_kinds(Kinds::new().with("session", SESSION))       // an app's own types
 //! });
 //! ```

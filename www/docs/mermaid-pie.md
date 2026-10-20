@@ -1,6 +1,7 @@
 ---
 title: Pie
 description: Slices of a whole, labelled with their share.
+prompt: Draw a pie chart of last month's traffic by browser.
 ---
 
 ```mermaid

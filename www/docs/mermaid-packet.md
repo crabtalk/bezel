@@ -1,6 +1,7 @@
 ---
 title: Packet
 description: A packet's fields laid out by bit range.
+prompt: Draw the TCP header as a packet diagram with each field's bit range.
 ---
 
 ```mermaid

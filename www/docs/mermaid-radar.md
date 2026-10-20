@@ -1,6 +1,7 @@
 ---
 title: Radar
 description: Curves over radial axes, one value per axis.
+prompt: Compare Alice's and Bob's skills on a radar chart across six subjects.
 ---
 
 ```mermaid

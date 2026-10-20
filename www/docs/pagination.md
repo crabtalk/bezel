@@ -1,45 +1,24 @@
 ---
 title: Pagination
 description: For data that arrives in pages, not for lists that are long — one function turns (current, total) into the row you see.
+prompt: Add page controls under the search results, which the API returns 50 at a time, showing "1 … 4 5 [6] 7 8 … 20".
 ---
 
 ```rust
-use ui::pagination::{self, Slot};
+use ui::{icons::glyph, pagination::{self, Slot}};
 
-pagination::window(6, 20, 2)
-// 1 … 4 5 [6] 7 8 … 20
+pagination::pagination()
+    .child(div().id("prev").on_click(prev).child(pagination::step(&theme, glyph::ChevronLeft, page > 1)))
+    .children(pagination::window(page, total, 2).into_iter().enumerate().map(|(slot, entry)| match entry {
+        Slot::Gap => pagination::ellipsis(&theme).into_any_element(),
+        Slot::Page(n) => pagination::page_button(&theme, n, n == page)
+            .id(("page", slot))
+            .on_click(cx.listener(move |view, _, _, cx| view.go_to_page(n, cx)))
+            .into_any_element(),
+    }))
+    .child(div().id("next").on_click(next).child(pagination::step(&theme, glyph::ChevronRight, page < total)))
 ```
 
-Reach for it only when the *data* is paged — an API answering "page 4 of 87". A list that is merely long is `scroll` and `list`.
-
-## Windowing
-
-```text
-current = 6, total = 20   →   1 … 4 5 [6] 7 8 … 20
-current = 2, total = 20   →   1 [2] 3 4 5 … 20
-current = 3, total = 5    →   1 2 [3] 4 5
-```
-
-Pages are 1-based. A gap that would hide exactly one page shows the page instead, and the window slides at the ends rather than shrinking.
-
-## API
-
-```rust
-// ui::pagination
-
-/// A place in the row: a page you can go to, or the mark for pages skipped.
-pub enum Slot { Page(usize), Gap }
-
-/// The pages to show, keeping `around` either side. `current` out of range is
-/// clamped rather than trusted — a paint is no place to panic.
-pub fn window(current: usize, total: usize, around: usize) -> Vec<Slot>;
-
-pub fn pagination() -> gpui::Div;
-pub fn page_button(theme: &Theme, page: usize, current: bool) -> gpui::Div;
-pub fn ellipsis(theme: &Theme) -> gpui::Div;
-
-/// Previous / next.
-pub fn step(theme: &Theme, icon: impl Into<Icon>, enabled: bool) -> gpui::Div;
-
-// ...
-```
+- Pages are 1-based. `window` clamps an out-of-range `current`.
+- The caller owns the page number and every click, including ignoring a click on a disabled step.
+- For a list that is only long, use [`scroll`](/docs/scroll-area) and [`list`](/docs/virtual-list) instead.

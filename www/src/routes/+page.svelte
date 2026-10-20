@@ -6,7 +6,7 @@
 	import { engage } from '$lib/engage.js';
 	import diagrams from '$lib/diagrams.json';
 	import stats from '$lib/stats.json';
-	import { catalog, repo, tagline as description } from '$lib/catalog.js';
+	import { catalog, repo, skillInstall, tagline as description } from '$lib/catalog.js';
 
 	let { data } = $props();
 
@@ -115,11 +115,9 @@
 	<div class="say">
 		<h1>Build the app, not the buttons.</h1>
 
-		<!-- One dependency: `bezel` re-exports the gpui it was built against, so a
-		     consumer cannot end up with a second copy in the graph. -->
 		<div class="install code-block">
-			<span class="file">Cargo.toml</span>
-			<code>bezel = "0.2"</code>
+			<span class="file">Agent skill</span>
+			<code>{skillInstall}</code>
 			<button class="copy" type="button" aria-label="Copy">
 				<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 				{@html Copy}{@html Check}

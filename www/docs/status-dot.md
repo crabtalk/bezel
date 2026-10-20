@@ -1,26 +1,17 @@
 ---
 title: Status dot
 description: The small state bead on a row — the tone comes from the caller, because the meaning does.
+prompt: Put a green, amber or red dot beside each job in the list for running, queued and failed.
 ---
 
 ```rust
 use ui::widgets;
 
-widgets::status_dot(theme.success)
-widgets::status_dot(theme.busy)
-widgets::status_dot(theme.danger)
+widgets::status_dot(match job.state {
+    State::Running => theme.success,
+    State::Queued => theme.warning,
+    State::Failed => theme.danger,
+})
 ```
 
-"Working", "idle", "failed" are the caller's domain, so the mapping from a state to a tone stays there rather than becoming an enum every app has to translate.
-
-## API
-
-```rust
-// ui::widgets
-
-/// A 6px bead. The tones worth reaching for are `success`, `busy`, `warning`,
-/// `danger`, and `text_faint` for one that means nothing yet.
-pub fn status_dot(tone: gpui::Hsla) -> gpui::Div;
-
-// ...
-```
+- The caller maps its own states to a theme tone.

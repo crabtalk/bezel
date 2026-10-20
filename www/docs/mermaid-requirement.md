@@ -1,6 +1,7 @@
 ---
 title: Requirement
 description: Requirements and the elements that satisfy, verify or trace them.
+prompt: Draw a requirement diagram showing the login requirement and the test that verifies it.
 ---
 
 ```mermaid

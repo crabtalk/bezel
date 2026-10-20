@@ -1,6 +1,7 @@
 ---
 title: Kanban
 description: Columns of task cards.
+prompt: Show this sprint's tasks as a kanban diagram with To do, In progress and Done columns.
 ---
 
 ```mermaid

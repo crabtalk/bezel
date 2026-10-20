@@ -115,11 +115,7 @@ pub fn start() {
     let section = requested("s");
     let example = requested("e");
     let opening = requested("open");
-    // Filled by the window builder below, and read back once the app hands its
-    // handle over — the listener needs both, and neither exists before the
-    // other.
-    let embedded: Rc<RefCell<Option<Entity<Gallery>>>> = Rc::new(RefCell::new(None));
-    let slot = embedded.clone();
+    let embedded = section.is_some();
 
     let platform = Rc::new(gpui_web::WebPlatform::new(false));
     let http_client = Arc::new(platform.fetch_http_client());
@@ -133,7 +129,7 @@ pub fn start() {
             appearance::init(AppearanceMode::System, cx);
             gallery::init(cx);
             let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
-            cx.open_window(
+            let window = cx.open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()
@@ -143,11 +139,7 @@ pub fn start() {
                 // reaches `reapply_window_background`, which updates the window
                 // still being constructed.
                 move |_, cx| match section.as_deref() {
-                    Some(key) => {
-                        let gallery = cx.new(|cx| Gallery::embedded(key, example.as_deref(), cx));
-                        *slot.borrow_mut() = Some(gallery.clone());
-                        gallery
-                    }
+                    Some(key) => cx.new(|cx| Gallery::embedded(key, example.as_deref(), cx)),
                     None => match opening.as_deref() {
                         Some(key) => cx.new(|cx| Gallery::showing(key, cx)),
                         None => cx.new(Gallery::new),
@@ -156,9 +148,11 @@ pub fn start() {
             )
             .expect("failed to open the gallery window");
             cx.activate(true);
+            // On the web this closure runs once the browser's graphics resolve,
+            // after `run_embedded` has returned and the handle is stored.
+            if embedded && let Ok(gallery) = window.entity(cx) {
+                follow_page(gallery);
+            }
         });
     APPLICATION.with(|application| *application.borrow_mut() = Some(handle));
-    if let Some(gallery) = embedded.borrow().clone() {
-        follow_page(gallery);
-    }
 }

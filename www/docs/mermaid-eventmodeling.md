@@ -1,6 +1,7 @@
 ---
 title: Event modeling
 description: An event model: screens, commands and events along a timeline.
+prompt: Draw an event model of adding an item to the cart — the UI, the command and the event on a timeline.
 ---
 
 ```mermaid

@@ -1,6 +1,7 @@
 ---
 title: Wardley map
 description: A value chain plotted against evolution, with the moves planned for it.
+prompt: Draw a Wardley map of the tea shop's value chain, with the kettle evolving to a commodity.
 ---
 
 ```mermaid

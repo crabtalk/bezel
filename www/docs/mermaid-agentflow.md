@@ -1,6 +1,7 @@
 ---
 title: Agent flow
 description: An agent's steps, tools and decisions, grouped into flows.
+prompt: Draw our review agent's steps as an agent flow — gather changes, analyse the diff, run the linter tool, then decide if it's clean.
 ---
 
 ```mermaid

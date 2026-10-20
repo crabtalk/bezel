@@ -1,6 +1,7 @@
 ---
 title: Timeline
 description: Events grouped by period, in order.
+prompt: Draw a timeline of the product's releases by year.
 ---
 
 ```mermaid

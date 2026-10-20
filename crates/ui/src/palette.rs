@@ -70,6 +70,9 @@ pub enum PaletteEvent {
     Dismissed,
 }
 
+/// Paints its card and nothing around it: mounting, as in
+/// [`popover::modal_glass`], is the caller's. Twelve rows show and the rest
+/// scroll under the query line.
 pub struct CommandPalette {
     search: SearchList,
     focus_handle: FocusHandle,

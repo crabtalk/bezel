@@ -88,3 +88,35 @@ fn a_fence_stands_empty_until_its_diagram_is_drawn(cx: &mut TestAppContext) {
             .is_some()
     );
 }
+
+struct Edited(String);
+
+impl Render for Edited {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let doc = parse(&self.0);
+        div()
+            .w(px(320.0))
+            .child(render_with(&doc, Editing::default(), window, cx))
+    }
+}
+
+#[gpui::test]
+fn an_edited_fence_shows_its_last_diagram_until_the_next_is_drawn(cx: &mut TestAppContext) {
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let window = cx.add_window(|_, _| {
+        Edited("```mermaid\nflowchart LR\n  A[Start] --> B[End]\n```\n".into())
+    });
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+    window
+        .update(&mut cx, |page, _, cx| {
+            page.0 = "```mermaid\nflowchart LR\n  A[Start] --> C[Next]\n```\n".into();
+            cx.notify();
+        })
+        .unwrap();
+    cx.update(|window, _| window.refresh());
+    assert!(
+        cx.debug_bounds(markdown::fence::mermaid::LANGUAGE)
+            .is_some()
+    );
+}

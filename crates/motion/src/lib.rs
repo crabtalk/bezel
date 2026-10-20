@@ -351,7 +351,9 @@ impl CubicBezier {
         (lo + hi) / 2.0
     }
 
-    /// Eased output for input progress `x ∈ [0,1]` (clamped).
+    /// Eased output for input progress `x ∈ [0,1]` (clamped). The output is
+    /// clamped to `[0,1]` too; gpui's animation element aborts on a delta
+    /// outside it.
     pub fn eval(&self, x: f32) -> f32 {
         if x <= 0.0 {
             return 0.0;
