@@ -304,18 +304,7 @@ pub trait Controls: ThemeExt {
     /// into a `flex_col`, flexbox's default `align-items: stretch` would
     /// otherwise blow it out to the column's full width.
     fn toggle_group(&self) -> Div {
-        let theme = self.theme();
-        div()
-            .self_start()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(TOGGLE_GROUP_PAD))
-            .p(px(TOGGLE_GROUP_PAD))
-            .rounded(px(TOGGLE_GROUP_RADIUS))
-            .bg(theme.ink(0.06))
-            .border_1()
-            .border_color(theme.border)
+        track(self.theme()).self_start()
     }
 
     /// One segment. The selected segment carries the active wash over the
@@ -481,11 +470,7 @@ fn well(ring: gpui::Hsla, color: gpui::Hsla) -> Div {
 fn segment(theme: &Theme, selected: bool) -> Div {
     let wash = theme.element_hover;
     let item = div()
-        // Concentric with the track: 9 - 2 = 7.
-        .rounded(px(Theme::inset_radius(
-            TOGGLE_GROUP_RADIUS,
-            TOGGLE_GROUP_PAD,
-        )))
+        .rounded(px(on_track_radius()))
         .border_1()
         .border_color(crate::widgets::RING_SLOT)
         .text_style(TextStyle::Callout)
@@ -502,9 +487,28 @@ fn segment(theme: &Theme, selected: bool) -> Div {
 
 impl Controls for Theme {}
 
-/// The segmented track's radius, and the inset its segments come in by. Two
-/// numbers read from both [`Controls::toggle_group`] and
-/// [`Controls::toggle_group_item`], so a segment cannot stop being concentric
-/// with the track it sits in.
+/// The rounded wash a segmented control's segments and a strip's tabs stand
+/// on, a row with [`TOGGLE_GROUP_PAD`] around and between what it holds.
+pub(crate) fn track(theme: &Theme) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(TOGGLE_GROUP_PAD))
+        .p(px(TOGGLE_GROUP_PAD))
+        .rounded(px(TOGGLE_GROUP_RADIUS))
+        .bg(theme.ink(0.06))
+        .border_1()
+        .border_color(theme.border)
+}
+
+/// The radius of what stands on a [`track`], concentric with it: 9 - 2 = 7.
+pub(crate) const fn on_track_radius() -> f32 {
+    Theme::inset_radius(TOGGLE_GROUP_RADIUS, TOGGLE_GROUP_PAD)
+}
+
+/// A [`track`]'s radius, and the inset what stands on it comes in by. Read by
+/// both [`track`] and [`on_track_radius`], so nothing on a track can stop
+/// being concentric with it.
 const TOGGLE_GROUP_RADIUS: f32 = 9.0;
 const TOGGLE_GROUP_PAD: f32 = 2.0;

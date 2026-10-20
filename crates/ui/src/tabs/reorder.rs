@@ -4,11 +4,12 @@ use std::rc::Rc;
 
 use gpui::{
     App, Axis, Div, ElementId, IntoElement, Pixels, Point, RenderOnce, ScrollHandle, Stateful,
-    Window, div, prelude::*, px,
+    Window, div, prelude::*, px, relative, transparent_black,
 };
 
-use super::{GAP, Strip};
+use super::{GAP, Strip, TRACK_MIN_WIDTH, Track};
 use crate::drag::{self, Domain};
+use crate::widgets;
 
 /// Persistent gesture and animation state, one per strip.
 ///
@@ -64,6 +65,8 @@ impl<Id: Clone + PartialEq + 'static> Reorder<Id> {
             reorder: self.clone(),
             id: id.into(),
             tabs,
+            active: strip.active().cloned(),
+            track: None,
             moved: None,
             outside: None,
         }
@@ -92,11 +95,19 @@ pub struct Bar<Id: Clone + PartialEq + 'static> {
     reorder: Reorder<Id>,
     id: ElementId,
     tabs: Vec<(Id, Stateful<Div>)>,
+    active: Option<Id>,
+    track: Option<Track>,
     moved: Option<Rc<OnMove>>,
     outside: Option<Rc<OnOutside<Id>>>,
 }
 
 impl<Id: Clone + PartialEq + 'static> Bar<Id> {
+    /// Stand the tabs on a track, filling the box the bar is put in.
+    pub fn on_track(mut self, track: Track) -> Self {
+        self.track = Some(track);
+        self
+    }
+
     /// Apply the final move synchronously. Accepts `cx.listener`.
     pub fn on_reorder(mut self, moved: impl Fn(&Move, &mut Window, &mut App) + 'static) -> Self {
         self.moved = Some(Rc::new(moved));
@@ -114,9 +125,17 @@ impl<Id: Clone + PartialEq + 'static> Bar<Id> {
 
 impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let raised = theme::Theme::of(cx).surface_raised;
+        let theme = theme::Theme::of(cx).clone();
+        let raised = theme.surface_raised;
         let Reorder { domain, scroll } = self.reorder;
         let order: Vec<Id> = self.tabs.iter().map(|(id, _)| id.clone()).collect();
+        let (track, active) = (self.track, self.active);
+        // A line before every tab but the first, unless the pill is on either
+        // side of it. Inside the tab and out of its flow, so no tab moves when
+        // the pill does.
+        let parted = |at: usize| {
+            at > 0 && active.as_ref() != order.get(at) && active.as_ref() != order.get(at - 1)
+        };
         let row = div()
             .id("tab-row")
             .flex_1()
@@ -127,8 +146,30 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
             .gap(px(GAP))
             .overflow_x_scroll()
             .track_scroll(&scroll)
-            .children(self.tabs.into_iter().map(|(id, tab)| {
-                let tab = tab.flex_none();
+            .children(self.tabs.into_iter().enumerate().map(|(at, (id, tab))| {
+                let tab = match track {
+                    None => tab.flex_none(),
+                    Some(_) => tab
+                        .relative()
+                        .flex_1()
+                        .min_w(px(TRACK_MIN_WIDTH))
+                        .max_w(relative(1.))
+                        .justify_center()
+                        .rounded(px(widgets::on_track_radius()))
+                        .when(parted(at), |tab| {
+                            tab.child(
+                                div()
+                                    .absolute()
+                                    // Past the tab's own 1px border, to the
+                                    // middle of the gap.
+                                    .left(px(-(1.0 + GAP / 2.0) - 0.5))
+                                    .top(px(6.0))
+                                    .bottom(px(6.0))
+                                    .w(px(1.0))
+                                    .bg(theme.border),
+                            )
+                        }),
+                };
                 let tab = match domain.carries(&id) {
                     true => tab.bg(raised).cursor_grabbing(),
                     false => tab,
@@ -172,7 +213,16 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
             });
         }
         // Sized to its tabs: the bar grows into this box, not the row it sits in.
-        div()
+        // On a track it fills the box it is put in.
+        let frame = match track {
+            None => div(),
+            Some(track) => widgets::track(&theme)
+                .flex_1()
+                .when(track == Track::Bare, |frame| {
+                    frame.border_color(transparent_black())
+                }),
+        };
+        frame
             .id(self.id)
             .relative()
             .min_w_0()
