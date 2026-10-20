@@ -11,13 +11,16 @@ parameters, and that is the thing to internalise before writing a call.
 
 ## Fetch the page before writing the call
 
-Every doc page is served as markdown. Signatures here are wrong to guess.
+Every doc page is served as markdown. A page gives the common call and the
+caveats a caller must uphold; it lists no signatures. Get those from the
+crate's docs.rs page, which every doc page links, or from the crate source.
+Signatures are wrong to guess.
 
 | want | fetch |
 | --- | --- |
 | the index of every page | `https://bezel.gallery/llms.txt` |
 | one component | `https://bezel.gallery/docs/<slug>.md` |
-| all of it, one file (~88KB) | `https://bezel.gallery/llms-full.txt` |
+| all of it, one file | `https://bezel.gallery/llms-full.txt` |
 
 Slugs by group — fetch the one you need:
 
@@ -31,7 +34,9 @@ Slugs by group — fetch the one you need:
 - **Data** scroll-area, follow, table, tree, virtual-list
 - **Content** badge, tag, avatar, breadcrumb, pagination, empty-state, skeleton
 - **Status** progress, status-dot, alerts, step-row, loaders, stats
-- **Patterns** agent-activity, agent-tools, agent-composer, agent-transcript, agent-diff, agent-terminal, agent-orbs, agent-avatar, document, editor, syntax
+- **Editor** editor, document, selectable-text, ribbon, markdown, syntax
+- **Diagrams** canvas, charts, mermaid, and a `mermaid-<type>` page per diagram type
+- **Agent** agent-activity, agent-tools, agent-composer, agent-transcript, agent-diff, agent-terminal, browser, agent-orbs, agent-avatar
 
 With the sources checked out, `crates/ui/src/` is the truth and
 `cargo run -p gallery` shows every component live.

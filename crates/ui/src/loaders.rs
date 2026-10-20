@@ -23,8 +23,7 @@ pub use motion::phase::{GSPIN_DIM, GSPIN_ROW_TINTS, MATRIX_SIDE, PULSE_CELLS};
 /// The pulse wave loader: a row of cells pulsing opacity 0.08→1 / scale 0.9→1
 /// over 2.4s with a 0.15s stagger per cell.
 ///
-/// `id` scopes the per-cell animation state — give each loader instance a
-/// distinct id.
+/// `id` is not read: every instance runs off the shared clock.
 pub fn pulse_loader(
     _id: &'static str,
     theme: &Theme,

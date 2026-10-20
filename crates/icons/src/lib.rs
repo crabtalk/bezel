@@ -38,7 +38,7 @@
 //! One feature per Lucide category, named as Lucide names it, and `full` is all
 //! 42. Nothing is on by default. Cargo unions features across a graph, so a
 //! category a dependency turns on is the floor for everyone below it — `ui`
-//! needs `arrows`, `notifications` and `text`.
+//! needs `arrows`, `layout`, `notifications`, `shapes` and `text`.
 //!
 //! [`CATEGORIES`] is every enabled category and its icons, for an icon browser.
 //! Naming it is what pins the enabled set, so an app that only paints icons

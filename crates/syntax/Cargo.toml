@@ -1,7 +1,7 @@
 [package]
 name = "bezel-syntax"
 
-description = "Tree-sitter syntax classification — a language registry, injections, and (byte range, kind) spans out. Grammars come from a provider"
+description = "Tree-sitter syntax classification — a language registry, injections, and (byte range, kind) spans out, with feature-gated grammars"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -20,18 +20,33 @@ name = "syntax"
 workspace = true
 
 [features]
+default = ["rust", "python", "typescript", "json", "go", "bash", "toml"]
 wasm = ["tree-sitter/wasm"]
+rust = ["dep:tree-sitter-rust"]
+python = ["dep:tree-sitter-python"]
+# Both the TypeScript and TSX rows — one grammar crate, and JavaScript rides TSX.
+typescript = ["dep:tree-sitter-typescript"]
+json = ["dep:tree-sitter-json"]
+go = ["dep:tree-sitter-go"]
+bash = ["dep:tree-sitter-bash"]
+toml = ["dep:tree-sitter-toml-ng"]
 
 [dependencies]
 theme.workspace = true
 tree-sitter.workspace = true
 tree-sitter-highlight.workspace = true
 tree-sitter-language.workspace = true
+tree-sitter-rust = { workspace = true, optional = true }
+tree-sitter-python = { workspace = true, optional = true }
+tree-sitter-json = { workspace = true, optional = true }
+tree-sitter-typescript = { workspace = true, optional = true }
+tree-sitter-go = { workspace = true, optional = true }
+tree-sitter-bash = { workspace = true, optional = true }
+tree-sitter-toml-ng = { workspace = true, optional = true }
 
 [dev-dependencies]
-# Fixtures only. The core links no grammar of its own — these give the
-# injection and registry tests a host/injected pair to run against, and the
-# document tests a full-sized highlights query.
+# Fixtures only: a host/injected pair for the injection and registry tests,
+# and a full-sized highlights query for the document tests.
 tree-sitter-html.workspace = true
 tree-sitter-css.workspace = true
 tree-sitter-rust.workspace = true

@@ -5,7 +5,7 @@
 //! dropped inside it.
 //!
 //! ```ignore
-//! CanvasView::new(doc, cx).with_kinds(Kinds::new().with_root(vault).with("session", session(store)))
+//! CanvasView::new(doc, layout::MINDMAP, cx).with_kinds(Kinds::new().with_root(vault).with("session", session(store)))
 //! ```
 //!
 //! Keyed by the node's `type`, per view; [`crate::AppExt::set_canvas_kinds`] names them for every
@@ -47,7 +47,8 @@ const FRAME_WASH: f32 = 0.06;
 /// How a node's box is sized.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sizing {
-    /// The document's width and height.
+    /// The document's width and height. What the kind paints past it is
+    /// clipped.
     Fixed,
     /// The document's width, as tall as the content. The height is written
     /// back.
@@ -70,6 +71,8 @@ pub enum Chrome {
 
 /// What a node paints with.
 pub struct Look {
+    /// The view's scale. gpui does not transform an element, so the kind
+    /// applies it to what it paints — `Typography::scaled`, `text_style_at`.
     pub zoom: f32,
     /// The editor typing into the node while it is edited, for the kind to
     /// place where the field it edits shows.
@@ -460,7 +463,7 @@ pub fn chrome(dress: Chrome, node: &Node, zoom: f32, cx: &App) -> Div {
         let outline = gpui::canvas(
             |_, _, _| (),
             move |bounds, _, window, _| {
-                canvas_core::paint::shape(window, shape, bounds, RADIUS * zoom, fill, border)
+                crate::paint::shape(window, shape, bounds, RADIUS * zoom, fill, border)
             },
         )
         .absolute()
@@ -495,7 +498,7 @@ pub fn chrome(dress: Chrome, node: &Node, zoom: f32, cx: &App) -> Div {
     }
 }
 
-pub use canvas_core::paint::color;
+pub use crate::paint::color;
 
 /// Our own node field: the height a growing node was pulled to. Its content
 /// may still run taller.

@@ -18,60 +18,64 @@
 //! selection included for a caller that owns them. The editing *surface* is the
 //! `editor` crate.
 //!
+//! Everything that paints is behind the `gpui` feature, on by default. Without
+//! it the crate is the document model alone and builds for
+//! `wasm32-unknown-unknown`.
+//!
 //! An image at an `http` URL — a picture, a favicon, a bookmark's cover —
 //! needs an http client on the app, which `gpui_platform::application` installs
 //! and a hand-built [`gpui::Application`] does not. gpui's own default is a
 //! `NullHttpClient`, and the failure is silent: the element paints the same
 //! fallback it would show while a fetch was still in flight.
 
-mod app;
-pub use app::AppExt;
-
-pub mod block;
-#[cfg(feature = "mermaid")]
-pub mod charts;
-pub mod comment;
+#[cfg(feature = "gpui")]
+pub mod app;
 pub mod doc;
 pub mod edit;
-pub mod find;
-pub mod highlight;
-pub mod layout;
-pub mod link;
+#[cfg(feature = "gpui")]
+pub mod fence;
 pub mod marks;
-#[cfg(feature = "mermaid")]
-pub mod mermaid;
+#[cfg(feature = "gpui")]
+pub mod paint;
 pub mod parse;
-pub mod picture;
-pub mod preview;
 pub mod quote;
+#[cfg(feature = "gpui")]
 pub mod render;
 pub mod select;
-pub mod selectable;
 pub mod serialize;
+#[cfg(feature = "gpui")]
 pub mod source;
-pub mod source_style;
 pub mod synced;
-pub mod typography;
 
-pub use block::{BlockRenderer, Fence, Rewrite};
-pub use comment::{CommentPaint, CommentWashes, default_comment};
+#[cfg(feature = "gpui")]
+pub use app::{
+    AppExt,
+    layout::Layout,
+    link::{Link, Links},
+    picture::PictureMenu,
+    preview::Preview,
+    typography::Typography,
+};
 pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKind, Quoted, Text};
 pub use edit::{Shortcut, Splice, shortcut};
-pub use find::{FindPaint, default_find, find_washes};
-pub use highlight::Highlighter;
-pub use layout::Layout;
-pub use link::{Link, Links};
-pub use marks::{
-    HighlightColor, HighlightPaint, MarkPaint, Marks, default_highlight, highlight_solid,
-    highlight_wash,
+#[cfg(feature = "gpui")]
+pub use fence::{BlockRenderer, Fence, Rewrite, highlight::Highlighter};
+pub use marks::Marks;
+#[cfg(feature = "gpui")]
+pub use paint::{
+    comment::{CommentPaint, CommentWashes, default_comment},
+    find::{FindPaint, default_find, find_washes},
+    marks::{
+        HighlightColor, HighlightPaint, MarkPaint, default_highlight, highlight_solid,
+        highlight_wash,
+    },
 };
 pub use parse::{
     ParsedDoc, is_image, is_link, is_url, parse, parse_at, parse_at_many, parse_ranges,
     parse_ranges_with, parse_with,
 };
-pub use picture::PictureMenu;
-pub use preview::Preview;
 pub use quote::Quote;
+#[cfg(feature = "gpui")]
 pub use render::{
     Annotation, BlockLayouts, Caption, CopyButton, Editing, FenceHost, ImageOverlay,
     ImageOverlayCorner, LeaveBlock, OnImage, OnImageMenu, OnJump, OnLeave, OnResize, OnRewrite,
@@ -80,7 +84,6 @@ pub use render::{
 };
 pub use select::{Affinity, Cursor, Selection};
 pub use serialize::{serialize, serialize_at, serialize_at_many, serialize_with};
-pub use source::spans as source_spans;
-pub use source_style::SourceStyle;
+#[cfg(feature = "gpui")]
+pub use source::{spans as source_spans, style::SourceStyle};
 pub use synced::Synced;
-pub use typography::Typography;

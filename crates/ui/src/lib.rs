@@ -28,6 +28,7 @@ pub mod docking;
 pub mod drag;
 pub mod floating;
 pub mod focus;
+pub mod fonts;
 pub mod history;
 pub mod hover_card;
 pub mod input;
@@ -77,11 +78,12 @@ static FONT_GEIST_SEMIBOLD: &[u8] = include_bytes!("../assets/fonts/Geist-SemiBo
 #[cfg(feature = "geist-weights")]
 static FONT_GEIST_BOLD: &[u8] = include_bytes!("../assets/fonts/Geist-Bold.ttf");
 
-/// Register the bundled fonts with the gpui text system. Failure is non-fatal:
+/// Register the bundled fonts through [`fonts::add`]. Failure is non-fatal:
 /// the theme's system fallbacks take over (same families the CSS stack names).
+/// With no `geist-*` feature on, it registers nothing and returns `Ok`.
 ///
-/// Your own fonts go through this same gpui API — `add_fonts` takes any bytes,
-/// and [`theme::Theme::font_sans`] / [`theme::Theme::font_mono`] name which
+/// Your own fonts go through [`fonts::add`] too, and
+/// [`theme::Theme::font_sans`] / [`theme::Theme::font_mono`] name which
 /// family the components then paint with.
 pub fn register_fonts(cx: &App) -> gpui::Result<()> {
     #[allow(unused_mut, reason = "every face below is behind a feature")]
@@ -96,5 +98,5 @@ pub fn register_fonts(cx: &App) -> gpui::Result<()> {
         Cow::Borrowed(FONT_GEIST_SEMIBOLD),
         Cow::Borrowed(FONT_GEIST_BOLD),
     ]);
-    cx.text_system().add_fonts(fonts)
+    fonts::add(cx, fonts)
 }

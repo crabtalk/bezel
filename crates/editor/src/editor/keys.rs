@@ -83,6 +83,9 @@ pub fn init(cx: &mut App) {
 /// chord to take it away, or skip [`init`] and bind a filtered `bindings()`.
 /// Either way the actions are public and [`CONTEXT`] names the scope, so what
 /// the editor answers to is the app's to say.
+///
+/// [`MoveBlockUp`], [`MoveBlockDown`], [`DuplicateBlock`] and [`RemoveBlock`]
+/// have no chord.
 pub fn bindings() -> Vec<KeyBinding> {
     let ctx = Some(CONTEXT);
     let mut bindings = Vec::new();

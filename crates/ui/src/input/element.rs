@@ -289,6 +289,7 @@ impl Render for TextField {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
             .w_full()
+            .when(self.shape == Shape::Fill, |field| field.h_full())
             .when(self.frame, |field| {
                 field
                     .px(px(10.0))
@@ -388,6 +389,10 @@ impl Element for TextFieldElement {
             }
             Shape::Rows(rows) => {
                 style.size.height = (line_height * rows.max(1) as f32).into();
+                return (window.request_layout(style, [], cx), ());
+            }
+            Shape::Fill => {
+                style.size.height = relative(1.).into();
                 return (window.request_layout(style, [], cx), ());
             }
             // Growing needs the row count, and the row count needs shaping at

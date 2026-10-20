@@ -11,6 +11,10 @@ use super::{GAP, Strip};
 use crate::drag::{self, Domain};
 
 /// Persistent gesture and animation state, one per strip.
+///
+/// Its tabs take no `on_drag` of their own. A control inside a tab stops
+/// mouse-down propagation, as [`super::close`] does, or a press on it picks up
+/// the tab.
 pub struct Reorder<Id> {
     domain: Domain<(), Id>,
     scroll: ScrollHandle,
@@ -39,7 +43,8 @@ impl<Id: Clone + PartialEq + 'static> Reorder<Id> {
         }
     }
 
-    /// Supply tabs in model order. The preview moves live; host order changes on release.
+    /// Supply tabs in model order, each with a key stable across renders. The
+    /// preview moves live; host order changes on release.
     pub fn bar(
         &self,
         id: impl Into<ElementId>,

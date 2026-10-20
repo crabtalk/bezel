@@ -1,0 +1,42 @@
+[package]
+name = "bezel-mermaid"
+description = "Mermaid source drawn as SVG, a port of Pele"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+exclude = ["tests/"]
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "mermaid"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+# Mermaid's config and models are JSON objects in insertion order.
+serde_json = { workspace = true, features = ["preserve_order"] }
+serde_repr.workspace = true
+serde_with.workspace = true
+indexmap = { workspace = true, features = ["serde"] }
+chrono.workspace = true
+memchr.workspace = true
+
+# The clock and the local zone are the page's, through `Date`.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+chrono = { workspace = true, features = ["wasmbind"] }
+
+[dev-dependencies]
+# The parser gpui paints SVG with.
+usvg.workspace = true
+
+[[bench]]
+name = "mermaid"
+harness = false

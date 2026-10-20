@@ -90,7 +90,8 @@ fn registry() -> &'static RwLock<Vec<Entry>> {
 }
 
 /// The names alone. Grammars arrive through [`register`], from
-/// `bezel-syntax-std` or from a provider of your own.
+/// [`grammars::install`](crate::grammars::install) or from a provider of your
+/// own.
 fn seeded() -> Vec<Entry> {
     NAMED
         .iter()

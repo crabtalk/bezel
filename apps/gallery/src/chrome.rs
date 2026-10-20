@@ -28,8 +28,10 @@ impl Gallery {
             .h(px(Theme::HEADER_HEIGHT))
             .pl(px(if compact {
                 COMPACT_NAV_PAD - NAV_ITEM_PAD
-            } else {
+            } else if NAV_OVER_RAIL {
                 RAIL_WIDTH + CARD_PAD - NAV_ITEM_PAD
+            } else {
+                CARD_PAD - NAV_ITEM_PAD
             }))
             .pr(px(if APP_MENUBAR { 0.0 } else { CARD_PAD }))
             .flex()
@@ -299,12 +301,12 @@ impl Render for Gallery {
         let body = self.body(section, window, cx);
         let pane = div().relative().flex_1().min_h_0().map(|pane| {
             if TABS[self.tab].full_bleed {
-                // A pattern is a screen: it takes the pane whole and
+                // A full-bleed page is a screen: it takes the pane whole and
                 // scrolls its own parts, so neither the fixed column nor
                 // the pane's own scrollbar applies to it.
                 //
                 // Narrower than a screen it stays one anyway, and you pan
-                // across it — a pattern is a file you copy into a desktop app,
+                // across it — a page is a file you copy into a desktop app,
                 // and thirteen phone layouts of one document nothing.
                 pane.child(
                     div()
@@ -348,44 +350,50 @@ impl Render for Gallery {
             // header — repeating them inside it would be the same chrome twice.
             div().flex().flex_col().size_full().child(pane)
         } else {
-            div()
+            let rail = (!compact).then(|| self.rail.clone().cached(rail::style()));
+            let card = div()
+                .flex_1()
+                .min_w_0()
+                .h_full()
                 .flex()
                 .flex_col()
-                .size_full()
-                .child(self.nav(&theme, compact, window, cx))
-                .child(
+                .bg(theme.surface)
+                .overflow_hidden()
+                // Runs off the window's right and bottom edges, so the only
+                // corner that floats is the one that gets rounded. The seam it
+                // rounds against is the rail, so a drawer leaves it nothing to
+                // round and the pane meets the window edge.
+                .when(!compact, |card| {
+                    card.rounded_tl(px(Theme::panel_radius()))
+                        .border_t_1()
+                        .border_l_1()
+                        .border_color(theme.border)
+                })
+                .child(self.header(section, &theme))
+                .child(pane);
+            let nav = self.nav(&theme, compact, window, cx);
+            if NAV_OVER_RAIL || compact {
+                div().flex().flex_col().size_full().child(nav).child(
                     div()
                         .flex_1()
                         .min_h_0()
                         .flex()
                         .flex_row()
-                        .when(!compact, |row| {
-                            row.child(self.rail.clone().cached(rail::style()))
-                        })
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .h_full()
-                                .flex()
-                                .flex_col()
-                                .bg(theme.surface)
-                                .overflow_hidden()
-                                // Runs off the window's right and bottom edges,
-                                // so the only corner that floats is the one
-                                // that gets rounded. The seam it rounds against
-                                // is the rail, so a drawer leaves it nothing to
-                                // round and the pane meets the window edge.
-                                .when(!compact, |card| {
-                                    card.rounded_tl(px(Theme::panel_radius()))
-                                        .border_t_1()
-                                        .border_l_1()
-                                        .border_color(theme.border)
-                                })
-                                .child(self.header(section, &theme))
-                                .child(pane),
-                        ),
+                        .children(rail)
+                        .child(card),
                 )
+            } else {
+                div().flex().flex_row().size_full().children(rail).child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .flex()
+                        .flex_col()
+                        .child(nav)
+                        .child(div().flex_1().min_h_0().flex().flex_row().child(card)),
+                )
+            }
         };
 
         // Traversal goes on the root so `tab` works wherever focus happens to

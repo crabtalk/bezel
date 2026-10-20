@@ -9,8 +9,8 @@ export const sections = catalog.flatMap((tab) =>
 			...section,
 			tab: tab.title,
 			group: group.title,
-			// A pattern is a screen, not a control: it wants the whole pane in the
-			// gallery, and it wants a taller frame on the page that documents it.
+			// A full-bleed page is a screen, not a control: it wants the whole pane
+			// in the gallery, and a taller frame on the page that documents it.
 			fullBleed: tab.fullBleed
 		}))
 	)
@@ -77,7 +77,8 @@ export const docsHome = documentedSections[0]?.key;
 
 export const repo = 'https://github.com/crabtalk/bezel';
 
-export const repoApi = repo.replace('https://github.com/', 'https://api.github.com/repos/');
+/** What a reader runs to give their agent the bezel skill. */
+export const skillInstall = 'npx skills add crabtalk/bezel --skill bezel';
 
 export const discord = 'https://discord.gg/yGZDYnwbx6';
 
@@ -88,7 +89,7 @@ export const sourceUrl = (section) => `${repo}/blob/main/${section.source}`;
  * Rustdoc for the crate a section is written in — the full surface, where the
  * page carries only the part worth reading first. `crates/<lib>` publishes as
  * `bezel-<lib>` and keeps `<lib>` as its lib name, which is the path docs.rs
- * builds. A pattern lives under `apps/`, so it has no crate and gets no link.
+ * builds. A screen lives under `apps/`, so it has no crate and gets no link.
  */
 export const docsUrl = (section) => {
 	const crate = section.source?.match(/^crates\/([^/]+)\//)?.[1];
@@ -96,7 +97,7 @@ export const docsUrl = (section) => {
 };
 
 /** The library in one line — search results, share cards, and the agent surface. */
-export const tagline = 'Design tokens, motion, and materials for native Rust apps, built on gpui.';
+export const tagline = 'A block editor, diagrams and components for native Rust apps, built on gpui.';
 
 /** Canonical URL, used for share links. */
 export const site = 'https://bezel.gallery';

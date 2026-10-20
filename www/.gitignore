@@ -2,6 +2,8 @@ node_modules
 .svelte-kit
 build
 src/lib/catalog.json
+src/lib/diagrams.json
+src/lib/stats.json
 
 # wasm-bindgen output; the loader beside it is source.
 static/gallery/*.js

@@ -138,6 +138,10 @@ struct Managing {
 type Normalize = dyn Fn(&str) -> Option<SharedString>;
 type Tint = dyn Fn(&str, &Theme) -> Hsla;
 
+/// Rows show a check for on and a dash for mixed. Taking a row clears the
+/// query. The Create row sits first and is active while it shows. Escape in
+/// the manage pane returns to the list. The list shows twelve rows and
+/// scrolls past that.
 pub struct MultiSelect {
     choices: Vec<Choice>,
     query: Entity<TextField>,

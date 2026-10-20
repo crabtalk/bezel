@@ -1,12 +1,21 @@
 ---
 title: Diff
-description: A file review — and the pattern whose finding is that it produced no library code at all.
+description: A file review — and the page whose finding is that it produced no library code at all.
+prompt: Show the agent's edit to a file as a unified diff with line numbers, green added lines and red removed lines, under a header with the path.
 ---
 
-A diff row is two numbers, a sign and a line of text: three `div`s and a colour, with no reducer, no state and nothing to measure. Next to [`tree`](/docs/tree) or [`table`](/docs/table) it would be a paint helper wearing a component's badge, so it lives in the file you would copy.
+```rust
+let (wash, mark, sign) = match change {
+    Change::Added => (theme.success.opacity(0.1), theme.success, "+"),
+    Change::Removed => (theme.danger.opacity(0.1), theme.danger, "-"),
+    Change::Context => (gpui::transparent_black(), theme.text_faint, " "),
+};
+div().flex().flex_row().gap(px(8.0)).bg(wash).font_family(theme.font_mono.clone())
+    .child(number(old)).child(number(new))
+    .child(div().text_color(mark).child(sign))
+    .child(text)
+```
 
-What is actually hard about a diff view — folding hunks, word-level marks inside a changed line, syntax highlighting, two panes scrolling together — is either the app's or waits on a syntax crate. Calling this a component would have promised all four.
-
-The rows arrive already decided: bezel never computes a diff. The header is `widgets` chrome, and the tones are the palette's `diff_add`, `diff_del` and `diff_hunk_bg`.
-
-The source is at `apps/gallery/src/patterns/diff.rs`.
+- There is no diff component, and bezel never computes a diff: the rows arrive decided. No hunk folding, word-level marks, syntax highlighting or side-by-side panes.
+- The palette also carries `diff_add`, `diff_del` and `diff_hunk_bg`.
+- Copy `apps/gallery/src/pages/agent/diff.rs`.

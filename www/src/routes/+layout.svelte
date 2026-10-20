@@ -1,26 +1,14 @@
 <script>
-	import { siDiscord, siGithub } from 'simple-icons';
+	import { siDiscord, siGithub, siX } from 'simple-icons';
 	import '../app.css';
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
 	import Brand from '$lib/Brand.svelte';
-	import { discord, documented, repo, repoApi } from '$lib/catalog.js';
+	import { discord, docsHome, documented, repo } from '$lib/catalog.js';
 
-	let { children, data } = $props();
+	const author = 'https://x.com/tianyi_gc';
 
-	// The build-time count goes stale between deploys, so refresh it once on
-	// hydration. Unauthenticated, but it is one request per visitor against a
-	// 60/hour per-IP limit, and the baked value stands when it fails.
-	let stars = $state(data.stars);
-
-	$effect(() => {
-		fetch(repoApi)
-			.then((response) => (response.ok ? response.json() : null))
-			.then((json) => {
-				if (typeof json?.stargazers_count === 'number') stars = json.stargazers_count;
-			})
-			.catch(() => {});
-	});
+	let { children } = $props();
 
 	// One header for the whole site: there is no marketing/docs split here to
 	// signal, so docs get the same chrome with the catalog's tabs added to it.
@@ -73,54 +61,144 @@
 </svelte:head>
 
 <header>
-	<a class="wordmark" href="{base}/">bezel</a>
+	<div class="bar" class:wide={inDocs}>
+		<a class="wordmark" href="{base}/">
+			<img src="{base}/favicon.svg" alt="" width="22" height="22" />
+			bezel
+		</a>
 
-	<!-- Nav sits with the wordmark, not opposite it: the left group is where you
-	     are in the project, the right group is what you can do about it. -->
-	<nav class="nav">
-		{#each tabs as tab (tab.title)}
-			<a
-				href="{base}/docs/{home(tab)}/"
-				class:current={tab.title === activeTab?.title}
-				aria-current={tab.title === activeTab?.title ? 'page' : undefined}
-			>
-				{tab.title}
+		<!-- Nav sits with the wordmark, not opposite it: the left group is where you
+		     are in the project, the right group is what you can do about it. -->
+		<nav class="nav">
+			{#each tabs as tab (tab.title)}
+				<a
+					href="{base}/docs/{home(tab)}/"
+					class:current={tab.title === activeTab?.title}
+					aria-current={tab.title === activeTab?.title ? 'page' : undefined}
+				>
+					{tab.title}
+				</a>
+			{/each}
+		</nav>
+
+		<nav class="links">
+			<a class="mark" href={discord} target="_blank" rel="noreferrer" aria-label="bezel on Discord">
+				<Brand icon={siDiscord} size={15} />
 			</a>
-		{/each}
-	</nav>
-
-	<nav class="links">
-		<a class="mark" href={discord} target="_blank" rel="noreferrer" aria-label="bezel on Discord">
-			<Brand icon={siDiscord} size={15} />
-		</a>
-		<a class="action" href={repo}>
-			Star
-			<Brand icon={siGithub} size={14} />
-			{#if stars !== null}<span class="count">{stars}</span>{/if}
-		</a>
-	</nav>
+			<a class="mark" href={repo} aria-label="bezel on GitHub">
+				<Brand icon={siGithub} size={15} />
+			</a>
+		</nav>
+	</div>
 </header>
 
-{@render children()}
+<!-- At least the window's height under the bar, so a short page keeps its foot
+     at the bottom of the window. -->
+<div class="page">
+	<main>
+		{@render children()}
+	</main>
+
+	{#if !inDocs}
+		<footer>
+			<nav class="left">
+				<a href="https://github.com/crabtalk">crabtalk</a>
+				{#if docsHome}<a href="{base}/docs/{docsHome}/">Docs</a>{/if}
+				<a href="{repo}/tree/main/skills">Skills</a>
+			</nav>
+			<nav class="right">
+				<a href={repo} aria-label="bezel on GitHub"><Brand icon={siGithub} size={15} /></a>
+				<a href={discord} target="_blank" rel="noreferrer" aria-label="bezel on Discord">
+					<Brand icon={siDiscord} size={15} />
+				</a>
+				<a href={author} target="_blank" rel="noreferrer" aria-label="The author on X">
+					<Brand icon={siX} size={14} />
+				</a>
+			</nav>
+		</footer>
+	{/if}
+</div>
 
 <style>
+	/* A band of glass across the window, with the page's own column inside it. */
 	header {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		height: var(--header);
+		border-bottom: 1px solid var(--line);
+		background: color-mix(in srgb, var(--bg) 60%, transparent);
+		backdrop-filter: blur(20px) saturate(1.8);
+		-webkit-backdrop-filter: blur(20px) saturate(1.8);
+		/* The lit edge glass has along its rim. */
+		box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.04);
+	}
+
+	.bar {
 		display: flex;
 		align-items: center;
 		gap: 26px;
+		height: 100%;
+		max-width: calc(1400px + 48px);
+		margin: 0 auto;
 		padding: 0 24px;
-		height: 56px;
-		border-bottom: 1px solid var(--line);
-		position: sticky;
-		top: 0;
+	}
+
+	/* The docs' rail is full bleed, so the bar is too. */
+	.bar.wide {
+		max-width: none;
+	}
+
+	.page {
+		display: flex;
+		flex-direction: column;
+		min-height: calc(100dvh - var(--header));
+	}
+
+	main {
+		flex: 1;
+	}
+
+	/* Full bleed; its content keeps the home page's 1200px column. */
+	footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 20px;
+		padding: 14px max(var(--gutter), calc((100% - 1200px) / 2));
+		border-top: 1px solid var(--line);
 		background: color-mix(in srgb, var(--bg) 88%, transparent);
 		backdrop-filter: blur(12px);
-		z-index: 20;
+	}
+
+	footer nav {
+		display: flex;
+		align-items: center;
+		gap: 22px;
+	}
+
+	/* Drafting-label register: small, spaced and set in the mono face, so it
+	   reads as an annotation on the page rather than more prose. */
+	footer .left a {
+		font-family: var(--mono);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.16em;
+	}
+
+	footer a {
+		color: var(--faint);
+	}
+
+	footer a:hover {
+		color: var(--text);
+		text-decoration: none;
 	}
 
 	.wordmark {
 		display: flex;
 		align-items: center;
+		gap: 8px;
 		color: var(--text);
 		font-weight: 600;
 		letter-spacing: -0.02em;
@@ -165,41 +243,22 @@
 	}
 
 
-	/* The label names the verb, the mark names the destination — so spelling the
-	   destination out as well would say it twice. */
-	.action {
-		display: inline-flex;
-		align-items: center;
-		gap: 7px;
-		height: 32px;
-		padding: 0 11px;
-		margin-left: 4px;
-		border: 1px solid var(--line-strong);
-		border-radius: var(--radius-control);
-		color: var(--text);
-	}
-
-	.action:hover {
-		border-color: var(--text);
-		text-decoration: none;
-	}
-
-	.count {
-		font-variant-numeric: tabular-nums;
-		color: var(--muted);
-		border-left: 1px solid var(--line-strong);
-		padding-left: 8px;
-	}
-
 	header a:hover {
 		color: var(--text);
 		text-decoration: none;
 	}
 
 	@media (max-width: 720px) {
-		header {
+		.bar {
 			gap: 16px;
 			padding: 0 16px;
+		}
+
+		footer {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 10px;
+			padding-block: 12px;
 		}
 
 		/* The tabs never fit beside the wordmark on a phone, and `min-width: 0`

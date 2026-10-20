@@ -17,7 +17,17 @@
 	--radius-control: 6px;
 	--radius-panel: 8px;
 	--radius-frame: 12px;
+	/* The gutter the header, every section and the footer share. */
+	--gutter: 28px;
+	/* The bar's height, and what anything sticky below it has to clear. */
+	--header: 56px;
 	color-scheme: dark;
+}
+
+@media (max-width: 720px) {
+	:root {
+		--gutter: 18px;
+	}
 }
 
 * {
@@ -27,6 +37,7 @@
 html,
 body {
 	margin: 0;
+	overscroll-behavior-y: none;
 	background: var(--bg);
 	color: var(--text);
 	font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
@@ -119,27 +130,22 @@ pre {
 	color: var(--text);
 }
 
-/* A gpui canvas claims every touch that lands on it — `touch-action: none` plus
-   a `preventDefault` on each pointer event — so a swipe over an inline embed
-   scrolls the gallery and never the page under it. On touch the embed is a
-   preview and interaction moves to the expanded dialog, where the gallery has
-   the screen and there is nothing behind it to scroll. A `button`, so a swipe
-   across it still scrolls the page and a tap still expands. */
+/* A gpui canvas claims every wheel and touch event that lands on it, so an
+   inline embed would scroll the gallery and never the page under it. The cover
+   sits over it until `engage` lifts it. A `button`, so a swipe across it still
+   scrolls the page. */
 .cover {
-	display: none;
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	border: 0;
+	padding: 0;
+	background: none;
+	cursor: pointer;
 }
 
-@media (hover: none) {
-	.cover {
-		display: block;
-		position: absolute;
-		inset: 0;
-		z-index: 1;
-		border: 0;
-		padding: 0;
-		background: none;
-		cursor: pointer;
-	}
+.engaged > .cover {
+	display: none;
 }
 
 /* One box, not two. `pre` already draws the outline and the padding; the

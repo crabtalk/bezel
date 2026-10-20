@@ -12,8 +12,10 @@
 //!
 //! This half is pure, so the motion is testable without a window.
 
+#[cfg(feature = "gpui")]
 use std::ops::Range;
 
+#[cfg(feature = "gpui")]
 use ui::input::Granularity;
 
 use crate::doc::{Doc, Part};
@@ -283,6 +285,7 @@ impl Cursor {
     /// The span of `unit` holding the caret, inside its own part. A word is
     /// the run of alphanumerics the caret touches, or of anything else when it
     /// touches none; a line runs between the part's newlines. A mention is never split.
+    #[cfg(feature = "gpui")]
     pub fn span(self, unit: Granularity, doc: &Doc) -> Range<Self> {
         let here = self.clamp(doc);
         let Some(text) = doc

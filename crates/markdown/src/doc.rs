@@ -323,7 +323,7 @@ pub enum BlockKind {
         width: Option<u32>,
     },
     /// A link with a block to itself, painted richly. Atomic on purpose:
-    /// everything it shows past the URL comes from [`crate::preview`], so there
+    /// everything it shows past the URL comes from [`crate::app::preview`], so there
     /// is nothing here for a caret to edit.
     ///
     /// [`Form`] picks a card or a card with its picture across the width;
@@ -526,7 +526,7 @@ pub enum Mark {
     /// A link painted richly rather than as underlined text — a chip inline, a
     /// [`BlockKind::Bookmark`] with a block to itself.
     ///
-    /// The chip shows a favicon and the [`crate::preview`] title in place of
+    /// The chip shows a favicon and the [`crate::app::preview`] title in place of
     /// its text, and opens the card on hover. Its text is atomic: a caret sits
     /// at either end, never inside, and typing at its end falls outside it.
     Mention {

@@ -1,5 +1,26 @@
 [
   {
+    "version": "0.2.18",
+    "date": "2026-10-19",
+    "summary": "Mermaid source drawn as SVG by the new `bezel-mermaid`, without gpui, and the document model builds without gpui.",
+    "new": [
+      "`bezel-mermaid` (`mermaid`) turns Mermaid source into SVG, a port of Pele 1.6.0: `render(source, &Options, &host)` answers a `Drawing` (`kind`, `svg`, `width`, `height`, `links`), `parse(source, &Options)` a `Parsed` whose `model` serializes as Pele's, `render_parsed`, `detect_type` and `supports`. Errors carry Pele's messages, a `Code`, and the line, column and snippet. The host is a `Host`, which answers text widths and icon markup; `Metrics` is one with Arial's advances and no icons. `Options` holds Pele's render options with their defaults. Colours and fonts are `--bezel-*` CSS variables. It builds without gpui, for `wasm32-unknown-unknown` too. This release draws `info`, `pie`, `xychart`, `quadrantChart`, `radar`, `sankey`, `treemap`, `gitGraph`, `packet`, `treeView`, `mindmap`, `railroad`, `venn`, `ishikawa`, `gantt`, `journey`, `kanban`, `timeline`, `classDiagram`, `flowchart`, `stateDiagram`, `erDiagram`, `requirementDiagram`, `sequenceDiagram`, `cynefin`, `wardley`, `eventmodeling`, `C4`, `architecture`, `block`, `agentflow`, `usecase` and `swimlane`.",
+      "`mermaid::layout` holds the layered, compound and lane layouts every graph diagram is placed by, and `mermaid::svg` the shapes, edge routes, markers and cluster titles they are drawn with; `mermaid::diagrams::common` the tokenizer, label fitting and outline grammar the diagram types share.",
+      "On `benches/mermaid.rs` against Pele 1.6.0 in Node 26, on an Apple M1, every case renders at least as fast as Pele at `opt-level = 3`, 1.06× to 2.7× (the flowchart docs in 2.1 ms against 3.7 ms); at the release profile's `opt-level = \"z\"` it is 0.70× of Pele on the geometric mean. `cargo bench -p bezel-mermaid --bench mermaid`, with `--profile release` for the latter, and `crates/mermaid/tests/mermaid/pele/compare.mjs` reproduce it.",
+      "`Options::colors` takes a `Colors` (each an `Rgba`) for a renderer without CSS custom properties: the SVG names those colours and every other variable's value in place of each `var(…)`, computes its `color-mix`, and keeps rectangles' radii in `rx`. `markdown::fence::fence_note` puts a note under a fence's code, `NOTE_SELECTOR` on it."
+    ],
+    "changed": [
+      "`ui::fonts::add` hands fonts to gpui's text system and, in a browser, to `ui::fonts::database`, the fonts SVG is laid out and drawn in; natively that is the system's fonts. `ui::register_fonts` goes through it.",
+      "A ` ```mermaid ` fence lays out and rasterizes its diagram with `ui::fonts::database` instead of gpui's SVG renderer, so in a browser its labels are drawn in the app's fonts rather than left out, and natively in the face they were measured in.",
+      "`bezel-syntax-std` is merged into `bezel-syntax`: `syntax_std::install` and `LANGS` are `syntax::grammars::install` and `syntax::grammars::LANGS`, and the `rust`, `python`, `typescript`, `json`, `go`, `bash` and `toml` features, on by default, are `bezel-syntax`'s.",
+      "`bezel-canvas-core` is merged into `bezel-canvas`: its modules are `canvas::change`, `clip`, `contain`, `drag`, `handle`, `json_canvas`, `layout`, `mindmap`, `model`, `paint`, `path` and `snap`. `diagram`, the read-only painter the mermaid fences used, is gone.",
+      "`bezel-markdown`'s gpui, theme and ui are behind its `gpui` feature, on by default. Without it the crate is `doc`, `parse`, `serialize`, `select`, `edit`, `quote` and `synced`, and builds for `wasm32-unknown-unknown`; `Cursor::span`, the mark and highlight paints and everything that renders need the feature.",
+      "`bezel-markdown`'s gpui modules are grouped: `fence` (was `block`, with `fence::highlight`, `fence::mermaid`, and `fence_panel`, `fence_band`, `fence_note` and `NOTE_SELECTOR` from `render`), `paint` (`paint::comment`, `paint::find`, and `paint::marks` for the mark and highlight paints that were in `marks`), `app` (`app::layout`, `app::link`, `app::picture`, `app::preview` and `app::typography`, beside `AppExt`), `source::style` (was `source_style`) and `render::selectable` (was `selectable`). The names re-exported at the crate root are unchanged.",
+      "`markdown::fence::mermaid` is the fence alone: `Zoom`, `LANGUAGE` and `DIAGRAM_SELECTOR`. Its `mermaid` feature turns on `gpui`.",
+      "A ` ```mermaid ` fence is drawn by `bezel-mermaid`, every diagram type it draws, painted from its SVG by gpui's SVG renderer at the fence's scale on screen, in the theme's colours. Labels are measured in the system faces that renderer draws them in: the theme's fonts where the system has a regular and a bold face of them, else the first of Helvetica Neue, Segoe UI, Roboto and other common families (Menlo, Consolas … for mono). The first fence drawn loads the system's font list, about a quarter of a second. Source that does not draw shows as code with the error under it. Gone: `canvas_core::mermaid`, `chart::mermaid` and their `mermaid` features, `markdown::charts`, and the `mermaid-rs-renderer` dependency."
+    ]
+  },
+  {
     "version": "0.2.17",
     "date": "2026-10-18",
     "summary": "Light glass casts a shadow, so it stands off a white page, and a hovered bookmark card stays opaque.",

@@ -140,9 +140,10 @@ pub trait Status: ThemeExt {
         .child(text.into())
     }
 
-    /// The dismissible red error strip (`flex items-start gap-2 rounded-xl
+    /// The red error strip (`flex items-start gap-2 rounded-xl
     /// border border-red-400/20 bg-red-400/[0.06] text-red-300/90` with a
-    /// leading `DangerTriangle mt-0.5 size-4`).
+    /// leading `TriangleAlert mt-0.5 size-4`). No dismiss control; the caller
+    /// adds one as a child.
     fn error_strip(&self, message: impl Into<SharedString>) -> Div {
         let theme = self.theme();
         let red = theme.danger; // red-400
@@ -172,7 +173,7 @@ pub trait Status: ThemeExt {
     }
 
     /// The amber warning strip (`flex items-start gap-2 border-amber-400/20
-    /// bg-amber-400/[0.06] text-amber-200/90` with a leading `DangerTriangle
+    /// bg-amber-400/[0.06] text-amber-200/90` with a leading `TriangleAlert
     /// mt-0.5 size-3.5`).
     fn warning_strip(&self, message: impl Into<SharedString>) -> Div {
         let theme = self.theme();

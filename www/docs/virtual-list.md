@@ -1,6 +1,7 @@
 ---
 title: Virtualized list
 description: A thin binding over gpui's uniform_list that pins the row height and hands the scrollbar a real handle.
+prompt: Show the 50,000 search results in a virtualized list of 28px rows with a scrollbar.
 ---
 
 ```rust
@@ -11,39 +12,9 @@ div().relative().h(px(240.0))
         let rows = rows.clone();
         move |range, _, _| range.map(|ix| row(&rows[ix])).collect()
     }))
-    .child(scroll::scrollbar(
-        "rows-bar",
-        &list::scroll_handle(&self.rows_scroll),
-        &self.rows_bar,
-    ))
+    .child(scroll::scrollbar("rows-bar", list::scroll_handle(&self.rows_scroll), &self.rows_bar))
 ```
 
-Thin on purpose — gpui already does the hard part.
-
-## API
-
-```rust
-// ui::list
-
-/// `uniform_list` measures the *first* row and lays every other out at that
-/// height; hand it uneven rows and nothing errors, the content just overlaps.
-/// This applies `row_height` to every row it returns.
-pub fn virtual_list<R: IntoElement>(
-    id: impl Into<ElementId>,
-    count: usize,
-    row_height: Pixels,
-    handle: &UniformListScrollHandle,
-    render: impl 'static + Fn(Range<usize>, &mut Window, &mut App) -> Vec<R>,
-) -> UniformList;
-
-/// The reach to the real `ScrollHandle` inside a `UniformListScrollHandle`,
-/// named so a consumer does not have to find it in gpui's source. The clone
-/// shares state.
-pub fn scroll_handle(handle: &UniformListScrollHandle) -> ScrollHandle;
-
-// ...
-```
-
-The list fills its parent: one with no height of its own collapses to a single measured row and then nothing. Set your own size after the call — the later call wins.
-
-gpui's other virtualizer, `list()`, takes rows of varying height and cannot carry a proportional scrollbar: a thumb's length is the visible share of a total height, and a variable-height list cannot know its total without measuring every row.
+- The list fills its parent. A parent with no height of its own leaves the list empty, with no error.
+- Every row is sized to `row_height`. For rows of varying height use `list::VariableList`.
+- `list::scroll_handle` shares state with the list's handle; it is not a copy.

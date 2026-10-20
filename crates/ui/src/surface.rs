@@ -27,7 +27,7 @@ use theme::{SurfaceSpec, SurfaceStyle, Theme};
 /// states — the shape the popover layers need, where the card arrives erased to
 /// an [`AnyElement`] and cannot be chained onto. The look comes off whichever
 /// theme paints it; a caller wanting its own hands one over through
-/// [`Glass::glass_effect`].
+/// [`Surfaced::surface`].
 pub fn of(corner_radius: f32, style: SurfaceStyle, child: impl IntoElement) -> Surface {
     Surface {
         corners: uniform(corner_radius),
@@ -37,7 +37,7 @@ pub fn of(corner_radius: f32, style: SurfaceStyle, child: impl IntoElement) -> S
     }
 }
 
-/// The same, on [`Theme::menu_style`] — what the popover layers mount on, so an
+/// The same, on [`Theme::popover_surface`] — what the popover layers mount on, so an
 /// app moves every menu between frost and glass by moving one token.
 pub fn popover(corner_radius: f32, child: impl IntoElement) -> Surface {
     Surface {
@@ -102,8 +102,7 @@ impl Tokens {
 
 /// The backdrop surfaces, on any element carrying a corner radius.
 pub trait Surfaced: Styled + IntoElement + Sized {
-    /// Paint this card as liquid glass — SwiftUI's `Glass.clear`: a refracting
-    /// bevel at the rim, a lit edge, and [`Theme::glass_clear`]'s dimming.
+    /// Paint this card as `style`'s surface.
     ///
     /// Blur, bevel and tint all come off [`Theme`], and the shape off the
     /// card's own rounding: the lens dies if any of the three is wrong.
@@ -152,7 +151,7 @@ pub struct Surface {
     child: AnyElement,
 }
 
-/// Whether [`Glass::glass_effect`] will actually refract here, or fall back to
+/// Whether [`Surfaced::surface`] will actually refract here, or fall back to
 /// [`SurfaceSpec::flat`]. Capability and choice both: the primitive is macOS
 /// Metal's and wgpu's, and components with glass off paint no lens.
 pub fn lensed(theme: &Theme) -> bool {

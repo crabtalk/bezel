@@ -354,7 +354,7 @@ pub struct Theme {
     // ---- glass ----
     //
     // Numbers, so they flow with the appearance the way every other token
-    // does. `Glass::glass_effect` reads them off the theme it is handed;
+    // does. `ui::surface` reads them off the theme it is handed;
     // nothing here is a parameter on a component.
     /// How opaque the tint over the blurred window is.
     pub vibrancy_alpha: f32,

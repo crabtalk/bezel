@@ -17,6 +17,7 @@ pub trait AppExt {
     fn set_appearance_mode(&mut self, mode: crate::appearance::AppearanceMode);
 
     /// Sets the palette builder. Install before `appearance::init`, or apply afterward.
+    /// Rerun on every light/dark switch; the [`crate::Brand`] applies to what it returns.
     fn set_palette(&mut self, build: impl Fn(crate::Appearance) -> crate::Theme + 'static);
 
     /// Sets the shared type ladder’s base size in points and refreshes windows.

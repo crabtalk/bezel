@@ -1,0 +1,10 @@
+sequenceDiagram
+  actor You
+  participant Composer
+  participant Agent
+  participant Transcript
+  You->>Composer: a message
+  Composer->>Agent: send
+  Agent-->>Transcript: reasoning, streamed
+  Agent->>Agent: tool calls, folded by verb
+  Agent-->>Transcript: diff to review

@@ -83,7 +83,8 @@ fn cell(u: f32, span: f32) -> usize {
     (((u / span + 1.0) / 2.0 * GRID as f32) as usize).min(GRID - 1)
 }
 
-/// The element, filling its layout bounds.
+/// The element, filling its layout bounds. Draws a [`Face`], never a
+/// [`Pose`](crate::avatar::Pose).
 pub fn mascot(face: &Face, t: f32) -> AnyElement {
     // Drift and breath are both under a cell at this size, so only the blink
     // survives the trip; the outline is the resting one, since a wobble that

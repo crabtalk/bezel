@@ -116,7 +116,8 @@ impl EdgeKind {
 }
 
 /// Our own edge fields: the handle each end left from, when it was not the
-/// middle of a side.
+/// middle of a side. The side is still written to the spec's `fromSide` and
+/// `toSide`.
 pub const FROM_HANDLE: &str = "fromHandle";
 pub const TO_HANDLE: &str = "toHandle";
 

@@ -85,7 +85,8 @@ pub(super) fn menu_layer(
 
 /// Wrap popover content in a floating anchored layer attached to the trigger:
 /// the caller `.child(anchored_menu(...))`s this from the trigger element while
-/// open. Plays `menu-in` (0.14s fade + 2px drop); `closing` (the [`Popup`]
+/// open. The trigger must be `relative()`, as for every `anchored_menu_*`
+/// variant. Plays `menu-in` (0.14s fade + 2px drop); `closing` (the [`Popup`]
 /// exit phase) swaps in `menu-out`. Dismissal is the caller's
 /// `.on_mouse_down_out` on the content. The layer `.occlude()`s: hitboxes are
 /// paint-order only in gpui, so without it clicks on menu rows would ALSO fire
@@ -133,8 +134,7 @@ pub fn anchored_menu_below_gap(
 /// it, and the two cards touch on whichever side [`submenu::place`] put it.
 /// `chain` is the open menu's, shared by every panel in it.
 ///
-/// No `closing`: a submenu is held open by the cursor, and the cursor is
-/// cleared before the menu it hangs in begins its own exit.
+/// `closing` is the root card's: the panel plays its exit with it.
 pub fn anchored_submenu(
     id: impl Into<SharedString>,
     content: AnyElement,

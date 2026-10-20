@@ -157,7 +157,8 @@ pub struct Formatting {
     /// included.
     pub marks: Vec<Mark>,
     /// What the caret's block is called in [`turns`], or `None` for a block the
-    /// menu does not offer.
+    /// menu does not offer. Matched on the kind and a heading's level alone: a
+    /// list numbered from 7 and a fence tagged `rs` report their row.
     pub block: Option<gpui::SharedString>,
     /// The quote the caret's block sits in — see [`quotes`].
     pub quote: Option<markdown::Quoted>,
@@ -314,6 +315,17 @@ pub(crate) enum Reveal {
     Top,
 }
 
+/// One view of a [`Document`].
+///
+/// Every edit notifies the entity and emits [`EditorEvent::Changed`].
+///
+/// The slash menu, the gutter handle and its block drag, a fence's language
+/// picker, the pasted-URL menu, undo and the clipboard need no wiring;
+/// [`Chrome`] turns the menus off. Hovering a table cell shows handles for its
+/// row and column: a click opens insert, delete and move, a drag reorders, and
+/// `escape` or a drop outside the table cancels. A right press on a cell opens
+/// both sets. The strips along a table's bottom and right edges append a row
+/// and a column.
 pub struct Editor {
     document: Entity<Document>,
     /// This editor's snapshot of the document, its form, its marks and its
@@ -661,12 +673,6 @@ impl Editor {
         cx.notify();
     }
 
-    /// Where the selection sits on screen, in window coordinates, so a host can
-    /// float a toolbar at it.
-    ///
-    /// The head's row only — a selection spanning ten blocks wants its bubble
-    /// where the pointer left off, not centred over the whole span. `None` when
-    /// nothing is selected or the caret has not painted yet.
     /// Where everything landed last frame — blocks, pictures, a fence's
     /// language label, and the row rects of any range.
     ///
@@ -677,6 +683,12 @@ impl Editor {
         &self.layouts
     }
 
+    /// Where the selection sits on screen, in window coordinates, so a host can
+    /// float a toolbar at it.
+    ///
+    /// The head's row only — a selection spanning ten blocks wants its bubble
+    /// where the pointer left off, not centred over the whole span. `None` when
+    /// nothing is selected or the caret has not painted yet.
     pub fn selection_bounds(&self) -> Option<gpui::Bounds<gpui::Pixels>> {
         // The head alone. A bar centred over the whole selection wants
         // `layouts().rects(selection)`, which is every painted row of it.

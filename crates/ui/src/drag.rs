@@ -84,7 +84,8 @@ impl<I> Carry<I> {
         self.gesture.claimed.get()
     }
 
-    /// A compact frame for a ghost at `pointer`, keeping the grab point.
+    /// A compact frame for a ghost at `pointer`, at most 180×32px, keeping the
+    /// grab point.
     pub fn ghost_bounds(&self, pointer: Point<Pixels>) -> gpui::Bounds<Pixels> {
         self.gesture.ghost_bounds(pointer)
     }
@@ -118,7 +119,9 @@ pub struct Outside<I> {
 /// How a region shows where the item would land.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Feedback {
-    /// Neighbours slide aside to open a gap.
+    /// Neighbours slide aside to open a gap. Only handles and
+    /// [`Domain::fixed`] items move; anything else in the region stays put.
+    /// Under reduced motion they jump.
     #[default]
     Displace,
     /// A line in the gap; nothing moves.
@@ -174,7 +177,9 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Domain<R, I
         )
     }
 
-    /// Makes `element` pickable as `item`. Item ids are unique within a domain.
+    /// Makes `element` pickable as `item` by putting `on_drag` on it, so
+    /// `element` must not have one of its own. Item ids are unique within a
+    /// domain.
     /// Custom controls inside it stop mouse-down propagation to keep their
     /// presses from starting a drag.
     pub fn handle<E>(&self, item: I, element: E) -> Handle<R, I>
@@ -207,7 +212,8 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Domain<R, I
             .is_some_and(|live| &live.item == item)
     }
 
-    /// Ends the gesture without a drop.
+    /// Ends the gesture without a drop. `escape` does the same while an item
+    /// is carried.
     pub fn cancel(&self, window: &mut Window, cx: &mut App) {
         let live = self.0.borrow_mut().end(window, cx);
         if live.is_some() {

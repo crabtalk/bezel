@@ -222,11 +222,13 @@ pub trait Layout: ThemeExt {
     /// Tab strip: a hairline-underlined row that tabs sit on.
     ///
     /// Switches between sections of one page, over a set fixed at compile
-    /// time. Tabs that open and close are [`crate::tabs`].
+    /// time. Tabs that open and close are [`crate::tabs`]. It holds the tabs
+    /// only; the panel a tab shows is the caller's.
     ///
     /// Keys are the caller's, through [`crate::focus`]: `focusable` puts each
     /// tab in the tab order and gives it `enter`/`space`, and `Decrement` /
-    /// `Increment` arrive on ← / → for whichever tab holds focus.
+    /// `Increment` arrive on ← / → for whichever tab holds focus. Move focus
+    /// with the selection, or the next arrow starts from the tab focus left.
     fn tab_bar(&self) -> Div {
         let theme = self.theme();
         div()
@@ -240,7 +242,8 @@ pub trait Layout: ThemeExt {
 
     /// One tab. The active tab is marked by the text tone plus a 2px underline
     /// that overlaps the bar's hairline, so switching tabs never changes row
-    /// height.
+    /// height. It keeps a clear 1px border for [`crate::focus::focusable`]'s
+    /// ring.
     fn tab(&self, label: impl Into<SharedString>, active: bool) -> Div {
         let theme = self.theme();
         div()

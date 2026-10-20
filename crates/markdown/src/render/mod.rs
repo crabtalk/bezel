@@ -1,0 +1,1330 @@
+//! [`Doc`] → gpui elements.
+//!
+//! Numbers drive layout (sizes, line heights, paddings — the constants here);
+//! colors are paint, read from [`Theme`]. Blocks are a flat list, so nesting is
+//! left padding rather than nested containers, and the gap between two blocks
+//! is decided by the pair: list items sit tight, everything else breathes.
+//!
+//! Ported from zeronsh/comet (MIT) and rebuilt against the flat block model.
+
+use crate::AppExt as _;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    ops::Range,
+    path::Path,
+    rc::Rc,
+    sync::Arc,
+};
+use ui::AppExt as _;
+use ui::widgets::Layout as _;
+
+use gpui::{
+    AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
+    ImageSource, InteractiveText, MouseButton, ObjectFit, Pixels, Point, SharedString,
+    StrikethroughStyle, StyledImage as _, StyledText, TextLayout, TextRun, UnderlineStyle, Window,
+    canvas, div, font, img, point, prelude::*, px, quad, size,
+};
+use theme::{TextStyle, Theme, Typeset};
+
+use crate::{
+    app::{preview, typography::Typography},
+    doc::{Align, Block, BlockKind, Doc, Form, Mark, Part, QuoteKind, Run, Text, quote_runs},
+    fence::{
+        self, CODE_PADDING_X, CODE_PADDING_Y, copy_button, fence_band, fence_note, fence_panel,
+    },
+    select::{Affinity, Cursor, Selection},
+};
+
+/// Space between two ordinary blocks, and the tighter space inside a list.
+mod code;
+mod column;
+mod layouts;
+mod media;
+pub use media::hover_bookmark;
+pub mod selectable;
+mod source;
+mod table;
+mod text;
+
+use code::*;
+use column::*;
+pub use layouts::*;
+use media::*;
+pub use source::*;
+use table::*;
+pub use text::*;
+
+const BLOCK_GAP: f32 = 12.0;
+const LIST_GAP: f32 = 4.0;
+/// One indent level. Wide enough to clear a marker and read as a level.
+const INDENT_WIDTH: f32 = 22.0;
+/// The marker column of a list row.
+const MARKER_WIDTH: f32 = 18.0;
+const MARKER_GAP: f32 = 8.0;
+/// What a fence with no info string calls itself, in its header and in a
+/// picker — one spelling, so the label and the menu row cannot disagree.
+pub const PLAIN_LANGUAGE: &str = "Plain";
+/// Width of the caret. Wider than a hairline, because it has to read at a
+/// glance against the text it sits in.
+const CARET_WIDTH: f32 = 1.5;
+/// Inline code's wash is a rounded quad painted under the glyphs: a run's
+/// `background_color` can only ever be a square box.
+const INLINE_CODE_RADIUS: f32 = 4.5;
+const INLINE_CODE_PAD_X: f32 = 2.0;
+const INLINE_CODE_INSET_Y: f32 = 2.0;
+/// A mention's hover card.
+const MENTION_CARD_WIDTH: f32 = 320.0;
+/// Bookmark metrics. Notion's card: 180px of image beside the text, and a
+/// height that fits a title, two lines of blurb and a footer. A cover moves
+/// that image above the text and gives it the card's full width.
+const CARD_HEIGHT: f32 = 116.0;
+const CARD_IMAGE_WIDTH: f32 = 180.0;
+const CARD_COVER_HEIGHT: f32 = 200.0;
+const CARD_PADDING: f32 = 14.0;
+const CARD_BORDER: f32 = 1.0;
+const CARD_ICON: f32 = 16.0;
+const CARD_COVER: f32 = 44.0;
+/// Image metrics.
+const IMAGE_EMPTY_HEIGHT: f32 = 52.0;
+const CAPTION_GAP: f32 = 4.0;
+/// What an image with no URL yet says, and what its caption says while empty.
+const IMAGE_EMPTY: &str = "Add an image";
+const CAPTION_HINT: &str = "Write a caption";
+/// Table metrics. The design is frameless: hairlines between rows are the only
+/// chrome — no outer box, no header fill, no rounding.
+const TABLE_CELL_PADDING: f32 = 12.0;
+/// Reserved lane for editor table controls, inside the block bounds.
+pub const TABLE_CONTROL_SIZE: f32 = 16.0;
+const TABLE_DIVIDER: f32 = 1.0;
+/// Floor for a column's max-content share, so a short column ("1k") beside a
+/// prose column keeps a readable width.
+const TABLE_MIN_COLUMN_CONTENT: f32 = 48.0;
+/// Narrowest a column wraps down to before the table scrolls instead.
+const TABLE_MIN_COLUMN_WIDTH: f32 = 96.0;
+
+/// What an image's one authored string is doing on the page.
+///
+/// SwiftUI keeps three things apart — `accessibilityLabel` for a reader that
+/// cannot see, `.help` for the pointer, and a caption you compose out of a
+/// `Text` under the picture. Markdown has one slot for all three, so this says
+/// which of them it is playing here rather than in the document, where it is
+/// the same string either way.
+///
+/// A named choice rather than a `bool`, so a surface that wants a third answer
+/// gets a variant instead of a second flag.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Caption {
+    /// Under the picture, where a caret can sit in it. The editor's shape.
+    #[default]
+    Shown,
+    /// Kept by the document and painted nowhere — a picture on its own.
+    Hidden,
+}
+
+/// Whether a fence paints the button that copies its text.
+///
+/// A named choice rather than a `bool`, the way [`Caption`] is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum CopyButton {
+    /// Floating at the top right of the band, on the pointer and off it.
+    #[default]
+    Shown,
+    /// Painted nowhere. A document with this and no [`Editing::toggle`] holds
+    /// no listener at all.
+    Hidden,
+}
+
+/// A range the caller wants washed, and which wash it gets.
+///
+/// None of what a comment or a highlight *says* is here: the caller keeps it
+/// and hands over the range, the way it hands over a [`crate::Preview`]. A
+/// closed set rather than a color, so the environment keeps deciding the paint.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[non_exhaustive]
+pub enum Annotation {
+    /// A thread still waiting on someone. The comment washes are
+    /// [`crate::AppExt::set_comment_paint`]'s.
+    #[default]
+    Open,
+    /// Answered, and kept for the record.
+    Resolved,
+    /// The one whose thread the reader has in front of them.
+    Active,
+    /// A reader's highlight, in the wash [`crate::AppExt::set_highlight_paint`]
+    /// gives its colour.
+    Highlight(crate::HighlightColor),
+    /// A find hit.
+    Match,
+    /// The find hit the reader is on.
+    Current,
+}
+
+impl Annotation {
+    fn wash(
+        self,
+        theme: &Theme,
+        highlight: crate::HighlightPaint,
+        find: crate::FindPaint,
+        comment: crate::CommentPaint,
+    ) -> Hsla {
+        match self {
+            Self::Open => comment(theme).open,
+            Self::Resolved => comment(theme).resolved,
+            Self::Active => comment(theme).active,
+            Self::Highlight(color) => highlight(color, theme),
+            Self::Match => find(theme).0,
+            Self::Current => find(theme).1,
+        }
+    }
+}
+
+/// Handed the block whose checkbox was clicked — see [`Toggle::Handled`].
+///
+/// Shared rather than borrowed: the press listener it is cloned into outlives
+/// the frame that built it.
+pub type OnToggle = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Handed the image block whose picture was clicked — see [`Editing::image`].
+pub type OnImage = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Handed the image block whose picture was right-pressed and the press's
+/// window position — see [`Editing::image_menu`].
+pub type OnImageMenu = Rc<dyn Fn(usize, Point<Pixels>, &mut Window, &mut App)>;
+
+/// Handed the heading block a clicked `#fragment` link names — see
+/// [`Editing::jump`].
+pub type OnJump = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Builds a picture's hover control from its block index and original URL.
+/// `None` leaves that picture without one. An empty picture placeholder gets
+/// none.
+pub type ImageOverlay = Rc<dyn Fn(usize, &str, &mut Window, &mut App) -> Option<AnyElement>>;
+
+/// Handed a fence's block index and its new code — see [`FenceHost::rewrite`].
+pub type OnRewrite = Rc<dyn Fn(usize, String, &mut Window, &mut App)>;
+
+/// Handed the block a painted fence is leaving — see [`FenceHost::leave`].
+pub type OnLeave = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Handed a resizable painted block's index and where its grip was pressed —
+/// see [`FenceHost::resize`].
+pub type OnResize = Rc<dyn Fn(usize, Pixels, &mut Window, &mut App)>;
+
+/// What an editor lends the blocks an installed [`crate::BlockRenderer`]
+/// paints — see [`Editing::fence`].
+#[derive(Clone)]
+pub struct FenceHost {
+    /// Replaces the code of the fence at a block index, as an edit of the
+    /// document.
+    pub rewrite: OnRewrite,
+    /// Hands the keyboard back to the document from inside the painted block
+    /// at a block index. Dispatched by [`LeaveBlock`].
+    pub leave: OnLeave,
+    /// Starts a height drag off the grip along a resizable painted block's
+    /// foot, from the press's window `y`. `None` paints no grip.
+    pub resize: Option<OnResize>,
+}
+
+/// The key context around every painted fence. An editor's bindings stop at
+/// it, so keys typed into a control the block paints stay that control's.
+pub const PAINTED_CONTEXT: &str = "MarkdownPaintedBlock";
+
+gpui::actions!(
+    markdown,
+    [
+        /// Return focus from inside a painted fence to the document around it.
+        LeaveBlock
+    ]
+);
+
+/// The picture corner holding an app's hover control.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ImageOverlayCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    #[default]
+    BottomRight,
+}
+
+/// Who answers a press on a task block's checkbox.
+///
+/// Either variant paints the box as a control — the pointer over it is a hand.
+/// [`Editing::toggle`] left unset paints it as a mark, and the press goes
+/// wherever it would on any other glyph.
+#[derive(Clone)]
+pub enum Toggle {
+    /// The box takes the press, stops it, and calls this with the block it
+    /// belongs to. For a caller holding the [`Doc`] it renders itself.
+    Handled(OnToggle),
+    /// The box takes no press. The caller hit-tests
+    /// [`BlockLayouts::checkbox_bounds`] in its own handler, which is what an
+    /// editor does: the press it swallows is the one that also takes focus and
+    /// closes an open menu, and the toggle belongs in the undo history beside
+    /// the rest of its edits.
+    HitTested,
+}
+
+/// What an editor paints over a document.
+///
+/// One value rather than six parameters, and the reason it is public: the
+/// caret, the selection, the comment washes and the layout sink all arrive
+/// together or not at all, and a read-only [`render`] sets none of them.
+#[derive(Clone)]
+pub struct Editing<'a> {
+    /// The caret and what it has selected. `None` paints neither — a document
+    /// nobody is editing.
+    pub selection: Option<Selection>,
+    /// The blink's lit half. A caret painted on every frame reads as frozen,
+    /// and the phase belongs to whoever owns the focus.
+    pub caret_on: bool,
+    /// Filled as the document paints, for a caller resolving clicks against it.
+    ///
+    /// Given, only the blocks near the part of the window the document shows
+    /// are built, and it answers for those alone. The rest are placed at their
+    /// last measured height, or a guess at one, and held in it across frames.
+    pub layouts: Option<&'a BlockLayouts>,
+    /// Ranges washed under the text, in the order given.
+    pub annotations: &'a [(Selection, Annotation)],
+    /// Shown on the caret's block while it holds nothing.
+    pub placeholder: Option<SharedString>,
+    pub caption: Caption,
+    /// What to set the document in. `None` takes the installed
+    /// [`Typography`] — a caller sizing one document apart from the rest
+    /// passes [`Typography::scaled`].
+    pub typography: Option<Typography>,
+    /// Makes a task block's checkbox a control, and says who answers the
+    /// press. `None` paints a mark.
+    pub toggle: Option<Toggle>,
+    /// Handles a picture click with its block index, keeping the arrow cursor. A
+    /// press and release more than a couple of pixels apart is a drag and
+    /// calls nothing. The press still reaches whatever is under the picture.
+    pub image: Option<OnImage>,
+    /// Handles a right press on a picture with its block index and the press's
+    /// window position, and stops the press. `None` lets it through to
+    /// whatever is under the picture. [`crate::PictureMenu`] is what the menu
+    /// offers.
+    pub image_menu: Option<OnImageMenu>,
+    /// An app control inset at `image_overlay_corner`, visible on hover.
+    /// Its presses do not reach the picture. `None` adds no listeners.
+    pub image_overlay: Option<ImageOverlay>,
+    /// Corner for the picture control; defaults to bottom-right.
+    pub image_overlay_corner: ImageOverlayCorner,
+    /// Lets a painted fence rewrite its own code and give the keyboard back.
+    /// `None` paints a fence that can do neither.
+    pub fence: Option<FenceHost>,
+    /// A painted block held at a height while its resize handle is dragged:
+    /// the block index and the height, in place of the one the document says.
+    pub sizing: Option<(usize, u32)>,
+    /// Reserves lanes around tables for editor controls.
+    pub table_controls: bool,
+    /// Whether a fence offers to copy itself.
+    pub copy: CopyButton,
+    /// The directory a relative image path is joined onto. `None` leaves it
+    /// relative, which gpui reads against the process's working directory.
+    pub base: Option<&'a Path>,
+    /// Blocks built wherever they are, alongside the ones near the part of the
+    /// window the document shows — source lines, for [`render_source`]. The
+    /// caret's and the selection anchor's are built without being named. Only
+    /// read with `layouts` given.
+    pub keep: &'a [usize],
+    /// The scroll container the document sits in. When blocks above the text
+    /// showing come out taller or shorter than they were placed at, its offset
+    /// moves by the difference. Only read with `layouts` given.
+    pub scroll: Option<&'a gpui::ScrollHandle>,
+    /// Scrolls to the heading a clicked `#fragment` link names, matched by
+    /// [`crate::app::link::heading`]. `None`, or a fragment naming no heading,
+    /// makes the click do nothing.
+    pub jump: Option<OnJump>,
+}
+
+impl Default for Editing<'_> {
+    fn default() -> Self {
+        Self {
+            selection: None,
+            // Lit, so that a caller setting a selection and nothing else gets a
+            // caret rather than a mystery.
+            caret_on: true,
+            layouts: None,
+            annotations: &[],
+            placeholder: None,
+            caption: Caption::default(),
+            typography: None,
+            toggle: None,
+            image: None,
+            image_menu: None,
+            image_overlay: None,
+            image_overlay_corner: ImageOverlayCorner::BottomRight,
+            fence: None,
+            sizing: None,
+            table_controls: false,
+            copy: CopyButton::default(),
+            base: None,
+            keep: &[],
+            scroll: None,
+            jump: None,
+        }
+    }
+}
+
+/// What the editor needs painted into one text: which text it is, where the
+/// caret sits, and where to record the layout a click resolves against.
+///
+/// One bundle rather than four parameters threaded through every block arm —
+/// a read-only render builds it with no caret and no sink, and pays nothing.
+#[derive(Clone, Copy)]
+struct Overlay<'a> {
+    block: usize,
+    part: Part,
+    selection: Option<Selection>,
+    caret_on: bool,
+    caret_shape: ui::input::CaretShape,
+    caret_height: ui::input::CaretHeight,
+    caret_inactive: ui::input::InactiveCaret,
+    /// A block caret is hollow, and cuts no glyph out, while this is false.
+    window_active: bool,
+    layouts: Option<&'a BlockLayouts>,
+    /// Ranges washed under the text, in the order the caller gave them.
+    annotations: &'a [(Selection, Annotation)],
+    /// Shown on the caret's block while it holds nothing. The renderer is the
+    /// only thing that knows where that text sits, so the string comes to it.
+    placeholder: Option<&'a SharedString>,
+    caption: Caption,
+    /// Borrowed so [`Overlay`] stays `Copy` — the clone is made at the one
+    /// press listener that needs an owned handle.
+    toggle: Option<&'a Toggle>,
+    image: Option<&'a OnImage>,
+    image_menu: Option<&'a OnImageMenu>,
+    image_overlay: Option<&'a ImageOverlay>,
+    image_overlay_corner: ImageOverlayCorner,
+    fence: Option<&'a FenceHost>,
+    sizing: Option<(usize, u32)>,
+    table_controls: bool,
+    copy: CopyButton,
+    base: Option<&'a Path>,
+    highlight: crate::HighlightPaint,
+    find: crate::FindPaint,
+    comment: crate::CommentPaint,
+    jump: Option<&'a crate::app::link::Jump>,
+}
+
+/// What a resizable painted block carries besides itself: where it landed,
+/// for the height drag, and the grip along its foot that starts one, shown
+/// while the block is hovered or being sized.
+fn resizable(overlay: &Overlay, theme: &Theme) -> Vec<AnyElement> {
+    let ix = overlay.block;
+    let mut parts = Vec::new();
+    if let Some(layouts) = overlay.layouts {
+        let layouts = layouts.clone();
+        parts.push(
+            canvas(
+                move |bounds, _, _| layouts.record_painted(ix, bounds),
+                |_, _, _, _| (),
+            )
+            .absolute()
+            .size_full()
+            .into_any_element(),
+        );
+    }
+    if let Some(resize) = overlay.fence.and_then(|host| host.resize.clone()) {
+        let dragging = overlay.held_height().is_some();
+        // Inside the block's foot rather than across its edge: the grip is
+        // shown while the block is hovered, and the pointer has to stay over
+        // the block to reach it. A strip only as wide as it needs, so the
+        // controls a block keeps in its corners stay pressable.
+        parts.push(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .bottom_0()
+                .flex()
+                .justify_center()
+                .child(
+                    theme
+                        .grip_handle()
+                        .id(ElementId::named_usize("painted-grip", ix))
+                        .debug_selector(|| "painted-grip".into())
+                        .w(px(PAINTED_GRIP_WIDTH))
+                        .when(!dragging, |el| {
+                            el.invisible()
+                                .group_hover(painted_group(ix), |el| el.visible())
+                        })
+                        .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                            cx.stop_propagation();
+                            resize(ix, event.position.y, window, cx);
+                        }),
+                )
+                .into_any_element(),
+        );
+    }
+    parts
+}
+
+/// How wide the grip along a resizable painted block's foot can be pressed.
+const PAINTED_GRIP_WIDTH: f32 = 120.0;
+
+fn painted_group(ix: usize) -> SharedString {
+    SharedString::from(format!("painted-{ix}"))
+}
+
+impl<'a> Overlay<'a> {
+    fn at(self, part: Part) -> Self {
+        Self { part, ..self }
+    }
+
+    /// The height this block's resize handle is holding it at, if it is.
+    fn held_height(&self) -> Option<u32> {
+        self.sizing
+            .filter(|(ix, _)| *ix == self.block)
+            .map(|(_, height)| height)
+    }
+
+    fn here(&self) -> Cursor {
+        Cursor::new(self.block, self.part, 0)
+    }
+
+    /// The caret to paint: where it is, only on the blink's lit half, and
+    /// never over a non-empty selection.
+    ///
+    /// Separate from [`Self::caret`] because the blink must not reach anything
+    /// but the quad — a block whose paint depends on holding the caret would
+    /// otherwise swap itself out twice a second.
+    fn caret_painted(&self) -> Option<usize> {
+        let collapsed = self.selection.is_some_and(|s| s.is_collapsed());
+        let shown = self
+            .caret_shape
+            .shown(self.window_active, self.caret_inactive);
+        (self.caret_on && collapsed && shown)
+            .then(|| self.caret())
+            .flatten()
+    }
+
+    /// The caret's row at a soft wrap.
+    fn affinity(&self) -> Affinity {
+        self.selection
+            .map_or_else(Affinity::default, |selection| selection.affinity)
+    }
+
+    /// The grapheme after the caret, which a solid block covers. None at the
+    /// end of a row before a wrap, where that grapheme starts the next row.
+    fn covered(&self, text: &str, offset: usize) -> Option<Range<usize>> {
+        (self.affinity() == Affinity::Downstream)
+            .then(|| glyph_at(text, offset))
+            .flatten()
+    }
+
+    fn caret_hollow(&self) -> bool {
+        !self.window_active
+    }
+
+    /// The caret's byte offset, if the head is in *this* text.
+    fn caret(&self) -> Option<usize> {
+        self.selection
+            .map(|selection| selection.head)
+            .filter(|head| head.block == self.block && head.part == self.part)
+            .map(|head| head.offset)
+    }
+
+    /// The selected slice of this text, clipped to it.
+    fn selected(&self, len: usize) -> Option<Range<usize>> {
+        self.clip(self.selection?, len)
+    }
+
+    /// The annotated slices of this text, already resolved to their paint —
+    /// the wash goes into a `move` closure that the theme does not travel into.
+    fn annotated(&self, len: usize, theme: &Theme) -> Vec<(Range<usize>, Hsla)> {
+        self.annotations
+            .iter()
+            .filter_map(|(range, kind)| {
+                Some((
+                    self.clip(*range, len)?,
+                    kind.wash(theme, self.highlight, self.find, self.comment),
+                ))
+            })
+            .collect()
+    }
+
+    /// A range clipped to this text, and `None` when it does not reach it.
+    ///
+    /// The comparison is on `(block, part)` alone: a range covers this text
+    /// entirely when it starts before and ends after, and the offsets only
+    /// matter at the two ends.
+    fn clip(&self, selection: Selection, len: usize) -> Option<Range<usize>> {
+        if selection.is_collapsed() {
+            return None;
+        }
+        let (start, end) = selection.ordered();
+        let here = self.here();
+        let (first, last) = (
+            Cursor::new(start.block, start.part, 0),
+            Cursor::new(end.block, end.part, 0),
+        );
+        if here < first || here > last {
+            return None;
+        }
+        let from = if here == first { start.offset } else { 0 };
+        let to = if here == last { end.offset } else { len };
+        (from < to).then_some(from..to.min(len))
+    }
+
+    /// Whether a block painting something a caret cannot enter — a rule, a
+    /// picture — falls inside the selection, and so should show that it is
+    /// going to be taken.
+    fn covers_block(&self) -> bool {
+        let Some(selection) = self.selection.filter(|s| !s.is_collapsed()) else {
+            return false;
+        };
+        let (start, end) = selection.ordered();
+        start.block < self.block && self.block < end.block
+    }
+}
+
+/// What gpui loads for an image URL as written in a document.
+///
+/// Anything with `://` is fetched as it stands. Anything else is a file: an
+/// absolute path as it stands, a relative one joined onto `base` when there is
+/// one.
+pub fn image_source(url: &str, base: Option<&Path>) -> ImageSource {
+    if url.contains("://") {
+        return SharedString::from(url.to_string()).into();
+    }
+    // gpui reads a file only from a `PathBuf` — handed a string it looks for
+    // an asset built into the binary and paints nothing.
+    match base {
+        Some(base) => base.join(url).into(),
+        None => std::path::PathBuf::from(url).into(),
+    }
+}
+
+/// Parse and render in one step — the common case for read-only content.
+pub fn markdown(source: &str, window: &mut Window, cx: &mut App) -> AnyElement {
+    let doc = crate::parse_with(source, &cx.marks());
+    render(&doc, Caption::default(), window, cx)
+}
+
+/// Render a document.
+pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) -> AnyElement {
+    render_with(
+        doc,
+        Editing {
+            caption,
+            ..Editing::default()
+        },
+        window,
+        cx,
+    )
+}
+
+/// Render a document with a caret and a selection in it.
+///
+/// Both are paint-time concerns and nothing else: they read their positions off
+/// the shaped text's own layout handle, the same way the inline-code wash does,
+/// so nothing about layout depends on where the caret sits. An editor supplies
+/// the selection and owns the focus and the keys; painting a caret and a few
+/// quads is not worth a second renderer.
+pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut App) -> AnyElement {
+    let Editing {
+        selection,
+        caret_on,
+        layouts,
+        annotations,
+        placeholder,
+        caption,
+        typography,
+        toggle,
+        image,
+        image_menu,
+        image_overlay,
+        image_overlay_corner,
+        fence,
+        sizing,
+        table_controls,
+        copy,
+        base,
+        keep,
+        scroll,
+        jump,
+    } = editing;
+    // Cloned once so the theme is readable while `cx` stays free for the
+    // element state the copy button needs.
+    let theme = Theme::of(cx).clone();
+    let typography = typography.unwrap_or_else(|| cx.typography());
+    let highlight = crate::paint::marks::highlight_paint_of(cx);
+    let find = crate::paint::find::find_paint_of(cx);
+    let comment = crate::paint::comment::comment_paint_of(cx);
+    let jump = jump.map(|to| crate::app::link::Jump::new(doc, to));
+    let gaps: Vec<Pixels> = doc
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(ix, block)| {
+            px(match doc.blocks.get(ix.wrapping_sub(1)) {
+                None => 0.0,
+                Some(previous) if tight(previous, block) => LIST_GAP,
+                Some(_) => BLOCK_GAP,
+            })
+        })
+        .collect();
+    let runs = quote_runs(doc.blocks.iter().map(|block| (block.quote, block.indent)));
+
+    let Some(layouts) = layouts else {
+        let mut column = div().flex().flex_col();
+        for (ix, block) in doc.blocks.iter().enumerate() {
+            let overlay = Overlay {
+                block: ix,
+                part: Part::Body,
+                selection,
+                caret_on,
+                caret_shape: cx.caret_shape(),
+                caret_height: cx.caret_height(),
+                caret_inactive: cx.inactive_caret(),
+                window_active: window.is_window_active(),
+                layouts: None,
+                annotations,
+                placeholder: placeholder.as_ref(),
+                caption,
+                toggle: toggle.as_ref(),
+                image: image.as_ref(),
+                image_menu: image_menu.as_ref(),
+                image_overlay: image_overlay.as_ref(),
+                image_overlay_corner,
+                fence: fence.as_ref(),
+                sizing,
+                table_controls,
+                copy,
+                base,
+                highlight,
+                find,
+                comment,
+                jump: jump.as_ref(),
+            };
+            let quote = Quote {
+                run: runs[ix],
+                gap: gaps[ix],
+            };
+            column = column.child(
+                block_box(block, quote, overlay, &typography, &theme, window, cx).mt(gaps[ix]),
+            );
+        }
+        return column.into_any_element();
+    };
+
+    let keys: Vec<u64> = doc
+        .blocks
+        .iter()
+        .zip(&runs)
+        .map(|(block, run)| block_key(block, *run, &typography, table_controls))
+        .collect();
+    layouts.prune(&keys);
+    let guesses: Vec<Guess> = doc
+        .blocks
+        .iter()
+        .zip(&runs)
+        .map(|(block, run)| {
+            let mut guess = guess(block, *run, &typography);
+            if table_controls && matches!(block.kind, BlockKind::Table { .. }) {
+                guess.extra += px(2.0 * TABLE_CONTROL_SIZE);
+            }
+            guess
+        })
+        .collect();
+    let mut kept = keep.to_vec();
+    kept.extend(selection.map(|selection| selection.head.block));
+    kept.extend(selection.map(|selection| selection.anchor.block));
+    let owned = Owned {
+        blocks: doc.blocks.clone(),
+        runs,
+        gaps: gaps.clone(),
+        selection,
+        caret_on,
+        layouts: layouts.clone(),
+        annotations: annotations.to_vec(),
+        placeholder,
+        caption,
+        toggle,
+        image,
+        image_menu,
+        image_overlay,
+        image_overlay_corner,
+        fence,
+        sizing,
+        table_controls,
+        copy,
+        base: base.map(Path::to_path_buf),
+        highlight,
+        find,
+        comment,
+        jump,
+        typography,
+        theme,
+    };
+    Column {
+        layouts: layouts.clone(),
+        keys: keys.into(),
+        gaps: gaps.into(),
+        guesses: guesses.into(),
+        keep: kept,
+        scroll: scroll.cloned(),
+        item_of: Rc::new(|at| at.block),
+        build: Box::new(move |ix, window, cx| {
+            let overlay = Overlay {
+                block: ix,
+                part: Part::Body,
+                selection: owned.selection,
+                caret_on: owned.caret_on,
+                caret_shape: cx.caret_shape(),
+                caret_height: cx.caret_height(),
+                caret_inactive: cx.inactive_caret(),
+                window_active: window.is_window_active(),
+                layouts: Some(&owned.layouts),
+                annotations: &owned.annotations,
+                placeholder: owned.placeholder.as_ref(),
+                caption: owned.caption,
+                toggle: owned.toggle.as_ref(),
+                image: owned.image.as_ref(),
+                image_menu: owned.image_menu.as_ref(),
+                image_overlay: owned.image_overlay.as_ref(),
+                image_overlay_corner: owned.image_overlay_corner,
+                fence: owned.fence.as_ref(),
+                sizing: owned.sizing,
+                table_controls: owned.table_controls,
+                copy: owned.copy,
+                base: owned.base.as_deref(),
+                highlight: owned.highlight,
+                find: owned.find,
+                comment: owned.comment,
+                jump: owned.jump.as_ref(),
+            };
+            let quote = Quote {
+                run: owned.runs[ix],
+                gap: owned.gaps[ix],
+            };
+            block_box(
+                &owned.blocks[ix],
+                quote,
+                overlay,
+                &owned.typography,
+                &owned.theme,
+                window,
+                cx,
+            )
+            .into_any_element()
+        }),
+    }
+    .into_any_element()
+}
+
+/// What [`Column`] builds a block from, owned so it can build one at prepaint.
+struct Owned {
+    blocks: Vec<Block>,
+    runs: Vec<Option<Run>>,
+    gaps: Vec<Pixels>,
+    selection: Option<Selection>,
+    caret_on: bool,
+    layouts: BlockLayouts,
+    annotations: Vec<(Selection, Annotation)>,
+    placeholder: Option<SharedString>,
+    caption: Caption,
+    toggle: Option<Toggle>,
+    image: Option<OnImage>,
+    image_menu: Option<OnImageMenu>,
+    image_overlay: Option<ImageOverlay>,
+    image_overlay_corner: ImageOverlayCorner,
+    fence: Option<FenceHost>,
+    sizing: Option<(usize, u32)>,
+    table_controls: bool,
+    copy: CopyButton,
+    base: Option<std::path::PathBuf>,
+    highlight: crate::HighlightPaint,
+    find: crate::FindPaint,
+    comment: crate::CommentPaint,
+    jump: Option<crate::app::link::Jump>,
+    typography: Typography,
+    theme: Theme,
+}
+
+/// Where a block stands in a blockquote, and the gap above it that a bar
+/// carried on from the block before has to cross.
+#[derive(Clone, Copy)]
+struct Quote {
+    run: Option<Run>,
+    gap: Pixels,
+}
+
+/// The space between a blockquote's bar and the text inside it.
+const QUOTE_INSET: f32 = 12.0;
+const QUOTE_BAR: f32 = 2.0;
+
+/// A block's box: its indent outside, and inside it the recorder and the
+/// block itself.
+fn block_box(
+    block: &Block,
+    quote: Quote,
+    overlay: Overlay,
+    typography: &Typography,
+    theme: &Theme,
+    window: &mut Window,
+    cx: &mut App,
+) -> gpui::Div {
+    let ix = overlay.block;
+    // The block's own box, recorded for a gutter handle and a drop target.
+    // A rule and an image hold no text, so a layout would not find them.
+    let frame = overlay.layouts.map(|layouts| {
+        let layouts = layouts.clone();
+        canvas(
+            move |bounds, _, _| layouts.record_block(ix, bounds),
+            |_, _, _, _| (),
+        )
+        .absolute()
+        .size_full()
+    });
+    // The indent sits on the outside and the recorder on the inside, so what
+    // is recorded is the box the block's text actually occupies. Recorded
+    // outside the padding, every level answered with the same left edge, and a
+    // gutter handle placed from it stayed at the margin while the block it
+    // belongs to moved right.
+    div()
+        .w_full()
+        // Everything a block draws — cards, bands, captions — is set in the
+        // document's face unless it names its own.
+        .font_family(theme.font_body.clone())
+        .pl(px(block.indent as f32 * INDENT_WIDTH))
+        .child(
+            div()
+                .w_full()
+                .relative()
+                .children(frame)
+                // What a caret cannot enter still has to show it is inside the
+                // selection, or a rule between two paragraphs looks untouched
+                // right up until it disappears.
+                .when(overlay.covers_block() && block.opaque(), |el| {
+                    el.rounded(px(4.0)).bg(theme.selection)
+                })
+                .child(quoted(
+                    block,
+                    quote,
+                    block_element(block, overlay, typography, theme, window, cx),
+                    typography,
+                    theme,
+                )),
+        )
+}
+
+/// A block inside a blockquote: the bar at the quote's level, the alert's
+/// label over the first block, and the block itself inset from the bar.
+///
+/// Each block paints its own piece of the bar, reaching up across the gap to
+/// the block before it, so a run shows one unbroken bar.
+fn quoted(
+    block: &Block,
+    quote: Quote,
+    element: AnyElement,
+    typography: &Typography,
+    theme: &Theme,
+) -> AnyElement {
+    let (Some(run), Some(quoted)) = (quote.run, block.quote) else {
+        return element;
+    };
+    let color = quoted
+        .alert
+        .map_or(theme.border_strong, |alert| alert_color(alert, theme));
+    let label = quoted.alert.filter(|_| run.first).map(|alert| {
+        div()
+            .pb(px(2.0))
+            .text_size(px(typography.body.size()))
+            .line_height(px(typography.body.line_height()))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(color)
+            .child(alert.label())
+    });
+    let bar = div()
+        .absolute()
+        .left(px(
+            -((block.indent - run.level.min(block.indent)) as f32) * INDENT_WIDTH
+        ))
+        .top(if run.first { px(0.0) } else { -quote.gap })
+        .bottom_0()
+        .w(px(QUOTE_BAR))
+        .bg(color);
+    div()
+        .child(bar)
+        .pl(px(QUOTE_BAR + QUOTE_INSET))
+        .pr(px(10.0))
+        .py(px(2.0))
+        .text_color(theme.text_muted)
+        .children(label)
+        .child(element)
+        .into_any_element()
+}
+
+/// What a block's height is cached under: its content and the type it is set
+/// in, so an edit elsewhere that shifts its index keeps the height.
+fn block_key(
+    block: &Block,
+    run: Option<Run>,
+    typography: &Typography,
+    table_controls: bool,
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    table_controls.hash(&mut hasher);
+    block.hash(&mut hasher);
+    run.map(|run| run.first).hash(&mut hasher);
+    typography.body.size().to_bits().hash(&mut hasher);
+    typography.body.line_height().to_bits().hash(&mut hasher);
+    hasher.finish()
+}
+
+/// What a block is placed at before it has ever been built.
+fn guess(block: &Block, run: Option<Run>, typography: &Typography) -> Guess {
+    let body = px(typography.body.line_height());
+    let prose = |chars: usize, line: Pixels| Guess {
+        chars,
+        line,
+        rows: 0,
+        extra: px(0.0),
+        indent: px(0.0),
+    };
+    let guess = match &block.kind {
+        BlockKind::Paragraph(text)
+        | BlockKind::Bullet(text)
+        | BlockKind::Ordered { text, .. }
+        | BlockKind::Task { text, .. } => prose(text.text.len(), body),
+        BlockKind::Heading { level, text } => prose(
+            text.text.len(),
+            px(typography.heading(*level).line_height()),
+        ),
+        BlockKind::Code { code, .. } => Guess {
+            rows: code.text.lines().count().max(1),
+            line: px(typography.code.line_height()),
+            extra: px(2.0 * CODE_PADDING_Y) + body,
+            ..prose(0, body)
+        },
+        BlockKind::Table { rows, .. } => Guess {
+            rows: rows.len() + 1,
+            extra: px(2.0 * TABLE_CELL_PADDING + TABLE_DIVIDER) * (rows.len() + 1) as f32,
+            ..prose(0, body)
+        },
+        BlockKind::Image { alt, .. } => Guess {
+            extra: px(240.0),
+            ..prose(alt.text.len(), px(typography.caption.line_height()))
+        },
+        BlockKind::Bookmark { .. } => Guess {
+            extra: body * 3.0,
+            ..prose(0, body)
+        },
+        BlockKind::Rule => Guess {
+            extra: body,
+            ..prose(0, px(0.0))
+        },
+    };
+    let quoted = run.is_some();
+    let label = run.is_some_and(|run| run.first) && block.quote.is_some_and(|q| q.alert.is_some());
+    Guess {
+        indent: px(block.indent as f32 * INDENT_WIDTH)
+            + if quoted {
+                px(QUOTE_BAR + QUOTE_INSET + 10.0)
+            } else {
+                px(0.0)
+            },
+        extra: guess.extra
+            + if quoted { px(4.0) } else { px(0.0) }
+            + if label { body + px(2.0) } else { px(0.0) },
+        ..guess
+    }
+}
+
+/// Whether two adjacent blocks belong to the same list and should sit close.
+fn tight(previous: &Block, next: &Block) -> bool {
+    let marker = |block: &Block| {
+        matches!(
+            block.kind,
+            BlockKind::Bullet(_) | BlockKind::Ordered { .. } | BlockKind::Task { .. }
+        )
+    };
+    marker(previous) && (marker(next) || next.indent > previous.indent)
+}
+
+fn block_element(
+    block: &Block,
+    overlay: Overlay,
+    typography: &Typography,
+    theme: &Theme,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    let body = overlay.at(Part::Body);
+    match &block.kind {
+        BlockKind::Paragraph(text) => text_element(
+            text,
+            typography.body.size(),
+            typography.body.line_height(),
+            FontWeight::NORMAL,
+            body,
+            theme,
+            cx,
+        ),
+        BlockKind::Heading { level, text } => {
+            let heading = typography.heading(*level);
+            text_element(
+                text,
+                heading.size(),
+                heading.line_height(),
+                heading.weight,
+                body,
+                theme,
+                cx,
+            )
+        }
+        BlockKind::Bullet(text) => {
+            marker_row(disc(typography, theme), text, body, typography, theme, cx)
+        }
+        BlockKind::Ordered { number, text } => marker_row(
+            div()
+                .flex_none()
+                .w(px(MARKER_WIDTH))
+                .text_size(px(typography.body.size()))
+                .line_height(px(typography.body.line_height()))
+                .text_color(theme.text_muted)
+                .child(SharedString::from(format!("{number}.")))
+                .into_any_element(),
+            text,
+            body,
+            typography,
+            theme,
+            cx,
+        ),
+        BlockKind::Task { checked, text } => marker_row(
+            checkbox(*checked, overlay, typography, theme),
+            text,
+            body,
+            typography,
+            theme,
+            cx,
+        ),
+        BlockKind::Code {
+            language,
+            code,
+            height,
+        } => {
+            let overlay = overlay.at(Part::Code);
+            let height = overlay.held_height().or(*height);
+            // The caret in the fence gives the source back. A painted block is
+            // still an editable one, and typing into it otherwise edits what
+            // the reader cannot see.
+            let fence = overlay
+                .caret()
+                .is_none()
+                .then(|| {
+                    Some(fence::Fence {
+                        language: language.as_deref()?,
+                        code: &code.text,
+                        height,
+                        rewrite: overlay.fence.map(|host| {
+                            let (rewrite, ix) = (host.rewrite.clone(), overlay.block);
+                            Rc::new(move |code: String, window: &mut Window, cx: &mut App| {
+                                rewrite(ix, code, window, cx)
+                            }) as fence::Rewrite
+                        }),
+                    })
+                })
+                .flatten();
+            let painted = match fence {
+                Some(fence) => fence::render(&fence, overlay.block, window, cx),
+                None => fence::Painted::Code(None),
+            };
+            match painted {
+                // Painted, there is no text under the selection to carry it —
+                // the wash an opaque block gets at the container comes here.
+                fence::Painted::Block(element) => div()
+                    .key_context(PAINTED_CONTEXT)
+                    .relative()
+                    .when_some(overlay.fence, |el, host| {
+                        let (leave, ix) = (host.leave.clone(), overlay.block);
+                        el.on_action(move |_: &LeaveBlock, window, cx| leave(ix, window, cx))
+                    })
+                    .when(overlay.covers_block(), |el| {
+                        el.rounded(px(4.0)).bg(theme.selection)
+                    })
+                    .group(painted_group(overlay.block))
+                    .child(element)
+                    .children(resizable(&overlay, theme))
+                    .into_any_element(),
+                fence::Painted::Code(note) => code_block(
+                    language.as_deref(),
+                    &code.text,
+                    note,
+                    overlay,
+                    typography,
+                    theme,
+                    window,
+                    cx,
+                ),
+            }
+        }
+        BlockKind::Image { url, alt, width } => {
+            image(url, alt, *width, overlay, typography, theme, window, cx)
+        }
+        BlockKind::Bookmark { url, form } => match crate::app::link::card(
+            crate::Link::new(url, overlay.base),
+            match (*form, overlay.held_height()) {
+                (Form::Embed(_), Some(held)) => Form::Embed(Some(held)),
+                (form, _) => form,
+            },
+            window,
+            cx,
+        ) {
+            // The app's own, painted where a fence's would be and kept apart
+            // from the editor's keys the same way.
+            Some(element) => div()
+                .key_context(PAINTED_CONTEXT)
+                .relative()
+                .when_some(overlay.fence, |el, host| {
+                    let (leave, ix) = (host.leave.clone(), overlay.block);
+                    el.on_action(move |_: &LeaveBlock, window, cx| leave(ix, window, cx))
+                })
+                .when(overlay.covers_block(), |el| {
+                    el.rounded(px(4.0)).bg(theme.selection)
+                })
+                .group(painted_group(overlay.block))
+                .child(element)
+                .children(match form {
+                    Form::Embed(_) => resizable(&overlay, theme),
+                    _ => Vec::new(),
+                })
+                .into_any_element(),
+            None => bookmark(
+                overlay.block,
+                url,
+                overlay.base,
+                *form,
+                typography,
+                theme,
+                cx,
+            ),
+        },
+        BlockKind::Table {
+            align,
+            header,
+            rows,
+        } => table(align, header, rows, overlay, typography, theme, window, cx),
+        BlockKind::Rule => div()
+            .h(px(1.0))
+            .w_full()
+            .bg(theme.border)
+            .into_any_element(),
+    }
+}
+
+/// A real 5px disc rather than the "•" glyph, which reads too small at body size.
+fn disc(typography: &Typography, theme: &Theme) -> AnyElement {
+    div()
+        .flex_none()
+        .w(px(MARKER_WIDTH))
+        .h(px(typography.body.line_height()))
+        .flex()
+        .items_center()
+        .child(
+            div()
+                .ml(px(1.0))
+                .w(px(5.0))
+                .h(px(5.0))
+                .rounded_full()
+                .bg(theme.text_faint),
+        )
+        .into_any_element()
+}
+
+fn checkbox(checked: bool, overlay: Overlay, typography: &Typography, theme: &Theme) -> AnyElement {
+    let ix = overlay.block;
+    let mut box_ = div()
+        .relative()
+        .w(px(13.0))
+        .h(px(13.0))
+        .rounded(px(3.5))
+        .border_1()
+        .flex()
+        .items_center()
+        .justify_center();
+    box_ = if checked {
+        box_.bg(theme.solid)
+            .border_color(theme.solid)
+            .text_style(TextStyle::Caption)
+            .text_color(theme.on_solid)
+            .child("✓")
+    } else {
+        box_.border_color(theme.border_strong)
+    };
+    // The box's own bounds rather than the marker column's: a caller hit-tests
+    // these to tell a toggle from a caret placed in the gutter beside it.
+    box_ = box_.children(overlay.layouts.map(|layouts| {
+        let layouts = layouts.clone();
+        canvas(
+            move |bounds, _, _| layouts.record_checkbox(ix, bounds),
+            |_, _, _, _| (),
+        )
+        .absolute()
+        .size_full()
+    }));
+    // The cursor answers to either variant: a box an editor hit-tests is as
+    // pressable as one the renderer listens to, and only the pointer says so.
+    if overlay.toggle.is_some() {
+        box_ = box_.cursor_pointer();
+    }
+    if let Some(Toggle::Handled(toggle)) = overlay.toggle.cloned() {
+        box_ = box_.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            // Stopped, or the press goes on to whatever placed a caret
+            // under it and the toggle reads as a click that moved the
+            // caret as well.
+            cx.stop_propagation();
+            toggle(ix, window, cx);
+        });
+    }
+
+    div()
+        .flex_none()
+        .w(px(MARKER_WIDTH))
+        .h(px(typography.body.line_height()))
+        .flex()
+        .items_center()
+        .child(box_)
+        .into_any_element()
+}
+
+/// What an alert paints its rule and its label in.
+fn alert_color(kind: QuoteKind, theme: &Theme) -> Hsla {
+    match kind {
+        QuoteKind::Note => theme.accent,
+        QuoteKind::Tip => theme.success,
+        QuoteKind::Important => theme.busy,
+        QuoteKind::Warning => theme.warning,
+        QuoteKind::Caution => theme.danger,
+    }
+}
+
+fn marker_row(
+    marker: AnyElement,
+    text: &Text,
+    overlay: Overlay,
+    typography: &Typography,
+    theme: &Theme,
+    cx: &App,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_row()
+        .gap(px(MARKER_GAP))
+        .child(marker)
+        .child(div().flex_auto().min_w_0().child(text_element(
+            text,
+            typography.body.size(),
+            typography.body.line_height(),
+            FontWeight::NORMAL,
+            overlay,
+            theme,
+            cx,
+        )))
+        .into_any_element()
+}

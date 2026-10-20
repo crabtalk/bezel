@@ -1,0 +1,46 @@
+use crate::token::grammar;
+
+grammar! {
+    /// The block lexer's token kinds.
+    pub enum T {
+        End = "$end",
+        Error = "INVALID",
+        Key = "BLOCK_DIAGRAM_KEY",
+        IdBlock = "id-block",
+        Columns = "COLUMNS",
+        MdStr = "MD_STR",
+        Str = "STR",
+        SpaceBlock = "SPACE_BLOCK",
+        Default = "DEFAULT",
+        Linkstyle = "LINKSTYLE",
+        Interpolate = "INTERPOLATE",
+        Classdef = "classDef",
+        DefaultClassdefId = "DEFAULT_CLASSDEF_ID",
+        ClassdefId = "CLASSDEF_ID",
+        ClassdefStyleopts = "CLASSDEF_STYLEOPTS",
+        Class = "class",
+        ClassentityIds = "CLASSENTITY_IDS",
+        Styleclass = "STYLECLASS",
+        Style = "style",
+        StyleEntityIds = "STYLE_ENTITY_IDS",
+        StyleDefinitionData = "STYLE_DEFINITION_DATA",
+        AccTitle = "acc_title",
+        AccTitleValue = "acc_title_value",
+        AccDescr = "acc_descr",
+        AccDescrValue = "acc_descr_value",
+        AccDescrMultilineValue = "acc_descr_multiline_value",
+        /// The `end` that closes a composite; `End` is the end of the tokens.
+        EndKeyword = "end",
+        NodeDstart = "NODE_DSTART",
+        NodeDend = "NODE_DEND",
+        BlockArrowStart = "BLOCK_ARROW_START",
+        BlockArrowEnd = "BLOCK_ARROW_END",
+        Dir = "DIR",
+        NodeId = "NODE_ID",
+        Link = "LINK",
+        StartLink = "START_LINK",
+        LinkLabel = "LINK_LABEL",
+        Size = "SIZE",
+        Eof = "EOF",
+    }
+}

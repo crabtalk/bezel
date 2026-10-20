@@ -1,0 +1,9 @@
+name = "Temple"
+
+[dark.seed]
+surface = "#02120c"
+ink = "#c7e6da"
+accent = "#e4f222"
+added = "#40c977"
+removed = "#fa423e"
+highlight = "#e4f222"

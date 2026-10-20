@@ -1,4 +1,4 @@
-use gallery::patterns::document::SOURCE;
+use gallery::pages::editor::document::SOURCE;
 
 /// The Source segment shows `serialize(&doc)` and the page invites you to
 /// compare it with [`SOURCE`]. If the constant drifts out of canonical form

@@ -1,38 +1,19 @@
 ---
 title: Checkbox & radio
 description: Display-only checkbox and radio marks — the app owns which are on, and one call puts them in the tab order.
+prompt: Add a "Remember me" checkbox and a pair of radio buttons for monthly or yearly billing, both reachable by keyboard.
 ---
 
 ```rust
 use ui::{focus, widgets::Controls};
 
-theme.checkbox(self.checked[index])
-theme.radio_button(self.radio == index)
+focus::focusable(&theme, &self.remember_focus, theme.checkbox(self.remember))
+    .id("remember")
+    .on_click(cx.listener(|view, _, _, cx| view.toggle_remember(cx)))
+    .on_action(cx.listener(|view, _: &focus::Activate, _, cx| view.toggle_remember(cx)))
+
+theme.radio_button(self.billing == Billing::Yearly)
 ```
 
-Radios are a *set*, so the caller owns which index is on. Nothing here groups them, because a group would have to own the answer.
-
-## Keyboard
-
-```rust
-focus::focusable(&theme, &self.checkboxes[index], theme.checkbox(checked))
-    .id("checkbox-0")
-    .on_click(cx.listener(..))
-    .on_action(cx.listener(|view, _: &focus::Activate, _, cx| ..))
-```
-
-## API
-
-```rust
-pub trait Controls: ThemeExt {
-    fn checkbox(&self, checked: bool) -> Div;
-    fn radio_button(&self, selected: bool) -> Div;
-
-    // ...
-}
-
-/// Tab order, focus ring, and `enter`/`space`.
-pub fn focusable(theme: &Theme, handle: &FocusHandle, el: Div) -> Div;
-```
-
-The click and the key press are wired separately on purpose: only the caller knows what the press means. Every control keeps a 1px border even where it paints nothing in it — gpui sizes border-box, so a border appearing only on focus would move the tick by a pixel as you tab onto it.
+- The marks are display-only: the caller holds the bools and the radio index, and nothing groups radios.
+- Keyboard use needs `ui::focus::init(cx)` and the window root in `focus::traversal`. Click and `focus::Activate` are wired separately.

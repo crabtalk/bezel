@@ -7,7 +7,7 @@
 //! size, or sampled onto an 8×8 grid by [`mascot`] for a list row.
 //!
 //! ```ignore
-//! agent::avatar(Face::from("Sara").pose(t)).w(px(48.)).h(px(48.))
+//! div().w(px(48.)).h(px(48.)).child(agent::avatar(Face::from("Sara").pose(t)))
 //! ```
 
 pub mod avatar;

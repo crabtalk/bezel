@@ -262,8 +262,6 @@ impl From<&str> for Shape {
 ///
 /// Composed and decomposed spellings still part ways: `café` written with `é`
 /// and with `e` + a combining acute are one name to a reader and two here.
-/// Normalizing them together needs a Unicode table, which is a dependency this
-/// crate does not carry.
 pub fn seed(name: &str) -> u64 {
     let feed = |h: u64, b: u8| (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3);
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;

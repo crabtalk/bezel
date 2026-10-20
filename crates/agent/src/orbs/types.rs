@@ -3,7 +3,7 @@
 /// The twelve shipped states — each a hand-tuned animation.
 ///
 /// Marked `#[non_exhaustive]`: matching on this from another crate needs a
-/// wildcard arm, so shipping a tenth state is not a breaking change. Prefer
+/// wildcard arm, so shipping another state is not a breaking change. Prefer
 /// [`OrbState::label`] / [`OrbState::as_str`] over matching where you can.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -168,7 +168,7 @@ impl OrbSize {
 /// Theme mode for monochrome ink on transparent canvas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum OrbTheme {
-    /// Resolve from the window appearance (GPUI `WindowAppearance`).
+    /// Resolve from the installed [`theme::Appearance`] at paint time.
     #[default]
     Auto,
     /// Light ink for dark backgrounds.

@@ -1,6 +1,5 @@
-//! The languages bezel can highlight: a row per grammar — the fence aliases
-//! it answers to, the tree-sitter grammar, and its highlights query. Each row
-//! is behind the feature of the same name.
+//! A language row: the fence aliases it answers to, the tree-sitter grammar,
+//! and its highlights query.
 
 use std::{ops::Range, sync::Arc};
 use theme::HighlightKind;

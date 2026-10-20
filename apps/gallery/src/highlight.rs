@@ -20,7 +20,7 @@ pub fn spans(language: &str, code: &str) -> Option<Vec<(Range<usize>, HighlightK
 #[cfg(not(target_family = "wasm"))]
 fn install() {
     static INSTALLED: std::sync::Once = std::sync::Once::new();
-    INSTALLED.call_once(syntax_std::install);
+    INSTALLED.call_once(syntax::grammars::install);
 }
 
 /// The names of registered languages with grammars.

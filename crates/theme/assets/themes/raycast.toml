@@ -1,0 +1,17 @@
+name = "Raycast"
+
+[dark.seed]
+surface = "#101010"
+ink = "#fefefe"
+accent = "#ff6363"
+added = "#59d499"
+removed = "#ff6363"
+highlight = "#cf2f98"
+
+[light.seed]
+surface = "#ffffff"
+ink = "#030303"
+accent = "#ff6363"
+added = "#006b4f"
+removed = "#b12424"
+highlight = "#9a1b6e"

@@ -3,7 +3,7 @@
 //! ```ignore
 //! canvas::init(cx);                                                // once, at startup
 //! let view = cx.new(|cx| {
-//!     CanvasView::new(Canvas::parse(json)?, cx)
+//!     CanvasView::new(Canvas::parse(json)?, canvas::layout::MINDMAP, cx)
 //!         .with_kinds(Kinds::new().with("session", SESSION))       // an app's own types
 //! });
 //! ```
@@ -18,10 +18,24 @@
 mod app;
 pub use app::AppExt;
 
-pub use canvas_core::{
-    Canvas, Change, Handle, Layout, Snap, change, clip, contain, drag, handle, layout, mindmap,
-    model, path, snap,
-};
+pub mod change;
+pub mod clip;
+pub mod contain;
+pub mod drag;
+pub mod handle;
+pub mod json_canvas;
+pub mod layout;
+pub mod mindmap;
+pub mod model;
+pub mod paint;
+pub mod path;
+pub mod snap;
+
+pub use change::Change;
+pub use handle::Handle;
+pub use layout::Layout;
+pub use model::Canvas;
+pub use snap::Snap;
 
 pub mod edge;
 mod edit;

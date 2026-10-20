@@ -1,6 +1,7 @@
 ---
 title: Breadcrumb
 description: A trail of crumbs and chevrons, assembled by the caller — the last one is current and stops looking clickable.
+prompt: Show the open file's path as a breadcrumb above the editor, each folder clickable to reveal it in the sidebar.
 ---
 
 ```rust
@@ -15,21 +16,5 @@ theme
     .child(theme.breadcrumb_item("widgets.rs", true))
 ```
 
-Separators are children rather than something the container inserts, so collapsing a long trail to `crates / … / widgets.rs` stays the caller's decision.
-
-## API
-
-```rust
-pub trait Content: ThemeExt {
-    /// The row. `min_w_0`, so a long path shortens instead of widening it.
-    fn breadcrumb(&self) -> Div;
-
-    /// One crumb; `current` takes the text tone and drops the pointer cursor.
-    fn breadcrumb_item(&self, label: impl Into<SharedString>, current: bool) -> Div;
-
-    /// The chevron between two.
-    fn breadcrumb_separator(&self) -> Svg;
-
-    // ...
-}
-```
+- The caller adds the separators and any click handlers; collapsing a long trail is the caller's too.
+- Mark only the last crumb `current`.

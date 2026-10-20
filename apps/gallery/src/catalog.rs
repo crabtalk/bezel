@@ -90,13 +90,13 @@ pub struct Tab {
     /// The page the tab opens on.
     pub home: &'static str,
     /// Whether its pages get the whole pane instead of the fixed column every
-    /// component demo is designed for. A pattern is a screen: it fills the
+    /// component demo is designed for. Such a page is a screen: it fills the
     /// pane, scrolls its own parts, and floats its own chrome over them.
     pub full_bleed: bool,
 }
 
-/// The top nav. The axis is the *kind* of thing you are looking at: a token, a
-/// component, or a screen built out of both.
+/// The top nav: tokens, components, then a tab per domain whose pages are
+/// screens.
 pub const TABS: &[Tab] = &[
     Tab {
         title: "Foundations",
@@ -111,44 +111,57 @@ pub const TABS: &[Tab] = &[
         full_bleed: false,
     },
     Tab {
-        title: "Patterns",
-        groups: PATTERNS,
+        title: "Editor",
+        groups: EDITOR,
+        home: "editor",
+        full_bleed: true,
+    },
+    Tab {
+        title: "Diagrams",
+        groups: DIAGRAMS,
+        home: "canvas",
+        full_bleed: true,
+    },
+    Tab {
+        title: "Agent",
+        groups: AGENT,
         home: "agent-avatar",
         full_bleed: true,
     },
 ];
 
-/// Composed screens. The source path points at the gallery rather than into
-/// `crates/`, and that is the point — a pattern is not a component you call, it
-/// is a file you copy.
-pub const PATTERNS: &[Group] = &[
-    // A group per kind of app, and this one is the driver: bezel is a UI
-    // library for agent apps. A page appears here when the parts under it are
-    // real — nothing is a row until it can be pressed.
+/// Agent screens. A page appears here when the parts under it are real —
+/// nothing is a row until it can be pressed.
+pub const AGENT: &[Group] = &[
     Group {
-        title: "Agent",
+        title: "Conversation",
         sections: &[
             section(
                 "agent-activity",
                 "Activity",
-                "apps/gallery/src/patterns/agent.rs",
+                "apps/gallery/src/pages/agent/activity.rs",
             ),
             section(
                 "agent-tools",
                 "Tool calls",
-                "apps/gallery/src/patterns/agent.rs",
+                "apps/gallery/src/pages/agent/activity.rs",
             ),
             section(
                 "agent-composer",
                 "Composer",
-                "apps/gallery/src/patterns/agent.rs",
+                "apps/gallery/src/pages/agent/activity.rs",
             ),
             section(
                 "agent-transcript",
                 "Transcript",
-                "apps/gallery/src/patterns/transcript.rs",
+                "apps/gallery/src/pages/agent/transcript.rs",
             ),
-            section("agent-diff", "Diff", "apps/gallery/src/patterns/diff.rs"),
+        ],
+    },
+    Group {
+        title: "Tools",
+        sections: &[
+            section("agent-diff", "Diff", "apps/gallery/src/pages/agent/diff.rs"),
             // Native-only: the terminal crate sits off the wasm build
             // (alacritty_terminal pulls `home`, which does not compile for
             // wasm32) — see the gallery manifest.
@@ -156,44 +169,288 @@ pub const PATTERNS: &[Group] = &[
             section(
                 "agent-terminal",
                 "Terminal",
-                "apps/gallery/src/patterns/terminal.rs",
+                "apps/gallery/src/pages/agent/terminal.rs",
             ),
             section(
-                "agent-orbs",
-                "Thinking orbs",
-                "apps/gallery/src/patterns/orbs.rs",
-            ),
-            section(
-                "agent-avatar",
-                "Blob avatars",
-                "apps/gallery/src/patterns/avatar.rs",
+                "browser",
+                "Browser",
+                "apps/gallery/src/pages/agent/browser.rs",
             ),
         ],
     },
     Group {
-        title: "Media",
+        title: "Presence",
         sections: &[
+            section(
+                "agent-orbs",
+                "Thinking orbs",
+                "apps/gallery/src/pages/agent/orbs.rs",
+            ),
+            section(
+                "agent-avatar",
+                "Blob avatars",
+                "apps/gallery/src/pages/agent/avatar.rs",
+            ),
+        ],
+    },
+];
+
+/// Document screens: the markdown model, read, selected and edited.
+pub const EDITOR: &[Group] = &[
+    Group {
+        title: "Documents",
+        sections: &[
+            section(
+                "editor",
+                "Editor",
+                "apps/gallery/src/pages/editor/editing.rs",
+            ),
             section(
                 "document",
                 "Document",
-                "apps/gallery/src/patterns/document.rs",
+                "apps/gallery/src/pages/editor/document.rs",
             ),
             section(
                 "selectable-text",
                 "Selectable text",
-                "apps/gallery/src/patterns/selectable.rs",
+                "apps/gallery/src/pages/editor/selectable.rs",
             ),
-            section("editor", "Editor", "apps/gallery/src/patterns/editor.rs"),
-            section("canvas", "Canvas", "apps/gallery/src/patterns/canvas.rs"),
-            section("charts", "Charts", "apps/gallery/src/patterns/charts.rs"),
-            section("browser", "Browser", "apps/gallery/src/patterns/browser.rs"),
-            section("ribbon", "Ribbon", "apps/gallery/src/patterns/ribbon.rs"),
+            section(
+                "ribbon",
+                "Ribbon",
+                "apps/gallery/src/pages/editor/ribbon.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Text",
+        sections: &[
             section(
                 "markdown",
                 "Markdown",
-                "apps/gallery/src/patterns/dialect.rs",
+                "apps/gallery/src/pages/editor/dialect.rs",
             ),
-            section("syntax", "Syntax", "apps/gallery/src/patterns/syntax.rs"),
+            section(
+                "syntax",
+                "Syntax",
+                "apps/gallery/src/pages/editor/syntax.rs",
+            ),
+        ],
+    },
+];
+
+/// A canvas, charts and a Mermaid playground drawn live, then one page per
+/// diagram type `bezel-mermaid` draws, each pointing at the module that parses
+/// and draws it. A `mermaid-` row needs a sample in
+/// [`crate::pages::diagrams::mermaid::SAMPLES`].
+pub const DIAGRAMS: &[Group] = &[
+    Group {
+        title: "Live",
+        sections: &[
+            section(
+                "canvas",
+                "Canvas",
+                "apps/gallery/src/pages/diagrams/mindmap.rs",
+            ),
+            section(
+                "charts",
+                "Charts",
+                "apps/gallery/src/pages/diagrams/charts.rs",
+            ),
+            section(
+                "playground",
+                "Playground",
+                "apps/gallery/src/pages/diagrams/playground.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Mermaid",
+        sections: &[section(
+            "mermaid",
+            "Overview",
+            "crates/markdown/src/fence/mermaid/mod.rs",
+        )],
+    },
+    Group {
+        title: "Graphs",
+        sections: &[
+            section(
+                "mermaid-flowchart",
+                "Flowchart",
+                "crates/mermaid/src/diagrams/flowchart/mod.rs",
+            ),
+            section(
+                "mermaid-sequence",
+                "Sequence",
+                "crates/mermaid/src/diagrams/sequence/mod.rs",
+            ),
+            section(
+                "mermaid-class",
+                "Class",
+                "crates/mermaid/src/diagrams/class/mod.rs",
+            ),
+            section(
+                "mermaid-state",
+                "State",
+                "crates/mermaid/src/diagrams/state/mod.rs",
+            ),
+            section(
+                "mermaid-er",
+                "Entity relationship",
+                "crates/mermaid/src/diagrams/er/mod.rs",
+            ),
+            section(
+                "mermaid-requirement",
+                "Requirement",
+                "crates/mermaid/src/diagrams/requirement/mod.rs",
+            ),
+            section(
+                "mermaid-architecture",
+                "Architecture",
+                "crates/mermaid/src/diagrams/architecture/mod.rs",
+            ),
+            section(
+                "mermaid-block",
+                "Block",
+                "crates/mermaid/src/diagrams/block/mod.rs",
+            ),
+            section("mermaid-c4", "C4", "crates/mermaid/src/diagrams/c4/mod.rs"),
+        ],
+    },
+    Group {
+        title: "Process",
+        sections: &[
+            section(
+                "mermaid-usecase",
+                "Use case",
+                "crates/mermaid/src/diagrams/usecase/mod.rs",
+            ),
+            section(
+                "mermaid-swimlane",
+                "Swimlane",
+                "crates/mermaid/src/diagrams/swimlane/mod.rs",
+            ),
+            section(
+                "mermaid-agentflow",
+                "Agent flow",
+                "crates/mermaid/src/diagrams/agentflow/mod.rs",
+            ),
+            section(
+                "mermaid-eventmodeling",
+                "Event modeling",
+                "crates/mermaid/src/diagrams/eventmodeling/mod.rs",
+            ),
+            section(
+                "mermaid-journey",
+                "User journey",
+                "crates/mermaid/src/diagrams/journey/mod.rs",
+            ),
+            section(
+                "mermaid-gitgraph",
+                "Git graph",
+                "crates/mermaid/src/diagrams/git/mod.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Charts",
+        sections: &[
+            section(
+                "mermaid-pie",
+                "Pie",
+                "crates/mermaid/src/diagrams/pie/mod.rs",
+            ),
+            section(
+                "mermaid-xychart",
+                "XY chart",
+                "crates/mermaid/src/diagrams/xychart/mod.rs",
+            ),
+            section(
+                "mermaid-quadrant",
+                "Quadrant",
+                "crates/mermaid/src/diagrams/quadrant/mod.rs",
+            ),
+            section(
+                "mermaid-radar",
+                "Radar",
+                "crates/mermaid/src/diagrams/radar/mod.rs",
+            ),
+            section(
+                "mermaid-sankey",
+                "Sankey",
+                "crates/mermaid/src/diagrams/sankey/mod.rs",
+            ),
+            section(
+                "mermaid-treemap",
+                "Treemap",
+                "crates/mermaid/src/diagrams/treemap/mod.rs",
+            ),
+            section(
+                "mermaid-venn",
+                "Venn",
+                "crates/mermaid/src/diagrams/venn/mod.rs",
+            ),
+            section(
+                "mermaid-packet",
+                "Packet",
+                "crates/mermaid/src/diagrams/packet/mod.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Planning",
+        sections: &[
+            section(
+                "mermaid-gantt",
+                "Gantt",
+                "crates/mermaid/src/diagrams/gantt/mod.rs",
+            ),
+            section(
+                "mermaid-timeline",
+                "Timeline",
+                "crates/mermaid/src/diagrams/timeline/mod.rs",
+            ),
+            section(
+                "mermaid-kanban",
+                "Kanban",
+                "crates/mermaid/src/diagrams/kanban/mod.rs",
+            ),
+        ],
+    },
+    Group {
+        title: "Maps & trees",
+        sections: &[
+            section(
+                "mermaid-mindmap",
+                "Mindmap",
+                "crates/mermaid/src/diagrams/mindmap/mod.rs",
+            ),
+            section(
+                "mermaid-treeview",
+                "Tree view",
+                "crates/mermaid/src/diagrams/treeview/mod.rs",
+            ),
+            section(
+                "mermaid-ishikawa",
+                "Ishikawa",
+                "crates/mermaid/src/diagrams/ishikawa/mod.rs",
+            ),
+            section(
+                "mermaid-wardley",
+                "Wardley map",
+                "crates/mermaid/src/diagrams/wardley/mod.rs",
+            ),
+            section(
+                "mermaid-cynefin",
+                "Cynefin",
+                "crates/mermaid/src/diagrams/cynefin/mod.rs",
+            ),
+            section(
+                "mermaid-railroad",
+                "Railroad",
+                "crates/mermaid/src/diagrams/railroad/mod.rs",
+            ),
         ],
     },
 ];

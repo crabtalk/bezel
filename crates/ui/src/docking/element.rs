@@ -17,7 +17,9 @@ pub struct Surface<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'stati
 }
 
 impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Surface<P, I> {
-    /// Apply the split/join synchronously and return its resulting pane; `None` rejects it.
+    /// Runs once on release. Apply the split/join synchronously and return its
+    /// resulting pane: the new pane for an edge split, the existing one for a
+    /// join. `None` rejects it and the item returns home.
     pub fn on_drop(
         mut self,
         callback: impl Fn(&super::Drop<P, I>, &mut Window, &mut App) -> Option<P> + 'static,

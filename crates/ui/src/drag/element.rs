@@ -87,8 +87,9 @@ impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Region<R, I
         self
     }
 
-    /// The handle scrolling this region's content. Holding an item near the
-    /// region's visible edges scrolls it.
+    /// The handle scrolling this region's content. Holding an item within 24px
+    /// of the region's visible edges, or a quarter of a shorter region,
+    /// scrolls it.
     pub fn track_scroll(mut self, handle: impl Into<Scroller>) -> Self {
         self.scroll = Some(handle.into());
         self

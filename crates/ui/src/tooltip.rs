@@ -4,6 +4,8 @@
 //! builder returning an `AnyView`: the tooltip is mounted in its own layer,
 //! after the hover delay, so it cannot be an inline element.
 //!
+//! The delay is gpui's; `.tooltip_show_delay(..)` on the element changes it.
+//!
 //! ```ignore
 //! use ui::tooltip::Tooltip;
 //!

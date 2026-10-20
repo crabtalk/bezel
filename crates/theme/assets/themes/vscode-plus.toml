@@ -1,0 +1,16 @@
+name = "VS Code Plus"
+
+[dark.seed]
+surface = "#1e1e1e"
+ink = "#d4d4d4"
+accent = "#007acc"
+added = "#369432"
+removed = "#f44747"
+
+[light.seed]
+surface = "#ffffff"
+ink = "#000000"
+accent = "#007acc"
+added = "#008000"
+removed = "#ee0000"
+highlight = "#0000ff"

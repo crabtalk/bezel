@@ -1,0 +1,17 @@
+name = "Absolutely"
+
+[dark.seed]
+surface = "#2d2d2b"
+ink = "#f9f9f7"
+accent = "#cc7d5e"
+added = "#00c853"
+removed = "#ff5f38"
+highlight = "#cc7d5e"
+
+[light.seed]
+surface = "#f9f9f7"
+ink = "#2d2d2b"
+accent = "#cc7d5e"
+added = "#00c853"
+removed = "#ff5f38"
+highlight = "#cc7d5e"

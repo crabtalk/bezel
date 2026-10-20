@@ -1,15 +1,18 @@
 ---
 title: Activity
 description: A model working in public — the reasoning box pinned to its newest line, opening itself while the run streams and yielding the moment you press the header.
+prompt: Show the model's reasoning in a box that stays scrolled to the newest line and opens while the run streams, until I click its header.
 ---
 
 ```rust
-let open = self.thinking.get(self.running);   // follows the run…
-self.thinking.toggle(self.running);           // …until the header is pressed
+let open = self.thinking.get(self.running);   // widgets::Takeover: follows the run…
+self.thinking.toggle(self.running);           // …on the header's click, until pressed
+
+div().relative()
+    .child(scroll::pane("reasoning", Axes::Vertical).track_scroll(&self.scroll).child(lines))
+    .child(scroll::follow(&self.scroll, &self.follow))
 ```
 
-Two library pieces carry the screen: [`scroll::follow`](/docs/follow) pins the reasoning box to its newest line while the run writes into it, and [`widgets::Takeover`](/docs/collapsible) opens the section while that is happening. Everything else is a `div`.
-
-Both are general — a terminal wants follow-scroll, a build log wants a section that unfolds while it runs.
-
-The source is at `apps/gallery/src/patterns/agent.rs`. Copy the file.
+- Pass the same `auto` value to `get` and `toggle`.
+- `scroll::follow` goes over the same container as the pane it pins; scrolling up releases it, `FollowState::follow` re-pins.
+- There is no activity component: the screen is [`scroll::follow`](/docs/follow), [`Takeover`](/docs/collapsible) and `div`s. Copy `apps/gallery/src/pages/agent/activity.rs`.

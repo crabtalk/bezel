@@ -290,8 +290,8 @@ pub(super) fn text_element(
         text,
         weight,
         theme,
-        |name| crate::marks::paint_of(cx, name, theme),
-        |url| crate::link::preview(crate::Link::new(url, overlay.base), cx),
+        |name| crate::paint::marks::paint_of(cx, name, theme),
+        |url| crate::app::link::preview(crate::Link::new(url, overlay.base), cx),
     );
     painted_text(flat, text.text.len(), size, line_height, overlay, theme)
 }
@@ -356,7 +356,7 @@ pub(super) fn painted_text(
             .on_click(ranges, move |clicked, window, cx| {
                 if let Some(url) = urls.get(clicked) {
                     let link = crate::Link::new(url, base.as_deref());
-                    crate::link::follow(link, jump.as_ref(), window, cx);
+                    crate::app::link::follow(link, jump.as_ref(), window, cx);
                 }
             })
             .tooltip(move |at, _window, cx| {

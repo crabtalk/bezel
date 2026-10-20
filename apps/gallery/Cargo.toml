@@ -16,7 +16,6 @@ profiler = ["gpui/profiler"]
 # ship highlighted samples it could never compile tree-sitter to produce.
 [build-dependencies]
 syntax.workspace = true
-syntax-std.workspace = true
 theme.workspace = true
 
 [dependencies]
@@ -55,10 +54,11 @@ terminal.workspace = true
 gpui_platform.workspace = true
 # The live highlighter. A web build has the build script's table instead.
 syntax.workspace = true
-syntax-std.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# The samples on the Mermaid tab, drawn without a window.
+mermaid.workspace = true
 # `TestAppContext` — a window without a display, which is what lets the
 # catalog's declared examples be compared against the ones a page paints.
 gpui = { workspace = true, features = ["test-support"] }

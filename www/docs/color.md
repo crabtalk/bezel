@@ -1,69 +1,24 @@
 ---
 title: Color
 description: The token set — two designed palettes read from a gpui global at paint time, with light designed rather than inverted.
+prompt: Add a Light / Dark / System setting that persists, and make our error red a little warmer in both modes.
 ---
 
 ```rust
-use theme::Theme;
+use theme::{AppExt as _, Theme, appearance::{self, AppearanceMode}};
+
+cx.set_palette(|appearance| {                    // optional: your own tokens
+    let mut theme = Theme::for_appearance(appearance);
+    theme.danger = my_red(appearance);
+    theme
+});
+appearance::init(saved_mode, cx);                // once, before the first window
 
 let theme = Theme::of(cx);
 div().bg(theme.surface).text_color(theme.text_muted)
 ```
 
-`Theme` is a plain struct of `gpui::Hsla` fields installed as a gpui `Global`. Components read it at paint time and never take a colour parameter.
-
-## Installing
-
-```rust
-use theme::appearance::{self, AppearanceMode};
-
-appearance::init(AppearanceMode::System, cx);
-```
-
-Once at boot, before the first window opens — later than that and the first frame paints in the wrong palette.
-
-## Replacing a token
-
-```rust
-use bezel::theme::AppExt as _;
-cx.set_palette(|appearance| {
-    let mut theme = Theme::for_appearance(appearance);
-    theme.danger = my_red(appearance);
-    theme
-}); // before appearance::init
-```
-
-Register the builder rather than installing one theme: `appearance::apply` rebuilds the palette from scratch on every light/dark switch, and a theme installed on its own lasts only until then.
-
-## API
-
-```rust
-impl Theme {
-    /// The installed palette.
-    pub fn of(cx: &App) -> &Theme;
-
-    pub fn for_appearance(appearance: Appearance) -> Self;
-
-    // ...
-}
-```
-
-```rust
-// theme::appearance
-
-/// Once at boot, before the first window opens.
-pub fn init(mode: AppearanceMode, cx: &mut App);
-
-/// Subscribes to the OS notification.
-pub fn observe_window(window: &mut Window, cx: &mut App) -> Subscription;
-
-/// Changes the preference and repaints.
-pub fn set_mode(mode: AppearanceMode, cx: &mut App);
-
-/// Serde-serializable, so you persist it wherever your settings live.
-pub enum AppearanceMode { System, Light, Dark }
-
-// ...
-```
-
-Light is designed, not inverted — mirroring lightness reverses surface order, elevation and accent contrast. Each light text token lands within ~0.5 of its dark counterpart's ratio, and a test asserts it. `accent` is neutral by default: a library that ships a hue puts that hue in every app that installs it.
+- `appearance::init` runs once at boot, before any window opens; later, the first frame paints the wrong palette.
+- Change tokens through `set_palette`. A light/dark switch rebuilds from the registered builder, so a palette installed with `Theme::install_custom` lasts only until then. Registered after `init`, follow it with `appearance::apply(cx)`.
+- Under `AppearanceMode::System`, each window needs `appearance::observe_window(window, cx).detach()` to follow the OS.
+- `AppearanceMode` is serde-serializable; persisting it is the app's job. `cx.set_appearance_mode(mode)` changes it at runtime.

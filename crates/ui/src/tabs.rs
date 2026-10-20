@@ -273,8 +273,11 @@ impl Label {
 /// only one tab in the window has the keyboard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
+    /// Behind another tab of its strip.
     Resting,
+    /// In front of its strip, in a pane without the keyboard.
     Front,
+    /// The tab holding the keyboard. One per window.
     Focused,
 }
 
@@ -337,7 +340,10 @@ const TAB_PAD: f32 = 8.0;
 /// The strip. Tabs go in it; a `+`, a `···` and anything else on the row are
 /// the caller's, outside this.
 ///
-/// It scrolls sideways once the tabs no longer fit. `min_w_0` is what allows
+/// It scrolls sideways once the tabs no longer fit, by wheel and trackpad; it
+/// draws no scrollbar. Without [`TabBar::track_scroll`] it keeps its offset
+/// across renders under `id`.
+/// `min_w_0` is what allows
 /// that — a flex child's `min-width: auto` refuses to shrink below its content,
 /// so without it the strip grows past its row instead of scrolling.
 pub fn bar(id: impl Into<ElementId>) -> TabBar {
@@ -418,8 +424,8 @@ pub fn tab(
 }
 
 /// A tab's `×`, for the `key` its [`tab`] was built with. The click is the
-/// caller's, and has to stop propagating or the tab under it takes the press
-/// as well.
+/// caller's. It stops mouse-down propagation, so a press on it neither clicks
+/// nor picks up the tab under it.
 pub fn close(theme: &Theme, key: impl Into<SharedString>, when: Close) -> Stateful<Div> {
     let key = key.into();
     let button = theme

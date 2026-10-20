@@ -46,6 +46,8 @@ impl Editor {
     }
 
     /// Switch between the document and its markdown, carrying the caret across.
+    /// A caret with no place in the other form lands at the end of the source,
+    /// or at the start of the document.
     ///
     /// One undo step, and one the history knows the mode of: stepping back
     /// over a switch puts the document back in the form it was edited in.

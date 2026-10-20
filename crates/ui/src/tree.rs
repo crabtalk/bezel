@@ -115,7 +115,9 @@ pub fn step(rows: &[Row], cursor: usize, direction: Direction) -> Option<Move> {
 
 actions!(bezel_tree, [SelectPrevious, SelectNext, Collapse, Expand]);
 
-/// The key context a tree claims.
+/// The key context a tree claims. [`tree`] does not set it: the caller puts it,
+/// with focus tracking and a handler per action, on the element holding the
+/// rows.
 pub const KEY_CONTEXT: &str = "Tree";
 
 /// Install the bindings — [`bindings`], bound. Call once, alongside

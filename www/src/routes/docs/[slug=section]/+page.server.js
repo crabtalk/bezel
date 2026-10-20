@@ -1,38 +1,13 @@
 import { error } from '@sveltejs/kit';
 import { marked } from 'marked';
-import { Check, Copy } from 'lucide-static';
-import hljs from 'highlight.js/lib/core';
-import bash from 'highlight.js/lib/languages/bash';
-import ini from 'highlight.js/lib/languages/ini';
-import json from 'highlight.js/lib/languages/json';
-import rust from 'highlight.js/lib/languages/rust';
-import { bySlug, documentedSections, prose } from '$lib/catalog.js';
+import { codeBlock } from '$lib/server/highlight.js';
+import { bySlug, documentedSections, prose, skillInstall } from '$lib/catalog.js';
 
-// A server load, so marked and highlight.js run at build time and never ship to
-// a reader. Only the languages the docs actually use — the core build plus four
-// grammars, rather than all 190.
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('rust', rust);
-hljs.registerLanguage('toml', ini);
-
-const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
-const escape = (code) => code.replace(/[&<>"]/g, (char) => ESCAPES[char]);
-
+// A server load, so marked runs at build time and never ships to a reader.
 marked.use({
 	renderer: {
 		code({ text, lang }) {
-			const language = lang && hljs.getLanguage(lang) ? lang : null;
-			const body = language ? hljs.highlight(text, { language }).value : escape(text);
-			// The button carries both marks and swaps them with a class; what it
-			// copies is the block's own textContent, so the source is never
-			// duplicated into an attribute just to be read back.
-			return (
-				`<div class="code-block">` +
-				`<button class="copy" type="button" aria-label="Copy code">${Copy}${Check}</button>` +
-				`<pre><code class="hljs${language ? ` language-${language}` : ''}">${body}</code></pre>` +
-				`</div>\n`
-			);
+			return codeBlock(text, lang);
 		}
 	}
 });
@@ -50,6 +25,9 @@ export function load({ params }) {
 	return {
 		section,
 		description: doc.meta.description ?? null,
+		ask: doc.meta.prompt
+			? { install: codeBlock(skillInstall, 'bash'), prompt: codeBlock(doc.meta.prompt, null) }
+			: null,
 		html: marked.parse(doc.body)
 	};
 }

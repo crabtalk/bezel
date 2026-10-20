@@ -16,7 +16,8 @@ pub trait AppExt {
     /// Sets editor zoom steps and limits, not an individual editor’s base size.
     fn set_editor_text_size(&mut self, text_size: crate::TextSize);
 
-    /// Installs the image store used when pasting pictures.
+    /// Installs the image store used when pasting pictures. Without one, a
+    /// screenshot cannot be pasted.
     fn set_image_store(&mut self, store: crate::ImageStore);
 
     /// Returns the installed image store, or the default that keeps nothing.
