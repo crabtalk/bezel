@@ -6,6 +6,42 @@ use serde::Serialize;
 
 use super::parser::{CynefinAst, DomainBlockAst, TransitionAst};
 
+/// One of the five domains of the framework.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Domain {
+    Complex,
+    Complicated,
+    Chaotic,
+    Clear,
+    Confusion,
+}
+
+impl Domain {
+    pub const ALL: [Domain; 5] = [
+        Domain::Complex,
+        Domain::Complicated,
+        Domain::Chaotic,
+        Domain::Clear,
+        Domain::Confusion,
+    ];
+
+    /// The domain a source names in lowercase.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|domain| domain.name() == name)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Domain::Complex => "complex",
+            Domain::Complicated => "complicated",
+            Domain::Chaotic => "chaotic",
+            Domain::Clear => "clear",
+            Domain::Confusion => "confusion",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CynefinItem {
     pub label: String,
@@ -13,14 +49,14 @@ pub struct CynefinItem {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CynefinDomain {
-    pub name: String,
+    pub name: Domain,
     pub items: Vec<CynefinItem>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CynefinTransition {
-    pub from: String,
-    pub to: String,
+    pub from: Domain,
+    pub to: Domain,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
 }
@@ -33,13 +69,13 @@ pub struct CynefinModel {
     #[serde(flatten)]
     pub titles: Titles,
     /// The domains the source declares. All five are drawn either way.
-    pub domains: IndexMap<String, CynefinDomain>,
+    pub domains: IndexMap<Domain, CynefinDomain>,
     pub transitions: Vec<CynefinTransition>,
 }
 
 #[derive(Default)]
 pub struct CynefinDb {
-    pub domains: IndexMap<String, CynefinDomain>,
+    pub domains: IndexMap<Domain, CynefinDomain>,
     pub transitions: Vec<CynefinTransition>,
 }
 
@@ -49,7 +85,7 @@ impl CynefinDb {
         for block in blocks {
             let name = block.domain;
             self.domains.insert(
-                name.clone(),
+                name,
                 CynefinDomain {
                     name,
                     items: block

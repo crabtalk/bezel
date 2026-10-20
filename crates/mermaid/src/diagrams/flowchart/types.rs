@@ -3,12 +3,14 @@
 use std::fmt::Debug;
 
 use indexmap::IndexMap;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::{
     config::{Map, Value},
     detect::Kind,
-    js::JsValue,
+    geom::{Direction, Size},
+    js::{self, JsValue},
+    svg::edges::Marker,
 };
 
 /// A parsed flowchart: the database the parser fills.
@@ -72,8 +74,6 @@ pub struct Node<P: Payload> {
     pub styles: Vec<String>,
     pub classes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dir: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub props: Option<IndexMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
@@ -92,7 +92,6 @@ impl<P: Payload> Node<P> {
             kind: None,
             styles: Vec::new(),
             classes: Vec::new(),
-            dir: None,
             props: None,
             link: None,
             link_target: None,
@@ -119,11 +118,11 @@ pub struct Edge<P: Payload> {
     pub start: String,
     pub end: String,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
+    pub kind: Option<ArrowType>,
     pub text: String,
     pub label_type: LabelType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stroke: Option<String>,
+    pub stroke: Option<Stroke>,
     #[serde(flatten)]
     pub line: P::Line,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,12 +167,23 @@ pub struct Subgraph<P: Payload> {
     pub title: String,
     pub classes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dir: Option<String>,
+    pub dir: Option<FlowDir>,
     pub label_type: LabelType,
     #[serde(flatten)]
     pub ext: P::Subgraph,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Map>,
+}
+
+impl<P: Payload> Subgraph<P> {
+    /// Whether its metadata's `view` is `collapsed`.
+    pub fn is_collapsed(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("view"))
+            .and_then(Value::as_str)
+            == Some("collapsed")
+    }
 }
 
 impl Payload for super::Flowchart {
@@ -210,6 +220,33 @@ pub struct NodeAssets {
         serialize_with = "crate::js::json_number_opt"
     )]
     pub asset_height: Option<f64>,
+}
+
+impl NodeAssets {
+    /// The image, unless blank.
+    pub fn image(&self) -> Option<&str> {
+        self.img.as_deref().filter(|img| !img.is_empty())
+    }
+
+    /// The icon, unless blank.
+    pub fn icon(&self) -> Option<&str> {
+        self.icon.as_deref().filter(|icon| !icon.is_empty())
+    }
+
+    /// The image's or icon's size: the one the metadata gives, where it is
+    /// above 0 and at most 4000, else `fallback`.
+    pub fn size(&self, fallback: f64) -> Size {
+        let pick = |value: Option<f64>| match value {
+            Some(value) if value > 0.0 && value <= 4000.0 => value,
+            _ => fallback,
+        };
+        Size::new(pick(self.asset_width), pick(self.asset_height))
+    }
+
+    /// Whether the image or icon sits above the label.
+    pub fn on_top(&self) -> bool {
+        self.pos.as_deref() == Some("t")
+    }
 }
 
 /// The heads a link draws.
@@ -249,6 +286,30 @@ impl ArrowType {
             other => other,
         }
     }
+
+    /// The marker it draws at an end, if any.
+    pub fn marker(self) -> Option<Marker> {
+        match self {
+            Self::Point | Self::DoublePoint => Some(Marker::Arrow),
+            Self::Cross | Self::DoubleCross => Some(Marker::Cross),
+            Self::Circle | Self::DoubleCircle => Some(Marker::Circle),
+            Self::Open | Self::Invalid => None,
+        }
+    }
+
+    /// Whether it draws a head at both ends.
+    pub fn is_double(self) -> bool {
+        matches!(
+            self,
+            Self::DoublePoint | Self::DoubleCross | Self::DoubleCircle
+        )
+    }
+}
+
+impl Serialize for ArrowType {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
 }
 
 /// The line of a link.
@@ -271,6 +332,12 @@ impl Stroke {
             Self::Invisible => "invisible",
             Self::Invalid => "INVALID",
         }
+    }
+}
+
+impl Serialize for Stroke {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
     }
 }
 
@@ -299,5 +366,53 @@ impl LinkInfo {
 pub enum DocItem {
     Str(String),
     List(Vec<String>),
-    Dir(String),
+    Dir(FlowDir),
+}
+
+/// A direction by the name the grammar reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum FlowDir {
+    Tb,
+    Td,
+    Bt,
+    Lr,
+    Rl,
+    /// Read as a direction, drawn top to bottom.
+    Br,
+}
+
+impl FlowDir {
+    /// The direction a `graph` header's direction token names: `<`, `^`,
+    /// `>` and `v` by the arrow, and `TD` as `TB`.
+    pub fn from_header(token: &str) -> Self {
+        let token = js::trim(token);
+        if token.contains('v') {
+            Self::Tb
+        } else if token.contains('>') {
+            Self::Lr
+        } else if token.contains('^') {
+            Self::Bt
+        } else if token.contains('<') {
+            Self::Rl
+        } else {
+            match token {
+                "BT" => Self::Bt,
+                "LR" => Self::Lr,
+                "RL" => Self::Rl,
+                "BR" => Self::Br,
+                _ => Self::Tb,
+            }
+        }
+    }
+
+    /// The direction drawn.
+    pub fn direction(self) -> Direction {
+        match self {
+            Self::Tb | Self::Td | Self::Br => Direction::TopToBottom,
+            Self::Bt => Direction::BottomToTop,
+            Self::Lr => Direction::LeftToRight,
+            Self::Rl => Direction::RightToLeft,
+        }
+    }
 }

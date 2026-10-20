@@ -7,7 +7,7 @@ use crate::js;
 /// which is a whole number, so that tick values are found by division and
 /// print without rounding noise (0.3, not 0.30000000000000004).
 pub fn tick_step(span: f64, count: f64) -> f64 {
-    let raw = span / js::max(count, 1.0);
+    let raw = span / count.max(1.0);
     let power = raw.log10().floor();
     let unit = raw / 10f64.powf(power);
     let factor = if unit >= 7.07 {

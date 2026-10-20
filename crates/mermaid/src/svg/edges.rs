@@ -119,6 +119,15 @@ impl Marker {
             None => Ok(()),
         })
     }
+
+    /// Mermaid's name for the marker, which [`Marker::from_name`] reads.
+    pub fn name(self) -> &'static str {
+        match self {
+            Marker::Arrow => "arrow_point",
+            Marker::Circle => "arrow_circle",
+            Marker::Cross => "arrow_cross",
+        }
+    }
 }
 
 /// How a route is drawn between its points, by Mermaid's curve names.

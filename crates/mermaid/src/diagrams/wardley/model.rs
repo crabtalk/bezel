@@ -5,8 +5,8 @@ use serde::Serialize;
 
 use super::{
     builder::{
-        NewNode, WardleyAnnotation, WardleyBuildResult, WardleyBuilder, WardleyForce, WardleyLink,
-        WardleyNote, WardleyTrend,
+        MapPoint, NewNode, NodeClass, WardleyAnnotation, WardleyBuildResult, WardleyBuilder,
+        WardleyForce, WardleyLink, WardleyNote, WardleyTrend,
     },
     parser::{Flow, LabelAst, WardleyAst},
 };
@@ -40,10 +40,10 @@ fn to_percent(value: f64, context: &str) -> Result<f64, Error> {
     Ok(normalized)
 }
 
-fn to_coordinates(visibility: f64, evolution: f64, context: &str) -> Result<(f64, f64), Error> {
+fn to_coordinates(visibility: f64, evolution: f64, context: &str) -> Result<MapPoint, Error> {
     let x = to_percent(evolution, &format!("{context} evolution"))?;
     let y = to_percent(visibility, &format!("{context} visibility"))?;
-    Ok((x, y))
+    Ok(MapPoint { x, y })
 }
 
 /// The flow and label of a `+'label'>` arrow.
@@ -95,7 +95,7 @@ impl WardleyBuilder {
         }
 
         for anchor in &ast.anchors {
-            let (x, y) = to_coordinates(
+            let at = to_coordinates(
                 anchor.visibility,
                 anchor.evolution,
                 &format!("Anchor \"{}\"", anchor.name),
@@ -103,9 +103,8 @@ impl WardleyBuilder {
             self.add_node(NewNode {
                 id: anchor.name.clone(),
                 label: anchor.name.clone(),
-                x,
-                y,
-                class_name: Some("anchor".into()),
+                at,
+                class_name: Some(NodeClass::Anchor),
                 label_offset_x: None,
                 label_offset_y: None,
                 inertia: None,
@@ -114,7 +113,7 @@ impl WardleyBuilder {
         }
 
         for component in &ast.components {
-            let (x, y) = to_coordinates(
+            let at = to_coordinates(
                 component.visibility,
                 component.evolution,
                 &format!("Component \"{}\"", component.name),
@@ -124,26 +123,24 @@ impl WardleyBuilder {
             self.add_node(NewNode {
                 id: component.name.clone(),
                 label: component.name.clone(),
-                x,
-                y,
-                class_name: Some("component".into()),
+                at,
+                class_name: Some(NodeClass::Component),
                 label_offset_x,
                 label_offset_y,
                 inertia: Some(component.inertia),
-                source_strategy: component.strategy.clone(),
+                source_strategy: component.strategy,
             });
         }
 
         for note in &ast.notes {
-            let (x, y) = to_coordinates(
+            let at = to_coordinates(
                 note.visibility,
                 note.evolution,
                 &format!("Note \"{}\"", note.text),
             )?;
             self.add_note(WardleyNote {
                 text: note.text.clone(),
-                x,
-                y,
+                at,
             });
         }
 
@@ -155,7 +152,7 @@ impl WardleyBuilder {
                 ))
                 .of(Kind::Wardley));
             };
-            let y = parent.y;
+            let y = parent.at.y;
             self.start_pipeline(&pipeline.parent);
             for component in &pipeline.components {
                 let id = format!("{}_{}", pipeline.parent, component.name);
@@ -168,9 +165,8 @@ impl WardleyBuilder {
                 self.add_node(NewNode {
                     id: id.clone(),
                     label: component.name.clone(),
-                    x,
-                    y,
-                    class_name: Some("pipeline-component".into()),
+                    at: MapPoint { x, y },
+                    class_name: Some(NodeClass::PipelineComponent),
                     label_offset_x,
                     label_offset_y,
                     inertia: None,
@@ -193,66 +189,62 @@ impl WardleyBuilder {
                 target,
                 dashed,
                 label: arrow_label.or_else(|| link.link_label.clone()),
-                flow: flow.map(Flow::name),
+                flow,
             });
         }
 
         for evolve in &ast.evolves {
             if let Some(node) = self.get_node(&evolve.component) {
-                let target_y = node.y;
-                let target_x = to_percent(
+                let y = node.at.y;
+                let x = to_percent(
                     evolve.target,
                     &format!("Evolve target for \"{}\"", evolve.component),
                 )?;
                 self.add_trend(WardleyTrend {
                     node_id: evolve.component.clone(),
-                    target_x,
-                    target_y,
+                    target: MapPoint { x, y },
                 });
             }
         }
 
         if let Some(first) = ast.annotations.first() {
-            let (x, y) = to_coordinates(first.x, first.y, "Annotations box")?;
-            self.set_annotations_box(x, y);
+            self.set_annotations_box(to_coordinates(first.x, first.y, "Annotations box")?);
         }
 
         for annotation in &ast.annotation {
-            let (x, y) = to_coordinates(
+            let at = to_coordinates(
                 annotation.x,
                 annotation.y,
                 &format!("Annotation {}", js::num_str(annotation.number)),
             )?;
             self.add_annotation(WardleyAnnotation {
                 number: annotation.number,
-                coordinates: vec![super::builder::Point { x, y }],
+                coordinates: vec![at],
                 text: Some(annotation.text.clone()),
             });
         }
 
         for accelerator in &ast.accelerators {
-            let (x, y) = to_coordinates(
+            let at = to_coordinates(
                 accelerator.x,
                 accelerator.y,
                 &format!("Accelerator \"{}\"", accelerator.name),
             )?;
             self.add_accelerator(WardleyForce {
                 name: accelerator.name.clone(),
-                x,
-                y,
+                at,
             });
         }
 
         for deaccelerator in &ast.deaccelerators {
-            let (x, y) = to_coordinates(
+            let at = to_coordinates(
                 deaccelerator.x,
                 deaccelerator.y,
                 &format!("Deaccelerator \"{}\"", deaccelerator.name),
             )?;
             self.add_deaccelerator(WardleyForce {
                 name: deaccelerator.name.clone(),
-                x,
-                y,
+                at,
             });
         }
         Ok(())

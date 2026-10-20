@@ -3,7 +3,10 @@
 
 use serde::Serialize;
 
-use crate::js::{self, Lazy};
+use crate::{
+    js::{self, Lazy},
+    svg::root::Accessible,
+};
 
 static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
@@ -41,5 +44,13 @@ impl Titles {
 
     pub fn set_acc_descr(&mut self, text: &str) {
         self.acc_descr = Some(acc_descr(text));
+    }
+
+    /// What a screen reader announces of the diagram.
+    pub fn accessible(&self) -> Accessible<'_> {
+        Accessible {
+            acc_title: self.acc_title.as_deref(),
+            acc_descr: self.acc_descr.as_deref(),
+        }
     }
 }

@@ -4,7 +4,10 @@ use super::{
     db::C4Model,
     lexer::tokenize,
     tokens::T,
-    types::{C4Attr, C4Named, C4Type},
+    types::{
+        C4Attr, C4Named, C4Type, NodeType, RelKind, ShapeBase, ShapeKind,
+        Store::{Db, Queue},
+    },
 };
 use crate::{
     detect::Kind,
@@ -31,15 +34,12 @@ enum P {
 /// What a diagram statement adds to the model.
 #[derive(Clone, Copy)]
 enum Statement {
-    /// Each element with Mermaid's typeC4Shape for it.
-    PersonOrSystem(&'static str),
-    Container(&'static str),
-    Component(&'static str),
+    Shape(ShapeKind),
     /// The type Mermaid inserts as the third attribute, if any.
     Boundary(Option<&'static str>),
     ContainerBoundary,
-    DeploymentNode(&'static str),
-    Rel(&'static str),
+    DeploymentNode(NodeType),
+    Rel(RelKind),
     /// Takes a sequence number first, which Mermaid ignores.
     RelIndex,
     UpdateElStyle,
@@ -69,41 +69,42 @@ impl T {
 
     fn statement(self) -> Option<Statement> {
         use Statement::*;
+        let shape = |base, external, store| Shape(ShapeKind::new(base, external, store));
         Some(match self {
-            T::Person => PersonOrSystem("person"),
-            T::PersonExt => PersonOrSystem("external_person"),
-            T::System => PersonOrSystem("system"),
-            T::SystemDb => PersonOrSystem("system_db"),
-            T::SystemQueue => PersonOrSystem("system_queue"),
-            T::SystemExt => PersonOrSystem("external_system"),
-            T::SystemExtDb => PersonOrSystem("external_system_db"),
-            T::SystemExtQueue => PersonOrSystem("external_system_queue"),
-            T::Container => Container("container"),
-            T::ContainerDb => Container("container_db"),
-            T::ContainerQueue => Container("container_queue"),
-            T::ContainerExt => Container("external_container"),
-            T::ContainerExtDb => Container("external_container_db"),
-            T::ContainerExtQueue => Container("external_container_queue"),
-            T::Component => Component("component"),
-            T::ComponentDb => Component("component_db"),
-            T::ComponentQueue => Component("component_queue"),
-            T::ComponentExt => Component("external_component"),
-            T::ComponentExtDb => Component("external_component_db"),
-            T::ComponentExtQueue => Component("external_component_queue"),
+            T::Person => shape(ShapeBase::Person, false, None),
+            T::PersonExt => shape(ShapeBase::Person, true, None),
+            T::System => shape(ShapeBase::System, false, None),
+            T::SystemDb => shape(ShapeBase::System, false, Some(Db)),
+            T::SystemQueue => shape(ShapeBase::System, false, Some(Queue)),
+            T::SystemExt => shape(ShapeBase::System, true, None),
+            T::SystemExtDb => shape(ShapeBase::System, true, Some(Db)),
+            T::SystemExtQueue => shape(ShapeBase::System, true, Some(Queue)),
+            T::Container => shape(ShapeBase::Container, false, None),
+            T::ContainerDb => shape(ShapeBase::Container, false, Some(Db)),
+            T::ContainerQueue => shape(ShapeBase::Container, false, Some(Queue)),
+            T::ContainerExt => shape(ShapeBase::Container, true, None),
+            T::ContainerExtDb => shape(ShapeBase::Container, true, Some(Db)),
+            T::ContainerExtQueue => shape(ShapeBase::Container, true, Some(Queue)),
+            T::Component => shape(ShapeBase::Component, false, None),
+            T::ComponentDb => shape(ShapeBase::Component, false, Some(Db)),
+            T::ComponentQueue => shape(ShapeBase::Component, false, Some(Queue)),
+            T::ComponentExt => shape(ShapeBase::Component, true, None),
+            T::ComponentExtDb => shape(ShapeBase::Component, true, Some(Db)),
+            T::ComponentExtQueue => shape(ShapeBase::Component, true, Some(Queue)),
             T::EnterpriseBoundary => Boundary(Some("ENTERPRISE")),
             T::SystemBoundary => Boundary(Some("SYSTEM")),
             T::Boundary => Boundary(None),
             T::ContainerBoundary => ContainerBoundary,
-            T::Node => DeploymentNode("node"),
-            T::NodeL => DeploymentNode("nodeL"),
-            T::NodeR => DeploymentNode("nodeR"),
-            T::Rel => Rel("rel"),
-            T::Birel => Rel("birel"),
-            T::RelU => Rel("rel_u"),
-            T::RelD => Rel("rel_d"),
-            T::RelL => Rel("rel_l"),
-            T::RelR => Rel("rel_r"),
-            T::RelB => Rel("rel_b"),
+            T::Node => DeploymentNode(NodeType::Node),
+            T::NodeL => DeploymentNode(NodeType::NodeL),
+            T::NodeR => DeploymentNode(NodeType::NodeR),
+            T::Rel => Rel(RelKind::Rel),
+            T::Birel => Rel(RelKind::Birel),
+            T::RelU => Rel(RelKind::RelU),
+            T::RelD => Rel(RelKind::RelD),
+            T::RelL => Rel(RelKind::RelL),
+            T::RelR => Rel(RelKind::RelR),
+            T::RelB => Rel(RelKind::RelB),
             T::RelIndex => RelIndex,
             T::UpdateElStyle => UpdateElStyle,
             T::UpdateRelStyle => UpdateRelStyle,
@@ -188,9 +189,7 @@ impl Parser<'_, '_> {
         self.s.bump();
         let mut attrs = self.attributes()?;
         match statement {
-            Statement::PersonOrSystem(kind) => db.add_person_or_system(kind, &attrs),
-            Statement::Container(kind) => db.add_container(kind, &attrs),
-            Statement::Component(kind) => db.add_component(kind, &attrs),
+            Statement::Shape(kind) => db.add_shape(kind, &attrs),
             Statement::Boundary(kind) => {
                 if let Some(kind) = kind {
                     attrs.insert(attrs.len().min(2), C4Attr::Str(kind.into()));
@@ -213,7 +212,7 @@ impl Parser<'_, '_> {
             Statement::Rel(kind) => db.add_rel(kind, &attrs),
             Statement::RelIndex => {
                 attrs.remove(0);
-                db.add_rel("rel", &attrs);
+                db.add_rel(RelKind::Rel, &attrs);
             }
             Statement::UpdateElStyle => db.update_el_style(&attrs),
             Statement::UpdateRelStyle => db.update_rel_style(&attrs),

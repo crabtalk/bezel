@@ -15,9 +15,8 @@ pub mod types;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub use db::FlowDb;
 pub use store::{FlowStore, StoreOptions};
@@ -64,11 +63,5 @@ impl Diagram for Flowchart {
         }
         parser::parse_flowchart(source, &mut db)?;
         Ok(Model::Flowchart(Box::new(db)))
-    }
-}
-
-impl Render for FlowDb {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_flowchart(self, &config.flowchart, ctx, None))
     }
 }

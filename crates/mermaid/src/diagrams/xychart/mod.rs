@@ -9,9 +9,8 @@ pub mod tokens;
 
 pub use db::XyChartModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::XyChartConfig;
 
 pub struct XyChart;
@@ -29,11 +28,5 @@ impl Diagram for XyChart {
         db.titles.title = title.map(str::to_string);
         parser::parse_xy_chart(source, &mut db)?;
         Ok(Model::XyChart(db))
-    }
-}
-
-impl Render for XyChartModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        render::render_xy_chart(self, &config.xy_chart, ctx)
     }
 }

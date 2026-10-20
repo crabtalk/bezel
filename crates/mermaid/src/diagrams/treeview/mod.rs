@@ -11,10 +11,9 @@ pub use model::{NodeType, TreeNode, TreeViewModel};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model, Render};
+use super::{Diagram, Model};
 use crate::config::{Map, Value};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use crate::{Config, Error, ParseLimits};
 
 pub struct TreeView;
 
@@ -57,10 +56,4 @@ pub struct TreeViewConfig {
     pub filename_icons: Option<Map>,
     #[serde_as(as = "DefaultOnError")]
     pub extension_icons: Option<Map>,
-}
-
-impl Render for TreeViewModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_tree_view(self, &config.tree_view, ctx))
-    }
 }

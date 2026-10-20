@@ -12,9 +12,8 @@ pub mod types;
 
 pub use db::C4Model;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct C4;
 
@@ -33,11 +32,5 @@ impl Diagram for C4 {
         }
         parser::parse_c4(source, &mut db)?;
         Ok(Model::C4(db))
-    }
-}
-
-impl Render for C4Model {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        render::render_c4(self, config, ctx)
     }
 }

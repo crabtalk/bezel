@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+use crate::geom::Direction;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Cardinality {
@@ -10,19 +12,6 @@ pub enum Cardinality {
     OneOrMore,
     OnlyOne,
     MdParent,
-}
-
-impl Cardinality {
-    /// The name lower-cased, as a marker type.
-    pub fn marker(self) -> &'static str {
-        match self {
-            Self::ZeroOrOne => "zero_or_one",
-            Self::ZeroOrMore => "zero_or_more",
-            Self::OneOrMore => "one_or_more",
-            Self::OnlyOne => "only_one",
-            Self::MdParent => "md_parent",
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -91,16 +80,6 @@ pub enum LabelType {
     Markdown,
 }
 
-impl LabelType {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Text => "text",
-            Self::String => "string",
-            Self::Markdown => "markdown",
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ErSubgraph {
@@ -110,12 +89,12 @@ pub struct ErSubgraph {
     pub classes: Vec<String>,
     pub css_styles: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dir: Option<String>,
+    pub dir: Option<Direction>,
     pub label_type: LabelType,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DocItem {
     Name(String),
-    Dir(&'static str),
+    Dir(Direction),
 }

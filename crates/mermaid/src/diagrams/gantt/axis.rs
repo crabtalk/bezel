@@ -3,7 +3,7 @@
 //! intervals with d3's `every` rule, and its choice of automatic ticks.
 //! Pele's `diagrams/gantt/axis.ts`.
 
-use super::dates::{MONTHS, WEEKDAYS};
+use super::dates::{MONTHS, WEEKDAYS, Weekday};
 use crate::js::{
     self, Lazy,
     date::{Date, LocalZone},
@@ -36,15 +36,6 @@ const AUTO: [(TickUnit, f64, f64); 18] = [
     (TickUnit::Month, 1.0, MONTH),
     (TickUnit::Month, 3.0, 3.0 * MONTH),
     (TickUnit::Year, 1.0, YEAR),
-];
-const WEEK_STARTS: [&str; 7] = [
-    "sunday",
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
 ];
 
 static RE_INTERVAL: Lazy = Lazy::new(
@@ -344,7 +335,7 @@ pub(crate) fn auto_ticks(start: f64, stop: f64, count: f64, zone: &LocalZone) ->
 /// or asks for more than `limit`.
 pub(crate) fn interval_ticks(
     interval: &str,
-    weekday: &str,
+    week_start: Weekday,
     start: f64,
     stop: f64,
     limit: f64,
@@ -353,11 +344,7 @@ pub(crate) fn interval_ticks(
     let m = RE_INTERVAL.exec(interval)?;
     let step = js::parse_int(m.str(1), 10);
     let unit = TickUnit::parse(m.str(2));
-    let week_start = WEEK_STARTS
-        .iter()
-        .position(|day| *day == weekday)
-        .map_or(0.0, |i| i as f64);
-    let calendar = every(unit, step, week_start, zone);
+    let calendar = every(unit, step, week_start as usize as f64, zone);
     if (stop - start) / (step.min(calendar.cycle()) * calendar.ms()) > limit {
         return None;
     }

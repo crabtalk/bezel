@@ -3,13 +3,11 @@
 use crate::diagrams::common::db::Titles;
 use serde::{Serialize, Serializer};
 
-use crate::{Error, detect::Kind};
+use crate::{Error, detect::Kind, geom::Direction, js};
 
-fn index_or_minus_one<S: Serializer>(index: &Option<usize>, s: S) -> Result<S::Ok, S::Error> {
-    match index {
-        Some(index) => s.serialize_u64(*index as u64),
-        None => s.serialize_i64(-1),
-    }
+/// `TD` running down, `LR` otherwise.
+fn direction_name<S: Serializer>(direction: &Direction, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(if direction.is_vertical() { "TD" } else { "LR" })
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -22,7 +20,7 @@ pub struct TimelinePeriod {
     pub section: String,
     /// Index into `sections` of that section, `None` before the first one,
     /// which the JSON writes as -1.
-    #[serde(serialize_with = "index_or_minus_one")]
+    #[serde(serialize_with = "js::json_index")]
     pub section_index: Option<usize>,
 }
 
@@ -33,8 +31,9 @@ pub struct TimelineModel {
     pub kind: &'static str,
     #[serde(flatten)]
     pub titles: Titles,
-    /// `LR` or `TD`.
-    pub direction: &'static str,
+    /// Left to right, or top to bottom.
+    #[serde(serialize_with = "direction_name")]
+    pub direction: Direction,
     pub sections: Vec<String>,
     pub periods: Vec<TimelinePeriod>,
     current_section: String,
@@ -51,7 +50,7 @@ impl TimelineModel {
         Self {
             kind: "timeline",
             titles: Titles::default(),
-            direction: "LR",
+            direction: Direction::LeftToRight,
             sections: Vec::new(),
             periods: Vec::new(),
             current_section: String::new(),

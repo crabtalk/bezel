@@ -75,7 +75,8 @@ fn word(text: &'static str) -> TokenType<Token> {
 }
 
 /// A frame's model entity type, by its name or short name.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum EntityType {
     Ui,
     Processor,

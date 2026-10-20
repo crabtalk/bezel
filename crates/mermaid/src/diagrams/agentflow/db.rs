@@ -473,8 +473,8 @@ impl AgentflowDb {
             if !title.is_empty() {
                 subgraph.title = title.to_string();
             }
-            if let Some(dir) = dir.filter(|dir| !dir.is_empty()) {
-                subgraph.dir = Some(dir);
+            if dir.is_some() {
+                subgraph.dir = dir;
             }
         }
         id
@@ -582,8 +582,8 @@ impl AgentflowDb {
                 end: e.end.clone(),
                 id: e.id.clone(),
                 label: (!e.text.is_empty()).then(|| e.text.clone()),
-                kind: e.kind.clone(),
-                stroke: e.stroke.clone(),
+                kind: e.kind,
+                stroke: e.stroke,
                 edge_semantic: e.line.edge_semantic,
                 length: e.length,
                 metadata: e.ext.metadata.clone().filter(|m| !m.is_empty()),
@@ -600,12 +600,12 @@ impl AgentflowDb {
                 title: Some(sg.title.clone()),
                 nodes: sg.nodes.clone(),
                 metadata: semantic_metadata(sg.metadata.as_ref()),
-                direction: sg.dir.clone(),
+                direction: sg.dir,
             })
             .collect();
 
         SemanticModel {
-            direction: self.store.direction.clone(),
+            direction: self.store.direction,
             vertices,
             edges,
             sub_graphs,

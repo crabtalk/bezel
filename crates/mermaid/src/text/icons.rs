@@ -12,3 +12,8 @@ pub fn icon(host: &impl Host, name: &str) -> Option<String> {
 pub fn icon_markup(host: &impl Host, name: &str) -> String {
     icon(host, name).unwrap_or_default()
 }
+
+/// Whether the host draws icon `name`.
+pub fn has_icon(host: &impl Host, name: &str) -> bool {
+    !name.is_empty() && !icon_markup(host, name).is_empty()
+}

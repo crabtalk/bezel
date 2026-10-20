@@ -3,8 +3,11 @@
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer};
 
-use super::graph::StateGraph;
-use crate::diagrams::common::{db::Titles, style_class::StyleClass};
+use super::graph::{StateGraph, StateShape};
+use crate::{
+    diagrams::common::{db::Titles, style_class::StyleClass},
+    geom::Direction,
+};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct StateNote {
@@ -46,13 +49,38 @@ impl Serialize for StateTag {
     }
 }
 
+/// What a state statement declares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StateKind {
+    Default,
+    Fork,
+    Join,
+    Choice,
+    /// A region of a composite, between dividers.
+    Divider,
+}
+
+impl StateKind {
+    /// The shape a state of this kind is drawn as.
+    pub fn shape(self) -> StateShape {
+        match self {
+            StateKind::Default => StateShape::Rect,
+            StateKind::Fork => StateShape::Fork,
+            StateKind::Join => StateShape::Join,
+            StateKind::Choice => StateShape::Choice,
+            StateKind::Divider => StateShape::Divider,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateStmt {
     pub stmt: StateTag,
     pub id: String,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
+    pub kind: Option<StateKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<Descr>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -72,10 +100,10 @@ pub struct StateStmt {
 }
 
 impl StateStmt {
-    pub fn new(id: impl Into<String>, kind: Option<&str>) -> Self {
+    pub fn new(id: impl Into<String>, kind: Option<StateKind>) -> Self {
         Self {
             id: id.into(),
-            kind: kind.map(str::to_string),
+            kind,
             ..Self::default()
         }
     }
@@ -104,7 +132,7 @@ pub struct StyleStmt {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct DirectionStmt {
-    pub value: String,
+    pub value: Direction,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

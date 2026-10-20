@@ -3,6 +3,7 @@
 
 use std::borrow::Cow;
 
+use super::types::Loc;
 use crate::{
     diagrams::flowchart::{
         lexer::{Core, Lex, S},
@@ -15,14 +16,13 @@ use crate::{
 
 pub struct Tokens<'s> {
     pub tokens: Vec<Token<'s, T>>,
-    /// Each token's place, counted the way Jison counts it: first line,
-    /// first column, last line, last column. Lines start at 1, columns at 0.
-    pub locs: Vec<[usize; 4]>,
+    /// Each token's place, counted the way Jison counts it.
+    pub locs: Vec<Loc>,
 }
 
 struct Lexer<'s> {
     core: Core<'s>,
-    locs: Vec<[usize; 4]>,
+    locs: Vec<Loc>,
     line: usize,
     col: usize,
     /// The last run of spaces and tabs measured, from and to.
@@ -111,7 +111,7 @@ impl<'s> Lex<'s> for Lexer<'s> {
 
     fn close(&mut self, kind: T, at: usize) {
         self.core.cur.tokens.push(Token::new(kind, "", at));
-        self.locs.push([self.line, self.col, self.line, self.col]);
+        self.locs.push(Loc::at(self.line, self.col));
     }
 
     /// `%%` not followed by `{`, through the end of the line.
@@ -140,7 +140,11 @@ impl<'s> Lexer<'s> {
         self.core.cur.tokens.push(Token::new(kind, text, p));
         step(self);
         self.core.cur.p = end;
-        self.locs.push([line, col, self.line, self.col]);
+        self.locs.push(Loc {
+            last_line: self.line,
+            last_column: self.col,
+            ..Loc::at(line, col)
+        });
     }
 
     /// The end of the run of spaces and tabs at `q`.

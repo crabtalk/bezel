@@ -5,7 +5,7 @@ use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use super::{
-    dates::{Unit, WEEKDAYS, add, add_days, format, iso_date, parse_strict},
+    dates::{Unit, WEEKDAYS, Weekday, add, add_days, format, iso_date, parse_strict},
     types::{GanttTask, RawTask},
 };
 use crate::{
@@ -68,7 +68,7 @@ fn invalid_date(text: &str) -> Error {
 }
 
 /// A time value, `NaN` for a date that is unset.
-fn time(date: Option<f64>) -> f64 {
+pub(super) fn time(date: Option<f64>) -> f64 {
     date.unwrap_or(f64::NAN)
 }
 
@@ -104,7 +104,7 @@ pub struct GanttDb {
     pub display_mode: String,
     /// The day week-based ticks start on, when the chart names one.
     /// Mermaid's default is Sunday.
-    pub weekday: Option<String>,
+    pub weekday: Option<Weekday>,
     pub weekend: Weekend,
     pub sections: Vec<String>,
     pub links: IndexMap<String, String>,
@@ -114,7 +114,7 @@ pub struct GanttDb {
     by_id: IndexMap<String, usize>,
     current_section: String,
     task_count: usize,
-    last_order: i64,
+    last_order: usize,
     last_task_id: Option<String>,
     now: f64,
     work: f64,
@@ -268,8 +268,8 @@ impl GanttDb {
         self.excludes = merge_tokens(&self.excludes, txt);
     }
 
-    pub fn set_weekday(&mut self, txt: &str) {
-        self.weekday = Some(txt.to_string());
+    pub fn set_weekday(&mut self, day: Weekday) {
+        self.weekday = Some(day);
     }
 
     pub fn add_section(&mut self, txt: &str) {
@@ -298,7 +298,7 @@ impl GanttDb {
             crit: false,
             milestone: false,
             vert: false,
-            order: -1,
+            order: None,
             classes: Vec::new(),
             prev_task_id: self.last_task_id.clone(),
             raw: RawTask {
@@ -349,7 +349,7 @@ impl GanttDb {
         task.raw.end = data[data.len() - 1].clone();
 
         if !task.vert {
-            task.order = self.last_order;
+            task.order = Some(self.last_order);
             self.last_order += 1;
         }
         let id = task.id.clone();

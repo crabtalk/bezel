@@ -3,6 +3,8 @@
 
 use std::{collections::HashMap, sync::LazyLock};
 
+use crate::{geom::Size, svg::shapes::Shape};
+
 /// Mermaid's documented shape names: the short name first, then its aliases.
 const SHAPES: [&[&str]; 53] = [
     &["rect", "proc", "process", "rectangle", "squareRect"],
@@ -139,7 +141,8 @@ pub fn is_valid_shape(name: &str) -> bool {
     CANONICAL.contains_key(name)
 }
 
-pub fn canonical_shape(name: Option<&str>) -> &'static str {
+/// The documented name `name` stands for, `rect` for none or an unknown one.
+fn canonical_shape(name: Option<&str>) -> &'static str {
     let Some(name) = name else {
         return "rect";
     };
@@ -149,4 +152,80 @@ pub fn canonical_shape(name: Option<&str>) -> &'static str {
         .map(|(_, shape)| *shape)
         .or_else(|| CANONICAL.get(name).copied())
         .unwrap_or("rect")
+}
+
+/// The frame a node's `form` draws around its icon.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IconFrame {
+    None,
+    Circle,
+    Square,
+    Rounded,
+}
+
+impl IconFrame {
+    pub fn from_form(form: Option<&str>) -> Self {
+        match form {
+            Some("circle") => Self::Circle,
+            Some("square") => Self::Square,
+            Some("rounded") => Self::Rounded,
+            _ => Self::None,
+        }
+    }
+}
+
+/// What a node is drawn as, by the documented name of its shape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeShape {
+    Drawn(Shape),
+    /// `imageSquare`
+    Image,
+    /// `icon`, `iconCircle`, `iconSquare` or `iconRounded`
+    Icon(IconFrame),
+    /// A name the drawing has no shape for; drawn as a rectangle.
+    Other(&'static str),
+}
+
+impl NodeShape {
+    /// The shape `name` or its alias names; the rectangle for none or an
+    /// unknown name.
+    pub fn named(name: Option<&str>) -> Self {
+        match canonical_shape(name) {
+            "imageSquare" => Self::Image,
+            "icon" => Self::Icon(IconFrame::None),
+            "iconCircle" => Self::Icon(IconFrame::Circle),
+            "iconSquare" => Self::Icon(IconFrame::Square),
+            "iconRounded" => Self::Icon(IconFrame::Rounded),
+            name => Shape::from_name(name).map_or(Self::Other(name), Self::Drawn),
+        }
+    }
+
+    /// The documented name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Drawn(shape) => shape.name(),
+            Self::Image => "imageSquare",
+            Self::Icon(IconFrame::None) => "icon",
+            Self::Icon(IconFrame::Circle) => "iconCircle",
+            Self::Icon(IconFrame::Square) => "iconSquare",
+            Self::Icon(IconFrame::Rounded) => "iconRounded",
+            Self::Other(name) => name,
+        }
+    }
+
+    /// The outline drawn.
+    pub fn shape(self) -> Shape {
+        match self {
+            Self::Drawn(shape) => shape,
+            _ => Shape::Rect,
+        }
+    }
+
+    /// [`Shape::span`] of a drawn shape; 0 for any other.
+    pub fn span(self, size: Size, sideways: bool) -> f64 {
+        match self {
+            Self::Drawn(shape) => shape.span(size, sideways),
+            _ => 0.0,
+        }
+    }
 }

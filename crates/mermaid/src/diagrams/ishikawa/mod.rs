@@ -7,9 +7,8 @@ pub mod parser;
 pub mod render;
 pub mod types;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct Ishikawa;
 
@@ -26,11 +25,5 @@ impl Diagram for Ishikawa {
         db.title = title.map(str::to_string);
         parser::parse_ishikawa(source, &mut db)?;
         Ok(Model::Ishikawa(db))
-    }
-}
-
-impl Render for db::IshikawaDb {
-    fn render(&self, _config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_ishikawa(self, ctx))
     }
 }

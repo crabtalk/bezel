@@ -8,8 +8,8 @@ use serde::{Serialize, Serializer, ser::SerializeMap};
 use super::{
     colors::is_css_color,
     types::{
-        NoteActor, Participant, Placement, SeqActor, SeqBox, SeqBoxData, SeqMessage,
-        SeqMessageText, SeqNote, SeqNumbering, SeqStatement, SeqText, line,
+        CentralConnection, LineType, NoteActor, Participant, Placement, SeqActor, SeqBox,
+        SeqBoxData, SeqMessage, SeqMessageText, SeqNote, SeqNumbering, SeqStatement, SeqText,
     },
 };
 use crate::{
@@ -306,13 +306,13 @@ impl SequenceModel {
         from: Option<&str>,
         to: Option<&str>,
         message: Option<&SeqText>,
-        kind: i32,
+        kind: LineType,
         activate: bool,
-        central_connection: Option<i32>,
+        central_connection: CentralConnection,
     ) -> Result<(), Error> {
         // Mermaid recounts every earlier message here. A running count per
         // participant says the same.
-        if kind == line::ACTIVE_END {
+        if kind == LineType::ActiveEnd {
             let from = from.filter(|from| !from.is_empty());
             let count = from.map_or(0, |from| self.active.get(from).copied().unwrap_or(0));
             if count < 1 {
@@ -324,7 +324,7 @@ impl SequenceModel {
             if let Some(from) = from {
                 self.active.insert(from.to_string(), count - 1);
             }
-        } else if kind == line::ACTIVE_START
+        } else if kind == LineType::ActiveStart
             && let Some(from) = from.filter(|from| !from.is_empty())
         {
             let count = self.active.get(from).copied().unwrap_or(0);
@@ -338,10 +338,10 @@ impl SequenceModel {
             wrap: message
                 .and_then(|m| m.wrap)
                 .unwrap_or_else(|| self.auto_wrap()),
-            kind: Some(kind),
+            kind,
             activate: Some(activate),
             placement: None,
-            central_connection: Some(central_connection.unwrap_or(0)),
+            central_connection: Some(central_connection),
         });
         Ok(())
     }
@@ -364,7 +364,7 @@ impl SequenceModel {
             to: Some(to),
             message: SeqMessageText::Text(message.text.clone()),
             wrap,
-            kind: Some(line::NOTE),
+            kind: LineType::Note,
             activate: None,
             placement: Some(placement),
             central_connection: None,
@@ -436,7 +436,7 @@ impl SequenceModel {
             &node.actor,
             &node.actor,
             node.description,
-            node.draw.map(str::to_string),
+            node.draw.map(|kind| kind.name().to_string()),
             node.config.as_deref(),
         )
     }
@@ -457,7 +457,7 @@ impl SequenceModel {
                     visible,
                 }),
                 wrap: false,
-                kind: Some(line::AUTONUMBER),
+                kind: LineType::Autonumber,
                 activate: None,
                 placement: None,
                 central_connection: None,
@@ -478,9 +478,14 @@ impl SequenceModel {
                 self.last_destroyed = Some(actor.clone());
                 self.destroyed_actors.insert(actor, self.messages.len());
             }
-            SeqStatement::Mark { actor, signal_type } => {
-                self.add_signal(Some(&actor), None, None, signal_type, false, None)?
-            }
+            SeqStatement::Mark { actor, signal_type } => self.add_signal(
+                Some(&actor),
+                None,
+                None,
+                signal_type,
+                false,
+                CentralConnection::Neither,
+            )?,
             SeqStatement::AddNote {
                 actor,
                 placement,
@@ -518,17 +523,27 @@ impl SequenceModel {
                     Some(&msg),
                     signal_type,
                     activate.unwrap_or(false),
-                    central_connection,
+                    central_connection.unwrap_or_default(),
                 )?;
             }
             SeqStatement::BoxStart(data) => self.add_box(data),
             SeqStatement::BoxEnd => self.current_box = None,
-            SeqStatement::Section { text, signal_type } => {
-                self.add_signal(None, None, Some(&text), signal_type, false, None)?
-            }
-            SeqStatement::End { signal_type } => {
-                self.add_signal(None, None, None, signal_type, false, None)?
-            }
+            SeqStatement::Section { text, signal_type } => self.add_signal(
+                None,
+                None,
+                Some(&text),
+                signal_type,
+                false,
+                CentralConnection::Neither,
+            )?,
+            SeqStatement::End { signal_type } => self.add_signal(
+                None,
+                None,
+                None,
+                signal_type,
+                false,
+                CentralConnection::Neither,
+            )?,
         }
         Ok(())
     }

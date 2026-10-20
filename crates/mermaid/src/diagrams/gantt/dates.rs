@@ -32,6 +32,50 @@ pub const WEEKDAYS: [&str; 7] = [
     "Friday",
     "Saturday",
 ];
+
+/// A day of the week, numbered from Sunday as [`Date::day`] numbers it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Weekday {
+    Sunday,
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+}
+
+impl Weekday {
+    pub const ALL: [Weekday; 7] = [
+        Weekday::Sunday,
+        Weekday::Monday,
+        Weekday::Tuesday,
+        Weekday::Wednesday,
+        Weekday::Thursday,
+        Weekday::Friday,
+        Weekday::Saturday,
+    ];
+
+    /// The day's name in lower case.
+    pub fn name(self) -> &'static str {
+        match self {
+            Weekday::Sunday => "sunday",
+            Weekday::Monday => "monday",
+            Weekday::Tuesday => "tuesday",
+            Weekday::Wednesday => "wednesday",
+            Weekday::Thursday => "thursday",
+            Weekday::Friday => "friday",
+            Weekday::Saturday => "saturday",
+        }
+    }
+
+    /// The day `name` names, in lower case.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|day| day.name() == name)
+    }
+}
+
 const DAY: f64 = 86_400_000.0;
 const WEEK: f64 = 7.0 * DAY;
 const DEFAULT_FORMAT: &str = "YYYY-MM-DDTHH:mm:ssZ";
@@ -263,8 +307,7 @@ pub(crate) fn format(date: Date, template: &str) -> Option<String> {
         match caps.str(0) {
             "YY" => {
                 let year = js::num_str(date.full_year());
-                let units: Vec<u16> = year.encode_utf16().collect();
-                String::from_utf16_lossy(&units[units.len().saturating_sub(2)..])
+                year[year.len().saturating_sub(2)..].to_string()
             }
             "YYYY" => pad(date.full_year(), 4),
             "M" => js::num_str(date.month() + 1.0),

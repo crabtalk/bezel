@@ -1,6 +1,6 @@
 //! Pele's `diagrams/xychart/db.ts`.
 
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{
     diagrams::common::db::Titles,
@@ -64,6 +64,14 @@ fn plot_data_json<S: Serializer>(data: &PlotData, s: S) -> Result<S::Ok, S::Erro
     )
 }
 
+/// Which way the bars run: up from the category axis, or across from it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Orientation {
+    Vertical,
+    Horizontal,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlotKind {
@@ -90,7 +98,7 @@ pub struct XyChartModel {
     #[serde(flatten)]
     pub titles: Titles,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub orientation: Option<&'static str>,
+    pub orientation: Option<Orientation>,
     pub x_axis: XAxis,
     pub y_axis: LinearAxis,
     pub has_set_x_axis: bool,
@@ -124,9 +132,9 @@ impl Default for XyChartModel {
 impl XyChartModel {
     pub fn set_orientation(&mut self, orientation: &str) {
         self.orientation = Some(if orientation == "horizontal" {
-            "horizontal"
+            Orientation::Horizontal
         } else {
-            "vertical"
+            Orientation::Vertical
         });
     }
 

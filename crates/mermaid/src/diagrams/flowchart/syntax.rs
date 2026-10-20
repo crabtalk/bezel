@@ -3,7 +3,7 @@
 use super::{
     store::FlowStore,
     tokens::T,
-    types::{DocItem, FlowText, LabelType, LinkInfo, Payload, Vertex},
+    types::{DocItem, FlowDir, FlowText, LabelType, LinkInfo, Payload, Vertex},
 };
 use crate::{
     detect::Kind,
@@ -144,7 +144,7 @@ impl<'a> Reader<'a> {
         self.s
             .expect(T::Graph, &expecting(self.dialect.blank.iter().copied()))?;
         if self.s.eat(T::Nodir) {
-            store.set_direction("TB");
+            store.direction = Some(FlowDir::Tb);
             return Ok(());
         }
         let dir = self.s.expect(T::Dir, "'NODIR'")?;
@@ -158,7 +158,7 @@ impl<'a> Reader<'a> {
             return Err(self.s.fail_expecting(line_ends.copied()));
         }
         self.s.bump();
-        store.set_direction(dir);
+        store.direction = Some(FlowDir::from_header(dir));
         Ok(())
     }
 
@@ -569,14 +569,13 @@ impl<'a> Reader<'a> {
             | T::DirectionLr
             | T::DirectionTd) => {
                 self.s.bump();
-                let dir = match t {
-                    T::DirectionTb => "TB",
-                    T::DirectionBt => "BT",
-                    T::DirectionRl => "RL",
-                    T::DirectionLr => "LR",
-                    _ => "TD",
-                };
-                DocItem::Dir(dir.to_string())
+                DocItem::Dir(match t {
+                    T::DirectionTb => FlowDir::Tb,
+                    T::DirectionBt => FlowDir::Bt,
+                    T::DirectionRl => FlowDir::Rl,
+                    T::DirectionLr => FlowDir::Lr,
+                    _ => FlowDir::Td,
+                })
             }
             T::AccTitle => {
                 self.s.bump();

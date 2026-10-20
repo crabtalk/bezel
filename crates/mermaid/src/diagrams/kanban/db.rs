@@ -4,7 +4,11 @@ use crate::js::JsValue;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use crate::{
-    Error, config::Value, detect::Kind, diagrams::common::outline::OutlineDb, yaml::parse_yaml,
+    Error,
+    config::Value,
+    detect::Kind,
+    diagrams::common::outline::{NodeType, OutlineDb},
+    yaml::parse_yaml,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -118,7 +122,7 @@ impl OutlineDb for KanbanModel {
         level: usize,
         id: &str,
         descr: &str,
-        _kind: i32,
+        _kind: NodeType,
         shape_data: Option<&str>,
     ) -> Result<(), Error> {
         let mut node = KanbanNode {

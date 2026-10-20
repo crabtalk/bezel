@@ -120,7 +120,7 @@ struct Tail {
     explicit_id: Option<String>,
     explicit_id_span: Option<Span>,
     kind: RelationshipType,
-    arrow_type: usize,
+    arrow_type: Arrow,
     label: Option<DraftLabel>,
     minlen: usize,
     target: Item,
@@ -514,7 +514,7 @@ impl Parser<'_> {
             explicit_id: None,
             explicit_id_span: None,
             kind: RelationshipType::Association,
-            arrow_type: Arrow::SOLID_ARROW,
+            arrow_type: Arrow::Solid,
             label: None,
             minlen: 1,
             target: Item::default(),
@@ -551,7 +551,7 @@ impl Parser<'_> {
             T::Generalization => tail.kind = RelationshipType::Generalization,
             T::ForwardSolid => tail.minlen = self.minimum_length(k),
             T::BackwardSolid => {
-                tail.arrow_type = Arrow::BACK_ARROW;
+                tail.arrow_type = Arrow::Back;
                 // Only the shortest operator can open a label:
                 // `A <-- label -- B`.
                 if width == 3 && self.labeled_right(|_| false) {
@@ -563,16 +563,16 @@ impl Parser<'_> {
                 }
             }
             T::MarkerlessSolid => {
-                tail.arrow_type = Arrow::LINE_SOLID;
+                tail.arrow_type = Arrow::Line;
                 if width == 2 && self.labeled_right(T::closes_label) {
                     tail.label = Some(self.label()?);
                     let close = self.t(self.p);
                     if close == T::ForwardSolid {
-                        tail.arrow_type = Arrow::SOLID_ARROW;
+                        tail.arrow_type = Arrow::Solid;
                     } else if close == T::ForwardCircle {
-                        tail.arrow_type = Arrow::CIRCLE_ARROW;
+                        tail.arrow_type = Arrow::Circle;
                     } else if close == T::ForwardCross {
-                        tail.arrow_type = Arrow::CROSS_ARROW;
+                        tail.arrow_type = Arrow::Cross;
                     } else if close != T::MarkerlessSolid {
                         return Err(self.no_alternative(
                             [
@@ -584,8 +584,7 @@ impl Parser<'_> {
                             .map(T::name),
                         ));
                     }
-                    if tail.arrow_type == Arrow::SOLID_ARROW || tail.arrow_type == Arrow::LINE_SOLID
-                    {
+                    if tail.arrow_type == Arrow::Solid || tail.arrow_type == Arrow::Line {
                         tail.minlen = self.minimum_length(self.p);
                     }
                     self.p += 1;
@@ -593,13 +592,13 @@ impl Parser<'_> {
                     tail.minlen = self.minimum_length(k);
                 }
             }
-            T::ForwardCircle => tail.arrow_type = Arrow::CIRCLE_ARROW,
-            T::ForwardCross => tail.arrow_type = Arrow::CROSS_ARROW,
+            T::ForwardCircle => tail.arrow_type = Arrow::Circle,
+            T::ForwardCross => tail.arrow_type = Arrow::Cross,
             T::BackwardCircle | T::BackwardCross => {
                 tail.arrow_type = if kind == T::BackwardCircle {
-                    Arrow::CIRCLE_ARROW_REVERSED
+                    Arrow::CircleReversed
                 } else {
-                    Arrow::CROSS_ARROW_REVERSED
+                    Arrow::CrossReversed
                 };
                 if self.labeled_right(|_| false) {
                     tail.label = Some(self.label()?);

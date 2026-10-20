@@ -6,7 +6,7 @@ use super::{
     tokens::T,
     types::{ClassRelation, LineType, Relation, RelationEnd, RelationType},
 };
-use crate::{detect::Kind, error::Error, js, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, js, token::Stream};
 
 const NAME_TOKENS: &str = "'UNICODE_TEXT', 'NUM', 'ALPHA', 'MINUS', 'BQUOTE_STR'";
 
@@ -389,12 +389,11 @@ impl<'t> Parser<'t, '_> {
             T::DirectionTb | T::DirectionBt | T::DirectionRl | T::DirectionLr => {
                 self.s.bump();
                 self.db.direction = match t {
-                    T::DirectionTb => "TB",
-                    T::DirectionBt => "BT",
-                    T::DirectionRl => "RL",
-                    _ => "LR",
-                }
-                .to_string();
+                    T::DirectionTb => Direction::TopToBottom,
+                    T::DirectionBt => Direction::BottomToTop,
+                    T::DirectionRl => Direction::RightToLeft,
+                    _ => Direction::LeftToRight,
+                };
                 return Ok(());
             }
             T::AccTitle => {

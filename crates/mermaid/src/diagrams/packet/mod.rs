@@ -10,9 +10,8 @@ pub use model::{PacketBlock, PacketModel};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct Packet;
 
@@ -49,11 +48,16 @@ pub struct PacketConfig {
     #[serde_as(as = "DefaultOnError")]
     pub show_bits: Option<bool>,
     #[serde_as(as = "DefaultOnError")]
-    pub bit_order: Option<String>,
+    pub bit_order: Option<BitOrder>,
 }
 
-impl Render for PacketModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_packet(self, &config.packet, ctx))
-    }
+/// Which end of a row bit 0 is drawn at.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BitOrder {
+    /// Bit 0 at the left.
+    #[default]
+    Ascending,
+    /// Bit 0 at the right.
+    Descending,
 }

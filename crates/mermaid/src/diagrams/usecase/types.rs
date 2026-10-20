@@ -3,6 +3,7 @@
 
 use indexmap::IndexMap;
 use serde::Serialize;
+use serde_repr::Serialize_repr;
 
 use crate::config::Value;
 
@@ -112,13 +113,13 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn name(self) -> &'static str {
+    /// The way the drawing's ranks run.
+    pub fn flow(self) -> crate::geom::Direction {
         match self {
-            Self::TB => "TB",
-            Self::TD => "TD",
-            Self::BT => "BT",
-            Self::RL => "RL",
-            Self::LR => "LR",
+            Self::TB | Self::TD => crate::geom::Direction::TopToBottom,
+            Self::BT => crate::geom::Direction::BottomToTop,
+            Self::RL => crate::geom::Direction::RightToLeft,
+            Self::LR => crate::geom::Direction::LeftToRight,
         }
     }
 }
@@ -196,17 +197,24 @@ pub struct SystemBoundary {
     pub styles: Vec<String>,
 }
 
-/// Arrow types, as Mermaid numbers them.
-pub struct Arrow;
+/// An association's arrow, serialized as Mermaid's number for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize_repr)]
+#[repr(u8)]
+pub enum Arrow {
+    Solid = 0,
+    Back = 1,
+    Line = 2,
+    Circle = 3,
+    Cross = 4,
+    CircleReversed = 5,
+    CrossReversed = 6,
+}
 
 impl Arrow {
-    pub const SOLID_ARROW: usize = 0;
-    pub const BACK_ARROW: usize = 1;
-    pub const LINE_SOLID: usize = 2;
-    pub const CIRCLE_ARROW: usize = 3;
-    pub const CROSS_ARROW: usize = 4;
-    pub const CIRCLE_ARROW_REVERSED: usize = 5;
-    pub const CROSS_ARROW_REVERSED: usize = 6;
+    /// Ends in a circle or a cross.
+    pub fn is_decorated(self) -> bool {
+        self as u8 > Arrow::Line as u8
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -218,7 +226,7 @@ pub struct Relationship {
     pub target: String,
     #[serde(rename = "type")]
     pub kind: RelationshipType,
-    pub arrow_type: usize,
+    pub arrow_type: Arrow,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

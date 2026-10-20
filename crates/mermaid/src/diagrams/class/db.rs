@@ -1,6 +1,8 @@
 //! Pele's `diagrams/class/db.ts`.
 
 use indexmap::{IndexMap, IndexSet};
+
+use crate::geom::Direction;
 use serde::{
     Serialize, Serializer,
     ser::{SerializeMap, SerializeStruct},
@@ -41,7 +43,7 @@ fn lookup_id(id: &str) -> String {
 /// Pele's `ClassDb`, serialized with its bookkeeping as Pele's is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClassModel {
-    pub direction: String,
+    pub direction: Direction,
     pub classes: IndexMap<String, ClassNode>,
     pub relations: Vec<ClassRelation>,
     pub notes: IndexMap<String, ClassNote>,
@@ -57,7 +59,7 @@ pub struct ClassModel {
 impl Default for ClassModel {
     fn default() -> Self {
         Self {
-            direction: "TB".into(),
+            direction: Direction::TopToBottom,
             classes: IndexMap::new(),
             relations: Vec::new(),
             notes: IndexMap::new(),

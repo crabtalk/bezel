@@ -5,10 +5,14 @@
 //! list, each block's start entry in a slot reserved where the block opens.
 
 use super::{
+    actors::ActorKind,
     db::SequenceModel,
     lexer::tokenize,
     tokens::T,
-    types::{NoteActor, Participant, Placement, SeqBoxData, SeqStatement, SeqText, line},
+    types::{
+        Block, CentralConnection, LineType, NoteActor, Participant, Placement, SeqBoxData,
+        SeqStatement, SeqText,
+    },
 };
 use crate::{
     detect::Kind,
@@ -21,34 +25,34 @@ const SIGNAL_TOKENS: &str = "'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARR
 
 impl T {
     /// The message kind of an arrow.
-    fn signal(self) -> Option<i32> {
+    fn signal(self) -> Option<LineType> {
         Some(match self {
-            T::SolidOpenArrow => line::SOLID_OPEN,
-            T::DottedOpenArrow => line::DOTTED_OPEN,
-            T::SolidArrow => line::SOLID,
-            T::DottedArrow => line::DOTTED,
-            T::BidirectionalSolidArrow => line::BIDIRECTIONAL_SOLID,
-            T::BidirectionalDottedArrow => line::BIDIRECTIONAL_DOTTED,
-            T::SolidCross => line::SOLID_CROSS,
-            T::DottedCross => line::DOTTED_CROSS,
-            T::SolidPoint => line::SOLID_POINT,
-            T::DottedPoint => line::DOTTED_POINT,
-            T::SolidArrowTop => line::SOLID_TOP,
-            T::SolidArrowBottom => line::SOLID_BOTTOM,
-            T::StickArrowTop => line::STICK_TOP,
-            T::StickArrowBottom => line::STICK_BOTTOM,
-            T::SolidArrowTopDotted => line::SOLID_TOP_DOTTED,
-            T::SolidArrowBottomDotted => line::SOLID_BOTTOM_DOTTED,
-            T::StickArrowTopDotted => line::STICK_TOP_DOTTED,
-            T::StickArrowBottomDotted => line::STICK_BOTTOM_DOTTED,
-            T::SolidArrowTopReverse => line::SOLID_ARROW_TOP_REVERSE,
-            T::SolidArrowBottomReverse => line::SOLID_ARROW_BOTTOM_REVERSE,
-            T::StickArrowTopReverse => line::STICK_ARROW_TOP_REVERSE,
-            T::StickArrowBottomReverse => line::STICK_ARROW_BOTTOM_REVERSE,
-            T::SolidArrowTopReverseDotted => line::SOLID_ARROW_TOP_REVERSE_DOTTED,
-            T::SolidArrowBottomReverseDotted => line::SOLID_ARROW_BOTTOM_REVERSE_DOTTED,
-            T::StickArrowTopReverseDotted => line::STICK_ARROW_TOP_REVERSE_DOTTED,
-            T::StickArrowBottomReverseDotted => line::STICK_ARROW_BOTTOM_REVERSE_DOTTED,
+            T::SolidOpenArrow => LineType::SolidOpen,
+            T::DottedOpenArrow => LineType::DottedOpen,
+            T::SolidArrow => LineType::Solid,
+            T::DottedArrow => LineType::Dotted,
+            T::BidirectionalSolidArrow => LineType::BidirectionalSolid,
+            T::BidirectionalDottedArrow => LineType::BidirectionalDotted,
+            T::SolidCross => LineType::SolidCross,
+            T::DottedCross => LineType::DottedCross,
+            T::SolidPoint => LineType::SolidPoint,
+            T::DottedPoint => LineType::DottedPoint,
+            T::SolidArrowTop => LineType::SolidTop,
+            T::SolidArrowBottom => LineType::SolidBottom,
+            T::StickArrowTop => LineType::StickTop,
+            T::StickArrowBottom => LineType::StickBottom,
+            T::SolidArrowTopDotted => LineType::SolidTopDotted,
+            T::SolidArrowBottomDotted => LineType::SolidBottomDotted,
+            T::StickArrowTopDotted => LineType::StickTopDotted,
+            T::StickArrowBottomDotted => LineType::StickBottomDotted,
+            T::SolidArrowTopReverse => LineType::SolidArrowTopReverse,
+            T::SolidArrowBottomReverse => LineType::SolidArrowBottomReverse,
+            T::StickArrowTopReverse => LineType::StickArrowTopReverse,
+            T::StickArrowBottomReverse => LineType::StickArrowBottomReverse,
+            T::SolidArrowTopReverseDotted => LineType::SolidArrowTopReverseDotted,
+            T::SolidArrowBottomReverseDotted => LineType::SolidArrowBottomReverseDotted,
+            T::StickArrowTopReverseDotted => LineType::StickArrowTopReverseDotted,
+            T::StickArrowBottomReverseDotted => LineType::StickArrowBottomReverseDotted,
             _ => return None,
         })
     }
@@ -56,36 +60,32 @@ impl T {
     /// The block a keyword opens.
     fn block(self) -> Option<K> {
         Some(match self {
-            T::Loop => K::Loop,
-            T::Rect => K::Rect,
-            T::Opt => K::Opt,
-            T::Break => K::Break,
-            T::Alt => K::Alt,
-            T::Par | T::ParOver => K::Par,
-            T::Critical => K::Critical,
+            T::Loop => K::Block(Block::Loop),
+            T::Rect => K::Block(Block::Rect),
+            T::Opt => K::Block(Block::Opt),
+            T::Break => K::Block(Block::Break),
+            T::Alt => K::Block(Block::Alt),
+            T::Par | T::ParOver => K::Block(Block::Par),
+            T::Critical => K::Block(Block::Critical),
             T::Box => K::Box,
             _ => return None,
         })
     }
 }
 
+/// What a frame of the parser is reading.
 #[derive(Clone, Copy, PartialEq)]
 enum K {
     Top,
     Box,
-    Loop,
-    Rect,
-    Opt,
-    Break,
-    Alt,
-    Par,
-    Critical,
+    Block(Block),
 }
 
 struct Frame {
     kind: K,
     text: String,
-    start_type: i32,
+    /// The kind of a block's start entry.
+    start_type: LineType,
     /// The slot of the block's start entry.
     slot: usize,
 }
@@ -150,9 +150,9 @@ impl Parser<'_, '_, '_> {
             node.config = Some(js::trim(content).to_string());
         }
         node.draw = Some(if t == T::Participant {
-            "participant"
+            ActorKind::Participant
         } else {
-            "actor"
+            ActorKind::Actor
         });
         if self.s.eat(T::As) {
             let alias = self.s.expect(T::RestOfLine, "")?;
@@ -196,23 +196,23 @@ impl Parser<'_, '_, '_> {
             let dual = mark == T::Central;
             activate = Some(dual);
             central_connection = Some(if dual {
-                line::CENTRAL_CONNECTION_DUAL
+                CentralConnection::Both
             } else {
-                line::CENTRAL_CONNECTION_REVERSE
+                CentralConnection::From
             });
             if dual {
-                marks.push((to.clone(), line::CENTRAL_CONNECTION));
+                marks.push((to.clone(), LineType::CentralConnection));
             }
-            marks.push((from.clone(), line::CENTRAL_CONNECTION_REVERSE));
+            marks.push((from.clone(), LineType::CentralConnectionReverse));
         } else if mark == T::Plus {
             activate = Some(true);
-            marks.push((to.clone(), line::ACTIVE_START));
+            marks.push((to.clone(), LineType::ActiveStart));
         } else if mark == T::Minus {
-            marks.push((from.clone(), line::ACTIVE_END));
+            marks.push((from.clone(), LineType::ActiveEnd));
         } else if mark == T::Central {
             activate = Some(true);
-            central_connection = Some(line::CENTRAL_CONNECTION);
-            marks.push((to.clone(), line::CENTRAL_CONNECTION));
+            central_connection = Some(CentralConnection::To);
+            marks.push((to.clone(), LineType::CentralConnection));
         }
         self.list.push(Some(SeqStatement::AddMessage {
             from,
@@ -313,33 +313,13 @@ impl Parser<'_, '_, '_> {
                 SeqStatement::BoxStart(SeqBoxData::parse(&text)),
                 SeqStatement::BoxEnd,
             ),
-            K::Loop => (
-                section(SeqText::parse(&text), line::LOOP_START),
-                ending(line::LOOP_END),
-            ),
-            K::Rect => (
-                section(SeqText::parse(&text), line::RECT_START),
-                ending(line::RECT_END),
-            ),
-            K::Opt => (
-                section(SeqText::parse(&text), line::OPT_START),
-                ending(line::OPT_END),
-            ),
-            K::Break => (
-                section(SeqText::parse(&text), line::BREAK_START),
-                ending(line::BREAK_END),
-            ),
-            K::Alt => (
-                section(SeqText::parse(&text), line::ALT_START),
-                ending(line::ALT_END),
-            ),
-            K::Par => (
+            K::Block(block) => (
                 section(SeqText::parse(&text), frame.start_type),
-                ending(line::PAR_END),
+                ending(block.end()),
             ),
-            K::Critical | K::Top => (
-                section(SeqText::parse(&text), line::CRITICAL_START),
-                ending(line::CRITICAL_END),
+            K::Top => (
+                section(SeqText::parse(&text), LineType::CriticalStart),
+                ending(LineType::CriticalEnd),
             ),
         };
         self.list[frame.slot] = Some(start);
@@ -354,7 +334,7 @@ impl Parser<'_, '_, '_> {
         let mut frame = Frame {
             kind: K::Top,
             text: String::new(),
-            start_type: 0,
+            start_type: LineType::CriticalStart,
             slot: 0,
         };
 
@@ -427,9 +407,9 @@ impl Parser<'_, '_, '_> {
                     self.list.push(Some(SeqStatement::Mark {
                         actor,
                         signal_type: if t == T::Activate {
-                            line::ACTIVE_START
+                            LineType::ActiveStart
                         } else {
-                            line::ACTIVE_END
+                            LineType::ActiveEnd
                         },
                     }));
                 }
@@ -465,24 +445,27 @@ impl Parser<'_, '_, '_> {
                     let text = self.s.expect(T::RestOfLine, "")?;
                     let slot = self.list.len();
                     self.list.push(None);
+                    let kind = t.block().unwrap_or(K::Top);
+                    let start_type = match kind {
+                        K::Block(Block::Par) if t == T::ParOver => LineType::ParOverStart,
+                        K::Block(block) => block.start(),
+                        K::Top | K::Box => LineType::CriticalStart,
+                    };
                     let inner = Frame {
-                        kind: t.block().unwrap_or(K::Top),
+                        kind,
                         text: text.to_string(),
-                        start_type: if t == T::ParOver {
-                            line::PAR_OVER_START
-                        } else {
-                            line::PAR_START
-                        },
+                        start_type,
                         slot,
                     };
                     stack.push(std::mem::replace(&mut frame, inner));
                 }
                 T::Else | T::And | T::Option => {
                     let (expected, signal_type) = match t {
-                        T::Else => (K::Alt, line::ALT_ELSE),
-                        T::And => (K::Par, line::PAR_AND),
-                        _ => (K::Critical, line::CRITICAL_OPTION),
+                        T::Else => (Block::Alt, LineType::AltElse),
+                        T::And => (Block::Par, LineType::ParAnd),
+                        _ => (Block::Critical, LineType::CriticalOption),
                     };
+                    let expected = K::Block(expected);
                     if frame.kind != expected {
                         return Err(self.s.fail("'end'"));
                     }
@@ -515,11 +498,11 @@ impl Parser<'_, '_, '_> {
     }
 }
 
-fn section(text: SeqText, signal_type: i32) -> SeqStatement {
+fn section(text: SeqText, signal_type: LineType) -> SeqStatement {
     SeqStatement::Section { text, signal_type }
 }
 
-fn ending(signal_type: i32) -> SeqStatement {
+fn ending(signal_type: LineType) -> SeqStatement {
     SeqStatement::End { signal_type }
 }
 

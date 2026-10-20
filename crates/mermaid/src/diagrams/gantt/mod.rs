@@ -15,9 +15,8 @@ pub use types::{GanttTask, RawTask};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct Gantt;
 
@@ -79,10 +78,4 @@ pub struct GanttConfig {
     pub weekday: Option<String>,
     #[serde_as(as = "DefaultOnError")]
     pub display_mode: Option<String>,
-}
-
-impl Render for GanttDb {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        render::render_gantt(self, &config.gantt, ctx)
-    }
 }

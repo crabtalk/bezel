@@ -2,6 +2,7 @@
 
 use crate::diagrams::common::db::Titles;
 use crate::diagrams::common::style_class::StyleClass;
+use crate::geom::Direction;
 use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Serializer};
 
@@ -13,7 +14,7 @@ use crate::js;
 /// Pele's `ErDb`, serialized with its lookups as Pele's is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ErModel {
-    pub direction: String,
+    pub direction: Direction,
     pub entities: IndexMap<String, ErEntity>,
     pub relationships: Vec<ErRelationship>,
     pub classes: IndexMap<String, StyleClass>,
@@ -30,7 +31,7 @@ pub struct ErModel {
 struct Json<'a> {
     #[serde(rename = "type")]
     kind: &'static str,
-    direction: &'a str,
+    direction: Direction,
     entities: &'a IndexMap<String, ErEntity>,
     relationships: &'a [ErRelationship],
     classes: &'a IndexMap<String, StyleClass>,
@@ -45,7 +46,7 @@ impl Serialize for ErModel {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         Json {
             kind: "er",
-            direction: &self.direction,
+            direction: self.direction,
             entities: &self.entities,
             relationships: &self.relationships,
             classes: &self.classes,
@@ -65,7 +66,7 @@ impl Serialize for ErModel {
 impl Default for ErModel {
     fn default() -> Self {
         Self {
-            direction: "TB".into(),
+            direction: Direction::TopToBottom,
             entities: IndexMap::new(),
             relationships: Vec::new(),
             classes: IndexMap::new(),
@@ -130,10 +131,6 @@ impl ErModel {
         });
     }
 
-    pub fn set_direction(&mut self, dir: &str) {
-        self.direction = dir.to_string();
-    }
-
     pub fn add_css_styles(&mut self, ids: &[&str], styles: &[String]) {
         for id in ids {
             if let Some(entity) = self.entities.get_mut(*id) {
@@ -177,11 +174,11 @@ impl ErModel {
         let id = js::trim(id_text).to_string();
         let mut seen: IndexSet<&str> = IndexSet::new();
         let mut nodes: Vec<String> = Vec::new();
-        let mut dir: Option<String> = None;
+        let mut dir = None;
         for item in list {
             let item = match item {
                 DocItem::Dir(value) => {
-                    dir = Some(value.to_string());
+                    dir = Some(*value);
                     continue;
                 }
                 DocItem::Name(item) => item,

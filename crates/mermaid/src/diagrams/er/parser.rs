@@ -7,7 +7,7 @@ use super::{
     types::{Cardinality, DocItem, Identification, ParsedAttribute, RelSpec},
 };
 use crate::util::chars::inner;
-use crate::{detect::Kind, error::Error, js, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, js, token::Stream};
 
 const NAME: &str = "'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE'";
 const CARDS: &str = "'ZERO_OR_ONE', 'ZERO_OR_MORE', 'ONE_OR_MORE', 'ONLY_ONE', 'MD_PARENT'";
@@ -349,14 +349,14 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
             T::DirectionTb | T::DirectionBt | T::DirectionRl | T::DirectionLr => {
                 r.s.bump();
                 let value = match t {
-                    T::DirectionTb => "TB",
-                    T::DirectionBt => "BT",
-                    T::DirectionRl => "RL",
-                    _ => "LR",
+                    T::DirectionTb => Direction::TopToBottom,
+                    T::DirectionBt => Direction::BottomToTop,
+                    T::DirectionRl => Direction::RightToLeft,
+                    _ => Direction::LeftToRight,
                 };
                 match r.open.last_mut() {
                     Some(frame) => frame.list.push(DocItem::Dir(value)),
-                    None => db.set_direction(value),
+                    None => db.direction = value,
                 }
             }
             T::Classdef | T::Style => {

@@ -1,5 +1,7 @@
 //! Pele's `diagrams/block/layout.ts`.
 
+use super::types::Columns;
+use crate::geom::{Point, Size};
 use crate::{Error, Kind, js};
 
 const MAX_SPAN: f64 = 1000.0;
@@ -8,59 +10,48 @@ const MAX_SPAN: f64 = 1000.0;
 pub struct Cell {
     /// Indices of the children in the slice the cell is laid out in.
     pub children: Vec<usize>,
-    /// Grid width of this container: a positive count, or -1 to put every
-    /// child on one row.
-    pub columns: f64,
+    /// Grid width of this container.
+    pub columns: Columns,
     pub span: f64,
     pub space: bool,
     /// Height reserved above a container's grid for its title.
     pub head: f64,
     /// Size the content needs. Set by the caller for leaves, computed here
     /// for containers.
-    pub nw: f64,
-    pub nh: f64,
+    pub need: Size,
     /// Placement: grid position, then center and size in pixels.
     pub col: f64,
     pub row: f64,
     pub cols: f64,
     pub heights: Vec<f64>,
-    pub x: f64,
-    pub y: f64,
-    pub w: f64,
-    pub h: f64,
-}
-
-impl Cell {
-    pub fn new(nw: f64, nh: f64, span: f64) -> Self {
-        Self {
-            columns: -1.0,
-            span,
-            nw,
-            nh,
-            ..Self::default()
-        }
-    }
+    pub center: Point,
+    pub size: Size,
 }
 
 fn is_integer(x: f64) -> bool {
     x.is_finite() && x.fract() == 0.0
 }
 
-pub fn calculate_block_position(columns: f64, position: f64) -> Result<(f64, f64), Error> {
-    if columns == 0.0 || !is_integer(columns) {
-        return Err(Error::semantic("Columns must be an integer !== 0.").of(Kind::Block));
+impl Columns {
+    /// The column and row of the grid cell at `position`.
+    pub fn cell(self, position: f64) -> Result<(f64, f64), Error> {
+        if let Columns::Count(columns) = self
+            && (columns == 0.0 || !is_integer(columns))
+        {
+            return Err(Error::semantic("Columns must be an integer !== 0.").of(Kind::Block));
+        }
+        if position < 0.0 || !is_integer(position) {
+            return Err(Error::semantic(format!(
+                "Position must be a non-negative integer.{}",
+                js::num_str(position)
+            ))
+            .of(Kind::Block));
+        }
+        Ok(match self {
+            Columns::Auto => (position, 0.0),
+            Columns::Count(columns) => (position % columns, (position / columns).floor()),
+        })
     }
-    if position < 0.0 || !is_integer(position) {
-        return Err(Error::semantic(format!(
-            "Position must be a non-negative integer.{}",
-            js::num_str(position)
-        ))
-        .of(Kind::Block));
-    }
-    if columns < 0.0 {
-        return Ok((position, 0.0));
-    }
-    Ok((position % columns, (position / columns).floor()))
 }
 
 /// Puts each child in its grid cell and sizes the container. Every column is
@@ -70,13 +61,14 @@ pub fn calculate_block_position(columns: f64, position: f64) -> Result<(f64, f64
 fn measure(cells: &mut [Cell], at: usize, gap: f64, inset: f64) -> Result<(), Error> {
     let columns = cells[at].columns;
     let children = std::mem::take(&mut cells[at].children);
-    let mut heights: Vec<f64> = Vec::new();
+    // `None` for a row that holds a plain block.
+    let mut heights: Vec<Option<f64>> = Vec::new();
     let mut position = 0.0;
     let mut cols = 0.0;
     let mut cw = 0.0;
     let mut tallest = 0.0;
     for &c in &children {
-        let (px, py) = calculate_block_position(columns, position)?;
+        let (px, py) = columns.cell(position)?;
         let child = &mut cells[c];
         // Mermaid lets a block wider than the rest of its row stick out of
         // the grid. Here it stops at the last column.
@@ -85,7 +77,9 @@ fn measure(cells: &mut [Cell], at: usize, gap: f64, inset: f64) -> Result<(), Er
         } else {
             1.0
         };
-        if columns > 0.0 && span > columns - px {
+        if let Columns::Count(columns) = columns
+            && span > columns - px
+        {
             span = columns - px;
         }
         child.span = span;
@@ -97,37 +91,43 @@ fn measure(cells: &mut [Cell], at: usize, gap: f64, inset: f64) -> Result<(), Er
         }
         let row = py as usize;
         if row == heights.len() {
-            heights.push(0.0);
+            heights.push(Some(0.0));
         }
         if child.children.is_empty() {
-            heights[row] = -1.0;
-        } else if heights[row] >= 0.0 && child.nh > heights[row] {
-            heights[row] = child.nh;
+            heights[row] = None;
+        } else if let Some(height) = heights[row]
+            && child.need.h > height
+        {
+            heights[row] = Some(child.need.h);
         }
         if child.space {
             continue;
         }
-        let width = (child.nw - gap * (span - 1.0)) / span;
+        let width = (child.need.w - gap * (span - 1.0)) / span;
         if width > cw {
             cw = width;
         }
-        if child.nh > tallest {
-            tallest = child.nh;
+        if child.need.h > tallest {
+            tallest = child.need.h;
         }
     }
+    let heights: Vec<f64> = heights
+        .into_iter()
+        .map(|row| row.unwrap_or(tallest))
+        .collect();
     let mut height = (heights.len() as f64 - 1.0) * gap;
-    for row in heights.iter_mut() {
-        if *row < 0.0 {
-            *row = tallest;
-        }
-        height += *row;
+    for row in &heights {
+        height += row;
     }
     let cell = &mut cells[at];
     cell.children = children;
     cell.cols = cols;
     cell.heights = heights;
-    cell.nw = cell.nw.max(cols * cw + (cols - 1.0) * gap + 2.0 * inset);
-    cell.nh = height + 2.0 * inset + cell.head;
+    cell.need.w = cell
+        .need
+        .w
+        .max(cols * cw + (cols - 1.0) * gap + 2.0 * inset);
+    cell.need.h = height + 2.0 * inset + cell.head;
     Ok(())
 }
 
@@ -139,16 +139,16 @@ fn arrange(cells: &mut [Cell], at: usize, gap: f64, inset: f64) {
     let heights = cell.heights.clone();
     let children = cell.children.clone();
     let rows = heights.len() as f64;
-    let cw = (cell.w - 2.0 * inset - (cols - 1.0) * gap) / cols;
-    let room = cell.h - 2.0 * inset - cell.head - (rows - 1.0) * gap;
+    let cw = (cell.size.w - 2.0 * inset - (cols - 1.0) * gap) / cols;
+    let room = cell.size.h - 2.0 * inset - cell.head - (rows - 1.0) * gap;
     let mut needed = 0.0;
     for height in &heights {
         needed += height;
     }
     let scale = if needed > 0.0 { room / needed } else { 0.0 };
     let share = if needed > 0.0 { 0.0 } else { room / rows };
-    let left = cell.x - cell.w / 2.0 + inset;
-    let mut top = cell.y - cell.h / 2.0 + inset + cell.head;
+    let left = cell.center.x - cell.size.w / 2.0 + inset;
+    let mut top = cell.center.y - cell.size.h / 2.0 + inset + cell.head;
     let mut row = 0;
     for c in children {
         let child = &mut cells[c];
@@ -156,16 +156,20 @@ fn arrange(cells: &mut [Cell], at: usize, gap: f64, inset: f64) {
             top += heights[row] * scale + share + gap;
             row += 1;
         }
-        child.w = cw * child.span + gap * (child.span - 1.0);
-        child.h = heights[row] * scale + share;
-        child.x = left + child.col * (cw + gap) + child.w / 2.0;
-        child.y = top + child.h / 2.0;
+        child.size = Size::new(
+            cw * child.span + gap * (child.span - 1.0),
+            heights[row] * scale + share,
+        );
+        child.center = Point::new(
+            left + child.col * (cw + gap) + child.size.w / 2.0,
+            top + child.size.h / 2.0,
+        );
     }
 }
 
-/// Lays out the tree of cells under `cells[0]` in place. The root has no
-/// border, so its grid starts at the origin.
-pub fn layout(cells: &mut [Cell], gap: f64) -> Result<(f64, f64), Error> {
+/// Lays out the tree of cells under `cells[0]` in place and gives its size.
+/// The root has no border, so its grid starts at the origin.
+pub fn layout(cells: &mut [Cell], gap: f64) -> Result<Size, Error> {
     let mut order = vec![0];
     let mut i = 0;
     while i < order.len() {
@@ -179,14 +183,12 @@ pub fn layout(cells: &mut [Cell], gap: f64) -> Result<(f64, f64), Error> {
         }
     }
     let root = &mut cells[0];
-    root.w = root.nw;
-    root.h = root.nh;
-    root.x = root.w / 2.0;
-    root.y = root.h / 2.0;
+    root.size = root.need;
+    root.center = Point::new(root.size.w / 2.0, root.size.h / 2.0);
     for (i, &at) in order.iter().enumerate() {
         if !cells[at].children.is_empty() {
             arrange(cells, at, gap, if i == 0 { 0.0 } else { gap });
         }
     }
-    Ok((cells[0].w, cells[0].h))
+    Ok(cells[0].size)
 }

@@ -5,6 +5,7 @@ use crate::{
     Error,
     detect::Kind,
     diagrams::common::scan::T,
+    geom::Direction,
     js,
     token::{Stream, after_keyword},
 };
@@ -16,8 +17,8 @@ pub fn parse_timeline(src: &str, db: &mut TimelineModel) -> Result<(), Error> {
     let mut s = Stream::new(Kind::Timeline, src, &tokens);
     match s.kind() {
         T::Timeline => {}
-        T::TimelineLr => db.direction = "LR",
-        T::TimelineTd => db.direction = "TD",
+        T::TimelineLr => db.direction = Direction::LeftToRight,
+        T::TimelineTd => db.direction = Direction::TopToBottom,
         _ => return Err(s.fail_expecting([T::Timeline, T::TimelineLr, T::TimelineTd])),
     }
     s.bump();

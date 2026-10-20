@@ -8,18 +8,17 @@ use crate::{
     text::{Host, icon_markup},
 };
 
-/// A square for a named icon, in the form labels use. The host's resolver
-/// supplies the drawing, if any.
+/// A square for a named icon, in the form labels use, its top left corner at
+/// `at`. The host's resolver supplies the drawing, if any.
 pub fn icon_svg<'a>(
     host: &'a impl Host,
     name: &'a str,
-    x: f64,
-    y: f64,
+    at: Point,
     side: f64,
 ) -> impl fmt::Display + 'a {
     icon_element(
         name,
-        Point::new(x, y),
+        at,
         side,
         fragment(move |f| f.write_str(&icon_markup(host, name))),
     )

@@ -4,19 +4,38 @@
 
 use indexmap::IndexMap;
 
-use crate::{Error, Kind, js, js::Lazy};
+use crate::{Error, Kind, js, js::Lazy, util::chars::is_space};
 
 const INDENT_UNIT: &str = "    ";
 
-static ALL_BOX_CHARS: Lazy = Lazy::new(r"[─━│┃└┗├┣]", "");
-static BRANCH_CHAR: Lazy = Lazy::new(r"[└┗├┣]", "");
-static DASH_CHAR: Lazy = Lazy::new(r"[─━]", "");
-static DECORATION_ONLY: Lazy = Lazy::new(r"^[\s│┃]+$", "");
-static BOX_ONLY: Lazy = Lazy::new(r"^[\s─━│┃└┗├┣]+$", "");
+/// `└`, `├` and their heavy forms: where an entry hangs off its parent's
+/// line.
+fn is_branch(c: char) -> bool {
+    matches!(c, '└' | '┗' | '├' | '┣')
+}
+
+/// `─` and `━`, which lead from a branch to the name.
+fn is_dash(c: char) -> bool {
+    matches!(c, '─' | '━')
+}
+
+/// `│` and `┃`, which carry a parent's line past an entry.
+fn is_rail(c: char) -> bool {
+    matches!(c, '│' | '┃')
+}
+
+fn is_box(c: char) -> bool {
+    is_branch(c) || is_dash(c) || is_rail(c)
+}
+
+/// A line of nothing but whitespace and rails.
+fn is_decoration(line: &str) -> bool {
+    !line.is_empty() && line.chars().all(|c| is_space(c) || is_rail(c))
+}
+
 static METADATA_LINE: Lazy = Lazy::new(r"^\s*(title[\t ]|accTitle[\t ]*:|accDescr[\t ]*[:{])", "");
 static COMMENT_LINE: Lazy = Lazy::new(r"^\s*%%", "");
 static RE_LINE: Lazy = Lazy::new(r"\bline\s+(\d+)\b", "gi");
-static RE_INDENTED: Lazy = Lazy::new(r"^\s+", "");
 
 pub struct PreprocessResult {
     pub text: String,
@@ -26,13 +45,13 @@ pub struct PreprocessResult {
 }
 
 pub fn is_box_drawing_format(lines: &[String]) -> bool {
-    lines.iter().any(|line| ALL_BOX_CHARS.test(line))
+    lines.iter().any(|line| line.contains(is_box))
 }
 
 fn infer_segment_width(content_lines: &[String]) -> usize {
     for line in content_lines {
-        if let Some(m) = BRANCH_CHAR.exec(line) {
-            let index = js::len(&line[..m.start()]);
+        if let Some(start) = line.find(is_branch) {
+            let index = js::len(&line[..start]);
             if index > 0 {
                 return index;
             }
@@ -64,7 +83,7 @@ pub fn preprocess_box_drawing(input: &str) -> Result<PreprocessResult, Error> {
             line_map,
         })
     };
-    if !ALL_BOX_CHARS.test(input) {
+    if !input.contains(is_box) {
         return unchanged(line_map);
     }
     let lines: Vec<&str> = input.split('\n').collect();
@@ -82,7 +101,7 @@ pub fn preprocess_box_drawing(input: &str) -> Result<PreprocessResult, Error> {
 
     let mut content_lines: Vec<String> = Vec::new();
     for line in &lines[keyword_idx + 1..] {
-        if passes(line) || DECORATION_ONLY.test(line) {
+        if passes(line) || is_decoration(line) {
             continue;
         }
         content_lines.push(line.replace('\t', INDENT_UNIT));
@@ -106,26 +125,18 @@ pub fn preprocess_box_drawing(input: &str) -> Result<PreprocessResult, Error> {
             keep(line.to_string(), i, &mut line_map);
             continue;
         }
-        if DECORATION_ONLY.test(line) {
+        if is_decoration(line) {
             continue;
         }
 
         let normalized = line.replace('\t', INDENT_UNIT);
-        if let Some(branch) = BRANCH_CHAR.exec(&normalized) {
-            let index = js::len(&normalized[..branch.start()]);
-            let depth = js::round(index as f64 / segment_width as f64) as usize + 1;
-            let mut pos = branch.end();
-            while pos < normalized.len() {
-                let width = crate::util::chars::width_at(&normalized, pos);
-                if !DASH_CHAR.test(&normalized[pos..pos + width]) {
-                    break;
-                }
-                pos += width;
-            }
-            while normalized.as_bytes().get(pos) == Some(&b' ') {
-                pos += 1;
-            }
-            let content = js::trim_end(&normalized[pos..]);
+        if let Some(start) = normalized.find(is_branch) {
+            let index = js::len(&normalized[..start]);
+            let depth = (index as f64 / segment_width as f64).round() as usize + 1;
+            let after = &normalized[start..];
+            let after = &after[after.chars().next().map_or(0, char::len_utf8)..];
+            let name = after.trim_start_matches(is_dash).trim_start_matches(' ');
+            let content = js::trim_end(name);
             if content.is_empty() {
                 return Err(fail(
                     i + 1,
@@ -133,13 +144,13 @@ pub fn preprocess_box_drawing(input: &str) -> Result<PreprocessResult, Error> {
                 ));
             }
             keep(INDENT_UNIT.repeat(depth) + content, i, &mut line_map);
-        } else if BOX_ONLY.test(&normalized) {
+        } else if !normalized.is_empty() && normalized.chars().all(|c| is_space(c) || is_box(c)) {
             continue;
-        } else if ALL_BOX_CHARS.test(&normalized) {
+        } else if normalized.contains(is_box) {
             // A name that happens to contain a box character, such as
             // "Section ─ A.txt", is a root item.
             keep(line.to_string(), i, &mut line_map);
-        } else if RE_INDENTED.test(&normalized) {
+        } else if normalized.starts_with(is_space) {
             return Err(fail(
                 i + 1,
                 "Unexpected indentation without box-drawing characters. In box-drawing format, use ├── or └── prefixes for indented nodes.",

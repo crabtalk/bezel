@@ -4,8 +4,8 @@ use crate::diagrams::common::db::Titles;
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 
-use super::parser::{ArchitectureAst, Side};
-use crate::{detect::Kind, error::Error};
+use super::parser::{Alignment, ArchitectureAst};
+use crate::{detect::Kind, error::Error, geom::Side};
 
 /// A service or a junction. A junction has no icon, icon text or title.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -70,10 +70,12 @@ pub struct ArchGroup {
 #[serde(rename_all = "camelCase")]
 pub struct ArchEdge {
     pub lhs_id: String,
+    #[serde(serialize_with = "super::parser::side_letter")]
     pub lhs_dir: Side,
     pub lhs_into: bool,
     pub lhs_group: bool,
     pub rhs_id: String,
+    #[serde(serialize_with = "super::parser::side_letter")]
     pub rhs_dir: Side,
     pub rhs_into: bool,
     pub rhs_group: bool,
@@ -84,8 +86,7 @@ pub struct ArchEdge {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchLayoutHint {
-    /// `row` or `column`.
-    pub direction: String,
+    pub direction: Alignment,
     pub members: Vec<String>,
 }
 
@@ -243,14 +244,14 @@ impl ArchitectureModel {
             if self.registered.get(id.as_str()) != Some(&Registered::Node) {
                 return Err(Error::semantic(format!(
                     "align {} references [{id}], which is not a service or junction",
-                    hint.direction
+                    hint.direction.name()
                 ))
                 .of(Kind::Architecture));
             }
             if !seen.insert(id.as_str()) {
                 return Err(Error::semantic(format!(
                     "align {} lists [{id}] more than once",
-                    hint.direction
+                    hint.direction.name()
                 ))
                 .of(Kind::Architecture));
             }

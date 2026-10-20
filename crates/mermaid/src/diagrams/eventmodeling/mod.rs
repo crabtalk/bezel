@@ -7,9 +7,8 @@ pub mod render;
 
 pub use model::EventModelingModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct EventModeling;
 
@@ -30,11 +29,5 @@ impl Diagram for EventModeling {
             parser::parse_event_model(source)?,
             title,
         )?)))
-    }
-}
-
-impl Render for EventModelingModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_event_model(self, config, ctx))
     }
 }

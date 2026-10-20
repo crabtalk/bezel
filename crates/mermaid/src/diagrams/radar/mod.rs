@@ -6,9 +6,8 @@ pub mod render;
 
 pub use model::RadarModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::RadarConfig;
 
 pub struct Radar;
@@ -26,11 +25,5 @@ impl Diagram for Radar {
             parser::parse_radar(source)?,
             title,
         )?))
-    }
-}
-
-impl Render for RadarModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_radar(self, &config.radar, ctx))
     }
 }

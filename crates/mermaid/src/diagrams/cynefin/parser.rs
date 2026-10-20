@@ -9,6 +9,8 @@ use crate::{
     error::Error,
 };
 
+use super::model::Domain;
+
 token_kinds! {
     enum Token {
         KeywordColon = TokenType::literal("cynefin-beta:"),
@@ -33,13 +35,13 @@ token_kinds! {
 }
 
 pub struct DomainBlockAst {
-    pub domain: String,
+    pub domain: Domain,
     pub items: Vec<String>,
 }
 
 pub struct TransitionAst {
-    pub from: String,
-    pub to: String,
+    pub from: Domain,
+    pub to: Domain,
     pub label: Option<String>,
 }
 
@@ -66,9 +68,9 @@ pub fn parse_cynefin(src: &str) -> Result<CynefinAst, Error> {
         match kind {
             Token::Newline => r.bump(),
             Token::Domain => {
-                let name = r.take().to_string();
+                let name = domain(r.take());
                 if r.accept(Token::Arrow) {
-                    let to = r.expect(Token::Domain)?.to_string();
+                    let to = domain(r.expect(Token::Domain)?);
                     let mut transition = TransitionAst {
                         from: name,
                         to,
@@ -96,4 +98,8 @@ pub fn parse_cynefin(src: &str) -> Result<CynefinAst, Error> {
         }
     }
     Ok(ast)
+}
+
+fn domain(text: &str) -> Domain {
+    Domain::from_name(text).expect("a DOMAIN_NAME token is a domain's name")
 }

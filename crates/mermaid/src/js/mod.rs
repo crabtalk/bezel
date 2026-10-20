@@ -545,3 +545,14 @@ pub(crate) fn min(a: f64, b: f64) -> f64 {
         a.min(b)
     }
 }
+
+/// An index as JavaScript code holds one, for `serialize_with`: -1 for none.
+pub(crate) fn json_index<S: serde::Serializer>(
+    index: &Option<usize>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    match index {
+        Some(index) => s.serialize_u64(*index as u64),
+        None => s.serialize_i64(-1),
+    }
+}

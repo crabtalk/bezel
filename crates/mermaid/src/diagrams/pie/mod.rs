@@ -6,9 +6,8 @@ pub mod render;
 
 pub use model::PieModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::PieConfig;
 
 pub struct Pie;
@@ -26,11 +25,5 @@ impl Diagram for Pie {
             parser::parse_pie(source)?,
             title,
         )?))
-    }
-}
-
-impl Render for PieModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_pie(self, &config.pie, ctx))
     }
 }

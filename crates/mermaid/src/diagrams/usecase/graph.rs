@@ -11,18 +11,76 @@ use super::types::{
     ActorType, Animation, Arrow, BoundaryType, LabelType, Relationship, RelationshipType,
     UseCaseShape, UsecaseJsonNode, UsecaseModel,
 };
-use crate::{config::Value, js};
+use crate::{config::Value, js, svg::edges::Marker};
 
-/// Start and end markers for each arrow type, in the order of [`Arrow`].
-const MARKERS: [(&str, &str); 7] = [
-    ("none", "arrow_point"),
-    ("arrow_point", "none"),
-    ("none", "none"),
-    ("none", "arrow_circle"),
-    ("none", "arrow_cross"),
-    ("arrow_circle", "none"),
-    ("arrow_cross", "none"),
-];
+/// What an edge ends in: one of the shared markers, or the hollow triangle of
+/// a generalization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Head {
+    Marker(Marker),
+    Extension,
+}
+
+impl Arrow {
+    /// The heads at its start and its end.
+    fn heads(self) -> (Option<Head>, Option<Head>) {
+        let head = |marker| Some(Head::Marker(marker));
+        match self {
+            Arrow::Solid => (None, head(Marker::Arrow)),
+            Arrow::Back => (head(Marker::Arrow), None),
+            Arrow::Line => (None, None),
+            Arrow::Circle => (None, head(Marker::Circle)),
+            Arrow::Cross => (None, head(Marker::Cross)),
+            Arrow::CircleReversed => (head(Marker::Circle), None),
+            Arrow::CrossReversed => (head(Marker::Cross), None),
+        }
+    }
+}
+
+/// How a node is drawn, by Mermaid's shape names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NodeShape {
+    /// `usecaseActor`, `usecaseActorHollow`, `usecaseActorAwesome` and
+    /// `usecaseActorIcon`.
+    Actor(ActorType),
+    /// `rect`.
+    Rect,
+    /// `usecaseEllipse`.
+    Ellipse,
+    /// `usecaseBusiness`.
+    BusinessEllipse,
+    /// `note`.
+    Note,
+    /// `usecaseJsonTable`.
+    JsonTable,
+    /// `usecaseSystemBoundary`.
+    SystemBoundary,
+}
+
+/// What an edge stands for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeKind {
+    Relationship(RelationshipType),
+    /// The line from a note to what it is about.
+    Note,
+}
+
+impl EdgeKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            EdgeKind::Relationship(kind) => kind.name(),
+            EdgeKind::Note => "note",
+        }
+    }
+
+    /// An include or an extend.
+    pub fn is_semantic(self) -> bool {
+        matches!(
+            self,
+            EdgeKind::Relationship(RelationshipType::Include | RelationshipType::Extend)
+        )
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct JsonRow {
@@ -38,8 +96,7 @@ pub struct UsecaseGraphNode {
     pub id: String,
     pub label: String,
     pub label_type: LabelType,
-    /// Mermaid's shape names.
-    pub shape: &'static str,
+    pub shape: NodeShape,
     pub is_group: bool,
     pub padding: f64,
     pub css_classes: String,
@@ -60,11 +117,10 @@ pub struct UsecaseGraphEdge {
     pub id: String,
     pub start: String,
     pub end: String,
-    /// The relationship's type, or `note`.
-    pub relationship_type: &'static str,
-    pub pattern: &'static str,
-    pub arrow_type_start: &'static str,
-    pub arrow_type_end: &'static str,
+    pub kind: EdgeKind,
+    pub dotted: bool,
+    pub arrow_start: Option<Head>,
+    pub arrow_end: Option<Head>,
     pub label: Option<String>,
     pub label_type: Option<LabelType>,
     pub classes: String,
@@ -168,14 +224,14 @@ fn class_list(names: &[Option<&str>]) -> String {
         .join(" ")
 }
 
-fn markers(relationship: &Relationship) -> (&'static str, &'static str) {
-    match relationship.kind {
-        RelationshipType::Generalization => ("none", "extension"),
-        RelationshipType::Association => MARKERS
-            .get(relationship.arrow_type)
-            .copied()
-            .unwrap_or(MARKERS[Arrow::LINE_SOLID]),
-        _ => MARKERS[Arrow::SOLID_ARROW],
+impl Relationship {
+    /// The heads at its start and its end.
+    fn heads(&self) -> (Option<Head>, Option<Head>) {
+        match self.kind {
+            RelationshipType::Generalization => (None, Some(Head::Extension)),
+            RelationshipType::Association => self.arrow_type.heads(),
+            _ => Arrow::Solid.heads(),
+        }
     }
 }
 
@@ -218,12 +274,7 @@ impl UsecaseModel {
                 id: actor.id.clone(),
                 label: actor.label.clone(),
                 label_type: actor.label_type,
-                shape: match actor.kind {
-                    ActorType::Normal => "usecaseActor",
-                    ActorType::Hollow => "usecaseActorHollow",
-                    ActorType::Awesome => "usecaseActorAwesome",
-                    ActorType::Icon => "usecaseActorIcon",
-                },
+                shape: NodeShape::Actor(actor.kind),
                 is_group: false,
                 padding: 10.0,
                 css_classes: class_list(&classes),
@@ -254,11 +305,11 @@ impl UsecaseModel {
                 label: use_case.label.clone(),
                 label_type: use_case.label_type,
                 shape: if !ellipse {
-                    "rect"
+                    NodeShape::Rect
                 } else if use_case.business {
-                    "usecaseBusiness"
+                    NodeShape::BusinessEllipse
                 } else {
-                    "usecaseEllipse"
+                    NodeShape::Ellipse
                 },
                 is_group: false,
                 padding: if ellipse { 20.0 } else { 10.0 },
@@ -280,7 +331,7 @@ impl UsecaseModel {
                 id: note.id.clone(),
                 label: note.label.clone(),
                 label_type: note.label_type,
-                shape: "note",
+                shape: NodeShape::Note,
                 is_group: false,
                 padding: 10.0,
                 css_classes: "default usecase-note".into(),
@@ -303,7 +354,7 @@ impl UsecaseModel {
                 id: json.id.clone(),
                 label: json.id.clone(),
                 label_type: LabelType::Text,
-                shape: "usecaseJsonTable",
+                shape: NodeShape::JsonTable,
                 is_group: false,
                 padding: 10.0,
                 css_classes: class_list(&classes),
@@ -331,7 +382,7 @@ impl UsecaseModel {
                 id: boundary.id.clone(),
                 label: boundary.label.clone(),
                 label_type: boundary.label_type,
-                shape: "usecaseSystemBoundary",
+                shape: NodeShape::SystemBoundary,
                 is_group: true,
                 padding: 20.0,
                 css_classes: class_list(&classes),
@@ -353,7 +404,7 @@ impl UsecaseModel {
                 relationship.kind,
                 RelationshipType::Include | RelationshipType::Extend
             );
-            let (arrow_type_start, arrow_type_end) = markers(relationship);
+            let (arrow_start, arrow_end) = relationship.heads();
             let animated = relationship.animate || relationship.animation.is_some();
             let kind_class = format!("relationship-{}", relationship.kind.name());
             let animation_class = format!(
@@ -371,10 +422,10 @@ impl UsecaseModel {
                 id: relationship.id.clone(),
                 start: relationship.source.clone(),
                 end: relationship.target.clone(),
-                relationship_type: relationship.kind.name(),
-                pattern: if semantic { "dotted" } else { "solid" },
-                arrow_type_start,
-                arrow_type_end,
+                kind: EdgeKind::Relationship(relationship.kind),
+                dotted: semantic,
+                arrow_start,
+                arrow_end,
                 label: None,
                 label_type: None,
                 classes: class_list(&classes),
@@ -406,10 +457,10 @@ impl UsecaseModel {
                 id: format!("{}-edge", note.id),
                 start: note.id.clone(),
                 end: note.target.clone(),
-                relationship_type: "note",
-                pattern: "dotted",
-                arrow_type_start: "none",
-                arrow_type_end: "none",
+                kind: EdgeKind::Note,
+                dotted: true,
+                arrow_start: None,
+                arrow_end: None,
                 label: None,
                 label_type: None,
                 classes: "default relationship relationship-note".into(),

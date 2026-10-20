@@ -1,7 +1,10 @@
 //! Pele's `diagrams/eventmodeling/model.ts`.
 
 use crate::diagrams::common::db::Titles;
-use std::collections::{HashMap, HashSet};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+};
 
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -21,7 +24,7 @@ pub struct EmLane {
     #[serde(serialize_with = "js::json_number")]
     pub index: f64,
     pub label: String,
-    pub group: &'static str,
+    pub group: Group,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
     /// Which lane this is, the same for every copy of it.
@@ -34,7 +37,7 @@ pub struct EmLane {
 pub struct EmBox {
     /// The frame number as written, such as "01".
     pub id: String,
-    pub kind: &'static str,
+    pub kind: EntityType,
     pub entity: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,7 +97,7 @@ pub struct EventModelingModel {
 }
 
 impl EntityType {
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Ui => "ui",
             Self::Processor => "processor",
@@ -114,22 +117,15 @@ impl EntityType {
 }
 
 /// The lanes a box's kind puts it in.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Group {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Group {
     Trigger,
     State,
     Stream,
 }
 
 impl Group {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Trigger => "trigger",
-            Self::State => "state",
-            Self::Stream => "stream",
-        }
-    }
-
     /// The group lane's index, its label, and the label prefix of its
     /// namespace lanes.
     fn info(self) -> (f64, &'static str, &'static str) {
@@ -218,7 +214,7 @@ impl EventModelingModel {
                     None => label.to_string(),
                     Some(namespace) => format!("{prefix}{namespace}"),
                 },
-                group: group.name(),
+                group,
                 namespace: namespace.map(str::to_string),
                 key: lane_of.len(),
             };
@@ -242,7 +238,7 @@ impl EventModelingModel {
             let lane = lane(kind.group(), namespace);
             let current = EmBox {
                 id: frame.name.clone(),
-                kind: kind.name(),
+                kind,
                 entity: frame.entity_identifier.clone(),
                 name: if parts.len() == 2 {
                     parts[1].to_string()
@@ -306,7 +302,7 @@ impl EventModelingModel {
         if let Some(text) = header.acc_descr {
             titles.set_acc_descr(&text);
         }
-        lanes.sort_by(|a, b| js::compare(a.index - b.index));
+        lanes.sort_by(|a, b| a.index.partial_cmp(&b.index).unwrap_or(Ordering::Equal));
         Ok(Self {
             kind: "eventmodeling",
             titles,

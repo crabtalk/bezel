@@ -1,13 +1,9 @@
 //! Pele's `diagrams/block/parser.ts`.
 
 use super::{
-    db::{
-        edge_str_to_edge_data, edge_str_to_edge_start_data, edge_str_to_pattern,
-        edge_str_to_thickness, type_str_to_type,
-    },
     lexer::tokenize,
     tokens::T,
-    types::{Block, BlockModel, Statement},
+    types::{Block, BlockKind, BlockModel, Columns, EdgeLine, Statement},
 };
 use crate::{Error, detect::Kind, js, token::Stream};
 
@@ -87,7 +83,7 @@ impl Parser<'_, '_, '_> {
         let mut from = Block {
             id: Some(first.id),
             label: first.label,
-            kind: Some(type_str_to_type(first.type_str.as_deref()).into()),
+            kind: BlockKind::from_brackets(first.type_str.as_deref()),
             directions: first.directions,
             width_in_columns: Some(size),
             ..Block::default()
@@ -109,7 +105,7 @@ impl Parser<'_, '_, '_> {
                 vec![self.db.alloc(Block {
                     id: from.id.clone(),
                     label: from.label.clone(),
-                    kind: from.kind.clone(),
+                    kind: from.kind,
                     directions: from.directions.clone(),
                     ..Block::default()
                 })]
@@ -117,7 +113,7 @@ impl Parser<'_, '_, '_> {
             from = Block {
                 id: Some(to.id.clone()),
                 label: to.label,
-                kind: Some(type_str_to_type(to.type_str.as_deref()).into()),
+                kind: BlockKind::from_brackets(to.type_str.as_deref()),
                 directions: to.directions.clone(),
                 ..Block::default()
             };
@@ -130,12 +126,9 @@ impl Parser<'_, '_, '_> {
                 start: Some(last),
                 end: Some(to.id),
                 label: Some(label),
-                kind: Some("edge".into()),
-                thickness: Some(edge_str_to_thickness(link).into()),
-                pattern: Some(edge_str_to_pattern(link).into()),
+                kind: BlockKind::Edge,
+                line: Some(EdgeLine::of(link)),
                 directions: to.directions,
-                arrow_type_end: Some(edge_str_to_edge_data(link).into()),
-                arrow_type_start: Some(edge_str_to_edge_start_data(link).into()),
                 ..Block::default()
             });
             let block = self.db.alloc(from.clone());
@@ -161,9 +154,13 @@ impl Parser<'_, '_, '_> {
                     list.push(statement);
                 }
                 T::Columns => {
-                    let columns = js::parse_int(self.s.take(), 10);
+                    // The lexer writes `auto` as `-1`.
+                    let columns = match self.s.take() {
+                        "-1" => Columns::Auto,
+                        count => Columns::Count(js::parse_int(count, 10)),
+                    };
                     list.push(Statement::One(self.db.alloc(Block {
-                        kind: Some("column-setting".into()),
+                        kind: BlockKind::ColumnSetting,
                         columns: Some(columns),
                         ..Block::default()
                     })));
@@ -173,7 +170,7 @@ impl Parser<'_, '_, '_> {
                     let id = self.db.generate_id();
                     list.push(Statement::One(self.db.alloc(Block {
                         id: Some(id),
-                        kind: Some("space".into()),
+                        kind: BlockKind::Space,
                         label: Some(String::new()),
                         width: Some(width),
                         children: Some(Vec::new()),
@@ -209,19 +206,19 @@ impl Parser<'_, '_, '_> {
                     let composite = match frame.header {
                         None => self.db.alloc(Block {
                             id: Some(id),
-                            kind: Some("composite".into()),
+                            kind: BlockKind::Composite,
                             label: Some(String::new()),
                             statements: children,
                             ..Block::default()
                         }),
                         Some(Statement::One(header)) => {
                             let block = &mut self.db.nodes[header];
-                            block.kind = Some("composite".into());
+                            block.kind = BlockKind::Composite;
                             block.statements = children;
                             header
                         }
                         Some(Statement::List(items)) => self.db.alloc(Block {
-                            kind: Some("composite".into()),
+                            kind: BlockKind::Composite,
                             statements: children,
                             spread: items,
                             ..Block::default()
@@ -234,7 +231,7 @@ impl Parser<'_, '_, '_> {
                     let id = js::trim(self.s.expect(T::ClassdefId, "")?).to_string();
                     let css = js::trim(self.s.expect(T::ClassdefStyleopts, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
-                        kind: Some("classDef".into()),
+                        kind: BlockKind::ClassDef,
                         id: Some(id),
                         css: Some(css),
                         ..Block::default()
@@ -245,7 +242,7 @@ impl Parser<'_, '_, '_> {
                     let id = js::trim(self.s.expect(T::ClassentityIds, "")?).to_string();
                     let class = js::trim(self.s.expect(T::Styleclass, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
-                        kind: Some("applyClass".into()),
+                        kind: BlockKind::ApplyClass,
                         id: Some(id),
                         style_class: Some(class),
                         ..Block::default()
@@ -256,7 +253,7 @@ impl Parser<'_, '_, '_> {
                     let id = js::trim(self.s.expect(T::StyleEntityIds, "")?).to_string();
                     let styles = js::trim(self.s.expect(T::StyleDefinitionData, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
-                        kind: Some("applyStyles".into()),
+                        kind: BlockKind::ApplyStyles,
                         id: Some(id),
                         styles_str: Some(styles),
                         ..Block::default()

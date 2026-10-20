@@ -2,6 +2,7 @@
 
 use crate::diagrams::common::db::Titles;
 use crate::diagrams::common::style_class::StyleClass;
+use crate::geom::Direction;
 use indexmap::IndexMap;
 use serde::Serialize;
 
@@ -23,7 +24,7 @@ const MAX_STYLE_COPIES: usize = 1_000_000;
 pub struct RequirementModel {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    pub direction: String,
+    pub direction: Direction,
     pub requirements: IndexMap<String, Requirement>,
     pub elements: IndexMap<String, RequirementElement>,
     pub relations: Vec<Relation>,
@@ -47,7 +48,7 @@ impl Default for RequirementModel {
     fn default() -> Self {
         Self {
             kind: "requirement",
-            direction: "TB".into(),
+            direction: Direction::TopToBottom,
             requirements: IndexMap::new(),
             elements: IndexMap::new(),
             relations: Vec::new(),
@@ -83,10 +84,6 @@ fn copy(count: &mut usize, target: &mut Vec<String>, styles: &[String]) -> Resul
 }
 
 impl RequirementModel {
-    pub fn set_direction(&mut self, dir: &str) {
-        self.direction = dir.to_string();
-    }
-
     pub fn add_requirement(&mut self, name: &str, kind: RequirementType) {
         if !self.requirements.contains_key(name) {
             let requirement = Requirement {

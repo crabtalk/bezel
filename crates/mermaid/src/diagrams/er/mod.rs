@@ -12,9 +12,8 @@ pub mod types;
 
 pub use db::ErModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct Er;
 
@@ -33,11 +32,5 @@ impl Diagram for Er {
         }
         parser::parse_er(source, &mut db)?;
         Ok(Model::Er(Box::new(db)))
-    }
-}
-
-impl Render for ErModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_er(self, config, ctx))
     }
 }

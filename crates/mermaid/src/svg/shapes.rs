@@ -7,7 +7,7 @@ use std::{
 };
 
 use super::{
-    builder::{fragment, num},
+    builder::{fragment, num, rect},
     theme::RADIUS,
 };
 use crate::{
@@ -259,7 +259,8 @@ fn box_size(tw: f64, th: f64) -> ShapeSize {
     )
 }
 
-fn poly<'a>(points: &'a [Point], a: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
+/// A `<polygon>` through `points`, with `a` after its points.
+pub fn poly<'a>(points: &'a [Point], a: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
     fragment(move |f| {
         f.write_str("<polygon points=\"")?;
         for (i, point) in points.iter().enumerate() {
@@ -269,19 +270,6 @@ fn poly<'a>(points: &'a [Point], a: impl fmt::Display + 'a) -> impl fmt::Display
             write!(f, "{point}")?;
         }
         write!(f, "\"{a}/>")
-    })
-}
-
-fn rect(w: f64, h: f64, a: impl fmt::Display, rx: impl fmt::Display) -> impl fmt::Display {
-    fragment(move |f| {
-        write!(
-            f,
-            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{rx}{a}/>",
-            num(-w / 2.0),
-            num(-h / 2.0),
-            num(w),
-            num(h)
-        )
     })
 }
 
@@ -404,9 +392,9 @@ impl Shape {
 
     fn def(self) -> ShapeDef {
         match self {
-            Shape::Rect => def(box_size, |out, w, h, a, _| { let _ = write!(out, "{}", rect(w, h, a, rounded())); }).span(flat),
+            Shape::Rect => def(box_size, |out, w, h, a, _| { let _ = write!(out, "{}", centered_rect(w, h, a, rounded())); }).span(flat),
             Shape::Rounded => def(box_size, |out, w, h, a, _| {
-let _ = write!(out, "{}", rect(w, h, a, format_args!(" rx=\"{}\"", num(12f64.min(h / 2.0)))));
+let _ = write!(out, "{}", centered_rect(w, h, a, format_args!(" rx=\"{}\"", num(12f64.min(h / 2.0)))));
 })
         .span(flat),
             Shape::Stadium => def(
@@ -414,7 +402,7 @@ let _ = write!(out, "{}", rect(w, h, a, format_args!(" rx=\"{}\"", num(12f64.min
                 let h = padded(th);
                 sized(tw + h * 0.5 + 2.0 * PAD_X - 8.0, h, 0.0)
             },
-            |out, w, h, a, _| { let _ = write!(out, "{}", rect(w, h, a, format_args!(" rx=\"{}\"", num(h / 2.0)))); })
+            |out, w, h, a, _| { let _ = write!(out, "{}", centered_rect(w, h, a, format_args!(" rx=\"{}\"", num(h / 2.0)))); })
         .inset(|_w, h, side, t| {
             if !side.is_horizontal() {
                 bulge(t, h / 2.0, h / 2.0)
@@ -427,7 +415,7 @@ let _ = write!(out, "{}", rect(w, h, a, format_args!(" rx=\"{}\"", num(12f64.min
             |tw, th| sized(tw + 2.0 * PAD_X + 16.0, padded(th), 0.0),
             |out, w, h, a, line| {
                 let x = w / 2.0 - 8.0;
-let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
+let _ = write!(out, "{}{}", centered_rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}V{}M{},{}V{}\" fill=\"none\"{line}/>",
                         num(-x),
                         num(-h / 2.0),
@@ -580,7 +568,7 @@ let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0, -h / 2.0), Point::new(w / 
         .span(quarter_across),
             Shape::Text => def(
             |tw, th| sized(tw + 8.0, th + 8.0, 0.0),
-            |out, w, h, _, _| { let _ = write!(out, "{}", rect(w, h, " fill=\"none\" stroke=\"none\"", "")); })
+            |out, w, h, _, _| { let _ = write!(out, "{}", centered_rect(w, h, " fill=\"none\" stroke=\"none\"", "")); })
         .span(flat),
             Shape::SmallCircle => def(fixed14, |out, w, _h, a, _| {
 let _ = write!(out, "{}", format_args!("<circle r=\"{}\"{a}/>", num(w / 2.0)));
@@ -608,7 +596,7 @@ let _ = write!(out, "{}", format_args!(
         .span(round_span),
             Shape::Fork => def(
             |_, _| sized(72.0, 8.0, 0.0),
-            |out, w, h, _a, line| { let _ = write!(out, "{}", rect(w, h, format_args!(" fill=\"var(--_l)\"{line}"), " rx=\"2\"")); })
+            |out, w, h, _a, line| { let _ = write!(out, "{}", centered_rect(w, h, format_args!(" fill=\"var(--_l)\"{line}"), " rx=\"2\"")); })
         .no_label()
         .span(|w, h, sideways| (if sideways { h } else { w }) - 8.0),
             Shape::NotchedRect => def(box_size, |out, w, h, a, _| {
@@ -619,7 +607,7 @@ let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0 + c, -h / 2.0), Point::new(
             Shape::LinedRect => def(
             |tw, th| sized(tw + 2.0 * PAD_X + 8.0, padded(th), 0.0),
             |out, w, h, a, line| {
-let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
+let _ = write!(out, "{}{}", centered_rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}V{}\" fill=\"none\"{line}/>",
                         num(-w / 2.0 + 8.0),
                         num(-h / 2.0),
@@ -630,7 +618,7 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
             Shape::DividedRect => def(
             |tw, th| sized(tw + 2.0 * PAD_X, th + 2.0 * PAD_Y + 8.0, 4.0),
             |out, w, h, a, line| {
-let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
+let _ = write!(out, "{}{}", centered_rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}H{}\" fill=\"none\"{line}/>",
                         num(-w / 2.0),
                         num(-h / 2.0 + 8.0),
@@ -641,7 +629,7 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
             Shape::WindowPane => def(
             |tw, th| sized(tw + 2.0 * PAD_X + 8.0, th + 2.0 * PAD_Y + 8.0, 4.0),
             |out, w, h, a, line| {
-let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
+let _ = write!(out, "{}{}", centered_rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}V{}M{},{}H{}\" fill=\"none\"{line}/>",
                         num(-w / 2.0 + 8.0),
                         num(-h / 2.0),
@@ -797,7 +785,7 @@ let _ = write!(out, "{}", format_args!(
 })
         .inset(|_w, _h, side, _t| if !side.is_horizontal() { 0.0 } else { 8.0 }),
             Shape::Datastore => def(box_size, |out, w, h, a, line| {
-let _ = write!(out, "{}{}", rect(
+let _ = write!(out, "{}{}", centered_rect(
                 w,
                 h,
                 &a.replacen("stroke=\"var(--_b)\"", "stroke=\"none\"", 1),
@@ -872,7 +860,7 @@ let _ = write!(out, "{}{}", path(
             Shape::Console => def(
             |tw, th| sized((tw + 2.0 * PAD_X).max(72.0), th + 2.0 * PAD_Y + 12.0, 6.0),
             |out, w, h, a, line| {
-let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
+let _ = write!(out, "{}{}", centered_rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}H{}M{},{}l3,2.5l-3,2.5M{},{}h4\" fill=\"none\"{line}/>",
                         num(-w / 2.0),
                         num(-h / 2.0 + 12.0),
@@ -890,7 +878,7 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                 let _ = write!(
                     out,
                     "{}<path d=\"M{},{}H{}\" fill=\"none\"{line}/>",
-                    rect(w, h, a, rounded()),
+                    centered_rect(w, h, a, rounded()),
                     num(-w / 2.0),
                     num(-h / 2.0 + 12.0),
                     num(w / 2.0)
@@ -967,13 +955,13 @@ let _ = write!(out, "{}", path(
 })
         .inset(|_w, _h, side, _t| if !side.is_horizontal() { 2.0 } else { 1.0 }),
             Shape::BraceLeft => def(one_brace, |out, w, h, _a, line| {
-let _ = write!(out, "{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(-w / 2.0 + 12.0, h, -1.0, line));
+let _ = write!(out, "{}{}", centered_rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(-w / 2.0 + 12.0, h, -1.0, line));
 }),
             Shape::BraceRight => def(one_brace, |out, w, h, _a, line| {
-let _ = write!(out, "{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(w / 2.0 - 12.0, h, 1.0, line));
+let _ = write!(out, "{}{}", centered_rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(w / 2.0 - 12.0, h, 1.0, line));
 }),
             Shape::Braces => def(two_braces, |out, w, h, _a, line| {
-let _ = write!(out, "{}{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(-w / 2.0 + 12.0, h, -1.0, line), brace(w / 2.0 - 12.0, h, 1.0, line));
+let _ = write!(out, "{}{}{}", centered_rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(-w / 2.0 + 12.0, h, -1.0, line), brace(w / 2.0 - 12.0, h, 1.0, line));
 }),
             Shape::Bolt => def(
             |_, _| sized(36.0, 56.0, 0.0),
@@ -1102,7 +1090,7 @@ let _ = write!(out, "{}", path(
 })
         .inset(|_w, h, side, _t| if side == Side::Right { h * 0.2 } else { 0.0 }),
             Shape::TaggedRect => def(box_size, |out, w, h, a, line| {
-let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
+let _ = write!(out, "{}{}", centered_rect(w, h, a, rounded()), format_args!(
                     "<path d=\"M{},{}L{},{}\" fill=\"none\"{line}/>",
                     num(w / 2.0 - 12.0),
                     num(h / 2.0),
@@ -1185,6 +1173,67 @@ let _ = write!(out, "{}", format_args!(
     pub fn has_label(self) -> bool {
         !self.def().no_label
     }
+
+    /// Mermaid's name for the shape.
+    pub fn name(self) -> &'static str {
+        match self {
+            Shape::Rect => "rect",
+            Shape::Rounded => "rounded",
+            Shape::Stadium => "stadium",
+            Shape::FramedRect => "fr-rect",
+            Shape::Cylinder => "cyl",
+            Shape::Circle => "circle",
+            Shape::DoubleCircle => "dbl-circ",
+            Shape::Ellipse => "ellipse",
+            Shape::Diamond => "diam",
+            Shape::Hexagon => "hex",
+            Shape::Odd => "odd",
+            Shape::LeanRight => "lean-r",
+            Shape::LeanLeft => "lean-l",
+            Shape::TrapezoidBottom => "trap-b",
+            Shape::TrapezoidTop => "trap-t",
+            Shape::Text => "text",
+            Shape::SmallCircle => "sm-circ",
+            Shape::FilledCircle => "f-circ",
+            Shape::FramedCircle => "fr-circ",
+            Shape::Fork => "fork",
+            Shape::NotchedRect => "notch-rect",
+            Shape::LinedRect => "lin-rect",
+            Shape::DividedRect => "div-rect",
+            Shape::WindowPane => "win-pane",
+            Shape::Triangle => "tri",
+            Shape::FlippedTriangle => "flip-tri",
+            Shape::SlopedRect => "sl-rect",
+            Shape::NotchedPentagon => "notch-pent",
+            Shape::Hourglass => "hourglass",
+            Shape::Delay => "delay",
+            Shape::HorizontalCylinder => "h-cyl",
+            Shape::CrossedCircle => "cross-circ",
+            Shape::StackedRect => "st-rect",
+            Shape::Document => "doc",
+            Shape::Flag => "flag",
+            Shape::Datastore => "datastore",
+            Shape::Folder => "folder",
+            Shape::Bucket => "bucket",
+            Shape::Console => "console",
+            Shape::Browser => "browser",
+            Shape::Person => "person",
+            Shape::Bang => "bang",
+            Shape::Cloud => "cloud",
+            Shape::BraceLeft => "brace",
+            Shape::BraceRight => "brace-r",
+            Shape::Braces => "braces",
+            Shape::Bolt => "bolt",
+            Shape::LinedCylinder => "lin-cyl",
+            Shape::CurvedTrapezoid => "curv-trap",
+            Shape::Documents => "docs",
+            Shape::BowRect => "bow-rect",
+            Shape::TaggedRect => "tag-rect",
+            Shape::TaggedDocument => "tag-doc",
+            Shape::LinedDocument => "lin-doc",
+            Shape::CollapsedGroup => "collapsedGroup",
+        }
+    }
 }
 
 fn lean_size(tw: f64, th: f64) -> ShapeSize {
@@ -1234,4 +1283,19 @@ impl ShapeView {
             end.x += if side == Side::Left { amount } else { -amount };
         }
     }
+}
+
+/// A `w` by `h` `<rect>` centred on the origin, with `rx` then `a`.
+fn centered_rect(w: f64, h: f64, a: impl fmt::Display, rx: impl fmt::Display) -> impl fmt::Display {
+    fragment(move |f| {
+        write!(
+            f,
+            "{}",
+            rect(
+                Point::new(-w / 2.0, -h / 2.0),
+                Size::new(w, h),
+                format_args!("{rx}{a}")
+            )
+        )
+    })
 }

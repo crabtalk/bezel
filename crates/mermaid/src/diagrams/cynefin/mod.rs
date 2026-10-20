@@ -8,9 +8,8 @@ pub mod render;
 
 pub use model::CynefinModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::CynefinConfig;
 
 pub struct Cynefin;
@@ -28,11 +27,5 @@ impl Diagram for Cynefin {
             parser::parse_cynefin(source)?,
             title,
         )))
-    }
-}
-
-impl Render for CynefinModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_cynefin(self, &config.cynefin, ctx))
     }
 }

@@ -19,42 +19,50 @@ pub fn prepare_text_for_parsing(text: &str) -> String {
 
 pub fn parse_sankey(src: &str, db: &mut SankeyModel) -> Result<(), Error> {
     let tokens = tokenize(src);
-    let mut s = Stream::new(Kind::Sankey, src, &tokens);
+    let mut p = Parser {
+        s: Stream::new(Kind::Sankey, src, &tokens),
+    };
 
-    s.expect(T::Sankey, "")?;
-    s.expect(T::Newline, "")?;
+    p.s.expect(T::Sankey, "")?;
+    p.s.expect(T::Newline, "")?;
     loop {
-        let from = name(&mut s)?;
-        s.expect(T::Comma, "'NEWLINE', 'EOF'")?;
-        let to = name(&mut s)?;
-        s.expect(T::Comma, "'NEWLINE', 'EOF'")?;
-        let amount = field(&mut s)?;
+        let from = p.name()?;
+        p.s.expect(T::Comma, "'NEWLINE', 'EOF'")?;
+        let to = p.name()?;
+        p.s.expect(T::Comma, "'NEWLINE', 'EOF'")?;
+        let amount = p.field()?;
         let source = db.find_or_create_node(&from);
         let target = db.find_or_create_node(&to);
         db.add_link(source, target, js::parse_float(js::trim(amount)));
-        if !s.eat(T::Newline) {
+        if !p.s.eat(T::Newline) {
             break;
         }
     }
-    s.eat(T::Eof);
-    if !s.is(T::End) {
-        return Err(s.fail("'NEWLINE', 'EOF'"));
+    p.s.eat(T::Eof);
+    if !p.s.is(T::End) {
+        return Err(p.s.fail("'NEWLINE', 'EOF'"));
     }
     Ok(())
 }
 
-fn field<'t>(s: &mut Stream<'t, '_, T>) -> Result<&'t str, Error> {
-    if s.is(T::NonEscapedText) {
-        return Ok(s.take());
-    }
-    if !s.eat(T::Dquote) {
-        return Err(s.fail("'DQUOTE', 'NON_ESCAPED_TEXT'"));
-    }
-    let text = s.expect(T::EscapedText, "")?;
-    s.expect(T::Dquote, "")?;
-    Ok(text)
+struct Parser<'t, 's> {
+    s: Stream<'t, 's, T>,
 }
 
-fn name(s: &mut Stream<'_, '_, T>) -> Result<String, Error> {
-    Ok(js::trim(field(s)?).replace("\"\"", "\""))
+impl<'t> Parser<'t, '_> {
+    fn field(&mut self) -> Result<&'t str, Error> {
+        if self.s.is(T::NonEscapedText) {
+            return Ok(self.s.take());
+        }
+        if !self.s.eat(T::Dquote) {
+            return Err(self.s.fail("'DQUOTE', 'NON_ESCAPED_TEXT'"));
+        }
+        let text = self.s.expect(T::EscapedText, "")?;
+        self.s.expect(T::Dquote, "")?;
+        Ok(text)
+    }
+
+    fn name(&mut self) -> Result<String, Error> {
+        Ok(js::trim(self.field()?).replace("\"\"", "\""))
+    }
 }

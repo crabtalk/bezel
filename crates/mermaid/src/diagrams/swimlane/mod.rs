@@ -6,15 +6,16 @@ use super::{
     flowchart::{
         FlowDb, Flowchart,
         graph::{FlowGraph, GraphNode},
-        render::{FlowVariant, render_flowchart},
-        types::LabelType,
+        render::FlowVariant,
+        shapes::NodeShape,
+        types::{LabelType, NodeAssets},
     },
 };
 use serde::Serialize;
 
-use crate::geom::{Direction, Point, Size};
 use crate::{
     Config, Error, ParseLimits, Rendered,
+    geom::{Direction, Point, Size},
     layout::{
         compound::{CEdge, CNode},
         lanes::lane_layout,
@@ -22,6 +23,7 @@ use crate::{
     },
     svg::{
         builder::{EscText, num},
+        shapes::Shape,
         theme::ResolvedStyle,
     },
     text::Label,
@@ -61,7 +63,7 @@ impl FlowVariant for Lanes {
             id: DEFAULT_LANE.to_string(),
             label: None,
             label_type: LabelType::Text,
-            shape: "rect".to_string(),
+            shape: NodeShape::Drawn(Shape::Rect),
             is_group: true,
             parent_id: None,
             css_styles: Vec::new(),
@@ -71,14 +73,7 @@ impl FlowVariant for Lanes {
             link: None,
             link_target: None,
             tooltip: None,
-            icon: None,
-            pos: None,
-            img: None,
-            asset_width: None,
-            asset_height: None,
-            constraint: None,
-            color_index: None,
-            metadata: None,
+            assets: NodeAssets::default(),
         });
     }
 
@@ -116,34 +111,29 @@ impl FlowVariant for Lanes {
         dir: Direction,
     ) {
         let p = crate::PREFIX;
-        let left = c.center.x - c.size.w / 2.0;
-        let top = c.center.y - c.size.h / 2.0;
+        let corner = c.corner();
         let sideways = !dir.is_vertical();
-        let cx = if sideways {
-            left + c.pad_top / 2.0
+        // The middle of the title band.
+        let at = if sideways {
+            Point::new(corner.x + c.pad_top / 2.0, c.center.y)
         } else {
-            c.center.x
-        };
-        let cy = if sideways {
-            c.center.y
-        } else {
-            top + c.pad_top / 2.0
+            Point::new(c.center.x, corner.y + c.pad_top / 2.0)
         };
         let attrs = format!(
             " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
             style.text
         );
-        let text = label.svg(Point::new(cx, cy), &attrs);
+        let text = label.svg(at, &attrs);
         let _ = write!(
             out,
             "<g class=\"{p}-cluster {p}-lane{classes}\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"var(--_b)\"/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"var(--_a)\" stroke=\"var(--_b)\"{}/>",
             EscText(id),
-            num(left),
-            num(top),
+            num(corner.x),
+            num(corner.y),
             num(c.size.w),
             num(c.size.h),
-            num(left),
-            num(top),
+            num(corner.x),
+            num(corner.y),
             num(if sideways { c.pad_top } else { c.size.w }),
             num(if sideways { c.size.h } else { c.pad_top }),
             style.shape,
@@ -152,8 +142,8 @@ impl FlowVariant for Lanes {
             write!(
                 out,
                 "<g transform=\"rotate(-90 {} {})\">{text}</g></g>",
-                num(cx),
-                num(cy)
+                num(at.x),
+                num(at.y)
             )
         } else {
             write!(out, "{text}</g>")
@@ -188,6 +178,6 @@ pub struct SwimlaneDb(pub FlowDb);
 impl Render for SwimlaneDb {
     fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
         let section = config.swimlane.as_ref().unwrap_or(&config.flowchart);
-        Ok(render_flowchart(&self.0, section, ctx, Some(&Lanes)))
+        Ok(self.0.render_as(section, ctx, Some(&Lanes)))
     }
 }

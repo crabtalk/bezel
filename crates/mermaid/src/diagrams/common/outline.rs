@@ -2,11 +2,13 @@
 //! adds `@{ … }` metadata after a node and keeps `@` out of node ids. Pele's
 //! `diagrams/common/outline.ts`.
 
+use serde_repr::Serialize_repr;
 use std::borrow::Cow;
 
 use crate::{
     detect::Kind,
     error::Error,
+    svg::shapes::Shape,
     token::{Cursor, Grammar, Stream, Token, grammar},
     util::chars::{is_space, width_at},
 };
@@ -64,33 +66,46 @@ const STOP: &str = "'SPACELINE', 'NL', 'EOF'";
 /// What `.` does not match.
 const LINE_ENDS: &[char] = &['\n', '\r', '\u{2028}', '\u{2029}'];
 
-pub mod node_type {
-    pub const DEFAULT: i32 = 0;
-    pub const NO_BORDER: i32 = 0;
-    pub const ROUNDED_RECT: i32 = 1;
-    pub const RECT: i32 = 2;
-    pub const CIRCLE: i32 = 3;
-    pub const CLOUD: i32 = 4;
-    pub const BANG: i32 = 5;
-    pub const HEXAGON: i32 = 6;
+/// A node's type, by the delimiters around its text, numbered as in Mermaid.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize_repr)]
+#[repr(u8)]
+pub enum NodeType {
+    /// No delimiters.
+    #[default]
+    Default = 0,
+    RoundedRect = 1,
+    Rect = 2,
+    Circle = 3,
+    Cloud = 4,
+    Bang = 5,
+    Hexagon = 6,
 }
 
-/// Any opening delimiter pairs with any closing one, as in Mermaid.
-pub fn get_type(start: &str, end: &str) -> i32 {
-    match start {
-        "[" => node_type::RECT,
-        "(" => {
-            if end == ")" {
-                node_type::ROUNDED_RECT
-            } else {
-                node_type::CLOUD
-            }
+impl NodeType {
+    /// Any opening delimiter pairs with any closing one, as in Mermaid.
+    pub fn of_delimiters(start: &str, end: &str) -> Self {
+        match start {
+            "[" => NodeType::Rect,
+            "(" if end == ")" => NodeType::RoundedRect,
+            "(" | ")" => NodeType::Cloud,
+            "((" => NodeType::Circle,
+            "))" => NodeType::Bang,
+            "{{" => NodeType::Hexagon,
+            _ => NodeType::Default,
         }
-        "((" => node_type::CIRCLE,
-        ")" => node_type::CLOUD,
-        "))" => node_type::BANG,
-        "{{" => node_type::HEXAGON,
-        _ => node_type::DEFAULT,
+    }
+
+    /// The shape a node of this type is drawn as, `None` for no delimiters.
+    pub fn shape(self) -> Option<Shape> {
+        Some(match self {
+            NodeType::Default => return None,
+            NodeType::RoundedRect => Shape::Rounded,
+            NodeType::Rect => Shape::Rect,
+            NodeType::Circle => Shape::Circle,
+            NodeType::Cloud => Shape::Cloud,
+            NodeType::Bang => Shape::Bang,
+            NodeType::Hexagon => Shape::Hexagon,
+        })
     }
 }
 
@@ -101,7 +116,7 @@ pub trait OutlineDb {
         level: usize,
         id: &str,
         descr: &str,
-        kind: i32,
+        kind: NodeType,
         shape_data: Option<&str>,
     ) -> Result<(), Error>;
     fn decorate_node(&mut self, icon: Option<&str>, class: Option<&str>);
@@ -194,12 +209,12 @@ impl Outline {
                     if !s.kind().is_stop() && !s.is(T::ShapeData) {
                         return Err(s.fail(&format!("{STOP}{data}")));
                     }
-                    (descr, get_type(start, end))
+                    (descr, NodeType::of_delimiters(start, end))
                 } else {
                     if !s.kind().is_stop() && !s.is(T::ShapeData) {
                         return Err(s.fail(&format!("{STOP}, 'NODE_DSTART'{data}")));
                     }
-                    (id.unwrap_or_default(), node_type::DEFAULT)
+                    (id.unwrap_or_default(), NodeType::Default)
                 };
                 let node_id = id.unwrap_or(descr);
                 let shape_data = if s.is(T::ShapeData) {

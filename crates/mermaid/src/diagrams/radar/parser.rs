@@ -1,5 +1,6 @@
 //! Pele's `diagrams/radar/parser.ts`.
 
+use super::model::Graticule;
 use crate::{
     detect::Kind,
     diagrams::common::{
@@ -78,7 +79,7 @@ pub struct CurveAst {
 
 pub enum OptionAst {
     ShowLegend(bool),
-    Graticule(String),
+    Graticule(Graticule),
     Ticks(f64),
     Max(f64),
     Min(f64),
@@ -157,7 +158,10 @@ impl Parser<'_> {
         Ok(match kind {
             Token::ShowLegend => OptionAst::ShowLegend(self.r.expect(Token::Boolean)? == "true"),
             Token::Graticule => {
-                OptionAst::Graticule(self.r.expect(Token::GraticuleValue)?.to_string())
+                OptionAst::Graticule(match self.r.expect(Token::GraticuleValue)? {
+                    "polygon" => Graticule::Polygon,
+                    _ => Graticule::Circle,
+                })
             }
             Token::Ticks => OptionAst::Ticks(self.r.number(Token::Number)?),
             Token::Max => OptionAst::Max(self.r.number(Token::Number)?),

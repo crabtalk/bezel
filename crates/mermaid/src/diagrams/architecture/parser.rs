@@ -1,6 +1,7 @@
 //! Pele's `diagrams/architecture/parser.ts`.
 
 use crate::util::chars::inner;
+use serde::Serialize;
 
 use crate::{
     detect::Kind,
@@ -9,6 +10,7 @@ use crate::{
         string, string_value, title, token_kinds, whitespace, yaml,
     },
     error::Error,
+    geom::Side,
     js,
 };
 
@@ -54,8 +56,42 @@ fn word(text: &'static str) -> TokenType<Token> {
     TokenType::literal(text).longer(&[Token::Id])
 }
 
-/// One of the four sides of a node: `L`, `R`, `T` or `B`.
-pub type Side = String;
+/// The side a direction letter names: `L`, `R`, `T` or `B`.
+fn side(letter: &str) -> Side {
+    match letter {
+        "L" => Side::Left,
+        "R" => Side::Right,
+        "T" => Side::Top,
+        _ => Side::Bottom,
+    }
+}
+
+/// A side as the source names it.
+pub(super) fn side_letter<S: serde::Serializer>(side: &Side, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(match side {
+        Side::Left => "L",
+        Side::Right => "R",
+        Side::Top => "T",
+        Side::Bottom => "B",
+    })
+}
+
+/// Which way an `align` directive lines its members up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Alignment {
+    Row,
+    Column,
+}
+
+impl Alignment {
+    pub fn name(self) -> &'static str {
+        match self {
+            Alignment::Row => "row",
+            Alignment::Column => "column",
+        }
+    }
+}
 
 pub struct GroupAst {
     pub id: String,
@@ -90,7 +126,7 @@ pub struct EdgeAst {
 }
 
 pub struct AlignmentAst {
-    pub direction: String,
+    pub direction: Alignment,
     pub members: Vec<String>,
 }
 
@@ -181,7 +217,7 @@ impl Parser<'_> {
         let lhs_id = self.r.take().to_string();
         let lhs_group = self.r.accept(Token::ArrowGroup);
         self.r.expect(Token::Colon)?;
-        let lhs_dir = self.r.expect(Token::Direction)?.to_string();
+        let lhs_dir = side(self.r.expect(Token::Direction)?);
         let lhs_into = self.r.accept(Token::Into);
         let mut title = None;
         if !self.r.accept(Token::Dashes) {
@@ -192,7 +228,7 @@ impl Parser<'_> {
             self.r.expect(Token::Dash)?;
         }
         let rhs_into = self.r.accept(Token::Into);
-        let rhs_dir = self.r.expect(Token::Direction)?.to_string();
+        let rhs_dir = side(self.r.expect(Token::Direction)?);
         self.r.expect(Token::Colon)?;
         let rhs_id = self.r.expect(Token::Id)?.to_string();
         let rhs_group = self.r.accept(Token::ArrowGroup);
@@ -211,10 +247,13 @@ impl Parser<'_> {
 
     fn alignment(&mut self) -> Result<AlignmentAst, Error> {
         self.r.bump();
-        if !self.r.at(Token::Row) && !self.r.at(Token::Column) {
+        let direction = if self.r.accept(Token::Row) {
+            Alignment::Row
+        } else if self.r.accept(Token::Column) {
+            Alignment::Column
+        } else {
             return Err(self.r.fail("'row' or 'column'"));
-        }
-        let direction = self.r.take().to_string();
+        };
         let mut members = vec![
             self.r.expect(Token::Id)?.to_string(),
             self.r.expect(Token::Id)?.to_string(),

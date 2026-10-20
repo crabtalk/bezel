@@ -8,9 +8,8 @@ pub mod render;
 
 pub use db::{TimelineModel, TimelinePeriod};
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::TimelineConfig;
 
 pub struct Timeline;
@@ -28,11 +27,5 @@ impl Diagram for Timeline {
         db.titles.title = title.map(str::to_string);
         parser::parse_timeline(source, &mut db)?;
         Ok(Model::Timeline(db))
-    }
-}
-
-impl Render for TimelineModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_timeline(self, &config.timeline, ctx))
     }
 }

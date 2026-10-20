@@ -11,9 +11,8 @@ pub mod types;
 
 pub use db::RequirementModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct Requirement;
 
@@ -32,11 +31,5 @@ impl Diagram for Requirement {
         }
         parser::parse_requirement(source, &mut db)?;
         Ok(Model::Requirement(Box::new(db)))
-    }
-}
-
-impl Render for RequirementModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_requirement(self, config, ctx))
     }
 }

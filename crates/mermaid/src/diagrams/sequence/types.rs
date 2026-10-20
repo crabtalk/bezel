@@ -1,76 +1,191 @@
 //! Pele's `diagrams/sequence/types.ts`.
 
 use serde::{Serialize, Serializer, ser::SerializeMap};
+use serde_repr::Serialize_repr;
 
+use super::actors::ActorKind;
 use crate::{config::Value, js};
 
-/// The message kinds, numbered as in Mermaid.
-pub mod line {
-    pub const SOLID: i32 = 0;
-    pub const DOTTED: i32 = 1;
-    pub const NOTE: i32 = 2;
-    pub const SOLID_CROSS: i32 = 3;
-    pub const DOTTED_CROSS: i32 = 4;
-    pub const SOLID_OPEN: i32 = 5;
-    pub const DOTTED_OPEN: i32 = 6;
-    pub const LOOP_START: i32 = 10;
-    pub const LOOP_END: i32 = 11;
-    pub const ALT_START: i32 = 12;
-    pub const ALT_ELSE: i32 = 13;
-    pub const ALT_END: i32 = 14;
-    pub const OPT_START: i32 = 15;
-    pub const OPT_END: i32 = 16;
-    pub const ACTIVE_START: i32 = 17;
-    pub const ACTIVE_END: i32 = 18;
-    pub const PAR_START: i32 = 19;
-    pub const PAR_AND: i32 = 20;
-    pub const PAR_END: i32 = 21;
-    pub const RECT_START: i32 = 22;
-    pub const RECT_END: i32 = 23;
-    pub const SOLID_POINT: i32 = 24;
-    pub const DOTTED_POINT: i32 = 25;
-    pub const AUTONUMBER: i32 = 26;
-    pub const CRITICAL_START: i32 = 27;
-    pub const CRITICAL_OPTION: i32 = 28;
-    pub const CRITICAL_END: i32 = 29;
-    pub const BREAK_START: i32 = 30;
-    pub const BREAK_END: i32 = 31;
-    pub const PAR_OVER_START: i32 = 32;
-    pub const BIDIRECTIONAL_SOLID: i32 = 33;
-    pub const BIDIRECTIONAL_DOTTED: i32 = 34;
-    pub const SOLID_TOP: i32 = 41;
-    pub const SOLID_BOTTOM: i32 = 42;
-    pub const STICK_TOP: i32 = 43;
-    pub const STICK_BOTTOM: i32 = 44;
-    pub const SOLID_ARROW_TOP_REVERSE: i32 = 45;
-    pub const SOLID_ARROW_BOTTOM_REVERSE: i32 = 46;
-    pub const STICK_ARROW_TOP_REVERSE: i32 = 47;
-    pub const STICK_ARROW_BOTTOM_REVERSE: i32 = 48;
-    pub const SOLID_TOP_DOTTED: i32 = 51;
-    pub const SOLID_BOTTOM_DOTTED: i32 = 52;
-    pub const STICK_TOP_DOTTED: i32 = 53;
-    pub const STICK_BOTTOM_DOTTED: i32 = 54;
-    pub const SOLID_ARROW_TOP_REVERSE_DOTTED: i32 = 55;
-    pub const SOLID_ARROW_BOTTOM_REVERSE_DOTTED: i32 = 56;
-    pub const STICK_ARROW_TOP_REVERSE_DOTTED: i32 = 57;
-    pub const STICK_ARROW_BOTTOM_REVERSE_DOTTED: i32 = 58;
-    pub const CENTRAL_CONNECTION: i32 = 59;
-    pub const CENTRAL_CONNECTION_REVERSE: i32 = 60;
-    pub const CENTRAL_CONNECTION_DUAL: i32 = 61;
+/// A message's kind, numbered as in Mermaid. Besides lines it covers notes,
+/// numbering, activations and the starts, sections and ends of blocks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize_repr)]
+#[repr(u8)]
+pub enum LineType {
+    Solid = 0,
+    Dotted = 1,
+    Note = 2,
+    SolidCross = 3,
+    DottedCross = 4,
+    SolidOpen = 5,
+    DottedOpen = 6,
+    LoopStart = 10,
+    LoopEnd = 11,
+    AltStart = 12,
+    AltElse = 13,
+    AltEnd = 14,
+    OptStart = 15,
+    OptEnd = 16,
+    ActiveStart = 17,
+    ActiveEnd = 18,
+    ParStart = 19,
+    ParAnd = 20,
+    ParEnd = 21,
+    RectStart = 22,
+    RectEnd = 23,
+    SolidPoint = 24,
+    DottedPoint = 25,
+    Autonumber = 26,
+    CriticalStart = 27,
+    CriticalOption = 28,
+    CriticalEnd = 29,
+    BreakStart = 30,
+    BreakEnd = 31,
+    ParOverStart = 32,
+    BidirectionalSolid = 33,
+    BidirectionalDotted = 34,
+    SolidTop = 41,
+    SolidBottom = 42,
+    StickTop = 43,
+    StickBottom = 44,
+    SolidArrowTopReverse = 45,
+    SolidArrowBottomReverse = 46,
+    StickArrowTopReverse = 47,
+    StickArrowBottomReverse = 48,
+    SolidTopDotted = 51,
+    SolidBottomDotted = 52,
+    StickTopDotted = 53,
+    StickBottomDotted = 54,
+    SolidArrowTopReverseDotted = 55,
+    SolidArrowBottomReverseDotted = 56,
+    StickArrowTopReverseDotted = 57,
+    StickArrowBottomReverseDotted = 58,
+    CentralConnection = 59,
+    CentralConnectionReverse = 60,
+    CentralConnectionDual = 61,
+}
+
+impl LineType {
+    /// The block a message of this kind opens.
+    pub fn opens(self) -> Option<Block> {
+        Some(match self {
+            LineType::LoopStart => Block::Loop,
+            LineType::AltStart => Block::Alt,
+            LineType::OptStart => Block::Opt,
+            LineType::ParStart | LineType::ParOverStart => Block::Par,
+            LineType::CriticalStart => Block::Critical,
+            LineType::BreakStart => Block::Break,
+            LineType::RectStart => Block::Rect,
+            _ => return None,
+        })
+    }
+
+    /// Whether a message of this kind starts a further section of a block.
+    pub fn divides(self) -> bool {
+        matches!(
+            self,
+            LineType::AltElse | LineType::ParAnd | LineType::CriticalOption
+        )
+    }
+
+    /// Whether a message of this kind ends a block.
+    pub fn closes(self) -> bool {
+        matches!(
+            self,
+            LineType::LoopEnd
+                | LineType::AltEnd
+                | LineType::OptEnd
+                | LineType::ParEnd
+                | LineType::CriticalEnd
+                | LineType::BreakEnd
+                | LineType::RectEnd
+        )
+    }
+}
+
+/// A block of messages, by its keyword.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Block {
+    Loop,
+    Alt,
+    Opt,
+    Par,
+    Critical,
+    Break,
+    Rect,
+}
+
+impl Block {
+    pub fn name(self) -> &'static str {
+        match self {
+            Block::Loop => "loop",
+            Block::Alt => "alt",
+            Block::Opt => "opt",
+            Block::Par => "par",
+            Block::Critical => "critical",
+            Block::Break => "break",
+            Block::Rect => "rect",
+        }
+    }
+
+    /// The kind of the message that opens the block; `par over` opens a
+    /// `par` with [`LineType::ParOverStart`] instead.
+    pub fn start(self) -> LineType {
+        match self {
+            Block::Loop => LineType::LoopStart,
+            Block::Alt => LineType::AltStart,
+            Block::Opt => LineType::OptStart,
+            Block::Par => LineType::ParStart,
+            Block::Critical => LineType::CriticalStart,
+            Block::Break => LineType::BreakStart,
+            Block::Rect => LineType::RectStart,
+        }
+    }
+
+    /// The kind of the message that ends the block.
+    pub fn end(self) -> LineType {
+        match self {
+            Block::Loop => LineType::LoopEnd,
+            Block::Alt => LineType::AltEnd,
+            Block::Opt => LineType::OptEnd,
+            Block::Par => LineType::ParEnd,
+            Block::Critical => LineType::CriticalEnd,
+            Block::Break => LineType::BreakEnd,
+            Block::Rect => LineType::RectEnd,
+        }
+    }
+}
+
+/// Which ends of a message carry a central-connection circle, numbered as
+/// the line types Mermaid gives them, 0 for neither.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize_repr)]
+#[repr(u8)]
+pub enum CentralConnection {
+    #[default]
+    Neither = 0,
+    /// At the receiver.
+    To = 59,
+    /// At the sender.
+    From = 60,
+    Both = 61,
+}
+
+impl CentralConnection {
+    pub fn at_to(self) -> bool {
+        matches!(self, CentralConnection::To | CentralConnection::Both)
+    }
+
+    pub fn at_from(self) -> bool {
+        matches!(self, CentralConnection::From | CentralConnection::Both)
+    }
 }
 
 /// Where a note is put, numbered as in Mermaid.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize_repr)]
+#[repr(u8)]
 pub enum Placement {
     LeftOf = 0,
     RightOf = 1,
     Over = 2,
-}
-
-impl Serialize for Placement {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_u8(*self as u8)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -186,14 +301,14 @@ pub struct SeqMessage {
     pub to: Option<String>,
     pub message: SeqMessageText,
     pub wrap: bool,
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<i32>,
+    #[serde(rename = "type")]
+    pub kind: LineType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub activate: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placement: Option<Placement>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub central_connection: Option<i32>,
+    pub central_connection: Option<CentralConnection>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -227,7 +342,7 @@ pub enum SeqStatement {
     /// `centralConnectionReverse`: a signal on one participant.
     Mark {
         actor: String,
-        signal_type: i32,
+        signal_type: LineType,
     },
     AddNote {
         actor: NoteActor,
@@ -241,28 +356,28 @@ pub enum SeqStatement {
     AddMessage {
         from: String,
         to: String,
-        signal_type: i32,
+        signal_type: LineType,
         msg: SeqText,
         activate: Option<bool>,
-        central_connection: Option<i32>,
+        central_connection: Option<CentralConnection>,
     },
     BoxStart(SeqBoxData),
     BoxEnd,
     /// The start of a block or of one of its sections, with its text.
     Section {
         text: SeqText,
-        signal_type: i32,
+        signal_type: LineType,
     },
     /// The end of a block.
     End {
-        signal_type: i32,
+        signal_type: LineType,
     },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Participant {
     pub actor: String,
-    pub draw: Option<&'static str>,
+    pub draw: Option<ActorKind>,
     pub description: Option<SeqText>,
     pub config: Option<String>,
 }

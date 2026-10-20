@@ -303,6 +303,15 @@ fn wrap(
 }
 
 impl Label {
+    /// The height with `gap` below it, or 0 for an empty label.
+    pub fn spaced_height(&self, gap: f64) -> f64 {
+        if self.height > 0.0 {
+            self.height + gap
+        } else {
+            0.0
+        }
+    }
+
     /// `raw` laid out at `size` px, wrapped at `max_width`: inline `<b>`/`<i>`,
     /// `<br>` and, for a `markdown` label, `**` and `_` emphasis. `base` is the
     /// [`Style`] the whole label starts in.
@@ -394,6 +403,129 @@ impl Label {
             height,
             size,
             line_height,
+        }
+    }
+
+    /// Cuts a label down to a box, ending what is left with an ellipsis.
+    pub fn ellipsized(&self, max_width: f64, max_lines: f64, measure: &impl Host) -> Label {
+        let label = self;
+        let cut = label.lines.len() as f64 > max_lines;
+        if !cut && label.width <= max_width {
+            return label.clone();
+        }
+        let dots = measure.width("…", label.size, 0);
+        let mut lines: Vec<Vec<Span>> = Vec::new();
+        let mut widths = Vec::new();
+        let mut widest: f64 = 0.0;
+        let mut i = 0;
+        while (i as f64) < max_lines.min(label.lines.len() as f64) {
+            let mut line = label.lines[i].clone();
+            let mut width = label.widths[i];
+            if width > max_width || (cut && i as f64 == max_lines - 1.0) {
+                loop {
+                    let Some(span) = line.last_mut() else {
+                        line.push(Span {
+                            text: "…".into(),
+                            style: 0,
+                            icon: None,
+                            width: dots,
+                        });
+                        width = dots;
+                        break;
+                    };
+                    let rest = width - span.width;
+                    if span.icon.is_none() && rest + dots < max_width {
+                        let mut lo = 0;
+                        let mut hi = js::len(&span.text);
+                        while lo < hi {
+                            let mid = (lo + hi + 1) >> 1;
+                            if rest
+                                + measure.width(
+                                    &span.text[..js::units_end(&span.text, mid)],
+                                    label.size,
+                                    span.style,
+                                )
+                                + dots
+                                <= max_width
+                            {
+                                lo = mid;
+                            } else {
+                                hi = mid - 1;
+                            }
+                        }
+                        let units: Vec<u16> = span.text.encode_utf16().collect();
+                        let code = if lo > 0 { units[lo - 1] } else { 0 };
+                        if (0xd800..=0xdbff).contains(&code) {
+                            lo -= 1;
+                        }
+                        span.text = format!(
+                            "{}…",
+                            js::trim_end(&span.text[..js::units_end(&span.text, lo)])
+                        );
+                        span.width = measure.width(&span.text, label.size, span.style);
+                        width = rest + span.width;
+                        break;
+                    }
+                    line.pop();
+                    width = rest;
+                }
+            }
+            lines.push(line);
+            widths.push(width);
+            widest = widest.max(width);
+            i += 1;
+        }
+        Label {
+            height: lines.len() as f64 * label.line_height,
+            lines,
+            widths,
+            width: widest,
+            ..label.clone()
+        }
+    }
+
+    /// The label with the [`Style`] bits `bits` added to every span, its
+    /// spans measured again.
+    pub fn restyled(self, bits: u8, measure: &impl Host) -> Label {
+        if bits == 0 || self.lines.is_empty() {
+            return self;
+        }
+        let mut width: f64 = 0.0;
+        let mut widths = Vec::new();
+        let lines: Vec<Vec<Span>> = self
+            .lines
+            .iter()
+            .map(|line| {
+                let mut total = 0.0;
+                let spans: Vec<Span> = line
+                    .iter()
+                    .map(|span| {
+                        let style = span.style | bits;
+                        let w = if span.icon.is_some() {
+                            span.width
+                        } else {
+                            measure.width(&span.text, self.size, style)
+                        };
+                        total += w;
+                        Span {
+                            style,
+                            width: w,
+                            ..span.clone()
+                        }
+                    })
+                    .collect();
+                widths.push(total);
+                if total > width {
+                    width = total;
+                }
+                spans
+            })
+            .collect();
+        Label {
+            lines,
+            widths,
+            width,
+            ..self
         }
     }
 }

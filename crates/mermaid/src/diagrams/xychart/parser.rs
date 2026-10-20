@@ -8,93 +8,52 @@ use super::{
 use crate::diagrams::common::chart::ChartKind;
 use crate::{detect::Kind, error::Error, js, token::Stream};
 
-fn text(s: &mut Stream<'_, '_, T>) -> Result<String, Error> {
-    let first = s.kind();
-    if !first.is_text() {
-        return Err(s.fail("'STR', 'ALPHA', 'NUM'"));
-    }
-    let mut text = s.take().to_string();
-    if first != T::Str {
-        while s.kind().is_word() {
-            text += s.take();
-        }
-    }
-    Ok(text)
-}
-
-fn number(s: &mut Stream<'_, '_, T>) -> Result<f64, Error> {
-    Ok(js::number(s.expect(T::NumberWithDecimal, "")?))
-}
-
-fn range(s: &mut Stream<'_, '_, T>) -> Result<(f64, f64), Error> {
-    let min = number(s)?;
-    s.expect(T::ArrowDelimiter, "")?;
-    Ok((min, number(s)?))
-}
-
-fn points(s: &mut Stream<'_, '_, T>) -> Result<Vec<DataPoint>, Error> {
-    let mut out = Vec::new();
-    s.expect(T::SquareBracesStart, "")?;
-    loop {
-        let value = number(s)?;
-        let label = if s.is(T::Str) {
-            s.take().to_string()
-        } else {
-            String::new()
-        };
-        out.push(DataPoint { value, label });
-        if !s.eat(T::Comma) {
-            break;
-        }
-    }
-    s.expect(T::SquareBracesEnd, "")?;
-    Ok(out)
-}
-
 pub fn parse_xy_chart(src: &str, db: &mut XyChartModel) -> Result<(), Error> {
     let tokens = tokenize(src);
-    let mut s = Stream::new(Kind::XyChart, src, &tokens);
+    let mut p = Parser {
+        s: Stream::new(Kind::XyChart, src, &tokens),
+    };
 
     loop {
-        if s.kind().is_eol() {
-            s.bump();
-        } else if s.eat(T::Xychart) {
-            if s.is(T::ChartOrientation) {
-                db.set_orientation(s.take());
+        if p.s.kind().is_eol() {
+            p.s.bump();
+        } else if p.s.eat(T::Xychart) {
+            if p.s.is(T::ChartOrientation) {
+                db.set_orientation(p.s.take());
             }
         } else {
             break;
         }
     }
 
-    while !s.is(T::End) {
-        let t = s.kind();
+    while !p.s.is(T::End) {
+        let t = p.s.kind();
         match t {
             T::Title => {
-                s.bump();
-                let title = text(&mut s)?;
+                p.s.bump();
+                let title = p.text()?;
                 db.titles.set_title(js::trim(&title));
             }
             T::XAxis | T::YAxis => {
-                s.bump();
-                let title = if s.kind().is_text() {
-                    Some(text(&mut s)?)
+                p.s.bump();
+                let title = if p.s.kind().is_text() {
+                    Some(p.text()?)
                 } else {
                     None
                 };
-                if t == T::XAxis && s.is(T::SquareBracesStart) {
+                if t == T::XAxis && p.s.is(T::SquareBracesStart) {
                     let mut categories = Vec::new();
                     loop {
-                        s.bump();
-                        categories.push(text(&mut s)?);
-                        if !s.is(T::Comma) {
+                        p.s.bump();
+                        categories.push(p.text()?);
+                        if !p.s.is(T::Comma) {
                             break;
                         }
                     }
-                    s.expect(T::SquareBracesEnd, "")?;
+                    p.s.expect(T::SquareBracesEnd, "")?;
                     db.set_x_axis_band(&categories);
-                } else if s.is(T::NumberWithDecimal) || title.is_none() {
-                    let (min, max) = range(&mut s)?;
+                } else if p.s.is(T::NumberWithDecimal) || title.is_none() {
+                    let (min, max) = p.range()?;
                     if t == T::XAxis {
                         db.set_x_axis_range_data(min, max);
                     } else {
@@ -109,13 +68,13 @@ pub fn parse_xy_chart(src: &str, db: &mut XyChartModel) -> Result<(), Error> {
                 }
             }
             T::Line | T::Bar => {
-                s.bump();
-                let title = if s.is(T::SquareBracesStart) {
+                p.s.bump();
+                let title = if p.s.is(T::SquareBracesStart) {
                     String::new()
                 } else {
-                    text(&mut s)?
+                    p.text()?
                 };
-                let data = points(&mut s)?;
+                let data = p.points()?;
                 let kind = if t == T::Line {
                     PlotKind::Line
                 } else {
@@ -124,25 +83,74 @@ pub fn parse_xy_chart(src: &str, db: &mut XyChartModel) -> Result<(), Error> {
                 db.add_plot(kind, &title, &data);
             }
             T::AccTitle => {
-                s.bump();
+                p.s.bump();
                 db.titles
-                    .set_acc_title(js::trim(s.expect(T::AccTitleValue, "")?));
+                    .set_acc_title(js::trim(p.s.expect(T::AccTitleValue, "")?));
             }
             T::AccDescr => {
-                s.bump();
+                p.s.bump();
                 db.titles
-                    .set_acc_descr(js::trim(s.expect(T::AccDescrValue, "")?));
+                    .set_acc_descr(js::trim(p.s.expect(T::AccDescrValue, "")?));
             }
-            T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(s.take())),
+            T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(p.s.take())),
             _ => {
-                return Err(s.fail(
+                return Err(p.s.fail(
                     "'title', 'X_AXIS', 'Y_AXIS', 'LINE', 'BAR', 'acc_title', 'acc_descr', 'acc_descr_multiline_value'",
                 ));
             }
         }
-        while s.kind().is_eol() {
-            s.bump();
+        while p.s.kind().is_eol() {
+            p.s.bump();
         }
     }
     Ok(())
+}
+
+struct Parser<'t, 's> {
+    s: Stream<'t, 's, T>,
+}
+
+impl<'t> Parser<'t, '_> {
+    fn text(&mut self) -> Result<String, Error> {
+        let first = self.s.kind();
+        if !first.is_text() {
+            return Err(self.s.fail("'STR', 'ALPHA', 'NUM'"));
+        }
+        let mut text = self.s.take().to_string();
+        if first != T::Str {
+            while self.s.kind().is_word() {
+                text += self.s.take();
+            }
+        }
+        Ok(text)
+    }
+
+    fn number(&mut self) -> Result<f64, Error> {
+        Ok(js::number(self.s.expect(T::NumberWithDecimal, "")?))
+    }
+
+    fn range(&mut self) -> Result<(f64, f64), Error> {
+        let min = self.number()?;
+        self.s.expect(T::ArrowDelimiter, "")?;
+        Ok((min, self.number()?))
+    }
+
+    fn points(&mut self) -> Result<Vec<DataPoint>, Error> {
+        let mut out = Vec::new();
+        self.s.expect(T::SquareBracesStart, "")?;
+        loop {
+            let value = self.number()?;
+            let label = if self.s.is(T::Str) {
+                self.s.take().to_string()
+            } else {
+                String::new()
+            };
+            out.push(DataPoint { value, label });
+            if !self.s.eat(T::Comma) {
+                break;
+            }
+        }
+        self.s.expect(T::SquareBracesEnd, "")?;
+        Ok(out)
+    }
 }

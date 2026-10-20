@@ -28,6 +28,14 @@ pub struct RadarCurve {
     pub entries: Vec<f64>,
 }
 
+/// The rings marking the ticks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Graticule {
+    Circle,
+    Polygon,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RadarOptions {
@@ -38,7 +46,7 @@ pub struct RadarOptions {
     pub max: Option<f64>,
     #[serde(serialize_with = "js::json_number")]
     pub min: f64,
-    pub graticule: String,
+    pub graticule: Graticule,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -108,7 +116,7 @@ impl RadarModel {
             ticks: 5.0,
             max: None,
             min: 0.0,
-            graticule: "circle".into(),
+            graticule: Graticule::Circle,
         };
         for option in ast.options {
             match option {

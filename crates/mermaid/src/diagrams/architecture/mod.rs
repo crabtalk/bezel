@@ -9,9 +9,8 @@ pub mod render;
 
 pub use db::ArchitectureModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::ArchitectureConfig;
 
 pub struct Architecture;
@@ -28,11 +27,5 @@ impl Diagram for Architecture {
         let mut db = ArchitectureModel::new();
         db.populate(parser::parse_architecture(source)?, title)?;
         Ok(Model::Architecture(Box::new(db)))
-    }
-}
-
-impl Render for ArchitectureModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_architecture(self, &config.architecture, ctx))
     }
 }

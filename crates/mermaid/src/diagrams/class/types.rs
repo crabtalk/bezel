@@ -2,6 +2,7 @@
 
 use indexmap::IndexSet;
 use serde::{Serialize, Serializer};
+use serde_repr::Serialize_repr;
 
 use super::members::ClassMember;
 pub use crate::diagrams::common::style_class::StyleClass;
@@ -25,6 +26,16 @@ pub enum RelationEnd {
     None,
 }
 
+impl RelationEnd {
+    /// The marker drawn at this end.
+    pub fn marker(self) -> Option<RelationType> {
+        match self {
+            RelationEnd::Type(kind) => Some(kind),
+            RelationEnd::None => None,
+        }
+    }
+}
+
 impl Serialize for RelationEnd {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
@@ -35,17 +46,11 @@ impl Serialize for RelationEnd {
 }
 
 /// Mermaid's lineType. Serialized as its number.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize_repr)]
 #[repr(u8)]
 pub enum LineType {
     Line,
     Dotted,
-}
-
-impl Serialize for LineType {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_u8(*self as u8)
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

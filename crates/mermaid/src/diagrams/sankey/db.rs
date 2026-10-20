@@ -3,7 +3,7 @@
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::{detect::Kind, js};
+use crate::{detect::Kind, diagrams::common::db::Titles, js};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SankeyNode {
@@ -27,12 +27,8 @@ pub struct SankeyModel {
     pub kind: Kind,
     pub nodes: Vec<SankeyNode>,
     pub links: Vec<SankeyLink>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     lookup: IndexMap<String, SankeyNode>,
 }
 
@@ -42,9 +38,7 @@ impl Default for SankeyModel {
             kind: Kind::Sankey,
             nodes: Vec::new(),
             links: Vec::new(),
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             lookup: IndexMap::new(),
         }
     }

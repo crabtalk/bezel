@@ -10,10 +10,7 @@ use serde::Serialize;
 use super::{Diagram, Model, Render};
 use crate::{
     Config, Error, ParseLimits, Rendered,
-    svg::{
-        builder::TITLE,
-        root::{Accessible, svg_document},
-    },
+    svg::{builder::TITLE, root::svg_document},
     text::Style,
 };
 use crate::{Ctx, Host};
@@ -60,11 +57,7 @@ impl Render for InfoModel {
             4000.0,
             Style::BOLD,
         );
-        let title_height = if title.height > 0.0 {
-            title.height + 8.0
-        } else {
-            0.0
-        };
+        let title_height = title.spaced_height(8.0);
         let version = format!("Bezel v{}", env!("CARGO_PKG_VERSION"));
         let text = Label::layout(Some(&version), false, measure, size, 4000.0, 0);
 
@@ -87,10 +80,7 @@ impl Render for InfoModel {
                 height,
                 size,
                 ctx,
-                Accessible {
-                    acc_title: self.titles.acc_title.as_deref(),
-                    acc_descr: self.titles.acc_descr.as_deref(),
-                },
+                self.titles.accessible(),
                 &content,
             ),
             width,

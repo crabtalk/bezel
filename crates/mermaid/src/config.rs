@@ -232,3 +232,10 @@ pub(crate) fn clamped(value: Option<f64>, min: f64, max: f64) -> Option<f64> {
         .filter(|value| value.is_finite())
         .map(|value| max.min(min.max(value)))
 }
+
+/// `value` when it is at least `min`, capped at `max`.
+pub(crate) fn capped_option(value: Option<f64>, min: f64, max: f64) -> Option<f64> {
+    value
+        .filter(|&value| value >= min)
+        .map(|value| value.min(max))
+}

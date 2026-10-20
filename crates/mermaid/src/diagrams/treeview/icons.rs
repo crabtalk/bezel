@@ -39,70 +39,67 @@ fn own<'c>(map: Option<&'c Map>, key: &str) -> Option<&'c str> {
     map?.get(key)?.as_str()
 }
 
-/// A file's icon from the configured maps. A file name wins over an
-/// extension, and extensions match in lower case with or without the leading
-/// dot.
-pub fn detect_icon<'c>(name: &str, config: &IconConfig<'c>) -> Option<&'c str> {
-    if let Some(by_name) = own(config.filename_icons, name).filter(|icon| !icon.is_empty()) {
-        return Some(by_name);
-    }
-    match name.rfind('.') {
-        Some(dot) if dot > 0 => {
-            let ext = name[dot..].to_lowercase();
-            own(config.extension_icons, &ext).or_else(|| own(config.extension_icons, &ext[1..]))
+impl<'c> IconConfig<'c> {
+    pub fn new(config: &'c TreeViewConfig) -> Self {
+        Self {
+            show_icons: config.show_icons.as_ref().is_some_and(Value::truthy),
+            default_icon_pack: config.default_icon_pack.as_deref().unwrap_or(""),
+            filename_icons: config.filename_icons.as_ref(),
+            extension_icons: config.extension_icons.as_ref(),
         }
-        _ => None,
     }
-}
 
-fn qualify_icon(icon: &str, default_icon_pack: &str) -> String {
-    if icon.contains(':') {
-        return icon.to_string();
-    }
-    if glyph(icon).is_some() || default_icon_pack.is_empty() {
-        return format!("{BUILTIN_PACK}:{icon}");
-    }
-    format!("{default_icon_pack}:{icon}")
-}
-
-/// The qualified icon name for a node, or `None` when it shows none. An
-/// `icon()` annotation always wins; otherwise icons appear only with
-/// `showIcons`.
-pub fn get_node_icon(node: &TreeNode, config: &IconConfig) -> Option<String> {
-    match node.icon.as_deref() {
-        Some("none") => return None,
-        Some(icon) if !icon.is_empty() => {
-            return Some(qualify_icon(icon, config.default_icon_pack));
+    /// A file's icon from the configured maps. A file name wins over an
+    /// extension, and extensions match in lower case with or without the
+    /// leading dot.
+    fn detect(&self, name: &str) -> Option<&'c str> {
+        if let Some(by_name) = own(self.filename_icons, name).filter(|icon| !icon.is_empty()) {
+            return Some(by_name);
         }
-        _ => {}
-    }
-    if !config.show_icons {
-        return None;
-    }
-    if node.node_type == NodeType::File {
-        match detect_icon(&node.name, config) {
-            Some("none") => return None,
-            Some(detected) if !detected.is_empty() => {
-                return Some(qualify_icon(detected, config.default_icon_pack));
+        match name.rfind('.') {
+            Some(dot) if dot > 0 => {
+                let ext = name[dot..].to_lowercase();
+                own(self.extension_icons, &ext).or_else(|| own(self.extension_icons, &ext[1..]))
             }
+            _ => None,
+        }
+    }
+
+    fn qualify(&self, icon: &str) -> String {
+        if icon.contains(':') {
+            return icon.to_string();
+        }
+        if glyph(icon).is_some() || self.default_icon_pack.is_empty() {
+            return format!("{BUILTIN_PACK}:{icon}");
+        }
+        format!("{}:{icon}", self.default_icon_pack)
+    }
+
+    /// The qualified icon name for a node, or `None` when it shows none. An
+    /// `icon()` annotation always wins; otherwise icons appear only with
+    /// `showIcons`.
+    pub fn of(&self, node: &TreeNode) -> Option<String> {
+        match node.icon.as_deref() {
+            Some("none") => return None,
+            Some(icon) if !icon.is_empty() => return Some(self.qualify(icon)),
             _ => {}
         }
-    }
-    Some(format!(
-        "{BUILTIN_PACK}:{}",
-        if node.node_type == NodeType::Directory {
-            "folder"
-        } else {
-            "file"
+        if !self.show_icons {
+            return None;
         }
-    ))
-}
-
-pub fn icon_config(config: &TreeViewConfig) -> IconConfig<'_> {
-    IconConfig {
-        show_icons: config.show_icons.as_ref().is_some_and(Value::truthy),
-        default_icon_pack: config.default_icon_pack.as_deref().unwrap_or(""),
-        filename_icons: config.filename_icons.as_ref(),
-        extension_icons: config.extension_icons.as_ref(),
+        if node.node_type == NodeType::File {
+            match self.detect(&node.name) {
+                Some("none") => return None,
+                Some(detected) if !detected.is_empty() => return Some(self.qualify(detected)),
+                _ => {}
+            }
+        }
+        Some(format!(
+            "{BUILTIN_PACK}:{}",
+            match node.node_type {
+                NodeType::Directory => "folder",
+                NodeType::File => "file",
+            }
+        ))
     }
 }

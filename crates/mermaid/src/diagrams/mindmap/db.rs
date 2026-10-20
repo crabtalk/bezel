@@ -2,7 +2,10 @@
 
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
-use crate::{Error, Kind, diagrams::common::outline::OutlineDb};
+use crate::{
+    Error, Kind,
+    diagrams::common::outline::{NodeType, OutlineDb},
+};
 
 const SECTIONS: usize = 11;
 
@@ -12,7 +15,7 @@ pub struct MindmapNode {
     pub node_id: String,
     pub level: i64,
     pub descr: String,
-    pub kind: i32,
+    pub kind: NodeType,
     /// Indices into the model's `nodes`.
     pub children: Vec<usize>,
     pub is_root: bool,
@@ -50,7 +53,7 @@ impl OutlineDb for MindmapModel {
         level: usize,
         id: &str,
         descr: &str,
-        kind: i32,
+        kind: NodeType,
         _shape_data: Option<&str>,
     ) -> Result<(), Error> {
         let is_root = self.nodes.is_empty();

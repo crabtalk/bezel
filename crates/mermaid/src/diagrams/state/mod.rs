@@ -11,9 +11,8 @@ pub mod types;
 
 pub use types::StateModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct State;
 
@@ -32,11 +31,5 @@ impl Diagram for State {
         }
         parser::parse_state(source, &mut db)?;
         Ok(Model::State(Box::new(db)))
-    }
-}
-
-impl Render for StateModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_state(self, config, ctx))
     }
 }

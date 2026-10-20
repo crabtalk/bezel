@@ -8,9 +8,8 @@ pub mod render;
 
 pub use db::{JourneyModel, JourneyTask};
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct Journey;
 
@@ -27,11 +26,5 @@ impl Diagram for Journey {
         db.titles.title = title.map(str::to_string);
         parser::parse_journey(source, &mut db)?;
         Ok(Model::Journey(db))
-    }
-}
-
-impl Render for JourneyModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_journey(self, config, ctx))
     }
 }

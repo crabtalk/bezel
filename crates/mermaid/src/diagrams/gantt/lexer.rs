@@ -122,9 +122,9 @@ impl Lexer<'_> {
         if let Some(q) = self.word_space("weekday")
             && let Some(&(kind, day)) = T::WEEKDAYS
                 .iter()
-                .find(|(_, day)| self.cur.keyword_caseless(day, q))
+                .find(|(_, day)| self.cur.keyword_caseless(day.name(), q))
         {
-            return self.emit(kind, q + day.len());
+            return self.emit(kind, q + day.name().len());
         }
         if let Some(q) = self.word_space("weekend") {
             for (day, kind) in [

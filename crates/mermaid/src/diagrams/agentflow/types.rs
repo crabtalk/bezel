@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::{config::Map, detect::Kind};
 
 pub use crate::diagrams::flowchart::types::{
-    ArrowType, DocItem, FlowText, LabelType, LinkInfo, Node, Payload, Stroke, Vertex,
+    ArrowType, DocItem, FlowDir, FlowText, LabelType, LinkInfo, Node, Payload, Stroke, Vertex,
 };
 
 /// A parsed agentflow: the database the parser fills.
@@ -21,6 +21,27 @@ pub struct Loc {
     pub first_column: usize,
     pub last_line: usize,
     pub last_column: usize,
+}
+
+impl Loc {
+    /// The empty span at `line` and `column`.
+    pub fn at(line: usize, column: usize) -> Self {
+        Self {
+            first_line: line,
+            first_column: column,
+            last_line: line,
+            last_column: column,
+        }
+    }
+
+    /// The span from the start of this one to the end of `end`.
+    pub fn to(self, end: Loc) -> Self {
+        Self {
+            last_line: end.last_line,
+            last_column: end.last_column,
+            ..self
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -204,9 +225,9 @@ pub struct SemanticEdge {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
+    pub kind: Option<ArrowType>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stroke: Option<String>,
+    pub stroke: Option<Stroke>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edge_semantic: Option<EdgeSemantic>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -227,7 +248,7 @@ pub struct SemanticSubgraph {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub direction: Option<String>,
+    pub direction: Option<FlowDir>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -246,7 +267,7 @@ pub struct SemanticConnector {
 #[serde(rename_all = "camelCase")]
 pub struct SemanticModel {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub direction: Option<String>,
+    pub direction: Option<FlowDir>,
     pub vertices: Vec<SemanticVertex>,
     pub edges: Vec<SemanticEdge>,
     pub sub_graphs: Vec<SemanticSubgraph>,

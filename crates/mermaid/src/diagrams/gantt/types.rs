@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use crate::js::date;
+use crate::js::{self, date};
 
 /// A task as written.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -45,9 +45,10 @@ pub struct GanttTask {
     pub crit: bool,
     pub milestone: bool,
     pub vert: bool,
-    /// Row index in source order; -1 for vertical markers, which take no
-    /// row.
-    pub order: i64,
+    /// Row index in source order; `None` for vertical markers, which take
+    /// no row.
+    #[serde(serialize_with = "js::json_index")]
+    pub order: Option<usize>,
     pub classes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prev_task_id: Option<String>,

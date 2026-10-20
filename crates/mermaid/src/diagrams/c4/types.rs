@@ -1,7 +1,9 @@
 //! Pele's `diagrams/c4/types.ts`.
 
+use std::fmt;
+
 use indexmap::IndexMap;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use crate::js;
 
@@ -60,18 +62,114 @@ pub struct C4Element {
     pub legend_sprite: Option<String>,
     /// Named arguments that set no known field.
     pub extra: Option<IndexMap<String, String>>,
-    /// Mermaid's typeC4Shape: person, external_system_db, container_queue
-    /// and so on.
-    pub kind: Option<String>,
-    /// Set on deployment nodes: node, nodeL or nodeR.
-    pub node_type: Option<String>,
+    /// Set on shapes.
+    pub kind: Option<ShapeKind>,
+    /// Set on deployment nodes.
+    pub node_type: Option<NodeType>,
+}
+
+/// What a shape is, Mermaid's typeC4Shape: `person`, `external_system_db`,
+/// `container_queue` and so on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShapeKind {
+    pub base: ShapeBase,
+    pub external: bool,
+    pub store: Option<Store>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShapeBase {
+    Person,
+    System,
+    Container,
+    Component,
+}
+
+/// A shape that holds data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Store {
+    Db,
+    Queue,
+}
+
+impl ShapeKind {
+    pub const fn new(base: ShapeBase, external: bool, store: Option<Store>) -> Self {
+        Self {
+            base,
+            external,
+            store,
+        }
+    }
+}
+
+/// Mermaid's name, its words joined by `_`.
+impl fmt::Display for ShapeKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.external {
+            f.write_str("external_")?;
+        }
+        f.write_str(match self.base {
+            ShapeBase::Person => "person",
+            ShapeBase::System => "system",
+            ShapeBase::Container => "container",
+            ShapeBase::Component => "component",
+        })?;
+        f.write_str(match self.store {
+            None => "",
+            Some(Store::Db) => "_db",
+            Some(Store::Queue) => "_queue",
+        })
+    }
+}
+
+impl Serialize for ShapeKind {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+/// The keyword of a deployment node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum NodeType {
+    #[serde(rename = "node")]
+    Node,
+    #[serde(rename = "nodeL")]
+    NodeL,
+    #[serde(rename = "nodeR")]
+    NodeR,
+}
+
+/// The keyword of a relation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelKind {
+    #[default]
+    Rel,
+    Birel,
+    RelU,
+    RelD,
+    RelL,
+    RelR,
+    RelB,
+}
+
+impl RelKind {
+    /// Whether the relation has an arrowhead at its start.
+    pub fn arrow_at_start(self) -> bool {
+        matches!(self, Self::Birel | Self::RelB)
+    }
+
+    /// Whether the relation has an arrowhead at its end.
+    pub fn arrow_at_end(self) -> bool {
+        self != Self::RelB
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct C4Rel {
     #[serde(rename = "type")]
-    pub ty: String,
+    pub ty: RelKind,
     pub from: String,
     pub to: String,
     pub label: String,

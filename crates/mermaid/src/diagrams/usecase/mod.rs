@@ -10,9 +10,8 @@ pub mod render;
 pub mod tokens;
 pub mod types;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::UsecaseConfig;
 
 pub use types::UsecaseModel;
@@ -31,11 +30,5 @@ impl Diagram for Usecase {
         Ok(Model::Usecase(Box::new(parser::parse_usecase(
             source, title,
         )?)))
-    }
-}
-
-impl Render for UsecaseModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_usecase(self, &config.usecase, ctx))
     }
 }

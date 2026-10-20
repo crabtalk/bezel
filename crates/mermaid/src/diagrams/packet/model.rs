@@ -42,7 +42,8 @@ impl PacketModel {
     pub fn new(ast: PacketAst, config: &PacketConfig, title: Option<&str>) -> Result<Self, Error> {
         let bits_per_row = capped(config.bits_per_row, 32.0, 1.0, 4096.0).floor();
         let mut rows: Vec<Vec<PacketBlock>> = Vec::new();
-        let mut last_bit = -1.0;
+        // The bit the next block must start at.
+        let mut next_bit = 0.0;
         let mut word: Vec<PacketBlock> = Vec::new();
         let mut row = 1.0;
 
@@ -58,13 +59,13 @@ impl PacketModel {
                 ))
                 .of(Kind::Packet));
             }
-            let mut start = start.unwrap_or(last_bit + 1.0);
-            if start != last_bit + 1.0 {
+            let mut start = start.unwrap_or(next_bit);
+            if start != next_bit {
                 return Err(Error::semantic(format!(
                     "Packet block {} - {} is not contiguous. It should start from {}.",
                     js::num_str(start),
                     js::num_str(end.unwrap_or(start)),
-                    js::num_str(last_bit + 1.0)
+                    js::num_str(next_bit)
                 ))
                 .of(Kind::Packet));
             }
@@ -77,7 +78,7 @@ impl PacketModel {
             }
             let end = end.unwrap_or(start + bits.unwrap_or(1.0) - 1.0);
             let mut bits = bits.unwrap_or(end - start + 1.0);
-            last_bit = end;
+            next_bit = end + 1.0;
 
             while word.len() as f64 <= bits_per_row + 1.0 && rows.len() < MAX_ROWS {
                 let row_end = row * bits_per_row - 1.0;

@@ -4,12 +4,14 @@
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 
-use super::types::{DocItem, Edge, FlowText, LabelType, LinkInfo, Node, Payload, Subgraph, Vertex};
+use super::types::{
+    DocItem, Edge, FlowDir, FlowText, LabelType, LinkInfo, Node, Payload, Subgraph, Vertex,
+};
 use crate::{
     config::Value,
     diagrams::common::{db::Titles, style_class::StyleClass},
     error::Error,
-    js,
+    js::{self, JsValue},
     util::{chars::unquote, url::safe_url},
 };
 
@@ -31,14 +33,14 @@ pub enum Element<'a, P: Payload> {
 /// and the direction the repeat gave.
 pub struct Repeat<'a, P: Payload> {
     pub subgraph: &'a mut Subgraph<P>,
-    pub dir: Option<String>,
+    pub dir: Option<FlowDir>,
 }
 
 /// Nodes, edges, subgraphs and styles, with the bookkeeping Pele serializes
 /// beside them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FlowStore<P: Payload> {
-    pub direction: Option<String>,
+    pub direction: Option<FlowDir>,
     pub nodes: IndexMap<String, Node<P>>,
     pub edges: Vec<Edge<P>>,
     pub subgraphs: Vec<Subgraph<P>>,
@@ -141,8 +143,8 @@ impl<P: Payload> FlowStore<P> {
             edge.label_type = text.kind;
         }
         if let Some(info) = info {
-            edge.kind = Some(info.kind.name().to_string());
-            edge.stroke = Some(info.stroke.name().to_string());
+            edge.kind = Some(info.kind);
+            edge.stroke = Some(info.stroke);
             edge.line = P::line(info);
             edge.length = info
                 .length
@@ -226,7 +228,7 @@ impl<P: Payload> FlowStore<P> {
     ) -> (String, Option<Repeat<'_, P>>) {
         let mut seen: IndexSet<&str> = IndexSet::new();
         let mut node_list: Vec<String> = Vec::new();
-        let mut dir: Option<String> = None;
+        let mut dir: Option<FlowDir> = None;
         for entry in list {
             match entry {
                 DocItem::Str(entry) => {
@@ -241,11 +243,11 @@ impl<P: Payload> FlowStore<P> {
                         }
                     }
                 }
-                DocItem::Dir(value) => dir = Some(value.clone()),
+                DocItem::Dir(value) => dir = Some(*value),
             }
         }
         if dir.is_none() && self.options.inherit_dir {
-            dir = self.direction.clone();
+            dir = self.direction;
         }
 
         let id = id.unwrap_or_else(|| format!("subGraph{}", self.sub_count));
@@ -367,26 +369,6 @@ impl<P: Payload> FlowStore<P> {
         }
     }
 
-    pub fn set_direction(&mut self, dir: &str) {
-        let mut d = js::trim(dir);
-        if d.contains('<') {
-            d = "RL";
-        }
-        if d.contains('^') {
-            d = "BT";
-        }
-        if d.contains('>') {
-            d = "LR";
-        }
-        if d.contains('v') {
-            d = "TB";
-        }
-        if d == "TD" {
-            d = "TB";
-        }
-        self.direction = Some(d.to_string());
-    }
-
     pub fn set_class(&mut self, ids: &str, class_name: &str) {
         for id in ids.split(',') {
             if let Some(node) = self.nodes.get_mut(id) {
@@ -422,5 +404,36 @@ impl<P: Payload> FlowStore<P> {
     /// in Mermaid's strict mode.
     pub fn set_click_event(&mut self, ids: &str) {
         self.set_class(ids, "clickable");
+    }
+
+    /// The styles of the classes `names` that are defined, in order, each
+    /// trimmed.
+    pub fn class_styles(&self, names: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for name in names {
+            if let Some(def) = self.classes.get(name) {
+                out.extend(
+                    def.styles
+                        .iter()
+                        .chain(&def.text_styles)
+                        .map(|s| js::trim(s).to_string()),
+                );
+            }
+        }
+        out
+    }
+
+    /// The curve `edge` is drawn with: its own, the diagram's, or
+    /// `default_curve`, the first not blank. `None` where the edge names it
+    /// with something other than a string.
+    pub fn curve_of(&self, edge: &Edge<P>, default_curve: Option<&str>) -> Option<String> {
+        match edge.interpolate.as_ref().filter(|v| v.truthy()) {
+            Some(value) => value.as_str().map(str::to_string),
+            None => self
+                .default_interpolate
+                .clone()
+                .filter(|curve| !curve.is_empty())
+                .or_else(|| default_curve.filter(|c| !c.is_empty()).map(str::to_string)),
+        }
     }
 }

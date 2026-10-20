@@ -7,9 +7,9 @@ use indexmap::IndexMap;
 
 use super::{
     graph::build_state_graph,
-    types::{Descr, StateLink, StateModel, StateNote, StateRelation, StateStmt, Stmt},
+    types::{Descr, StateKind, StateLink, StateModel, StateNote, StateRelation, StateStmt, Stmt},
 };
-use crate::{diagrams::common::style_class::StyleClass, error::Error, js};
+use crate::{diagrams::common::style_class::StyleClass, error::Error, geom::Direction, js};
 
 /// A document being given ids, taken out of its state while its statements
 /// are visited.
@@ -29,14 +29,8 @@ impl StateModel {
 
     /// The direction the root document is laid out in: its last `direction`
     /// statement.
-    pub fn direction(&self) -> &str {
-        let mut dir = "TB";
-        for item in &self.root_doc {
-            if let Stmt::Dir(item) = item {
-                dir = &item.value;
-            }
-        }
-        dir
+    pub fn direction(&self) -> Direction {
+        last_direction(&self.root_doc)
     }
 
     pub fn set_root_doc(&mut self, doc: Vec<Stmt>) -> Result<(), Error> {
@@ -59,7 +53,7 @@ impl StateModel {
             match item {
                 Stmt::State(item) => self.add_state(
                     js::trim(&item.id),
-                    item.kind.as_deref(),
+                    item.kind,
                     item.doc.as_ref(),
                     item.description.as_ref(),
                     item.note.as_ref(),
@@ -145,7 +139,7 @@ impl StateModel {
         for item in std::mem::take(doc) {
             match item {
                 Stmt::State(mut state)
-                    if state.kind.as_deref() == Some("divider") && state.doc.is_none() =>
+                    if state.kind == Some(StateKind::Divider) && state.doc.is_none() =>
                 {
                     state.doc = Some(std::mem::take(&mut current));
                     regions.push(Stmt::State(state));
@@ -162,7 +156,7 @@ impl StateModel {
             return;
         }
         if !current.is_empty() {
-            let mut state = StateStmt::new(self.next_divider_id(), Some("divider"));
+            let mut state = StateStmt::new(self.next_divider_id(), Some(StateKind::Divider));
             state.doc = Some(current);
             regions.push(Stmt::State(Box::new(state)));
         }
@@ -172,14 +166,14 @@ impl StateModel {
     pub fn add_state(
         &mut self,
         id: &str,
-        kind: Option<&str>,
+        kind: Option<StateKind>,
         doc: Option<&Vec<Stmt>>,
         descr: Option<&Descr>,
         note: Option<&StateNote>,
         classes: Option<&Vec<String>>,
     ) {
         let trimmed = js::trim(id).to_string();
-        let kind = kind.unwrap_or("default");
+        let kind = kind.unwrap_or(StateKind::Default);
         match self.states.get_mut(&trimmed) {
             None => {
                 self.states.insert(
@@ -187,7 +181,7 @@ impl StateModel {
                     StateStmt {
                         id: trimmed.clone(),
                         descriptions: Some(Vec::new()),
-                        kind: Some(kind.to_string()),
+                        kind: Some(kind),
                         doc: doc.cloned(),
                         note: note.cloned(),
                         classes: Some(Vec::new()),
@@ -201,8 +195,8 @@ impl StateModel {
                 if state.doc.is_none() {
                     state.doc = doc.cloned();
                 }
-                if state.kind.as_deref().is_none_or(str::is_empty) {
-                    state.kind = Some(kind.to_string());
+                if state.kind.is_none() {
+                    state.kind = Some(kind);
                 }
             }
         }
@@ -237,7 +231,7 @@ impl StateModel {
         for item in [item1, item2] {
             self.add_state(
                 &item.id,
-                item.kind.as_deref(),
+                item.kind,
                 item.doc.as_ref(),
                 item.description.as_ref(),
                 item.note.as_ref(),
@@ -326,4 +320,15 @@ impl StateStmt {
             self.id = js::trim(&self.id).to_string();
         }
     }
+}
+
+/// The last `direction` statement of `doc`, or top to bottom.
+pub(super) fn last_direction(doc: &[Stmt]) -> Direction {
+    doc.iter()
+        .rev()
+        .find_map(|item| match item {
+            Stmt::Dir(item) => Some(item.value),
+            _ => None,
+        })
+        .unwrap_or_default()
 }

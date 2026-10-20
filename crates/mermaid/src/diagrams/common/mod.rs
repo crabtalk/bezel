@@ -9,6 +9,7 @@ pub mod fit_text;
 pub mod fit_width;
 pub mod generics;
 pub mod icon;
+pub mod legend;
 pub mod literal_label;
 pub mod outline;
 pub mod scan;

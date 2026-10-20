@@ -2,11 +2,7 @@
 
 use std::{fs, path::Path};
 
-use mermaid::{
-    Metrics, Options,
-    diagrams::{Model, agentflow::graph::build_agent_graph},
-    parse, render,
-};
+use mermaid::{Metrics, Options, diagrams::Model, parse, render};
 use serde_json::{Map, Value, json};
 
 fn draws(file: &str) {
@@ -215,7 +211,7 @@ fn reference_projection(source: &str) -> Result<Value, String> {
         return Err("not an agentflow".into());
     };
     let mut db = (*db).clone();
-    let graph = build_agent_graph(&mut db, REFERENCE_PALETTE, Some(REFERENCE_CURVE));
+    let graph = db.build_graph(REFERENCE_PALETTE, Some(REFERENCE_CURVE));
     let model = serde_json::to_value(&db).expect("model JSON");
     let nodes: Vec<Value> = graph
         .nodes
@@ -225,7 +221,7 @@ fn reference_projection(source: &str) -> Result<Value, String> {
                 "{}{}",
                 n.css_classes,
                 n.kind
-                    .map_or(String::new(), |kind| format!(" af-kind-{kind}"))
+                    .map_or(String::new(), |kind| format!(" af-kind-{}", kind.name()))
             );
             let mut node = Map::new();
             node.insert("id".into(), json!(n.id));
@@ -243,8 +239,10 @@ fn reference_projection(source: &str) -> Result<Value, String> {
                 "cssClasses".into(),
                 json!(classes.split_whitespace().collect::<Vec<_>>().join(" ")),
             );
+            if let Some(dir) = n.dir {
+                node.insert("dir".into(), json!(dir));
+            }
             for (key, value) in [
-                ("dir", &n.dir),
                 ("link", &n.link),
                 ("linkTarget", &n.link_target),
                 ("tooltip", &n.tooltip),
@@ -270,7 +268,10 @@ fn reference_projection(source: &str) -> Result<Value, String> {
             edge.insert("id".into(), json!(e.id));
             edge.insert("start".into(), json!(e.start));
             edge.insert("end".into(), json!(e.end));
-            edge.insert("type".into(), json!(e.kind));
+            edge.insert(
+                "type".into(),
+                json!(e.kind.map_or("normal", |kind| kind.name())),
+            );
             edge.insert("label".into(), json!(e.label));
             edge.insert("labelType".into(), to(&e.label_type));
             if let Some(thickness) = &e.thickness {
@@ -279,8 +280,11 @@ fn reference_projection(source: &str) -> Result<Value, String> {
             if let Some(minlen) = e.minlen {
                 edge.insert("minlen".into(), json!(minlen));
             }
-            edge.insert("arrowTypeStart".into(), json!(e.arrow_type_start));
-            edge.insert("arrowTypeEnd".into(), json!(e.arrow_type_end));
+            edge.insert("arrowTypeStart".into(), json!("none"));
+            edge.insert(
+                "arrowTypeEnd".into(),
+                json!(e.arrow_type_end.map_or("none", |marker| marker.name())),
+            );
             edge.insert("cssCompiledStyles".into(), json!(e.css_compiled_styles));
             edge.insert("style".into(), json!(e.style));
             if let Some(curve) = &e.curve {
@@ -338,7 +342,7 @@ fn reference_projection(source: &str) -> Result<Value, String> {
         .unwrap_or_default();
     let mut out = Map::new();
     if let Some(direction) = &db.store.direction {
-        out.insert("direction".into(), json!(direction.trim()));
+        out.insert("direction".into(), json!(direction));
     }
     out.insert(
         "accTitle".into(),

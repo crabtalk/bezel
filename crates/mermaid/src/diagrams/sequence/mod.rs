@@ -15,9 +15,8 @@ pub use db::SequenceModel;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct Sequence;
 
@@ -73,10 +72,4 @@ pub struct SequenceConfig {
     pub box_margin: Option<f64>,
     #[serde_as(as = "DefaultOnError")]
     pub message_align: Option<String>,
-}
-
-impl Render for SequenceModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_sequence(self, &config.sequence, ctx))
-    }
 }

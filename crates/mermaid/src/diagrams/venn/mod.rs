@@ -8,9 +8,8 @@ pub mod parser;
 pub mod render;
 pub mod types;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct Venn;
 
@@ -29,11 +28,5 @@ impl Diagram for Venn {
         }
         parser::parse_venn(source, &mut db)?;
         Ok(Model::Venn(db))
-    }
-}
-
-impl Render for db::VennDb {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_venn(self, config, ctx))
     }
 }

@@ -15,6 +15,9 @@ use crate::{
     js,
 };
 
+use super::builder::Strategy;
+use serde::Serialize;
+
 token_kinds! {
     enum Token {
         LBracket = TokenType::literal("["),
@@ -135,7 +138,7 @@ pub struct ComponentAst {
     pub visibility: f64,
     pub evolution: f64,
     pub label: Option<LabelAst>,
-    pub strategy: Option<String>,
+    pub strategy: Option<Strategy>,
     pub inertia: bool,
 }
 
@@ -146,7 +149,8 @@ pub struct PipelineComponentAst {
 }
 
 /// Which way a link's value flows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Flow {
     Forward,
     Backward,
@@ -154,12 +158,14 @@ pub enum Flow {
 }
 
 impl Flow {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Forward => "forward",
-            Self::Backward => "backward",
-            Self::Bidirectional => "bidirectional",
-        }
+    /// Whether the value flows from the source to the target.
+    pub fn forward(self) -> bool {
+        matches!(self, Self::Forward | Self::Bidirectional)
+    }
+
+    /// Whether the value flows from the target to the source.
+    pub fn backward(self) -> bool {
+        matches!(self, Self::Backward | Self::Bidirectional)
     }
 
     /// A port's flow: `+>`, `+<` or `+<>`.
@@ -343,7 +349,7 @@ impl Parser<'_> {
         };
         if self.r.at(Token::LParen) && self.r.peek(1) == Some(Token::Strategy) {
             self.r.bump();
-            component.strategy = Some(self.r.take().to_string());
+            component.strategy = Strategy::from_name(self.r.take());
             self.r.expect(Token::RParen)?;
         }
         if self.r.accept(Token::Inertia) {

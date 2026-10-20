@@ -70,20 +70,13 @@ struct Frame {
 /// The model being built, and where each token is.
 struct Build<'a> {
     db: &'a mut AgentflowDb,
-    locs: &'a [[usize; 4]],
+    locs: &'a [Loc],
 }
 
 impl Build<'_> {
     /// The span from the start of token `a` to the end of token `b`.
     fn span(&self, a: usize, b: usize) -> Loc {
-        let ([first_line, first_column, ..], [.., last_line, last_column]) =
-            (self.locs[a], self.locs[b]);
-        Loc {
-            first_line,
-            first_column,
-            last_line,
-            last_column,
-        }
+        self.locs[a].to(self.locs[b])
     }
 
     fn add_data(&mut self, id: &str, data: &ShapeData) -> Result<(), Error> {

@@ -107,6 +107,21 @@ impl ResolvedStyle {
             None => Cow::Borrowed("var(--_l)"),
         }
     }
+
+    /// The [`Style`](crate::text::Style) bits of its weight and slant.
+    pub fn label_style(&self) -> u8 {
+        let bold = if self.bold {
+            crate::text::Style::BOLD
+        } else {
+            0
+        };
+        let italic = if self.italic {
+            crate::text::Style::ITALIC
+        } else {
+            0
+        };
+        bold | italic
+    }
 }
 
 pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
@@ -397,4 +412,28 @@ fn mixed(text: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// `color` as a shape's fill, in the ` style="…"` attribute
+/// [`resolve_style`] writes, or `""`.
+pub fn fill_style(color: &str) -> String {
+    resolve_style(&[format!("fill:{color}")]).shape
+}
+
+/// [`resolve_style`] of `base` followed by `over`.
+pub fn resolve_style_over(base: &[String], over: &[String]) -> ResolvedStyle {
+    if over.is_empty() {
+        return resolve_style(base);
+    }
+    let mut all = base.to_vec();
+    all.extend_from_slice(over);
+    resolve_style(&all)
+}
+
+static RE_DEFAULT_CLASS: Lazy = Lazy::new(r"^default\s?", "");
+
+/// [`class_names`] of a node's `raw` classes, less the `default` class they
+/// start with.
+pub fn node_class_names(raw: &str) -> String {
+    class_names(&RE_DEFAULT_CLASS.replace(raw, |_| String::new()))
 }

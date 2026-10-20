@@ -5,23 +5,71 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use serde::{Serialize, ser::SerializeMap};
 
+use super::parser::Flow;
 use crate::js::{self, JsonNumber};
 
-/// Coordinates are percentages: x is evolution, y is visibility.
+/// A place on the map, in percent: `x` is evolution, `y` is visibility.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct MapPoint {
+    #[serde(serialize_with = "js::json_number")]
+    pub x: f64,
+    #[serde(serialize_with = "js::json_number")]
+    pub y: f64,
+}
+
+/// What a node was declared as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NodeClass {
+    Anchor,
+    Component,
+    PipelineComponent,
+}
+
+/// How a component is sourced.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Strategy {
+    Build,
+    Buy,
+    Outsource,
+    Market,
+}
+
+impl Strategy {
+    /// The strategy a source names in lowercase.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "build" => Self::Build,
+            "buy" => Self::Buy,
+            "outsource" => Self::Outsource,
+            "market" => Self::Market,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Build => "build",
+            Self::Buy => "buy",
+            Self::Outsource => "outsource",
+            Self::Market => "market",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct WardleyNode {
     pub id: String,
     pub label: String,
-    pub x: f64,
-    pub y: f64,
-    /// `anchor`, `component`, or `pipeline-component`
-    pub class_name: Option<String>,
+    pub at: MapPoint,
+    pub class_name: Option<NodeClass>,
     pub label_offset_x: Option<f64>,
     pub label_offset_y: Option<f64>,
     pub in_pipeline: Option<bool>,
     pub is_pipeline_parent: Option<bool>,
     pub inertia: Option<bool>,
-    pub source_strategy: Option<String>,
+    pub source_strategy: Option<Strategy>,
     /// Whether `is_pipeline_parent` was set before `in_pipeline`, which is
     /// the order the two keys serialize in.
     pub parent_first: bool,
@@ -32,8 +80,8 @@ impl Serialize for WardleyNode {
         let mut map = s.serialize_map(None)?;
         map.serialize_entry("id", &self.id)?;
         map.serialize_entry("label", &self.label)?;
-        map.serialize_entry("x", &JsonNumber(self.x))?;
-        map.serialize_entry("y", &JsonNumber(self.y))?;
+        map.serialize_entry("x", &JsonNumber(self.at.x))?;
+        map.serialize_entry("y", &JsonNumber(self.at.y))?;
         if let Some(class_name) = &self.class_name {
             map.serialize_entry("className", class_name)?;
         }
@@ -71,17 +119,23 @@ pub struct WardleyLink {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub flow: Option<&'static str>,
+    pub flow: Option<Flow>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WardleyTrend {
     pub node_id: String,
-    #[serde(serialize_with = "js::json_number")]
-    pub target_x: f64,
-    #[serde(serialize_with = "js::json_number")]
-    pub target_y: f64,
+    pub target: MapPoint,
+}
+
+impl Serialize for WardleyTrend {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut map = s.serialize_map(Some(3))?;
+        map.serialize_entry("nodeId", &self.node_id)?;
+        map.serialize_entry("targetX", &JsonNumber(self.target.x))?;
+        map.serialize_entry("targetY", &JsonNumber(self.target.y))?;
+        map.end()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -91,19 +145,11 @@ pub struct WardleyPipeline {
     pub component_ids: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-pub struct Point {
-    #[serde(serialize_with = "js::json_number")]
-    pub x: f64,
-    #[serde(serialize_with = "js::json_number")]
-    pub y: f64,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WardleyAnnotation {
     #[serde(serialize_with = "js::json_number")]
     pub number: f64,
-    pub coordinates: Vec<Point>,
+    pub coordinates: Vec<MapPoint>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
@@ -111,19 +157,15 @@ pub struct WardleyAnnotation {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WardleyNote {
     pub text: String,
-    #[serde(serialize_with = "js::json_number")]
-    pub x: f64,
-    #[serde(serialize_with = "js::json_number")]
-    pub y: f64,
+    #[serde(flatten)]
+    pub at: MapPoint,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WardleyForce {
     pub name: String,
-    #[serde(serialize_with = "js::json_number")]
-    pub x: f64,
-    #[serde(serialize_with = "js::json_number")]
-    pub y: f64,
+    #[serde(flatten)]
+    pub at: MapPoint,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -170,7 +212,7 @@ pub struct WardleyBuildResult {
     pub accelerators: Vec<WardleyForce>,
     pub deaccelerators: Vec<WardleyForce>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub annotations_box: Option<Point>,
+    pub annotations_box: Option<MapPoint>,
     pub axes: WardleyAxesConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<WardleySize>,
@@ -180,13 +222,12 @@ pub struct WardleyBuildResult {
 pub struct NewNode {
     pub id: String,
     pub label: String,
-    pub x: f64,
-    pub y: f64,
-    pub class_name: Option<String>,
+    pub at: MapPoint,
+    pub class_name: Option<NodeClass>,
     pub label_offset_x: Option<f64>,
     pub label_offset_y: Option<f64>,
     pub inertia: Option<bool>,
-    pub source_strategy: Option<String>,
+    pub source_strategy: Option<Strategy>,
 }
 
 #[derive(Default)]
@@ -200,7 +241,7 @@ pub struct WardleyBuilder {
     notes: Vec<WardleyNote>,
     accelerators: Vec<WardleyForce>,
     deaccelerators: Vec<WardleyForce>,
-    annotations_box: Option<Point>,
+    annotations_box: Option<MapPoint>,
     axes: WardleyAxesConfig,
     size: Option<WardleySize>,
 }
@@ -213,9 +254,8 @@ impl WardleyBuilder {
             Some(existing) => WardleyNode {
                 id: node.id.clone(),
                 label: node.label,
-                x: node.x,
-                y: node.y,
-                class_name: node.class_name.or_else(|| existing.class_name.clone()),
+                at: node.at,
+                class_name: node.class_name.or(existing.class_name),
                 label_offset_x: node.label_offset_x.or(existing.label_offset_x),
                 label_offset_y: node.label_offset_y.or(existing.label_offset_y),
                 in_pipeline: existing.in_pipeline,
@@ -227,8 +267,7 @@ impl WardleyBuilder {
             None => WardleyNode {
                 id: node.id.clone(),
                 label: node.label,
-                x: node.x,
-                y: node.y,
+                at: node.at,
                 class_name: node.class_name,
                 label_offset_x: node.label_offset_x,
                 label_offset_y: node.label_offset_y,
@@ -292,8 +331,8 @@ impl WardleyBuilder {
         self.deaccelerators.push(deaccelerator);
     }
 
-    pub fn set_annotations_box(&mut self, x: f64, y: f64) {
-        self.annotations_box = Some(Point { x, y });
+    pub fn set_annotations_box(&mut self, at: MapPoint) {
+        self.annotations_box = Some(at);
     }
 
     pub fn set_axes(&mut self, stages: Vec<String>, stage_boundaries: Vec<f64>) {

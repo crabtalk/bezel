@@ -1,5 +1,6 @@
 //! Pele's `diagrams/git/parser.ts`.
 
+use super::db::CommitType;
 use crate::{
     detect::Kind,
     diagrams::common::tokens::{
@@ -7,6 +8,7 @@ use crate::{
         single_line_comment, string, string_value, title, token_kinds, whitespace, yaml,
     },
     error::Error,
+    geom::Direction,
     js,
 };
 
@@ -57,21 +59,14 @@ fn word(name: &'static str) -> TokenType<Token> {
 }
 
 impl Token {
-    fn direction(self) -> Option<&'static str> {
+    fn direction(self) -> Option<Direction> {
         match self {
-            Self::Lr => Some("LR"),
-            Self::Tb => Some("TB"),
-            Self::Bt => Some("BT"),
+            Self::Lr => Some(Direction::LeftToRight),
+            Self::Tb => Some(Direction::TopToBottom),
+            Self::Bt => Some(Direction::BottomToTop),
             _ => None,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CommitTypeName {
-    Normal,
-    Reverse,
-    Highlight,
 }
 
 pub enum StatementAst {
@@ -79,7 +74,7 @@ pub enum StatementAst {
         id: Option<String>,
         message: Option<String>,
         tags: Vec<String>,
-        kind: Option<CommitTypeName>,
+        kind: Option<CommitType>,
     },
     Branch {
         name: String,
@@ -89,7 +84,7 @@ pub enum StatementAst {
         branch: String,
         id: Option<String>,
         tags: Vec<String>,
-        kind: Option<CommitTypeName>,
+        kind: Option<CommitType>,
     },
     Checkout {
         branch: String,
@@ -103,7 +98,7 @@ pub enum StatementAst {
 
 #[derive(Default)]
 pub struct GitGraphAst {
-    pub dir: Option<&'static str>,
+    pub dir: Option<Direction>,
     pub header: Header,
     pub statements: Vec<StatementAst>,
 }
@@ -125,11 +120,11 @@ impl Parser<'_> {
         Ok(string_value(self.r.expect(Token::String)?))
     }
 
-    fn commit_type(&mut self) -> Result<CommitTypeName, Error> {
+    fn commit_type(&mut self) -> Result<CommitType, Error> {
         let kind = match self.r.kind() {
-            Some(Token::Normal) => CommitTypeName::Normal,
-            Some(Token::Reverse) => CommitTypeName::Reverse,
-            Some(Token::Highlight) => CommitTypeName::Highlight,
+            Some(Token::Normal) => CommitType::Normal,
+            Some(Token::Reverse) => CommitType::Reverse,
+            Some(Token::Highlight) => CommitType::Highlight,
             _ => return Err(self.r.fail("NORMAL, REVERSE, or HIGHLIGHT")),
         };
         self.r.bump();

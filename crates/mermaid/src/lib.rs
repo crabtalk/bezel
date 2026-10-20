@@ -2,8 +2,11 @@
 //! with its syntax and drawn in bezel's style.
 //!
 //! A port of Pele 1.6.0 (github.com/obsidianmd/pele, MIT): its parsers,
-//! layouts and SVG, so a source draws as Pele draws it, class names and CSS
-//! variables named `bezel-*` for `pele-*`.
+//! layouts and SVG, so a source draws as Pele draws it, class names, CSS
+//! variables and element ids named `bezel-*` for `pele-*`. The SVG does not
+//! match mermaid.js's.
+//!
+//! Builds without gpui, for `wasm32-unknown-unknown` too.
 //!
 //! ```
 //! let drawing = mermaid::render("info", &Default::default(), &mermaid::Metrics).unwrap();

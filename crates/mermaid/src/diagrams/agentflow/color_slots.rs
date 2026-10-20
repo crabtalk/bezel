@@ -31,11 +31,6 @@ impl VertexKind {
     }
 }
 
-/// The slot of the kind named `kind`, when it is one.
-pub fn kind_slot(kind: &str) -> Option<usize> {
-    KINDS.iter().position(|kind_of| kind_of.name() == kind)
-}
-
 /// At least one, so that a palette shorter than the kinds still gives
 /// containers a slot.
 pub fn container_slot_count(palette_length: usize) -> usize {
@@ -73,7 +68,7 @@ pub fn assign_color_slots(
             continue;
         }
         if let Some(kind) = kind_of(&node.id) {
-            node.kind = Some(kind.name());
+            node.kind = Some(kind);
         }
     }
 }

@@ -8,9 +8,8 @@ pub mod render;
 
 pub use model::WardleyModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::WardleyConfig;
 
 pub struct Wardley;
@@ -28,11 +27,5 @@ impl Diagram for Wardley {
             parser::parse_wardley(source)?,
             title,
         )?)))
-    }
-}
-
-impl Render for WardleyModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_wardley(self, &config.wardley, ctx))
     }
 }

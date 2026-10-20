@@ -6,7 +6,7 @@ use super::{
     tokens::T,
     types::{Relationship, RequirementType, Risk, VerifyMethod},
 };
-use crate::{detect::Kind, error::Error, js, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, js, token::Stream};
 
 const REQUIREMENT_TYPES: [(T, RequirementType); 6] = [
     (T::Requirement, RequirementType::Requirement),
@@ -41,11 +41,11 @@ const STYLE_PARTS: [T; 5] = [T::Alpha, T::Colon, T::Semicolon, T::Minus, T::Brkt
 const REQUIREMENT_FIELDS: [T; 4] = [T::Id, T::Text, T::Risk, T::Verifymthd];
 const ELEMENT_FIELDS: [T; 2] = [T::Type, T::Docref];
 const DIRECTIVES: [T; 3] = [T::AccTitle, T::AccDescr, T::AccDescrMultilineValue];
-const DIRECTIONS: [(T, &str); 4] = [
-    (T::DirectionTb, "TB"),
-    (T::DirectionBt, "BT"),
-    (T::DirectionRl, "RL"),
-    (T::DirectionLr, "LR"),
+const DIRECTIONS: [(T, Direction); 4] = [
+    (T::DirectionTb, Direction::TopToBottom),
+    (T::DirectionBt, Direction::BottomToTop),
+    (T::DirectionRl, Direction::RightToLeft),
+    (T::DirectionLr, Direction::LeftToRight),
 ];
 
 fn kinds<V>(table: &[(T, V)]) -> impl Iterator<Item = T> + '_ {
@@ -214,7 +214,7 @@ pub fn parse_requirement(src: &str, db: &mut RequirementModel) -> Result<(), Err
         }
         if let Some(&(_, direction)) = DIRECTIONS.iter().find(|&&(kind, _)| kind == t) {
             r.s.bump();
-            db.set_direction(direction);
+            db.direction = direction;
         } else if kinds(&REQUIREMENT_TYPES).any(|kind| kind == t) {
             let kind = r.keyword(&REQUIREMENT_TYPES)?;
             let name = r.string()?;

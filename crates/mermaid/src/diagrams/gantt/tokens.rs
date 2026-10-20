@@ -1,5 +1,6 @@
 //! Pele's `diagrams/gantt/tokens.ts`.
 
+use super::dates::Weekday;
 use crate::token::grammar;
 
 grammar! {
@@ -57,18 +58,18 @@ grammar! {
 
 impl T {
     /// The `weekday` statements and the day each names, from Monday.
-    pub const WEEKDAYS: [(T, &str); 7] = [
-        (T::WeekdayMonday, "monday"),
-        (T::WeekdayTuesday, "tuesday"),
-        (T::WeekdayWednesday, "wednesday"),
-        (T::WeekdayThursday, "thursday"),
-        (T::WeekdayFriday, "friday"),
-        (T::WeekdaySaturday, "saturday"),
-        (T::WeekdaySunday, "sunday"),
+    pub const WEEKDAYS: [(T, Weekday); 7] = [
+        (T::WeekdayMonday, Weekday::Monday),
+        (T::WeekdayTuesday, Weekday::Tuesday),
+        (T::WeekdayWednesday, Weekday::Wednesday),
+        (T::WeekdayThursday, Weekday::Thursday),
+        (T::WeekdayFriday, Weekday::Friday),
+        (T::WeekdaySaturday, Weekday::Saturday),
+        (T::WeekdaySunday, Weekday::Sunday),
     ];
 
     /// The day a `weekday` statement names.
-    pub fn weekday(self) -> Option<&'static str> {
+    pub fn weekday(self) -> Option<Weekday> {
         Self::WEEKDAYS
             .iter()
             .find(|(kind, _)| *kind == self)

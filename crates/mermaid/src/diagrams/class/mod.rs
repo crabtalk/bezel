@@ -13,9 +13,8 @@ pub mod types;
 
 pub use db::ClassModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::ClassConfig;
 
 pub struct Class;
@@ -35,11 +34,5 @@ impl Diagram for Class {
         }
         parser::parse_class_diagram(source, &mut db)?;
         Ok(Model::Class(Box::new(db)))
-    }
-}
-
-impl Render for ClassModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_class(self, &config.class, ctx))
     }
 }

@@ -7,9 +7,8 @@ mod render;
 
 pub use db::{MindmapModel, MindmapNode};
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::MindmapConfig;
 
 pub struct Mindmap;
@@ -26,11 +25,5 @@ impl Diagram for Mindmap {
         let mut db = MindmapModel::new(title);
         parser::parse_mindmap(source, &mut db)?;
         Ok(Model::Mindmap(db))
-    }
-}
-
-impl Render for MindmapModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_mindmap(self, &config.mindmap, ctx))
     }
 }

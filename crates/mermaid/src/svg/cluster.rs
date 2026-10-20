@@ -100,6 +100,37 @@ impl Crossings {
         xs.iter()
             .any(|&cx| cx > left && cx < left + c.size.w && (cx - x).abs() < width / 2.0 + 4.0)
     }
+
+    /// [`Crossings::title_x`] for a title centred when nothing crosses it:
+    /// the centre, then `pad` in from the left, then from the right.
+    pub fn centred_title_x(&self, c: &CNode, width: f64, pad: f64) -> f64 {
+        let Some(xs) = self.at_top(c) else {
+            return c.center.x;
+        };
+        if width == 0.0 {
+            return c.center.x;
+        }
+        let left = c.center.x - c.size.w / 2.0;
+        let half = width / 2.0;
+        let mut best = c.center.x;
+        let mut best_gap = -1.0;
+        for x in [c.center.x, left + pad + half, left + c.size.w - pad - half] {
+            let mut gap = f64::INFINITY;
+            for &cx in xs {
+                if cx > left && cx < left + c.size.w {
+                    gap = gap.min((cx - x).abs() - half);
+                }
+            }
+            if gap >= 6.0 {
+                return x;
+            }
+            if gap > best_gap + 0.5 {
+                best_gap = gap;
+                best = x;
+            }
+        }
+        best
+    }
 }
 
 /// A title an edge runs through, drawn over the edges: the text on an

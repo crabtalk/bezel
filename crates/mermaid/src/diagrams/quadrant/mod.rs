@@ -9,9 +9,8 @@ pub mod tokens;
 
 pub use db::QuadrantModel;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::QuadrantConfig;
 
 pub struct Quadrant;
@@ -29,11 +28,5 @@ impl Diagram for Quadrant {
         db.titles.title = title.map(str::to_string);
         parser::parse_quadrant(source, &mut db)?;
         Ok(Model::Quadrant(db))
-    }
-}
-
-impl Render for QuadrantModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_quadrant(self, &config.quadrant_chart, ctx))
     }
 }

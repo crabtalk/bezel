@@ -10,7 +10,7 @@ use indexmap::{IndexMap, IndexSet};
 use super::{
     lexer::Source,
     types::{
-        Actor, ActorType, Animation, BoundaryType, ClassDef, Direction, EdgeOccurrence,
+        Actor, ActorType, Animation, Arrow, BoundaryType, ClassDef, Direction, EdgeOccurrence,
         GraphStatement, LabelType, MetadataOccurrence, Relationship, RelationshipType, Span,
         StatementKind, SymbolKind, SystemBoundary, UseCase, UseCaseShape, UsecaseJsonNode,
         UsecaseModel, UsecaseNote,
@@ -163,7 +163,7 @@ pub struct DraftRelationship {
     pub id: Option<String>,
     pub id_span: Option<Span>,
     pub kind: RelationshipType,
-    pub arrow_type: usize,
+    pub arrow_type: Arrow,
     pub label: Option<DraftLabel>,
     pub minlen: usize,
 }
@@ -1002,7 +1002,7 @@ impl Drafts {
             }
             if kind == RelationshipType::Association
                 && (source_kind == SymbolKind::Json || target_kind == SymbolKind::Json)
-                && draft.arrow_type > 2
+                && draft.arrow_type.is_decorated()
             {
                 return Err(r.fail(
                     &format!(

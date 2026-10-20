@@ -1,14 +1,9 @@
 //! The geometry of Mermaid's Cynefin boundaries: seeded wavy lines between
-//! the domains and the S-shaped cliff between Clear and Chaotic. Curves are
-//! flat lists of numbers: a start point, then six numbers (two control points
-//! and an end point) per cubic segment. Pele's
+//! the domains and the S-shaped cliff between Clear and Chaotic. Pele's
 //! `diagrams/cynefin/boundaries.ts`.
 
 use crate::geom::Point;
-use crate::{
-    js,
-    svg::builder::{fragment, num},
-};
+use crate::{js, svg::builder::fragment};
 use std::fmt;
 
 pub const FOLD: WaveOptions = WaveOptions {
@@ -74,14 +69,7 @@ pub struct WaveOptions {
 /// A wavy line along one axis from `from` to `to`, centered on `center` in
 /// the other axis. Points jitter by up to the amplitude; a pinned end stays on
 /// the center line.
-pub fn wave(
-    from: f64,
-    to: f64,
-    center: f64,
-    seed: f64,
-    amplitude: f64,
-    o: WaveOptions,
-) -> Vec<f64> {
+pub fn wave(from: f64, to: f64, center: f64, seed: f64, amplitude: f64, o: WaveOptions) -> Curve {
     let step = (to - from) / o.segments as f64;
     let mut along = Vec::with_capacity(o.segments + 1);
     let mut across = Vec::with_capacity(o.segments + 1);
@@ -94,117 +82,92 @@ pub fn wave(
             center + seeded_random(seed + i as f64 * o.point_step) * amplitude * 2.0 - amplitude
         });
     }
-    let mut out = if o.vertical {
-        vec![across[0], along[0]]
-    } else {
-        vec![along[0], across[0]]
+    let point = |along: f64, across: f64| {
+        if o.vertical {
+            Point::new(across, along)
+        } else {
+            Point::new(along, across)
+        }
     };
+    let mut points = Vec::with_capacity(3 * o.segments + 1);
+    points.push(point(along[0], across[0]));
     for i in 0..o.segments {
         let mid = (along[i] + along[i + 1]) / 2.0;
         let offset = amplitude
             * 1.5
             * (if i % 2 == 0 { 1.0 } else { -1.0 })
             * seeded_random(seed + i as f64 * o.control_step + o.control_shift);
-        if o.vertical {
-            out.extend([
-                across[i] + offset,
-                mid,
-                across[i + 1] - offset,
-                mid,
-                across[i + 1],
-                along[i + 1],
-            ]);
-        } else {
-            out.extend([
-                mid,
-                across[i] + offset,
-                mid,
-                across[i + 1] - offset,
-                along[i + 1],
-                across[i + 1],
-            ]);
-        }
+        points.extend([
+            point(mid, across[i] + offset),
+            point(mid, across[i + 1] - offset),
+            point(along[i + 1], across[i + 1]),
+        ]);
     }
-    out
+    Curve(points)
 }
 
-/// The cliff: a steep S from (cx, top) down to (cx, bottom).
-pub fn cliff(cx: f64, top: f64, bottom: f64, amplitude: f64) -> Vec<f64> {
+/// The cliff: a steep S from `top` straight down to `bottom`.
+pub fn cliff(top: Point, bottom: f64, amplitude: f64) -> Curve {
+    let Point { x: cx, y: top } = top;
     let h = bottom - top;
-    vec![
-        cx,
-        top,
-        cx + amplitude,
-        top + h * 0.2,
-        cx - amplitude * 1.5,
-        top + h * 0.55,
-        cx + amplitude * 0.5,
-        top + h * 0.75,
-        cx - amplitude,
-        top + h * 0.85,
-        cx + amplitude * 0.3,
-        top + h * 0.95,
-        cx,
-        bottom,
-    ]
+    Curve(vec![
+        Point::new(cx, top),
+        Point::new(cx + amplitude, top + h * 0.2),
+        Point::new(cx - amplitude * 1.5, top + h * 0.55),
+        Point::new(cx + amplitude * 0.5, top + h * 0.75),
+        Point::new(cx - amplitude, top + h * 0.85),
+        Point::new(cx + amplitude * 0.3, top + h * 0.95),
+        Point::new(cx, bottom),
+    ])
 }
 
-/// Path commands that continue from the curve's start point to its end.
-pub fn forward(curve: &[f64]) -> impl fmt::Display + '_ {
+/// A start point, then two control points and an end point per cubic
+/// segment.
+pub struct Curve(pub Vec<Point>);
+
+impl Curve {
+    pub fn start(&self) -> Point {
+        self.0[0]
+    }
+
+    pub fn end(&self) -> Point {
+        self.0[self.0.len() - 1]
+    }
+
+    /// Path commands that continue from the start point to the end.
+    pub fn forward(&self) -> impl fmt::Display + '_ {
+        fragment(move |f| {
+            for c in self.0[1..].as_chunks::<3>().0 {
+                write!(f, "C{} {} {}", c[0], c[1], c[2])?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Path commands that continue from the end point back to the start.
+    pub fn backward(&self) -> impl fmt::Display + '_ {
+        fragment(move |f| {
+            for c in self.0.windows(4).rev().step_by(3) {
+                write!(f, "C{} {} {}", c[2], c[1], c[0])?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn path(&self) -> impl fmt::Display + '_ {
+        fragment(move |f| write!(f, "M{}{}", self.start(), self.forward()))
+    }
+}
+
+pub fn ellipse_path(center: Point, radii: Point) -> impl fmt::Display {
     fragment(move |f| {
-        let mut i = 2;
-        while i < curve.len() {
-            write!(
-                f,
-                "C{},{} {},{} {},{}",
-                num(curve[i]),
-                num(curve[i + 1]),
-                num(curve[i + 2]),
-                num(curve[i + 3]),
-                num(curve[i + 4]),
-                num(curve[i + 5])
-            )?;
-            i += 6;
-        }
-        Ok(())
-    })
-}
-
-/// Path commands that continue from the curve's end point back to its start.
-pub fn backward(curve: &[f64]) -> impl fmt::Display + '_ {
-    fragment(move |f| {
-        let mut i = curve.len() as isize - 6;
-        while i >= 2 {
-            let k = i as usize;
-            write!(
-                f,
-                "C{},{} {},{} {},{}",
-                num(curve[k + 2]),
-                num(curve[k + 3]),
-                num(curve[k]),
-                num(curve[k + 1]),
-                num(curve[k - 2]),
-                num(curve[k - 1])
-            )?;
-            i -= 6;
-        }
-        Ok(())
-    })
-}
-
-pub fn curve_path(curve: &[f64]) -> impl fmt::Display + '_ {
-    fragment(move |f| write!(f, "M{}{}", Point::new(curve[0], curve[1]), forward(curve)))
-}
-
-pub fn ellipse_path(cx: f64, cy: f64, rx: f64, ry: f64) -> impl fmt::Display {
-    fragment(move |f| {
-        let r = Point::new(rx, ry);
+        let across = Point::new(radii.x, 0.0);
         write!(
             f,
-            "M{}A{r} 0 1,1 {}A{r} 0 1,1 {}Z",
-            Point::new(cx - rx, cy),
-            Point::new(cx + rx, cy),
-            Point::new(cx - rx, cy)
+            "M{}A{radii} 0 1,1 {}A{radii} 0 1,1 {}Z",
+            center - across,
+            center + across,
+            center - across
         )
     })
 }

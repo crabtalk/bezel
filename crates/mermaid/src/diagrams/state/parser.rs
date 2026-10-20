@@ -4,11 +4,11 @@ use super::{
     lexer::tokenize,
     tokens::T,
     types::{
-        ClassDefStmt, ClickStmt, Descr, DirectionStmt, RelationStmt, StateModel, StateNote,
-        StateStmt, Stmt, StyleStmt,
+        ClassDefStmt, ClickStmt, Descr, DirectionStmt, RelationStmt, StateKind, StateModel,
+        StateNote, StateStmt, Stmt, StyleStmt,
     },
 };
-use crate::{detect::Kind, error::Error, js, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, js, token::Stream};
 
 const STATEMENT: &str = "'NL', 'ID', 'HIDE_EMPTY', 'scale', 'COMPOSIT_STATE', 'STATE_DESCR', 'FORK', 'JOIN', 'CHOICE', 'CONCURRENT', 'note', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'CLICK', 'classDef', 'style', 'class', 'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'EDGE_STATE'";
 
@@ -48,7 +48,7 @@ impl Parser<'_, '_> {
     /// Steps past `{` and starts the document of the composite `id`.
     fn open(&mut self, id: String, description: String) {
         self.s.bump();
-        let mut state = StateStmt::new(id, Some("default"));
+        let mut state = StateStmt::new(id, Some(StateKind::Default));
         state.description = Some(Descr::One(description));
         let parent = std::mem::take(&mut self.doc);
         self.outer.push(Open { parent, state });
@@ -59,7 +59,7 @@ impl Parser<'_, '_> {
             return Err(self.s.fail("'ID', 'EDGE_STATE'"));
         }
         let id = js::trim(self.s.take()).to_string();
-        let mut state = StateStmt::new(id, Some("default"));
+        let mut state = StateStmt::new(id, Some(StateKind::Default));
         state.description = Some(Descr::One(String::new()));
         if !self.s.eat(T::StyleSeparator) {
             return Ok(state);
@@ -101,13 +101,13 @@ impl Parser<'_, '_> {
         if let Some((id, second)) = id.split_once(':') {
             // Mermaid keeps the part after the first colon up to the next.
             let second = second.split(':').next().unwrap_or("");
-            state = StateStmt::new(id, Some("default"));
+            state = StateStmt::new(id, Some(StateKind::Default));
             state.description = Some(Descr::Many(vec![
                 js::trim(&description).to_string(),
                 second.to_string(),
             ]));
         } else {
-            state = StateStmt::new(id, Some("default"));
+            state = StateStmt::new(id, Some(StateKind::Default));
             state.description = Some(Descr::One(js::trim(&description).to_string()));
         }
         self.add_state(state);
@@ -209,9 +209,9 @@ impl Parser<'_, '_> {
                 T::StateDescr => self.described_state()?,
                 T::Fork | T::Join | T::Choice => {
                     let kind = match t {
-                        T::Fork => "fork",
-                        T::Join => "join",
-                        _ => "choice",
+                        T::Fork => StateKind::Fork,
+                        T::Join => StateKind::Join,
+                        _ => StateKind::Choice,
                     };
                     let id = self.s.take().to_string();
                     self.add_state(StateStmt::new(id, Some(kind)));
@@ -219,17 +219,16 @@ impl Parser<'_, '_> {
                 T::Concurrent => {
                     self.s.bump();
                     let id = self.db.next_divider_id();
-                    self.add_state(StateStmt::new(id, Some("divider")));
+                    self.add_state(StateStmt::new(id, Some(StateKind::Divider)));
                 }
                 T::Note => self.note()?,
                 T::DirectionTb | T::DirectionBt | T::DirectionRl | T::DirectionLr => {
                     let value = match t {
-                        T::DirectionTb => "TB",
-                        T::DirectionBt => "BT",
-                        T::DirectionRl => "RL",
-                        _ => "LR",
-                    }
-                    .to_string();
+                        T::DirectionTb => Direction::TopToBottom,
+                        T::DirectionBt => Direction::BottomToTop,
+                        T::DirectionRl => Direction::RightToLeft,
+                        _ => Direction::LeftToRight,
+                    };
                     self.s.bump();
                     // The grammar's setDirection lands in the root document
                     // the parser has not handed over yet, which setRootDoc

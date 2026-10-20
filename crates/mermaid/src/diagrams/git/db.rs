@@ -4,16 +4,21 @@ use super::GitGraphConfig;
 use crate::diagrams::common::db::Titles;
 use indexmap::IndexMap;
 use serde::Serialize;
+use serde_repr::Serialize_repr;
 
-use super::parser::{CommitTypeName, GitGraphAst, StatementAst};
-use crate::{Error, Kind};
+use super::parser::{GitGraphAst, StatementAst};
+use crate::{Error, Kind, geom::Direction, js};
 
-pub mod commit_type {
-    pub const NORMAL: u8 = 0;
-    pub const REVERSE: u8 = 1;
-    pub const HIGHLIGHT: u8 = 2;
-    pub const MERGE: u8 = 3;
-    pub const CHERRY_PICK: u8 = 4;
+/// A commit's kind, numbered as in Mermaid.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize_repr)]
+#[repr(u8)]
+pub enum CommitType {
+    #[default]
+    Normal = 0,
+    Reverse = 1,
+    Highlight = 2,
+    Merge = 3,
+    CherryPick = 4,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -23,12 +28,12 @@ pub struct GitCommit {
     pub message: String,
     pub seq: usize,
     #[serde(rename = "type")]
-    pub kind: u8,
+    pub kind: CommitType,
     pub tags: Vec<String>,
     pub parents: Vec<String>,
     pub branch: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub custom_type: Option<u8>,
+    pub custom_type: Option<CommitType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_id: Option<bool>,
 }
@@ -40,7 +45,7 @@ pub struct GitModel {
     pub kind: &'static str,
     #[serde(flatten)]
     pub titles: Titles,
-    pub direction: &'static str,
+    pub direction: Direction,
     /// Keyed by commit id, in the order the ids first appeared.
     pub commits: IndexMap<String, GitCommit>,
     /// The id of each branch's latest commit, or `None` while the branch has
@@ -53,16 +58,6 @@ pub struct GitModel {
     pub warnings: Vec<String>,
 }
 
-impl CommitTypeName {
-    fn code(self) -> u8 {
-        match self {
-            Self::Reverse => commit_type::REVERSE,
-            Self::Highlight => commit_type::HIGHLIGHT,
-            Self::Normal => commit_type::NORMAL,
-        }
-    }
-}
-
 /// What Mermaid's gitGraph database holds while statements are read.
 struct Db {
     commits: IndexMap<String, GitCommit>,
@@ -71,7 +66,7 @@ struct Db {
     warnings: Vec<String>,
     head: Option<Box<GitCommit>>,
     current: String,
-    direction: &'static str,
+    direction: Direction,
     seq: usize,
 }
 
@@ -116,7 +111,7 @@ impl Db {
         Ok(())
     }
 
-    fn commit(&mut self, msg: String, id: Option<String>, kind: u8, tags: Vec<String>) {
+    fn commit(&mut self, msg: String, id: Option<String>, kind: CommitType, tags: Vec<String>) {
         let commit = GitCommit {
             id: id
                 .filter(|id| !id.is_empty())
@@ -153,7 +148,7 @@ impl Db {
         &mut self,
         other: &str,
         custom_id: String,
-        kind: Option<u8>,
+        kind: Option<CommitType>,
         tags: Vec<String>,
     ) -> Result<(), Error> {
         let current = self.current.clone();
@@ -222,7 +217,7 @@ impl Db {
             },
             message: format!("merged branch {other} into {current}"),
             seq: self.seq,
-            kind: commit_type::MERGE,
+            kind: CommitType::Merge,
             tags,
             parents,
             branch: current,
@@ -260,7 +255,7 @@ impl Db {
                 "Invalid operation: The specified parent commit is not an immediate parent of the cherry-picked commit.",
             ).of(Kind::GitGraph));
         }
-        if source.kind == commit_type::MERGE && parent.is_none() {
+        if source.kind == CommitType::Merge && parent.is_none() {
             return Err(Error::semantic(
                 "Incorrect usage of cherry-pick: If the source commit is a merge commit, an immediate parent commit must be specified.",
             ).of(Kind::GitGraph));
@@ -294,7 +289,7 @@ impl Db {
             None => vec![format!(
                 "cherry-pick:{}{}",
                 source.id,
-                if source.kind == commit_type::MERGE {
+                if source.kind == CommitType::Merge {
                     format!("|parent:{}", parent.as_deref().unwrap_or("undefined"))
                 } else {
                     String::new()
@@ -305,7 +300,7 @@ impl Db {
             id: self.next_id(),
             message: format!("cherry-picked {} into {current}", source.message),
             seq: self.seq,
-            kind: commit_type::CHERRY_PICK,
+            kind: CommitType::CherryPick,
             tags,
             parents,
             branch: current,
@@ -328,7 +323,7 @@ impl Db {
                 self.commit(
                     message.unwrap_or_default(),
                     id,
-                    kind.map_or(commit_type::NORMAL, CommitTypeName::code),
+                    kind.unwrap_or_default(),
                     tags,
                 );
                 Ok(())
@@ -339,12 +334,7 @@ impl Db {
                 id,
                 tags,
                 kind,
-            } => self.merge(
-                &branch,
-                id.unwrap_or_default(),
-                kind.map(CommitTypeName::code),
-                tags,
-            ),
+            } => self.merge(&branch, id.unwrap_or_default(), kind, tags),
             StatementAst::Checkout { branch } => self.checkout(&branch),
             StatementAst::CherryPicking { id, tags, parent } => self.cherry_pick(
                 id,
@@ -376,13 +366,10 @@ impl GitModel {
             warnings: Vec::new(),
             head: None,
             current: main_name,
-            direction: "LR",
+            direction: ast.dir.unwrap_or(Direction::LeftToRight),
             seq: 0,
         };
 
-        if let Some(dir) = ast.dir {
-            db.direction = dir;
-        }
         for statement in ast.statements {
             db.statement(statement)?;
         }
@@ -400,11 +387,7 @@ impl GitModel {
                 )
             })
             .collect();
-        lanes.sort_by(|a, b| {
-            (a.1 - b.1)
-                .partial_cmp(&0.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        lanes.sort_by(|a, b| js::compare(a.1 - b.1));
 
         Ok(Self {
             kind: "gitGraph",

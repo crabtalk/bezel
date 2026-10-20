@@ -3,65 +3,10 @@
 use crate::diagrams::common::style_class::StyleClass;
 use indexmap::{IndexMap, IndexSet};
 
-use super::types::{Block, BlockModel, Statement};
+use super::types::{Block, BlockKind, BlockModel, Columns, Statement};
 use crate::{Error, Kind, js};
 
 const MAX_SPACES: f64 = 100000.0;
-
-pub fn type_str_to_type(type_str: Option<&str>) -> &'static str {
-    match type_str {
-        Some("[]") => "square",
-        Some("()") => "round",
-        Some("(())") => "circle",
-        Some(">]") => "rect_left_inv_arrow",
-        Some("{}") => "diamond",
-        Some("{{}}") => "hexagon",
-        Some("([])") => "stadium",
-        Some("[[]]") => "subroutine",
-        Some("[()]") => "cylinder",
-        Some("((()))") => "doublecircle",
-        Some("[//]") => "lean_right",
-        Some(r"[\\]") => "lean_left",
-        Some(r"[/\]") => "trapezoid",
-        Some(r"[\/]") => "inv_trapezoid",
-        Some("<[]>") => "block_arrow",
-        _ => "na",
-    }
-}
-
-pub fn edge_str_to_edge_data(type_str: &str) -> &'static str {
-    match js::trim(type_str).chars().next_back() {
-        Some('x') => "arrow_cross",
-        Some('o') => "arrow_circle",
-        Some('>') => "arrow_point",
-        _ => "",
-    }
-}
-
-pub fn edge_str_to_edge_start_data(type_str: &str) -> &'static str {
-    match js::trim(type_str).chars().next() {
-        Some('x') => "arrow_cross",
-        Some('o') => "arrow_circle",
-        Some('<') => "arrow_point",
-        _ => "arrow_open",
-    }
-}
-
-pub fn edge_str_to_thickness(type_str: &str) -> &'static str {
-    if type_str.contains("==") {
-        "thick"
-    } else {
-        "normal"
-    }
-}
-
-pub fn edge_str_to_pattern(type_str: &str) -> &'static str {
-    if type_str.contains(".-") {
-        "dotted"
-    } else {
-        "solid"
-    }
-}
 
 struct Frame {
     list: Vec<usize>,
@@ -103,9 +48,9 @@ impl BlockModel {
             spaces: 0.0,
             nodes: vec![Block {
                 id: Some("root".into()),
-                kind: Some("composite".into()),
+                kind: BlockKind::Composite,
                 children: Some(Vec::new()),
-                columns: Some(-1.0),
+                columns: Some(Columns::Auto),
                 ..Block::default()
             }],
             class_lists: Vec::new(),
@@ -166,7 +111,7 @@ impl BlockModel {
         }
         let at = self.alloc(Block {
             id: Some(id.to_string()),
-            kind: Some("na".into()),
+            kind: BlockKind::Na,
             children: Some(Vec::new()),
             ..Block::default()
         });
@@ -187,32 +132,32 @@ impl BlockModel {
             f.at += 1;
             let parent = f.parent;
             let block = &self.nodes[at];
-            match block.kind.as_deref() {
-                Some("classDef") => {
+            match block.kind {
+                BlockKind::ClassDef => {
                     let id = block.id.clone().unwrap_or_default();
                     let css = block.css.clone().unwrap_or_default();
                     self.add_style_class(&id, &css);
                     continue;
                 }
-                Some("applyClass") => {
+                BlockKind::ApplyClass => {
                     let id = block.id.clone().unwrap_or_default();
                     let class = block.style_class.clone().unwrap_or_default();
                     self.set_css_class(&id, &class);
                     continue;
                 }
-                Some("applyStyles") => {
+                BlockKind::ApplyStyles => {
                     if let Some(styles) = block.styles_str.clone().filter(|s| !s.is_empty()) {
                         let id = block.id.clone().unwrap_or_default();
                         self.add_style_to_node(&id, &styles);
                     }
                     continue;
                 }
-                Some("column-setting") => {
-                    let columns = block.columns.unwrap_or(-1.0);
+                BlockKind::ColumnSetting => {
+                    let columns = block.columns.unwrap_or(Columns::Auto);
                     self.nodes[parent].columns = Some(columns);
                     continue;
                 }
-                Some("edge") => {
+                BlockKind::Edge => {
                     let key = block.id.clone().unwrap_or_default();
                     let count = self.edge_count.get(&key).copied().unwrap_or(0) + 1;
                     self.edge_count.insert(key.clone(), count);
@@ -232,7 +177,7 @@ impl BlockModel {
             let block = &mut self.nodes[at];
             let id = block.id.clone().unwrap_or_default();
             if block.label.as_deref().is_none_or(str::is_empty) {
-                block.label = Some(if block.kind.as_deref() == Some("composite") {
+                block.label = Some(if block.kind == BlockKind::Composite {
                     String::new()
                 } else {
                     id.clone()
@@ -242,8 +187,8 @@ impl BlockModel {
             let fresh = known.is_none() || self.pending.shift_remove(&id);
             if !fresh {
                 let known = known.expect("a known block");
-                let (kind, label) = (self.nodes[at].kind.clone(), self.nodes[at].label.clone());
-                if kind.as_deref() != Some("na") {
+                let (kind, label) = (self.nodes[at].kind, self.nodes[at].label.clone());
+                if kind != BlockKind::Na {
                     self.nodes[known].kind = kind;
                 }
                 if label.as_deref() != Some(id.as_str()) {
@@ -256,7 +201,7 @@ impl BlockModel {
                     self.nodes[at].classes = classes;
                     self.nodes[at].styles = styles;
                 }
-                if self.nodes[at].kind.as_deref() == Some("composite") {
+                if self.nodes[at].kind == BlockKind::Composite {
                     self.nodes[at].color_index = Some(self.colors as f64);
                     self.colors += 1;
                 }
@@ -266,7 +211,7 @@ impl BlockModel {
             let inner = std::mem::take(&mut self.nodes[at].statements);
             self.nodes[at].children = Some(Vec::new());
             let mut pushed = Vec::new();
-            if self.nodes[at].kind.as_deref() == Some("space") {
+            if self.nodes[at].kind == BlockKind::Space {
                 let width = self.nodes[at].width.unwrap_or(1.0);
                 if width.is_nan() || width > MAX_SPACES - self.spaces {
                     return Err(Error::limit(format!(

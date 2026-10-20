@@ -7,7 +7,9 @@ use serde::{
     ser::{Error as _, SerializeMap},
 };
 
-use super::types::{C4Attr, C4Element, C4Named, C4Ref, C4Rel, C4Type};
+use super::types::{
+    C4Attr, C4Element, C4Named, C4Ref, C4Rel, C4Type, NodeType, RelKind, ShapeBase, ShapeKind,
+};
 use crate::js::{self, JsonNumber};
 
 /// A field of a shape, a boundary or a relation that an argument may set.
@@ -284,42 +286,33 @@ impl Default for C4Model {
 }
 
 impl C4Model {
-    /// alias, label, ?descr, ?sprite, ?tags, $link
-    pub fn add_person_or_system(&mut self, kind: &str, attrs: &[C4Attr]) {
+    /// A person or system takes alias, label, ?descr, ?sprite, ?tags, $link;
+    /// a container or component alias, label, ?techn, ?descr, ?sprite,
+    /// ?tags, $link.
+    pub fn add_shape(&mut self, kind: ShapeKind, attrs: &[C4Attr]) {
         let at = element(
             &mut self.shapes,
             &mut self.shape_index,
             attrs.first(),
             attrs.get(1),
         );
-        self.shapes[at].text(Field::Descr, attrs.get(2));
-        self.finish_shape(at, kind, attrs, 3);
-    }
-
-    /// alias, label, ?techn, ?descr, ?sprite, ?tags, $link
-    pub fn add_container(&mut self, kind: &str, attrs: &[C4Attr]) {
-        let at = element(
-            &mut self.shapes,
-            &mut self.shape_index,
-            attrs.first(),
-            attrs.get(1),
-        );
-        self.shapes[at].text(Field::Techn, attrs.get(2));
-        self.shapes[at].text(Field::Descr, attrs.get(3));
-        self.finish_shape(at, kind, attrs, 4);
-    }
-
-    pub fn add_component(&mut self, kind: &str, attrs: &[C4Attr]) {
-        self.add_container(kind, attrs);
-    }
-
-    fn finish_shape(&mut self, at: usize, kind: &str, attrs: &[C4Attr], from: usize) {
         let current = self.current;
         let shape = &mut self.shapes[at];
+        let from = match kind.base {
+            ShapeBase::Person | ShapeBase::System => {
+                shape.text(Field::Descr, attrs.get(2));
+                3
+            }
+            ShapeBase::Container | ShapeBase::Component => {
+                shape.text(Field::Techn, attrs.get(2));
+                shape.text(Field::Descr, attrs.get(3));
+                4
+            }
+        };
         shape.put(Field::Sprite, attrs.get(from));
         shape.put(Field::Tags, attrs.get(from + 1));
         shape.put(Field::Link, attrs.get(from + 2));
-        shape.kind = Some(kind.to_string());
+        shape.kind = Some(kind);
         shape.parent = Some(current);
     }
 
@@ -363,7 +356,7 @@ impl C4Model {
     }
 
     /// alias, label, ?type, ?descr, ?sprite, ?tags, $link
-    pub fn add_deployment_node(&mut self, node_type: &str, attrs: &[C4Attr]) {
+    pub fn add_deployment_node(&mut self, node_type: NodeType, attrs: &[C4Attr]) {
         let at = self.boundary(attrs, "node");
         let boundary = &mut self.boundaries[at];
         boundary.text(Field::Descr, attrs.get(3));
@@ -372,7 +365,7 @@ impl C4Model {
         boundary.put(Field::Sprite, attrs.get(4));
         boundary.put(Field::Tags, attrs.get(5));
         boundary.put(Field::Link, attrs.get(6));
-        boundary.node_type = Some(node_type.to_string());
+        boundary.node_type = Some(node_type);
         self.open(at);
     }
 
@@ -381,7 +374,7 @@ impl C4Model {
     }
 
     /// from, to, label, ?techn, ?descr, ?sprite, ?tags, $link
-    pub fn add_rel(&mut self, ty: &str, attrs: &[C4Attr]) {
+    pub fn add_rel(&mut self, ty: RelKind, attrs: &[C4Attr]) {
         let (Some(from), Some(to), Some(_)) = (attrs.first(), attrs.get(1), attrs.get(2)) else {
             return;
         };
@@ -398,7 +391,7 @@ impl C4Model {
         let at = found.unwrap_or_else(|| {
             let at = self.rels.len();
             let mut rel = C4Rel {
-                ty: ty.to_string(),
+                ty,
                 ..C4Rel::default()
             };
             if let Some((from, to)) = known {
@@ -419,7 +412,7 @@ impl C4Model {
             at
         });
         let rel = &mut self.rels[at];
-        rel.ty = ty.to_string();
+        rel.ty = ty;
         rel.label(attrs.get(2));
         rel.text(Field::Techn, attrs.get(3));
         rel.text(Field::Descr, attrs.get(4));
@@ -564,12 +557,16 @@ impl Serialize for ElementJson<'_> {
             ("shape", &el.shape),
             ("legendText", &el.legend_text),
             ("legendSprite", &el.legend_sprite),
-            ("kind", &el.kind),
-            ("nodeType", &el.node_type),
         ] {
             if let Some(value) = value {
                 map.serialize_entry(key, value)?;
             }
+        }
+        if let Some(kind) = &el.kind {
+            map.serialize_entry("kind", kind)?;
+        }
+        if let Some(node_type) = &el.node_type {
+            map.serialize_entry("nodeType", node_type)?;
         }
         if let Some(extra) = &el.extra {
             map.serialize_entry("extra", extra)?;

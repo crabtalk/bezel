@@ -9,9 +9,8 @@ pub use db::{GitCommit, GitModel};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 
 pub struct GitGraph;
 
@@ -47,10 +46,4 @@ pub struct GitGraphConfig {
     pub main_branch_name: Option<String>,
     #[serde_as(as = "DefaultOnError")]
     pub main_branch_order: Option<f64>,
-}
-
-impl Render for GitModel {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_git(self, &config.git_graph, ctx))
-    }
 }

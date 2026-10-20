@@ -14,7 +14,13 @@ pub enum Code {
     Syntax,
     /// Source that parses but describes something that cannot be.
     Semantic,
-    /// Past one of [`super::Limits`], or nested too deeply.
+    /// Past [`Options::limit`], [`Options::output_limit`] or
+    /// [`Options::max_edges`], or past a limit a diagram type keeps on its
+    /// own, such as nesting depth.
+    ///
+    /// [`Options::limit`]: crate::Options::limit
+    /// [`Options::output_limit`]: crate::Options::output_limit
+    /// [`Options::max_edges`]: crate::Options::max_edges
     Limit,
 }
 

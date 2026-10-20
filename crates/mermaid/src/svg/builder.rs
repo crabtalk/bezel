@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    geom::Point,
+    geom::{Point, Size},
     js,
     text::{Label, Span, Style, decoded},
 };
@@ -484,4 +484,18 @@ impl fmt::Display for TextStyle<'_> {
         }
         Ok(())
     }
+}
+
+/// A `<rect>` with its top left corner at `corner`, then `attrs` as written.
+pub fn rect(corner: Point, size: Size, attrs: impl fmt::Display) -> impl fmt::Display {
+    fragment(move |f| {
+        write!(
+            f,
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{attrs}/>",
+            num(corner.x),
+            num(corner.y),
+            num(size.w),
+            num(size.h)
+        )
+    })
 }

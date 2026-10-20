@@ -11,9 +11,8 @@ pub mod render;
 pub mod shapes;
 pub mod types;
 
-use super::{Diagram, Model, Render};
-use crate::{Config, Error, ParseLimits, Rendered};
-use crate::{Ctx, Host};
+use super::{Diagram, Model};
+use crate::{Config, Error, ParseLimits};
 pub use render::AgentflowConfig;
 
 pub use db::{AgentflowDb, AgentflowDbOptions};
@@ -48,13 +47,7 @@ impl Diagram for Agentflow {
             db.store.titles.set_title(title);
         }
         parser::parse_agentflow(source, &mut db, false)?;
-        db.graph = render::agent_graph(&mut db, flow);
+        db.graph = db.build_graph(render::PALETTE, flow.curve.as_deref());
         Ok(Model::Agentflow(Box::new(db)))
-    }
-}
-
-impl Render for AgentflowDb {
-    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-        Ok(render::render_agentflow(self, &config.agentflow, ctx))
     }
 }

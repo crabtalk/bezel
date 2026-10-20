@@ -924,6 +924,7 @@ dependencies = [
  "memchr",
  "serde",
  "serde_json",
+ "serde_repr",
  "serde_with",
  "usvg",
 ]

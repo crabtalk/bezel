@@ -57,11 +57,7 @@ impl CEdge {
             } else {
                 0.0
             },
-            if label.height > 0.0 {
-                label.height + 4.0
-            } else {
-                0.0
-            },
+            label.spaced_height(4.0),
         )
     }
 }
@@ -133,6 +129,27 @@ impl CNode {
             f64::INFINITY
         });
         Point::new(from.center.x + dx * scale, from.center.y + dy * scale)
+    }
+
+    /// A group laid out in `dir`, with its padding.
+    pub fn group(dir: Option<Direction>, pad_x: f64, pad_top: f64, pad_bottom: f64) -> Self {
+        CNode {
+            is_group: true,
+            dir,
+            pad_x,
+            pad_top,
+            pad_bottom,
+            ..CNode::new(Size::default(), None)
+        }
+    }
+
+    /// Whether `p` lies on the border of the layout box, within half a
+    /// pixel.
+    pub fn on_border(&self, p: Point) -> bool {
+        let dx = (p.x - self.center.x).abs();
+        let dy = (p.y - self.center.y).abs();
+        ((dy - self.size.h / 2.0).abs() < 0.5 && dx <= self.size.w / 2.0 + 0.5)
+            || ((dx - self.size.w / 2.0).abs() < 0.5 && dy <= self.size.h / 2.0 + 0.5)
     }
 }
 
@@ -766,4 +783,79 @@ pub fn compound_layout(
     }
 
     total
+}
+
+/// The direction of the nearest of the first 10000 groups above node `i`
+/// that sets one, or `root`.
+pub fn level_dir(nodes: &[CNode], i: usize, root: Direction) -> Direction {
+    std::iter::successors(nodes[i].parent, |&at| nodes[at].parent)
+        .take(10000)
+        .find_map(|at| nodes[at].dir)
+        .unwrap_or(root)
+}
+
+/// Spreads the route ends that meet one side of a node along that side, at
+/// most `gap` apart and `margin` clear of its corners, in the order of where
+/// their edges head. `drawn` gives the size node `i` is drawn at, centered
+/// in its layout box. Self-loops and routes of fewer than two points are
+/// left alone.
+pub fn spread_ends(
+    nodes: &[CNode],
+    edges: &mut [CEdge],
+    drawn: impl Fn(usize) -> Size,
+    gap: f64,
+    margin: f64,
+) {
+    struct End {
+        edge: usize,
+        at: usize,
+        toward: f64,
+    }
+    let mut sides: indexmap::IndexMap<(usize, Side), Vec<End>> = indexmap::IndexMap::new();
+    for (e, edge) in edges.iter().enumerate() {
+        let route = &edge.route;
+        if edge.src == edge.dst || route.len() < 2 {
+            continue;
+        }
+        for at in [0, route.len() - 1] {
+            let node = if at == 0 { edge.src } else { edge.dst };
+            let next = route[if at == 0 { 1 } else { at - 1 }].at;
+            let Some(side) = nodes[node].side_of(route[at].at) else {
+                continue;
+            };
+            let end = End {
+                edge: e,
+                at,
+                toward: if side.is_horizontal() { next.x } else { next.y },
+            };
+            sides.entry((node, side)).or_default().push(end);
+        }
+    }
+    for (&(node, side), ends) in sides.iter_mut() {
+        if ends.len() < 2 {
+            continue;
+        }
+        let axis = if side.is_horizontal() {
+            Axis::X
+        } else {
+            Axis::Y
+        };
+        let length = drawn(node).along(axis);
+        let step = gap
+            .min((length - 2.0 * margin) / (ends.len() - 1) as f64)
+            .max(0.0);
+        let center = nodes[node].center.along(axis);
+        ends.sort_by(|a, b| js::compare(a.toward - b.toward));
+        let count = ends.len() as f64;
+        for (j, end) in ends.iter().enumerate() {
+            *edges[end.edge].route[end.at].at.along_mut(axis) =
+                center + (j as f64 - (count - 1.0) / 2.0) * step;
+        }
+    }
+}
+
+/// The groups around node `i`, innermost first. The walk ends after
+/// `nodes.len()` steps, so a cycle of parents does not hang it.
+pub fn ancestors(nodes: &[CNode], i: usize) -> impl Iterator<Item = usize> + '_ {
+    std::iter::successors(nodes[i].parent, |&at| nodes[at].parent).take(nodes.len())
 }
